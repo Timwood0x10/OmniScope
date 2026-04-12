@@ -1,0 +1,9 @@
+.vscode/
+
+.DS_Store
+
+.zig-cache
+
+plan/
+
+bin/
