@@ -21,19 +21,19 @@ pub const FactStore = struct {
     pub fn init(allocator: std.mem.Allocator) FactStore {
         return .{
             .allocator = allocator,
-            .kinds = std.ArrayList(FactKind).init(allocator),
-            .subj = std.ArrayList(u32).init(allocator),
-            .obj = std.ArrayList(u32).init(allocator),
-            .ctx = std.ArrayList(u32).init(allocator),
+            .kinds = std.ArrayList(FactKind).initCapacity(allocator, 1024) catch unreachable,
+            .subj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
+            .obj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
+            .ctx = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
         };
     }
 
     /// Deinitialize the fact store
     pub fn deinit(self: *FactStore) void {
-        self.kinds.deinit();
-        self.subj.deinit();
-        self.obj.deinit();
-        self.ctx.deinit();
+        self.kinds.deinit(self.allocator);
+        self.subj.deinit(self.allocator);
+        self.obj.deinit(self.allocator);
+        self.ctx.deinit(self.allocator);
     }
 
     /// Insert a fact into the store (append-only)
@@ -50,10 +50,10 @@ pub const FactStore = struct {
         object: u32,
         context: u32,
     ) !void {
-        try self.kinds.append(kind);
-        try self.subj.append(subject);
-        try self.obj.append(object);
-        try self.ctx.append(context);
+        try self.kinds.append(self.allocator, kind);
+        try self.subj.append(self.allocator, subject);
+        try self.obj.append(self.allocator, object);
+        try self.ctx.append(self.allocator, context);
     }
 
     /// Get the number of facts in the store
@@ -76,13 +76,13 @@ pub const FactStore = struct {
     ///
     /// Returns a slice of indices matching the given kind
     pub fn queryByKind(self: *const FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
-        var indices = std.ArrayList(usize).init(allocator);
+        var indices = std.ArrayList(usize).initCapacity(allocator, 128) catch unreachable;
         for (self.kinds.items, 0..) |k, i| {
             if (k == kind) {
-                try indices.append(i);
+                try indices.append(allocator, i);
             }
         }
-        return indices.toOwnedSlice();
+        return indices.toOwnedSlice(allocator);
     }
 };
 
@@ -128,4 +128,138 @@ test "FactStore - get out of bounds" {
 
     const fact = store.get(0);
     try std.testing.expect(fact == null);
+}
+
+test "FactStore - large scale insert and retrieve" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    const count = 10000;
+
+    // Insert many facts
+    for (0..count) |i| {
+        const kind: FactKind = switch (i % 3) {
+            0 => .cfg_edge,
+            1 => .dfg_edge,
+            2 => .alias_may,
+            else => unreachable,
+        };
+        try store.insert(kind, @intCast(i), @intCast(i + 1), @intCast(i / 100));
+    }
+
+    try std.testing.expectEqual(@as(usize, count), store.count());
+
+    // Verify all facts can be retrieved correctly
+    for (0..count) |i| {
+        const fact = store.get(i).?;
+        try std.testing.expectEqual(@as(u32, @intCast(i)), fact.subject);
+        try std.testing.expectEqual(@as(u32, @intCast(i + 1)), fact.object);
+        try std.testing.expectEqual(@as(u32, @intCast(i / 100)), fact.context);
+    }
+}
+
+test "FactStore - queryByKind with mixed kinds" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts of all kinds
+    try store.insert(.cfg_edge, 1, 2, 0);
+    try store.insert(.dfg_edge, 3, 4, 0);
+    try store.insert(.alias_may, 5, 6, 0);
+    try store.insert(.alias_must, 7, 8, 0);
+    try store.insert(.lock_acquire, 9, 10, 0);
+    try store.insert(.lock_release, 11, 12, 0);
+    try store.insert(.taint, 13, 14, 0);
+    try store.insert(.allocation, 15, 16, 0);
+
+    // Query each kind
+    const kinds = [_]FactKind{
+        .cfg_edge,     .dfg_edge,     .alias_may, .alias_must,
+        .lock_acquire, .lock_release, .taint,     .allocation,
+    };
+
+    inline for (kinds, 0..) |kind, expected_idx| {
+        const indices = try store.queryByKind(kind, std.testing.allocator);
+        defer std.testing.allocator.free(indices);
+
+        try std.testing.expectEqual(@as(usize, 1), indices.len);
+        const fact = store.get(indices[0]).?;
+        try std.testing.expectEqual(kind, fact.kind);
+        try std.testing.expectEqual(@as(u32, @intCast(expected_idx * 2 + 1)), fact.subject);
+    }
+}
+
+test "FactStore - append-only property" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts
+    try store.insert(.cfg_edge, 1, 2, 0);
+    try store.insert(.dfg_edge, 3, 4, 0);
+
+    const first_fact = store.get(0).?;
+    const second_fact = store.get(1).?;
+
+    // Store should maintain order
+    try std.testing.expectEqual(FactKind.cfg_edge, first_fact.kind);
+    try std.testing.expectEqual(FactKind.dfg_edge, second_fact.kind);
+
+    // Insert more facts
+    try store.insert(.cfg_edge, 5, 6, 0);
+
+    // Previous facts should not be modified
+    const first_fact_again = store.get(0).?;
+    try std.testing.expectEqual(@as(u32, 1), first_fact_again.subject);
+    try std.testing.expectEqual(@as(u32, 2), first_fact_again.object);
+}
+
+test "FactStore - boundary values" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Test with maximum u32 values
+    try store.insert(.cfg_edge, 0, 0, 0);
+    try store.insert(.cfg_edge, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+    const first = store.get(0).?;
+    try std.testing.expectEqual(@as(u32, 0), first.subject);
+    try std.testing.expectEqual(@as(u32, 0), first.object);
+    try std.testing.expectEqual(@as(u32, 0), first.context);
+
+    const second = store.get(1).?;
+    try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.subject);
+    try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.object);
+    try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.context);
+}
+
+test "FactStore - all fact kinds" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Test all fact kinds are valid
+    const all_kinds = [_]FactKind{
+        .cfg_edge,
+        .dfg_edge,
+        .alias_may,
+        .alias_must,
+        .lock_acquire,
+        .lock_release,
+        .taint,
+        .allocation,
+    };
+
+    inline for (all_kinds, 0..) |kind, i| {
+        try store.insert(kind, @intCast(i), @intCast(i + 1), @intCast(i + 2));
+    }
+
+    try std.testing.expectEqual(@as(usize, all_kinds.len), store.count());
+
+    // Verify each kind was stored correctly
+    inline for (all_kinds, 0..) |kind, i| {
+        const fact = store.get(i).?;
+        try std.testing.expectEqual(kind, fact.kind);
+        try std.testing.expectEqual(@as(u32, @intCast(i)), fact.subject);
+        try std.testing.expectEqual(@as(u32, @intCast(i + 1)), fact.object);
+        try std.testing.expectEqual(@as(u32, @intCast(i + 2)), fact.context);
+    }
 }

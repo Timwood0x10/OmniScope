@@ -25,3 +25,20 @@ pub const fact = struct {
     pub const FactStore = @import("fact/store.zig").FactStore;
     pub const QueryEngine = @import("fact/query.zig").QueryEngine;
 };
+
+// Simple test to verify test system works
+test "root.zig - module import test" {
+    // Verify that all modules can be imported
+    _ = ir.llvm_c;
+    _ = ir.view;
+    _ = ir.location;
+    _ = pass.Pass;
+    _ = pass.PassContext;
+    _ = pass.DiagnosticWriter;
+    _ = pass.PassKind;
+    _ = pass.PassManager;
+    _ = fact.Fact;
+    _ = fact.FactKind;
+    _ = fact.FactStore;
+    _ = fact.QueryEngine;
+}

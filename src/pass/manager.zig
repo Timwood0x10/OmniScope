@@ -25,13 +25,13 @@ pub const PassManager = struct {
     pub fn init(allocator: std.mem.Allocator) PassManager {
         return .{
             .allocator = allocator,
-            .passes = std.ArrayList(PassEntry).init(allocator),
+            .passes = std.ArrayList(PassEntry).initCapacity(allocator, 0) catch unreachable,
         };
     }
 
     /// Deinitialize the pass manager
     pub fn deinit(self: *PassManager) void {
-        self.passes.deinit();
+        self.passes.deinit(self.allocator);
     }
 
     /// Register a pass with the manager
@@ -46,7 +46,7 @@ pub const PassManager = struct {
             .deps = pass_type.deps,
             .run_fn = pass_type.run,
         };
-        try self.passes.append(entry);
+        try self.passes.append(self.allocator, entry);
     }
 
     /// Execute all registered passes in dependency order

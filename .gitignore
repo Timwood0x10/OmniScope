@@ -1,9 +1,36 @@
+# IDE and Editor
 .vscode/
 
+*.swp
+*.swo
+*~
 .DS_Store
 
-.zig-cache
+# Zig build artifacts
+.zig-cache/
+zig-out/
+zig-build-*.log
 
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Test and coverage
+zig-coverage/
+zig-test-*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# OS specific
+Thumbs.db
+desktop.ini
+
+# Plan documents (internal design)
 plan/
-
-bin/

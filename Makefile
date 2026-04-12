@@ -1,225 +1,90 @@
-# LLVMScope Makefile
-# Build system for LLVMScope V2
-
-# ============================================================================
-# Configuration
-# ============================================================================
-PROJECT_NAME := OmniSope
-BUILD_DIR := zig-out
-CACHE_DIR := zig-cache
-
-# Compiler and tools
-ZIG := zig
-ZIG_BUILD := $(ZIG) build
-ZIG_FMT := $(ZIG) fmt
-ZIG_TEST := $(ZIG) build test
-
-# ============================================================================
-# Build Targets
-# ============================================================================
-
-.PHONY: all build dev release release-fast release-small test run clean fmt check help
+.PHONY: all build test check fmt clean help release release-fast release-small
 
 # Default target
 all: build
 
-# Development build (default)
+# Build the project
 build:
-	@echo "Building $(PROJECT_NAME) (dev mode)..."
-	$(ZIG_BUILD)
+	@echo "Building OmniSope (dev mode)..."
+	@zig build
 
-# Release build with LTO
+# Release builds
 release:
-	@echo "Building $(PROJECT_NAME) (release mode with LTO)..."
-	$(ZIG_BUILD) -Doptimize=ReleaseFast -Denable-lto
+	@echo "Building OmniSope (ReleaseSafe)..."
+	@zig build -Doptimize=ReleaseSafe
 
-# ReleaseFast build (optimize for speed)
 release-fast:
-	@echo "Building $(PROJECT_NAME) (ReleaseFast)..."
-	$(ZIG_BUILD) -Doptimize=ReleaseFast
+	@echo "Building OmniSope (ReleaseFast with LTO)..."
+	@zig build -Doptimize=ReleaseFast -Denable-lto
 
-# ReleaseSmall build (optimize for size)
 release-small:
-	@echo "Building $(PROJECT_NAME) (ReleaseSmall)..."
-	$(ZIG_BUILD) -Doptimize=ReleaseSmall
+	@echo "Building OmniSope (ReleaseSmall with LTO)..."
+	@zig build -Doptimize=ReleaseSmall -Denable-lto
 
-# Debug build (default)
-debug:
-	@echo "Building $(PROJECT_NAME) (debug mode)..."
-	$(ZIG_BUILD) -Doptimize=Debug
-
-# ============================================================================
-# Test Targets
-# ============================================================================
-
-# Run all tests
+# Run tests (uses direct test for clear output)
 test:
 	@echo "Running tests..."
-	$(ZIG_TEST)
+	@zig test src/root.zig
 
-# Run tests with verbose output
-test-verbose:
-	@echo "Running tests (verbose)..."
-	$(ZIG_TEST) --summary all
+# Run tests via build system
+test-build:
+	@echo "Running tests via build system..."
+	@zig build test
 
-# Run a specific test file
-test-file:
-	@if [ -z "$(FILE)" ]; then \
-		echo "Usage: make test-file FILE=path/to/test.zig"; \
-		exit 1; \
-	fi
-	@echo "Running test file: $(FILE)..."
-	$(ZIG) test $(FILE)
-
-# ============================================================================
-# Run Targets
-# ============================================================================
-
-# Run the application
-run: build
-	@echo "Running $(PROJECT_NAME)..."
-	$(BUILD_DIR)/bin/$(PROJECT_NAME)
-
-# Run with arguments
-run-args: build
-	@echo "Running $(PROJECT_NAME) with args: $(ARGS)..."
-	$(BUILD_DIR)/bin/$(PROJECT_NAME) $(ARGS)
-
-# ============================================================================
-# Code Quality Targets
-# ============================================================================
-
-# Format all Zig code
-fmt:
-	@echo "Formatting Zig code..."
-	$(ZIG_FMT) .
-
-# Check code (must have 0 errors - acceptance criteria)
+# Check for errors (acceptance criteria: 0 errors)
 check:
 	@echo "Checking code for errors..."
-	@ERRORS=$$($(ZIG_BUILD) 2>&1 | grep -c "error:" || true); \
-	if [ "$$ERRORS" -ne 0 ]; then \
-		echo "❌ Check failed: $$ERRORS error(s) found"; \
+	@if zig build 2>&1 | grep -q "error:"; then \
+		echo "❌ Check failed: errors found"; \
 		exit 1; \
 	else \
 		echo "✅ Check passed: 0 errors"; \
 	fi
 
-# Check format (without formatting)
+# Format code
+fmt:
+	@echo "Formatting Zig code..."
+	@zig fmt .
+
+# Check formatting
 check-fmt:
-	@echo "Checking code format..."
-	@$(ZIG_FMT) --check . || { echo "❌ Format check failed"; exit 1; }
-	@echo "✅ Format check passed"
-
-# Check format and fix
-fix-fmt:
-	@echo "Fixing code format..."
-	$(ZIG_FMT) .
-
-# Lint check (warnings are allowed, errors are not)
-lint:
-	@echo "Running linter (errors only)..."
-	@$(ZIG_BUILD) 2>&1 | grep "error:" && exit 1 || echo "✅ No errors found"
-
-# Full check (format + build)
-check-all: check-fmt check
-	@echo "✅ All checks passed"
-
-# ============================================================================
-# Clean Targets
-# ============================================================================
+	@echo "Checking code formatting..."
+	@zig fmt --check .
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR) $(CACHE_DIR)
+	@rm -rf zig-cache zig-out
 
-# Clean only cache (keep binaries)
-clean-cache:
-	@echo "Cleaning cache only..."
-	rm -rf $(CACHE_DIR)
-
-# Clean only binaries (keep cache)
-clean-bin:
-	@echo "Cleaning binaries only..."
-	rm -rf $(BUILD_DIR)
-
-# Deep clean (including .zig-cache in subdirectories)
+# Clean everything including test files
 clean-all:
-	@echo "Deep cleaning all artifacts..."
-	find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name "zig-out" -exec rm -rf {} + 2>/dev/null || true
+	@echo "Cleaning everything..."
+	@rm -rf zig-cache zig-out test_* *.zig.bak
 
-# ============================================================================
-# Development Helpers
-# ============================================================================
+# Build runtime library
+rt:
+	@echo "Building runtime library..."
+	@zig build rt
 
-# Watch and rebuild on file changes (requires fswatch)
-watch:
-	@echo "Watching for changes... (requires fswatch)"
-	@which fswatch >/dev/null 2>&1 || { echo "❌ fswatch not installed"; exit 1; }
-	@fswatch -o . -r -e "zig-cache|zig-out" | xargs -n1 -I{} make build
+# Run the application
+run:
+	@echo "Running OmniSope..."
+	@zig build run
 
-# Generate documentation
-docs:
-	@echo "Generating documentation..."
-	$(ZIG) build-exe src/lib.zig --emit-docs -femit-docs=$(BUILD_DIR)/docs
-
-# Install dependencies
-deps:
-	@echo "Installing dependencies..."
-	$(ZIG) fetch
-
-# Update dependencies
-deps-update:
-	@echo "Updating dependencies..."
-	$(ZIG) fetch --save
-
-# ============================================================================
-# Help Target
-# ============================================================================
-
+# Help message
 help:
-	@echo "LLVMScope Build System"
-	@echo ""
-	@echo "Build Targets:"
-	@echo "  make build         - Build in dev mode (default)"
-	@echo "  make release       - Build in release mode with LTO"
-	@echo "  make release-fast  - Build optimized for speed"
-	@echo "  make release-small - Build optimized for size"
-	@echo "  make debug         - Build in debug mode"
-	@echo ""
-	@echo "Test Targets:"
-	@echo "  make test          - Run all tests"
-	@echo "  make test-verbose  - Run tests with verbose output"
-	@echo "  make test-file     - Run specific test (FILE=path/to/test.zig)"
-	@echo ""
-	@echo "Run Targets:"
-	@echo "  make run           - Build and run the application"
-	@echo "  make run-args      - Run with args (ARGS=\"arg1 arg2\")"
-	@echo ""
-	@echo "Code Quality Targets:"
-	@echo "  make fmt           - Format all Zig code"
-	@echo "  make check         - Check for errors (0 errors = pass)"
-	@echo "  make check-fmt     - Check code format without fixing"
-	@echo "  make fix-fmt       - Fix code format"
-	@echo "  make lint          - Run linter (errors only)"
-	@echo "  make check-all     - Run all checks (format + build)"
-	@echo ""
-	@echo "Clean Targets:"
-	@echo "  make clean         - Clean build artifacts"
-	@echo "  make clean-cache   - Clean cache only"
-	@echo "  make clean-bin     - Clean binaries only"
-	@echo "  make clean-all     - Deep clean all artifacts"
-	@echo ""
-	@echo "Development Helpers:"
-	@echo "  make watch         - Watch and rebuild (requires fswatch)"
-	@echo "  make docs          - Generate documentation"
-	@echo "  make deps          - Install dependencies"
-	@echo "  make deps-update   - Update dependencies"
-	@echo ""
-	@echo "Usage Examples:"
-	@echo "  make build && make run"
-	@echo "  make release && make test"
-	@echo "  make check-all"
-	@echo ""
+	@echo "Available targets:"
+	@echo "  make build          - Build the project (dev mode)"
+	@echo "  make release        - Build with ReleaseSafe optimization"
+	@echo "  make release-fast   - Build with ReleaseFast + LTO"
+	@echo "  make release-small  - Build with ReleaseSmall + LTO"
+	@echo "  make test           - Run tests (direct, shows output)"
+	@echo "  make test-build     - Run tests via build system"
+	@echo "  make check          - Check for compilation errors"
+	@echo "  make fmt            - Format code"
+	@echo "  make check-fmt      - Check code formatting"
+	@echo "  make clean          - Clean build artifacts"
+	@echo "  make clean-all      - Clean everything including test files"
+	@echo "  make rt             - Build runtime library"
+	@echo "  make run            - Run the application"
+	@echo "  make help           - Show this help message"

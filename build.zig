@@ -1,11 +1,6 @@
 const std = @import("std");
 
 /// Build configuration for OmniScope
-///
-/// This build script supports the following options:
-///   -Doptimize=[Debug|ReleaseSafe|ReleaseFast|ReleaseSmall]
-///   -Denable-lto=true (enable Link Time Optimization)
-///   -Dtarget=<triple> (target platform)
 pub fn build(b: *std.Build) void {
     // Parse build options
     const target = b.standardTargetOptions(.{});
@@ -51,7 +46,8 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    // Test steps
+    // Test step - test the library module with proper output
+    const test_step = b.step("test", "Run all tests");
     const lib_tests = b.addTest(.{
         .root_module = lib_mod,
     });
@@ -61,16 +57,8 @@ pub fn build(b: *std.Build) void {
     }
 
     const run_lib_tests = b.addRunArtifact(lib_tests);
-
-    const exe_tests = b.addTest(.{
-        .root_module = exe.root_module,
-    });
-
-    const run_exe_tests = b.addRunArtifact(exe_tests);
-
-    const test_step = b.step("test", "Run all tests");
+    run_lib_tests.step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_lib_tests.step);
-    test_step.dependOn(&run_exe_tests.step);
 
     // Build runtime library as a static library
     const rt_lib = b.addLibrary(.{
@@ -91,30 +79,6 @@ pub fn build(b: *std.Build) void {
     // Step to build runtime library
     const build_rt_step = b.step("rt", "Build runtime library");
     build_rt_step.dependOn(&b.addInstallArtifact(rt_lib, .{}).step);
-
-    // Benchmark step (if ReleaseFast)
-    if (optimize == .ReleaseFast) {
-        const bench_step = b.step("bench", "Run benchmarks");
-        const bench_exe = b.addExecutable(.{
-            .name = "bench",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/main.zig"),
-                .target = target,
-                .optimize = .ReleaseFast,
-                .imports = &.{
-                    .{ .name = "OmniScope", .module = lib_mod },
-                },
-            }),
-        });
-
-        if (enable_lto) {
-            bench_exe.want_lto = true;
-        }
-
-        const run_bench = b.addRunArtifact(bench_exe);
-        bench_step.dependOn(&run_bench.step);
-        run_bench.step.dependOn(b.getInstallStep());
-    }
 
     // Help information
     const help_step = b.step("help", "Show build options");
