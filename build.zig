@@ -15,8 +15,8 @@ pub fn build(b: *std.Build) void {
     const llvm_path = b.option(
         []const u8,
         "llvm-path",
-        "Path to LLVM installation (default: /opt/homebrew/Cellar/llvm/22.1.2)",
-    ) orelse "/opt/homebrew/Cellar/llvm/22.1.2";
+        "Path to LLVM installation (default: /opt/homebrew/Cellar/llvm/22.1.3)",
+    ) orelse "/opt/homebrew/Cellar/llvm/22.1.3";
 
     // Create library module for OmniScope
     const lib_mod = b.addModule("OmniScope", .{

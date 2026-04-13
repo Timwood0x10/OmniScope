@@ -8,6 +8,16 @@ const std = @import("std");
 const MergedEvent = @import("../runtime/merge.zig").MergedEvent;
 const Anomaly = @import("../runtime/merge.zig").Anomaly;
 
+/// Free a diagnostics slice returned by getBySeverity or getByKind
+///
+/// This properly frees both the slice and all messages within.
+fn freeDiagnosticsSlice(allocator: std.mem.Allocator, diags: []Diagnostic) void {
+    for (diags) |diag| {
+        allocator.free(diag.message);
+    }
+    allocator.free(diags);
+}
+
 /// Diagnostic aggregator
 pub const DiagnosticAggregator = struct {
     allocator: std.mem.Allocator,
@@ -23,12 +33,20 @@ pub const DiagnosticAggregator = struct {
 
     /// Deinitialize the aggregator
     pub fn deinit(self: *DiagnosticAggregator) void {
+        self.clear();
         self.diagnostics.deinit(self.allocator);
     }
 
     /// Add a diagnostic
     pub fn add(self: *DiagnosticAggregator, diag: Diagnostic) !void {
-        try self.diagnostics.append(self.allocator, diag);
+        const owned_message = try self.allocator.dupe(u8, diag.message);
+        try self.diagnostics.append(self.allocator, .{
+            .kind = diag.kind,
+            .severity = diag.severity,
+            .loc = diag.loc,
+            .message = owned_message,
+            .confidence = diag.confidence,
+        });
     }
 
     /// Get all diagnostics
@@ -37,6 +55,9 @@ pub const DiagnosticAggregator = struct {
     }
 
     /// Get diagnostics by severity
+    ///
+    /// Returns newly allocated slice that caller owns. Caller must free the
+    /// returned slice and all messages within.
     pub fn getBySeverity(
         self: *const DiagnosticAggregator,
         severity: Severity,
@@ -46,7 +67,14 @@ pub const DiagnosticAggregator = struct {
 
         for (self.diagnostics.items) |diag| {
             if (diag.severity == severity) {
-                try filtered.append(allocator, diag);
+                const owned_message = try allocator.dupe(u8, diag.message);
+                try filtered.append(allocator, .{
+                    .kind = diag.kind,
+                    .severity = diag.severity,
+                    .loc = diag.loc,
+                    .message = owned_message,
+                    .confidence = diag.confidence,
+                });
             }
         }
 
@@ -54,6 +82,9 @@ pub const DiagnosticAggregator = struct {
     }
 
     /// Get diagnostics by kind
+    ///
+    /// Returns newly allocated slice that caller owns. Caller must free the
+    /// returned slice and all messages within.
     pub fn getByKind(
         self: *const DiagnosticAggregator,
         kind: DiagnosticKind,
@@ -63,7 +94,14 @@ pub const DiagnosticAggregator = struct {
 
         for (self.diagnostics.items) |diag| {
             if (diag.kind == kind) {
-                try filtered.append(allocator, diag);
+                const owned_message = try allocator.dupe(u8, diag.message);
+                try filtered.append(allocator, .{
+                    .kind = diag.kind,
+                    .severity = diag.severity,
+                    .loc = diag.loc,
+                    .message = owned_message,
+                    .confidence = diag.confidence,
+                });
             }
         }
 
@@ -255,7 +293,7 @@ test "DiagnosticAggregator - get by severity" {
     });
 
     const errors = try aggregator.getBySeverity(.err, std.testing.allocator);
-    defer std.testing.allocator.free(errors);
+    defer freeDiagnosticsSlice(std.testing.allocator, errors);
 
     try std.testing.expectEqual(@as(usize, 1), errors.len);
 }
@@ -280,10 +318,10 @@ test "DiagnosticAggregator - get by kind" {
         .confidence = 0.8,
     });
 
-    const static = try aggregator.getByKind(.static_issue, std.testing.allocator);
-    defer std.testing.allocator.free(static);
+    const static_diags = try aggregator.getByKind(.static_issue, std.testing.allocator);
+    defer freeDiagnosticsSlice(std.testing.allocator, static_diags);
 
-    try std.testing.expectEqual(@as(usize, 1), static.len);
+    try std.testing.expectEqual(@as(usize, 1), static_diags.len);
 }
 
 test "DiagnosticAggregator - aggregate from events" {
@@ -358,7 +396,7 @@ test "DiagnosticAggregator - clear" {
         .kind = .static_issue,
         .severity = .warning,
         .loc = 1,
-        .message = try std.testing.allocator.dupe(u8, "Test"),
+        .message = "Test",
         .confidence = 0.8,
     });
 

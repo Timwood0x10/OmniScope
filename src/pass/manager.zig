@@ -25,6 +25,7 @@ pub const PassManager = struct {
     passes: std.ArrayList(PassEntry),
     pass_map: std.StringHashMap(usize), // name -> index
     resolved_order: ?[]usize, // indices in execution order
+    execution_names: ?[]const []const u8, // cached pass names in order
 
     const PassEntry = struct {
         name: []const u8,
@@ -40,11 +41,15 @@ pub const PassManager = struct {
             .passes = std.ArrayList(PassEntry).initCapacity(allocator, 0) catch unreachable,
             .pass_map = std.StringHashMap(usize).init(allocator),
             .resolved_order = null,
+            .execution_names = null,
         };
     }
 
     /// Deinitialize the pass manager
     pub fn deinit(self: *PassManager) void {
+        if (self.execution_names) |names| {
+            self.allocator.free(names);
+        }
         if (self.resolved_order) |order| {
             self.allocator.free(order);
         }
@@ -72,6 +77,10 @@ pub const PassManager = struct {
 
     /// Invalidate resolved order (needs to be recomputed)
     fn invalidateResolvedOrder(self: *PassManager) void {
+        if (self.execution_names) |names| {
+            self.allocator.free(names);
+            self.execution_names = null;
+        }
         if (self.resolved_order) |order| {
             self.allocator.free(order);
             self.resolved_order = null;
@@ -134,6 +143,7 @@ pub const PassManager = struct {
         }
 
         var result = std.ArrayList(usize).initCapacity(self.allocator, num_passes) catch unreachable;
+        defer result.deinit(self.allocator);
 
         while (queue.items.len > 0) {
             // Get next node (FIFO)
@@ -157,12 +167,15 @@ pub const PassManager = struct {
         // Store resolved order
         self.resolved_order = try result.toOwnedSlice(self.allocator);
 
-        // Return pass names in order
+        // Build and cache execution names
         var names = try std.ArrayList([]const u8).initCapacity(self.allocator, num_passes);
         for (self.resolved_order.?) |idx| {
             try names.append(self.allocator, self.passes.items[idx].name);
         }
-        return names.toOwnedSlice(self.allocator);
+        self.execution_names = try names.toOwnedSlice(self.allocator);
+
+        // Return cached names
+        return self.execution_names.?;
     }
 
     /// Get execution order
@@ -170,13 +183,7 @@ pub const PassManager = struct {
     /// Returns:
     ///   - []const []const u8: Pass names in execution order, or null if not resolved
     pub fn getExecutionOrder(self: *PassManager) ?[]const []const u8 {
-        if (self.resolved_order == null) return null;
-
-        var names = std.ArrayList([]const u8).initCapacity(self.allocator, self.resolved_order.?.len) catch unreachable;
-        for (self.resolved_order.?) |idx| {
-            names.appendAssumeCapacity(self.passes.items[idx].name);
-        }
-        return names.toOwnedSlice(self.allocator) catch unreachable;
+        return self.execution_names;
     }
 
     /// Execute all registered passes in dependency order
@@ -288,12 +295,11 @@ test "PassManager - resolve dependencies - simple chain" {
         }
     };
 
-    try manager.registerPass(PassC); // Register in reverse order
+    try manager.registerPass(PassC);
     try manager.registerPass(PassA);
     try manager.registerPass(PassB);
 
     const order = try manager.resolveDependencies();
-    defer std.testing.allocator.free(order);
 
     try std.testing.expectEqual(@as(usize, 3), order.len);
     try std.testing.expectEqualStrings("A", order[0]);
@@ -351,7 +357,6 @@ test "PassManager - resolve dependencies - diamond" {
     try manager.registerPass(PassB);
 
     const order = try manager.resolveDependencies();
-    defer std.testing.allocator.free(order);
 
     try std.testing.expectEqual(@as(usize, 4), order.len);
     try std.testing.expectEqualStrings("A", order[0]);
@@ -451,7 +456,6 @@ test "PassManager - get execution order" {
     // After resolving
     _ = try manager.resolveDependencies();
     const order = manager.getExecutionOrder().?;
-    defer std.testing.allocator.free(order);
 
     try std.testing.expectEqual(@as(usize, 2), order.len);
     try std.testing.expectEqualStrings("A", order[0]);

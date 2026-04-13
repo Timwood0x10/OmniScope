@@ -21,12 +21,12 @@ release-small:
 	@echo "Building OmniSope (ReleaseSmall with LTO)..."
 	@zig build -Doptimize=ReleaseSmall -Denable-lto
 
-# Run tests (uses direct test for clear output)
+# Run tests (uses zig build test for proper LLVM linking)
 test:
 	@echo "Running tests..."
-	@zig test src/root.zig
+	@zig build test
 
-# Run tests via build system
+# Run tests via build system (alias for 'test')
 test-build:
 	@echo "Running tests via build system..."
 	@zig build test

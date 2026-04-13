@@ -4,7 +4,7 @@
 //! the shared ring buffer and decodes events.
 
 const std = @import("std");
-const RingBuffer = @import("rt_lib/ring_buffer.zig").RingBuffer;
+const RingBuffer = @import("rt_lib/ring_buffer.zig").TestRingBuffer;
 const Event = @import("rt_lib/ring_buffer.zig").Event;
 
 /// Event collector
@@ -85,24 +85,31 @@ pub const Collector = struct {
 /// Event decoder
 pub const Decoder = struct {
     allocator: std.mem.Allocator,
+    last_timestamp: i128,
 
     /// Create a new event decoder
     pub fn init(allocator: std.mem.Allocator) Decoder {
         return .{
             .allocator = allocator,
+            .last_timestamp = 0,
         };
     }
 
     /// Decode a single event
     pub fn decode(self: *Decoder, ev: Event) !DecodedEvent {
-        _ = self;
+        const ts = std.time.nanoTimestamp();
+        if (ts <= self.last_timestamp) {
+            self.last_timestamp += 1;
+        } else {
+            self.last_timestamp = ts;
+        }
 
         return .{
             .tag = ev.tag,
             .tid = ev.tid,
             .loc = ev.loc,
             .arg = ev.arg,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = self.last_timestamp,
         };
     }
 
