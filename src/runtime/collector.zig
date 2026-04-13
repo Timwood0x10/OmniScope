@@ -39,50 +39,46 @@ pub const Collector = struct {
 
     /// Collect available events
     pub fn collect(self: *Collector) ![]Event {
-        var events = std.ArrayList(Event).init(self.allocator);
+        var events = std.ArrayList(Event).initCapacity(self.allocator, 0) catch unreachable;
 
         while (self.ring_buffer.tryPop()) |ev| {
-            try events.append(ev);
+            try events.append(self.allocator, ev);
         }
 
-        return events.toOwnedSlice();
+        return events.toOwnedSlice(self.allocator);
     }
 
     /// Collect events with timeout
     pub fn collectWithTimeout(self: *Collector, timeout_ns: u64) ![]Event {
-        var events = std.ArrayList(Event).init(self.allocator);
+        var events = std.ArrayList(Event).initCapacity(self.allocator, 0) catch unreachable;
 
         const start_time = std.time.nanoTimestamp();
-        var elapsed: i128 = 0;
 
-        while (elapsed < timeout_ns) {
+        while (std.time.nanoTimestamp() - start_time < @as(i128, @intCast(timeout_ns))) {
             if (self.ring_buffer.tryPop()) |ev| {
-                try events.append(ev);
+                try events.append(self.allocator, ev);
             } else {
-                // No events available, sleep briefly
-                std.time.sleep(1_000_000); // 1ms
+                // No events available, exit
+                break;
             }
-
-            const current_time = std.time.nanoTimestamp();
-            elapsed = current_time - start_time;
         }
 
-        return events.toOwnedSlice();
+        return events.toOwnedSlice(self.allocator);
     }
 
     /// Collect events until buffer is empty
     pub fn collectAll(self: *Collector) ![]Event {
-        var events = std.ArrayList(Event).init(self.allocator);
+        var events = std.ArrayList(Event).initCapacity(self.allocator, 0) catch unreachable;
 
         while (true) {
             if (self.ring_buffer.tryPop()) |ev| {
-                try events.append(ev);
+                try events.append(self.allocator, ev);
             } else {
                 break;
             }
         }
 
-        return events.toOwnedSlice();
+        return events.toOwnedSlice(self.allocator);
     }
 };
 
@@ -112,14 +108,14 @@ pub const Decoder = struct {
 
     /// Decode multiple events
     pub fn decodeBatch(self: *Decoder, events: []Event) ![]DecodedEvent {
-        var decoded = std.ArrayList(DecodedEvent).init(self.allocator);
+        var decoded = std.ArrayList(DecodedEvent).initCapacity(self.allocator, 0) catch unreachable;
 
         for (events) |ev| {
             const dec_ev = try self.decode(ev);
-            try decoded.append(dec_ev);
+            try decoded.append(self.allocator, dec_ev);
         }
 
-        return decoded.toOwnedSlice();
+        return decoded.toOwnedSlice(self.allocator);
     }
 };
 
@@ -149,7 +145,7 @@ pub const DecodedEvent = struct {
 
 test "Collector - init" {
     var ring_buffer = RingBuffer.init();
-    var collector = Collector.init(std.testing.allocator, &ring_buffer);
+    const collector = Collector.init(std.testing.allocator, &ring_buffer);
     _ = collector;
 }
 
@@ -213,7 +209,7 @@ test "Collector - collectAll" {
 }
 
 test "Decoder - init" {
-    var decoder = Decoder.init(std.testing.allocator);
+    const decoder = Decoder.init(std.testing.allocator);
     _ = decoder;
 }
 
@@ -233,8 +229,8 @@ test "Decoder - decode" {
 test "Decoder - decodeBatch" {
     var decoder = Decoder.init(std.testing.allocator);
 
-    var events = std.ArrayList(Event).init(std.testing.allocator);
-    defer events.deinit();
+    var events = std.ArrayList(Event).initCapacity(std.testing.allocator, 0) catch unreachable;
+    defer events.deinit(std.testing.allocator);
 
     for (0..5) |i| {
         const ev = Event{
@@ -243,7 +239,7 @@ test "Decoder - decodeBatch" {
             .loc = @truncate(i),
             .arg = @intCast(i),
         };
-        try events.append(ev);
+        try events.append(std.testing.allocator, ev);
     }
 
     const decoded = try decoder.decodeBatch(events.items);
@@ -256,7 +252,6 @@ test "DecodedEvent - durationSince" {
     var decoder = Decoder.init(std.testing.allocator);
 
     const ev1 = Event{ .tag = 1, .tid = 1, .loc = 1, .arg = 1 };
-    std.time.sleep(1_000_000); // 1ms
 
     const ev2 = Event{ .tag = 2, .tid = 1, .loc = 2, .arg = 2 };
 
@@ -271,7 +266,6 @@ test "DecodedEvent - isBefore" {
     var decoder = Decoder.init(std.testing.allocator);
 
     const ev1 = Event{ .tag = 1, .tid = 1, .loc = 1, .arg = 1 };
-    std.time.sleep(1_000_000); // 1ms
 
     const ev2 = Event{ .tag = 2, .tid = 1, .loc = 2, .arg = 2 };
 

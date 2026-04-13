@@ -17,18 +17,18 @@ pub const DiagnosticAggregator = struct {
     pub fn init(allocator: std.mem.Allocator) DiagnosticAggregator {
         return .{
             .allocator = allocator,
-            .diagnostics = std.ArrayList(Diagnostic).init(allocator),
+            .diagnostics = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable,
         };
     }
 
     /// Deinitialize the aggregator
     pub fn deinit(self: *DiagnosticAggregator) void {
-        self.diagnostics.deinit();
+        self.diagnostics.deinit(self.allocator);
     }
 
     /// Add a diagnostic
     pub fn add(self: *DiagnosticAggregator, diag: Diagnostic) !void {
-        try self.diagnostics.append(diag);
+        try self.diagnostics.append(self.allocator, diag);
     }
 
     /// Get all diagnostics
@@ -42,15 +42,15 @@ pub const DiagnosticAggregator = struct {
         severity: Severity,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).init(allocator);
+        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
 
         for (self.diagnostics.items) |diag| {
             if (diag.severity == severity) {
-                try filtered.append(diag);
+                try filtered.append(allocator, diag);
             }
         }
 
-        return filtered.toOwnedSlice();
+        return filtered.toOwnedSlice(allocator);
     }
 
     /// Get diagnostics by kind
@@ -59,15 +59,15 @@ pub const DiagnosticAggregator = struct {
         kind: DiagnosticKind,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).init(allocator);
+        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
 
         for (self.diagnostics.items) |diag| {
             if (diag.kind == kind) {
-                try filtered.append(diag);
+                try filtered.append(allocator, diag);
             }
         }
 
-        return filtered.toOwnedSlice();
+        return filtered.toOwnedSlice(allocator);
     }
 
     /// Aggregate diagnostics from merged events
@@ -89,7 +89,7 @@ pub const DiagnosticAggregator = struct {
                     ),
                     .confidence = ev.confidence,
                 };
-                try self.diagnostics.append(diag);
+                try self.diagnostics.append(self.allocator, diag);
             }
         }
     }
@@ -114,7 +114,7 @@ pub const DiagnosticAggregator = struct {
                 .message = try self.allocator.dupe(u8, anomaly.description),
                 .confidence = anomaly.confidence,
             };
-            try self.diagnostics.append(diag);
+            try self.diagnostics.append(self.allocator, diag);
         }
     }
 
@@ -123,6 +123,7 @@ pub const DiagnosticAggregator = struct {
         self: *const DiagnosticAggregator,
         allocator: std.mem.Allocator,
     ) !SummaryReport {
+        _ = allocator; // Will be used for future expansion
         var error_count: usize = 0;
         var warning_count: usize = 0;
         var info_count: usize = 0;
@@ -152,6 +153,30 @@ pub const DiagnosticAggregator = struct {
     }
 };
 
+/// Diagnostic kind
+pub const DiagnosticKind = enum(u8) {
+    /// Static analysis issue
+    static_issue,
+    /// Runtime issue
+    runtime_issue,
+    /// Anomaly detected
+    anomaly,
+    /// Performance issue
+    performance,
+    /// Security issue
+    security,
+};
+
+/// Severity level
+pub const Severity = enum(u8) {
+    /// Information only
+    info = 0,
+    /// Warning
+    warning = 1,
+    /// Error
+    err = 2,
+};
+
 /// Diagnostic
 pub const Diagnostic = struct {
     /// Diagnostic kind
@@ -164,30 +189,6 @@ pub const Diagnostic = struct {
     message: []const u8,
     /// Confidence score [0.0, 1.0]
     confidence: f32,
-
-    /// Diagnostic kind
-    pub const DiagnosticKind = enum(u8) {
-        /// Static analysis issue
-        static_issue,
-        /// Runtime issue
-        runtime_issue,
-        /// Anomaly detected
-        anomaly,
-        /// Performance issue
-        performance,
-        /// Security issue
-        security,
-    };
-
-    /// Severity level
-    pub const Severity = enum(u8) {
-        /// Information only
-        info = 0,
-        /// Warning
-        warning = 1,
-        /// Error
-        err = 2,
-    };
 };
 
 /// Summary report
@@ -289,7 +290,7 @@ test "DiagnosticAggregator - aggregate from events" {
     var aggregator = DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
-    const events = [_]MergedEvent{
+    var events = [_]MergedEvent{
         .{
             .tag = 1,
             .tid = 1,

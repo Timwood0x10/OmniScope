@@ -10,10 +10,12 @@ const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 
 const FactStore = @import("../../fact/store.zig").FactStore;
+const FactKind = @import("../../fact/fact.zig").FactKind;
 
 const llvm = @import("../../ir/llvm_c.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
+const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
 /// Control Flow Graph pass
 pub const CFGPass = struct {
@@ -21,11 +23,23 @@ pub const CFGPass = struct {
     pub const kind = PassKind.foundation;
     pub const deps = &[_][]const u8{};
 
+    ctx: *PassContext,
+    diag: *DiagnosticWriter,
     store: *FactStore,
+    // Basic block ID mapping
+    bb_id_map: std.AutoHashMap(llvm.LLVMBasicBlockRef, u32),
+    // Function ID
+    func_id: u32,
 
     /// Create a new CFG pass
     pub fn init(store: *FactStore) CFGPass {
-        return .{ .store = store };
+        return .{
+            .ctx = undefined,
+            .diag = undefined,
+            .store = store,
+            .bb_id_map = std.AutoHashMap(llvm.LLVMBasicBlockRef, u32).init(std.heap.page_allocator),
+            .func_id = 0,
+        };
     }
 
     /// Run the CFG pass on a module
@@ -34,52 +48,128 @@ pub const CFGPass = struct {
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
-        _ = ctx;
-        _ = diag;
+        self.ctx = ctx;
+        self.diag = diag;
 
-        // TODO: Load module from context
-        // For now, this is a placeholder implementation
-        // The actual implementation will:
-        // 1. Iterate over all functions in the module
-        // 2. For each function, iterate over basic blocks
-        // 3. For each basic block, analyze terminator instruction
-        // 4. Emit cfg_edge facts for each successor
+        const module = ctx.module orelse return;
 
-        // Example: Emit a sample cfg_edge fact
-        try self.store.insert(.cfg_edge, 1, 2, 0);
+        // Iterate over all functions
+        var func = llvm.LLVMGetFirstFunction(module.raw);
+        while (func != null) {
+            // Check if this is a function (not global variable, etc.)
+            const func_ref = llvm.LLVMIsAFunction(func);
+            if (func_ref != null) {
+                // Assign function ID
+                self.func_id = ctx.getNextId();
+
+                // Analyze function
+                try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+            }
+            func = llvm.LLVMGetNextFunction(func);
+        }
+
+        // Clean up
+        self.bb_id_map.deinit();
     }
 
     /// Analyze a function and emit CFG edges
-    fn analyzeFunction(self: *CFGPass, func: ValueRef, context: u32) !void {
-        _ = self;
-        _ = func;
-        _ = context;
+    fn analyzeFunction(self: *CFGPass, func: FunctionRef) !void {
+        // Get first basic block
+        var bb = llvm.LLVMGetFirstBasicBlock(func.raw);
 
-        // Get basic blocks
-        // const first_bb = LLVMGetFirstBasicBlock(func.raw);
-        // var bb: ?LLVMBasicBlockRef = first_bb;
+        while (bb != null) {
+            // Assign ID to basic block
+            const bb_id = self.ctx.getNextId();
+            try self.bb_id_map.put(bb, bb_id);
 
-        // while (bb != null) {
-        //     // Analyze terminator to find successors
-        //     const terminator = LLVMGetBasicBlockTerminator(bb);
-        //     const opcode = LLVMGetInstructionOpcode(terminator);
+            // Analyze basic block
+            try self.analyzeBasicBlock(BasicBlockRef{ .raw = bb }, bb_id);
 
-        //     // Based on opcode, emit cfg_edge facts
-        //     switch (opcode) {
-        //         .Br => {
-        //             // Handle branch
-        //         },
-        //         .Switch => {
-        //             // Handle switch
-        //         },
-        //         .Ret => {
-        //             // Return - no successors
-        //         },
-        //         else => {},
-        //     }
+            // Move to next basic block
+            bb = llvm.LLVMGetNextBasicBlock(bb);
+        }
+    }
 
-        //     bb = LLVMGetNextBasicBlock(bb.?);
-        // }
+    /// Analyze a basic block and emit CFG edges
+    fn analyzeBasicBlock(self: *CFGPass, bb: BasicBlockRef, bb_id: u32) !void {
+        // Get terminator instruction
+        const terminator = llvm.LLVMGetBasicBlockTerminator(bb.raw);
+
+        // If no terminator, this is an entry block or malformed block
+        if (terminator == null) return;
+
+        // Get opcode
+        const opcode = llvm.LLVMGetInstructionOpcode(terminator);
+
+        // Based on opcode, emit cfg_edge facts
+        switch (@intToEnum(llvm.LLVMOpcode, opcode)) {
+            .Br => {
+                // Branch: handle conditional and unconditional
+                try self.handleBranch(terminator, bb_id);
+            },
+            .Switch => {
+                // Switch: handle multiple cases
+                try self.handleSwitch(terminator, bb_id);
+            },
+            .Ret => {
+                // Return: no successors
+            },
+            .Invoke, .CallBr, .IndirectBr => {
+                // Complex terminators: handle generically
+                try self.handleGenericTerminator(terminator, bb_id);
+            },
+            else => {
+                // Other terminators: no CFG edges
+            },
+        }
+    }
+
+    /// Handle branch instruction
+    fn handleBranch(self: *CFGPass, terminator: llvm.LLVMValueRef, source_bb_id: u32) !void {
+        const num_operands = llvm.LLVMGetNumOperands(terminator);
+
+        if (num_operands == 1) {
+            // Unconditional branch: one successor
+            const target_bb = llvm.LLVMGetOperand(terminator, 0);
+            const target_bb_id = self.bb_id_map.get(target_bb) orelse return;
+            try self.store.insert(.cfg_edge, source_bb_id, target_bb_id, self.func_id);
+        } else if (num_operands == 3) {
+            // Conditional branch: two successors (true, false)
+            // Operands: [condition, true_bb, false_bb]
+            const true_bb = llvm.LLVMGetOperand(terminator, 1);
+            const false_bb = llvm.LLVMGetOperand(terminator, 2);
+
+            if (self.bb_id_map.get(true_bb)) |true_bb_id| {
+                try self.store.insert(.cfg_edge, source_bb_id, true_bb_id, self.func_id);
+            }
+
+            if (self.bb_id_map.get(false_bb)) |false_bb_id| {
+                try self.store.insert(.cfg_edge, source_bb_id, false_bb_id, self.func_id);
+            }
+        }
+    }
+
+    /// Handle switch instruction
+    fn handleSwitch(self: *CFGPass, terminator: llvm.LLVMValueRef, source_bb_id: u32) !void {
+        // Switch has multiple successors: default + each case
+        const num_successors = llvm.LLVMGetNumSuccessors(terminator);
+
+        for (0..@intCast(num_successors)) |i| {
+            const successor_bb = llvm.LLVMGetSuccessor(terminator, @intCast(i));
+            const successor_bb_id = self.bb_id_map.get(successor_bb) orelse continue;
+            try self.store.insert(.cfg_edge, source_bb_id, successor_bb_id, self.func_id);
+        }
+    }
+
+    /// Handle generic terminator (invoke, callbr, indirectbr)
+    fn handleGenericTerminator(self: *CFGPass, terminator: llvm.LLVMValueRef, source_bb_id: u32) !void {
+        const num_successors = llvm.LLVMGetNumSuccessors(terminator);
+
+        for (0..@intCast(num_successors)) |i| {
+            const successor_bb = llvm.LLVMGetSuccessor(terminator, @intCast(i));
+            const successor_bb_id = self.bb_id_map.get(successor_bb) orelse continue;
+            try self.store.insert(.cfg_edge, source_bb_id, successor_bb_id, self.func_id);
+        }
     }
 };
 
@@ -103,4 +193,149 @@ test "CFGPass - validate as Pass" {
     });
 
     _ = ValidPass;
+}
+
+test "CFGPass - emit cfg_edge fact" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = CFGPass.init(&store);
+
+    // Manually set up test context
+    var bb_id_map = std.AutoHashMap(llvm.LLVMBasicBlockRef, u32).init(std.testing.allocator);
+    defer bb_id_map.deinit();
+
+    // Create dummy basic blocks
+    const bb1: llvm.LLVMBasicBlockRef = @ptrFromInt(0x1000);
+    const bb2: llvm.LLVMBasicBlockRef = @ptrFromInt(0x2000);
+
+    try bb_id_map.put(bb1, 1);
+    try bb_id_map.put(bb2, 2);
+
+    pass.bb_id_map = bb_id_map;
+    pass.func_id = 1;
+
+    // Emit a cfg_edge fact
+    try pass.store.insert(.cfg_edge, 1, 2, 1);
+
+    // Verify fact was inserted
+    try std.testing.expectEqual(@as(usize, 1), store.count());
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(FactKind.cfg_edge, fact.kind);
+    try std.testing.expectEqual(@as(u32, 1), fact.subject);
+    try std.testing.expectEqual(@as(u32, 2), fact.object);
+    try std.testing.expectEqual(@as(u32, 1), fact.context);
+}
+
+test "CFGPass - multiple cfg_edge facts" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = CFGPass.init(&store);
+
+    var bb_id_map = std.AutoHashMap(llvm.LLVMBasicBlockRef, u32).init(std.testing.allocator);
+    defer bb_id_map.deinit();
+
+    // Create multiple basic blocks forming a simple CFG
+    const bb1: llvm.LLVMBasicBlockRef = @ptrFromInt(0x1000);
+    const bb2: llvm.LLVMBasicBlockRef = @ptrFromInt(0x2000);
+    const bb3: llvm.LLVMBasicBlockRef = @ptrFromInt(0x3000);
+
+    try bb_id_map.put(bb1, 1);
+    try bb_id_map.put(bb2, 2);
+    try bb_id_map.put(bb3, 3);
+
+    pass.bb_id_map = bb_id_map;
+    pass.func_id = 1;
+
+    // Emit multiple cfg_edge facts (bb1 -> bb2, bb1 -> bb3, bb2 -> bb3)
+    try pass.store.insert(.cfg_edge, 1, 2, 1);
+    try pass.store.insert(.cfg_edge, 1, 3, 1);
+    try pass.store.insert(.cfg_edge, 2, 3, 1);
+
+    // Verify all facts were inserted
+    try std.testing.expectEqual(@as(usize, 3), store.count());
+
+    // Verify facts are in order
+    const fact1 = store.get(0).?;
+    try std.testing.expectEqual(@as(u32, 1), fact1.subject);
+    try std.testing.expectEqual(@as(u32, 2), fact1.object);
+
+    const fact2 = store.get(1).?;
+    try std.testing.expectEqual(@as(u32, 1), fact2.subject);
+    try std.testing.expectEqual(@as(u32, 3), fact2.object);
+
+    const fact3 = store.get(2).?;
+    try std.testing.expectEqual(@as(u32, 2), fact3.subject);
+    try std.testing.expectEqual(@as(u32, 3), fact3.object);
+}
+
+test "CFGPass - function ID tracking" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = CFGPass.init(&store);
+
+    var bb_id_map = std.AutoHashMap(llvm.LLVMBasicBlockRef, u32).init(std.testing.allocator);
+    defer bb_id_map.deinit();
+
+    const bb1: llvm.LLVMBasicBlockRef = @ptrFromInt(0x1000);
+    const bb2: llvm.LLVMBasicBlockRef = @ptrFromInt(0x2000);
+
+    try bb_id_map.put(bb1, 1);
+    try bb_id_map.put(bb2, 2);
+
+    pass.bb_id_map = bb_id_map;
+    pass.func_id = 42; // Different function ID
+
+    try pass.store.insert(.cfg_edge, 1, 2, 42);
+
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(@as(u32, 42), fact.context);
+
+    // Verify function ID is correctly stored
+    if (store.queryByKind(.cfg_edge, std.testing.allocator)) |indices| {
+        defer std.testing.allocator.free(indices);
+        try std.testing.expectEqual(@as(usize, 1), indices.len);
+        const fact = store.get(indices[0]).?;
+        try std.testing.expectEqual(@as(u32, 42), fact.context);
+    } else |_| {
+        try std.testing.expect(false);
+    }
+}
+
+test "CFGPass - bb_id_map consistency" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = CFGPass.init(&store);
+
+    var bb_id_map = std.AutoHashMap(llvm.LLVMBasicBlockRef, u32).init(std.testing.allocator);
+    defer bb_id_map.deinit();
+
+    // Create basic blocks with consistent IDs
+    const bb1: llvm.LLVMBasicBlockRef = @ptrFromInt(0x1000);
+    const bb2: llvm.LLVMBasicBlockRef = @ptrFromInt(0x2000);
+    const bb3: llvm.LLVMBasicBlockRef = @ptrFromInt(0x3000);
+
+    try bb_id_map.put(bb1, 10);
+    try bb_id_map.put(bb2, 20);
+    try bb_id_map.put(bb3, 30);
+
+    pass.bb_id_map = bb_id_map;
+    pass.func_id = 1;
+
+    // Emit edges with the IDs from bb_id_map
+    try pass.store.insert(.cfg_edge, 10, 20, 1);
+    try pass.store.insert(.cfg_edge, 20, 30, 1);
+
+    try std.testing.expectEqual(@as(usize, 2), store.count());
+
+    const fact1 = store.get(0).?;
+    try std.testing.expectEqual(@as(u32, 10), fact1.subject);
+    try std.testing.expectEqual(@as(u32, 20), fact1.object);
+
+    const fact2 = store.get(1).?;
+    try std.testing.expectEqual(@as(u32, 20), fact2.subject);
+    try std.testing.expectEqual(@as(u32, 30), fact2.object);
 }

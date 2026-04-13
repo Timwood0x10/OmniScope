@@ -26,6 +26,24 @@ pub const fact = struct {
     pub const QueryEngine = @import("fact/query.zig").QueryEngine;
 };
 
+// Export pipeline system
+pub const pipeline = struct {
+    pub const Stage = @import("pipeline/stage.zig").Stage;
+    pub const StageContext = @import("pipeline/stage.zig").StageContext;
+    pub const StageResult = @import("pipeline/stage.zig").StageResult;
+    pub const StageKind = @import("pipeline/stage.zig").StageKind;
+    pub const StaticStage = @import("pipeline/static_stage.zig").StaticStage;
+    pub const InstrumentationStage = @import("pipeline/instrumentation_stage.zig").InstrumentationStage;
+    pub const RuntimeStage = @import("pipeline/runtime_stage.zig").RuntimeStage;
+    pub const MergeStage = @import("pipeline/merge_stage.zig").MergeStage;
+};
+
+// Export engine
+pub const engine = struct {
+    pub const IRLoader = @import("engine/loader.zig").IRLoader;
+    pub const LoaderError = @import("engine/loader.zig").LoaderError;
+};
+
 // Simple test to verify test system works
 test "root.zig - module import test" {
     // Verify that all modules can be imported
@@ -41,4 +59,14 @@ test "root.zig - module import test" {
     _ = fact.FactKind;
     _ = fact.FactStore;
     _ = fact.QueryEngine;
+    _ = pipeline.Stage;
+    _ = pipeline.StageContext;
+    _ = pipeline.StageResult;
+    _ = pipeline.StageKind;
+    _ = pipeline.StaticStage;
+    _ = pipeline.InstrumentationStage;
+    _ = pipeline.RuntimeStage;
+    _ = pipeline.MergeStage;
+    _ = engine.IRLoader;
+    _ = engine.LoaderError;
 }

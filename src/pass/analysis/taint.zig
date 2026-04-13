@@ -10,7 +10,12 @@ const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 
 const FactStore = @import("../../fact/store.zig").FactStore;
+const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
+
+const llvm = @import("../../ir/llvm_c.zig");
+const ValueRef = @import("../../ir/view.zig").ValueRef;
+const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
 /// Taint analysis pass
 pub const TaintPass = struct {
@@ -18,14 +23,30 @@ pub const TaintPass = struct {
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
 
+    ctx: *PassContext,
+    diag: *DiagnosticWriter,
     store: *FactStore,
     query: QueryEngine,
+    // Taint graph
+    taint_graph: TaintGraph,
+    // Function ID
+    func_id: u32,
+    // Taint sources
+    sources: std.ArrayList(u32),
+    // Taint sinks
+    sinks: std.ArrayList(u32),
 
     /// Create a new taint analysis pass
     pub fn init(store: *FactStore) TaintPass {
         return .{
+            .ctx = undefined,
+            .diag = undefined,
             .store = store,
             .query = QueryEngine.init(store),
+            .taint_graph = TaintGraph.init(std.heap.page_allocator),
+            .func_id = 0,
+            .sources = std.ArrayList(u32).init(std.heap.page_allocator),
+            .sinks = std.ArrayList(u32).init(std.heap.page_allocator),
         };
     }
 
@@ -35,48 +56,190 @@ pub const TaintPass = struct {
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
-        _ = ctx;
-        _ = diag;
+        self.ctx = ctx;
+        self.diag = diag;
 
-        // TODO: Load module from context
-        // The actual implementation will:
-        // 1. Identify taint sources (user input, network, file I/O)
-        // 2. Propagate taint through data flow
-        // 3. Detect taint reaching sensitive sinks
-        // 4. Emit taint facts
+        const module = ctx.module orelse return;
 
-        // Example: Emit sample taint facts
-        try self.store.insert(.taint, 1, 2, 0);
+        // Iterate over all functions
+        var func = llvm.LLVMGetFirstFunction(module.raw);
+        while (func != null) {
+            const func_ref = llvm.LLVMIsAFunction(func);
+            if (func_ref != null) {
+                // Assign function ID
+                self.func_id = ctx.getNextId();
+
+                // Analyze function
+                try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+            }
+            func = llvm.LLVMGetNextFunction(func);
+        }
+
+        // Clean up
+        self.taint_graph.deinit();
+        self.sources.deinit();
+        self.sinks.deinit();
     }
 
     /// Analyze a function for taint propagation
-    fn analyzeFunction(self: *TaintPass, func_id: u32, context: u32) !void {
-        _ = self;
-        _ = func_id;
-        _ = context;
+    fn analyzeFunction(self: *TaintPass, func: FunctionRef) !void {
+        // Get first basic block
+        var bb = llvm.LLVMGetFirstBasicBlock(func.raw);
 
-        // Implementation steps:
-        // 1. Identify taint sources in the function
-        // 2. Build taint propagation graph
-        // 3. Track taint through data flow
-        // 4. Check for taint reaching sinks
+        while (bb != null) {
+            // Get first instruction
+            var inst = llvm.LLVMGetFirstInstruction(bb);
+
+            while (inst != null) {
+                // Get opcode
+                const opcode = llvm.LLVMGetInstructionOpcode(inst);
+
+                // Check if this is a call instruction
+                const opcode_enum = @intToEnum(llvm.LLVMOpcode, opcode);
+                if (opcode_enum == .Call) {
+                    const inst_id = self.ctx.getNextId();
+
+                    // Check if this is a taint source
+                    if (self.isTaintSource(inst)) {
+                        try self.sources.append(inst_id);
+                        try self.taint_graph.markTainted(inst_id);
+                        try self.store.insert(.taint, inst_id, inst_id, self.func_id);
+                    }
+
+                    // Check if this is a taint sink
+                    if (self.isTaintSink(inst)) {
+                        try self.sinks.append(inst_id);
+                    }
+                }
+
+                // Move to next instruction
+                inst = llvm.LLVMGetNextInstruction(inst);
+            }
+
+            // Move to next basic block
+            bb = llvm.LLVMGetNextBasicBlock(bb);
+        }
+
+        // Query DFG edges for data flow
+        const dfg_indices = try self.store.queryByKind(.dfg_edge, self.ctx.allocator);
+        defer self.ctx.allocator.free(dfg_indices);
+
+        // Build taint propagation graph from DFG
+        for (dfg_indices) |idx| {
+            const fact = self.store.get(idx).?;
+            try self.taint_graph.addPropagation(fact.subject, fact.object);
+        }
+
+        // Propagate taint
+        try self.taint_graph.propagate();
+
+        // Check if taint reaches any sinks
+        for (self.sinks.items) |sink| {
+            if (self.taint_graph.isTainted(sink)) {
+                // Taint reached a sink - emit taint fact
+                // Find source that reached this sink
+                for (self.sources.items) |source| {
+                    try self.store.insert(.taint, source, sink, self.func_id);
+                }
+            }
+        }
     }
 
-    /// Check if a value is a taint source
-    fn isTaintSource(value: u32) bool {
-        // In a real implementation, this would check against known
-        // taint source functions (e.g., read, recv, getenv)
-        // For now, return false as placeholder
-        _ = value;
+    /// Check if a call instruction is a taint source
+    fn isTaintSource(self: *TaintPass, inst: llvm.LLVMValueRef) bool {
+        _ = self;
+
+        // Get called function
+        const called_func = llvm.LLVMGetOperand(inst, 0);
+        if (called_func == null) return false;
+
+        // Get function name
+        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name_slice = std.mem.span(func_name);
+
+        // Check if it's a known taint source
+        return self.isKnownTaintSource(func_name_slice);
+    }
+
+    /// Check if a function name is a known taint source
+    fn isKnownTaintSource(self: *TaintPass, name: []const u8) bool {
+        _ = self;
+
+        // Common taint source functions
+        const taint_sources = [_][]const u8{
+            "read",
+            "recv",
+            "recvfrom",
+            "getenv",
+            "fgets",
+            "fread",
+            "scanf",
+            "gets",
+            "getchar",
+            "getwd",
+            "getcwd",
+            "getlogin",
+            "getpwnam",
+            "getpwuid",
+            "sysinfo",
+        };
+
+        for (taint_sources) |source| {
+            if (std.mem.eql(u8, name, source)) {
+                return true;
+            }
+        }
+
         return false;
     }
 
-    /// Check if a value is a taint sink
-    fn isTaintSink(value: u32) bool {
-        // In a real implementation, this would check against known
-        // taint sink functions (e.g., system, exec, sql queries)
-        // For now, return false as placeholder
-        _ = value;
+    /// Check if a call instruction is a taint sink
+    fn isTaintSink(self: *TaintPass, inst: llvm.LLVMValueRef) bool {
+        _ = self;
+
+        // Get called function
+        const called_func = llvm.LLVMGetOperand(inst, 0);
+        if (called_func == null) return false;
+
+        // Get function name
+        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name_slice = std.mem.span(func_name);
+
+        // Check if it's a known taint sink
+        return self.isKnownTaintSink(func_name_slice);
+    }
+
+    /// Check if a function name is a known taint sink
+    fn isKnownTaintSink(self: *TaintPass, name: []const u8) bool {
+        _ = self;
+
+        // Common taint sink functions
+        const taint_sinks = [_][]const u8{
+            "system",
+            "exec",
+            "execv",
+            "execl",
+            "execlp",
+            "execle",
+            "popen",
+            "open",
+            "fopen",
+            "fwrite",
+            "printf",
+            "sprintf",
+            "snprintf",
+            "strcpy",
+            "strcat",
+            "mysql_query",
+            "sqlite3_exec",
+        };
+
+        for (taint_sinks) |sink| {
+            if (std.mem.eql(u8, name, sink)) {
+                return true;
+            }
+        }
+
         return false;
     }
 };
@@ -175,6 +338,209 @@ test "TaintPass - validate as Pass" {
     });
 
     _ = ValidPass;
+}
+
+test "TaintPass - emit taint fact" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Emit taint fact
+    try pass.store.insert(.taint, 1, 2, 1);
+
+    // Verify fact was inserted
+    try std.testing.expectEqual(@as(usize, 1), store.count());
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(FactKind.taint, fact.kind);
+    try std.testing.expectEqual(@as(u32, 1), fact.subject);
+    try std.testing.expectEqual(@as(u32, 2), fact.object);
+    try std.testing.expectEqual(@as(u32, 1), fact.context);
+}
+
+test "TaintPass - known taint sources" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+
+    // Test known taint sources
+    try std.testing.expect(pass.isKnownTaintSource("read"));
+    try std.testing.expect(pass.isKnownTaintSource("recv"));
+    try std.testing.expect(pass.isKnownTaintSource("getenv"));
+    try std.testing.expect(pass.isKnownTaintSource("fgets"));
+    try std.testing.expect(pass.isKnownTaintSource("scanf"));
+
+    // Test non-sources
+    try std.testing.expect(!pass.isKnownTaintSource("malloc"));
+    try std.testing.expect(!pass.isKnownTaintSource("free"));
+    try std.testing.expect(!pass.isKnownTaintSource("printf")); // printf is a sink, not a source
+}
+
+test "TaintPass - known taint sinks" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+
+    // Test known taint sinks
+    try std.testing.expect(pass.isKnownTaintSink("system"));
+    try std.testing.expect(pass.isKnownTaintSink("exec"));
+    try std.testing.expect(pass.isKnownTaintSink("popen"));
+    try std.testing.expect(pass.isKnownTaintSink("printf"));
+    try std.testing.expect(pass.isKnownTaintSink("sprintf"));
+
+    // Test non-sinks
+    try std.testing.expect(!pass.isKnownTaintSink("malloc"));
+    try std.testing.expect(!pass.isKnownTaintSink("free"));
+    try std.testing.expect(!pass.isKnownTaintSink("read")); // read is a source, not a sink
+}
+
+test "TaintPass - taint source tracking" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Add taint sources
+    try pass.sources.append(10);
+    try pass.sources.append(20);
+    try pass.sources.append(30);
+
+    try std.testing.expectEqual(@as(usize, 3), pass.sources.items.len);
+    try std.testing.expectEqual(@as(u32, 10), pass.sources.items[0]);
+    try std.testing.expectEqual(@as(u32, 20), pass.sources.items[1]);
+    try std.testing.expectEqual(@as(u32, 30), pass.sources.items[2]);
+}
+
+test "TaintPass - taint sink tracking" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Add taint sinks
+    try pass.sinks.append(100);
+    try pass.sinks.append(200);
+
+    try std.testing.expectEqual(@as(usize, 2), pass.sinks.items.len);
+    try std.testing.expectEqual(@as(u32, 100), pass.sinks.items[0]);
+    try std.testing.expectEqual(@as(u32, 200), pass.sinks.items[1]);
+}
+
+test "TaintPass - taint graph propagation" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Mark a value as tainted
+    try pass.taint_graph.markTainted(1);
+
+    // Add propagation edges
+    try pass.taint_graph.addPropagation(1, 2);
+    try pass.taint_graph.addPropagation(2, 3);
+    try pass.taint_graph.addPropagation(3, 4);
+
+    // Propagate taint
+    try pass.taint_graph.propagate();
+
+    // Verify all values are tainted
+    try std.testing.expect(pass.taint_graph.isTainted(1));
+    try std.testing.expect(pass.taint_graph.isTainted(2));
+    try std.testing.expect(pass.taint_graph.isTainted(3));
+    try std.testing.expect(pass.taint_graph.isTainted(4));
+}
+
+test "TaintPass - complex taint scenario" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Simulate a complex taint scenario:
+    // Source A -> intermediate -> Sink X
+    // Source B -> intermediate -> Sink Y
+    // Both sources and sinks exist
+
+    // Add sources
+    try pass.sources.append(10); // Source A
+    try pass.sources.append(20); // Source B
+
+    // Add sinks
+    try pass.sinks.append(100); // Sink X
+    try pass.sinks.append(200); // Sink Y
+
+    // Mark sources as tainted
+    try pass.taint_graph.markTainted(10);
+    try pass.taint_graph.markTainted(20);
+
+    // Add propagation edges
+    // Source A -> 50 -> Sink X
+    try pass.taint_graph.addPropagation(10, 50);
+    try pass.taint_graph.addPropagation(50, 100);
+
+    // Source B -> 50 -> Sink Y
+    try pass.taint_graph.addPropagation(20, 50);
+    try pass.taint_graph.addPropagation(50, 200);
+
+    // Propagate taint
+    try pass.taint_graph.propagate();
+
+    // Verify propagation
+    try std.testing.expect(pass.taint_graph.isTainted(10)); // Source A
+    try std.testing.expect(pass.taint_graph.isTainted(20)); // Source B
+    try std.testing.expect(pass.taint_graph.isTainted(50)); // Intermediate
+    try std.testing.expect(pass.taint_graph.isTainted(100)); // Sink X
+    try std.testing.expect(pass.taint_graph.isTainted(200)); // Sink Y
+
+    // Verify source and sink counts
+    try std.testing.expectEqual(@as(usize, 2), pass.sources.items.len);
+    try std.testing.expectEqual(@as(usize, 2), pass.sinks.items.len);
+}
+
+test "TaintPass - taint reaching sink" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var pass = TaintPass.init(&store);
+    pass.func_id = 1;
+
+    // Add source and sink
+    try pass.sources.append(1);
+    try pass.sinks.append(3);
+
+    // Mark source as tainted
+    try pass.taint_graph.markTainted(1);
+
+    // Add propagation edge: source -> intermediate -> sink
+    try pass.taint_graph.addPropagation(1, 2);
+    try pass.taint_graph.addPropagation(2, 3);
+
+    // Propagate taint
+    try pass.taint_graph.propagate();
+
+    // Check if taint reaches sink
+    try std.testing.expect(pass.taint_graph.isTainted(3));
+
+    // Emit taint fact (simulating detection)
+    for (pass.sources.items) |source| {
+        if (pass.taint_graph.isTainted(3)) {
+            try pass.store.insert(.taint, source, 3, pass.func_id);
+        }
+    }
+
+    // Verify taint fact was emitted
+    try std.testing.expectEqual(@as(usize, 1), store.count());
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(FactKind.taint, fact.kind);
+    try std.testing.expectEqual(@as(u32, 1), fact.subject);
+    try std.testing.expectEqual(@as(u32, 3), fact.object);
 }
 
 test "TaintGraph - init and deinit" {

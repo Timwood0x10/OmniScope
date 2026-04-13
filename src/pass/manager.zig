@@ -1,18 +1,30 @@
 //! Pass manager for scheduling and executing passes
 //!
 //! This module manages pass registration, dependency resolution,
-//! and execution in the correct order.
+//! and execution in the correct order using topological sorting.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 const Pass = @import("pass.zig").Pass;
 const PassContext = @import("pass.zig").PassContext;
 const DiagnosticWriter = @import("pass.zig").DiagnosticWriter;
 const PassKind = @import("pass.zig").PassKind;
+const FactStore = @import("../fact/store.zig").FactStore;
+const QueryEngine = @import("../fact/query.zig").QueryEngine;
+
+/// Dependency resolution error
+pub const DependencyError = error{
+    CycleDetected,
+    MissingDependency,
+};
 
 /// Pass manager
 pub const PassManager = struct {
-    allocator: std.mem.Allocator,
+    allocator: Allocator,
     passes: std.ArrayList(PassEntry),
+    pass_map: std.StringHashMap(usize), // name -> index
+    resolved_order: ?[]usize, // indices in execution order
 
     const PassEntry = struct {
         name: []const u8,
@@ -22,15 +34,21 @@ pub const PassManager = struct {
     };
 
     /// Create a new pass manager
-    pub fn init(allocator: std.mem.Allocator) PassManager {
+    pub fn init(allocator: Allocator) PassManager {
         return .{
             .allocator = allocator,
             .passes = std.ArrayList(PassEntry).initCapacity(allocator, 0) catch unreachable,
+            .pass_map = std.StringHashMap(usize).init(allocator),
+            .resolved_order = null,
         };
     }
 
     /// Deinitialize the pass manager
     pub fn deinit(self: *PassManager) void {
+        if (self.resolved_order) |order| {
+            self.allocator.free(order);
+        }
+        self.pass_map.deinit();
         self.passes.deinit(self.allocator);
     }
 
@@ -47,14 +65,130 @@ pub const PassManager = struct {
             .run_fn = pass_type.run,
         };
         try self.passes.append(self.allocator, entry);
+        try self.pass_map.put(entry.name, self.passes.items.len - 1);
+        // Invalidate resolved order when new pass is registered
+        self.invalidateResolvedOrder();
+    }
+
+    /// Invalidate resolved order (needs to be recomputed)
+    fn invalidateResolvedOrder(self: *PassManager) void {
+        if (self.resolved_order) |order| {
+            self.allocator.free(order);
+            self.resolved_order = null;
+        }
+    }
+
+    /// Resolve dependencies using Kahn's algorithm (topological sort)
+    ///
+    /// Returns:
+    ///   - []const []const u8: Execution order (pass names)
+    ///
+    /// Errors:
+    ///   - error.CycleDetected: Circular dependency found
+    ///   - error.MissingDependency: A dependency is not registered
+    pub fn resolveDependencies(self: *PassManager) ![]const []const u8 {
+        // Build adjacency list and in-degree count
+        const num_passes = self.passes.items.len;
+        var in_degree = try self.allocator.alloc(usize, num_passes);
+        defer self.allocator.free(in_degree);
+
+        var adjacency = try std.ArrayList(std.ArrayList(usize)).initCapacity(self.allocator, num_passes);
+        defer {
+            for (adjacency.items) |*list| {
+                list.deinit(self.allocator);
+            }
+            adjacency.deinit(self.allocator);
+        }
+
+        // Initialize in-degree and adjacency
+        for (0..num_passes) |i| {
+            in_degree[i] = 0;
+            try adjacency.append(self.allocator, std.ArrayList(usize).initCapacity(self.allocator, 0) catch unreachable);
+        }
+
+        // Build graph
+        for (0..num_passes) |i| {
+            const pass = self.passes.items[i];
+            for (pass.deps) |dep_name| {
+                // Find dependency index
+                const dep_idx = self.pass_map.get(dep_name) orelse {
+                    // Dependency not found - check if it's a special case
+                    // For now, we assume all dependencies must be registered
+                    return error.MissingDependency;
+                };
+                // Add edge: dep_idx -> i
+                try adjacency.items[dep_idx].append(self.allocator, i);
+                in_degree[i] += 1;
+            }
+        }
+
+        // Kahn's algorithm
+        var queue = std.ArrayList(usize).initCapacity(self.allocator, num_passes) catch unreachable;
+        defer queue.deinit(self.allocator);
+
+        // Find all nodes with in-degree 0
+        for (0..num_passes) |i| {
+            if (in_degree[i] == 0) {
+                try queue.append(self.allocator, i);
+            }
+        }
+
+        var result = std.ArrayList(usize).initCapacity(self.allocator, num_passes) catch unreachable;
+
+        while (queue.items.len > 0) {
+            // Get next node (FIFO)
+            const node = queue.orderedRemove(0);
+            try result.append(self.allocator, node);
+
+            // Reduce in-degree of neighbors
+            for (adjacency.items[node].items) |neighbor| {
+                in_degree[neighbor] -= 1;
+                if (in_degree[neighbor] == 0) {
+                    try queue.append(self.allocator, neighbor);
+                }
+            }
+        }
+
+        // Check for cycle
+        if (result.items.len != num_passes) {
+            return error.CycleDetected;
+        }
+
+        // Store resolved order
+        self.resolved_order = try result.toOwnedSlice(self.allocator);
+
+        // Return pass names in order
+        var names = try std.ArrayList([]const u8).initCapacity(self.allocator, num_passes);
+        for (self.resolved_order.?) |idx| {
+            try names.append(self.allocator, self.passes.items[idx].name);
+        }
+        return names.toOwnedSlice(self.allocator);
+    }
+
+    /// Get execution order
+    ///
+    /// Returns:
+    ///   - []const []const u8: Pass names in execution order, or null if not resolved
+    pub fn getExecutionOrder(self: *PassManager) ?[]const []const u8 {
+        if (self.resolved_order == null) return null;
+
+        var names = std.ArrayList([]const u8).initCapacity(self.allocator, self.resolved_order.?.len) catch unreachable;
+        for (self.resolved_order.?) |idx| {
+            names.appendAssumeCapacity(self.passes.items[idx].name);
+        }
+        return names.toOwnedSlice(self.allocator) catch unreachable;
     }
 
     /// Execute all registered passes in dependency order
     pub fn run(self: *PassManager, ctx: *PassContext, diag: *DiagnosticWriter) !void {
-        // For now, execute in registration order
-        // TODO: Implement topological sort based on dependencies
-        for (self.passes.items) |entry| {
-            try entry.run_fn(ctx, diag);
+        // Resolve dependencies if not already done
+        if (self.resolved_order == null) {
+            _ = try self.resolveDependencies();
+        }
+
+        // Execute in resolved order
+        for (self.resolved_order.?) |idx| {
+            try self.passes.items[idx].run_fn(ctx, diag);
         }
     }
 
@@ -92,6 +226,11 @@ test "PassManager - run passes" {
     var manager = PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = QueryEngine.init(&fact_store);
+
     const TestPass = struct {
         pub const name = "test-pass";
         pub const kind = PassKind.foundation;
@@ -104,7 +243,217 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
-    var ctx = PassContext{ .allocator = std.testing.allocator };
+    var ctx = PassContext{
+        .allocator = std.testing.allocator,
+        .module = null,
+        .fact_store = &fact_store,
+        .query_engine = &query_engine,
+        .next_id = std.atomic.Value(u32).init(1),
+    };
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };
     try manager.run(&ctx, &diag);
+}
+
+test "PassManager - resolve dependencies - simple chain" {
+    var manager = PassManager.init(std.testing.allocator);
+    defer manager.deinit();
+
+    const PassA = struct {
+        pub const name = "A";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassB = struct {
+        pub const name = "B";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"A"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassC = struct {
+        pub const name = "C";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"B"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    try manager.registerPass(PassC); // Register in reverse order
+    try manager.registerPass(PassA);
+    try manager.registerPass(PassB);
+
+    const order = try manager.resolveDependencies();
+    defer std.testing.allocator.free(order);
+
+    try std.testing.expectEqual(@as(usize, 3), order.len);
+    try std.testing.expectEqualStrings("A", order[0]);
+    try std.testing.expectEqualStrings("B", order[1]);
+    try std.testing.expectEqualStrings("C", order[2]);
+}
+
+test "PassManager - resolve dependencies - diamond" {
+    var manager = PassManager.init(std.testing.allocator);
+    defer manager.deinit();
+
+    const PassA = struct {
+        pub const name = "A";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassB = struct {
+        pub const name = "B";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"A"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassC = struct {
+        pub const name = "C";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"A"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassD = struct {
+        pub const name = "D";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{ "B", "C" };
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    try manager.registerPass(PassD);
+    try manager.registerPass(PassC);
+    try manager.registerPass(PassA);
+    try manager.registerPass(PassB);
+
+    const order = try manager.resolveDependencies();
+    defer std.testing.allocator.free(order);
+
+    try std.testing.expectEqual(@as(usize, 4), order.len);
+    try std.testing.expectEqualStrings("A", order[0]);
+    // B and C can be in any order, both must be before D
+    var found_b = false;
+    var found_c = false;
+    for (order) |pass_name| {
+        if (std.mem.eql(u8, pass_name, "B")) found_b = true;
+        if (std.mem.eql(u8, pass_name, "C")) found_c = true;
+    }
+    try std.testing.expect(found_b);
+    try std.testing.expect(found_c);
+    try std.testing.expectEqualStrings("D", order[3]);
+}
+
+test "PassManager - detect cycle" {
+    var manager = PassManager.init(std.testing.allocator);
+    defer manager.deinit();
+
+    const PassA = struct {
+        pub const name = "A";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"B"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassB = struct {
+        pub const name = "B";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"A"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    try manager.registerPass(PassA);
+    try manager.registerPass(PassB);
+
+    const result = manager.resolveDependencies();
+    try std.testing.expectError(error.CycleDetected, result);
+}
+
+test "PassManager - missing dependency" {
+    var manager = PassManager.init(std.testing.allocator);
+    defer manager.deinit();
+
+    const PassA = struct {
+        pub const name = "A";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"NonExistent"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    try manager.registerPass(PassA);
+
+    const result = manager.resolveDependencies();
+    try std.testing.expectError(error.MissingDependency, result);
+}
+
+test "PassManager - get execution order" {
+    var manager = PassManager.init(std.testing.allocator);
+    defer manager.deinit();
+
+    const PassA = struct {
+        pub const name = "A";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    const PassB = struct {
+        pub const name = "B";
+        pub const kind = PassKind.foundation;
+        pub const deps = &[_][]const u8{"A"};
+        pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+            _ = ctx;
+            _ = diag;
+        }
+    };
+
+    try manager.registerPass(PassB);
+    try manager.registerPass(PassA);
+
+    // Before resolving
+    try std.testing.expect(manager.getExecutionOrder() == null);
+
+    // After resolving
+    _ = try manager.resolveDependencies();
+    const order = manager.getExecutionOrder().?;
+    defer std.testing.allocator.free(order);
+
+    try std.testing.expectEqual(@as(usize, 2), order.len);
+    try std.testing.expectEqualStrings("A", order[0]);
+    try std.testing.expectEqualStrings("B", order[1]);
 }

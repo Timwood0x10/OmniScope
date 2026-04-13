@@ -28,14 +28,14 @@ pub const MergeEngine = struct {
         self: *MergeEngine,
         events: []DecodedEvent,
     ) ![]MergedEvent {
-        var merged = std.ArrayList(MergedEvent).init(self.allocator);
+        var merged = std.ArrayList(MergedEvent).initCapacity(self.allocator, 0) catch unreachable;
 
         for (events) |ev| {
             const merged_ev = try self.mergeEvent(ev);
-            try merged.append(merged_ev);
+            try merged.append(self.allocator, merged_ev);
         }
 
-        return merged.toOwnedSlice();
+        return merged.toOwnedSlice(self.allocator);
     }
 
     /// Merge a single event with static facts
@@ -89,15 +89,16 @@ pub const MergeEngine = struct {
         self: *MergeEngine,
         events: []DecodedEvent,
     ) ![]Anomaly {
-        var anomalies = std.ArrayList(Anomaly).init(self.allocator);
+        var anomalies = std.ArrayList(Anomaly).initCapacity(self.allocator, 0) catch unreachable;
 
         // Implementation steps:
         // 1. Group events by location
         // 2. Compare with static facts
         // 3. Detect inconsistencies
         // 4. Report anomalies
+        _ = events;
 
-        return anomalies.toOwnedSlice();
+        return anomalies.toOwnedSlice(self.allocator);
     }
 };
 
@@ -165,7 +166,7 @@ test "MergeEngine - merge empty" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const engine = MergeEngine.init(std.testing.allocator, &store);
+    var engine = MergeEngine.init(std.testing.allocator, &store);
 
     const events: []DecodedEvent = &.{};
     const merged = try engine.merge(events);
@@ -178,7 +179,7 @@ test "MergeEngine - merge single event" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const engine = MergeEngine.init(std.testing.allocator, &store);
+    var engine = MergeEngine.init(std.testing.allocator, &store);
 
     const ev = DecodedEvent{
         .tag = 1,
@@ -188,7 +189,8 @@ test "MergeEngine - merge single event" {
         .timestamp = std.time.nanoTimestamp(),
     };
 
-    const merged = try engine.merge(&.{ev});
+    var events = [_]DecodedEvent{ev};
+    const merged = try engine.merge(&events);
     defer std.testing.allocator.free(merged);
 
     try std.testing.expectEqual(@as(usize, 1), merged.len);
@@ -205,7 +207,7 @@ test "MergeEngine - merge with static facts" {
     try store.insert(.cfg_edge, 1, 42, 0);
     try store.insert(.dfg_edge, 42, 100, 0);
 
-    const engine = MergeEngine.init(std.testing.allocator, &store);
+    var engine = MergeEngine.init(std.testing.allocator, &store);
 
     const ev = DecodedEvent{
         .tag = 1,
@@ -215,7 +217,8 @@ test "MergeEngine - merge with static facts" {
         .timestamp = std.time.nanoTimestamp(),
     };
 
-    const merged = try engine.merge(&.{ev});
+    var events = [_]DecodedEvent{ev};
+    const merged = try engine.merge(&events);
     defer std.testing.allocator.free(merged);
 
     try std.testing.expectEqual(@as(usize, 1), merged.len);
@@ -227,10 +230,10 @@ test "MergeEngine - merge multiple events" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const engine = MergeEngine.init(std.testing.allocator, &store);
+    var engine = MergeEngine.init(std.testing.allocator, &store);
 
-    var events = std.ArrayList(DecodedEvent).init(std.testing.allocator);
-    defer events.deinit();
+    var events = std.ArrayList(DecodedEvent).initCapacity(std.testing.allocator, 0) catch unreachable;
+    defer events.deinit(std.testing.allocator);
 
     for (0..10) |i| {
         const ev = DecodedEvent{
@@ -240,7 +243,7 @@ test "MergeEngine - merge multiple events" {
             .arg = @intCast(i),
             .timestamp = std.time.nanoTimestamp(),
         };
-        try events.append(ev);
+        try events.append(std.testing.allocator, ev);
     }
 
     const merged = try engine.merge(events.items);

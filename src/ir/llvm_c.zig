@@ -15,53 +15,58 @@ pub const LLVMMemoryBufferRef = *opaque {};
 
 // LLVM-C API declarations
 // Context
-extern fn LLVMContextCreate() LLVMContextRef;
-extern fn LLVMContextDispose(ctx: LLVMContextRef) void;
+pub extern fn LLVMContextCreate() LLVMContextRef;
+pub extern fn LLVMContextDispose(ctx: LLVMContextRef) void;
 
 // Module
-extern fn LLVMParseIRInContext(
+pub extern fn LLVMParseIRInContext(
     ctx: LLVMContextRef,
     mem_buf: LLVMMemoryBufferRef,
     out_msg: *[*:0]u8,
 ) LLVMModuleRef;
-extern fn LLVMDisposeModule(module: LLVMModuleRef) void;
+pub extern fn LLVMDisposeModule(module: LLVMModuleRef) void;
 
 // Memory buffer
-extern fn LLVMCreateMemoryBufferWithContentsOfFile(
+pub extern fn LLVMCreateMemoryBufferWithContentsOfFile(
     path: [*:0]const u8,
     out_mem_buf: *LLVMMemoryBufferRef,
     out_msg: *[*:0]u8,
 ) c_int;
-extern fn LLVMDisposeMemoryBuffer(mem_buf: LLVMMemoryBufferRef) void;
+pub extern fn LLVMDisposeMemoryBuffer(mem_buf: LLVMMemoryBufferRef) void;
 
 // Value operations
-extern fn LLVMGetValueName(value: LLVMValueRef) [*:0]const u8;
-extern fn LLVMGetInstructionOpcode(inst: LLVMValueRef) c_uint;
-extern fn LLVMGetNextInstruction(inst: LLVMValueRef) LLVMValueRef;
-extern fn LLVMGetPreviousInstruction(inst: LLVMValueRef) LLVMValueRef;
-extern fn LLVMGetInstructionParent(inst: LLVMValueRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetValueName(value: LLVMValueRef) [*:0]const u8;
+pub extern fn LLVMGetInstructionOpcode(inst: LLVMValueRef) c_uint;
+pub extern fn LLVMGetNextInstruction(inst: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMGetPreviousInstruction(inst: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMGetInstructionParent(inst: LLVMValueRef) LLVMBasicBlockRef;
 
 // Basic block operations
-extern fn LLVMGetBasicBlocks(function: LLVMValueRef) *LLVMBasicBlockRef;
-extern fn LLVMGetNextBasicBlock(bb: LLVMBasicBlockRef) LLVMBasicBlockRef;
-extern fn LLVMGetPreviousBasicBlock(bb: LLVMBasicBlockRef) LLVMBasicBlockRef;
-extern fn LLVMGetBasicBlockName(bb: LLVMBasicBlockRef) [*:0]const u8;
-extern fn LLVMGetFirstBasicBlock(function: LLVMValueRef) LLVMBasicBlockRef;
-extern fn LLVMGetLastBasicBlock(function: LLVMValueRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetBasicBlocks(function: LLVMValueRef) *LLVMBasicBlockRef;
+pub extern fn LLVMGetNextBasicBlock(bb: LLVMBasicBlockRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetPreviousBasicBlock(bb: LLVMBasicBlockRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetBasicBlockName(bb: LLVMBasicBlockRef) [*:0]const u8;
+pub extern fn LLVMGetFirstBasicBlock(function: LLVMValueRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetLastBasicBlock(function: LLVMValueRef) LLVMBasicBlockRef;
+pub extern fn LLVMGetFirstInstruction(bb: LLVMBasicBlockRef) LLVMValueRef;
+pub extern fn LLVMGetLastInstruction(bb: LLVMBasicBlockRef) LLVMValueRef;
+pub extern fn LLVMGetBasicBlockTerminator(bb: LLVMBasicBlockRef) LLVMValueRef;
 
 // Function operations
-extern fn LLVMGetFirstFunction(module: LLVMModuleRef) LLVMValueRef;
-extern fn LLVMGetNextFunction(func: LLVMValueRef) LLVMValueRef;
-extern fn LLVMIsAFunction(val: LLVMValueRef) LLVMValueRef;
-extern fn LLVMCountBasicBlocks(func_val: LLVMValueRef) c_uint;
+pub extern fn LLVMGetFirstFunction(module: LLVMModuleRef) LLVMValueRef;
+pub extern fn LLVMGetNextFunction(func: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMIsAFunction(val: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMCountBasicBlocks(func_val: LLVMValueRef) c_uint;
 
 // Instruction operations
-extern fn LLVMGetOperand(inst: LLVMValueRef, index: c_uint) LLVMValueRef;
-extern fn LLVMGetNumOperands(inst: LLVMValueRef) c_uint;
-extern fn LLVMIsAPHINode(inst: LLVMValueRef) LLVMValueRef;
-extern fn LLVMCountIncoming(phi: LLVMValueRef) c_uint;
-extern fn LLVMGetIncomingValue(phi: LLVMValueRef, index: c_uint) LLVMValueRef;
-extern fn LLVMGetIncomingBlock(phi: LLVMValueRef, index: c_uint) LLVMBasicBlockRef;
+pub extern fn LLVMGetOperand(inst: LLVMValueRef, index: c_uint) LLVMValueRef;
+pub extern fn LLVMGetNumOperands(inst: LLVMValueRef) c_uint;
+pub extern fn LLVMIsAPHINode(inst: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMCountIncoming(phi: LLVMValueRef) c_uint;
+pub extern fn LLVMGetIncomingValue(phi: LLVMValueRef, index: c_uint) LLVMValueRef;
+pub extern fn LLVMGetIncomingBlock(phi: LLVMValueRef, index: c_uint) LLVMBasicBlockRef;
+pub extern fn LLVMGetNumSuccessors(term: LLVMValueRef) c_uint;
+pub extern fn LLVMGetSuccessor(term: LLVMValueRef, index: c_uint) LLVMBasicBlockRef;
 
 // Instruction opcodes
 pub const LLVMOpcode = enum(c_uint) {
@@ -82,3 +87,42 @@ pub const LLVMOpcode = enum(c_uint) {
     BitCast = 34,
     AddrSpaceCast = 60,
 };
+
+// Type operations
+pub const LLVMTypeRef = *opaque {};
+pub extern fn LLVMTypeOf(val: LLVMValueRef) LLVMTypeRef;
+pub extern fn LLVMGetElementType(ptr_type: LLVMTypeRef) LLVMTypeRef;
+pub extern fn LLVMGetPointerAddressSpace(ptr_type: LLVMTypeRef) c_uint;
+pub extern fn LLVMGetTypeKind(ty: LLVMTypeRef) LLVMTypeKind;
+
+// Type kind enumeration
+pub const LLVMTypeKind = enum(c_uint) {
+    Void = 0,
+    Half = 1,
+    Float = 2,
+    Double = 3,
+    X86_FP80 = 4,
+    FP128 = 5,
+    PPC_FP128 = 6,
+    Label = 7,
+    Integer = 8,
+    Function = 9,
+    Struct = 10,
+    Array = 11,
+    Pointer = 12,
+    Vector = 13,
+    Metadata = 14,
+    X86_MMX = 15,
+    Token = 16,
+    ScalableVector = 17,
+    BFloat = 18,
+    X86_AMX = 19,
+};
+
+// Metadata operations
+pub const LLVMMetadataRef = *opaque {};
+pub extern fn LLVMGetMDKindIDInContext(ctx: LLVMContextRef, name: [*:0]const u8, slen: c_uint) c_uint;
+pub extern fn LLVMGetMetadata(val: LLVMValueRef, kind_id: c_uint) LLVMMetadataRef;
+pub extern fn LLVMGetInstructionDebugLoc(inst: LLVMValueRef) LLVMMetadataRef;
+pub extern fn LLVMGetMDNodeNumOperands(md: LLVMMetadataRef) c_uint;
+pub extern fn LLVMGetMDNodeOperands(md: LLVMMetadataRef, dest: [*]LLVMMetadataRef) void;

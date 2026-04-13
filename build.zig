@@ -11,11 +11,21 @@ pub fn build(b: *std.Build) void {
         "Enable Link Time Optimization (default: false)",
     ) orelse false;
 
+    // LLVM configuration
+    const llvm_path = b.option(
+        []const u8,
+        "llvm-path",
+        "Path to LLVM installation (default: /opt/homebrew/Cellar/llvm/22.1.2)",
+    ) orelse "/opt/homebrew/Cellar/llvm/22.1.2";
+
     // Create library module for OmniScope
     const lib_mod = b.addModule("OmniScope", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
+
+    // Add LLVM include path to all steps
+    lib_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
 
     // Build main executable
     const exe = b.addExecutable(.{
@@ -29,6 +39,18 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+
+    // Add LLVM include path
+    exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+
+    // Add LLVM library path and link LLVM library
+    exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    exe.linkSystemLibrary("c");
+    exe.linkSystemLibrary("z");
+    exe.linkSystemLibrary("LLVM-22");
+
+    // Add rpath for runtime library loading
+    exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
 
     // Apply LTO if enabled
     if (enable_lto) {
@@ -51,6 +73,16 @@ pub fn build(b: *std.Build) void {
     const lib_tests = b.addTest(.{
         .root_module = lib_mod,
     });
+
+    // Add LLVM configuration to tests
+    lib_tests.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    lib_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    lib_tests.linkSystemLibrary("c");
+    lib_tests.linkSystemLibrary("z");
+    lib_tests.linkSystemLibrary("LLVM-22");
+
+    // Add rpath for runtime library loading
+    lib_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
 
     if (enable_lto) {
         lib_tests.want_lto = true;
