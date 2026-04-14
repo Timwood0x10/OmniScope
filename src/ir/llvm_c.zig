@@ -38,6 +38,7 @@ pub extern fn LLVMCreateMemoryBufferWithContentsOfFile(
     out_msg: *[*:0]u8,
 ) c_int;
 pub extern fn LLVMDisposeMemoryBuffer(mem_buf: LLVMMemoryBufferRef) void;
+pub extern fn LLVMDisposeMessage(msg: [*:0]u8) void;
 
 // Value operations
 pub extern fn LLVMGetValueName(value: LLVMValueRef) [*:0]const u8;

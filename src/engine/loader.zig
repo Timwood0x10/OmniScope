@@ -63,6 +63,7 @@ pub const IRLoader = struct {
             &err_msg,
         ) != 0) {
             log.warn("loader", "Failed to load file: {s}", .{std.mem.span(err_msg)});
+            llvm.LLVMDisposeMessage(err_msg);
             llvm.LLVMContextDispose(self.llvm_ctx.raw);
             return error.FileNotFound;
         }
@@ -74,6 +75,9 @@ pub const IRLoader = struct {
             mem_buf_ptr,
             &module,
         ) != 0) {
+            log.warn("loader", "Failed to parse module: {s}", .{std.mem.span(err_msg)});
+            llvm.LLVMDisposeMessage(err_msg);
+            llvm.LLVMDisposeMemoryBuffer(mem_buf_ptr);
             llvm.LLVMContextDispose(self.llvm_ctx.raw);
             return error.ModuleParseFailed;
         }

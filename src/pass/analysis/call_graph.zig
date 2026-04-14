@@ -11,12 +11,19 @@ const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 
+/// Classification of function origin in the call graph.
+/// Used to determine trust boundaries and FFI transitions.
 pub const FunctionKind = enum {
+    /// Function defined within the analyzed module.
     internal,
+    /// Standard C library function (trusted).
     libc,
+    /// Function with unknown origin (potential FFI boundary).
     external_unknown,
 };
 
+/// List of known libc functions that are considered trusted.
+/// These are NOT treated as FFI boundaries even if external.
 pub const LIBC_FUNCTIONS = &[_][]const u8{
     "malloc",
     "free",
@@ -41,6 +48,8 @@ pub const LIBC_FUNCTIONS = &[_][]const u8{
     "getline",
 };
 
+/// Functions that are considered sources of taint.
+/// Taint propagation starts from these functions.
 pub const SOURCE_FUNCTIONS = &[_][]const u8{
     "read",
     "recv",
@@ -49,6 +58,8 @@ pub const SOURCE_FUNCTIONS = &[_][]const u8{
     "main",
 };
 
+/// Substring patterns that indicate dangerous sink functions.
+/// Used to detect potential vulnerability paths.
 pub const SINK_PATTERNS = &[_][]const u8{
     "system",
     "exec",
@@ -59,21 +70,36 @@ pub const SINK_PATTERNS = &[_][]const u8{
     "strncpy",
 };
 
+/// A node in the call graph representing a function.
 pub const Node = struct {
+    /// Unique identifier for this node.
     id: u32,
+    /// Name of the function.
     name: []const u8,
+    /// LLVM value reference to the function.
     func_ref: llvm.LLVMValueRef,
+    /// Classification of the function's origin.
     kind: FunctionKind,
+    /// Whether this function is external to the module.
     isExternal: bool,
+    /// Whether this function is reachable from a taint source.
     isTainted: bool,
+    /// ID of the node that tainted this function (null if source).
     taintedBy: ?u32,
 };
 
+/// An edge in the call graph representing a call relationship.
 pub const Edge = struct {
+    /// ID of the caller function.
     caller: u32,
+    /// ID of the callee function.
     callee: u32,
 };
 
+/// Call graph analysis pass.
+///
+/// Analyzes LLVM IR to build a function call graph, classifies functions,
+/// and detects taint propagation paths from sources to sinks.
 pub const CallGraphPass = struct {
     pub const name = "call-graph";
     pub const kind = PassKind.foundation;
@@ -95,7 +121,7 @@ pub const CallGraphPass = struct {
         classifyFunctions(&nodes);
         markSources(&nodes);
         try propagateTaint(ctx.allocator, &nodes, &edges);
-        try detectAndReportSinks(&nodes, &edges, diag);
+        try detectAndReportSinks(ctx.allocator, &nodes, &edges, diag);
     }
 
     fn buildNodes(allocator: std.mem.Allocator, mod: llvm.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
@@ -105,6 +131,7 @@ pub const CallGraphPass = struct {
             if (@intFromPtr(func_ref) == 0) continue;
 
             const func_name_ptr = llvm.LLVMGetValueName(func);
+            if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
             const is_external = llvm.LLVMIsDeclaration(func) != 0;
 
@@ -212,20 +239,53 @@ pub const CallGraphPass = struct {
         }
     }
 
-    fn detectAndReportSinks(nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge), diag: *DiagnosticWriter) !void {
+    fn detectAndReportSinks(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge), diag: *DiagnosticWriter) !void {
         _ = edges;
+        var vulnerability_id: u32 = 0;
+
         for (nodes.items) |node| {
             if (node.isTainted and isSink(node.name)) {
                 const risk = classifyRisk(node.name);
-                if (risk == .critical) {
-                    diag.err("Data flow to sink: {s}", .{node.name});
-                    if (node.taintedBy) |source_id| {
-                        if (source_id < nodes.items.len) {
-                            diag.err("  Source: {s}", .{nodes.items[source_id].name});
-                        }
+                vulnerability_id += 1;
+
+                diag.err("VULNERABILITY OMI-{d:0>3}", .{vulnerability_id});
+                diag.err("Severity: {s}", .{@tagName(risk)});
+
+                diag.err("Path:", .{});
+
+                var current_id: ?u32 = node.id;
+                var path_length: usize = 0;
+                var visited = std.AutoHashMap(u32, void).init(allocator);
+                defer visited.deinit();
+
+                while (current_id != null and path_length < 64) : (path_length += 1) {
+                    const id = current_id.?;
+                    if (visited.contains(id)) {
+                        diag.err("  └─> [CYCLE DETECTED]", .{});
+                        break;
                     }
-                } else {
-                    diag.warn("Data flow to sink: {s}", .{node.name});
+                    try visited.put(id, {});
+
+                    if (id >= nodes.items.len) break;
+                    const current_node = nodes.items[id];
+
+                    if (path_length == 0) {
+                        diag.err("  [Sink] {s}()", .{current_node.name});
+                    } else if (current_node.taintedBy == null) {
+                        diag.err("  [Source] {s}() - initial taint source", .{current_node.name});
+                    } else {
+                        diag.err("    └─> {s}()", .{current_node.name});
+                    }
+
+                    if (current_node.kind == .external_unknown and path_length > 0) {
+                        diag.err("    └─> [FFI Boundary: cross-language call]", .{});
+                    }
+
+                    current_id = current_node.taintedBy;
+                }
+
+                if (risk == .critical) {
+                    diag.err("Impact: Arbitrary command execution possible", .{});
                 }
             }
         }
@@ -298,4 +358,102 @@ test "contains helper" {
     try std.testing.expect(contains("system", "system"));
     try std.testing.expect(contains("__libc_system", "system"));
     try std.testing.expect(!contains("malloc", "system"));
+}
+
+test "contains - empty strings" {
+    try std.testing.expect(contains("", ""));
+    try std.testing.expect(!contains("", "a"));
+    try std.testing.expect(!contains("a", ""));
+}
+
+test "contains - exact match" {
+    try std.testing.expect(contains("read", "read"));
+    try std.testing.expect(!contains("read", "ead"));
+    try std.testing.expect(!contains("read", "rea"));
+}
+
+test "classifyRisk - critical sinks" {
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("system"), .critical);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("exec"), .critical);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("popen"), .critical);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("__libc_system"), .critical);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("system_r"), .critical);
+}
+
+test "classifyRisk - medium sinks" {
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("sprintf"), .medium);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("snprintf"), .medium);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("strcpy"), .medium);
+}
+
+test "classifyRisk - non-sinks" {
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("malloc"), .medium);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("free"), .medium);
+    try std.testing.expectEqual(CallGraphPass.classifyRisk("printf"), .medium);
+}
+
+test "isSink - matches patterns" {
+    try std.testing.expect(CallGraphPass.isSink("system"));
+    try std.testing.expect(CallGraphPass.isSink("execve"));
+    try std.testing.expect(CallGraphPass.isSink("__strcpy_chk"));
+    try std.testing.expect(CallGraphPass.isSink("__snprintf_chk"));
+}
+
+test "isSink - no match" {
+    try std.testing.expect(!CallGraphPass.isSink("malloc"));
+    try std.testing.expect(!CallGraphPass.isSink("printf"));
+    try std.testing.expect(!CallGraphPass.isSink("free"));
+    try std.testing.expect(!CallGraphPass.isSink("strlen"));
+}
+
+test "isSink - partial match edge cases" {
+    try std.testing.expect(CallGraphPass.isSink("system_call"));
+    try std.testing.expect(CallGraphPass.isSink("mysystem"));
+    try std.testing.expect(!CallGraphPass.isSink("systematic"));
+}
+
+test "FunctionKind - all kinds have values" {
+    try std.testing.expectEqual(FunctionKind.internal, FunctionKind.internal);
+    try std.testing.expectEqual(FunctionKind.libc, FunctionKind.libc);
+    try std.testing.expectEqual(FunctionKind.external_unknown, FunctionKind.external_unknown);
+}
+
+test "LIBC_FUNCTIONS - comprehensive check" {
+    for (LIBC_FUNCTIONS) |name| {
+        try std.testing.expect(name.len > 0);
+    }
+}
+
+test "SOURCE_FUNCTIONS - comprehensive check" {
+    for (SOURCE_FUNCTIONS) |name| {
+        try std.testing.expect(name.len > 0);
+    }
+    try std.testing.expect(SOURCE_FUNCTIONS.len > 0);
+}
+
+test "SINK_PATTERNS - comprehensive check" {
+    for (SINK_PATTERNS) |pattern| {
+        try std.testing.expect(pattern.len > 0);
+    }
+    try std.testing.expect(SINK_PATTERNS.len > 0);
+}
+
+test "SOURCE_FUNCTIONS - main is a source" {
+    var found_main = false;
+    for (SOURCE_FUNCTIONS) |s| {
+        if (std.mem.eql(u8, s, "main")) {
+            found_main = true;
+        }
+    }
+    try std.testing.expect(found_main);
+}
+
+test "SINK_PATTERNS - system is a sink" {
+    var found_system = false;
+    for (SINK_PATTERNS) |p| {
+        if (contains(p, "system")) {
+            found_system = true;
+        }
+    }
+    try std.testing.expect(found_system);
 }

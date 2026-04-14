@@ -5,7 +5,13 @@ const call_graph = OmniScope.cross_lang;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked == .leak) {
+            OmniScope.log.warn("main", "Memory leak detected!\n", .{});
+        }
+    }
+
     const allocator = gpa.allocator();
 
     var args = try std.process.argsWithAllocator(allocator);
