@@ -76,7 +76,23 @@ pub const PassContext = struct {
 /// Diagnostic writer for pass output
 pub const DiagnosticWriter = struct {
     allocator: Allocator,
-    // Additional fields will be added as needed
+
+    pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
+        _ = self;
+        std.debug.print("[" ++ severity ++ "] " ++ format ++ "\n", args);
+    }
+
+    pub fn info(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
+        self.write("INFO", format, args);
+    }
+
+    pub fn warn(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
+        self.write("WARN", format, args);
+    }
+
+    pub fn err(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
+        self.write("ERROR", format, args);
+    }
 };
 
 /// Pass comptime wrapper with type validation

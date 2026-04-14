@@ -1,6 +1,7 @@
 const std = @import("std");
 const OmniScope = @import("OmniScope");
 const Pipeline = OmniScope.pipeline.Pipeline;
+const call_graph = OmniScope.cross_lang;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -40,7 +41,12 @@ pub fn main() !void {
             "  -h, --help          Show this help message\n" ++
             "  -v, --verbose       Enable verbose logging\n" ++
             "  -d, --debug         Enable debug logging\n" ++
-            "  --version           Show version information\n", .{});
+            "  --version           Show version information\n" ++
+            "\n" ++
+            "Analysis Types:\n" ++
+            "  Cross-Language Data Flow (default)\n" ++
+            "  Detects: Source -> Sink paths across FFI boundaries\n" ++
+            "\n", .{});
         return;
     }
 
@@ -49,32 +55,41 @@ pub fn main() !void {
         return;
     };
 
+    std.debug.print("=== OmniScope Cross-Language Data Flow Analysis ===\n\n", .{});
+
     var pipeline = Pipeline.init(allocator);
     defer pipeline.deinit();
 
+    std.debug.print("[*] Loading IR: {s}\n", .{path});
     pipeline.loadIR(path) catch |err| {
-        std.debug.print("Failed to load IR: {}\n", .{err});
+        std.debug.print("[!] Failed to load IR: {}\n", .{err});
         return err;
     };
 
     if (pipeline.getIRLoader()) |l| {
-        std.debug.print("Loaded {d} functions\n", .{l.getFunctionCount()});
+        std.debug.print("[*] IR loaded: {d} functions\n\n", .{l.getFunctionCount()});
     }
 
+    std.debug.print("[*] Registering analysis passes...\n", .{});
+    try pipeline.registerPass(call_graph.CallGraphPass);
+
+    std.debug.print("[*] Running analysis...\n\n", .{});
     _ = pipeline.runStaticAnalysis() catch |err| {
-        std.debug.print("Analysis failed: {}\n", .{err});
+        std.debug.print("[!] Analysis failed: {}\n", .{err});
         return err;
     };
 
+    std.debug.print("\n=== Analysis Results ===\n", .{});
     const diagnostics = pipeline.getDiagnosticAggregator().getAll();
 
-    for (diagnostics) |diag| {
-        std.debug.print("[{s}] {s}\n", .{
-            @tagName(diag.severity),
-            diag.message,
-        });
-    }
     if (diagnostics.len == 0) {
         std.debug.print("No issues found.\n", .{});
+    } else {
+        for (diagnostics) |diag| {
+            std.debug.print("[{s}] {s}\n", .{
+                @tagName(diag.severity),
+                diag.message,
+            });
+        }
     }
 }

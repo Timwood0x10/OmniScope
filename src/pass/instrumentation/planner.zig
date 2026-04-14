@@ -375,25 +375,26 @@ pub const InstrumentationPlan = struct {
         });
     }
 
-    /// Add an instrumentation point with priority
-    pub fn addInstrumentationWithPriority(
+    /// Add an instrumentation point with custom score
+    pub fn addInstrumentationWithScore(
         self: *InstrumentationPlan,
         inst_id: u32,
         location: u32,
         event_tag: u8,
         priority: Priority,
+        score: f32,
     ) !void {
         try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
             .priority = @intFromEnum(priority),
-            .score = @floatFromInt(@intFromEnum(priority)),
+            .score = score,
         });
     }
 
     /// Add an instrumentation point with priority and score
-    pub fn addInstrumentationWithScore(
+    pub fn addInstrumentationWithPriorityAndScore(
         self: *InstrumentationPlan,
         inst_id: u32,
         location: u32,

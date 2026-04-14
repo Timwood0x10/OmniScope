@@ -85,31 +85,31 @@ fn logInternal(
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const allocator = fba.allocator();
 
-    var msg = std.ArrayList(u8).init(allocator);
-    errdefer msg.deinit();
+    var msg = std.ArrayList(u8).initCapacity(allocator, 256) catch return;
+    defer msg.deinit(allocator);
 
     if (global_config.enable_colors) {
-        try msg.appendSlice(getLevelColor(level));
+        msg.appendSlice(allocator, getLevelColor(level)) catch return;
     }
 
     if (global_config.enable_timestamps) {
         const timestamp = std.time.timestamp();
-        try msg.writer().print("[{d}] ", .{timestamp});
+        msg.writer(allocator).print("[{d}] ", .{timestamp}) catch return;
     }
 
-    try msg.writer().print("[{s}] ", .{getLevelPrefix(level)});
+    msg.writer(allocator).print("[{s}] ", .{getLevelPrefix(level)}) catch return;
 
     if (global_config.enable_module_prefix) {
-        try msg.writer().print("[{s}] ", .{module});
+        msg.writer(allocator).print("[{s}] ", .{module}) catch return;
     }
 
-    try msg.writer().print(format, args);
+    msg.writer(allocator).print(format, args) catch return;
 
     if (global_config.enable_colors) {
-        try msg.appendSlice(RESET_COLOR);
+        msg.appendSlice(allocator, RESET_COLOR) catch return;
     }
 
-    try msg.append('\n');
+    msg.append(allocator, '\n') catch return;
 
     writer.writeAll(msg.items) catch return;
 }

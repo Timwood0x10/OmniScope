@@ -80,6 +80,23 @@ pub const engine = struct {
     pub const LoaderError = @import("engine/loader.zig").LoaderError;
 };
 
+// Export cross-language analysis
+pub const cross_lang = struct {
+    pub const FunctionKind = @import("pass/analysis/call_graph.zig").FunctionKind;
+    pub const Node = @import("pass/analysis/call_graph.zig").Node;
+    pub const Edge = @import("pass/analysis/call_graph.zig").Edge;
+    pub const LIBC_FUNCTIONS = @import("pass/analysis/call_graph.zig").LIBC_FUNCTIONS;
+    pub const SOURCE_FUNCTIONS = @import("pass/analysis/call_graph.zig").SOURCE_FUNCTIONS;
+    pub const SINK_PATTERNS = @import("pass/analysis/call_graph.zig").SINK_PATTERNS;
+    pub const CallGraphPass = @import("pass/analysis/call_graph.zig").CallGraphPass;
+    pub const TaintPropagationPass = @import("pass/analysis/taint_propagation.zig").TaintPropagationPass;
+    pub const FFIBoundaryPass = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryPass;
+    pub const SinkTracerPass = @import("pass/analysis/sink_tracer.zig").SinkTracerPass;
+    pub const TaintError = @import("pass/analysis/taint_propagation.zig").TaintError;
+    pub const FFIBoundaryError = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryError;
+    pub const FlowPathError = @import("pass/analysis/sink_tracer.zig").FlowPathError;
+};
+
 // Simple test to verify test system works
 test "root.zig - module import test" {
     // Verify that all modules can be imported

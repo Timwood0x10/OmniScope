@@ -67,6 +67,7 @@ pub extern fn LLVMCountBasicBlocks(func_val: LLVMValueRef) c_uint;
 pub extern fn LLVMGetOperand(inst: LLVMValueRef, index: c_uint) LLVMValueRef;
 pub extern fn LLVMGetNumOperands(inst: LLVMValueRef) c_uint;
 pub extern fn LLVMIsAPHINode(inst: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMIsACallInst(inst: LLVMValueRef) LLVMValueRef;
 pub extern fn LLVMCountIncoming(phi: LLVMValueRef) c_uint;
 pub extern fn LLVMGetIncomingValue(phi: LLVMValueRef, index: c_uint) LLVMValueRef;
 pub extern fn LLVMGetIncomingBlock(phi: LLVMValueRef, index: c_uint) LLVMBasicBlockRef;
@@ -131,3 +132,5 @@ pub extern fn LLVMGetMetadata(val: LLVMValueRef, kind_id: c_uint) LLVMMetadataRe
 pub extern fn LLVMGetInstructionDebugLoc(inst: LLVMValueRef) LLVMMetadataRef;
 pub extern fn LLVMGetMDNodeNumOperands(md: LLVMMetadataRef) c_uint;
 pub extern fn LLVMGetMDNodeOperands(md: LLVMMetadataRef, dest: [*]LLVMMetadataRef) void;
+pub extern fn LLVMGetCalledValue(call: LLVMValueRef) LLVMValueRef;
+pub extern fn LLVMIsDeclaration(func: LLVMValueRef) c_uint;

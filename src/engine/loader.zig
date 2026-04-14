@@ -15,6 +15,7 @@ const llvm = @import("../ir/llvm_c.zig");
 const ContextRef = @import("../ir/view.zig").ContextRef;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FunctionRef = @import("../ir/view.zig").FunctionRef;
+const log = @import("../log/log.zig");
 
 /// IR Loader error set
 pub const LoaderError = error{
@@ -61,6 +62,7 @@ pub const IRLoader = struct {
             &mem_buf_ptr,
             &err_msg,
         ) != 0) {
+            log.warn("loader", "Failed to load file: {s}", .{std.mem.span(err_msg)});
             llvm.LLVMContextDispose(self.llvm_ctx.raw);
             return error.FileNotFound;
         }

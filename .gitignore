@@ -32,5 +32,9 @@ zig-test-*.log
 Thumbs.db
 desktop.ini
 
+# Examples generated files
+examples/*.bc
+examples/*.ll
+
 # Plan documents (internal design)
 plan/
