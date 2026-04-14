@@ -34,14 +34,19 @@ pub const Config = struct {
 var global_config: Config = .{};
 var global_writer: ?std.io.AnyWriter = null;
 var global_allocator: ?std.mem.Allocator = null;
+var log_mutex = std.Thread.Mutex{};
 
 pub fn init(allocator: std.mem.Allocator, writer: std.io.AnyWriter, config: Config) void {
+    log_mutex.lock();
+    defer log_mutex.unlock();
     global_allocator = allocator;
     global_writer = writer;
     global_config = config;
 }
 
 pub fn deinit() void {
+    log_mutex.lock();
+    defer log_mutex.unlock();
     global_writer = null;
     global_allocator = null;
 }
@@ -79,9 +84,12 @@ fn logInternal(
 ) void {
     if (!shouldLog(level)) return;
 
+    log_mutex.lock();
+    defer log_mutex.unlock();
+
     const writer = global_writer orelse return;
 
-    var buffer: [4096]u8 = undefined;
+    var buffer: [8192]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const allocator = fba.allocator();
 

@@ -116,11 +116,6 @@ pub const IRLoader = struct {
     pub fn getFunction(self: *IRLoader, name: []const u8) ?FunctionRef {
         const module = self.module orelse return null;
 
-        var name_c: [256:0]u8 = undefined;
-        if (name.len >= name_c.len) return null;
-        @memcpy(name_c[0..name.len], name);
-        name_c[name.len] = 0;
-
         var func = llvm.LLVMGetFirstFunction(module.raw);
 
         while (@intFromPtr(func) != 0) {

@@ -53,7 +53,7 @@ pub const PassContext = struct {
     /// Returns:
     ///   - u32: A unique ID (thread-safe)
     pub fn getNextId(self: *PassContext) u32 {
-        return self.next_id.fetchAdd(1, .monotonic);
+        return self.next_id.fetchAdd(1, .seq_cst);
     }
 
     /// Set the IR module
