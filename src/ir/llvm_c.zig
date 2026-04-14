@@ -24,6 +24,11 @@ pub extern fn LLVMParseIRInContext(
     mem_buf: LLVMMemoryBufferRef,
     out_msg: *[*:0]u8,
 ) LLVMModuleRef;
+pub extern fn LLVMParseBitcodeInContext2(
+    ctx: LLVMContextRef,
+    mem_buf: LLVMMemoryBufferRef,
+    out_module: *LLVMModuleRef,
+) c_int;
 pub extern fn LLVMDisposeModule(module: LLVMModuleRef) void;
 
 // Memory buffer

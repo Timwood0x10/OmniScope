@@ -335,13 +335,13 @@ pub const InstrumentationPlan = struct {
     pub fn init(allocator: std.mem.Allocator) InstrumentationPlan {
         return .{
             .allocator = allocator,
-            .instrumentations = std.ArrayList(Instrumentation).init(allocator),
+            .instrumentations = std.ArrayList(Instrumentation).initCapacity(allocator, 16) catch unreachable,
         };
     }
 
     /// Deinitialize the instrumentation plan
     pub fn deinit(self: *InstrumentationPlan) void {
-        self.instrumentations.deinit();
+        self.instrumentations.deinit(self.allocator);
     }
 
     /// Add an instrumentation point
@@ -350,7 +350,7 @@ pub const InstrumentationPlan = struct {
         inst_id: u32,
         location: u32,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = 0, // Default tag
             .location = location,
@@ -366,7 +366,7 @@ pub const InstrumentationPlan = struct {
         location: u32,
         event_tag: u8,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
@@ -383,7 +383,7 @@ pub const InstrumentationPlan = struct {
         event_tag: u8,
         priority: Priority,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
@@ -401,7 +401,7 @@ pub const InstrumentationPlan = struct {
         priority: Priority,
         score: f32,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
@@ -462,7 +462,7 @@ pub const InstrumentationPlan = struct {
     /// Merge another instrumentation plan
     pub fn merge(self: *InstrumentationPlan, other: *const InstrumentationPlan) !void {
         for (other.instrumentations.items) |inst| {
-            try self.instrumentations.append(inst);
+            try self.instrumentations.append(self.allocator, inst);
         }
     }
 
@@ -473,7 +473,7 @@ pub const InstrumentationPlan = struct {
         var seen = std.AutoHashMap(u32, Instrumentation).init(self.allocator);
         defer seen.deinit();
 
-        var optimized = std.ArrayList(Instrumentation).init(self.allocator);
+        var optimized = std.ArrayList(Instrumentation).initCapacity(self.allocator, 16) catch unreachable;
 
         for (self.instrumentations.items) |inst| {
             // Check if we already have an instrumentation at this location
@@ -494,10 +494,10 @@ pub const InstrumentationPlan = struct {
         // Collect all unique instrumentations
         var iter = seen.iterator();
         while (iter.next()) |entry| {
-            try optimized.append(entry.value_ptr.*);
+            try optimized.append(self.allocator, entry.value_ptr.*);
         }
 
-        self.instrumentations.deinit();
+        self.instrumentations.deinit(self.allocator);
         self.instrumentations = optimized;
     }
 };

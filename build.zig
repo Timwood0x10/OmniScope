@@ -59,6 +59,50 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    // Verification step for IR loading
+    const verify_step = b.step("verify-ir", "Verify IR loading functionality");
+    const verify_exe = b.addExecutable(.{
+        .name = "verify_ir_loading",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("verify_ir_loading.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "OmniScope", .module = lib_mod },
+            },
+        }),
+    });
+    verify_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    verify_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    verify_exe.linkSystemLibrary("c");
+    verify_exe.linkSystemLibrary("z");
+    verify_exe.linkSystemLibrary("LLVM-22");
+    verify_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    const verify_cmd = b.addRunArtifact(verify_exe);
+    verify_step.dependOn(&verify_cmd.step);
+
+    // Demo step
+    const demo_step = b.step("demo", "Run the analysis demo");
+    const demo_exe = b.addExecutable(.{
+        .name = "demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/demo_analysis.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "OmniScope", .module = lib_mod },
+            },
+        }),
+    });
+    demo_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    demo_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    demo_exe.linkSystemLibrary("c");
+    demo_exe.linkSystemLibrary("z");
+    demo_exe.linkSystemLibrary("LLVM-22");
+    demo_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    const demo_cmd = b.addRunArtifact(demo_exe);
+    demo_step.dependOn(&demo_cmd.step);
+
     // Run step
     const run_step = b.step("run", "Run the application");
     const run_cmd = b.addRunArtifact(exe);
@@ -91,6 +135,52 @@ pub fn build(b: *std.Build) void {
     const run_lib_tests = b.addRunArtifact(lib_tests);
     run_lib_tests.step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_lib_tests.step);
+
+    // Integration tests step
+    const integration_test_step = b.step("integration-test", "Run integration tests with real IR files");
+    const integration_test_mod = b.addModule("integration_test", .{
+        .root_source_file = b.path("tests/integration_ir_test.zig"),
+        .target = target,
+    });
+    integration_test_mod.addImport("OmniScope", lib_mod);
+    integration_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const integration_tests = b.addTest(.{
+        .root_module = integration_test_mod,
+    });
+    integration_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    integration_tests.linkSystemLibrary("c");
+    integration_tests.linkSystemLibrary("z");
+    integration_tests.linkSystemLibrary("LLVM-22");
+    integration_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    if (enable_lto) {
+        integration_tests.want_lto = true;
+    }
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    run_integration_tests.step.dependOn(b.getInstallStep());
+    integration_test_step.dependOn(&run_integration_tests.step);
+
+    // E2E tests step
+    const e2e_test_step = b.step("e2e-test", "Run end-to-end tests with real IR and Pipeline");
+    const e2e_test_mod = b.addModule("e2e_test", .{
+        .root_source_file = b.path("tests/e2e_ir_test.zig"),
+        .target = target,
+    });
+    e2e_test_mod.addImport("OmniScope", lib_mod);
+    e2e_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const e2e_tests = b.addTest(.{
+        .root_module = e2e_test_mod,
+    });
+    e2e_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    e2e_tests.linkSystemLibrary("c");
+    e2e_tests.linkSystemLibrary("z");
+    e2e_tests.linkSystemLibrary("LLVM-22");
+    e2e_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    if (enable_lto) {
+        e2e_tests.want_lto = true;
+    }
+    const run_e2e_tests = b.addRunArtifact(e2e_tests);
+    run_e2e_tests.step.dependOn(b.getInstallStep());
+    e2e_test_step.dependOn(&run_e2e_tests.step);
 
     // Build runtime library as a static library
     const rt_lib = b.addLibrary(.{

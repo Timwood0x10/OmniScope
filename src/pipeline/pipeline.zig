@@ -25,14 +25,15 @@ pub const Pipeline = struct {
     pass_manager: PassManager,
     instrumentation_plan: InstrumentationPlan,
     diagnostic_aggregator: DiagnosticAggregator,
-    ir_loader: ?IRLoader,
+    ir_loader: ?*IRLoader,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) Pipeline {
+        var fact_store = FactStore.init(allocator);
         return .{
             .allocator = allocator,
-            .fact_store = FactStore.init(allocator),
-            .query_engine = QueryEngine.init(&FactStore.init(allocator)), // Temporary, will be fixed
+            .fact_store = fact_store,
+            .query_engine = QueryEngine.init(&fact_store),
             .pass_manager = PassManager.init(allocator),
             .instrumentation_plan = InstrumentationPlan.init(allocator),
             .diagnostic_aggregator = DiagnosticAggregator.init(allocator),
@@ -48,6 +49,7 @@ pub const Pipeline = struct {
         self.diagnostic_aggregator.deinit();
         if (self.ir_loader) |loader| {
             loader.deinit();
+            self.allocator.destroy(loader);
         }
     }
 
@@ -59,9 +61,11 @@ pub const Pipeline = struct {
         // Clean up previous loader if exists
         if (self.ir_loader) |old_loader| {
             old_loader.deinit();
+            self.allocator.destroy(old_loader);
         }
 
-        self.ir_loader = loader;
+        self.ir_loader = try self.allocator.create(IRLoader);
+        self.ir_loader.?.* = loader;
     }
 
     /// Run the full analysis pipeline
@@ -173,7 +177,7 @@ pub const Pipeline = struct {
 
     /// Get the IR loader
     pub fn getIRLoader(self: *Pipeline) ?*IRLoader {
-        if (self.ir_loader) |*loader| {
+        if (self.ir_loader) |loader| {
             return loader;
         }
         return null;
@@ -206,6 +210,15 @@ pub const PipelineResult = struct {
             .execution_time_ns = execution_time_ns,
         };
     }
+};
+
+/// Full pipeline result containing all stage results
+pub const FullPipelineResult = struct {
+    static_result: PipelineResult,
+    instrumentation_result: PipelineResult,
+    runtime_result: ?PipelineResult,
+    merge_result: ?PipelineResult,
+    total_time_ns: u64,
 };
 
 test "Pipeline - init and deinit" {
