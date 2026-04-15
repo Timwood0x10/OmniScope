@@ -207,7 +207,11 @@ pub fn classifyRiskLevel(sink_name: []const u8) RiskLevel {
     // High: format string (CWE-134)
     if (std.mem.indexOf(u8, sink_name, "printf") != null or
         std.mem.indexOf(u8, sink_name, "fprintf") != null or
-        std.mem.indexOf(u8, sink_name, "snprintf") != null)
+        std.mem.indexOf(u8, sink_name, "snprintf") != null or
+        std.mem.indexOf(u8, sink_name, "vprintf") != null or
+        std.mem.indexOf(u8, sink_name, "vfprintf") != null or
+        std.mem.indexOf(u8, sink_name, "vsprintf") != null or
+        std.mem.indexOf(u8, sink_name, "vsnprintf") != null)
     {
         return .high;
     }
@@ -225,6 +229,13 @@ pub fn isDangerousSink(func_name: []const u8) bool {
         "strcat",
         "sprintf",
         "gets",
+        "printf",
+        "fprintf",
+        "snprintf",
+        "vprintf",
+        "vfprintf",
+        "vsprintf",
+        "vsnprintf",
     };
 
     for (dangerous_sinks) |sink| {

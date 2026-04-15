@@ -1,6 +1,19 @@
 # OmniScope Examples
 
-This directory contains example code demonstrating OmniScope's cross-language analysis capabilities.
+This directory contains examples demonstrating OmniScope's cross-language data flow analysis capabilities, organized into production-grade demos and functional tests.
+
+## Directory Structure
+
+```
+examples/
+├── demos/                    # Production-grade cross-language vulnerability demos
+│   ├── crypto_key_manager/   # Rust+C cryptography library (buffer overflow, command injection)
+│   └── web_command_injection/ # Go+C HTTP server (network parser vulnerabilities)
+├── tests/                    # Functional test cases
+│   ├── basic_patterns/       # Basic vulnerability patterns (buffer overflow, use-after-free)
+│   └── edge_cases/           # Complex scenarios (logic bugs, crypto bugs)
+└── README.md
+```
 
 ## Quick Start
 
@@ -9,161 +22,216 @@ This directory contains example code demonstrating OmniScope's cross-language an
 cd /path/to/OmniScope
 zig build
 
-# Run examples
-./scripts/run_examples.sh list     # List available examples
-./scripts/run_examples.sh          # Run all examples
-./scripts/run_examples.sh cffi_test  # Run specific example
+# Run demos (requires compiler for each language)
+./zig-out/bin/OmniScope examples/demos/crypto_key_manager/combined.bc
+./zig-out/bin/OmniScope examples/demos/web_command_injection/combined.bc
 
-# Run benchmarks
-zig build bench    # Run all benchmarks
-./scripts/run_benchmarks.sh        # Alternative: run benchmarks via script
+# Run tests
+./zig-out/bin/OmniScope examples/tests/basic_patterns/cffi_test.bc
+./zig-out/bin/OmniScope examples/tests/edge_cases/logic_bugs.bc
 ```
 
-## Script Usage
+## Production Demos
 
-### run_examples.sh
+### crypto_key_manager - Rust+C Cryptography
 
-Run analysis examples on sample code:
+**Scenario**: A key management service that uses Rust for memory safety, but delegates cryptographic operations to a legacy C library via FFI. The C library has critical vulnerabilities.
+
+**Vulnerabilities**:
+- Buffer overflow in `set_global_key()` (C layer)
+- Command injection in `execute_crypto_command()` (C layer)
+- Weak key derivation (C layer ignores Rust parameters)
+
+**Build**:
+```bash
+cd examples/demos/crypto_key_manager
+gcc -c -emit-llvm -O0 -g c_vulnerable_layer.c -o c_vulnerable_layer.bc
+rustc --crate-type=lib --emit=llvm-bc -O0 rust_safe_layer.rs -o rust_safe_layer.bc
+llvm-link rust_safe_layer.bc c_vulnerable_layer.bc -o combined.bc
+./zig-out/bin/OmniScope combined.bc
+```
+
+**Expected Output**: OmniScope detects taint propagation from Rust input validation through FFI boundary to C vulnerabilities.
+
+### web_command_injection - Go+C HTTP Server
+
+**Scenario**: A production web service built with Go that uses a high-performance C protocol parser via CGO. The Go layer validates input, but the C parser has vulnerabilities.
+
+**Vulnerabilities**:
+- Buffer overflow in `parse_http_request()` (C layer)
+- Command injection in `execute_parsed_command()` (C layer)
+- Buffer overflow in `parse_dns_query()` (C layer)
+
+**Build**:
+```bash
+cd examples/demos/web_command_injection
+gcc -c -emit-llvm -O0 -g c_parser.c -o c_parser.bc
+gollvm -S -emit-llvm -O0 go_http_server.go -o go_http_server.ll
+llvm-as go_http_server.ll -o go_http_server.bc
+llvm-link go_http_server.bc c_parser.bc -o combined.bc
+./zig-out/bin/OmniScope combined.bc
+```
+
+**Expected Output**: OmniScope detects network taint propagation from Go input validation through CGO boundary to C vulnerabilities.
+
+## Functional Tests
+
+### basic_patterns/
+
+Test cases for fundamental vulnerability patterns:
+
+- **cffi_test.c** - Cross-language FFI test (source → propagation → sink)
+- **sample_analysis.c** - Memory safety issues (buffer overflow, memory leak, use-after-free)
+- **sample_rust.rs** - Rust-specific patterns for analysis
+- **sample_zig.zig** - Zig IR generation and analysis
+- **sample_go.go** - Go IR analysis (requires Gollvm)
+- **sample_wasm.c** - WebAssembly target
+- **ntt.c** - Number theoretic transform patterns
+
+### edge_cases/
+
+Complex scenarios and logic bugs:
+
+- **logic_bugs.c** - Various logic bug patterns:
+  - NTT butterfly operation bug (wrong mathematical operation)
+  - Integer overflow in coefficient multiplication
+  - Conditional logic bug (wrong comparison operator)
+  - Off-by-one errors in loop termination
+  - Weak PRNG seed (predictable instead of secure)
+
+## Building Examples
+
+### C Examples
 
 ```bash
-./scripts/run_examples.sh [example_name]
-
-# Examples:
-./scripts/run_examples.sh              # Run all examples
-./scripts/run_examples.sh cffi_test   # C FFI test
-./scripts/run_examples.sh logic_bugs   # Logic bug patterns
-./scripts/run_examples.sh sample_rust  # Rust patterns (requires rustc)
-./scripts/run_examples.sh sample_zig   # Zig patterns (requires zig)
-./scripts/run_examples.sh list         # Show all available examples
+gcc -c -emit-llvm -O0 -g <source.c> -o <output.bc>
 ```
 
-### run_benchmarks.sh
-
-Run performance benchmarks:
+### Rust Examples
 
 ```bash
-./scripts/run_benchmarks.sh [benchmark_name]
-
-# Benchmarks:
-./scripts/run_benchmarks.sh              # Run all benchmarks
-./scripts/run_benchmarks.sh fact_store   # FactStore insert/query
-./scripts/run_benchmarks.sh taint        # TaintContext operations
-./scripts/run_benchmarks.sh ffi          # FFIBoundaryDetector
-./scripts/run_benchmarks.sh flow_path     # FlowPath operations
-./scripts/run_benchmarks.sh concurrent   # Concurrent FactStore
-./scripts/run_benchmarks.sh call_graph   # Call graph building
-./scripts/run_benchmarks.sh risk         # RiskLevel classification
-./scripts/run_benchmarks.sh list         # Show all benchmarks
+rustc --crate-type=lib --emit=llvm-bc -O0 <source.rs> -o <output.bc>
 ```
 
-## Manual Analysis
-
-### Compile and Analyze
+### Go Examples
 
 ```bash
-# Analyze a C file
-zig build
-./zig-out/bin/OmniScope examples/cffi_test.c
-
-# Analyze the Rust+C FFI demo
-./zig-out/bin/OmniScope examples/ntt_ffi/combined.bc
+# Using gollvm
+gollvm -S -emit-llvm -O0 <source.go> -o <output.ll>
+llvm-as <output.ll> -o <output.bc>
 ```
 
-## Examples
+### Zig Examples
 
-### ntt_ffi - Rust + C FFI Demo
-
-This demonstrates Rust "safety" being bypassed via C FFI.
-
-```
-ntt_ffi/
-├── src/
-│   └── lib.rs           # Rust safe wrapper with sanitization
-├── Cargo.toml           # Rust build config
-└── c_lib/
-    ├── dangerous.h      # C header
-    └── dangerous.c      # Vulnerable C implementation
+```bash
+zig build-obj --emit=llvm-ir -O0 <source.zig> -o <output.ll>
+llvm-as <output.ll> -o <output.bc>
 ```
 
-**Rust Code (looks safe):**
-```rust
-pub fn process_input(input: &str) -> Result<(), Error> {
-    let sanitized = input.replace(";", "");
-    let c_str = CString::new(sanitized).unwrap();
-    unsafe { dangerous_process(c_str.as_ptr()); }
-    Ok(())
-}
+## Running OmniScope
+
+### Basic Usage
+
+```bash
+./zig-out/bin/OmniScope <path-to-bitcode-file>
 ```
 
-**C Code (actually dangerous):**
-```c
-void dangerous_process(char* input) {
-    char buf[64];
-    strcpy(buf, input);  // Buffer overflow
-    system(buf);          // Command injection
-}
-```
+### Expected Output Format
 
-**Expected OmniScope Output:**
 ```
+=== OmniScope Cross-Language Data Flow Analysis ===
+
+[*] Loading IR: <file.bc>
+[*] IR loaded: <n> functions
+
+[*] Registering analysis passes...
+[*] Running analysis...
+
 [ERROR] VULNERABILITY OMI-001
-[ERROR] Severity: critical
+[ERROR] Severity: <critical|medium|low>
 [ERROR] Path:
-  [Sink] dangerous_process()
-    └─> system()
-  [Source] process_input() - initial taint source
-[ERROR] Impact: Arbitrary command execution possible
+[ERROR]   [Sink] <function>()
+[ERROR]     └─> <intermediate functions>
+[ERROR]   [Source] <function>() - initial taint source
+[ERROR] Impact: <vulnerability description>
+
+=== Analysis Results ===
+<n> issues found.
 ```
 
-## Compilation Instructions
+## Key Concepts Demonstrated
 
-### Compile C library
+### 1. Cross-Language Taint Propagation
 
-```bash
-cd examples/ntt_ffi/c_lib
-gcc -c -emit-llvm -O0 dangerous.c -o dangerous.bc
-ar rcs libdangerous.a dangerous.o
+OmniScope tracks data flow across language boundaries:
+- **Rust → C**: Via FFI bindings
+- **Go → C**: Via CGO
+- **Zig → C**: Via @cImport
+
+### 2. FFI Boundary Detection
+
+OmniScope identifies where control crosses language boundaries:
+```
+[INFO] FFI Boundary detected: Rust → C
+[INFO] Taint propagates across language boundary
 ```
 
-### Compile Rust (requires rustc with LLVM backend)
+### 3. Vulnerability Patterns
 
-```bash
-cd examples/ntt_ffi
-rustc --crate-type=lib --emit=llvm-bc src/lib.rs -o lib.rs.bc
-```
+- **Buffer Overflow**: Unsafe string operations in C
+- **Command Injection**: Unsanitized input in system() calls
+- **Memory Safety**: Use-after-free, double-free, leaks
+- **Logic Bugs**: Wrong comparisons, off-by-one errors
 
-### Link both IR files
+## Real-World Parallels
 
-```bash
-llvm-link lib.rs.bc dangerous.bc -o combined.bc
-```
+These demos mirror actual production systems:
 
-### Analyze with OmniScope
+| Demo | Real-World Systems |
+|------|-------------------|
+| crypto_key_manager | OpenSSL wrappers in Rust/Go, Cloudflare TLS |
+| web_command_injection | Nginx/Apache parsers, CDN packet processing |
+| basic_patterns | Legacy codebases, embedded systems |
+| edge_cases | Mathematical libraries, crypto implementations |
 
-```bash
-./zig-out/bin/OmniScope examples/ntt_ffi/combined.bc
-```
+## Best Practices for Analysis
 
-## cffi_test.c - Cross-Language Test
+1. **Always analyze the combined IR**: Link all language components together
+2. **Enable debug symbols**: Use `-g` flag during compilation
+3. **Optimization level**: Use `-O0` for analysis to preserve code structure
+4. **Check FFI boundaries**: Pay special attention to cross-language calls
+5. **Validate findings**: Cross-reference OmniScope output with code review
 
-Simple C example demonstrating source-to-sink data flow:
+## Troubleshooting
 
-- **Source**: `get_input()` - reads from stdin
-- **Propagation**: `process_data()`, `transform()`
-- **Sink**: `execute_command()` - calls system()
+### "IR loaded: 0 functions"
+- Ensure the bitcode file is valid: `llvm-dis <file.bc>`
+- Check that symbols are exported: `nm <file.bc>`
 
-```bash
-# Compile
-gcc -c -emit-llvm -O0 examples/cffi_test.c -o examples/cffi_test.bc
+### "No issues found" (but vulnerabilities exist)
+- Verify optimization level is `-O0`
+- Check that FFI functions are visible in IR
+- Ensure source functions have proper LLVM metadata
 
-# Analyze
-./zig-out/bin/OmniScope examples/cffi_test.bc
-```
+### FFI Boundary Not Detected
+- Verify FFI functions are not inlined
+- Check that extern "C" / CGO directives are present
+- Ensure function signatures match across languages
 
-## Sample Files
+## Contributing
 
-- `sample_rust.rs` - Rust patterns for analysis
-- `sample_zig.zig` - Zig IR generation
-- `sample_go.go` - Go IR (requires Gollvm)
-- `sample_wasm.c` - WebAssembly target
-- `logic_bugs.c` - Various logic bug patterns
+When adding new examples:
+
+1. Place production demos in `demos/`
+2. Place test cases in `tests/basic_patterns/` or `tests/edge_cases/`
+3. Include a README explaining the vulnerability
+4. Provide build instructions for all languages
+5. Document expected OmniScope output
+6. Test on multiple LLVM IR versions
+
+## References
+
+- [FFI Best Practices](https://doc.rust-lang.org/nomicon/ffi.html)
+- [CGO Documentation](https://pkg.go.dev/cmd/cgo)
+- [LLVM IR Reference](https://llvm.org/docs/LangRef.html)
+- [CWE Top 25](https://cwe.mitre.org/top25/)

@@ -1,7 +1,0 @@
-test_name,avg_ms,min_ms,max_ms,stddev_ms,p50_ms,p95_ms,p99_ms,avg_memory_bytes,min_memory_bytes,max_memory_bytes
-FactStore Insert 100000 items,6.447,6.335,6.642,0.099,6.463,6.642,6.642,5210438,5210438,5210438
-FactStore Query 100000 items,0.541,0.522,0.575,0.016,0.543,0.575,0.575,1043168,1043168,1043168
-RiskLevel classifyRisk 100000 calls,87.252,86.652,88.240,0.595,87.205,88.240,88.240,0,0,0
-FactStore Insert Small (1K facts),0.050,0.050,0.051,0.000,0.050,0.051,0.051,13312,13312,13312
-FactStore Insert Medium (10K facts),0.563,0.545,0.594,0.013,0.562,0.594,0.594,324964,324964,324964
-FactStore Insert Large (100K facts),5.546,5.514,5.676,0.048,5.535,5.676,5.676,5210438,5210438,5210438

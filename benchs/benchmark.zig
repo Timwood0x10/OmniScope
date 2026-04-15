@@ -397,22 +397,22 @@ pub fn main() !void {
     const report = try collector.generateReport();
 
     // Write JSON report
-    const json_file = try std.fs.cwd().createFile("benchmark_results.json", .{});
+    const json_file = try std.fs.cwd().createFile("benchs/output/benchmark_results.json", .{});
     defer json_file.close();
     var json_buffer = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
     defer json_buffer.deinit(allocator);
     try report.toJson(json_buffer.writer(allocator));
     try json_file.writeAll(json_buffer.items);
-    std.debug.print("  JSON report written to: benchmark_results.json\n", .{});
+    std.debug.print("  JSON report written to: benchs/output/benchmark_results.json\n", .{});
 
     // Write CSV report
-    const csv_file = try std.fs.cwd().createFile("benchmark_results.csv", .{});
+    const csv_file = try std.fs.cwd().createFile("benchs/output/benchmark_results.csv", .{});
     defer csv_file.close();
     var csv_buffer = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
     defer csv_buffer.deinit(allocator);
     try report.toCsv(csv_buffer.writer(allocator));
     try csv_file.writeAll(csv_buffer.items);
-    std.debug.print("  CSV report written to: benchmark_results.csv\n", .{});
+    std.debug.print("  CSV report written to: benchs/output/benchmark_results.csv\n", .{});
 }
 
 fn benchmarkPerformanceComparison(allocator: std.mem.Allocator) !void {

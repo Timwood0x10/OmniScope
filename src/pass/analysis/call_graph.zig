@@ -120,10 +120,10 @@ pub const CallGraphPass = struct {
         const mod = ctx.module.?.raw;
 
         var nodes: std.ArrayList(Node) = .{};
-        errdefer nodes.deinit(ctx.allocator);
+        defer nodes.deinit(ctx.allocator);
 
         var edges: std.ArrayList(Edge) = .{};
-        errdefer edges.deinit(ctx.allocator);
+        defer edges.deinit(ctx.allocator);
 
         try buildNodes(ctx.allocator, mod, &nodes);
         try buildEdges(ctx.allocator, &nodes, &edges);
