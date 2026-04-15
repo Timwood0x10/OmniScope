@@ -48,6 +48,15 @@ pub const LIBC_FUNCTIONS = &[_][]const u8{
     "getline",
 };
 
+pub fn isLibC(func_name: []const u8) bool {
+    for (LIBC_FUNCTIONS) |libc_name| {
+        if (std.mem.eql(u8, func_name, libc_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Functions that are considered sources of taint.
 /// Taint propagation starts from these functions.
 pub const SOURCE_FUNCTIONS = &[_][]const u8{
@@ -133,6 +142,7 @@ pub const CallGraphPass = struct {
             const func_name_ptr = llvm.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
+            if (func_name.len > 1024) continue;
             const is_external = llvm.LLVMIsDeclaration(func) != 0;
 
             const id = @as(u32, @intCast(nodes.items.len));
@@ -172,7 +182,7 @@ pub const CallGraphPass = struct {
 
     fn classifyFunctions(nodes: *std.ArrayList(Node)) void {
         for (nodes.items) |*node| {
-            if (isLibCName(node.name)) {
+            if (isLibC(node.name)) {
                 node.kind = .libc;
             } else if (node.isExternal) {
                 node.kind = .external_unknown;
@@ -180,15 +190,6 @@ pub const CallGraphPass = struct {
                 node.kind = .internal;
             }
         }
-    }
-
-    fn isLibCName(func_name: []const u8) bool {
-        for (LIBC_FUNCTIONS) |libc_name| {
-            if (std.mem.eql(u8, func_name, libc_name)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     fn isSource(func_name: []const u8) bool {

@@ -12,6 +12,7 @@ const FactKind = @import("fact.zig").FactKind;
 /// Principle: Structure of Arrays for cache-friendliness and append-only for parallelism
 pub const FactStore = struct {
     allocator: std.mem.Allocator,
+    mutex: std.Thread.Mutex,
     kinds: std.ArrayList(FactKind),
     subj: std.ArrayList(u32),
     obj: std.ArrayList(u32),
@@ -21,6 +22,7 @@ pub const FactStore = struct {
     pub fn init(allocator: std.mem.Allocator) FactStore {
         return .{
             .allocator = allocator,
+            .mutex = std.Thread.Mutex{},
             .kinds = std.ArrayList(FactKind).initCapacity(allocator, 1024) catch unreachable,
             .subj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
             .obj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
@@ -50,6 +52,8 @@ pub const FactStore = struct {
         object: u32,
         context: u32,
     ) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         try self.kinds.append(self.allocator, kind);
         try self.subj.append(self.allocator, subject);
         try self.obj.append(self.allocator, object);
@@ -75,7 +79,9 @@ pub const FactStore = struct {
     /// Query facts by kind
     ///
     /// Returns a slice of indices matching the given kind
-    pub fn queryByKind(self: *const FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
+    pub fn queryByKind(self: *FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         var indices = std.ArrayList(usize).initCapacity(allocator, 128) catch unreachable;
         for (self.kinds.items, 0..) |k, i| {
             if (k == kind) {

@@ -95,6 +95,22 @@ pub const cross_lang = struct {
     pub const TaintError = @import("pass/analysis/taint_propagation.zig").TaintError;
     pub const FFIBoundaryError = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryError;
     pub const FlowPathError = @import("pass/analysis/sink_tracer.zig").FlowPathError;
+
+    pub const TaintState = @import("pass/analysis/taint_state.zig").TaintState;
+    pub const TaintInfo = @import("pass/analysis/taint_state.zig").TaintInfo;
+    pub const TaintContext = @import("pass/analysis/taint_state.zig").TaintContext;
+
+    pub const FFIKind = @import("pass/analysis/ffi_info.zig").FFIKind;
+    pub const FFIBoundaryInfo = @import("pass/analysis/ffi_info.zig").FFIBoundaryInfo;
+    pub const FFIBoundaryDetector = @import("pass/analysis/ffi_info.zig").FFIBoundaryDetector;
+
+    pub const RiskLevel = @import("pass/analysis/flow_path.zig").RiskLevel;
+    pub const FlowStep = @import("pass/analysis/flow_path.zig").FlowStep;
+    pub const FlowPath = @import("pass/analysis/flow_path.zig").FlowPath;
+    pub const VulnerabilityReport = @import("pass/analysis/flow_path.zig").VulnerabilityReport;
+
+    pub const classifyRiskLevel = @import("pass/analysis/sink_tracer.zig").classifyRiskLevel;
+    pub const isDangerousSink = @import("pass/analysis/sink_tracer.zig").isDangerousSink;
 };
 
 // Simple test to verify test system works

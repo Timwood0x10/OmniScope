@@ -128,12 +128,14 @@ pub const PluginLoader = struct {
 
     /// Deinitialize the plugin loader
     pub fn deinit(self: *PluginLoader) void {
-        // Unload all plugins
         for (self.plugins.items) |plugin| {
             if (plugin.descriptor.deinit) |deinit_fn| {
                 deinit_fn(&plugin.context);
             }
-            // TODO: Close shared library handle
+            const lib = std.DynLib{
+                .handle = plugin.handle,
+            };
+            lib.close();
         }
 
         self.plugins.deinit();

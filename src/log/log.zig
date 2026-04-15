@@ -139,10 +139,14 @@ pub fn err(comptime module: []const u8, comptime format: []const u8, args: anyty
 }
 
 pub fn setLevel(level: LogLevel) void {
+    log_mutex.lock();
+    defer log_mutex.unlock();
     global_config.level = level;
 }
 
 pub fn getLevel() LogLevel {
+    log_mutex.lock();
+    defer log_mutex.unlock();
     return global_config.level;
 }
 

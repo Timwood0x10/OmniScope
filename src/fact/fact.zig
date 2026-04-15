@@ -21,6 +21,10 @@ pub const FactKind = enum(u8) {
     taint,
     /// Memory allocation
     allocation,
+    /// FFI boundary crossing
+    ffi_boundary,
+    /// Detected vulnerability
+    vulnerability,
 };
 
 /// Fact represents a single analysis fact

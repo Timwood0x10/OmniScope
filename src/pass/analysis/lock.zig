@@ -278,8 +278,8 @@ pub const LockPass = struct {
 
         // Detect cycles
         if (try graph.hasCycle()) {
-            // Found a potential deadlock
-            // TODO: Emit diagnostic warning
+            self.diag.err("DEADLOCK DETECTED: Cycle found in lock acquisition graph", .{});
+            self.diag.err("  This indicates a potential deadlock scenario", .{});
         }
     }
 };

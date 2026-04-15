@@ -131,13 +131,9 @@ pub const DFGPass = struct {
 
         for (0..@intCast(num_incoming)) |i| {
             const incoming_value = llvm.LLVMGetIncomingValue(phi, @intCast(i));
-            const incoming_block = llvm.LLVMGetIncomingBlock(phi, @intCast(i));
+            _ = llvm.LLVMGetIncomingBlock(phi, @intCast(i));
 
-            _ = incoming_block; // TODO: Could use this for more precise analysis
-
-            // Get incoming value ID if it's an instruction
             if (self.inst_id_map.get(incoming_value)) |operand_id| {
-                // Emit dfg_edge: incoming value -> PHI node
                 try self.store.insert(.dfg_edge, operand_id, inst_id, self.func_id);
             }
         }

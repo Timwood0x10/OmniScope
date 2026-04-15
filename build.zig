@@ -103,6 +103,28 @@ pub fn build(b: *std.Build) void {
     const demo_cmd = b.addRunArtifact(demo_exe);
     demo_step.dependOn(&demo_cmd.step);
 
+    // Benchmark step
+    const bench_step = b.step("bench", "Run benchmarks");
+    const bench_exe = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("./benchs/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "OmniScope", .module = lib_mod },
+            },
+        }),
+    });
+    bench_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    bench_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    bench_exe.linkSystemLibrary("c");
+    bench_exe.linkSystemLibrary("z");
+    bench_exe.linkSystemLibrary("LLVM-22");
+    bench_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    const bench_cmd = b.addRunArtifact(bench_exe);
+    bench_step.dependOn(&bench_cmd.step);
+
     // Run step
     const run_step = b.step("run", "Run the application");
     const run_cmd = b.addRunArtifact(exe);

@@ -5,6 +5,62 @@ This directory contains example code demonstrating OmniScope's cross-language an
 ## Quick Start
 
 ```bash
+# Build OmniScope
+cd /path/to/OmniScope
+zig build
+
+# Run examples
+./scripts/run_examples.sh list     # List available examples
+./scripts/run_examples.sh          # Run all examples
+./scripts/run_examples.sh cffi_test  # Run specific example
+
+# Run benchmarks
+zig build bench    # Run all benchmarks
+./scripts/run_benchmarks.sh        # Alternative: run benchmarks via script
+```
+
+## Script Usage
+
+### run_examples.sh
+
+Run analysis examples on sample code:
+
+```bash
+./scripts/run_examples.sh [example_name]
+
+# Examples:
+./scripts/run_examples.sh              # Run all examples
+./scripts/run_examples.sh cffi_test   # C FFI test
+./scripts/run_examples.sh logic_bugs   # Logic bug patterns
+./scripts/run_examples.sh sample_rust  # Rust patterns (requires rustc)
+./scripts/run_examples.sh sample_zig   # Zig patterns (requires zig)
+./scripts/run_examples.sh list         # Show all available examples
+```
+
+### run_benchmarks.sh
+
+Run performance benchmarks:
+
+```bash
+./scripts/run_benchmarks.sh [benchmark_name]
+
+# Benchmarks:
+./scripts/run_benchmarks.sh              # Run all benchmarks
+./scripts/run_benchmarks.sh fact_store   # FactStore insert/query
+./scripts/run_benchmarks.sh taint        # TaintContext operations
+./scripts/run_benchmarks.sh ffi          # FFIBoundaryDetector
+./scripts/run_benchmarks.sh flow_path     # FlowPath operations
+./scripts/run_benchmarks.sh concurrent   # Concurrent FactStore
+./scripts/run_benchmarks.sh call_graph   # Call graph building
+./scripts/run_benchmarks.sh risk         # RiskLevel classification
+./scripts/run_benchmarks.sh list         # Show all benchmarks
+```
+
+## Manual Analysis
+
+### Compile and Analyze
+
+```bash
 # Analyze a C file
 zig build
 ./zig-out/bin/OmniScope examples/cffi_test.c
