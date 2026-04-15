@@ -38,30 +38,41 @@ OmniSope is a production-grade universal LLVM analysis framework built with Zig 
 
 ## Recent Developments
 
-### Latest Enhancements (April 2026)
+### Latest Enhancements (April 15, 2026)
 
-1. **Comprehensive Documentation System**
+1. **Rust FFI Cross-Language Detection System**
+   - Implemented multi-file input support (Rust.bc + C.bc)
+   - Created FFIMatcher module for function declaration and implementation matching
+   - Developed FFIDetector Pass for cross-language vulnerability detection
+   - Added .ll file support for FFI debugging and analysis
+   - Implemented vulnerability type detection (command injection, buffer overflow, etc.)
+
+2. **Comprehensive Documentation System**
    - Added complete bilingual documentation (English/Chinese)
    - Implemented user guides, developer guides, and API references
    - Created detailed bug analysis with 21 identified issues
+   - Added Rust FFI detection strategy documentation
 
-2. **Cross-Language Analysis Enhancement**
+3. **Cross-Language Analysis Enhancement**
    - Developed detailed 4-phase enhancement plan
    - Implemented CallGraphPass with taint propagation
    - Added FFI boundary detection framework
-   - Created sink tracing capabilities
+   - Created sink tracing functionality
+   - Implemented function name matching mechanism (declare → define)
 
-3. **Code Quality Improvements**
+4. **Code Quality Improvements**
    - Enhanced error handling throughout the codebase
    - Improved memory management and resource cleanup
    - Added comprehensive logging and debugging utilities
    - Implemented extensive testing infrastructure
+   - Fixed memory leak issues (call_graph.zig)
 
-4. **Architecture Refinement**
+5. **Architecture Optimization**
    - Completed implementation of all foundation passes (CFG, DFG)
    - Enhanced analysis passes with advanced features
    - Improved pass dependency management
    - Added fact query optimization
+   - Created FFI-specific modules (src/ffi/)
 
 ### Development Focus Areas
 

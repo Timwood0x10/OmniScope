@@ -4,34 +4,34 @@
 //! Principle: only wrap pointers, no caching or computation.
 
 const std = @import("std");
-const llvm = @import("llvm_c.zig");
+const c = @import("llvm_raw.zig").c;
 
 /// Thin wrapper for LLVM value (instruction, function, etc.)
 pub const ValueRef = struct {
-    raw: llvm.LLVMValueRef,
+    raw: c.LLVMValueRef,
 };
 
 /// Thin wrapper for LLVM basic block
 pub const BasicBlockRef = struct {
-    raw: llvm.LLVMBasicBlockRef,
+    raw: c.LLVMBasicBlockRef,
 };
 
 /// Thin wrapper for LLVM module
 pub const ModuleRef = struct {
-    raw: llvm.LLVMModuleRef,
+    raw: c.LLVMModuleRef,
 };
 
 /// Thin wrapper for LLVM context
 pub const ContextRef = struct {
-    raw: llvm.LLVMContextRef,
+    raw: c.LLVMContextRef,
 };
 
 /// Thin wrapper for LLVM function
 pub const FunctionRef = struct {
-    raw: llvm.LLVMValueRef,
+    raw: c.LLVMValueRef,
 
     pub fn name(self: FunctionRef) []const u8 {
-        const c_str = llvm.LLVMGetValueName(self.raw);
+        const c_str = c.LLVMGetValueName(self.raw);
         return std.mem.span(c_str);
     }
 };

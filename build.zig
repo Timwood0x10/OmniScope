@@ -18,6 +18,12 @@ pub fn build(b: *std.Build) void {
         "Path to LLVM installation (default: /opt/homebrew/Cellar/llvm/22.1.3)",
     ) orelse "/opt/homebrew/Cellar/llvm/22.1.3";
 
+    const llvm_version = b.option(
+        []const u8,
+        "llvm-version",
+        "LLVM version to link against (default: 22)",
+    ) orelse "22";
+
     // Create library module for OmniScope
     const lib_mod = b.addModule("OmniScope", .{
         .root_source_file = b.path("src/root.zig"),
@@ -47,7 +53,10 @@ pub fn build(b: *std.Build) void {
     exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     exe.linkSystemLibrary("c");
     exe.linkSystemLibrary("z");
-    exe.linkSystemLibrary("LLVM-22");
+
+    // Link LLVM library with version suffix
+    const llvm_lib_name = b.fmt("LLVM-{s}", .{llvm_version});
+    exe.linkSystemLibrary(llvm_lib_name);
 
     // Add rpath for runtime library loading
     exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
@@ -76,7 +85,7 @@ pub fn build(b: *std.Build) void {
     verify_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     verify_exe.linkSystemLibrary("c");
     verify_exe.linkSystemLibrary("z");
-    verify_exe.linkSystemLibrary("LLVM-22");
+    verify_exe.linkSystemLibrary(llvm_lib_name);
     verify_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     const verify_cmd = b.addRunArtifact(verify_exe);
     verify_step.dependOn(&verify_cmd.step);
@@ -98,7 +107,7 @@ pub fn build(b: *std.Build) void {
     demo_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     demo_exe.linkSystemLibrary("c");
     demo_exe.linkSystemLibrary("z");
-    demo_exe.linkSystemLibrary("LLVM-22");
+    demo_exe.linkSystemLibrary(llvm_lib_name);
     demo_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     const demo_cmd = b.addRunArtifact(demo_exe);
     demo_step.dependOn(&demo_cmd.step);
@@ -120,7 +129,7 @@ pub fn build(b: *std.Build) void {
     bench_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     bench_exe.linkSystemLibrary("c");
     bench_exe.linkSystemLibrary("z");
-    bench_exe.linkSystemLibrary("LLVM-22");
+    bench_exe.linkSystemLibrary(llvm_lib_name);
     bench_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     const bench_cmd = b.addRunArtifact(bench_exe);
     bench_step.dependOn(&bench_cmd.step);
@@ -167,7 +176,7 @@ pub fn build(b: *std.Build) void {
     lib_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     lib_tests.linkSystemLibrary("c");
     lib_tests.linkSystemLibrary("z");
-    lib_tests.linkSystemLibrary("LLVM-22");
+    lib_tests.linkSystemLibrary(llvm_lib_name);
 
     // Add rpath for runtime library loading
     lib_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
@@ -194,7 +203,7 @@ pub fn build(b: *std.Build) void {
     integration_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     integration_tests.linkSystemLibrary("c");
     integration_tests.linkSystemLibrary("z");
-    integration_tests.linkSystemLibrary("LLVM-22");
+    integration_tests.linkSystemLibrary(llvm_lib_name);
     integration_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     if (enable_lto) {
         integration_tests.want_lto = true;
@@ -217,7 +226,7 @@ pub fn build(b: *std.Build) void {
     e2e_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     e2e_tests.linkSystemLibrary("c");
     e2e_tests.linkSystemLibrary("z");
-    e2e_tests.linkSystemLibrary("LLVM-22");
+    e2e_tests.linkSystemLibrary(llvm_lib_name);
     e2e_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
     if (enable_lto) {
         e2e_tests.want_lto = true;

@@ -4,7 +4,7 @@
 //! This is a thin wrapper around LLVM-C debug info APIs.
 
 const std = @import("std");
-const llvm = @import("llvm_c.zig");
+const c = @import("llvm_raw.zig").c;
 
 pub const DWARFSourceLanguage = enum(c_uint) {
     C89 = 0,

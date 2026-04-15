@@ -37,7 +37,8 @@ pub const errors = struct {
 
 // Export IR layer
 pub const ir = struct {
-    pub const llvm_c = @import("ir/llvm_c.zig");
+    pub const llvm_raw = @import("ir/llvm_raw.zig");
+    pub const llvm_safe = @import("ir/llvm_safe.zig");
     pub const view = @import("ir/view.zig");
     pub const location = @import("ir/location.zig");
     pub const debug_info = @import("ir/debug_info.zig");
@@ -103,6 +104,11 @@ pub const cross_lang = struct {
     pub const TaintInfo = @import("pass/analysis/taint_state.zig").TaintInfo;
     pub const TaintContext = @import("pass/analysis/taint_state.zig").TaintContext;
 
+    pub const FFIDetector = @import("pass/analysis/ffi_detector.zig").FFIDetector;
+    pub const FFIVulnerability = @import("pass/analysis/ffi_detector.zig").FFIVulnerability;
+    pub const FFIVulnerabilityType = @import("pass/analysis/ffi_detector.zig").FFIVulnerabilityType;
+    pub const FFISeverity = @import("pass/analysis/ffi_detector.zig").FFISeverity;
+
     pub const FFIKind = @import("pass/analysis/ffi_info.zig").FFIKind;
     pub const FFIBoundaryInfo = @import("pass/analysis/ffi_info.zig").FFIBoundaryInfo;
     pub const FFIBoundaryDetector = @import("pass/analysis/ffi_info.zig").FFIBoundaryDetector;
@@ -119,7 +125,8 @@ pub const cross_lang = struct {
 // Simple test to verify test system works
 test "root.zig - module import test" {
     // Verify that all modules can be imported
-    _ = ir.llvm_c;
+    _ = ir.llvm_raw;
+    _ = ir.llvm_safe;
     _ = ir.view;
     _ = ir.location;
     _ = pass.Pass;

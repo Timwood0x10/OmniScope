@@ -11,7 +11,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const llvm = @import("../ir/llvm_c.zig");
+const llvm_safe = @import("../ir/llvm_safe.zig");
+const c = @import("../ir/llvm_raw.zig").c;
 const ContextRef = @import("../ir/view.zig").ContextRef;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FunctionRef = @import("../ir/view.zig").FunctionRef;
@@ -40,7 +41,7 @@ pub const IRLoader = struct {
     module: ?ModuleRef,
     alive: bool = false,
 
-    /// Load a .bc file from disk
+    /// Load a .bc or .ll file from disk
     pub fn loadFile(allocator: Allocator, path: []const u8) LoaderError!IRLoader {
         var self = IRLoader{
             .allocator = allocator,
@@ -49,37 +50,91 @@ pub const IRLoader = struct {
             .alive = false,
         };
 
-        self.llvm_ctx.raw = llvm.LLVMContextCreate();
+        self.llvm_ctx.raw = c.LLVMContextCreate();
+
+        // Safety check for context creation
+        if (@intFromPtr(self.llvm_ctx.raw) == 0) {
+            log.warn("loader", "Failed to create LLVM context", .{});
+            return error.LLVMContextCreationFailed;
+        }
 
         const path_c = try allocator.dupeZ(u8, path);
         defer allocator.free(path_c);
 
-        var mem_buf_ptr: llvm.LLVMMemoryBufferRef = undefined;
+        var mem_buf_ptr: c.LLVMMemoryBufferRef = undefined;
         var err_msg: [*:0]u8 = undefined;
 
-        if (llvm.LLVMCreateMemoryBufferWithContentsOfFile(
+        if (c.LLVMCreateMemoryBufferWithContentsOfFile(
             path_c.ptr,
             &mem_buf_ptr,
             &err_msg,
         ) != 0) {
             log.warn("loader", "Failed to load file: {s}", .{std.mem.span(err_msg)});
-            llvm.LLVMDisposeMessage(err_msg);
-            llvm.LLVMContextDispose(self.llvm_ctx.raw);
+            c.LLVMDisposeMessage(err_msg);
             return error.FileNotFound;
         }
-        defer llvm.LLVMDisposeMemoryBuffer(mem_buf_ptr);
+        // Don't use defer here - memory buffer ownership is handled by
+        // LLVM on success and by us on failure (in error handling above)
 
-        var module: llvm.LLVMModuleRef = undefined;
-        if (llvm.LLVMParseBitcodeInContext2(
-            self.llvm_ctx.raw,
-            mem_buf_ptr,
-            &module,
-        ) != 0) {
-            log.warn("loader", "Failed to parse module: {s}", .{std.mem.span(err_msg)});
-            llvm.LLVMDisposeMessage(err_msg);
-            llvm.LLVMDisposeMemoryBuffer(mem_buf_ptr);
-            llvm.LLVMContextDispose(self.llvm_ctx.raw);
-            return error.ModuleParseFailed;
+        // Add safety check for memory buffer
+        if (@intFromPtr(mem_buf_ptr) == 0) {
+            log.warn("loader", "Memory buffer is null after creation", .{});
+            return error.InvalidIR;
+        }
+
+        // Detect file type by extension
+        const is_ll_file = std.mem.endsWith(u8, path, ".ll");
+
+        log.debug("loader", "Loading file: {s}, is_ll_file: {}", .{ path, is_ll_file });
+
+        var module: c.LLVMModuleRef = undefined;
+
+        // Parse based on file type
+        if (is_ll_file) {
+            // Parse LLVM IR text format (.ll file)
+            log.info("loader", "Attempting to parse .ll file", .{});
+
+            const result = c.LLVMParseIRInContext(
+                self.llvm_ctx.raw,
+                mem_buf_ptr,
+                &module,
+                &err_msg,
+            );
+
+            if (result != 0) {
+                // Failed to parse
+                if (@intFromPtr(err_msg) != 0) {
+                    const error_slice = std.mem.span(err_msg);
+                    log.warn("loader", "Failed to parse .ll file: {s}", .{error_slice});
+                    c.LLVMDisposeMessage(err_msg);
+                } else {
+                    log.warn("loader", "Failed to parse .ll file: unknown error", .{});
+                }
+                // LLVMParseIRInContext takes ownership of mem_buf even on failure
+                c.LLVMDisposeMemoryBuffer(mem_buf_ptr);
+                return error.ModuleParseFailed;
+            }
+            // LLVMParseIRInContext takes ownership of mem_buf on success
+        } else {
+            // Parse LLVM bitcode format (.bc file)
+            if (c.LLVMParseBitcodeInContext2(
+                self.llvm_ctx.raw,
+                mem_buf_ptr,
+                &module,
+            ) != 0) {
+                // Safely handle error message - check if err_msg is valid
+                if (@intFromPtr(err_msg) != 0) {
+                    const error_slice = std.mem.span(err_msg);
+                    log.warn("loader", "Failed to parse module: {s}", .{error_slice});
+                    c.LLVMDisposeMessage(err_msg);
+                } else {
+                    log.warn("loader", "Failed to parse module: unknown error", .{});
+                }
+                // LLVMParseBitcodeInContext2 doesn't take ownership on failure
+                c.LLVMDisposeMemoryBuffer(mem_buf_ptr);
+                return error.ModuleParseFailed;
+            }
+            // LLVMParseBitcodeInContext2 takes ownership of mem_buf on success
         }
 
         self.module = .{ .raw = module };
@@ -101,14 +156,15 @@ pub const IRLoader = struct {
     /// Iterate over all functions in the module
     pub fn iterateFunctions(
         self: *IRLoader,
-        callback: fn (FunctionRef) anyerror!void,
+        ctx: anytype,
+        callback: fn (c.LLVMValueRef, @TypeOf(ctx)) anyerror!void,
     ) !void {
         const module = self.module orelse return;
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
 
         while (@intFromPtr(func) != 0) {
-            try callback(FunctionRef{ .raw = func });
-            func = llvm.LLVMGetNextFunction(func);
+            try callback(func, ctx);
+            func = c.LLVMGetNextFunction(func);
         }
     }
 
@@ -116,17 +172,17 @@ pub const IRLoader = struct {
     pub fn getFunction(self: *IRLoader, name: []const u8) ?FunctionRef {
         const module = self.module orelse return null;
 
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
 
         while (@intFromPtr(func) != 0) {
-            const func_name = llvm.LLVMGetValueName(func);
+            const func_name = c.LLVMGetValueName(func);
             const func_name_slice = std.mem.span(func_name);
 
             if (std.mem.eql(u8, name, func_name_slice)) {
                 return .{ .raw = func };
             }
 
-            func = llvm.LLVMGetNextFunction(func);
+            func = c.LLVMGetNextFunction(func);
         }
 
         return null;
@@ -137,11 +193,11 @@ pub const IRLoader = struct {
         const module = self.module orelse return 0;
 
         var count: usize = 0;
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
 
         while (@intFromPtr(func) != 0) {
             count += 1;
-            func = llvm.LLVMGetNextFunction(func);
+            func = c.LLVMGetNextFunction(func);
         }
 
         return count;
@@ -160,11 +216,18 @@ pub const IRLoader = struct {
         if (!self.alive) return;
 
         if (self.module) |mod| {
-            llvm.LLVMDisposeModule(mod.raw);
+            // Check if module pointer is valid before disposing
+            if (@intFromPtr(mod.raw) != 0) {
+                c.LLVMDisposeModule(mod.raw);
+            }
             self.module = null;
         }
 
-        llvm.LLVMContextDispose(self.llvm_ctx.raw);
+        // Check if context pointer is valid before disposing
+        if (@intFromPtr(self.llvm_ctx.raw) != 0) {
+            c.LLVMContextDispose(self.llvm_ctx.raw);
+        }
+
         self.alive = false;
     }
 
