@@ -4,7 +4,7 @@
 //! Only external_unknown is considered a true FFI boundary (not libc).
 
 const std = @import("std");
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const call_graph = @import("./call_graph.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -53,12 +53,12 @@ pub const FFIBoundaryPass = struct {
     /// Detect FFI boundaries in the call graph
     fn detectFFIBoundaries(ctx: *PassContext, detector: *FFIBoundaryDetector, diag: *DiagnosticWriter) !void {
         const mod = ctx.module.?.raw;
-        var func = llvm.LLVMGetFirstFunction(mod);
+        var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
         var ffi_count: u32 = 0;
 
-        while (@intFromPtr(func) != 0) : (func = llvm.LLVMGetNextFunction(func)) {
-            const func_name_ptr = llvm.LLVMGetValueName(func);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
             if (func_name.len > 1024) continue;
@@ -90,12 +90,12 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Detect FFI calls within a function
-    fn detectCallsInFunction(ctx: *PassContext, detector: *FFIBoundaryDetector, func: llvm.LLVMValueRef, diag: *DiagnosticWriter) !void {
-        var bb = llvm.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = llvm.LLVMGetNextBasicBlock(bb)) {
-            var inst = llvm.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = llvm.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(llvm.LLVMIsACallInst(inst)) != 0) {
+    fn detectCallsInFunction(ctx: *PassContext, detector: *FFIBoundaryDetector, func: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
                     try checkCallForFFI(ctx, detector, inst, func, diag);
                 }
             }
@@ -103,18 +103,18 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Check a call instruction for FFI boundary
-    fn checkCallForFFI(ctx: *PassContext, detector: *FFIBoundaryDetector, inst: llvm.LLVMValueRef, caller_func: llvm.LLVMValueRef, diag: *DiagnosticWriter) !void {
-        const called_val = llvm.LLVMGetCalledValue(inst);
+    fn checkCallForFFI(ctx: *PassContext, detector: *FFIBoundaryDetector, inst: c.LLVMValueRef, caller_func: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
+        const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return;
 
-        const called_name_ptr = llvm.LLVMGetValueName(called_val);
+        const called_name_ptr = c.LLVMGetValueName(called_val);
         if (@intFromPtr(called_name_ptr) == 0) return;
         const called_name = std.mem.span(called_name_ptr);
 
         if (detector.isFFICall(called_name)) {
             const ffi_kind = detector.classifyFFIKind(called_name);
 
-            const caller_name_ptr = llvm.LLVMGetValueName(caller_func);
+            const caller_name_ptr = c.LLVMGetValueName(caller_func);
             const caller_name = if (@intFromPtr(caller_name_ptr) != 0) std.mem.span(caller_name_ptr) else "unknown";
 
             const info = FFIBoundaryInfo{

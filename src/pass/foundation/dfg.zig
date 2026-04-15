@@ -12,7 +12,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
@@ -27,7 +27,7 @@ pub const DFGPass = struct {
     diag: *DiagnosticWriter,
     store: *FactStore,
     // Instruction ID mapping
-    inst_id_map: std.AutoHashMap(llvm.LLVMValueRef, u32),
+    inst_id_map: std.AutoHashMap(c.LLVMValueRef, u32),
     // Function ID
     func_id: u32,
 
@@ -37,7 +37,7 @@ pub const DFGPass = struct {
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.heap.page_allocator),
+            .inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.heap.page_allocator),
             .func_id = 0,
         };
     }
@@ -54,10 +54,10 @@ pub const DFGPass = struct {
         const module = ctx.module orelse return;
 
         // Iterate over all functions
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
         while (func != null) {
             // Check if this is a function (not global variable, etc.)
-            const func_ref = llvm.LLVMIsAFunction(func);
+            const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
                 self.func_id = ctx.getNextId();
@@ -65,7 +65,7 @@ pub const DFGPass = struct {
                 // Analyze function
                 try self.analyzeFunction(FunctionRef{ .raw = func_ref });
             }
-            func = llvm.LLVMGetNextFunction(func);
+            func = c.LLVMGetNextFunction(func);
         }
 
         // Clean up
@@ -75,11 +75,11 @@ pub const DFGPass = struct {
     /// Analyze a function and emit DFG edges
     fn analyzeFunction(self: *DFGPass, func: FunctionRef) !void {
         // Get first basic block
-        var bb = llvm.LLVMGetFirstBasicBlock(func.raw);
+        var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
         while (bb != null) {
             // Get first instruction
-            var inst = llvm.LLVMGetFirstInstruction(bb);
+            var inst = c.LLVMGetFirstInstruction(bb);
 
             while (inst != null) {
                 // Assign ID to instruction
@@ -90,18 +90,18 @@ pub const DFGPass = struct {
                 try self.analyzeInstruction(inst, inst_id);
 
                 // Move to next instruction
-                inst = llvm.LLVMGetNextInstruction(inst);
+                inst = c.LLVMGetNextInstruction(inst);
             }
 
             // Move to next basic block
-            bb = llvm.LLVMGetNextBasicBlock(bb);
+            bb = c.LLVMGetNextBasicBlock(bb);
         }
     }
 
     /// Analyze an instruction and emit DFG edges
-    fn analyzeInstruction(self: *DFGPass, inst: llvm.LLVMValueRef, inst_id: u32) !void {
+    fn analyzeInstruction(self: *DFGPass, inst: c.LLVMValueRef, inst_id: u32) !void {
         // Check if this is a PHI node
-        const phi = llvm.LLVMIsAPHINode(inst);
+        const phi = c.LLVMIsAPHINode(inst);
         if (phi != null) {
             // Handle PHI node separately
             try self.analyzePHINode(inst, inst_id);
@@ -109,10 +109,10 @@ pub const DFGPass = struct {
         }
 
         // Regular instruction: analyze operands
-        const num_operands = llvm.LLVMGetNumOperands(inst);
+        const num_operands = c.LLVMGetNumOperands(inst);
 
         for (0..@intCast(num_operands)) |i| {
-            const operand = llvm.LLVMGetOperand(inst, @intCast(i));
+            const operand = c.LLVMGetOperand(inst, @intCast(i));
 
             // Get operand ID if it's an instruction
             if (self.inst_id_map.get(operand)) |operand_id| {
@@ -126,12 +126,12 @@ pub const DFGPass = struct {
     ///
     /// PHI nodes have special semantics: each incoming value is from a different
     /// predecessor basic block. We emit dfg_edge facts for each incoming value.
-    fn analyzePHINode(self: *DFGPass, phi: llvm.LLVMValueRef, inst_id: u32) !void {
-        const num_incoming = llvm.LLVMCountIncoming(phi);
+    fn analyzePHINode(self: *DFGPass, phi: c.LLVMValueRef, inst_id: u32) !void {
+        const num_incoming = c.LLVMCountIncoming(phi);
 
         for (0..@intCast(num_incoming)) |i| {
-            const incoming_value = llvm.LLVMGetIncomingValue(phi, @intCast(i));
-            _ = llvm.LLVMGetIncomingBlock(phi, @intCast(i));
+            const incoming_value = c.LLVMGetIncomingValue(phi, @intCast(i));
+            _ = c.LLVMGetIncomingBlock(phi, @intCast(i));
 
             if (self.inst_id_map.get(incoming_value)) |operand_id| {
                 try self.store.insert(.dfg_edge, operand_id, inst_id, self.func_id);
@@ -169,12 +169,12 @@ test "DFGPass - emit dfg_edge fact" {
     var pass = DFGPass.init(&store);
 
     // Manually set up test context
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
     // Create dummy instructions
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
 
     try inst_id_map.put(inst1, 1);
     try inst_id_map.put(inst2, 2);
@@ -200,13 +200,13 @@ test "DFGPass - multiple dfg_edge facts" {
 
     var pass = DFGPass.init(&store);
 
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
     // Create instructions forming a chain: inst1 -> inst2 -> inst3
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
-    const inst3: llvm.LLVMValueRef = @ptrFromInt(0x3000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst3: c.LLVMValueRef = @ptrFromInt(0x3000);
 
     try inst_id_map.put(inst1, 1);
     try inst_id_map.put(inst2, 2);
@@ -237,13 +237,13 @@ test "DFGPass - instruction with multiple operands" {
 
     var pass = DFGPass.init(&store);
 
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
     // Create instruction with multiple operands: inst3 = add inst1, inst2
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
-    const inst3: llvm.LLVMValueRef = @ptrFromInt(0x3000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst3: c.LLVMValueRef = @ptrFromInt(0x3000);
 
     try inst_id_map.put(inst1, 1);
     try inst_id_map.put(inst2, 2);
@@ -272,11 +272,11 @@ test "DFGPass - function ID tracking" {
 
     var pass = DFGPass.init(&store);
 
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
 
     try inst_id_map.put(inst1, 1);
     try inst_id_map.put(inst2, 2);
@@ -306,13 +306,13 @@ test "DFGPass - inst_id_map consistency" {
 
     var pass = DFGPass.init(&store);
 
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
     // Create instructions with consistent IDs
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
-    const inst3: llvm.LLVMValueRef = @ptrFromInt(0x3000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst3: c.LLVMValueRef = @ptrFromInt(0x3000);
 
     try inst_id_map.put(inst1, 100);
     try inst_id_map.put(inst2, 200);
@@ -342,19 +342,19 @@ test "DFGPass - complex data flow graph" {
 
     var pass = DFGPass.init(&store);
 
-    var inst_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.testing.allocator);
+    var inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.testing.allocator);
     defer inst_id_map.deinit();
 
     // Create a complex DFG:
     // inst1 and inst2 are inputs to inst3
     // inst3 and inst4 are inputs to inst5
     // inst5 is input to inst6
-    const inst1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const inst2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
-    const inst3: llvm.LLVMValueRef = @ptrFromInt(0x3000);
-    const inst4: llvm.LLVMValueRef = @ptrFromInt(0x4000);
-    const inst5: llvm.LLVMValueRef = @ptrFromInt(0x5000);
-    const inst6: llvm.LLVMValueRef = @ptrFromInt(0x6000);
+    const inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const inst2: c.LLVMValueRef = @ptrFromInt(0x2000);
+    const inst3: c.LLVMValueRef = @ptrFromInt(0x3000);
+    const inst4: c.LLVMValueRef = @ptrFromInt(0x4000);
+    const inst5: c.LLVMValueRef = @ptrFromInt(0x5000);
+    const inst6: c.LLVMValueRef = @ptrFromInt(0x6000);
 
     try inst_id_map.put(inst1, 1);
     try inst_id_map.put(inst2, 2);

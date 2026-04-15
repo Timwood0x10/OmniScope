@@ -12,4 +12,3 @@ pub const c = @cImport({
     @cInclude("llvm-c/BitReader.h");
     @cInclude("llvm-c/Analysis.h");
 });
-

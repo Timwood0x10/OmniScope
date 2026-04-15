@@ -20,7 +20,7 @@ const FFIMatcher = ffi_matcher.FFIMatcher;
 const FFIMatch = ffi_matcher.FFIMatch;
 const FunctionInfo = ffi_matcher.FunctionInfo;
 
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
 /// FFI vulnerability severity

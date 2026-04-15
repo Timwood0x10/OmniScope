@@ -3,7 +3,7 @@
 //! Defines rules for how taint propagates through different LLVM instructions.
 
 const std = @import("std");
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const TaintContext = @import("./taint_state.zig").TaintContext;
 const TaintInfo = @import("./taint_state.zig").TaintInfo;
 const TaintState = @import("./taint_state.zig").TaintState;
@@ -22,11 +22,11 @@ pub const PropagationDirection = enum {
 /// Taint propagation rule for a specific opcode
 pub const PropagationRule = struct {
     /// LLVM opcode this rule applies to
-    op_code: llvm.LLVMOpcode,
+    op_code: c.LLVMOpcode,
     /// Direction of propagation
     direction: PropagationDirection,
     /// Handler function for this rule
-    handler: *const fn (ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void,
+    handler: *const fn (ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void,
 };
 
 /// Confidence decay factor for propagation
@@ -56,8 +56,8 @@ fn isSinkFunc(func_name: []const u8) bool {
 }
 
 /// Handle load instruction - forward propagation
-pub fn handleLoad(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const ptr_operand = llvm.LLVMGetOperand(inst, 0);
+pub fn handleLoad(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const ptr_operand = c.LLVMGetOperand(inst, 0);
     if (@intFromPtr(ptr_operand) == 0) return;
 
     const ptr_taint = ctx.getValueTaint(@intFromPtr(ptr_operand));
@@ -75,9 +75,9 @@ pub fn handleLoad(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) any
 }
 
 /// Handle store instruction - forward propagation
-pub fn handleStore(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const value_operand = llvm.LLVMGetOperand(inst, 0);
-    const ptr_operand = llvm.LLVMGetOperand(inst, 1);
+pub fn handleStore(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const value_operand = c.LLVMGetOperand(inst, 0);
+    const ptr_operand = c.LLVMGetOperand(inst, 1);
 
     if (@intFromPtr(value_operand) == 0 or @intFromPtr(ptr_operand) == 0) return;
 
@@ -96,11 +96,11 @@ pub fn handleStore(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) an
 }
 
 /// Handle call instruction - forward propagation
-pub fn handleCall(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const called_value = llvm.LLVMGetCalledValue(inst);
+pub fn handleCall(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const called_value = c.LLVMGetCalledValue(inst);
     if (@intFromPtr(called_value) == 0) return;
 
-    const called_name_ptr = llvm.LLVMGetValueName(called_value);
+    const called_name_ptr = c.LLVMGetValueName(called_value);
     const called_func_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else "";
 
     if (called_func_name.len > 0 and isSinkFunc(called_func_name)) {
@@ -114,14 +114,14 @@ pub fn handleCall(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) any
         return;
     }
 
-    const num_operands = llvm.LLVMGetNumOperands(inst);
+    const num_operands = c.LLVMGetNumOperands(inst);
     var has_tainted_arg = false;
     var max_confidence: f32 = 0.0;
     var source_id: ?u32 = null;
 
     var i: u32 = 0;
     while (i < num_operands) : (i += 1) {
-        const operand = llvm.LLVMGetOperand(inst, i);
+        const operand = c.LLVMGetOperand(inst, i);
         if (@intFromPtr(operand) == 0) continue;
 
         if (ctx.getValueTaint(@intFromPtr(operand))) |info| {
@@ -147,9 +147,9 @@ pub fn handleCall(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) any
 }
 
 /// Handle bitcast instruction - bidirectional propagation
-pub fn handleBitCast(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
+pub fn handleBitCast(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
     _ = next_id;
-    const operand = llvm.LLVMGetOperand(inst, 0);
+    const operand = c.LLVMGetOperand(inst, 0);
     if (@intFromPtr(operand) == 0) return;
 
     const operand_taint = ctx.getValueTaint(@intFromPtr(operand));
@@ -168,8 +168,8 @@ pub fn handleBitCast(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) 
 }
 
 /// Handle getelementptr instruction - forward propagation
-pub fn handleGEP(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const ptr_operand = llvm.LLVMGetOperand(inst, 0);
+pub fn handleGEP(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const ptr_operand = c.LLVMGetOperand(inst, 0);
     if (@intFromPtr(ptr_operand) == 0) return;
 
     const ptr_taint = ctx.getValueTaint(@intFromPtr(ptr_operand));
@@ -187,15 +187,15 @@ pub fn handleGEP(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anye
 }
 
 /// Handle arithmetic instructions (Add, Sub, Mul, etc.)
-pub fn handleArithmetic(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const num_operands = llvm.LLVMGetNumOperands(inst);
+pub fn handleArithmetic(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const num_operands = c.LLVMGetNumOperands(inst);
     var has_tainted: bool = false;
     var max_confidence: f32 = 0.0;
     var source_id: ?u32 = null;
 
     var i: u32 = 0;
     while (i < num_operands) : (i += 1) {
-        const operand = llvm.LLVMGetOperand(inst, i);
+        const operand = c.LLVMGetOperand(inst, i);
         if (@intFromPtr(operand) == 0) continue;
 
         if (ctx.getValueTaint(@intFromPtr(operand))) |info| {
@@ -221,15 +221,15 @@ pub fn handleArithmetic(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u3
 }
 
 /// Handle comparison instructions
-pub fn handleComparison(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const num_operands = llvm.LLVMGetNumOperands(inst);
+pub fn handleComparison(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const num_operands = c.LLVMGetNumOperands(inst);
     var has_tainted: bool = false;
     var max_confidence: f32 = 0.0;
     var source_id: ?u32 = null;
 
     var i: u32 = 0;
     while (i < num_operands) : (i += 1) {
-        const operand = llvm.LLVMGetOperand(inst, i);
+        const operand = c.LLVMGetOperand(inst, i);
         if (@intFromPtr(operand) == 0) continue;
 
         if (ctx.getValueTaint(@intFromPtr(operand))) |info| {
@@ -255,15 +255,15 @@ pub fn handleComparison(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u3
 }
 
 /// Handle PHI instruction
-pub fn handlePhi(ctx: *TaintContext, inst: llvm.LLVMValueRef, next_id: u32) anyerror!void {
-    const num_incoming = llvm.LLVMCountIncoming(inst);
+pub fn handlePhi(ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) anyerror!void {
+    const num_incoming = c.LLVMCountIncoming(inst);
     var has_tainted: bool = false;
     var max_confidence: f32 = 0.0;
     var source_id: ?u32 = null;
 
     var i: u32 = 0;
     while (i < num_incoming) : (i += 1) {
-        const incoming_value = llvm.LLVMGetIncomingValue(inst, i);
+        const incoming_value = c.LLVMGetIncomingValue(inst, i);
         if (@intFromPtr(incoming_value) == 0) continue;
 
         if (ctx.getValueTaint(@intFromPtr(incoming_value))) |info| {
@@ -306,7 +306,7 @@ pub const BUILTIN_RULES = &[_]PropagationRule{
 };
 
 /// Find a rule for a given opcode
-pub fn findRule(opcode: llvm.LLVMOpcode) ?PropagationRule {
+pub fn findRule(opcode: c.LLVMOpcode) ?PropagationRule {
     for (BUILTIN_RULES) |rule| {
         if (@intFromEnum(rule.op_code) == @intFromEnum(opcode)) {
             return rule;
@@ -327,7 +327,7 @@ test "PropagationRule - structure" {
         .direction = .forward,
         .handler = handleLoad,
     };
-    try std.testing.expectEqual(llvm.LLVMOpcode.Load, rule.op_code);
+    try std.testing.expectEqual(c.LLVMOpcode.Load, rule.op_code);
     try std.testing.expectEqual(PropagationDirection.forward, rule.direction);
 }
 
@@ -338,7 +338,7 @@ test "BUILTIN_RULES - not empty" {
 test "BUILTIN_RULES - contains Load" {
     var found = false;
     for (BUILTIN_RULES) |rule| {
-        if (@intFromEnum(rule.op_code) == @intFromEnum(llvm.LLVMOpcode.Load)) {
+        if (@intFromEnum(rule.op_code) == @intFromEnum(c.LLVMOpcode.Load)) {
             found = true;
             break;
         }
@@ -349,7 +349,7 @@ test "BUILTIN_RULES - contains Load" {
 test "BUILTIN_RULES - contains Store" {
     var found = false;
     for (BUILTIN_RULES) |rule| {
-        if (@intFromEnum(rule.op_code) == @intFromEnum(llvm.LLVMOpcode.Store)) {
+        if (@intFromEnum(rule.op_code) == @intFromEnum(c.LLVMOpcode.Store)) {
             found = true;
             break;
         }
@@ -360,7 +360,7 @@ test "BUILTIN_RULES - contains Store" {
 test "BUILTIN_RULES - contains Call" {
     var found = false;
     for (BUILTIN_RULES) |rule| {
-        if (@intFromEnum(rule.op_code) == @intFromEnum(llvm.LLVMOpcode.Call)) {
+        if (@intFromEnum(rule.op_code) == @intFromEnum(c.LLVMOpcode.Call)) {
             found = true;
             break;
         }
@@ -371,17 +371,17 @@ test "BUILTIN_RULES - contains Call" {
 test "findRule - find Load rule" {
     const rule = findRule(.Load);
     try std.testing.expect(rule != null);
-    try std.testing.expectEqual(llvm.LLVMOpcode.Load, rule.?.op_code);
+    try std.testing.expectEqual(c.LLVMOpcode.Load, rule.?.op_code);
 }
 
 test "findRule - find Call rule" {
     const rule = findRule(.Call);
     try std.testing.expect(rule != null);
-    try std.testing.expectEqual(llvm.LLVMOpcode.Call, rule.?.op_code);
+    try std.testing.expectEqual(c.LLVMOpcode.Call, rule.?.op_code);
 }
 
 test "findRule - returns null for unknown opcode" {
-    const rule = findRule(@as(llvm.LLVMOpcode, @enumFromInt(9999)));
+    const rule = findRule(@as(c.LLVMOpcode, @enumFromInt(9999)));
     try std.testing.expect(rule == null);
 }
 

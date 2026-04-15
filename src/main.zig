@@ -3,8 +3,9 @@ const Allocator = std.mem.Allocator;
 const OmniScope = @import("OmniScope");
 const Pipeline = OmniScope.pipeline.Pipeline;
 const call_graph = OmniScope.cross_lang;
-const c = OmniScope.ir.llvm_raw.c;
+const llvm_safe = OmniScope.ir.llvm_safe;
 const IRLoader = OmniScope.engine.IRLoader;
+const FunctionRef = OmniScope.ir.view.FunctionRef;
 
 /// Main entry point error set
 pub const MainError = error{
@@ -160,7 +161,6 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
 
     // Import FFI components from OmniScope module
     const FFIMatcher = OmniScope.cross_lang.FFIMatcher;
-    const FFIDetector = OmniScope.cross_lang.FFIDetector;
     const FFIMatcherFunctionInfo = OmniScope.cross_lang.FunctionInfo;
 
     var matcher = FFIMatcher.init(allocator);
@@ -173,13 +173,14 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
             matcher_ptr: *FFIMatcher,
             allocator_ptr: Allocator,
 
-            fn processFunction(func_ref: c.LLVMValueRef, self: *const MatcherCallback) anyerror!void {
-                const func_info = try FFIMatcherFunctionInfo.fromFunction(func_ref, self.allocator_ptr);
+            fn processFunction(func_ref: FunctionRef, self: *const @This()) anyerror!void {
+                const func = llvm_safe.Function{ .raw = func_ref.raw };
+                const func_info = try FFIMatcherFunctionInfo.fromFunction(func, self.allocator_ptr);
                 // Add to matcher based on function kind
                 if (func_info.kind == .declare) {
-                    try self.matcher_ptr.declare_functions.append(func_info);
+                    try self.matcher_ptr.declare_functions.append(self.allocator_ptr, func_info);
                 } else if (func_info.kind == .define) {
-                    try self.matcher_ptr.define_functions.append(func_info);
+                    try self.matcher_ptr.define_functions.append(self.allocator_ptr, func_info);
                 }
             }
         };
@@ -199,15 +200,19 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     std.debug.print("[*] Found {d} FFI matches\n", .{matcher.matches.items.len});
 
     // Analyze each FFI match for potential vulnerabilities
-    var vulnerabilities: std.ArrayList(FFIDetector.FFIVulnerability) = std.ArrayList(FFIDetector.FFIVulnerability).init(allocator);
-    defer vulnerabilities.deinit();
+    var vulnerabilities: std.ArrayList(OmniScope.cross_lang.FFIVulnerability) = try std.ArrayList(OmniScope.cross_lang.FFIVulnerability).initCapacity(allocator, 100);
+    defer vulnerabilities.deinit(allocator);
 
-    for (matcher.matches.items) |*match| {
+    std.debug.print("[*] Analyzing {d} FFI matches for vulnerabilities...\n", .{matcher.matches.items.len});
+
+    for (matcher.matches.items, 0..) |*match, i| {
         if (!match.isValid()) continue;
+
+        std.debug.print("  [Match {d}] {s}\n", .{ i, match.name });
 
         // Check for dangerous patterns
         if (isDangerousFFIPattern(match)) {
-            const vuln = FFIDetector.FFIVulnerability{
+            const vuln = OmniScope.cross_lang.FFIVulnerability{
                 .id = @intCast(vulnerabilities.items.len),
                 .vuln_type = .command_injection,
                 .severity = .high,
@@ -216,13 +221,13 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
                 .source_location = match.declare_func.?.name,
                 .sink_location = match.define_func.?.name,
             };
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(allocator, vuln);
         }
     }
 
     // Print analysis results
     std.debug.print("\n[*] Running FFI vulnerability detection...\n", .{});
-    
+
     if (vulnerabilities.items.len > 0) {
         std.debug.print("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
         for (vulnerabilities.items) |vuln| {
@@ -248,6 +253,46 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     }});
     std.debug.print("FFI matches found: {d}\n", .{matcher.matches.items.len});
     std.debug.print("Vulnerabilities detected: {d}\n", .{vulnerabilities.items.len});
+}
+
+/// Check if an FFI match represents a dangerous pattern
+fn isDangerousFFIPattern(match: *const OmniScope.cross_lang.FFIMatch) bool {
+    // Check for system/exec calls (potential command injection)
+    const define_func = match.define_func orelse return false;
+    const name = define_func.name;
+
+    // Check for dangerous patterns in function name
+    const dangerous_patterns = &[_][]const u8{
+        "system",
+        "exec",
+        "popen",
+        "eval",
+        "shell",
+        "debug", // Debug functions often have format string vulnerabilities
+        "dump", // Dump functions often have format string vulnerabilities
+        "verify", // Verify functions often call system commands
+    };
+
+    for (dangerous_patterns) |pattern| {
+        if (std.mem.indexOf(u8, name, pattern) != null) {
+            return true;
+        }
+    }
+
+    // Check for functions that take user input without sanitization
+    // Functions that register or verify transactions are potential targets
+    const sensitive_patterns = &[_][]const u8{
+        "register",
+        "batch",
+    };
+
+    for (sensitive_patterns) |pattern| {
+        if (std.mem.indexOf(u8, name, pattern) != null) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Print analysis results

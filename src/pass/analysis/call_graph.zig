@@ -6,7 +6,7 @@
 //! This pass is stateless - it analyzes the IR directly and emits diagnostics.
 
 const std = @import("std");
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -86,7 +86,7 @@ pub const Node = struct {
     /// Name of the function.
     name: []const u8,
     /// LLVM value reference to the function.
-    func_ref: llvm.LLVMValueRef,
+    func_ref: c.LLVMValueRef,
     /// Classification of the function's origin.
     kind: FunctionKind,
     /// Whether this function is external to the module.
@@ -133,17 +133,17 @@ pub const CallGraphPass = struct {
         try detectAndReportSinks(ctx.allocator, &nodes, &edges, diag);
     }
 
-    fn buildNodes(allocator: std.mem.Allocator, mod: llvm.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
-        var func = llvm.LLVMGetFirstFunction(mod);
-        while (@intFromPtr(func) != 0) : (func = llvm.LLVMGetNextFunction(func)) {
-            const func_ref = llvm.LLVMIsAFunction(func);
+    fn buildNodes(allocator: std.mem.Allocator, mod: c.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
+        var func = c.LLVMGetFirstFunction(mod);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            const func_ref = c.LLVMIsAFunction(func);
             if (@intFromPtr(func_ref) == 0) continue;
 
-            const func_name_ptr = llvm.LLVMGetValueName(func);
+            const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
             if (func_name.len > 1024) continue;
-            const is_external = llvm.LLVMIsDeclaration(func) != 0;
+            const is_external = c.LLVMIsDeclaration(func) != 0;
 
             const id = @as(u32, @intCast(nodes.items.len));
             try nodes.append(allocator, .{ .id = id, .name = func_name, .func_ref = func, .kind = .internal, .isExternal = is_external, .isTainted = false, .taintedBy = null });
@@ -157,14 +157,14 @@ pub const CallGraphPass = struct {
     }
 
     fn findCallsInFunction(allocator: std.mem.Allocator, caller_node: *Node, caller_idx: u32, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
-        var bb = llvm.LLVMGetFirstBasicBlock(caller_node.func_ref);
-        while (@intFromPtr(bb) != 0) : (bb = llvm.LLVMGetNextBasicBlock(bb)) {
-            var inst = llvm.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = llvm.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(llvm.LLVMIsACallInst(inst)) != 0) {
-                    const called_val = llvm.LLVMGetCalledValue(inst);
+        var bb = c.LLVMGetFirstBasicBlock(caller_node.func_ref);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) != 0) {
-                        const called_name_ptr = llvm.LLVMGetValueName(called_val);
+                        const called_name_ptr = c.LLVMGetValueName(called_val);
                         if (@intFromPtr(called_name_ptr) != 0) {
                             const called_name = std.mem.span(called_name_ptr);
                             for (nodes.items, 0..) |*callee_node, callee_idx| {

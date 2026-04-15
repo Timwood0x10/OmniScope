@@ -13,7 +13,7 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
@@ -62,9 +62,9 @@ pub const TaintPass = struct {
         const module = ctx.module orelse return;
 
         // Iterate over all functions
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
         while (func != null) {
-            const func_ref = llvm.LLVMIsAFunction(func);
+            const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
                 self.func_id = ctx.getNextId();
@@ -72,7 +72,7 @@ pub const TaintPass = struct {
                 // Analyze function
                 try self.analyzeFunction(FunctionRef{ .raw = func_ref });
             }
-            func = llvm.LLVMGetNextFunction(func);
+            func = c.LLVMGetNextFunction(func);
         }
 
         // Clean up
@@ -84,18 +84,18 @@ pub const TaintPass = struct {
     /// Analyze a function for taint propagation
     fn analyzeFunction(self: *TaintPass, func: FunctionRef) !void {
         // Get first basic block
-        var bb = llvm.LLVMGetFirstBasicBlock(func.raw);
+        var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
         while (bb != null) {
             // Get first instruction
-            var inst = llvm.LLVMGetFirstInstruction(bb);
+            var inst = c.LLVMGetFirstInstruction(bb);
 
             while (inst != null) {
                 // Get opcode
-                const opcode = llvm.LLVMGetInstructionOpcode(inst);
+                const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check if this is a call instruction
-                const opcode_enum = @intToEnum(llvm.LLVMOpcode, opcode);
+                const opcode_enum = @intToEnum(c.LLVMOpcode, opcode);
                 if (opcode_enum == .Call) {
                     const inst_id = self.ctx.getNextId();
 
@@ -113,11 +113,11 @@ pub const TaintPass = struct {
                 }
 
                 // Move to next instruction
-                inst = llvm.LLVMGetNextInstruction(inst);
+                inst = c.LLVMGetNextInstruction(inst);
             }
 
             // Move to next basic block
-            bb = llvm.LLVMGetNextBasicBlock(bb);
+            bb = c.LLVMGetNextBasicBlock(bb);
         }
 
         // Query DFG edges for data flow
@@ -146,15 +146,15 @@ pub const TaintPass = struct {
     }
 
     /// Check if a call instruction is a taint source
-    fn isTaintSource(self: *TaintPass, inst: llvm.LLVMValueRef) bool {
+    fn isTaintSource(self: *TaintPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
         // Get called function
-        const called_func = llvm.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
 
         // Get function name
-        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name = c.LLVMGetValueName(called_func);
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint source
@@ -194,15 +194,15 @@ pub const TaintPass = struct {
     }
 
     /// Check if a call instruction is a taint sink
-    fn isTaintSink(self: *TaintPass, inst: llvm.LLVMValueRef) bool {
+    fn isTaintSink(self: *TaintPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
         // Get called function
-        const called_func = llvm.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
 
         // Get function name
-        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name = c.LLVMGetValueName(called_func);
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint sink

@@ -109,6 +109,12 @@ pub const cross_lang = struct {
     pub const FFIVulnerabilityType = @import("pass/analysis/ffi_detector.zig").FFIVulnerabilityType;
     pub const FFISeverity = @import("pass/analysis/ffi_detector.zig").FFISeverity;
 
+    pub const FFIMatcher = @import("ffi/ffi_matcher.zig").FFIMatcher;
+    pub const FunctionInfo = @import("ffi/ffi_matcher.zig").FunctionInfo;
+    pub const FFIMatch = @import("ffi/ffi_matcher.zig").FFIMatch;
+    pub const FFIMatcherError = @import("ffi/ffi_matcher.zig").FFIMatcherError;
+    pub const FFIFunctionKind = @import("ffi/ffi_matcher.zig").FunctionKind;
+
     pub const FFIKind = @import("pass/analysis/ffi_info.zig").FFIKind;
     pub const FFIBoundaryInfo = @import("pass/analysis/ffi_info.zig").FFIBoundaryInfo;
     pub const FFIBoundaryDetector = @import("pass/analysis/ffi_info.zig").FFIBoundaryDetector;

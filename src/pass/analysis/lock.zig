@@ -15,7 +15,7 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
@@ -39,7 +39,7 @@ pub const LockPass = struct {
     // Lock operations map
     lock_ops: std.ArrayList(LockOperation),
     // Lock ID mapping
-    lock_id_map: std.AutoHashMap(llvm.LLVMValueRef, u32),
+    lock_id_map: std.AutoHashMap(c.LLVMValueRef, u32),
     // Function ID
     func_id: u32,
     // Next lock ID
@@ -53,7 +53,7 @@ pub const LockPass = struct {
             .store = store,
             .query = QueryEngine.init(store),
             .lock_ops = std.ArrayList(LockOperation).init(std.heap.page_allocator),
-            .lock_id_map = std.AutoHashMap(llvm.LLVMValueRef, u32).init(std.heap.page_allocator),
+            .lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.heap.page_allocator),
             .func_id = 0,
             .next_lock_id = 1,
         };
@@ -71,9 +71,9 @@ pub const LockPass = struct {
         const module = ctx.module orelse return;
 
         // Iterate over all functions
-        var func = llvm.LLVMGetFirstFunction(module.raw);
+        var func = c.LLVMGetFirstFunction(module.raw);
         while (func != null) {
-            const func_ref = llvm.LLVMIsAFunction(func);
+            const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
                 self.func_id = ctx.getNextId();
@@ -81,7 +81,7 @@ pub const LockPass = struct {
                 // Analyze function
                 try self.analyzeFunction(FunctionRef{ .raw = func_ref });
             }
-            func = llvm.LLVMGetNextFunction(func);
+            func = c.LLVMGetNextFunction(func);
         }
 
         // Build lock graph and detect deadlocks
@@ -95,11 +95,11 @@ pub const LockPass = struct {
     /// Analyze a function for lock operations
     fn analyzeFunction(self: *LockPass, func: FunctionRef) !void {
         // Get first basic block
-        var bb = llvm.LLVMGetFirstBasicBlock(func.raw);
+        var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
         while (bb != null) {
             // Get first instruction
-            var inst = llvm.LLVMGetFirstInstruction(bb);
+            var inst = c.LLVMGetFirstInstruction(bb);
 
             while (inst != null) {
                 // Check if this is a lock operation
@@ -125,31 +125,31 @@ pub const LockPass = struct {
                 }
 
                 // Move to next instruction
-                inst = llvm.LLVMGetNextInstruction(inst);
+                inst = c.LLVMGetNextInstruction(inst);
             }
 
             // Move to next basic block
-            bb = llvm.LLVMGetNextBasicBlock(bb);
+            bb = c.LLVMGetNextBasicBlock(bb);
         }
     }
 
     /// Check if an instruction is a lock operation
-    fn isLockOperation(self: *LockPass, inst: llvm.LLVMValueRef) bool {
+    fn isLockOperation(self: *LockPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
         // Get opcode
-        const opcode = llvm.LLVMGetInstructionOpcode(inst);
+        const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Lock operations are typically function calls
-        const opcode_enum = @intToEnum(llvm.LLVMOpcode, opcode);
+        const opcode_enum = @intToEnum(c.LLVMOpcode, opcode);
         if (opcode_enum != .Call) return false;
 
         // Get called function
-        const called_func = llvm.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
 
         // Get function name
-        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name = c.LLVMGetValueName(called_func);
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known lock function
@@ -180,15 +180,15 @@ pub const LockPass = struct {
     }
 
     /// Check if a lock operation is acquire or release
-    fn isLockAcquire(self: *LockPass, inst: llvm.LLVMValueRef) bool {
+    fn isLockAcquire(self: *LockPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
         // Get called function
-        const called_func = llvm.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
 
         // Get function name
-        const func_name = llvm.LLVMGetValueName(called_func);
+        const func_name = c.LLVMGetValueName(called_func);
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a lock acquire function
@@ -197,9 +197,9 @@ pub const LockPass = struct {
     }
 
     /// Get or create lock ID for a lock object
-    fn getLockId(self: *LockPass, inst: llvm.LLVMValueRef) !u32 {
+    fn getLockId(self: *LockPass, inst: c.LLVMValueRef) !u32 {
         // Get the lock object (first argument)
-        const lock_obj = llvm.LLVMGetOperand(inst, 1); // Call instruction: func + args
+        const lock_obj = c.LLVMGetOperand(inst, 1); // Call instruction: func + args
         if (lock_obj == null) return error.InvalidLockOperation;
 
         // Check if we already have an ID for this lock
@@ -493,9 +493,9 @@ test "LockPass - lock ID mapping" {
     var pass = LockPass.init(&store);
 
     // Create dummy lock objects
-    const lock1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const lock2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
-    const lock3: llvm.LLVMValueRef = @ptrFromInt(0x3000);
+    const lock1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const lock2: c.LLVMValueRef = @ptrFromInt(0x2000);
+    const lock3: c.LLVMValueRef = @ptrFromInt(0x3000);
 
     // Assign lock IDs
     const lock_id1 = try pass.getLockId(lock1);
@@ -519,8 +519,8 @@ test "LockPass - lock ID map consistency" {
     var pass = LockPass.init(&store);
 
     // Create dummy lock objects
-    const lock1: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const lock2: llvm.LLVMValueRef = @ptrFromInt(0x2000);
+    const lock1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const lock2: c.LLVMValueRef = @ptrFromInt(0x2000);
 
     // Assign lock IDs
     const lock_id1 = try pass.getLockId(lock1);
@@ -561,8 +561,8 @@ test "LockPass - lock acquire vs release detection" {
     var pass = LockPass.init(&store);
 
     // Create dummy call instructions
-    const lock_call: llvm.LLVMValueRef = @ptrFromInt(0x1000);
-    const unlock_call: llvm.LLVMValueRef = @ptrFromInt(0x2000);
+    const lock_call: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const unlock_call: c.LLVMValueRef = @ptrFromInt(0x2000);
 
     // Test lock acquire
     // Note: isLockAcquire needs a call instruction with a function operand

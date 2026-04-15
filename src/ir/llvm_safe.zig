@@ -27,7 +27,7 @@ pub const Context = struct {
     pub fn init() !Context {
         const ctx = c.LLVMContextCreate();
         if (ctx == null) return Error.ContextCreationFailed;
-        
+
         return .{ .raw = ctx };
     }
 
@@ -50,12 +50,72 @@ pub const Module = struct {
     pub fn getFunctionCount(self: Module) usize {
         var count: usize = 0;
         var func = c.LLVMGetFirstFunction(self.raw);
-        
+
         while (func != null) : (func = c.LLVMGetNextFunction(func)) {
             count += 1;
         }
-        
+
         return count;
+    }
+
+    /// Get the first function in the module
+    pub fn getFirstFunction(self: Module) ?Function {
+        const func = c.LLVMGetFirstFunction(self.raw);
+        if (func == null) return null;
+        return .{ .raw = func };
+    }
+
+    /// Get a function by name
+    pub fn getFunction(self: Module, name: []const u8) ?Function {
+        var func = c.LLVMGetFirstFunction(self.raw);
+
+        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+            const func_name = c.LLVMGetValueName(func);
+            const func_name_slice = std.mem.span(func_name);
+
+            if (std.mem.eql(u8, name, func_name_slice)) {
+                return .{ .raw = func };
+            }
+        }
+
+        return null;
+    }
+
+    /// Iterate over all functions in the module
+    pub fn iterateFunctions(
+        self: Module,
+        ctx: anytype,
+        callback: fn (Function, @TypeOf(ctx)) anyerror!void,
+    ) !void {
+        var func = c.LLVMGetFirstFunction(self.raw);
+
+        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+            try callback(.{ .raw = func }, ctx);
+        }
+    }
+};
+
+/// Safe wrapper for LLVM Function
+pub const Function = struct {
+    raw: c.LLVMValueRef,
+
+    /// Get the function name (owned copy)
+    pub fn getName(self: Function, allocator: Allocator) ![]u8 {
+        const name_ptr = c.LLVMGetValueName(self.raw);
+        const name_span = std.mem.span(name_ptr);
+        return try allocator.dupe(u8, name_span);
+    }
+
+    /// Check if the function is a declaration (extern)
+    pub fn isDeclaration(self: Function) bool {
+        return c.LLVMIsDeclaration(self.raw) != 0;
+    }
+
+    /// Get the next function in the module
+    pub fn getNext(self: Function) ?Function {
+        const next = c.LLVMGetNextFunction(self.raw);
+        if (next == null) return null;
+        return .{ .raw = next };
     }
 };
 
@@ -68,7 +128,7 @@ pub const IRLoader = struct {
     /// Create a new IR loader
     pub fn init(allocator: Allocator) !IRLoader {
         const context = try Context.init();
-        
+
         return .{
             .allocator = allocator,
             .context = context,
@@ -78,11 +138,13 @@ pub const IRLoader = struct {
 
     /// Load LLVM IR from a file (.bc or .ll)
     pub fn loadFile(self: *IRLoader, path: []const u8) !Module {
-        const path_c = try std.cstr.addZ(self.allocator, path);
+        if (path.len == 0) return Error.FileNotFound;
+
+        const path_c = try self.allocator.dupeZ(u8, path);
         defer self.allocator.free(path_c);
 
         var mem_buf: c.LLVMMemoryBufferRef = undefined;
-        var err_msg: [*:0]u8 = undefined;
+        var err_msg: [*c]u8 = undefined;
 
         // Create memory buffer from file
         if (c.LLVMCreateMemoryBufferWithContentsOfFile(
@@ -96,7 +158,7 @@ pub const IRLoader = struct {
 
         // Detect file type
         const is_ll_file = std.mem.endsWith(u8, path, ".ll");
-        
+
         var module_raw: c.LLVMModuleRef = undefined;
         var result: c_int = undefined;
 
@@ -127,6 +189,16 @@ pub const IRLoader = struct {
         return self.module.?;
     }
 
+    /// Get the module
+    pub fn getModule(self: *IRLoader) ?Module {
+        return self.module;
+    }
+
+    /// Get the context
+    pub fn getContext(self: *IRLoader) Context {
+        return self.context;
+    }
+
     /// Deinitialize the loader
     pub fn deinit(self: *IRLoader) void {
         if (self.module) |mod| {
@@ -141,6 +213,16 @@ pub const IRLoader = struct {
 pub fn parseIR(allocator: Allocator, path: []const u8) !Module {
     var loader = try IRLoader.init(allocator);
     defer loader.deinit();
-    
+
     return loader.loadFile(path);
+}
+
+test "parseIR - error handling for non-existent file" {
+    const result = parseIR(std.testing.allocator, "nonexistent_file.bc");
+    try std.testing.expectError(Error.FileNotFound, result);
+}
+
+test "parseIR - error handling for invalid path" {
+    const result = parseIR(std.testing.allocator, "");
+    try std.testing.expectError(Error.FileNotFound, result);
 }

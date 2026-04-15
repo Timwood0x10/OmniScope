@@ -3,7 +3,7 @@
 //! Traces tainted data flow from sources to dangerous sinks.
 
 const std = @import("std");
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const call_graph = @import("./call_graph.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;

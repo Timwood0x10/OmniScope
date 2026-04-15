@@ -7,7 +7,7 @@
 //! tracking how tainted values propagate through the IR.
 
 const std = @import("std");
-const llvm = @import("../../ir/llvm_c.zig");
+const c = @import("../../ir/llvm_raw.zig");
 const call_graph = @import("./call_graph.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -55,12 +55,12 @@ pub const TaintPropagationPass = struct {
     /// Mark source function parameters as tainted
     fn markSources(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         const mod = ctx.module.?.raw;
-        var func = llvm.LLVMGetFirstFunction(mod);
+        var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
         var source_count: u32 = 0;
 
-        while (@intFromPtr(func) != 0) : (func = llvm.LLVMGetNextFunction(func)) {
-            const func_name_ptr = llvm.LLVMGetValueName(func);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
@@ -78,11 +78,11 @@ pub const TaintPropagationPass = struct {
     /// Propagate taint through all functions
     fn propagateTaint(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         const mod = ctx.module.?.raw;
-        var func = llvm.LLVMGetFirstFunction(mod);
+        var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
         var inst_count: u32 = 0;
 
-        while (@intFromPtr(func) != 0) : (func = llvm.LLVMGetNextFunction(func)) {
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             try propagateThroughFunction(ctx, taint_ctx, func, &inst_count, diag);
         }
 
@@ -93,25 +93,25 @@ pub const TaintPropagationPass = struct {
     }
 
     /// Propagate taint through a single function
-    fn propagateThroughFunction(ctx: *PassContext, taint_ctx: *TaintContext, func: llvm.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
-        var bb = llvm.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = llvm.LLVMGetNextBasicBlock(bb)) {
+    fn propagateThroughFunction(ctx: *PassContext, taint_ctx: *TaintContext, func: c.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             try propagateThroughBasicBlock(ctx, taint_ctx, bb, inst_count, diag);
         }
     }
 
     /// Propagate taint through a basic block
-    fn propagateThroughBasicBlock(ctx: *PassContext, taint_ctx: *TaintContext, bb: llvm.LLVMBasicBlockRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
-        var inst = llvm.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = llvm.LLVMGetNextInstruction(inst)) {
+    fn propagateThroughBasicBlock(ctx: *PassContext, taint_ctx: *TaintContext, bb: c.LLVMBasicBlockRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
             try propagateThroughInstruction(ctx, taint_ctx, inst, inst_count, diag);
         }
     }
 
     /// Propagate taint through a single instruction
-    fn propagateThroughInstruction(ctx: *PassContext, taint_ctx: *TaintContext, inst: llvm.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
+    fn propagateThroughInstruction(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
         inst_count.* += 1;
-        const opcode = llvm.LLVMGetInstructionOpcode(inst);
+        const opcode = c.LLVMGetInstructionOpcode(inst);
 
         const rule = propagation_rule.findRule(opcode) orelse {
             diag.warn("No propagation rule for opcode {}", .{@intFromEnum(opcode)});
@@ -158,15 +158,15 @@ pub const TaintPropagationPass = struct {
     }
 
     /// Mark function parameters as tainted
-    fn markFunctionParametersTainted(ctx: *PassContext, taint_ctx: *TaintContext, func: llvm.LLVMValueRef, diag: *DiagnosticWriter) !void {
-        const func_name_ptr = llvm.LLVMGetValueName(func);
+    fn markFunctionParametersTainted(ctx: *PassContext, taint_ctx: *TaintContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
+        const func_name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(func_name_ptr) == 0) return;
         const func_name = std.mem.span(func_name_ptr);
 
-        var arg = llvm.LLVMGetFirstParam(func);
+        var arg = c.LLVMGetFirstParam(func);
         var param_idx: u32 = 0;
 
-        while (@intFromPtr(arg) != 0) : (arg = llvm.LLVMGetNextParam(arg)) {
+        while (@intFromPtr(arg) != 0) : (arg = c.LLVMGetNextParam(arg)) {
             const info = TaintInfo{
                 .id = ctx.getNextId(),
                 .state = .source,
@@ -183,12 +183,12 @@ pub const TaintPropagationPass = struct {
     }
 
     /// Check for tainted call to sink
-    fn checkTaintedCall(ctx: *PassContext, taint_ctx: *TaintContext, inst: llvm.LLVMValueRef, sink_name: []const u8, diag: *DiagnosticWriter) !void {
-        const num_operands = llvm.LLVMGetNumOperands(inst);
+    fn checkTaintedCall(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, sink_name: []const u8, diag: *DiagnosticWriter) !void {
+        const num_operands = c.LLVMGetNumOperands(inst);
 
         var i: u32 = 0;
         while (i < num_operands) : (i += 1) {
-            const operand = llvm.LLVMGetOperand(inst, i);
+            const operand = c.LLVMGetOperand(inst, i);
             if (@intFromPtr(operand) == 0) continue;
 
             if (taint_ctx.getValueTaint(@intFromPtr(operand))) |info| {
@@ -321,4 +321,17 @@ test "TaintPropagationPass - deps valid strings" {
     for (TaintPropagationPass.deps) |dep| {
         try std.testing.expect(dep.len > 0);
     }
+}
+
+test "TaintPropagationPass - handles null module gracefully" {
+    // Test that the pass handles null module without crashing
+    const allocator = std.testing.allocator;
+    var context = PassContext.init(allocator, null, null);
+    defer context.deinit();
+
+    var diagnostics = DiagnosticWriter.init(allocator);
+    defer diagnostics.deinit();
+
+    // This should not panic, just return early
+    _ = TaintPropagationPass.run(&context, &diagnostics);
 }

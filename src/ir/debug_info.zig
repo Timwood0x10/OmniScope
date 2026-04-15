@@ -92,61 +92,61 @@ pub const SourceLocation = struct {
 };
 
 pub const DIScope = struct {
-    raw: llvm.LLVMMetadataRef,
+    raw: c.LLVMMetadataRef,
 };
 
 pub const DICompileUnit = struct {
-    raw: llvm.LLVMMetadataRef,
+    raw: c.LLVMMetadataRef,
 
     pub fn getLanguage(self: DICompileUnit) DWARFSourceLanguage {
-        const lang = llvm.LLVMGetCompileUnitLanguage(self.raw);
+        const lang = c.LLVMGetCompileUnitLanguage(self.raw);
         return @enumFromInt(lang);
     }
 
     pub fn getFilename(self: DICompileUnit) []const u8 {
-        const c_str = llvm.LLVMGetCompileUnitFilename(self.raw);
+        const c_str = c.LLVMGetCompileUnitFilename(self.raw);
         return std.mem.span(c_str);
     }
 };
 
 pub const DISubprogram = struct {
-    raw: llvm.LLVMMetadataRef,
+    raw: c.LLVMMetadataRef,
 
     pub fn getName(self: DISubprogram) []const u8 {
-        const c_str = llvm.LLVMGetSubprogramName(self.raw);
+        const c_str = c.LLVMGetSubprogramName(self.raw);
         return std.mem.span(c_str);
     }
 
     pub fn getLine(self: DISubprogram) u32 {
-        return llvm.LLVMGetSubprogramLine(self.raw);
+        return c.LLVMGetSubprogramLine(self.raw);
     }
 };
 
 pub const DILocation = struct {
-    raw: llvm.LLVMMetadataRef,
+    raw: c.LLVMMetadataRef,
 
     pub fn getLine(self: DILocation) u32 {
-        return llvm.LLMDILocationGetLine(self.raw);
+        return c.LLMDILocationGetLine(self.raw);
     }
 
     pub fn getColumn(self: DILocation) u32 {
-        return llvm.LLMDILocationGetColumn(self.raw);
+        return c.LLMDILocationGetColumn(self.raw);
     }
 
     pub fn getScope(self: DILocation) DIScope {
-        return .{ .raw = llvm.LLMDILocationGetScope(self.raw) };
+        return .{ .raw = c.LLMDILocationGetScope(self.raw) };
     }
 };
 
 pub const DIBuilder = struct {
-    raw: llvm.LLVMDIBuilderRef,
+    raw: c.LLVMDIBuilderRef,
 
-    pub fn create(module: llvm.LLVMModuleRef) DIBuilder {
-        return .{ .raw = llvm.LLVMCreateDIBuilder(module) };
+    pub fn create(module: c.LLVMModuleRef) DIBuilder {
+        return .{ .raw = c.LLVMCreateDIBuilder(module) };
     }
 
     pub fn deinit(self: *DIBuilder) void {
-        llvm.LLVMDisposeDIBuilder(self.raw);
+        c.LLVMDisposeDIBuilder(self.raw);
     }
 };
 
