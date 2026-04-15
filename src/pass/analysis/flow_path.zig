@@ -46,7 +46,9 @@ pub const FlowStep = struct {
 /// Complete flow path from source to sink
 pub const FlowPath = struct {
     /// Ordered list of steps in the path
-    steps: []FlowStep,
+    steps: std.ArrayList(FlowStep),
+    /// Allocator for memory management
+    allocator: Allocator,
     /// Risk severity of this path
     risk_level: RiskLevel,
     /// Whether this path crosses a language boundary
@@ -56,10 +58,11 @@ pub const FlowPath = struct {
     /// Sink function name
     sink_func: []const u8,
 
-    /// Initialize an empty flow path
-    pub fn init() FlowPath {
+    /// Initialize an empty flow path.
+    pub fn init(allocator: Allocator) !FlowPath {
         return .{
-            .steps = &[0]FlowStep{},
+            .steps = try std.ArrayList(FlowStep).initCapacity(allocator, 0),
+            .allocator = allocator,
             .risk_level = .low,
             .is_cross_language = false,
             .source_func = "",
@@ -68,30 +71,23 @@ pub const FlowPath = struct {
     }
 
     /// Deinitialize the flow path
-    pub fn deinit(self: *FlowPath, allocator: Allocator) void {
-        if (self.steps.len > 0) {
-            allocator.free(self.steps);
-        }
+    pub fn deinit(self: *FlowPath) void {
+        self.steps.deinit();
     }
 
     /// Add a step to the path
-    pub fn addStep(self: *FlowPath, allocator: Allocator, step: FlowStep) !void {
-        var new_steps = try allocator.alloc(FlowStep, self.steps.len + 1);
-        errdefer allocator.free(new_steps);
-        @memcpy(new_steps[0..self.steps.len], self.steps);
-        new_steps[self.steps.len] = step;
-        allocator.free(self.steps);
-        self.steps = new_steps;
+    pub fn addStep(self: *FlowPath, step: FlowStep) !void {
+        try self.steps.append(self.allocator, step);
     }
 
     /// Get the length of the path
     pub fn length(self: *const FlowPath) usize {
-        return self.steps.len;
+        return self.steps.items.len;
     }
 
     /// Check if the path is empty
     pub fn isEmpty(self: *const FlowPath) bool {
-        return self.steps.len == 0;
+        return self.steps.items.len == 0;
     }
 };
 
@@ -140,13 +136,13 @@ pub const VulnerabilityReportBuilder = struct {
     recommendation: []const u8,
 
     /// Create a new builder
-    pub fn init(id: u32) VulnerabilityReportBuilder {
+    pub fn init(id: u32, allocator: Allocator) !VulnerabilityReportBuilder {
         return .{
             .id = id,
             .risk_level = .medium,
             .source_func = "",
             .sink_func = "",
-            .flow_path = FlowPath.init(),
+            .flow_path = try FlowPath.init(allocator),
             .description = "",
             .recommendation = "",
         };
@@ -243,14 +239,14 @@ test "FlowStep - structure" {
 }
 
 test "FlowPath - empty path" {
-    const path = FlowPath.init();
+    const path = try FlowPath.init(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 0), path.length());
     try std.testing.expect(path.isEmpty());
 }
 
 test "FlowPath - add step" {
-    var path = FlowPath.init();
-    defer path.deinit(std.testing.allocator);
+    var path = try FlowPath.init(std.testing.allocator);
+    defer path.deinit();
 
     const step = FlowStep{
         .id = 1,
@@ -260,14 +256,14 @@ test "FlowPath - add step" {
         .confidence = 1.0,
     };
 
-    try path.addStep(std.testing.allocator, step);
+    try path.addStep(step);
     try std.testing.expectEqual(@as(usize, 1), path.length());
     try std.testing.expect(!path.isEmpty());
 }
 
 test "FlowPath - multiple steps" {
-    var path = FlowPath.init();
-    defer path.deinit(std.testing.allocator);
+    var path = try FlowPath.init(std.testing.allocator);
+    defer path.deinit();
 
     const step1 = FlowStep{
         .id = 1,
@@ -285,8 +281,8 @@ test "FlowPath - multiple steps" {
         .confidence = 0.9,
     };
 
-    try path.addStep(std.testing.allocator, step1);
-    try path.addStep(std.testing.allocator, step2);
+    try path.addStep(step1);
+    try path.addStep(step2);
     try std.testing.expectEqual(@as(usize, 2), path.length());
 }
 
@@ -296,7 +292,7 @@ test "VulnerabilityReport - structure" {
         .risk_level = .critical,
         .source_func = "read_input",
         .sink_func = "system",
-        .flow_path = FlowPath.init(),
+        .flow_path = try FlowPath.init(std.testing.allocator),
         .description = "Command injection",
         .recommendation = "Sanitize input",
     };
@@ -308,7 +304,8 @@ test "VulnerabilityReport - structure" {
 }
 
 test "VulnerabilityReportBuilder - build report" {
-    var builder = VulnerabilityReportBuilder.init(1);
+    var builder = try VulnerabilityReportBuilder.init(1, std.testing.allocator);
+    defer builder.flow_path.deinit();
     _ = builder.withRisk(.high);
     _ = builder.withSource("source_func");
     _ = builder.withSink("sink_func");
@@ -328,7 +325,7 @@ test "VulnerabilityReport - formatSummary" {
         .risk_level = .critical,
         .source_func = "read",
         .sink_func = "system",
-        .flow_path = FlowPath.init(),
+        .flow_path = try FlowPath.init(std.testing.allocator),
         .description = "Test",
         .recommendation = "Fix",
     };
@@ -347,8 +344,8 @@ test "RiskLevel - ordering" {
 }
 
 test "FlowPath - cross language flag" {
-    var path = FlowPath.init();
-    defer path.deinit(std.testing.allocator);
+    var path = try FlowPath.init(std.testing.allocator);
+    defer path.deinit();
 
     path.is_cross_language = true;
     try std.testing.expect(path.is_cross_language);

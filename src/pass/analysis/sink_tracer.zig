@@ -101,8 +101,8 @@ pub const SinkTracerPass = struct {
 
     /// Trace flow path from tainted value to sink
     fn traceFlowPath(allocator: Allocator, taint_ctx: *TaintContext, value_id: u32) FlowPathError!?FlowPath {
-        var path = FlowPath.init();
-        errdefer path.deinit(allocator);
+        var path = try FlowPath.init(allocator);
+        errdefer path.deinit();
 
         const taint_info = taint_ctx.getValueTaint(value_id);
         const state: TaintState = if (taint_info) |info| info.state else .none;
@@ -126,7 +126,7 @@ pub const SinkTracerPass = struct {
             .confidence = confidence,
         };
 
-        try path.addStep(allocator, step);
+        try path.addStep(step);
 
         if (taint_info) |info| {
             if (info.source_id) |source_id| {
@@ -137,7 +137,7 @@ pub const SinkTracerPass = struct {
                     .taint_state = .source,
                     .confidence = 1.0,
                 };
-                try path.addStep(allocator, source_step);
+                try path.addStep(source_step);
             }
         }
 
@@ -146,7 +146,7 @@ pub const SinkTracerPass = struct {
 
     /// Report vulnerability with complete information
     fn reportVulnerability(ctx: *PassContext, path: FlowPath, vuln_id: u32, diag: *DiagnosticWriter) !void {
-        var builder = VulnerabilityReportBuilder.init(vuln_id);
+        var builder = try VulnerabilityReportBuilder.init(vuln_id, ctx.allocator);
         _ = builder.withRisk(.high);
         _ = builder.withSource("source");
         _ = builder.withSink("sink");

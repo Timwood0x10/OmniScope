@@ -15,6 +15,7 @@ const FactKind = OmniScope.fact.FactKind;
 const QueryEngine = OmniScope.fact.QueryEngine;
 const TaintContext = OmniScope.cross_lang.TaintContext;
 const TaintInfo = OmniScope.cross_lang.TaintInfo;
+const TaintState = OmniScope.cross_lang.TaintState;
 const FFIBoundaryDetector = OmniScope.cross_lang.FFIBoundaryDetector;
 const FlowPath = OmniScope.cross_lang.FlowPath;
 const FlowStep = OmniScope.cross_lang.FlowStep;
@@ -55,6 +56,7 @@ fn trackFree() void {
 }
 
 const RunStats = struct {
+    allocator: std.mem.Allocator,
     min_ns: i128 = std.math.maxInt(i128),
     max_ns: i128 = 0,
     total_ns: i128 = 0,
@@ -62,12 +64,13 @@ const RunStats = struct {
 
     fn init(allocator: std.mem.Allocator, capacity: usize) !RunStats {
         return .{
+            .allocator = allocator,
             .values = try allocator.alloc(i128, capacity),
         };
     }
 
-    fn deinit(self: *RunStats, allocator: std.mem.Allocator) void {
-        allocator.free(self.values);
+    fn deinit(self: *RunStats) void {
+        self.allocator.free(self.values);
     }
 
     fn record(self: *RunStats, elapsed_ns: i128) void {
@@ -121,10 +124,13 @@ pub fn main() !void {
 
 fn benchmarkFactStore(allocator: std.mem.Allocator) !void {
     std.debug.print("--- FactStore ---\n", .{});
+    std.debug.print("  Scenario: Analyzing medium-sized C/Rust project (~50K LOC)\n", .{});
 
+    // Realistic: medium project with ~500 functions, 100K facts
+    // Fact types: cfg_edge, data_flow, alias, call_edge, taint
     const insert_count = 100000;
     var insert_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer insert_stats.deinit(allocator);
+    defer insert_stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
@@ -132,7 +138,9 @@ fn benchmarkFactStore(allocator: std.mem.Allocator) !void {
         defer store.deinit();
         var j: u32 = 0;
         while (j < insert_count) : (j += 1) {
-            try store.insert(.cfg_edge, j, j + 1, j / 100);
+            // Mix of fact types: 40% cfg_edge, 25% dfg_edge, 15% alias_may, 10% lock_acquire, 10% taint
+            const kind: FactKind = if (j % 10 < 4) .cfg_edge else if (j % 10 < 6) .dfg_edge else if (j % 10 < 8) .alias_may else if (j % 10 < 9) .lock_acquire else .taint;
+            try store.insert(kind, j, j + 1, j / 100);
         }
         consumeValue(usize, store.count());
     }
@@ -145,7 +153,8 @@ fn benchmarkFactStore(allocator: std.mem.Allocator) !void {
         const start = std.time.nanoTimestamp();
         var j: u32 = 0;
         while (j < insert_count) : (j += 1) {
-            try store.insert(.cfg_edge, j, j + 1, j / 100);
+            const kind: FactKind = if (j % 10 < 4) .cfg_edge else if (j % 10 < 6) .dfg_edge else if (j % 10 < 8) .alias_may else if (j % 10 < 9) .lock_acquire else .taint;
+            try store.insert(kind, j, j + 1, j / 100);
         }
         const elapsed = std.time.nanoTimestamp() - start;
         insert_stats.values[i] = elapsed;
@@ -158,13 +167,13 @@ fn benchmarkFactStore(allocator: std.mem.Allocator) !void {
     std.debug.print("    Memory: {} bytes allocated, {} frees\n", .{ mem.alloc_bytes, mem.free_count });
 
     var query_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer query_stats.deinit(allocator);
+    defer query_stats.deinit();
 
     var store = FactStore.init(allocator);
     defer store.deinit();
     var j: u32 = 0;
     while (j < insert_count) : (j += 1) {
-        const kind: FactKind = @enumFromInt(j % 5);
+        const kind: FactKind = if (j % 10 < 4) .cfg_edge else if (j % 10 < 6) .dfg_edge else if (j % 10 < 8) .alias_may else if (j % 10 < 9) .lock_acquire else .taint;
         try store.insert(kind, j, j + 1, j / 100);
     }
 
@@ -184,28 +193,30 @@ fn benchmarkFactStore(allocator: std.mem.Allocator) !void {
     }
 
     const mem2 = getMemoryStats();
-    std.debug.print("  Query (5 kind queries, {} items): avg={d:.3}ms min={d:.3}ms max={d:.3}ms stddev={d:.3}ms\n", .{ insert_count, query_stats.avg_ms(MEASUREMENT_ITERATIONS), query_stats.min_ms(), query_stats.max_ms(), query_stats.stddev_ms(MEASUREMENT_ITERATIONS) });
+    std.debug.print("  Query (cfg_edge from {} items): avg={d:.3}ms min={d:.3}ms max={d:.3}ms stddev={d:.3}ms\n", .{ insert_count, query_stats.avg_ms(MEASUREMENT_ITERATIONS), query_stats.min_ms(), query_stats.max_ms(), query_stats.stddev_ms(MEASUREMENT_ITERATIONS) });
     std.debug.print("    Memory: {} bytes allocated, {} frees\n", .{ mem2.alloc_bytes, mem2.free_count });
 }
 
 fn benchmarkQueryEngine(allocator: std.mem.Allocator) !void {
     std.debug.print("--- QueryEngine ---\n", .{});
+    std.debug.print("  Scenario: Querying facts from analyzed project\n", .{});
 
+    // Realistic: 50K facts representing ~200 functions
     const fact_count = 50000;
     var store = FactStore.init(allocator);
     defer store.deinit();
 
     var j: u32 = 0;
     while (j < fact_count) : (j += 1) {
-        const kind: FactKind = @enumFromInt(j % 5);
-        const ctx: u32 = j / 1000;
+        const kind: FactKind = if (j % 10 < 4) .cfg_edge else if (j % 10 < 6) .dfg_edge else if (j % 10 < 8) .alias_may else if (j % 10 < 9) .lock_acquire else .taint;
+        const ctx: u32 = j / 1000; // ~50 contexts
         try store.insert(kind, j, j + 1, ctx);
     }
 
     var engine = QueryEngine.init(&store);
 
     var byKind_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer byKind_stats.deinit(allocator);
+    defer byKind_stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
@@ -230,7 +241,7 @@ fn benchmarkQueryEngine(allocator: std.mem.Allocator) !void {
     std.debug.print("    Memory: {} bytes allocated, {} frees\n", .{ mem.alloc_bytes, mem.free_count });
 
     var byCtx_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer byCtx_stats.deinit(allocator);
+    defer byCtx_stats.deinit();
 
     i = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
@@ -257,11 +268,13 @@ fn benchmarkQueryEngine(allocator: std.mem.Allocator) !void {
 
 fn benchmarkTaintContext(allocator: std.mem.Allocator) !void {
     std.debug.print("--- TaintContext ---\n", .{});
+    std.debug.print("  Scenario: Tracking taint across ~100K program values\n", .{});
+    std.debug.print("  Distribution: 10% source, 70% tainted, 20% safe\n", .{});
 
     const count = 100000;
 
     var set_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer set_stats.deinit(allocator);
+    defer set_stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
@@ -269,11 +282,16 @@ fn benchmarkTaintContext(allocator: std.mem.Allocator) !void {
         defer ctx.deinit();
         var j: u32 = 0;
         while (j < count) : (j += 1) {
+            const state: TaintState = switch (j % 10) {
+                0 => .source,
+                1...7 => .tainted,
+                else => .safe,
+            };
             const info = TaintInfo{
                 .id = j,
-                .state = .tainted,
-                .source_id = 0,
-                .confidence = 0.9,
+                .state = state,
+                .source_id = if (state == .source) j else 0,
+                .confidence = if (state == .source) 1.0 else 0.8,
             };
             try ctx.setValueTaint(j, info);
         }
@@ -287,11 +305,16 @@ fn benchmarkTaintContext(allocator: std.mem.Allocator) !void {
         const start = std.time.nanoTimestamp();
         var j: u32 = 0;
         while (j < count) : (j += 1) {
+            const state: TaintState = switch (j % 10) {
+                0 => .source,
+                1...7 => .tainted,
+                else => .safe,
+            };
             const info = TaintInfo{
                 .id = j,
-                .state = .tainted,
-                .source_id = 0,
-                .confidence = 0.9,
+                .state = state,
+                .source_id = if (state == .source) j else 0,
+                .confidence = if (state == .source) 1.0 else 0.8,
             };
             try ctx.setValueTaint(j, info);
         }
@@ -306,13 +329,18 @@ fn benchmarkTaintContext(allocator: std.mem.Allocator) !void {
     std.debug.print("    Memory: {} bytes allocated, {} frees\n", .{ mem.alloc_bytes, mem.free_count });
 
     var get_stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer get_stats.deinit(allocator);
+    defer get_stats.deinit();
 
     var ctx = TaintContext.init(allocator);
     defer ctx.deinit();
     var setup_j: u32 = 0;
     while (setup_j < count) : (setup_j += 1) {
-        const info = TaintInfo{ .id = setup_j, .state = .tainted, .source_id = 0, .confidence = 0.9 };
+        const state: TaintState = switch (setup_j % 10) {
+            0 => .source,
+            1...7 => .tainted,
+            else => .safe,
+        };
+        const info = TaintInfo{ .id = setup_j, .state = state, .source_id = if (state == .source) setup_j else 0, .confidence = if (state == .source) 1.0 else 0.8 };
         try ctx.setValueTaint(setup_j, info);
     }
 
@@ -348,21 +376,35 @@ fn benchmarkFFIBoundary(allocator: std.mem.Allocator) !void {
     var detector = FFIBoundaryDetector.init(allocator);
     defer detector.deinit();
 
+    // Real-world FFI function names from C/C++/Rust projects
     const test_functions = &[_][]const u8{
-        "rust_function",
-        "cgo_wrapper",
-        "my_popen_wrapper",
-        "_Z3fooi",
-        "malloc",
-        "printf",
-        "Java_com_example_native",
-        "PyObject_Call",
+        // C standard library
+        "malloc",               "free",                                         "calloc",                                          "realloc",
+        "read",                 "write",                                        "open",                                            "close",
+        "system",               "popen",                                        "execve",                                          "fork",
+        "printf",               "sprintf",                                      "fprintf",                                         "snprintf",
+        "strcpy",               "strcat",                                       "strncpy",                                         "strncat",
+        "gets",                 "fgets",                                        "scanf",
+        // C++ mangled names
+                                                  "_Z3fooi",
+        "_ZN6MyClass6methodEv",
+        // Rust FFI functions (mangled)
+        "_ZN10my_crate10factorial17hf1234567890abcdeE", "_ZN10my_crate10process_data17h9876543210fedcbaE",
+        // JNI (Java Native Interface)
+        "Java_com_example_Main_nativeMethod",
+        // Python C API
+        "PyObject_Call",        "PyArg_ParseTuple",
+        // Node.js native add-ons
+                                    "node_module_register",
+        // Custom FFI wrappers
+                                   "rust_wrapper_func",
+        "cgo_callback",         "swift_bridge",                                 "zig_ffi_export",
     };
 
-    const call_count = 1000000;
+    const call_count = 100000;
 
     var stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer stats.deinit(allocator);
+    defer stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
@@ -397,44 +439,75 @@ fn benchmarkFFIBoundary(allocator: std.mem.Allocator) !void {
 fn benchmarkFlowPath(allocator: std.mem.Allocator) !void {
     std.debug.print("--- FlowPath ---\n", .{});
 
-    const step_count = 10000;
+    const step_count = 1000; // More realistic: typical flow path length
+
+    // Real-world data flow function names from security analysis scenarios
+    const flow_functions = &[_][]const u8{
+        // Source functions (where tainted data originates)
+        "read",            "fgets",                   "scanf",         "getenv",
+        "std::io::stdin",  "std::fs::read_to_string", "req.body",      "request.getParameter",
+        // Processing functions (data transformation)
+        "parse_json",      "decode_base64",           "url_decode",    "validate_input",
+        "sanitize_string", "escape_html",             "process_data",  "transform_value",
+        "convert_type",
+        // Wrapper functions (common in FFI scenarios)
+           "rust_wrapper",            "c_binding",     "ffi_bridge",
+        "native_call",     "unsafe_block",            "extern_c_func",
+        // Sink functions (where vulnerabilities occur)
+        "system",
+        "execve",          "popen",                   "eval",          "strcpy",
+        "sprintf",         "strcat",                  "sqlite3_exec",  "mysql_query",
+        "File.write",      "fs.writeFileSync",
+    };
 
     var stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer stats.deinit(allocator);
+    defer stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
-        var path = FlowPath.init();
-        defer path.deinit(allocator);
+        var path = try FlowPath.init(allocator);
+        defer path.deinit();
         var j: u32 = 0;
         while (j < step_count) : (j += 1) {
+            const func_idx = j % flow_functions.len;
+            const ts: TaintState = switch (j % 3) {
+                0 => .source,
+                1 => .tainted,
+                else => .safe,
+            };
             const step = FlowStep{
                 .id = j,
-                .func_name = "test_function",
-                .location = .{ .file = null, .line = j, .column = 0 },
-                .taint_state = .tainted,
-                .confidence = 0.9,
+                .func_name = flow_functions[func_idx],
+                .location = .{ .file = null, .line = j * 10, .column = 5 },
+                .taint_state = ts,
+                .confidence = @as(f32, @floatFromInt(j % 100)) / 100.0,
             };
-            try path.addStep(allocator, step);
+            try path.addStep(step);
         }
     }
 
     resetMemoryStats();
     i = 0;
     while (i < MEASUREMENT_ITERATIONS) : (i += 1) {
-        var path = FlowPath.init();
-        defer path.deinit(allocator);
+        var path = try FlowPath.init(allocator);
+        defer path.deinit();
         const start = std.time.nanoTimestamp();
         var j: u32 = 0;
         while (j < step_count) : (j += 1) {
+            const func_idx = j % flow_functions.len;
+            const ts: TaintState = switch (j % 3) {
+                0 => .source,
+                1 => .tainted,
+                else => .safe,
+            };
             const step = FlowStep{
                 .id = j,
-                .func_name = "test_function",
-                .location = .{ .file = null, .line = j, .column = 0 },
-                .taint_state = .tainted,
-                .confidence = 0.9,
+                .func_name = flow_functions[func_idx],
+                .location = .{ .file = null, .line = j * 10, .column = 5 },
+                .taint_state = ts,
+                .confidence = @as(f32, @floatFromInt(j % 100)) / 100.0,
             };
-            try path.addStep(allocator, step);
+            try path.addStep(step);
         }
         const elapsed = std.time.nanoTimestamp() - start;
         stats.values[i] = elapsed;
@@ -450,21 +523,45 @@ fn benchmarkFlowPath(allocator: std.mem.Allocator) !void {
 fn benchmarkRiskLevel(allocator: std.mem.Allocator) !void {
     std.debug.print("--- RiskLevel ---\n", .{});
 
+    // Real-world dangerous functions from CWE/SANS Top 25
     const test_functions = &[_][]const u8{
-        "system",
-        "execve",
-        "strcpy",
-        "strcat",
-        "sprintf",
-        "popen",
-        "malloc",
-        "printf",
+        // Command injection (CWE-78)
+        "system",              "execve",                  "popen",                    "posix_spawn",
+        "ShellExecute",        "WinExec",
+        // Buffer overflow (CWE-120)
+                        "strcpy",                   "strcat",
+        "sprintf",             "gets",                    "scanf",                    "sscanf",
+        "fscanf",
+        // Format string (CWE-134)
+                     "printf",                  "fprintf",                  "sprintf",
+        "snprintf",            "syslog",                  "setproctitle",
+        // SQL injection related
+                    "sqlite3_exec",
+        "mysql_query",         "mysql_real_query",        "PQexec",                   "SQLPrepare",
+        "SQLExecDirect",
+        // Memory management
+              "malloc",                  "free",                     "calloc",
+        "realloc",             "alloca",                  "VirtualAlloc",
+        // File operations
+                    "fopen",
+        "open",                "creat",                   "remove",                   "unlink",
+        "rmdir",
+        // Network operations
+                      "connect",                 "bind",                     "listen",
+        "accept",              "send",                    "recv",                     "sendto",
+        "recvfrom",
+        // Process operations
+                   "fork",                    "exec",                     "spawn",
+        "CreateProcess",
+        // Rust unsafe functions
+              "std::ptr::read_volatile", "std::ptr::write_volatile", "std::slice::from_raw_parts",
+        "std::mem::transmute",
     };
 
-    const call_count = 1000000;
+    const call_count = 100000;
 
     var stats = try RunStats.init(allocator, MEASUREMENT_ITERATIONS);
-    defer stats.deinit(allocator);
+    defer stats.deinit();
 
     var i: u32 = 0;
     while (i < WARMUP_ITERATIONS) : (i += 1) {
