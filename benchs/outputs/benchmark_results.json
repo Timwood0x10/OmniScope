@@ -1,0 +1,84 @@
+{
+  "timestamp": 1776227020,
+  "benchmark_name": "OmniScope Benchmark Suite",
+  "results": [
+    {
+      "test_name": "FactStore Insert 100000 items",
+      "avg_ms": 6.447,
+      "min_ms": 6.335,
+      "max_ms": 6.642,
+      "stddev_ms": 0.099,
+      "p50_ms": 6.463,
+      "p95_ms": 6.642,
+      "p99_ms": 6.642,
+      "avg_memory_bytes": 5210438,
+      "min_memory_bytes": 5210438,
+      "max_memory_bytes": 5210438
+    },
+    {
+      "test_name": "FactStore Query 100000 items",
+      "avg_ms": 0.541,
+      "min_ms": 0.522,
+      "max_ms": 0.575,
+      "stddev_ms": 0.016,
+      "p50_ms": 0.543,
+      "p95_ms": 0.575,
+      "p99_ms": 0.575,
+      "avg_memory_bytes": 1043168,
+      "min_memory_bytes": 1043168,
+      "max_memory_bytes": 1043168
+    },
+    {
+      "test_name": "RiskLevel classifyRisk 100000 calls",
+      "avg_ms": 87.252,
+      "min_ms": 86.652,
+      "max_ms": 88.240,
+      "stddev_ms": 0.595,
+      "p50_ms": 87.205,
+      "p95_ms": 88.240,
+      "p99_ms": 88.240,
+      "avg_memory_bytes": 0,
+      "min_memory_bytes": 0,
+      "max_memory_bytes": 0
+    },
+    {
+      "test_name": "FactStore Insert Small (1K facts)",
+      "avg_ms": 0.050,
+      "min_ms": 0.050,
+      "max_ms": 0.051,
+      "stddev_ms": 0.000,
+      "p50_ms": 0.050,
+      "p95_ms": 0.051,
+      "p99_ms": 0.051,
+      "avg_memory_bytes": 13312,
+      "min_memory_bytes": 13312,
+      "max_memory_bytes": 13312
+    },
+    {
+      "test_name": "FactStore Insert Medium (10K facts)",
+      "avg_ms": 0.563,
+      "min_ms": 0.545,
+      "max_ms": 0.594,
+      "stddev_ms": 0.013,
+      "p50_ms": 0.562,
+      "p95_ms": 0.594,
+      "p99_ms": 0.594,
+      "avg_memory_bytes": 324964,
+      "min_memory_bytes": 324964,
+      "max_memory_bytes": 324964
+    },
+    {
+      "test_name": "FactStore Insert Large (100K facts)",
+      "avg_ms": 5.546,
+      "min_ms": 5.514,
+      "max_ms": 5.676,
+      "stddev_ms": 0.048,
+      "p50_ms": 5.535,
+      "p95_ms": 5.676,
+      "p99_ms": 5.676,
+      "avg_memory_bytes": 5210438,
+      "min_memory_bytes": 5210438,
+      "max_memory_bytes": 5210438
+    }
+  ]
+}

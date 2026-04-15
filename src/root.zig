@@ -60,6 +60,9 @@ pub const fact = struct {
     pub const QueryEngine = @import("fact/query.zig").QueryEngine;
 };
 
+// Export tracking utilities
+pub const tracking = @import("tracking/mod.zig");
+
 // Export pipeline system
 pub const pipeline = struct {
     pub const Stage = @import("pipeline/stage.zig").Stage;

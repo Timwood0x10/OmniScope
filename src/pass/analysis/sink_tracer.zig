@@ -176,15 +176,43 @@ pub const SinkTracerPass = struct {
     }
 };
 
-/// Classify risk level based on sink function
+/// Classify risk level based on sink function.
+///
+/// Simple and fast classification using minimal string operations.
+/// Optimized for performance with early exit on critical patterns.
+///
+/// Parameters:
+///   - sink_name: Name of the sink function to classify
+///
+/// Returns:
+///   - RiskLevel classification for the function
 pub fn classifyRiskLevel(sink_name: []const u8) RiskLevel {
+    // Critical: command injection (CWE-78)
     if (std.mem.indexOf(u8, sink_name, "system") != null or
         std.mem.indexOf(u8, sink_name, "exec") != null or
         std.mem.indexOf(u8, sink_name, "popen") != null)
     {
         return .critical;
     }
-    return .high;
+
+    // High: buffer overflow (CWE-120)
+    if (std.mem.indexOf(u8, sink_name, "strcpy") != null or
+        std.mem.indexOf(u8, sink_name, "strcat") != null or
+        std.mem.indexOf(u8, sink_name, "sprintf") != null or
+        std.mem.indexOf(u8, sink_name, "gets") != null)
+    {
+        return .high;
+    }
+
+    // High: format string (CWE-134)
+    if (std.mem.indexOf(u8, sink_name, "printf") != null or
+        std.mem.indexOf(u8, sink_name, "fprintf") != null or
+        std.mem.indexOf(u8, sink_name, "snprintf") != null)
+    {
+        return .high;
+    }
+
+    return .low;
 }
 
 /// Check if a function is a dangerous sink

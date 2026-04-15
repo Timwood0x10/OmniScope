@@ -125,6 +125,28 @@ pub fn build(b: *std.Build) void {
     const bench_cmd = b.addRunArtifact(bench_exe);
     bench_step.dependOn(&bench_cmd.step);
 
+    // Benchmark data compilation step
+    const bench_compile_step = b.step("bench-compile", "Compile real code for benchmarking");
+
+    // Create output directory
+    const mkdir_cmd = b.addSystemCommand(&[_][]const u8{ "mkdir", "-p", "zig-out/bench_data" });
+    bench_compile_step.dependOn(&mkdir_cmd.step);
+
+    // Compile sample_analysis.c to LLVM IR
+    const compile_sample_analysis = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/sample_analysis.ll", "examples/sample_analysis.c" });
+    compile_sample_analysis.step.dependOn(&mkdir_cmd.step);
+    bench_compile_step.dependOn(&compile_sample_analysis.step);
+
+    // Compile logic_bugs.c to LLVM IR
+    const compile_logic_bugs = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/logic_bugs.ll", "examples/logic_bugs.c" });
+    compile_logic_bugs.step.dependOn(&mkdir_cmd.step);
+    bench_compile_step.dependOn(&compile_logic_bugs.step);
+
+    // Compile ntt.c to LLVM IR
+    const compile_ntt = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/ntt.ll", "examples/ntt.c" });
+    compile_ntt.step.dependOn(&mkdir_cmd.step);
+    bench_compile_step.dependOn(&compile_ntt.step);
+
     // Run step
     const run_step = b.step("run", "Run the application");
     const run_cmd = b.addRunArtifact(exe);

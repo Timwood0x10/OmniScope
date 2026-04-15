@@ -72,7 +72,7 @@ pub const FlowPath = struct {
 
     /// Deinitialize the flow path
     pub fn deinit(self: *FlowPath) void {
-        self.steps.deinit();
+        self.steps.deinit(self.allocator);
     }
 
     /// Add a step to the path
