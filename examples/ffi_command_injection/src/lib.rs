@@ -12,21 +12,18 @@
 // Real-world parallel: Solana, Aptos, Sui validators that call
 // OpenSSL/BoringSSL via FFI for cryptographic operations.
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::c_char;
-use std::process::Command;
 
 // Import C crypto library functions
 #[link(name = "crypto_lib", kind = "static")]
 #[link(name = "m")]
 extern "C" {
-    fn crypto_init() -> i32;
     fn register_transaction(tx_hash: *const c_char, sender: *const c_char, 
                            receiver: *const c_char, amount: i32) -> i32;
     fn verify_transaction(tx_hash: *const c_char) -> i32;
     fn debug_dump_transaction(tx_hash: *const c_char) -> i32;
     fn batch_verify(hashes: *const *const c_char, count: i32) -> i32;
-    fn crypto_cleanup();
 }
 
 /// Transaction hash format validator

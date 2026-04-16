@@ -105,6 +105,7 @@ pub const cross_lang = struct {
     pub const TaintContext = @import("pass/analysis/taint_state.zig").TaintContext;
 
     pub const FFIDetector = @import("pass/analysis/ffi_detector.zig").FFIDetector;
+    pub const getCWEID = @import("pass/analysis/ffi_detector.zig").getCWEID;
     pub const FFIVulnerability = @import("pass/analysis/ffi_detector.zig").FFIVulnerability;
     pub const FFIVulnerabilityType = @import("pass/analysis/ffi_detector.zig").FFIVulnerabilityType;
     pub const FFISeverity = @import("pass/analysis/ffi_detector.zig").FFISeverity;
@@ -126,6 +127,14 @@ pub const cross_lang = struct {
 
     pub const classifyRiskLevel = @import("pass/analysis/sink_tracer.zig").classifyRiskLevel;
     pub const isDangerousSink = @import("pass/analysis/sink_tracer.zig").isDangerousSink;
+};
+
+// Export output system
+pub const output = struct {
+    pub const Formatter = @import("output/formatter.zig").Formatter;
+    pub const OutputFormat = @import("output/formatter.zig").OutputFormat;
+    pub const AnalysisResult = @import("output/formatter.zig").AnalysisResult;
+    pub const Vulnerability = @import("output/formatter.zig").Vulnerability;
 };
 
 // Simple test to verify test system works

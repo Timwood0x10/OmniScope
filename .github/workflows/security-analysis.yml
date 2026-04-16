@@ -1,0 +1,85 @@
+name: Security Analysis
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  omniscope-analysis:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build project
+        run: |
+          cd ${{ github.workspace }}
+          mkdir -p build
+          # Add build steps for your project
+          # For example: cargo build --release
+          # Or: cmake -B build && cmake --build build
+
+      - name: Install OmniScope
+        run: |
+          # Option 1: If OmniScope is released as a binary
+          curl -sL https://github.com/omniscope/omniscope/releases/latest/download/omniscope-linux-x86_64.tar.gz | tar xz
+
+          # Option 2: Build from source
+          # git clone https://github.com/omniscope/omniscope.git
+          # cd omniscope && zig build -Doptimize=ReleaseSafe
+
+      - name: Run security analysis
+        run: |
+          ./omniscope --output-format sarif --output-file results.sarif \
+            build/*.bc build/**/*.bc 2>/dev/null || true
+
+          # Alternative: Run with JSON output
+          # ./omniscope --output-format json --output-file results.json \
+          #   build/*.bc build/**/*.bc 2>/dev/null || true
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: omniscope/ffi-analysis
+
+      - name: Check for vulnerabilities
+        if: always()
+        run: |
+          if [ -f results.sarif ]; then
+            VULN_COUNT=$(grep -c '"ruleId"' results.sarif || echo "0")
+            echo "Found $VULN_COUNT potential vulnerabilities"
+            if [ "$VULN_COUNT" -gt 0 ]; then
+              echo "::warning::Security vulnerabilities detected!"
+              # Exit with error if you want to fail the build
+              # exit 1
+            fi
+          fi
+
+  # Optional: Run on specific file patterns
+  analyze-ffi:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, '[ci analyze]')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: Zigworld/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+
+      - name: Build and analyze
+        run: |
+          zig build
+          ./zig-out/bin/OmniSope --output-format sarif --output-file analysis.sarif \
+            path/to/rust_lib.bc path/to/c_lib.bc
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: analysis.sarif
