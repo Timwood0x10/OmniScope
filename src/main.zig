@@ -127,33 +127,51 @@ fn showHelp() void {
     , .{});
 }
 
-/// Run analysis on single file
+/// Run analysis on single file.
+///
+/// This function loads LLVM IR from a file and performs basic analysis.
+/// It uses IRLoader directly for simple file analysis without the complexity
+/// of the full Pipeline system.
+///
+/// Arguments:
+///   - allocator: Memory allocator for resource management
+///   - path: Path to the LLVM IR file (.bc or .ll)
+///
+/// Errors:
+///   - FileNotFound: IR file does not exist
+///   - InvalidIR: IR file is corrupted or invalid
+///   - OutOfMemory: Memory allocation failed
 fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
-    std.debug.print("=== OmniScope Cross-Language Data Flow Analysis ===\n\n", .{});
+    std.log.info("=== OmniScope IR Analysis ===\n", .{});
+    std.log.info("File: {s}\n\n", .{path});
 
-    var pipeline = Pipeline.init(allocator);
-    defer pipeline.deinit();
-
-    std.debug.print("[*] Loading IR: {s}\n", .{path});
-    pipeline.loadIR(path) catch |err| {
-        std.debug.print("[!] Failed to load IR: {}\n", .{err});
+    // Load IR file using IRLoader
+    var loader = IRLoader.loadFile(allocator, path) catch |err| {
+        std.log.err("Failed to load IR file: {s}\n", .{@errorName(err)});
         return err;
     };
+    defer loader.deinit();
 
-    if (pipeline.getIRLoader()) |l| {
-        std.debug.print("[*] IR loaded: {d} functions\n\n", .{l.getFunctionCount()});
-    }
+    // Get function count
+    const func_count = loader.getFunctionCount();
+    std.log.info("Loaded: {d} functions\n\n", .{func_count});
 
-    std.debug.print("[*] Registering analysis passes...\n", .{});
-    try pipeline.registerPass(call_graph.CallGraphPass);
+    // Basic analysis: iterate through functions
+    var analysis_count: usize = 0;
+    try loader.iterateFunctions(&analysis_count, countFunction);
 
-    std.debug.print("[*] Running analysis...\n\n", .{});
-    _ = pipeline.runStaticAnalysis() catch |err| {
-        std.debug.print("[!] Analysis failed: {}\n", .{err});
-        return err;
-    };
+    std.log.info("Analysis complete\n", .{});
+    std.log.info("Functions processed: {d}\n", .{analysis_count});
+}
 
-    printResults(&pipeline);
+/// Callback function to count functions during iteration.
+///
+/// Arguments:
+///   - func_ref: Reference to the function
+///   - count: Pointer to counter (user context)
+fn countFunction(func_ref: FunctionRef, count: *usize) !void {
+    _ = func_ref;
+    count.* += 1;
 }
 
 /// Run analysis on multiple files (FFI mode)

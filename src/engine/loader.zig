@@ -15,7 +15,7 @@ const llvm_safe = @import("../ir/llvm_safe.zig");
 const ContextRef = @import("../ir/view.zig").ContextRef;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FunctionRef = @import("../ir/view.zig").FunctionRef;
-const log = @import("../log/log.zig");
+const log = std.log;
 
 /// IR Loader error set
 pub const LoaderError = error{
@@ -42,7 +42,7 @@ pub const IRLoader = struct {
     /// Load a .bc or .ll file from disk
     pub fn loadFile(allocator: Allocator, path: []const u8) LoaderError!IRLoader {
         var safe_loader = llvm_safe.IRLoader.init(allocator) catch |err| {
-            log.warn("loader", "Failed to create safe loader: {}", .{err});
+            log.warn("Failed to create safe loader: {}", .{err});
             return switch (err) {
                 llvm_safe.Error.OutOfMemory => error.OutOfMemory,
                 llvm_safe.Error.ContextCreationFailed => error.LLVMContextCreationFailed,
@@ -51,10 +51,10 @@ pub const IRLoader = struct {
         };
         errdefer safe_loader.deinit();
 
-        log.debug("loader", "Loading file: {s}", .{path});
+        log.debug("Loading file: {s}", .{path});
 
         _ = safe_loader.loadFile(path) catch |err| {
-            log.warn("loader", "Failed to load file: {}", .{err});
+            log.warn("Failed to load file: {}", .{err});
             return switch (err) {
                 llvm_safe.Error.FileNotFound => error.FileNotFound,
                 llvm_safe.Error.IRLoadFailed => error.InvalidIR,

@@ -32,7 +32,7 @@ pub const Pipeline = struct {
     pass_manager: PassManager,
     instrumentation_plan: InstrumentationPlan,
     diagnostic_aggregator: DiagnosticAggregator,
-    ir_loader: ?*IRLoader,
+    ir_loader: ?IRLoader,
     runtime_stage: ?RuntimeStage,
     merge_engine: MergeEngine,
     plugin_loader: ?*PluginLoader,
@@ -60,9 +60,8 @@ pub const Pipeline = struct {
         self.pass_manager.deinit();
         self.instrumentation_plan.deinit();
         self.diagnostic_aggregator.deinit();
-        if (self.ir_loader) |loader| {
+        if (self.ir_loader) |*loader| {
             loader.deinit();
-            self.allocator.destroy(loader);
         }
         if (self.plugin_loader) |loader| {
             loader.deinit();
@@ -73,17 +72,13 @@ pub const Pipeline = struct {
 
     /// Load IR from file
     pub fn loadIR(self: *Pipeline, path: []const u8) !void {
-        // Create IR loader
-        const loader = try IRLoader.loadFile(self.allocator, path);
-
         // Clean up previous loader if exists
-        if (self.ir_loader) |old_loader| {
-            old_loader.deinit();
-            self.allocator.destroy(old_loader);
+        if (self.ir_loader) |*loader| {
+            loader.deinit();
         }
 
-        self.ir_loader = try self.allocator.create(IRLoader);
-        self.ir_loader.?.* = loader;
+        // Create IR loader
+        self.ir_loader = try IRLoader.loadFile(self.allocator, path);
     }
 
     /// Run the full analysis pipeline
@@ -94,7 +89,7 @@ pub const Pipeline = struct {
         // Create context with module
         var ctx = PassContext{
             .allocator = self.allocator,
-            .module = if (self.ir_loader) |loader| loader.getModule() else null,
+            .module = if (self.ir_loader) |*loader| loader.getModule() else null,
             .fact_store = &self.fact_store,
             .query_engine = &self.query_engine,
             .next_id = std.atomic.Value(u32).init(1),
@@ -196,7 +191,7 @@ pub const Pipeline = struct {
             .allocator = self.allocator,
             .fact_store = &self.fact_store,
             .query_engine = &self.query_engine,
-            .module = if (self.ir_loader) |loader| loader.getModule() else null,
+            .module = if (self.ir_loader) |*loader| loader.getModule() else null,
             .instrumentation_plan = &self.instrumentation_plan,
         };
 
@@ -280,7 +275,7 @@ pub const Pipeline = struct {
 
     /// Get the IR loader
     pub fn getIRLoader(self: *Pipeline) ?*IRLoader {
-        if (self.ir_loader) |loader| {
+        if (self.ir_loader) |*loader| {
             return loader;
         }
         return null;
