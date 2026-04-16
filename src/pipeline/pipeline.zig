@@ -14,9 +14,6 @@ const PassManager = @import("../pass/manager.zig").PassManager;
 const InstrumentationPlan = @import("../pass/instrumentation/planner.zig").InstrumentationPlan;
 const DiagnosticAggregator = @import("../diag/aggregator.zig").DiagnosticAggregator;
 
-const ModuleRef = @import("../ir/view.zig").ModuleRef;
-const IRLoader = @import("../engine/loader.zig").IRLoader;
-
 const RuntimeStage = @import("runtime_stage.zig").RuntimeStage;
 const RuntimeStageConfig = @import("runtime_stage.zig").RuntimeStageConfig;
 const MergeEngine = @import("../runtime/merge.zig").MergeEngine;
@@ -32,10 +29,9 @@ pub const Pipeline = struct {
     pass_manager: PassManager,
     instrumentation_plan: InstrumentationPlan,
     diagnostic_aggregator: DiagnosticAggregator,
-    ir_loader: ?IRLoader,
     runtime_stage: ?RuntimeStage,
     merge_engine: MergeEngine,
-    plugin_loader: ?*PluginLoader,
+    plugin_loader: ?PluginLoader,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) Pipeline {
@@ -47,7 +43,6 @@ pub const Pipeline = struct {
             .pass_manager = PassManager.init(allocator),
             .instrumentation_plan = InstrumentationPlan.init(allocator),
             .diagnostic_aggregator = DiagnosticAggregator.init(allocator),
-            .ir_loader = null,
             .runtime_stage = null,
             .merge_engine = MergeEngine.init(allocator, &fact_store),
             .plugin_loader = null,
@@ -60,25 +55,13 @@ pub const Pipeline = struct {
         self.pass_manager.deinit();
         self.instrumentation_plan.deinit();
         self.diagnostic_aggregator.deinit();
-        if (self.ir_loader) |*loader| {
+        if (self.runtime_stage) |*stage| {
+            stage.deinit();
+        }
+        if (self.plugin_loader) |*loader| {
             loader.deinit();
         }
-        if (self.plugin_loader) |loader| {
-            loader.deinit();
-            self.allocator.destroy(loader);
-        }
-        // RuntimeStage and MergeEngine are stack-allocated or managed separately
-    }
-
-    /// Load IR from file
-    pub fn loadIR(self: *Pipeline, path: []const u8) !void {
-        // Clean up previous loader if exists
-        if (self.ir_loader) |*loader| {
-            loader.deinit();
-        }
-
-        // Create IR loader
-        self.ir_loader = try IRLoader.loadFile(self.allocator, path);
+        // MergeEngine is stack-allocated and will be cleaned up automatically
     }
 
     /// Run the full analysis pipeline
@@ -87,9 +70,10 @@ pub const Pipeline = struct {
         self.query_engine = QueryEngine.init(&self.fact_store);
 
         // Create context with module
+        // Note: Pipeline no longer handles IR loading, module must be provided separately
         var ctx = PassContext{
             .allocator = self.allocator,
-            .module = if (self.ir_loader) |*loader| loader.getModule() else null,
+            .module = null, // Module must be set externally if needed
             .fact_store = &self.fact_store,
             .query_engine = &self.query_engine,
             .next_id = std.atomic.Value(u32).init(1),
@@ -141,36 +125,6 @@ pub const Pipeline = struct {
         };
     }
 
-    /// Run full pipeline (static analysis + instrumentation)
-    pub fn runFullPipeline(self: *Pipeline, ir_path: []const u8) !FullPipelineResult {
-        const pipeline_start = std.time.nanoTimestamp();
-
-        // 1. Load IR
-        try self.loadIR(ir_path);
-
-        // 2. Run static analysis
-        const static_result = try self.runStaticAnalysis();
-
-        // 3. Run instrumentation
-        const instrumentation_result = try self.runInstrumentation();
-
-        // 4. Run runtime stage (if instrumentation was done)
-        const runtime_result = try self.runRuntimeStage();
-
-        // 5. Run merge stage (if runtime data is available)
-        const merge_result = try self.runMergeStage();
-
-        const pipeline_end = std.time.nanoTimestamp();
-
-        return FullPipelineResult{
-            .static_result = static_result,
-            .instrumentation_result = instrumentation_result,
-            .runtime_result = runtime_result,
-            .merge_result = merge_result,
-            .total_time_ns = @intCast(pipeline_end - pipeline_start),
-        };
-    }
-
     /// Run runtime stage to collect events
     pub fn runRuntimeStage(self: *Pipeline) !?PipelineResult {
         // Only run runtime stage if instrumentation was done
@@ -190,8 +144,8 @@ pub const Pipeline = struct {
         const stage_ctx = StageContext{
             .allocator = self.allocator,
             .fact_store = &self.fact_store,
-            .query_engine = &self.query_engine,
             .module = if (self.ir_loader) |*loader| loader.getModule() else null,
+            .module = null, // Module must be provided externally when using runtime stage
             .instrumentation_plan = &self.instrumentation_plan,
         };
 
@@ -273,20 +227,10 @@ pub const Pipeline = struct {
         return &self.diagnostic_aggregator;
     }
 
-    /// Get the IR loader
-    pub fn getIRLoader(self: *Pipeline) ?*IRLoader {
-        if (self.ir_loader) |*loader| {
-            return loader;
-        }
-        return null;
-    }
-
     /// Initialize plugin system
     pub fn initPluginSystem(self: *Pipeline) !void {
         if (self.plugin_loader == null) {
-            const loader = try self.allocator.create(PluginLoader);
-            loader.* = PluginLoader.init(self.allocator);
-            self.plugin_loader = loader;
+            self.plugin_loader = PluginLoader.init(self.allocator);
         }
     }
 
