@@ -237,6 +237,8 @@ test "PassManager - run passes" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
 
     const TestPass = struct {
         pub const name = "test-pass";
@@ -255,6 +257,7 @@ test "PassManager - run passes" {
         .module = null,
         .fact_store = &fact_store,
         .query_engine = &query_engine,
+        .data_flow_graph = &data_flow_graph,
         .next_id = std.atomic.Value(u32).init(1),
     };
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };

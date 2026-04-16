@@ -421,8 +421,6 @@ pub const FFIDetector = struct {
 
     /// Check if function calls any dangerous function
     fn callsDangerousFunction(self: *FFIDetector, func: FunctionInfo, dangerous_funcs: []const []const u8) !?[]const u8 {
-        _ = self;
-
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (bb != null) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -439,7 +437,8 @@ pub const FFIDetector = struct {
 
                             for (dangerous_funcs) |dangerous| {
                                 if (std.mem.eql(u8, func_name_slice, dangerous)) {
-                                    return func_name_slice;
+                                    // Copy the function name to avoid dangling pointer
+                                    return self.allocator.dupe(u8, func_name_slice);
                                 }
                             }
                         }

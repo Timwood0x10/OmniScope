@@ -82,3 +82,54 @@ int c_parse_config(const char* config_data, char* parsed_result, int result_size
 
     return 0;
 }
+
+// Format string vulnerability
+// VULNERABILITY: Format string injection
+int c_format_string(const char* user_data) {
+    printf("[C] c_format_string() called\n");
+    
+    // VULNERABILITY: User input used as format string
+    printf(user_data);  // Format string vulnerability!
+    
+    return 0;
+}
+
+// Integer overflow
+// VULNERABILITY: Integer overflow in size calculation
+void c_integer_overflow(int count, int element_size) {
+    printf("[C] c_integer_overflow() called\n");
+    
+    // VULNERABILITY: No overflow check before multiplication
+    int total_size = count * element_size;  // Integer overflow!
+    char* buffer = malloc(total_size);
+    
+    if (buffer) {
+        free(buffer);
+    }
+}
+
+// Double free
+// VULNERABILITY: Potential double free
+void c_double_free(char* ptr) {
+    printf("[C] c_double_free() called\n");
+    
+    if (ptr) {
+        free(ptr);
+        // In some conditions, ptr might be freed again
+        // This is a simplified demonstration
+    }
+}
+
+// Use after free
+// VULNERABILITY: Use after free
+void c_use_after_free() {
+    printf("[C] c_use_after_free() called\n");
+    
+    char* ptr = malloc(100);
+    strcpy(ptr, "sensitive data");
+    
+    free(ptr);
+    
+    // VULNERABILITY: Using freed pointer
+    printf("[C] Data: %s\n", ptr);  // Use after free!
+}

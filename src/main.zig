@@ -118,12 +118,36 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
     const func_count = loader.getFunctionCount();
     std.log.info("Loaded: {d} functions\n\n", .{func_count});
 
-    // Basic analysis: iterate through functions
-    var analysis_count: usize = 0;
-    try loader.iterateFunctions(&analysis_count, countFunction);
+    // Initialize Pipeline with IR module
+    var pipeline = Pipeline.init(allocator);
+    defer pipeline.deinit();
+
+    // Set the module for analysis
+    if (loader.getModule()) |module_ref| {
+        pipeline.setModule(module_ref);
+    }
+
+    // Register FFI boundary detection pass
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+
+    // Register return value check pass
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+
+    // Register FFI unsafe detection pass
+    try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+
+    // Run static analysis through Pipeline
+    const result = try pipeline.runStaticAnalysis();
 
     std.log.info("Analysis complete\n", .{});
-    std.log.info("Functions processed: {d}\n", .{analysis_count});
+    std.log.info("Functions processed: {d}\n", .{func_count});
+    std.log.info("Facts generated: {d}\n", .{result.fact_count});
+
+    // Print issues detected by Pipeline
+    const issues = pipeline.getIssues();
+    if (issues.len > 0) {
+        std.log.info("Issues detected: {d}\n", .{issues.len});
+    }
 }
 
 /// Callback function to count functions during iteration.

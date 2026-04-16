@@ -5,8 +5,27 @@
 //! and produces unified reports.
 
 const std = @import("std");
-const MergedEvent = @import("../runtime/merge.zig").MergedEvent;
-const Anomaly = @import("../runtime/merge.zig").Anomaly;
+
+/// Simplified event representation (temporary until runtime/merge.zig is implemented)
+pub const MergedEvent = struct {
+    tag: u32,
+    tid: u32,
+    loc: u32,
+    arg: u32,
+    timestamp: u64,
+    confidence: f32,
+
+    pub fn isHighConfidence(self: MergedEvent) bool {
+        return self.confidence >= 0.7;
+    }
+};
+
+/// Simplified anomaly representation
+pub const Anomaly = struct {
+    loc: u32,
+    description: []const u8,
+    confidence: f32,
+};
 
 /// Free a diagnostics slice returned by getBySeverity or getByKind
 ///

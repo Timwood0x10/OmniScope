@@ -9,6 +9,7 @@ const Allocator = std.mem.Allocator;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
+const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -24,12 +25,14 @@ pub const PassKind = enum {
 /// - Access to IR module
 /// - Access to fact store for reading/writing facts
 /// - Access to query engine for querying facts
+/// - Access to data flow graph for high-level data flow operations
 /// - ID allocation for unique identifiers
 pub const PassContext = struct {
     allocator: Allocator,
     module: ?ModuleRef,
     fact_store: *FactStore,
     query_engine: *QueryEngine,
+    data_flow_graph: *DataFlowGraph,
     next_id: std.atomic.Value(u32),
 
     /// Create a new pass context
@@ -38,12 +41,14 @@ pub const PassContext = struct {
         module: ?ModuleRef,
         fact_store: *FactStore,
         query_engine: *QueryEngine,
+        data_flow_graph: *DataFlowGraph,
     ) PassContext {
         return .{
             .allocator = allocator,
             .module = module,
             .fact_store = fact_store,
             .query_engine = query_engine,
+            .data_flow_graph = data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1), // Start from 1 (0 is reserved)
         };
     }
@@ -70,6 +75,81 @@ pub const PassContext = struct {
     ///   - true if a module is loaded, false otherwise
     pub fn hasModule(self: *const PassContext) bool {
         return self.module != null;
+    }
+
+    /// Get data flow graph
+    ///
+    /// Returns:
+    ///   - Reference to the data flow graph
+    pub fn getDataFlowGraph(self: *const PassContext) *DataFlowGraph {
+        return self.data_flow_graph;
+    }
+
+    /// Add a node to data flow graph
+    ///
+    /// Parameters:
+    ///   - node: The node to add
+    ///
+    /// Returns:
+    ///   - error if operation fails
+    pub fn addNode(self: *PassContext, node: anytype) !void {
+        try self.data_flow_graph.addNode(node);
+    }
+
+    /// Add an edge to data flow graph
+    ///
+    /// Parameters:
+    ///   - edge: The edge to add
+    ///
+    /// Returns:
+    ///   - error if operation fails
+    pub fn addEdge(self: *PassContext, edge: anytype) !void {
+        try self.data_flow_graph.addEdge(edge);
+    }
+
+    /// Add an FFI boundary to data flow graph
+    ///
+    /// Parameters:
+    ///   - boundary: The FFI boundary to add
+    ///
+    /// Returns:
+    ///   - error if operation fails
+    pub fn addFFIBoundary(self: *PassContext, boundary: anytype) !void {
+        try self.data_flow_graph.addFFIBoundary(boundary);
+    }
+
+    /// Add an issue to data flow graph
+    ///
+    /// Parameters:
+    ///   - issue: The issue to add
+    ///
+    /// Returns:
+    ///   - error if operation fails
+    pub fn addIssue(self: *PassContext, issue: anytype) !void {
+        try self.data_flow_graph.addIssue(issue);
+    }
+
+    /// Mark a node as tainted
+    ///
+    /// Parameters:
+    ///   - node_id: Node ID to mark as tainted
+    ///   - source_id: Optional source node ID
+    ///
+    /// Returns:
+    ///   - error if operation fails
+    pub fn markTainted(self: *PassContext, node_id: u32, source_id: ?u32) !void {
+        try self.data_flow_graph.markTainted(node_id, source_id);
+    }
+
+    /// Check if a node is tainted
+    ///
+    /// Parameters:
+    ///   - node_id: Node ID to check
+    ///
+    /// Returns:
+    ///   - true if node is tainted
+    pub fn isTainted(self: *const PassContext, node_id: u32) bool {
+        return self.data_flow_graph.isTainted(node_id);
     }
 };
 
@@ -136,12 +216,15 @@ test "PassContext - init and deinit" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
 
     const ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
+        &data_flow_graph,
     );
 
     try std.testing.expect(!ctx.hasModule());
@@ -152,12 +235,15 @@ test "PassContext - getNextId" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
 
     var ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
+        &data_flow_graph,
     );
 
     const id1 = ctx.getNextId();
@@ -174,12 +260,15 @@ test "PassContext - setModule and hasModule" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
 
     var ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
+        &data_flow_graph,
     );
 
     try std.testing.expect(!ctx.hasModule());
@@ -195,12 +284,15 @@ test "PassContext - access to components" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
 
     const ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
+        &data_flow_graph,
     );
 
     // Verify access to components

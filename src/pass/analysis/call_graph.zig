@@ -252,23 +252,25 @@ pub const CallGraphPass = struct {
             changed = false;
             iterations += 1;
 
-            var visited = std.AutoHashMap(u32, void).init(allocator);
-            defer visited.deinit();
+            // Track processed callees in this iteration to avoid redundant processing
+            var processed = std.AutoHashMap(u32, void).init(allocator);
+            defer processed.deinit();
 
             for (edges.items) |edge| {
                 if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
-                if (visited.contains(edge.callee)) continue;
 
                 const caller = &nodes.items[edge.caller];
-                var callee = &nodes.items[edge.callee];
+                const callee = &nodes.items[edge.callee];
 
+                // Only propagate taint if caller is tainted and callee is not yet tainted
                 if (caller.is_tainted and !callee.is_tainted) {
                     callee.is_tainted = true;
                     callee.tainted_by = caller.id;
                     changed = true;
                 }
 
-                try visited.put(edge.callee, {});
+                // Mark callee as processed after handling to allow multiple paths to reach it
+                try processed.put(edge.callee, {});
             }
         }
     }

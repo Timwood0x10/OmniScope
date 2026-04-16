@@ -28,19 +28,29 @@ pub const fact = struct {
     pub const QueryEngine = @import("fact/query.zig").QueryEngine;
 };
 
+// Export diag system
+pub const diag = struct {
+    pub const Issue = @import("diag/issue.zig").Issue;
+    pub const IssueKind = @import("diag/issue.zig").IssueKind;
+    pub const Severity = @import("diag/issue.zig").Severity;
+    pub const Location = @import("diag/issue.zig").Location;
+    pub const FFIBoundary = @import("diag/issue.zig").FFIBoundary;
+};
+
+// Export dataflow system
+pub const dataflow = struct {
+    pub const DataFlowGraph = @import("dataflow/graph.zig").DataFlowGraph;
+    pub const DataNode = @import("dataflow/node.zig").DataNode;
+    pub const DataEdge = @import("dataflow/edge.zig").DataEdge;
+    pub const ValueType = @import("dataflow/node.zig").ValueType;
+    pub const EdgeType = @import("dataflow/edge.zig").EdgeType;
+};
+
 // Export tracking utilities
 pub const tracking = @import("tracking/mod.zig");
 
 // Export pipeline system
 pub const pipeline = struct {
-    pub const Stage = @import("pipeline/stage.zig").Stage;
-    pub const StageContext = @import("pipeline/stage.zig").StageContext;
-    pub const StageResult = @import("pipeline/stage.zig").StageResult;
-    pub const StageKind = @import("pipeline/stage.zig").StageKind;
-    pub const StaticStage = @import("pipeline/static_stage.zig").StaticStage;
-    pub const InstrumentationStage = @import("pipeline/instrumentation_stage.zig").InstrumentationStage;
-    pub const RuntimeStage = @import("pipeline/runtime_stage.zig").RuntimeStage;
-    pub const MergeStage = @import("pipeline/merge_stage.zig").MergeStage;
     pub const Pipeline = @import("pipeline/pipeline.zig").Pipeline;
     pub const PipelineResult = @import("pipeline/pipeline.zig").PipelineResult;
 };
@@ -94,6 +104,13 @@ pub const cross_lang = struct {
 
     pub const classifyRiskLevel = @import("pass/analysis/sink_tracer.zig").classifyRiskLevel;
     pub const isDangerousSink = @import("pass/analysis/sink_tracer.zig").isDangerousSink;
+
+    pub const ReturnCheckPass = @import("pass/analysis/issue/return_check.zig").ReturnCheckPass;
+    pub const FFIUnsafePass = @import("pass/analysis/issue/ffi_unsafe.zig").FFIUnsafePass;
+    pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;
+    pub const FFIAnalysisResult = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisResult;
+    pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
+    pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
 };
 
 // Export output system
@@ -120,14 +137,8 @@ test "root.zig - module import test" {
     _ = fact.FactKind;
     _ = fact.FactStore;
     _ = fact.QueryEngine;
-    _ = pipeline.Stage;
-    _ = pipeline.StageContext;
-    _ = pipeline.StageResult;
-    _ = pipeline.StageKind;
-    _ = pipeline.StaticStage;
-    _ = pipeline.InstrumentationStage;
-    _ = pipeline.RuntimeStage;
-    _ = pipeline.MergeStage;
+    _ = pipeline.Pipeline;
+    _ = pipeline.PipelineResult;
     _ = engine.IRLoader;
     _ = engine.LoaderError;
 }

@@ -168,7 +168,7 @@ pub const AliasPass = struct {
         if (type_kind != .Pointer) return;
 
         // Get or create type ID
-        const type_id = try self.getTypeId(type);
+        const type_id = try self.getTypeId(inst_type);
 
         // Get instruction ID
         const inst_id = self.ctx.getNextId();

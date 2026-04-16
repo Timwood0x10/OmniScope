@@ -268,9 +268,30 @@ pub const ReportGenerator = struct {
     }
 
     fn formatTimestamp(self: *ReportGenerator, timestamp: i64) []const u8 {
-        _ = self;
-        _ = timestamp;
-        return "2024-01-15 10:30:00";
+        // Convert Unix timestamp to readable format
+        // timestamp is in seconds since Unix epoch
+        const epoch = std.time.epoch.Epoch{ .seconds = @intCast(timestamp) };
+        const year_day = epoch.getYearDay();
+        const month_day = year_day.calculateMonthDay();
+
+        const hours_minutes = epoch.getDayMinutes();
+        const seconds = epoch.getDaySeconds() % 60;
+
+        // Format: YYYY-MM-DD HH:MM:SS
+        const formatted = std.fmt.allocPrint(
+            self.allocator,
+            "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}",
+            .{
+                year_day.year,
+                month_day.month.numeric(),
+                month_day.day_index + 1,
+                hours_minutes.hours,
+                hours_minutes.minutes,
+                seconds,
+            },
+        ) catch "1970-01-01 00:00:00";
+
+        return formatted;
     }
 
     fn confidenceLabel(self: *ReportGenerator, confidence: f32) []const u8 {

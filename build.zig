@@ -260,26 +260,6 @@ pub fn build(b: *std.Build) void {
     run_e2e_tests.step.dependOn(b.getInstallStep());
     e2e_test_step.dependOn(&run_e2e_tests.step);
 
-    // Build runtime library as a static library
-    const rt_lib = b.addLibrary(.{
-        .name = "omniscope_rt",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/runtime/rt_lib/probes.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    if (enable_lto) {
-        rt_lib.want_lto = true;
-    }
-
-    b.installArtifact(rt_lib);
-
-    // Step to build runtime library
-    const build_rt_step = b.step("rt", "Build runtime library");
-    build_rt_step.dependOn(&b.addInstallArtifact(rt_lib, .{}).step);
-
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{
