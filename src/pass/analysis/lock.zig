@@ -46,17 +46,33 @@ pub const LockPass = struct {
     next_lock_id: u32,
 
     /// Create a new lock analysis pass
-    pub fn init(store: *FactStore) LockPass {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) LockPass {
         return .{
             .ctx = undefined,
             .diag = undefined,
             .store = store,
             .query = QueryEngine.init(store),
-            .lock_ops = std.ArrayList(LockOperation).init(std.heap.page_allocator),
-            .lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.heap.page_allocator),
+            .lock_ops = std.ArrayList(LockOperation).init(allocator),
+            .lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator),
             .func_id = 0,
             .next_lock_id = 1,
         };
+    }
+
+    /// Deinitialize the pass
+    pub fn deinit(self: *LockPass, allocator: std.mem.Allocator) void {
+        self.lock_ops.deinit(allocator);
+        self.lock_id_map.deinit(allocator);
+    }
+
+    /// Reset internal state for re-analysis
+    fn reset(self: *LockPass, allocator: std.mem.Allocator) void {
+        self.lock_ops.deinit(allocator);
+        self.lock_id_map.deinit(allocator);
+        self.lock_ops = std.ArrayList(LockOperation).init(allocator);
+        self.lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator);
+        self.func_id = 0;
+        self.next_lock_id = 1;
     }
 
     /// Run the lock analysis pass
@@ -67,6 +83,9 @@ pub const LockPass = struct {
     ) !void {
         self.ctx = ctx;
         self.diag = diag;
+
+        // Reset internal state for re-analysis
+        self.reset(ctx.allocator);
 
         const module = ctx.module orelse return;
 
@@ -85,7 +104,7 @@ pub const LockPass = struct {
         }
 
         // Build lock graph and detect deadlocks
-        try self.detectDeadlocks();
+        try self.detectDeadlocks(self.ctx.allocator);
 
         // Clean up
         self.lock_ops.deinit();
@@ -213,27 +232,27 @@ pub const LockPass = struct {
     }
 
     /// Detect deadlocks using lock acquisition graph
-    fn detectDeadlocks(self: *LockPass) !void {
+    fn detectDeadlocks(self: *LockPass, allocator: std.mem.Allocator) !void {
         if (self.lock_ops.items.len == 0) return;
 
         // Build lock acquisition graph
-        var graph = LockGraph.init(std.heap.page_allocator);
+        var graph = LockGraph.init(allocator);
         defer graph.deinit();
 
         // Group lock operations by lock ID
-        var lock_sequences = std.AutoHashMap(u32, std.ArrayList(LockOperation)).init(std.heap.page_allocator);
+        var lock_sequences = std.AutoHashMap(u32, std.ArrayList(LockOperation)).init(allocator);
         defer {
             var iter = lock_sequences.iterator();
             while (iter.next()) |entry| {
-                entry.value_ptr.deinit();
+                entry.value_ptr.deinit(allocator);
             }
-            lock_sequences.deinit();
+            lock_sequences.deinit(allocator);
         }
 
         for (self.lock_ops.items) |lock_op| {
             const gop = try lock_sequences.getOrPut(lock_op.lock_id);
             if (!gop.found_existing) {
-                gop.value_ptr.* = std.ArrayList(LockOperation).init(std.heap.page_allocator);
+                gop.value_ptr.* = std.ArrayList(LockOperation).init(allocator);
             }
             try gop.value_ptr.append(lock_op);
         }
@@ -247,8 +266,8 @@ pub const LockPass = struct {
                 if (!lock_a_op.is_acquire) continue;
 
                 // Find locks held at this point
-                var held_locks = std.ArrayList(u32).init(std.heap.page_allocator);
-                defer held_locks.deinit();
+                var held_locks = std.ArrayList(u32).init(allocator);
+                defer held_locks.deinit(allocator);
 
                 for (self.lock_ops.items) |other_op| {
                     if (other_op.inst_id < lock_a_op.inst_id and other_op.is_acquire) {

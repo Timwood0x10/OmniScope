@@ -238,6 +238,45 @@ test "FactStore - boundary values" {
     try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.context);
 }
 
+test "FactStore - zero values" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert fact with all zero values
+    try store.insert(.cfg_edge, 0, 0, 0);
+
+    try std.testing.expectEqual(@as(usize, 1), store.count());
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(FactKind.cfg_edge, fact.kind);
+    try std.testing.expectEqual(@as(u32, 0), fact.subject);
+    try std.testing.expectEqual(@as(u32, 0), fact.object);
+    try std.testing.expectEqual(@as(u32, 0), fact.context);
+}
+
+test "FactStore - mixed operations" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts of different kinds
+    try store.insert(.cfg_edge, 1, 2, 0);
+    try store.insert(.dfg_edge, 3, 4, 0);
+    try store.insert(.cfg_edge, 5, 6, 0);
+
+    // Query by kind
+    const cfg_facts = try store.queryByKind(.cfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(cfg_facts);
+    try std.testing.expectEqual(@as(usize, 2), cfg_facts.len);
+
+    const dfg_facts = try store.queryByKind(.dfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(dfg_facts);
+    try std.testing.expectEqual(@as(usize, 1), dfg_facts.len);
+
+    // Query non-existent kind
+    const taint_facts = try store.queryByKind(.taint, std.testing.allocator);
+    defer std.testing.allocator.free(taint_facts);
+    try std.testing.expectEqual(@as(usize, 0), taint_facts.len);
+}
+
 test "FactStore - all fact kinds" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();

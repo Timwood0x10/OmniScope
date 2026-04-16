@@ -265,3 +265,31 @@ test "QueryEngine - query on large dataset" {
         try std.testing.expectEqual(@as(u32, 5), fact.context);
     }
 }
+
+test "QueryEngine - query with zero values" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts with zero values
+    try store.insert(.cfg_edge, 0, 0, 0);
+    try store.insert(.dfg_edge, 0, 0, 0);
+
+    var engine = QueryEngine.init(&store);
+
+    // Query by subject with zero
+    const facts = try engine.queryBySubject(0, std.testing.allocator);
+    defer std.testing.allocator.free(facts);
+    try std.testing.expectEqual(@as(usize, 2), facts.len);
+}
+
+test "QueryEngine - query empty store" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var engine = QueryEngine.init(&store);
+
+    // Query on empty store should return empty results
+    const facts = try engine.queryByKind(.cfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(facts);
+    try std.testing.expectEqual(@as(usize, 0), facts.len);
+}

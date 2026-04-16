@@ -32,14 +32,26 @@ pub const DFGPass = struct {
     func_id: u32,
 
     /// Create a new DFG pass
-    pub fn init(store: *FactStore) DFGPass {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) DFGPass {
         return .{
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(std.heap.page_allocator),
+            .inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator),
             .func_id = 0,
         };
+    }
+
+    /// Deinitialize the pass
+    pub fn deinit(self: *DFGPass, allocator: std.mem.Allocator) void {
+        self.inst_id_map.deinit(allocator);
+    }
+
+    /// Reset internal state for re-analysis
+    fn reset(self: *DFGPass, allocator: std.mem.Allocator) void {
+        self.inst_id_map.deinit(allocator);
+        self.inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator);
+        self.func_id = 0;
     }
 
     /// Run the DFG pass on a module
@@ -50,6 +62,9 @@ pub const DFGPass = struct {
     ) !void {
         self.ctx = ctx;
         self.diag = diag;
+
+        // Reset internal state for re-analysis
+        self.reset(ctx.allocator);
 
         const module = ctx.module orelse return;
 

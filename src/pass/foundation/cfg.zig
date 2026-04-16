@@ -32,14 +32,26 @@ pub const CFGPass = struct {
     func_id: u32,
 
     /// Create a new CFG pass
-    pub fn init(store: *FactStore) CFGPass {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) CFGPass {
         return .{
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(std.heap.page_allocator),
+            .bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(allocator),
             .func_id = 0,
         };
+    }
+
+    /// Deinitialize the pass
+    pub fn deinit(self: *CFGPass, allocator: std.mem.Allocator) void {
+        self.bb_id_map.deinit(allocator);
+    }
+
+    /// Reset internal state for re-analysis
+    fn reset(self: *CFGPass, allocator: std.mem.Allocator) void {
+        self.bb_id_map.deinit(allocator);
+        self.bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(allocator);
+        self.func_id = 0;
     }
 
     /// Run the CFG pass on a module
@@ -50,6 +62,9 @@ pub const CFGPass = struct {
     ) !void {
         self.ctx = ctx;
         self.diag = diag;
+
+        // Reset internal state for re-analysis
+        self.reset(ctx.allocator);
 
         const module = ctx.module orelse return;
 

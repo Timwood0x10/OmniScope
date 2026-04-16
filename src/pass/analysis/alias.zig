@@ -48,16 +48,31 @@ pub const AliasPass = struct {
     func_id: u32,
 
     /// Create a new alias analysis pass
-    pub fn init(store: *FactStore) AliasPass {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) AliasPass {
         return .{
             .ctx = undefined,
             .diag = undefined,
             .store = store,
             .query = QueryEngine.init(store),
-            .type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(std.heap.page_allocator),
-            .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(std.heap.page_allocator),
+            .type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator),
+            .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator),
             .func_id = 0,
         };
+    }
+
+    /// Deinitialize the pass
+    pub fn deinit(self: *AliasPass, allocator: std.mem.Allocator) void {
+        self.type_cache.deinit(allocator);
+        self.ptr_info_map.deinit(allocator);
+    }
+
+    /// Reset internal state for re-analysis
+    fn reset(self: *AliasPass, allocator: std.mem.Allocator) void {
+        self.type_cache.deinit(allocator);
+        self.ptr_info_map.deinit(allocator);
+        self.type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator);
+        self.ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator);
+        self.func_id = 0;
     }
 
     /// Run the alias analysis pass
@@ -68,6 +83,9 @@ pub const AliasPass = struct {
     ) !void {
         self.ctx = ctx;
         self.diag = diag;
+
+        // Reset internal state for re-analysis
+        self.reset(ctx.allocator);
 
         const module = ctx.module orelse return;
 
@@ -137,7 +155,7 @@ pub const AliasPass = struct {
         }
 
         // Analyze collected pointers for aliasing
-        try self.analyzePointerAliasing();
+        try self.analyzePointerAliasing(self.ctx.allocator);
     }
 
     /// Collect pointer information
@@ -215,15 +233,15 @@ pub const AliasPass = struct {
     }
 
     /// Analyze all collected pointers for aliasing
-    fn analyzePointerAliasing(self: *AliasPass) !void {
+    fn analyzePointerAliasing(self: *AliasPass, allocator: std.mem.Allocator) !void {
         // Group pointers by type
-        var type_groups = std.AutoHashMap(u32, std.ArrayList(PointerInfo)).init(std.heap.page_allocator);
+        var type_groups = std.AutoHashMap(u32, std.ArrayList(PointerInfo)).init(allocator);
         defer {
             var iter = type_groups.iterator();
             while (iter.next()) |entry| {
-                entry.value_ptr.deinit();
+                entry.value_ptr.deinit(allocator);
             }
-            type_groups.deinit();
+            type_groups.deinit(allocator);
         }
 
         // Group pointers
@@ -232,7 +250,7 @@ pub const AliasPass = struct {
             const ptr_info = entry.value_ptr.*;
             const gop = try type_groups.getOrPut(ptr_info.type_id);
             if (!gop.found_existing) {
-                gop.value_ptr.* = std.ArrayList(PointerInfo).init(std.heap.page_allocator);
+                gop.value_ptr.* = std.ArrayList(PointerInfo).init(allocator);
             }
             try gop.value_ptr.append(ptr_info);
         }

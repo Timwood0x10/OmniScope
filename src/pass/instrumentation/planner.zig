@@ -128,7 +128,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all cfg_edge facts to find frequently executed paths
-        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch return;
+        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(cfg_facts);
 
         // Count how many successors each basic block has
@@ -164,7 +167,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all alias_may facts
-        const alias_facts = self.query.queryByKind(.alias_may, ctx.allocator) catch return;
+        const alias_facts = self.query.queryByKind(.alias_may, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(alias_facts);
 
         // For each alias_may fact, instrument both pointers
@@ -194,7 +200,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all cfg_edge facts to identify loops
-        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch return;
+        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(cfg_facts);
 
         // Build a map of back edges (edges that point to earlier blocks)
@@ -246,7 +255,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all lock_acquire facts
-        const lock_acquire_facts = self.query.queryByKind(.lock_acquire, ctx.allocator) catch return;
+        const lock_acquire_facts = self.query.queryByKind(.lock_acquire, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(lock_acquire_facts);
 
         // Instrument all lock acquire points
@@ -259,7 +271,10 @@ pub const InstrumentationPlanner = struct {
         }
 
         // Query all lock_release facts
-        const lock_release_facts = self.query.queryByKind(.lock_release, ctx.allocator) catch return;
+        const lock_release_facts = self.query.queryByKind(.lock_release, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(lock_release_facts);
 
         // Instrument all lock release points
@@ -281,7 +296,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all taint facts
-        const taint_facts = self.query.queryByKind(.taint, ctx.allocator) catch return;
+        const taint_facts = self.query.queryByKind(.taint, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(taint_facts);
 
         // Instrument all taint sources and sinks

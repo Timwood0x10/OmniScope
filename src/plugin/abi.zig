@@ -130,15 +130,21 @@ pub const PluginLoader = struct {
     pub fn deinit(self: *PluginLoader) void {
         for (self.plugins.items) |plugin| {
             if (plugin.descriptor.deinit) |deinit_fn| {
-                deinit_fn(&plugin.context);
+                // Note: Casting away const to match C ABI expectations
+                deinit_fn(@constCast(&plugin.context));
             }
-            const lib = std.DynLib{
-                .handle = plugin.handle,
-            };
-            lib.close();
+            // Close the dynamic library using the raw handle
+            // Note: This is system-specific and may need platform-specific handling
+            // For now, we assume the handle can be directly closed
+            if (@import("builtin").os.tag == .linux or @import("builtin").os.tag == .macos) {
+                const c = @cImport({
+                    @cInclude("dlfcn.h");
+                });
+                _ = c.dlclose(plugin.handle);
+            }
         }
 
-        self.plugins.deinit();
+        self.plugins.deinit(self.allocator);
     }
 
     /// Load a plugin from a shared library

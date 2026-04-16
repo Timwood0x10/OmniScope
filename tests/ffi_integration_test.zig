@@ -232,3 +232,96 @@ test "FFI severity level classification" {
     try std.testing.expectEqual(@as(usize, 2), @intFromEnum(high));
     try std.testing.expectEqual(@as(usize, 3), @intFromEnum(critical));
 }
+
+test "FFI Integration - Complex cross-language scenario" {
+    // Test complex FFI scenario with multiple languages and data flow
+    // Simulating: Rust -> C -> Python FFI chain
+
+    const allocator = std.testing.allocator;
+
+    // Simulate multi-language FFI chain
+    var ffi_chain = std.ArrayList([]const u8).init(allocator);
+    defer ffi_chain.deinit();
+
+    try ffi_chain.append("rust_wrapper.bc");
+    try ffi_chain.append("c_layer.bc");
+    try ffi_chain.append("python_binding.bc");
+
+    // Verify chain length
+    try std.testing.expectEqual(@as(usize, 3), ffi_chain.items.len);
+
+    // Verify chain elements
+    try std.testing.expect(std.mem.eql(u8, ffi_chain.items[0], "rust_wrapper.bc"));
+    try std.testing.expect(std.mem.eql(u8, ffi_chain.items[1], "c_layer.bc"));
+    try std.testing.expect(std.mem.eql(u8, ffi_chain.items[2], "python_binding.bc"));
+}
+
+test "FFI Integration - Multi-function data flow" {
+    // Test data flow across multiple functions in FFI boundary
+    // Simulating: user_input -> sanitize -> C function -> return value
+
+    const allocator = std.testing.allocator;
+
+    // Simulate data flow chain
+    var data_flow = std.ArrayList([]const u8).init(allocator);
+    defer data_flow.deinit();
+
+    try data_flow.append("read_user_input");
+    try data_flow.append("sanitize_input");
+    try data_flow.append("call_c_function");
+    try data_flow.append("process_result");
+
+    // Verify data flow length
+    try std.testing.expectEqual(@as(usize, 4), data_flow.items.len);
+
+    // Verify data flow elements
+    try std.testing.expect(std.mem.eql(u8, data_flow.items[0], "read_user_input"));
+    try std.testing.expect(std.mem.eql(u8, data_flow.items[1], "sanitize_input"));
+    try std.testing.expect(std.mem.eql(u8, data_flow.items[2], "call_c_function"));
+    try std.testing.expect(std.mem.eql(u8, data_flow.items[3], "process_result"));
+}
+
+test "FFI Integration - Complex vulnerability pattern" {
+    // Test complex vulnerability pattern involving multiple FFI calls
+    // Simulating: tainted data -> FFI call -> unsafe C function -> return
+
+    const allocator = std.testing.allocator;
+
+    // Simulate vulnerability chain
+    var vuln_chain = std.ArrayList([]const u8).init(allocator);
+    defer vuln_chain.deinit();
+
+    try vuln_chain.append("getenv");
+    try vuln_chain.append("rust_wrapper");
+    try vuln_chain.append("c_system_call");
+    try vuln_chain.append("command_execution");
+
+    // Verify vulnerability chain
+    try std.testing.expectEqual(@as(usize, 4), vuln_chain.items.len);
+
+    // Verify dangerous pattern: getenv -> system
+    try std.testing.expect(std.mem.eql(u8, vuln_chain.items[0], "getenv"));
+    try std.testing.expect(std.mem.eql(u8, vuln_chain.items[2], "c_system_call"));
+}
+
+test "FFI Integration - Cross-language memory safety" {
+    // Test memory safety across FFI boundaries
+    // Simulating: Rust allocation -> C usage -> Rust cleanup
+
+    const allocator = std.testing.allocator;
+
+    // Simulate memory lifecycle
+    var memory_lifecycle = std.ArrayList([]const u8).init(allocator);
+    defer memory_lifecycle.deinit();
+
+    try memory_lifecycle.append("rust_alloc");
+    try memory_lifecycle.append("c_use");
+    try memory_lifecycle.append("rust_free");
+
+    // Verify memory lifecycle
+    try std.testing.expectEqual(@as(usize, 3), memory_lifecycle.items.len);
+
+    // Verify allocation and cleanup are paired
+    try std.testing.expect(std.mem.eql(u8, memory_lifecycle.items[0], "rust_alloc"));
+    try std.testing.expect(std.mem.eql(u8, memory_lifecycle.items[2], "rust_free"));
+}

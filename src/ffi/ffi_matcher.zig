@@ -106,9 +106,14 @@ pub const FFIMatcher = struct {
         }
         self.define_functions.deinit(self.allocator);
 
-        // Free match.name memory (independent copy)
         for (self.matches.items) |match| {
-            self.allocator.free(match.name);
+            if (match.name.len > 0) self.allocator.free(match.name);
+            if (match.declare_func) |func| {
+                self.allocator.free(func.name);
+            }
+            if (match.define_func) |func| {
+                self.allocator.free(func.name);
+            }
         }
         self.matches.deinit(self.allocator);
     }

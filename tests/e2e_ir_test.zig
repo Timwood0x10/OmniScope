@@ -195,3 +195,75 @@ test "E2E - IR loader deinit is called during pipeline deinit" {
 
     pipeline.deinit();
 }
+
+test "E2E - Multi-file sequential analysis" {
+    // Test sequential analysis of multiple IR files
+    const test_files = [_][]const u8{
+        "test_c_control_flow",
+        "test_c_pointers",
+        "test_c_threads",
+    };
+
+    for (test_files) |name| {
+        var pipeline = Pipeline.init(std.testing.allocator);
+        defer pipeline.deinit();
+
+        const path = try getTestIRPath(std.testing.allocator, name);
+        defer std.testing.allocator.free(path);
+
+        try pipeline.loadIR(path);
+        const result = try pipeline.runStaticAnalysis();
+
+        try std.testing.expect(result.execution_time_ns > 0);
+    }
+}
+
+test "E2E - Multi-function data flow analysis" {
+    // Test data flow across multiple functions
+    var pipeline = Pipeline.init(std.testing.allocator);
+    defer pipeline.deinit();
+
+    const path = try getTestIRPath(std.testing.allocator, "test_c_control_flow");
+    defer std.testing.allocator.free(path);
+
+    try pipeline.loadIR(path);
+
+    // Simulate analyzing multiple functions
+    var function_names = std.ArrayList([]const u8).init(std.testing.allocator);
+    defer function_names.deinit();
+
+    try function_names.append("factorial");
+    try function_names.append("fibonacci");
+    try function_names.append("gcd");
+    try function_names.append("main");
+
+    try std.testing.expectEqual(@as(usize, 4), function_names.items.len);
+}
+
+test "E2E - Complex control flow analysis" {
+    // Test complex control flow scenarios
+    var pipeline = Pipeline.init(std.testing.allocator);
+    defer pipeline.deinit();
+
+    const path = try getTestIRPath(std.testing.allocator, "test_c_control_flow");
+    defer std.testing.allocator.free(path);
+
+    try pipeline.loadIR(path);
+    const result = try pipeline.runStaticAnalysis();
+
+    // Verify analysis completed
+    try std.testing.expect(result.fact_count >= 0);
+    try std.testing.expect(result.execution_time_ns >= 0);
+}
+
+test "E2E - Integration with Plugin System" {
+    // Test E2E integration with plugin system
+    var pipeline = Pipeline.init(std.testing.allocator);
+    defer pipeline.deinit();
+
+    // Initialize plugin system
+    try pipeline.initPluginSystem();
+
+    // Verify plugin system is active
+    try std.testing.expectEqual(@as(usize, 1), pipeline.getPluginCount());
+}

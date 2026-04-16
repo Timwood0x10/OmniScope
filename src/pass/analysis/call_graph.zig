@@ -109,11 +109,11 @@ pub const Node = struct {
     /// Classification of the function's origin.
     kind: FunctionKind,
     /// Whether this function is external to the module.
-    isExternal: bool,
+    is_external: bool,
     /// Whether this function is reachable from a taint source.
-    isTainted: bool,
+    is_tainted: bool,
     /// ID of the node that tainted this function (null if source).
-    taintedBy: ?u32,
+    tainted_by: ?u32,
 
     /// Deinitialize the node and free owned memory
     fn deinit(self: *Node, allocator: std.mem.Allocator) void {
@@ -179,7 +179,7 @@ pub const CallGraphPass = struct {
             const name_owned = try allocator.dupe(u8, func_name);
 
             const id = @as(u32, @intCast(nodes.items.len));
-            try nodes.append(allocator, .{ .id = id, .name = name_owned, .func_ref = func, .kind = .internal, .isExternal = is_external, .isTainted = false, .taintedBy = null });
+            try nodes.append(allocator, .{ .id = id, .name = name_owned, .func_ref = func, .kind = .internal, .is_external = is_external, .is_tainted = false, .tainted_by = null });
         }
     }
 
@@ -217,7 +217,7 @@ pub const CallGraphPass = struct {
         for (nodes.items) |*node| {
             if (isLibC(node.name)) {
                 node.kind = .libc;
-            } else if (node.isExternal) {
+            } else if (node.is_external) {
                 node.kind = .external_unknown;
             } else {
                 node.kind = .internal;
@@ -237,8 +237,8 @@ pub const CallGraphPass = struct {
     fn markSources(nodes: *std.ArrayList(Node)) void {
         for (nodes.items) |*node| {
             if (isSource(node.name)) {
-                node.isTainted = true;
-                node.taintedBy = null;
+                node.is_tainted = true;
+                node.tainted_by = null;
             }
         }
     }
@@ -257,18 +257,18 @@ pub const CallGraphPass = struct {
 
             for (edges.items) |edge| {
                 if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
-
                 if (visited.contains(edge.callee)) continue;
-                visited.put(edge.callee, {}) catch continue;
 
                 const caller = &nodes.items[edge.caller];
                 var callee = &nodes.items[edge.callee];
 
-                if (caller.isTainted and !callee.isTainted) {
-                    callee.isTainted = true;
-                    callee.taintedBy = caller.id;
+                if (caller.is_tainted and !callee.is_tainted) {
+                    callee.is_tainted = true;
+                    callee.tainted_by = caller.id;
                     changed = true;
                 }
+
+                try visited.put(edge.callee, {});
             }
         }
     }
@@ -278,7 +278,7 @@ pub const CallGraphPass = struct {
         var vulnerability_id: u32 = 0;
 
         for (nodes.items) |node| {
-            if (node.isTainted and isSink(node.name)) {
+            if (node.is_tainted and isSink(node.name)) {
                 const risk = classifyRisk(node.name);
                 vulnerability_id += 1;
 
@@ -305,7 +305,7 @@ pub const CallGraphPass = struct {
 
                     if (path_length == 0) {
                         diag.err("  [Sink] {s}()", .{current_node.name});
-                    } else if (current_node.taintedBy == null) {
+                    } else if (current_node.tainted_by == null) {
                         diag.err("  [Source] {s}() - initial taint source", .{current_node.name});
                     } else {
                         diag.err("    └─> {s}()", .{current_node.name});
@@ -315,7 +315,7 @@ pub const CallGraphPass = struct {
                         diag.err("    └─> [FFI Boundary: cross-language call]", .{});
                     }
 
-                    current_id = current_node.taintedBy;
+                    current_id = current_node.tainted_by;
                 }
 
                 if (risk == .critical) {

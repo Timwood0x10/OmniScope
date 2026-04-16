@@ -17,6 +17,13 @@ const DiagnosticAggregator = @import("../diag/aggregator.zig").DiagnosticAggrega
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const IRLoader = @import("../engine/loader.zig").IRLoader;
 
+const RuntimeStage = @import("runtime_stage.zig").RuntimeStage;
+const RuntimeStageConfig = @import("runtime_stage.zig").RuntimeStageConfig;
+const MergeEngine = @import("../runtime/merge.zig").MergeEngine;
+const DecodedEvent = @import("../runtime/collector.zig").DecodedEvent;
+const PluginLoader = @import("../plugin/abi.zig").PluginLoader;
+const StageContext = @import("stage.zig").StageContext;
+
 /// Analysis pipeline
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
@@ -26,6 +33,9 @@ pub const Pipeline = struct {
     instrumentation_plan: InstrumentationPlan,
     diagnostic_aggregator: DiagnosticAggregator,
     ir_loader: ?*IRLoader,
+    runtime_stage: ?RuntimeStage,
+    merge_engine: MergeEngine,
+    plugin_loader: ?*PluginLoader,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) Pipeline {
@@ -38,6 +48,9 @@ pub const Pipeline = struct {
             .instrumentation_plan = InstrumentationPlan.init(allocator),
             .diagnostic_aggregator = DiagnosticAggregator.init(allocator),
             .ir_loader = null,
+            .runtime_stage = null,
+            .merge_engine = MergeEngine.init(allocator, &fact_store),
+            .plugin_loader = null,
         };
     }
 
@@ -51,6 +64,11 @@ pub const Pipeline = struct {
             loader.deinit();
             self.allocator.destroy(loader);
         }
+        if (self.plugin_loader) |loader| {
+            loader.deinit();
+            self.allocator.destroy(loader);
+        }
+        // RuntimeStage and MergeEngine are stack-allocated or managed separately
     }
 
     /// Load IR from file
@@ -141,17 +159,102 @@ pub const Pipeline = struct {
         // 3. Run instrumentation
         const instrumentation_result = try self.runInstrumentation();
 
-        // 4. Generate diagnostics
-        // In a real implementation, this would aggregate diagnostics from all sources
+        // 4. Run runtime stage (if instrumentation was done)
+        const runtime_result = try self.runRuntimeStage();
+
+        // 5. Run merge stage (if runtime data is available)
+        const merge_result = try self.runMergeStage();
 
         const pipeline_end = std.time.nanoTimestamp();
 
         return FullPipelineResult{
             .static_result = static_result,
             .instrumentation_result = instrumentation_result,
-            .runtime_result = null, // Runtime collection not yet implemented
-            .merge_result = null, // Merge engine not yet implemented
+            .runtime_result = runtime_result,
+            .merge_result = merge_result,
             .total_time_ns = @intCast(pipeline_end - pipeline_start),
+        };
+    }
+
+    /// Run runtime stage to collect events
+    pub fn runRuntimeStage(self: *Pipeline) !?PipelineResult {
+        // Only run runtime stage if instrumentation was done
+        if (self.instrumentation_plan.count() == 0) {
+            return null;
+        }
+
+        const start_time = std.time.nanoTimestamp();
+
+        // Initialize runtime stage if not already initialized
+        if (self.runtime_stage == null) {
+            const config = RuntimeStageConfig{};
+            self.runtime_stage = try RuntimeStage.init(self.allocator, config);
+        }
+
+        // Create stage context
+        const stage_ctx = StageContext{
+            .allocator = self.allocator,
+            .fact_store = &self.fact_store,
+            .query_engine = &self.query_engine,
+            .module = if (self.ir_loader) |loader| loader.getModule() else null,
+            .instrumentation_plan = &self.instrumentation_plan,
+        };
+
+        // Run the runtime stage
+        const result = self.runtime_stage.?.run(&stage_ctx);
+        if (result != .success) {
+            return error.RuntimeStageFailed;
+        }
+
+        const end_time = std.time.nanoTimestamp();
+
+        return PipelineResult{
+            .fact_count = self.fact_store.count(),
+            .instrumentation_count = self.instrumentation_plan.count(),
+            .execution_time_ns = @intCast(end_time - start_time),
+        };
+    }
+
+    /// Run merge stage to combine static and runtime data
+    pub fn runMergeStage(self: *Pipeline) !?PipelineResult {
+        // Only run merge stage if runtime data is available
+        if (self.runtime_stage == null) {
+            return null;
+        }
+
+        const start_time = std.time.nanoTimestamp();
+
+        // Collect runtime events
+        const events = try self.runtime_stage.?.collectEvents();
+        defer self.allocator.free(events);
+
+        if (events.len == 0) {
+            return null;
+        }
+
+        // Merge events with static facts
+        const merged_events = try self.merge_engine.merge(events);
+        defer self.allocator.free(merged_events);
+
+        // Store merged results as diagnostic facts
+        for (merged_events) |merged_ev| {
+            if (merged_ev.is_anomaly) {
+                try self.diagnostic_aggregator.addDiagnostic(.{
+                    .kind = .runtime_issue,
+                    .severity = .warning,
+                    .loc = merged_ev.tag,
+                    .message = "Runtime anomaly detected",
+                    .confidence = merged_ev.confidence,
+                });
+            }
+        }
+
+        const end_time = std.time.nanoTimestamp();
+
+        return PipelineResult{
+            .fact_count = self.fact_store.count(),
+            .instrumentation_count = self.instrumentation_plan.count(),
+            .execution_time_ns = @intCast(end_time - start_time),
         };
     }
 
@@ -181,6 +284,43 @@ pub const Pipeline = struct {
             return loader;
         }
         return null;
+    }
+
+    /// Initialize plugin system
+    pub fn initPluginSystem(self: *Pipeline) !void {
+        if (self.plugin_loader == null) {
+            const loader = try self.allocator.create(PluginLoader);
+            loader.* = PluginLoader.init(self.allocator);
+            self.plugin_loader = loader;
+        }
+    }
+
+    /// Load a plugin from file
+    pub fn loadPlugin(self: *Pipeline, path: []const u8) !void {
+        if (self.plugin_loader) |loader| {
+            try loader.load(path);
+        } else {
+            return error.PluginSystemNotInitialized;
+        }
+    }
+
+    /// Query all loaded plugins
+    pub fn queryPlugins(self: *Pipeline) !usize {
+        if (self.plugin_loader) |loader| {
+            const diagnostics = try loader.queryPlugins(&self.fact_store, &self.query_engine);
+            return diagnostics.len;
+        } else {
+            return 0;
+        }
+    }
+
+    /// Get the number of loaded plugins
+    pub fn getPluginCount(self: *const Pipeline) usize {
+        if (self.plugin_loader) |loader| {
+            return loader.count();
+        } else {
+            return 0;
+        }
     }
 
     /// Register a pass with the pipeline

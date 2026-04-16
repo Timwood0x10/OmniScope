@@ -406,3 +406,41 @@ test "DiagnosticAggregator - clear" {
 
     try std.testing.expectEqual(@as(usize, 0), aggregator.diagnostics.items.len);
 }
+
+test "DiagnosticAggregator - multiple diagnostics same severity" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    // Add multiple diagnostics with same severity
+    try aggregator.add(Diagnostic{
+        .kind = .static_issue,
+        .severity = .err,
+        .loc = 1,
+        .message = "Error 1",
+        .confidence = 0.9,
+    });
+
+    try aggregator.add(Diagnostic{
+        .kind = .runtime_issue,
+        .severity = .err,
+        .loc = 2,
+        .message = "Error 2",
+        .confidence = 0.7,
+    });
+
+    const errors = try aggregator.getBySeverity(.err, std.testing.allocator);
+    defer freeDiagnosticsSlice(std.testing.allocator, errors);
+    try std.testing.expectEqual(@as(usize, 2), errors.len);
+}
+
+test "DiagnosticAggregator - empty aggregation" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    // Get summary with no diagnostics
+    const summary = try aggregator.generateSummary(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 0), summary.total);
+    try std.testing.expectEqual(@as(usize, 0), summary.error_count);
+    try std.testing.expectEqual(@as(usize, 0), summary.warning_count);
+    try std.testing.expectEqual(@as(usize, 0), summary.info_count);
+}
