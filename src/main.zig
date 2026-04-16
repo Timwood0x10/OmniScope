@@ -246,8 +246,7 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     }
 
     // Print analysis results
-    std.log.info("
-[*] Running FFI vulnerability detection...\n", .{});
+    std.log.info("[*] Running FFI vulnerability detection...\n", .{});
 
     if (vulnerabilities.items.len > 0) {
         std.log.info("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
@@ -257,8 +256,7 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
             std.debug.print("    Description: {s}\n", .{vuln.description});
             std.debug.print("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
             std.debug.print("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
-            std.log.info("
-", .{});
+            std.log.info("\n", .{});
         }
     } else {
         std.log.info("[*] No FFI vulnerabilities detected\n", .{});
