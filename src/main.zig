@@ -138,8 +138,8 @@ fn countFunction(func_ref: FunctionRef, count: *usize) !void {
 
 /// Run analysis on multiple files (FFI mode)
 fn runMultiFileAnalysis(files: []const []const u8) !void {
-    std.debug.print("=== OmniScope Cross-Language FFI Analysis ===\n\n", .{});
-    std.debug.print("[*] FFI Mode: {d} files detected\n", .{files.len});
+    std.log.info("=== OmniScope Cross-Language FFI Analysis ===\n\n", .{});
+    std.log.info("[*] FFI Mode: {d} files detected\n", .{files.len});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -173,10 +173,10 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
         try loaders.append(allocator, loader);
     }
 
-    std.debug.print("[*] All files loaded successfully\n\n", .{});
+    std.log.info("[*] All files loaded successfully\n\n", .{});
 
     // Initialize FFI matcher
-    std.debug.print("[*] Initializing FFI matcher...\n", .{});
+    std.log.info("[*] Initializing FFI matcher...\n", .{});
 
     // Import FFI components from OmniScope module
     const FFIMatcher = OmniScope.cross_lang.FFIMatcher;
@@ -213,16 +213,16 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     }
 
     // Perform FFI matching
-    std.debug.print("[*] Performing FFI function matching...\n", .{});
+    std.log.info("[*] Performing FFI function matching...\n", .{});
     try matcher.matchFunctions();
 
-    std.debug.print("[*] Found {d} FFI matches\n", .{matcher.matches.items.len});
+    std.log.info("[*] Found {d} FFI matches\n", .{matcher.matches.items.len});
 
     // Analyze each FFI match for potential vulnerabilities
     var vulnerabilities: std.ArrayList(OmniScope.cross_lang.FFIVulnerability) = try std.ArrayList(OmniScope.cross_lang.FFIVulnerability).initCapacity(allocator, 100);
     defer vulnerabilities.deinit(allocator);
 
-    std.debug.print("[*] Analyzing {d} FFI matches for vulnerabilities...\n", .{matcher.matches.items.len});
+    std.log.info("[*] Analyzing {d} FFI matches for vulnerabilities...\n", .{matcher.matches.items.len});
 
     for (matcher.matches.items, 0..) |*match, i| {
         if (!match.isValid()) continue;
@@ -246,23 +246,25 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     }
 
     // Print analysis results
-    std.debug.print("\n[*] Running FFI vulnerability detection...\n", .{});
+    std.log.info("
+[*] Running FFI vulnerability detection...\n", .{});
 
     if (vulnerabilities.items.len > 0) {
-        std.debug.print("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
+        std.log.info("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
         for (vulnerabilities.items) |vuln| {
             std.debug.print("  [VULN #{d}] {s}\n", .{ vuln.id, @tagName(vuln.vuln_type) });
             std.debug.print("    Severity: {s}\n", .{@tagName(vuln.severity)});
             std.debug.print("    Description: {s}\n", .{vuln.description});
             std.debug.print("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
             std.debug.print("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
-            std.debug.print("\n", .{});
+            std.log.info("
+", .{});
         }
     } else {
-        std.debug.print("[*] No FFI vulnerabilities detected\n", .{});
+        std.log.info("[*] No FFI vulnerabilities detected\n", .{});
     }
 
-    std.debug.print("=== FFI Analysis Summary ===\n", .{});
+    std.log.info("=== FFI Analysis Summary ===\n", .{});
     std.debug.print("Total files analyzed: {d}\n", .{files.len});
     std.debug.print("Total functions: {d}\n", .{blk: {
         var total: usize = 0;
@@ -321,7 +323,7 @@ fn printResults(pipeline: *Pipeline) void {
     const diagnostics = pipeline.getDiagnosticAggregator().getAll();
 
     if (diagnostics.len == 0) {
-        std.debug.print("No issues found.\n", .{});
+        std.log.info("No issues found.\n", .{});
     } else {
         for (diagnostics) |diag| {
             std.debug.print("[{s}] {s}\n", .{

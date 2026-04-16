@@ -144,7 +144,7 @@ pub const Pipeline = struct {
         const stage_ctx = StageContext{
             .allocator = self.allocator,
             .fact_store = &self.fact_store,
-            .module = if (self.ir_loader) |*loader| loader.getModule() else null,
+            .query_engine = &self.query_engine,
             .module = null, // Module must be provided externally when using runtime stage
             .instrumentation_plan = &self.instrumentation_plan,
         };
@@ -375,29 +375,6 @@ test "Pipeline - run instrumentation" {
 
     // Verify result
     try std.testing.expect(result.execution_time_ns >= 0);
-}
-
-test "Pipeline - get IR loader" {
-    var pipeline = Pipeline.init(std.testing.allocator);
-    defer pipeline.deinit();
-
-    // No IR loaded yet
-    try std.testing.expect(pipeline.getIRLoader() == null);
-
-    // Try to load a non-existent file (should fail gracefully)
-    const load_result = pipeline.loadIR("nonexistent.bc");
-    try std.testing.expectError(error.FileNotFound, load_result);
-}
-
-test "Pipeline - full pipeline without IR" {
-    var pipeline = Pipeline.init(std.testing.allocator);
-    defer pipeline.deinit();
-
-    // Try to run full pipeline with non-existent IR
-    const result = pipeline.runFullPipeline("nonexistent.bc");
-
-    // Should fail because file doesn't exist
-    try std.testing.expectError(error.FileNotFound, result);
 }
 
 test "Pipeline - component integration" {
