@@ -169,7 +169,7 @@ fn runMultiFileAnalysis(files: []const []const u8, config: *const Config) !void 
     defer {
         const leaked = gpa.deinit();
         if (leaked == .leak) {
-            OmniScope.log.warn("main", "Memory leak detected in FFI analysis!\n", .{});
+            std.debug.print("[WARN] Memory leak detected in FFI analysis!\n", .{});
         }
     }
 
@@ -415,7 +415,7 @@ pub fn main() !void {
     defer {
         const leaked = gpa.deinit();
         if (leaked == .leak) {
-            OmniScope.log.warn("main", "Memory leak detected!\n", .{});
+            std.debug.print("[WARN] Memory leak detected!\n", .{});
         }
     }
 

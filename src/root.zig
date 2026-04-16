@@ -2,39 +2,6 @@
 //!
 //! This is the public API entry point for the OmniScope library.
 
-// Export logging system
-pub const log = struct {
-    pub const LogLevel = @import("log/log.zig").LogLevel;
-    pub const LogConfig = @import("log/log.zig").Config;
-    pub const init = @import("log/log.zig").init;
-    pub const deinit = @import("log/log.zig").deinit;
-    pub const debug = @import("log/log.zig").debug;
-    pub const info = @import("log/log.zig").info;
-    pub const warn = @import("log/log.zig").warn;
-    pub const err = @import("log/log.zig").err;
-    pub const setLevel = @import("log/log.zig").setLevel;
-    pub const getLevel = @import("log/log.zig").getLevel;
-    pub const DebugConfig = @import("log/debug.zig").Config;
-    pub const debug_init = @import("log/debug.zig").init;
-    pub const debug_deinit = @import("log/debug.zig").deinit;
-    pub const assert = @import("log/debug.zig").assert;
-    pub const panicWithContext = @import("log/debug.zig").panicWithContext;
-    pub const notImplemented = @import("log/debug.zig").notImplemented;
-    pub const todo = @import("log/debug.zig").todo;
-};
-
-// Export error types
-pub const errors = struct {
-    pub const Error = @import("log/error.zig").Error;
-    pub const IRLoadError = @import("log/error.zig").IRLoadError;
-    pub const IRViewError = @import("log/error.zig").IRViewError;
-    pub const PassError = @import("log/error.zig").PassError;
-    pub const AnalysisError = @import("log/error.zig").AnalysisError;
-    pub const InstrumentationError = @import("log/error.zig").InstrumentationError;
-    pub const RuntimeError = @import("log/error.zig").RuntimeError;
-    pub const ConfigError = @import("log/error.zig").ConfigError;
-};
-
 // Export IR layer
 pub const ir = struct {
     pub const llvm_raw = @import("ir/llvm_raw.zig");

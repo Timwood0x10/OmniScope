@@ -11,4 +11,5 @@ pub const c = @cImport({
     @cInclude("llvm-c/IRReader.h");
     @cInclude("llvm-c/BitReader.h");
     @cInclude("llvm-c/Analysis.h");
+    @cInclude("llvm-c/Target.h");
 });
