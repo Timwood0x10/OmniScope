@@ -102,7 +102,8 @@ pub const CFGPass = struct {
         const opcode = c.LLVMGetInstructionOpcode(terminator);
 
         // Based on opcode, emit cfg_edge facts
-        switch (@intToEnum(c.LLVMOpcode, opcode)) {
+        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
+        switch (opcode_enum) {
             .Br => {
                 // Branch: handle conditional and unconditional
                 try self.handleBranch(terminator, bb_id);
@@ -297,8 +298,11 @@ test "CFGPass - function ID tracking" {
     if (store.queryByKind(.cfg_edge, std.testing.allocator)) |indices| {
         defer std.testing.allocator.free(indices);
         try std.testing.expectEqual(@as(usize, 1), indices.len);
-        const fact = store.get(indices[0]).?;
-        try std.testing.expectEqual(@as(u32, 42), fact.context);
+        if (store.get(indices[0])) |queried_fact| {
+            try std.testing.expectEqual(@as(u32, 42), queried_fact.context);
+        } else {
+            try std.testing.expect(false);
+        }
     } else |_| {
         try std.testing.expect(false);
     }

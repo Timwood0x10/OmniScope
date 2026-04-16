@@ -1,5 +1,29 @@
 const std = @import("std");
 
+/// Get the default LLVM path for the current OS
+fn getDefaultLLVMPath() []const u8 {
+    const os = @import("builtin").os.tag;
+
+    return switch (os) {
+        .macos => "/opt/homebrew/opt/llvm",
+        .linux => "/usr/lib/llvm",
+        .windows => "C:\\Program Files\\LLVM",
+        else => "/usr/lib/llvm",
+    };
+}
+
+/// Get the default LLVM version for the current OS
+fn getDefaultLLVMVersion() []const u8 {
+    const os = @import("builtin").os.tag;
+
+    return switch (os) {
+        .macos => "22",
+        .linux => "18",
+        .windows => "18",
+        else => "18",
+    };
+}
+
 /// Build configuration for OmniScope
 pub fn build(b: *std.Build) void {
     // Parse build options
@@ -12,17 +36,18 @@ pub fn build(b: *std.Build) void {
     ) orelse false;
 
     // LLVM configuration
+    // Use --llvm-path option or fallback to OS-specific defaults
     const llvm_path = b.option(
         []const u8,
         "llvm-path",
-        "Path to LLVM installation (default: /opt/homebrew/Cellar/llvm/22.1.3)",
-    ) orelse "/opt/homebrew/Cellar/llvm/22.1.3";
+        b.fmt("Path to LLVM installation (default: auto-detect based on OS: {s})", .{getDefaultLLVMPath()}),
+    ) orelse getDefaultLLVMPath();
 
     const llvm_version = b.option(
         []const u8,
         "llvm-version",
-        "LLVM version to link against (default: 22)",
-    ) orelse "22";
+        b.fmt("LLVM version to link against (default: {s})", .{getDefaultLLVMVersion()}),
+    ) orelse getDefaultLLVMVersion();
 
     // Create library module for OmniScope
     const lib_mod = b.addModule("OmniScope", .{

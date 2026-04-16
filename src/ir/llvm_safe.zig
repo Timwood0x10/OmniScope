@@ -159,12 +159,12 @@ pub const IRLoader = struct {
         // Detect file type
         const is_ll_file = std.mem.endsWith(u8, path, ".ll");
 
-        var module_raw: c.LLVMModuleRef = undefined;
-        var result: c_int = undefined;
+        var module_raw: c.LLVMModuleRef = null;
+        var parse_result: c.LLVMBool = 0;
 
         if (is_ll_file) {
             // Parse LLVM IR text format (.ll)
-            result = c.LLVMParseIRInContext(
+            parse_result = c.LLVMParseIRInContext(
                 self.context.raw,
                 mem_buf,
                 &module_raw,
@@ -172,14 +172,14 @@ pub const IRLoader = struct {
             );
         } else {
             // Parse LLVM bitcode format (.bc)
-            result = c.LLVMParseBitcodeInContext2(
+            parse_result = c.LLVMParseBitcodeInContext2(
                 self.context.raw,
                 mem_buf,
                 &module_raw,
             );
         }
 
-        if (result != 0) {
+        if (parse_result != 0 or module_raw == null) {
             defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
             c.LLVMDisposeMemoryBuffer(mem_buf);
             return Error.ParseFailed;
@@ -210,19 +210,25 @@ pub const IRLoader = struct {
 };
 
 /// Parse LLVM IR from a file with proper error handling
+///
+/// DEPRECATED: This function is fundamentally broken and should not be used.
+/// The returned Module holds a pointer to memory that is freed by loader.deinit().
+/// Use IRLoader directly and manage its lifecycle appropriately instead.
+///
+/// Example correct usage:
+///   var loader = try IRLoader.init(allocator);
+///   defer loader.deinit();
+///   const module = try loader.loadFile(path);
+///   // use module while loader is still alive
 pub fn parseIR(allocator: Allocator, path: []const u8) !Module {
-    var loader = try IRLoader.init(allocator);
-    defer loader.deinit();
-
-    return loader.loadFile(path);
+    _ = allocator;
+    _ = path;
+    return Error.IRLoadFailed;
 }
 
-test "parseIR - error handling for non-existent file" {
+test "parseIR - deprecated function should not be used" {
+    // parseIR is deprecated because it returns a dangling Module.
+    // Use IRLoader directly instead.
     const result = parseIR(std.testing.allocator, "nonexistent_file.bc");
-    try std.testing.expectError(Error.FileNotFound, result);
-}
-
-test "parseIR - error handling for invalid path" {
-    const result = parseIR(std.testing.allocator, "");
-    try std.testing.expectError(Error.FileNotFound, result);
+    try std.testing.expectError(Error.IRLoadFailed, result);
 }

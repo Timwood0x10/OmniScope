@@ -29,9 +29,9 @@ const Config = struct {
     output_format: OutputFormat = .text,
     output_file: ?[]const u8 = null,
 
-    fn init(allocator: std.mem.Allocator) Config {
+    fn init(allocator: std.mem.Allocator) !Config {
         return .{
-            .input_files = std.ArrayList([]const u8).initCapacity(allocator, 0) catch unreachable,
+            .input_files = try std.ArrayList([]const u8).initCapacity(allocator, 0),
         };
     }
 
@@ -51,7 +51,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
 
     _ = args.next(); // Skip program name
 
-    var config = Config.init(allocator);
+    var config = try Config.init(allocator);
     errdefer config.deinit(allocator);
 
     while (args.next()) |arg| {
@@ -214,7 +214,7 @@ fn runMultiFileAnalysis(files: []const []const u8, config: *const Config) !void 
     const FFIMatcher = OmniScope.cross_lang.FFIMatcher;
     const FFIMatcherFunctionInfo = OmniScope.cross_lang.FunctionInfo;
 
-    var matcher = FFIMatcher.init(allocator);
+    var matcher = try FFIMatcher.init(allocator);
     defer matcher.deinit();
 
     // Add functions from each loader to the matcher
@@ -364,33 +364,28 @@ fn isDangerousFFIPattern(match: *const OmniScope.cross_lang.FFIMatch) bool {
     const define_func = match.define_func orelse return false;
     const name = define_func.name;
 
-    // Check for dangerous patterns in function name
-    const dangerous_patterns = &[_][]const u8{
+    // Use exact match for dangerous function names
+    // These are known dangerous functions that should be flagged
+    const dangerous_functions = &[_][]const u8{
         "system",
         "exec",
         "popen",
         "eval",
         "shell",
-        "debug", // Debug functions often have format string vulnerabilities
-        "dump", // Dump functions often have format string vulnerabilities
-        "verify", // Verify functions often call system commands
+        // C standard library dangerous functions
+        "gets",
+        "strcpy",
+        "strcat",
+        "sprintf",
+        "vsprintf",
+        "scanf",
+        "fscanf",
+        "sscanf",
+        "getenv",
     };
 
-    for (dangerous_patterns) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) {
-            return true;
-        }
-    }
-
-    // Check for functions that take user input without sanitization
-    // Functions that register or verify transactions are potential targets
-    const sensitive_patterns = &[_][]const u8{
-        "register",
-        "batch",
-    };
-
-    for (sensitive_patterns) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) {
+    for (dangerous_functions) |func_name| {
+        if (std.mem.eql(u8, name, func_name)) {
             return true;
         }
     }
@@ -452,7 +447,7 @@ pub fn main() !void {
 }
 
 test "Config - init and deinit" {
-    var config = Config.init(std.testing.allocator);
+    var config = try Config.init(std.testing.allocator);
     defer config.deinit(std.testing.allocator);
 
     try std.testing.expect(!config.show_help);

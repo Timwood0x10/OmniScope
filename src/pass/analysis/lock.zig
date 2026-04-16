@@ -134,14 +134,12 @@ pub const LockPass = struct {
     }
 
     /// Check if an instruction is a lock operation
-    fn isLockOperation(self: *LockPass, inst: c.LLVMValueRef) bool {
-        _ = self;
-
+    fn isLockOperation(_: *LockPass, inst: c.LLVMValueRef) bool {
         // Get opcode
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Lock operations are typically function calls
-        const opcode_enum = @intToEnum(c.LLVMOpcode, opcode);
+        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
         if (opcode_enum != .Call) return false;
 
         // Get called function
@@ -153,12 +151,11 @@ pub const LockPass = struct {
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known lock function
-        return self.isKnownLockFunction(func_name_slice);
+        return isKnownLockFunctionByName(func_name_slice);
     }
 
-    /// Check if a function name is a known lock function
-    fn isKnownLockFunction(self: *LockPass, name: []const u8) bool {
-        _ = self;
+    /// Check if a function name is a known lock function (standalone)
+    fn isKnownLockFunctionByName(func_name_slice: []const u8) bool {
 
         // Common lock function names
         const lock_funcs = [_][]const u8{
@@ -171,7 +168,7 @@ pub const LockPass = struct {
         };
 
         for (lock_funcs) |lock_func| {
-            if (std.mem.eql(u8, name, lock_func)) {
+            if (std.mem.eql(u8, func_name_slice, lock_func)) {
                 return true;
             }
         }
@@ -560,17 +557,14 @@ test "LockPass - lock acquire vs release detection" {
 
     var pass = LockPass.init(&store);
 
-    // Create dummy call instructions
-    const lock_call: c.LLVMValueRef = @ptrFromInt(0x1000);
-    const unlock_call: c.LLVMValueRef = @ptrFromInt(0x2000);
-
-    // Test lock acquire
-    // Note: isLockAcquire needs a call instruction with a function operand
-    // This is a simplified test, actual implementation would need more setup
-
+    // Test lock acquire and release detection through function names
     // The implementation checks for "lock" in name and not "unlock"
     // So "pthread_mutex_lock" is acquire, "pthread_mutex_unlock" is release
-    // This is tested indirectly through isKnownLockFunction
+    try std.testing.expect(pass.isKnownLockFunctionByName("pthread_mutex_lock"));
+    try std.testing.expect(pass.isKnownLockFunctionByName("pthread_mutex_unlock"));
+    try std.testing.expect(pass.isKnownLockFunctionByName("pthread_spin_lock"));
+    try std.testing.expect(pass.isKnownLockFunctionByName("lock_acquire"));
+    try std.testing.expect(pass.isKnownLockFunctionByName("lock_release"));
 }
 
 test "LockPass - complex deadlock scenario" {

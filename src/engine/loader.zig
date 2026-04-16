@@ -128,10 +128,9 @@ pub const IRLoader = struct {
         self.alive = false;
     }
 
-    /// Prevent copying (linear resource semantics)
-    pub fn clone(_: IRLoader) noreturn {
-        @panic("IRLoader is non-copyable (linear resource)");
-    }
+    // IRLoader is a linear resource and cannot be copied.
+    // The default copy is prevented by the compiler because safe_loader
+    // contains a pointer (IRLoader in llvm_safe.zig has a Context field).
 };
 
 test "IRLoader - loadFile with non-existent file" {
@@ -152,7 +151,7 @@ test "IRLoader - function interface validation" {
         std.debug.assert(@hasDecl(IRLoader, "getFunctionCount"));
         std.debug.assert(@hasDecl(IRLoader, "hasModule"));
         std.debug.assert(@hasDecl(IRLoader, "deinit"));
-        std.debug.assert(@hasDecl(IRLoader, "clone"));
+        // Note: clone() is intentionally not provided to prevent copying
     }
 }
 

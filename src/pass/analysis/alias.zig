@@ -104,7 +104,8 @@ pub const AliasPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Analyze based on opcode
-                switch (@intToEnum(c.LLVMOpcode, opcode)) {
+                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
+                switch (opcode_enum) {
                     .Alloca => {
                         // Alloca creates a new pointer
                         try self.collectPointer(inst);
@@ -171,7 +172,8 @@ pub const AliasPass = struct {
         var ptr_operand: c.LLVMValueRef = undefined;
 
         // Get pointer operand
-        switch (@intToEnum(c.LLVMOpcode, opcode)) {
+        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
+        switch (opcode_enum) {
             .Load => {
                 // Load: first operand is the pointer
                 ptr_operand = c.LLVMGetOperand(inst, 0);

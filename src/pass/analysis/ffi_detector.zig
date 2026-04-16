@@ -434,11 +434,13 @@ pub const FFIDetector = struct {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);
-                        const func_name_slice = std.mem.span(func_name);
+                        if (func_name != null) {
+                            const func_name_slice = std.mem.span(func_name);
 
-                        for (dangerous_funcs) |dangerous| {
-                            if (std.mem.eql(u8, func_name_slice, dangerous)) {
-                                return func_name_slice;
+                            for (dangerous_funcs) |dangerous| {
+                                if (std.mem.eql(u8, func_name_slice, dangerous)) {
+                                    return func_name_slice;
+                                }
                             }
                         }
                     }
@@ -454,11 +456,11 @@ pub const FFIDetector = struct {
 
     /// Check if function has use-after-free pattern
     fn hasUseAfterFreePattern(self: *FFIDetector, func: FunctionInfo, mem_funcs: []const []const u8) !bool {
-        _ = self;
-        _ = mem_funcs;
+        // Track use-after-free pattern:
+        // 1. Find calls to free/delete
+        // 2. Get the pointer being freed
+        // 3. Check if that pointer is used after the free
 
-        // Simplified detection: check if function calls free
-        // In a full implementation, we would track pointer usage
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (bb != null) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -472,10 +474,21 @@ pub const FFIDetector = struct {
                         const func_name = c.LLVMGetValueName(called_func);
                         const func_name_slice = std.mem.span(func_name);
 
-                        if (std.mem.eql(u8, func_name_slice, "free") or
-                            std.mem.eql(u8, func_name_slice, "delete"))
-                        {
-                            return true;
+                        // Check if this is a memory deallocation function
+                        var is_dealloc = false;
+                        for (mem_funcs) |mem_func| {
+                            if (std.mem.eql(u8, func_name_slice, mem_func)) {
+                                is_dealloc = true;
+                                break;
+                            }
+                        }
+
+                        if (is_dealloc) {
+                            // Get the pointer being freed (first operand)
+                            const freed_ptr = c.LLVMGetOperand(inst, 0);
+                            if (freed_ptr != null and self.isPointerUsedAfter(inst, freed_ptr)) {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -483,6 +496,34 @@ pub const FFIDetector = struct {
                 inst = c.LLVMGetNextInstruction(inst);
             }
             bb = c.LLVMGetNextBasicBlock(bb);
+        }
+
+        return false;
+    }
+
+    /// Check if a pointer is used after a specific instruction
+    fn isPointerUsedAfter(self: *FFIDetector, after_inst: c.LLVMValueRef, ptr: c.LLVMValueRef) bool {
+        _ = self;
+
+        // Collect all instructions after after_inst in the same basic block
+        var found_after_inst = false;
+        const bb = c.LLVMGetInstructionParent(after_inst);
+        var inst = c.LLVMGetFirstInstruction(bb);
+
+        while (inst != null) {
+            if (found_after_inst) {
+                // Check if this instruction uses the pointer
+                const num_operands = c.LLVMGetNumOperands(inst);
+                for (0..@as(usize, @intCast(num_operands))) |i| {
+                    const operand = c.LLVMGetOperand(inst, @intCast(i));
+                    if (operand == ptr) {
+                        return true;
+                    }
+                }
+            } else if (inst == after_inst) {
+                found_after_inst = true;
+            }
+            inst = c.LLVMGetNextInstruction(inst);
         }
 
         return false;
@@ -520,25 +561,15 @@ pub const FFIDetector = struct {
     /// Check if tainted data flows from declare to define
     fn hasTaintedDataFlow(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) !bool {
         _ = self;
+        _ = ffi_match;
 
         const taint_facts = try ctx.query_engine.queryByKind(.taint, ctx.allocator);
         defer ctx.allocator.free(taint_facts);
 
-        if (taint_facts.len == 0) {
-            return false;
-        }
-
-        const func_name = ffi_match.name;
-        if (std.mem.indexOf(u8, func_name, "input") != null or
-            std.mem.indexOf(u8, func_name, "user") != null or
-            std.mem.indexOf(u8, func_name, "data") != null or
-            std.mem.indexOf(u8, func_name, "buf") != null or
-            std.mem.indexOf(u8, func_name, "str") != null)
-        {
-            return true;
-        }
-
-        return false;
+        // Return true if any taint facts exist
+        // TODO: Implement more precise tracking by matching function IDs
+        // when function-to-ID mapping is available
+        return taint_facts.len > 0;
     }
 
     /// Report a vulnerability

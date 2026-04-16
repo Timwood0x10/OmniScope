@@ -24,6 +24,8 @@ pub const FunctionKind = enum {
 
 /// List of known libc functions that are considered trusted.
 /// These are NOT treated as FFI boundaries even if external.
+/// Note: Dangerous functions like system, exec, popen are NOT included here
+/// because they should be treated as potential FFI boundaries for security analysis.
 pub const LIBC_FUNCTIONS = &[_][]const u8{
     "malloc",
     "free",
@@ -33,19 +35,36 @@ pub const LIBC_FUNCTIONS = &[_][]const u8{
     "write",
     "open",
     "close",
+    "strlen",
+    "strncpy",
+    "snprintf",
+    "fgets",
+    "getline",
+    "memcpy",
+    "memmove",
+    "memset",
+    "memcmp",
+    "printf",
+    "fprintf",
+    "puts",
+    "fopen",
+    "fclose",
+    "fread",
+    "fwrite",
+};
+
+/// List of dangerous functions that should be flagged as security risks.
+/// These are treated as FFI boundaries and potential sinks.
+pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
     "system",
     "exec",
     "popen",
-    "strlen",
-    "strcpy",
-    "strncpy",
-    "sprintf",
-    "snprintf",
     "gets",
-    "fgets",
+    "strcpy",
+    "strcat",
+    "sprintf",
     "scanf",
     "getenv",
-    "getline",
 };
 
 pub fn isLibC(func_name: []const u8) bool {
@@ -83,7 +102,7 @@ pub const SINK_PATTERNS = &[_][]const u8{
 pub const Node = struct {
     /// Unique identifier for this node.
     id: u32,
-    /// Name of the function.
+    /// Name of the function (owned by this node).
     name: []const u8,
     /// LLVM value reference to the function.
     func_ref: c.LLVMValueRef,
@@ -95,6 +114,11 @@ pub const Node = struct {
     isTainted: bool,
     /// ID of the node that tainted this function (null if source).
     taintedBy: ?u32,
+
+    /// Deinitialize the node and free owned memory
+    fn deinit(self: *Node, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+    }
 };
 
 /// An edge in the call graph representing a call relationship.
@@ -120,7 +144,13 @@ pub const CallGraphPass = struct {
         const mod = ctx.module.?.raw;
 
         var nodes: std.ArrayList(Node) = .{};
-        defer nodes.deinit(ctx.allocator);
+        defer {
+            // Free owned name memory before deinit
+            for (nodes.items) |*node| {
+                node.deinit(ctx.allocator);
+            }
+            nodes.deinit(ctx.allocator);
+        }
 
         var edges: std.ArrayList(Edge) = .{};
         defer edges.deinit(ctx.allocator);
@@ -145,8 +175,11 @@ pub const CallGraphPass = struct {
             if (func_name.len > 1024) continue;
             const is_external = c.LLVMIsDeclaration(func) != 0;
 
+            // Allocate independent copy of the name
+            const name_owned = try allocator.dupe(u8, func_name);
+
             const id = @as(u32, @intCast(nodes.items.len));
-            try nodes.append(allocator, .{ .id = id, .name = func_name, .func_ref = func, .kind = .internal, .isExternal = is_external, .isTainted = false, .taintedBy = null });
+            try nodes.append(allocator, .{ .id = id, .name = name_owned, .func_ref = func, .kind = .internal, .isExternal = is_external, .isTainted = false, .taintedBy = null });
         }
     }
 
@@ -293,15 +326,26 @@ pub const CallGraphPass = struct {
     }
 
     fn classifyRisk(func_name: []const u8) enum { medium, critical } {
-        if (contains(func_name, "system") or contains(func_name, "exec") or contains(func_name, "popen")) {
+        // Use exact match for critical risk functions
+        if (std.mem.eql(u8, func_name, "system") or
+            std.mem.eql(u8, func_name, "exec") or
+            std.mem.eql(u8, func_name, "popen"))
+        {
             return .critical;
         }
         return .medium;
     }
 
     fn isSink(func_name: []const u8) bool {
+        // Use exact match for sink detection
         for (SINK_PATTERNS) |pattern| {
-            if (contains(func_name, pattern)) {
+            if (std.mem.eql(u8, func_name, pattern)) {
+                return true;
+            }
+        }
+        // Also check dangerous functions list
+        for (DANGEROUS_FUNCTIONS) |func| {
+            if (std.mem.eql(u8, func_name, func)) {
                 return true;
             }
         }

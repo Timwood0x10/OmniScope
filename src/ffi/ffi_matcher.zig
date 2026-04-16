@@ -85,12 +85,12 @@ pub const FFIMatcher = struct {
     matches: std.ArrayList(FFIMatch),
 
     /// Create a new FFI matcher
-    pub fn init(allocator: Allocator) FFIMatcher {
+    pub fn init(allocator: Allocator) !FFIMatcher {
         return .{
             .allocator = allocator,
-            .declare_functions = std.ArrayList(FunctionInfo).initCapacity(allocator, 0) catch unreachable,
-            .define_functions = std.ArrayList(FunctionInfo).initCapacity(allocator, 0) catch unreachable,
-            .matches = std.ArrayList(FFIMatch).initCapacity(allocator, 0) catch unreachable,
+            .declare_functions = try std.ArrayList(FunctionInfo).initCapacity(allocator, 0),
+            .define_functions = try std.ArrayList(FunctionInfo).initCapacity(allocator, 0),
+            .matches = try std.ArrayList(FFIMatch).initCapacity(allocator, 0),
         };
     }
 
@@ -106,7 +106,10 @@ pub const FFIMatcher = struct {
         }
         self.define_functions.deinit(self.allocator);
 
-        // Matches reference functions that will be freed above
+        // Free match.name memory (independent copy)
+        for (self.matches.items) |match| {
+            self.allocator.free(match.name);
+        }
         self.matches.deinit(self.allocator);
     }
 
@@ -143,8 +146,12 @@ pub const FFIMatcher = struct {
             const define_idx = define_map.get(declare_func.name) orelse continue;
             const define_func = &self.define_functions.items[define_idx];
 
+            // Allocate independent copy for match.name to avoid dangling pointer
+            const name_copy = try self.allocator.dupe(u8, declare_func.name);
+            errdefer self.allocator.free(name_copy);
+
             const match = FFIMatch{
-                .name = declare_func.name, // Reference to declare_func.name
+                .name = name_copy,
                 .declare_func = declare_func,
                 .define_func = define_func.*,
                 .is_complete = true,
@@ -180,7 +187,15 @@ pub const FFIMatcher = struct {
         // Find unmatched declares
         for (self.declare_functions.items) |declare_func| {
             if (!matched_names.contains(declare_func.name)) {
-                try unmatched.append(self.allocator, declare_func);
+                // Allocate independent copy for name to avoid dangling pointer
+                const name_copy = try self.allocator.dupe(u8, declare_func.name);
+                const func_copy = FunctionInfo{
+                    .name = name_copy,
+                    .kind = declare_func.kind,
+                    .func = declare_func.func,
+                    .is_external = declare_func.is_external,
+                };
+                try unmatched.append(self.allocator, func_copy);
             }
         }
 
@@ -208,7 +223,15 @@ pub const FFIMatcher = struct {
         // Find unmatched defines
         for (self.define_functions.items) |define_func| {
             if (!matched_names.contains(define_func.name)) {
-                try unmatched.append(self.allocator, define_func);
+                // Allocate independent copy for name to avoid dangling pointer
+                const name_copy = try self.allocator.dupe(u8, define_func.name);
+                const func_copy = FunctionInfo{
+                    .name = name_copy,
+                    .kind = define_func.kind,
+                    .func = define_func.func,
+                    .is_external = define_func.is_external,
+                };
+                try unmatched.append(self.allocator, func_copy);
             }
         }
 

@@ -23,6 +23,7 @@ pub const TaintPass = struct {
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
 
+    allocator: std.mem.Allocator,
     ctx: *PassContext,
     diag: *DiagnosticWriter,
     store: *FactStore,
@@ -37,17 +38,35 @@ pub const TaintPass = struct {
     sinks: std.ArrayList(u32),
 
     /// Create a new taint analysis pass
-    pub fn init(store: *FactStore) TaintPass {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) TaintPass {
         return .{
+            .allocator = allocator,
             .ctx = undefined,
             .diag = undefined,
             .store = store,
             .query = QueryEngine.init(store),
-            .taint_graph = TaintGraph.init(std.heap.page_allocator),
+            .taint_graph = TaintGraph.init(allocator),
             .func_id = 0,
-            .sources = std.ArrayList(u32).init(std.heap.page_allocator),
-            .sinks = std.ArrayList(u32).init(std.heap.page_allocator),
+            .sources = std.ArrayList(u32).init(allocator),
+            .sinks = std.ArrayList(u32).init(allocator),
         };
+    }
+
+    /// Deinitialize the pass
+    pub fn deinit(self: *TaintPass) void {
+        self.taint_graph.deinit();
+        self.sources.deinit();
+        self.sinks.deinit();
+    }
+
+    /// Reset internal state for re-analysis
+    fn reset(self: *TaintPass) void {
+        self.taint_graph.deinit();
+        self.sources.clearAndFree();
+        self.sinks.clearAndFree();
+        self.taint_graph = TaintGraph.init(self.allocator);
+        self.sources = std.ArrayList(u32).init(self.allocator);
+        self.sinks = std.ArrayList(u32).init(self.allocator);
     }
 
     /// Run the taint analysis pass
@@ -56,6 +75,9 @@ pub const TaintPass = struct {
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        // Reset internal state for re-analysis
+        self.reset();
+
         self.ctx = ctx;
         self.diag = diag;
 
@@ -74,11 +96,6 @@ pub const TaintPass = struct {
             }
             func = c.LLVMGetNextFunction(func);
         }
-
-        // Clean up
-        self.taint_graph.deinit();
-        self.sources.deinit();
-        self.sinks.deinit();
     }
 
     /// Analyze a function for taint propagation
@@ -95,14 +112,14 @@ pub const TaintPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check if this is a call instruction
-                const opcode_enum = @intToEnum(c.LLVMOpcode, opcode);
+                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
                 if (opcode_enum == .Call) {
                     const inst_id = self.ctx.getNextId();
 
                     // Check if this is a taint source
                     if (self.isTaintSource(inst)) {
                         try self.sources.append(inst_id);
-                        try self.taint_graph.markTainted(inst_id);
+                        try self.taint_graph.markTaintedFromSource(inst_id, inst_id);
                         try self.store.insert(.taint, inst_id, inst_id, self.func_id);
                     }
 
@@ -137,18 +154,18 @@ pub const TaintPass = struct {
         for (self.sinks.items) |sink| {
             if (self.taint_graph.isTainted(sink)) {
                 // Taint reached a sink - emit taint fact
-                // Find source that reached this sink
-                for (self.sources.items) |source| {
-                    try self.store.insert(.taint, source, sink, self.func_id);
+                // Only associate sources that actually propagated to this sink
+                if (self.taint_graph.getTaintSources(sink)) |sources| {
+                    for (sources) |source| {
+                        try self.store.insert(.taint, source, sink, self.func_id);
+                    }
                 }
             }
         }
     }
 
     /// Check if a call instruction is a taint source
-    fn isTaintSource(self: *TaintPass, inst: c.LLVMValueRef) bool {
-        _ = self;
-
+    fn isTaintSource(_: *TaintPass, inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
@@ -158,13 +175,11 @@ pub const TaintPass = struct {
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint source
-        return self.isKnownTaintSource(func_name_slice);
+        return isKnownTaintSourceByName(func_name_slice);
     }
 
-    /// Check if a function name is a known taint source
-    fn isKnownTaintSource(self: *TaintPass, name: []const u8) bool {
-        _ = self;
-
+    /// Check if a function name is a known taint source (standalone function)
+    fn isKnownTaintSourceByName(func_name_slice: []const u8) bool {
         // Common taint source functions
         const taint_sources = [_][]const u8{
             "read",
@@ -185,7 +200,7 @@ pub const TaintPass = struct {
         };
 
         for (taint_sources) |source| {
-            if (std.mem.eql(u8, name, source)) {
+            if (std.mem.eql(u8, func_name_slice, source)) {
                 return true;
             }
         }
@@ -194,9 +209,7 @@ pub const TaintPass = struct {
     }
 
     /// Check if a call instruction is a taint sink
-    fn isTaintSink(self: *TaintPass, inst: c.LLVMValueRef) bool {
-        _ = self;
-
+    fn isTaintSink(_: *TaintPass, inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
@@ -206,12 +219,11 @@ pub const TaintPass = struct {
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint sink
-        return self.isKnownTaintSink(func_name_slice);
+        return isKnownTaintSinkByName(func_name_slice);
     }
 
-    /// Check if a function name is a known taint sink
-    fn isKnownTaintSink(self: *TaintPass, name: []const u8) bool {
-        _ = self;
+    /// Check if a function name is a known taint sink (standalone function)
+    fn isKnownTaintSinkByName(func_name_slice: []const u8) bool {
 
         // Common taint sink functions
         const taint_sinks = [_][]const u8{
@@ -235,7 +247,7 @@ pub const TaintPass = struct {
         };
 
         for (taint_sinks) |sink| {
-            if (std.mem.eql(u8, name, sink)) {
+            if (std.mem.eql(u8, func_name_slice, sink)) {
                 return true;
             }
         }
@@ -249,6 +261,8 @@ pub const TaintGraph = struct {
     allocator: std.mem.Allocator,
     tainted_values: std.AutoHashMap(u32, bool),
     propagation_edges: std.ArrayList(Edge),
+    // Track which source tainted each value (value -> source)
+    taint_sources: std.AutoHashMap(u32, std.ArrayList(u32)),
 
     const Edge = struct {
         from: u32,
@@ -261,6 +275,7 @@ pub const TaintGraph = struct {
             .allocator = allocator,
             .tainted_values = std.AutoHashMap(u32, bool).init(allocator),
             .propagation_edges = std.ArrayList(Edge).init(allocator),
+            .taint_sources = std.AutoHashMap(u32, std.ArrayList(u32)).init(allocator),
         };
     }
 
@@ -268,9 +283,28 @@ pub const TaintGraph = struct {
     pub fn deinit(self: *TaintGraph) void {
         self.tainted_values.deinit();
         self.propagation_edges.deinit();
+        var iter = self.taint_sources.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+        self.taint_sources.deinit();
     }
 
-    /// Mark a value as tainted
+    /// Mark a value as tainted from a specific source
+    pub fn markTaintedFromSource(self: *TaintGraph, value: u32, source: u32) !void {
+        try self.tainted_values.put(value, true);
+
+        // Record the source for this value
+        if (try self.taint_sources.getOrPut(value)) |*entry| {
+            try entry.value_ptr.append(source);
+        } else {
+            var sources = std.ArrayList(u32).init(self.allocator);
+            try sources.append(source);
+            try self.taint_sources.put(value, sources);
+        }
+    }
+
+    /// Mark a value as tainted (backward compatibility)
     pub fn markTainted(self: *TaintGraph, value: u32) !void {
         try self.tainted_values.put(value, true);
     }
@@ -280,6 +314,14 @@ pub const TaintGraph = struct {
         return self.tainted_values.contains(value);
     }
 
+    /// Get the sources that tainted a specific value
+    pub fn getTaintSources(self: *const TaintGraph, value: u32) ?[]const u32 {
+        if (self.taint_sources.get(value)) |sources| {
+            return sources.items;
+        }
+        return null;
+    }
+
     /// Add a propagation edge
     pub fn addPropagation(self: *TaintGraph, from: u32, to: u32) !void {
         try self.propagation_edges.append(.{ .from = from, .to = to });
@@ -287,14 +329,33 @@ pub const TaintGraph = struct {
         // If source is tainted, propagate to destination
         if (self.tainted_values.contains(from)) {
             try self.tainted_values.put(to, true);
+
+            // Propagate sources
+            if (self.taint_sources.get(from)) |from_sources| {
+                if (try self.taint_sources.getOrPut(to)) |*entry| {
+                    for (from_sources.items) |src| {
+                        try entry.value_ptr.append(src);
+                    }
+                } else {
+                    var sources = std.ArrayList(u32).init(self.allocator);
+                    for (from_sources.items) |src| {
+                        try sources.append(src);
+                    }
+                    try self.taint_sources.put(to, sources);
+                }
+            }
         }
     }
 
     /// Propagate taint through the graph
     pub fn propagate(self: *TaintGraph) !void {
+        const max_iterations = 1000;
+        var iterations: usize = 0;
         var changed = true;
-        while (changed) {
+
+        while (changed and iterations < max_iterations) {
             changed = false;
+            iterations += 1;
 
             for (self.propagation_edges.items) |edge| {
                 if (self.tainted_values.contains(edge.from) and
@@ -302,6 +363,21 @@ pub const TaintGraph = struct {
                 {
                     try self.tainted_values.put(edge.to, true);
                     changed = true;
+
+                    // Propagate sources
+                    if (self.taint_sources.get(edge.from)) |from_sources| {
+                        if (try self.taint_sources.getOrPut(edge.to)) |*entry| {
+                            for (from_sources.items) |src| {
+                                try entry.value_ptr.append(src);
+                            }
+                        } else {
+                            var sources = std.ArrayList(u32).init(self.allocator);
+                            for (from_sources.items) |src| {
+                                try sources.append(src);
+                            }
+                            try self.taint_sources.put(edge.to, sources);
+                        }
+                    }
                 }
             }
         }

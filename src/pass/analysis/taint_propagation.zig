@@ -7,7 +7,7 @@
 //! tracking how tainted values propagate through the IR.
 
 const std = @import("std");
-const c = @import("../../ir/llvm_raw.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
 const call_graph = @import("./call_graph.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
