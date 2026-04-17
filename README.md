@@ -1,15 +1,15 @@
 # OmniScope
 
-**Cross-Language Static Security Analyzer**
+**LLVM IR Static Analysis Framework**
 
-OmniScope is an LLVM IR-based static analysis tool focused on detecting security vulnerabilities across FFI boundaries.
+OmniScope is a static analysis tool for LLVM IR, focused on cross-language security vulnerability detection through FFI boundaries.
 
-## Key Features
+## Key Innovations
 
-- **Cross-Language Data Flow Analysis**: Track data flow across Rust ↔ C, Zig ↔ C, and other FFI boundaries
-- **Security Vulnerability Detection**: Command injection, buffer overflow, memory leaks, double free, and more
-- **Traceable Output**: Every vulnerability comes with a complete reasoning path
-- **Modular Pass Architecture**: Easy to extend with new detection rules
+- **Fact Graph Architecture**: Structure-of-Arrays (SoA) fact storage enables efficient inter-pass communication
+- **Cross-Language FFI Analysis**: Tracks data flow across Rust ↔ C, Zig ↔ C, and other FFI boundaries
+- **Zero-Cost Abstractions**: Leverages Zig's comptime features to eliminate runtime overhead
+- **Strict Communication Boundaries**: Passes communicate only through the fact store, ensuring isolation
 
 ## Quick Start
 
@@ -73,24 +73,14 @@ info: Issues detected: 20
 
 ```
 src/
-├── pass/
-│   ├── analysis/
-│   │   ├── issue/           # Vulnerability detection passes
-│   │   │   ├── malloc_check.zig
-│   │   │   ├── free_validation.zig
-│   │   │   ├── memory_safety.zig
-│   │   │   ├── ffi_unsafe.zig
-│   │   │   └── integer_overflow.zig
-│   │   └── ffi_semantics.zig
+├── pass/                    # Pass system
+│   ├── analysis/            # Analysis passes
 │   └── manager.zig
-├── dataflow/
-│   └── graph.zig            # Data flow graph
-├── ffi/
-│   └── ffi_matcher.zig      # FFI boundary matching
-├── diag/
-│   └── issue.zig            # Issue definitions
-└── pipeline/
-    └── pipeline.zig         # Analysis pipeline
+├── dataflow/               # Data flow graph
+├── ffi/                    # FFI boundary detection
+├── fact/                   # Fact store (SoA layout)
+├── diag/                   # Issue definitions
+└── ir/                     # LLVM wrappers
 ```
 
 ## Pass Development Guide
@@ -162,9 +152,9 @@ pub const deps = &[_][]const u8{ "ffi-boundary", "call-graph" };
 
 ## Limitations
 
-- Requires compiled LLVM IR (no direct source code analysis)
-- Limited inter-procedural analysis (primarily intra-procedural)
-- Requires debug information for better location reporting
+- Requires compiled LLVM IR
+- Primarily intra-procedural analysis
+- Debug information improves location reporting
 
 ## Contributing
 

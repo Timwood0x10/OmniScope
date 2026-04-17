@@ -12,7 +12,7 @@ IR_DIR := $(BUILD_DIR)/ir
 # Tools
 CARGO := cargo
 CLANG := clang
-LLVM_LINK := llvm-link
+LLVM_LINK := /opt/homebrew/opt/llvm/bin/llvm-link
 OMNISCOPE := $(ROOT_DIR)/zig-out/bin/OmniScope
 
 # Output files
@@ -39,7 +39,9 @@ ir: $(IR_DIR)
 	
 	# Generate Rust IR
 	@echo "  - Compiling Rust to LLVM IR..."
-	$(CARGO) rustc --release -- --emit=llvm-ir -o $(RUST_IR)
+	$(CARGO) rustc --release --lib -- --emit=llvm-ir
+	@# Find and copy the generated Rust IR file from deps directory
+	@find $(BUILD_DIR)/release/deps -name "rust_ffi_demo-*.ll" -exec cp {} $(RUST_IR) \;
 	
 	# Generate C IR
 	@echo "  - Compiling C to LLVM IR..."
