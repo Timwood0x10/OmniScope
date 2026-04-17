@@ -233,14 +233,20 @@ pub const SarifGenerator = struct {
             try output.writer().print("              \"id\": \"{s}\",\n", .{rule.id});
             try output.writer().print("              \"name\": \"{s}\",\n", .{rule.name});
             try output.appendSlice("              \"shortDescription\": {\n");
-            const escaped_short = std.json.stringEncode(self.allocator, rule.short_description) catch "";
-            defer self.allocator.free(escaped_short);
-            try output.writer().print("                \"text\": {s}\n", .{escaped_short});
+            const escaped_short = std.json.stringEncode(self.allocator, rule.short_description) catch {
+                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.short_description});
+            } else {
+                defer self.allocator.free(escaped_short);
+                try output.writer().print("                \"text\": {s}\n", .{escaped_short});
+            };
             try output.appendSlice("              },\n");
             try output.appendSlice("              \"fullDescription\": {\n");
-            const escaped_full = std.json.stringEncode(self.allocator, rule.full_description) catch "";
-            defer self.allocator.free(escaped_full);
-            try output.writer().print("                \"text\": {s}\n", .{escaped_full});
+            const escaped_full = std.json.stringEncode(self.allocator, rule.full_description) catch {
+                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.full_description});
+            } else {
+                defer self.allocator.free(escaped_full);
+                try output.writer().print("                \"text\": {s}\n", .{escaped_full});
+            };
             try output.appendSlice("              },\n");
             try output.writer().print("              \"defaultConfiguration\": {{\n", .{});
             try output.writer().print("                \"level\": \"{s}\"\n", .{rule.default_severity});
@@ -303,7 +309,12 @@ pub const SarifGenerator = struct {
     fn writeMessage(self: *SarifGenerator, output: *std.ArrayList(u8), message: []const u8) !void {
         _ = self;
         try output.appendSlice("          \"message\": {\n");
-        const escaped = std.json.stringEncode(self.allocator, message) catch "";
+        const escaped = std.json.stringEncode(self.allocator, message) catch {
+            // If encoding fails, write unescaped message to avoid crash
+            try output.writer().print("            \"text\": \"{s}\"\n", .{message});
+            try output.appendSlice("          }");
+            return;
+        };
         defer self.allocator.free(escaped);
         try output.writer().print("            \"text\": {s}\n", .{escaped});
         try output.appendSlice("          }");
@@ -318,13 +329,19 @@ pub const SarifGenerator = struct {
         try output.appendSlice("                \"artifactLocation\": {\n");
 
         if (location.file) |file| {
-            const escaped_file = std.json.stringEncode(self.allocator, file) catch "";
-            defer self.allocator.free(escaped_file);
-            try output.writer().print("                  \"uri\": {s}\n", .{escaped_file});
+            const escaped_file = std.json.stringEncode(self.allocator, file) catch {
+                try output.writer().print("                  \"uri\": \"{s}\"\n", .{file});
+            } else {
+                defer self.allocator.free(escaped_file);
+                try output.writer().print("                  \"uri\": {s}\n", .{escaped_file});
+            };
         } else {
-            const escaped_func = std.json.stringEncode(self.allocator, location.function) catch "";
-            defer self.allocator.free(escaped_func);
-            try output.writer().print("                  \"uri\": {s}\n", .{escaped_func});
+            const escaped_func = std.json.stringEncode(self.allocator, location.function) catch {
+                try output.writer().print("                  \"uri\": \"{s}\"\n", .{location.function});
+            } else {
+                defer self.allocator.free(escaped_func);
+                try output.writer().print("                  \"uri\": {s}\n", .{escaped_func});
+            };
         }
 
         try output.appendSlice("                },\n");
@@ -384,15 +401,21 @@ pub const SarifGenerator = struct {
         try output.writer().print("                        \"id\": {d},\n", .{step});
         try output.appendSlice("                        \"physicalLocation\": {\n");
         try output.appendSlice("                          \"artifactLocation\": {\n");
-        const escaped_func = std.json.stringEncode(self.allocator, boundary.function_name) catch "";
-        defer self.allocator.free(escaped_func);
-        try output.writer().print("                            \"uri\": {s}\n", .{escaped_func});
+        const escaped_func = std.json.stringEncode(self.allocator, boundary.function_name) catch {
+            try output.writer().print("                            \"uri\": \"{s}\"\n", .{boundary.function_name});
+        } else {
+            defer self.allocator.free(escaped_func);
+            try output.writer().print("                            \"uri\": {s}\n", .{escaped_func});
+        };
         try output.appendSlice("                          }\n");
         try output.appendSlice("                        },\n");
         try output.appendSlice("                        \"message\": {\n");
-        const escaped_msg = std.json.stringEncode(self.allocator, message) catch "";
-        defer self.allocator.free(escaped_msg);
-        try output.writer().print("                          \"text\": {s}\n", .{escaped_msg});
+        const escaped_msg = std.json.stringEncode(self.allocator, message) catch {
+            try output.writer().print("                          \"text\": \"{s}\"\n", .{message});
+        } else {
+            defer self.allocator.free(escaped_msg);
+            try output.writer().print("                          \"text\": {s}\n", .{escaped_msg});
+        };
         try output.appendSlice("                        }\n");
         try output.appendSlice("                      }\n");
         try output.appendSlice("                    }");
