@@ -423,10 +423,14 @@ pub const FFIBoundary = struct {
     pub const Language = enum {
         /// C language
         c,
+        /// C++ language
+        cpp,
         /// Rust language
         rust,
         /// Zig language
         zig,
+        /// Swift language
+        swift,
         /// Unknown language
         unknown,
     };

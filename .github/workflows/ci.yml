@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev
+      - name: Type check
+        run: zig build check
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev
+      - name: Run unit tests
+        run: zig build test --summary all
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: zig-out/test-results/
+
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev
+      - name: Run benchmarks
+        run: zig build bench-perf -Doptimize=ReleaseFast
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench/output/
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev
+      - name: Build release
+        run: zig build -Doptimize=ReleaseSafe
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniscope-linux
+          path: zig-out/bin/OmniSope
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: brew install llvm@18
+      - name: Build release
+        run: zig build -Doptimize=ReleaseSafe
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniscope-macos
+          path: zig-out/bin/OmniSope
+
+  examples:
+    name: FFI Examples
+    runs-on: macos-latest
+    needs: build-macos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install LLVM
+        run: brew install llvm@18
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: omniscope-macos
+          path: zig-out/bin/
+      - name: Run Rust example
+        run: make rust-run
+      - name: Run C++ example
+        run: make cpp-run
+      - name: Run Zig example
+        run: make zig-run
+      - name: Upload example results
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-results
+          path: examples/*/target/
+
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          zig-version: 0.15.0
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev lcov
+      - name: Generate coverage
+        run: |
+          zig build test -Dcoverage
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage.info
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          fail_ci_if_error: false

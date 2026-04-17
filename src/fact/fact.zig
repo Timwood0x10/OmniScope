@@ -25,6 +25,14 @@ pub const FactKind = enum(u8) {
     ffi_boundary,
     /// Detected vulnerability
     vulnerability,
+    /// Ownership allocation event
+    ownership_alloc,
+    /// Ownership free event
+    ownership_free,
+    /// Ownership transfer across boundary
+    ownership_transfer,
+    /// Ownership violation detected
+    ownership_violation,
 };
 
 /// Fact represents a single analysis fact

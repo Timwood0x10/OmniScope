@@ -2,6 +2,8 @@
 //!
 //! Detects and marks cross-language transitions in the call graph.
 //! Integrates with the unified data flow architecture using DataFlowGraph.
+//! Uses SemanticRegistry for risk assessment of FFI boundary functions.
+//! Supports debug info extraction for precise source locations.
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -14,6 +16,13 @@ const Location = @import("../../diag/issue.zig").Location;
 const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
 const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
+
+const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
+const Severity = @import("../../registry/semantic_registry.zig").Severity;
+
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
+const SourceLocation = @import("../../ir/debug_info.zig").SourceLocation;
 
 /// Error type for FFI boundary detection operations.
 pub const FFIBoundaryError = error{
@@ -31,6 +40,14 @@ const FFIBoundaryStats = struct {
     libc: u32 = 0,
     external_unknown: u32 = 0,
     dangerous: u32 = 0,
+    /// Count by risk kind
+    command_exec: u32 = 0,
+    unchecked_copy: u32 = 0,
+    format_string: u32 = 0,
+    allocator: u32 = 0,
+    deallocator: u32 = 0,
+    rust_ownership: u32 = 0,
+    borrow_escaped: u32 = 0,
 };
 
 /// Result of analyzing a function for FFI boundaries
@@ -145,6 +162,7 @@ pub const FFIBoundaryPass = struct {
         diag.info("    - LibC calls: {}", .{stats.libc});
         if (stats.dangerous > 0) {
             diag.err("  Dangerous calls: {}", .{stats.dangerous});
+            diag.info("  Semantic Registry: {} functions known", .{SemanticRegistry.totalCount()});
         } else {
             diag.info("  Dangerous calls: {}", .{stats.dangerous});
         }
@@ -184,12 +202,57 @@ pub const FFIBoundaryPass = struct {
         if (@intFromPtr(called_name_ptr) == 0) return false;
         const called_name = std.mem.span(called_name_ptr);
 
-        // Check if it's a dangerous call
-        const is_dangerous = isDangerousFFICall(called_name);
+        // Check if it's a known risky function via Semantic Registry
+        const semantics = SemanticRegistry.lookup(called_name);
+        const is_dangerous = semantics != null;
 
-        // Skip libc functions (not true FFI boundaries) - but track them
+        // Get caller function name for risk reporting
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
+        // Report risky libc functions even if they're not FFI boundaries
+        // These are still security-relevant calls
         if (isLibcFunction(called_name)) {
             stats.libc += 1;
+
+            // Report high-risk libc functions from Semantic Registry
+            if (is_dangerous) {
+                stats.dangerous_count += 1;
+                const caller_demangled = demangleRustName(caller_name);
+                const callee_demangled = demangleRustName(called_name);
+                const sem = semantics.?;
+
+                const severity_str = sem.severity.toString();
+                const kind_str = @tagName(sem.kind);
+
+                // Get debug info for the instruction
+                const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
+
+                diag.err("[{s}] RISKY LIBC CALL: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+
+                // Show source location if available
+                if (debug_loc) |loc| {
+                    if (loc.valid()) {
+                        diag.err("  Location: {f}", .{loc});
+                    }
+                }
+
+                diag.err("  Kind: {s}", .{kind_str});
+                diag.err("  Detail: {s}", .{sem.description});
+
+                if (sem.consumes_ownership) {
+                    diag.err("  Warning: This function CONSUMES ownership", .{});
+                }
+                if (sem.transfers_ownership) {
+                    diag.err("  Warning: This function TRANSFERS ownership", .{});
+                }
+                if (sem.requires_null_check) {
+                    diag.err("  Warning: Result requires NULL check", .{});
+                }
+            }
             return false;
         }
 
@@ -213,13 +276,6 @@ pub const FFIBoundaryPass = struct {
         if ((caller_lang != callee_lang and callee_lang != .unknown) or is_external) {
             const boundary_kind = classifyBoundaryKind(caller_lang, callee_lang);
 
-            // Get caller function name
-            const caller_name_ptr = c.LLVMGetValueName(caller_func);
-            const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-                std.mem.span(caller_name_ptr)
-            else
-                "unknown";
-
             // Create location
             const location = Location.init(caller_name);
 
@@ -236,25 +292,47 @@ pub const FFIBoundaryPass = struct {
             // Add to DataFlowGraph
             try ctx.addFFIBoundary(boundary);
 
-            // Only print dangerous calls with details
+            // Print dangerous calls with detailed risk info from Semantic Registry
             if (is_dangerous) {
                 stats.dangerous_count += 1;
-                diag.err("DANGEROUS FFI CALL: {s} -> {s}", .{ caller_name, called_name });
+                const caller_demangled = demangleRustName(caller_name);
+                const callee_demangled = demangleRustName(called_name);
+                const sem = semantics.?;
+
+                // Format risk message based on severity
+                const severity_str = sem.severity.toString();
+                const kind_str = @tagName(sem.kind);
+
+                // Get debug info for the instruction
+                const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
+
+                diag.err("[{s}] FFI RISK: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+
+                // Show source location if available
+                if (debug_loc) |loc| {
+                    if (loc.valid()) {
+                        diag.err("  Location: {f}", .{loc});
+                    }
+                }
+
+                diag.err("  Kind: {s}", .{kind_str});
+                diag.err("  Detail: {s}", .{sem.description});
+
+                // Additional context for ownership-related functions
+                if (sem.consumes_ownership) {
+                    diag.err("  Warning: This function CONSUMES ownership", .{});
+                }
+                if (sem.transfers_ownership) {
+                    diag.err("  Warning: This function TRANSFERS ownership", .{});
+                }
+                if (sem.requires_null_check) {
+                    diag.err("  Warning: Result requires NULL check", .{});
+                }
             }
 
             return true;
         }
 
-        return false;
-    }
-
-    /// Check if a function name represents a dangerous FFI call
-    fn isDangerousFFICall(func_name: []const u8) bool {
-        inline for (FFIPatterns.dangerous_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return true;
-            }
-        }
         return false;
     }
 
@@ -316,6 +394,81 @@ pub const FFIBoundaryPass = struct {
         return .unknown;
     }
 
+    /// Demangle a Rust mangled name to a readable format
+    /// Returns the original name if not a valid Rust mangled name
+    fn demangleRustName(mangled: []const u8) []const u8 {
+        // Rust mangled names start with _ZN
+        if (mangled.len < 4 or mangled[0] != '_' or mangled[1] != 'Z' or mangled[2] != 'N') {
+            return mangled;
+        }
+
+        var pos: usize = 3;
+        var components: [3][]const u8 = .{ "", "", "" };
+        var comp_count: usize = 0;
+
+        while (pos < mangled.len and comp_count < 3) {
+            if (mangled[pos] == 'E') break;
+
+            var len: usize = 0;
+            while (pos < mangled.len and mangled[pos] >= '0' and mangled[pos] <= '9') {
+                len = len * 10 + @as(usize, mangled[pos] - '0');
+                pos += 1;
+            }
+
+            if (len == 0 or pos >= mangled.len or pos + len > mangled.len) break;
+            if (len > 50) break; // Skip unreasonable lengths
+
+            const slice = mangled[pos .. pos + len];
+            pos += len;
+
+            // Skip template markers and special characters
+            if (slice.len == 0) continue;
+            if (slice[0] == '$' or slice[0] == 'C' or slice[0] == '{' or slice[0] == '}') {
+                if (pos < mangled.len and mangled[pos] == 'E') pos += 1;
+                continue;
+            }
+
+            // Skip common Rust namespace prefixes
+            if (comp_count == 0) {
+                if (std.mem.eql(u8, slice, "core") or
+                    std.mem.eql(u8, slice, "alloc") or
+                    std.mem.eql(u8, slice, "std") or
+                    std.mem.eql(u8, slice, "rust_ffi_demo"))
+                {
+                    components[0] = slice;
+                    comp_count = 1;
+                    continue;
+                }
+            }
+
+            // Collect meaningful components
+            if (comp_count > 0 or
+                (!std.mem.eql(u8, slice, "core") and
+                    !std.mem.eql(u8, slice, "alloc") and
+                    !std.mem.eql(u8, slice, "std")))
+            {
+                components[comp_count] = slice;
+                comp_count += 1;
+            }
+
+            if (pos < mangled.len and mangled[pos] == 'E') {
+                pos += 1;
+                break;
+            }
+        }
+
+        // Format: namespace::function_name
+        if (comp_count >= 2) {
+            var buf: [128]u8 = undefined;
+            const result = std.fmt.bufPrint(&buf, "{s}::{s}", .{ components[0], components[1] }) catch return mangled;
+            return result;
+        } else if (comp_count == 1) {
+            return components[0];
+        }
+
+        return mangled;
+    }
+
     /// Classify the boundary kind based on caller and callee languages
     fn classifyBoundaryKind(caller_lang: Language, callee_lang: Language) BoundaryKind {
         return switch (caller_lang) {
@@ -348,14 +501,10 @@ pub const FFIBoundaryPass = struct {
         return false;
     }
 
-    /// Check if a function name represents a dangerous FFI pattern
+    /// Check if a function name represents a dangerous FFI pattern.
+    /// Uses Semantic Registry for comprehensive risk assessment.
     pub fn isDangerousPattern(func_name: []const u8) bool {
-        for (FFIPatterns.dangerous_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return true;
-            }
-        }
-        return false;
+        return SemanticRegistry.isKnown(func_name);
     }
 };
 
@@ -374,9 +523,19 @@ test "FFIBoundaryPass - deps" {
 }
 
 test "FFIBoundaryPass - isDangerousPattern" {
+    // Exact matches from Layer 1 (FFI high-risk functions)
     try std.testing.expect(FFIBoundaryPass.isDangerousPattern("system"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("exec_cmd"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("debug_dump"));
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("free"));
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("malloc"));
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("strcpy"));
+
+    // Contains matches from Layer 2 (Rust ownership patterns)
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("into_raw"));
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("std::boxed::Box<T>::into_raw"));
+    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("as_ptr"));
+
+    // Unknown functions are not flagged
     try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("safe_func"));
     try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("print_message"));
+    try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("exec_cmd"));
 }

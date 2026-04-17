@@ -214,6 +214,34 @@ pub fn build(b: *std.Build) void {
     run_lib_tests.step.dependOn(b.getInstallStep());
     test_step.dependOn(&run_lib_tests.step);
 
+    // Unit tests step
+    const unit_test_step = b.step("unit-test", "Run unit tests");
+    const unit_test_mod = b.addModule("unit_test", .{
+        .root_source_file = b.path("tests/main.zig"),
+        .target = target,
+    });
+    unit_test_mod.addImport("OmniScope", lib_mod);
+    const unit_tests = b.addTest(.{
+        .root_module = unit_test_mod,
+    });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    unit_test_step.dependOn(&run_unit_tests.step);
+    test_step.dependOn(&run_unit_tests.step);
+
+    // Benchmark step
+    const bench_perf_step = b.step("bench-perf", "Run performance benchmarks");
+    const bench_mod = b.addModule("bench", .{
+        .root_source_file = b.path("benches/main.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_mod.addImport("OmniScope", lib_mod);
+    const bench_tests = b.addTest(.{
+        .root_module = bench_mod,
+    });
+    const run_bench_tests = b.addRunArtifact(bench_tests);
+    bench_perf_step.dependOn(&run_bench_tests.step);
+
     // Integration tests step
     const integration_test_step = b.step("integration-test", "Run integration tests with real IR files");
     const integration_test_mod = b.addModule("integration_test", .{
@@ -236,6 +264,45 @@ pub fn build(b: *std.Build) void {
     const run_integration_tests = b.addRunArtifact(integration_tests);
     run_integration_tests.step.dependOn(b.getInstallStep());
     integration_test_step.dependOn(&run_integration_tests.step);
+
+    // Test integration step (new integration test suite)
+    const test_integration_step = b.step("test-integration", "Run integration test suite");
+    const test_integration_mod = b.addModule("test_integration", .{
+        .root_source_file = b.path("tests/integration/main.zig"),
+        .target = target,
+    });
+    test_integration_mod.addImport("OmniScope", lib_mod);
+    const test_integration_tests = b.addTest(.{
+        .root_module = test_integration_mod,
+    });
+    const run_test_integration_tests = b.addRunArtifact(test_integration_tests);
+    test_integration_step.dependOn(&run_test_integration_tests.step);
+
+    // Issue verification tests step
+    const issue_verify_step = b.step("test-issues", "Run issue verification tests");
+    const issue_verify_mod = b.addModule("issue_verify", .{
+        .root_source_file = b.path("tests/integration/issue_verification.zig"),
+        .target = target,
+    });
+    issue_verify_mod.addImport("OmniScope", lib_mod);
+    const issue_verify_tests = b.addTest(.{
+        .root_module = issue_verify_mod,
+    });
+    const run_issue_verify_tests = b.addRunArtifact(issue_verify_tests);
+    issue_verify_step.dependOn(&run_issue_verify_tests.step);
+
+    // Stability tests step
+    const stability_test_step = b.step("test-stability", "Run stability tests (crash-free, malformed input)");
+    const stability_test_mod = b.addModule("stability_test", .{
+        .root_source_file = b.path("tests/stability/main.zig"),
+        .target = target,
+    });
+    stability_test_mod.addImport("OmniScope", lib_mod);
+    const stability_tests = b.addTest(.{
+        .root_module = stability_test_mod,
+    });
+    const run_stability_tests = b.addRunArtifact(stability_tests);
+    stability_test_step.dependOn(&run_stability_tests.step);
 
     // E2E tests step
     const e2e_test_step = b.step("e2e-test", "Run end-to-end tests with real IR and Pipeline");
@@ -267,4 +334,20 @@ pub fn build(b: *std.Build) void {
         "build",
         "--help",
     }).step);
+
+    // Check step - type check without linking
+    const check_step = b.step("check", "Type check the project");
+    const check_exe = b.addExecutable(.{
+        .name = "check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "OmniScope", .module = lib_mod },
+            },
+        }),
+    });
+    check_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    check_step.dependOn(&check_exe.step);
 }

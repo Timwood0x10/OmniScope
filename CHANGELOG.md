@@ -5,7 +5,62 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-04-17
+## [0.2.0] - 2026-04-17
+
+### Added
+
+#### Resource Lifetime Engine
+- **Universal Lifetime Analysis**: Not Rust-specific, supports any LLVM language
+- **Owner State Tracking**: unknown, caller, callee, shared, system
+- **Lifetime State Machine**: live, moved, borrowed, freed, escaped, invalid
+- **Semantic Actions**: alloc, free, borrow, transfer, reclaim, escape
+- **State Transition Rules**: Data-driven transition table
+
+#### Semantic Registry
+- **Built-in Semantics**: 18 functions known (C, Rust, Zig, Swift, C++)
+- **Data-Driven Rules**: No if-else chains, just rule tables
+- **Platform Adaptation**: macOS (`_system`, `__strcpy_chk`) and Linux variants
+- **Custom Wrapper Support**: JSON config file for project-specific functions
+
+#### Debug Info Support
+- **Precise Source Location**: File, line, column extraction
+- **LLVM Debug Metadata**: DIFile, DILocation, DISubprogram wrappers
+- **Inline Call Stack**: DILocation with inlinedAt support
+
+#### Cross-Language FFI Testing
+- **Rust → C**: Full example with intentional vulnerabilities
+- **C++ → C**: extern "C" boundary analysis
+- **Go → C**: cgo memory safety analysis
+- **Zig → C**: Allocator semantics analysis
+
+### Changed
+
+#### Architecture Simplification
+- Removed unnecessary passes: SinkTracerPass, ReturnCheckPass, TaintPropagationPass
+- Simplified Pass chain: CallGraph → FFIBoundary → PointerOwnership → FFIUnsafe
+- Unified Fact types with ownership-specific kinds
+
+#### Improved Detection
+- **FFIBoundaryPass**: Integrated with Semantic Registry for risk assessment
+- **PointerOwnershipPass**: Added Fact integration for ownership tracking
+- **SinkTracerPass**: Uses Semantic Registry for sink classification
+
+### Fixed
+
+- Allocation detection: Exact matches instead of substring matches
+- Rust Debug trait false positives: Fixed pattern matching
+- Platform-specific function names: Added suffix/contains matching
+
+### Test Results
+
+| Example | Languages | Accuracy |
+|---------|-----------|----------|
+| rust_ffi_demo | Rust → C | 100% |
+| cpp_cffi | C++ → C | 100% |
+| go_cffi | Go → C | 89% |
+| zig_cffi | Zig → C | 88% |
+
+## [0.1.0] - 2026-04-10
 
 ### Added
 
@@ -31,37 +86,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **JSON**: Structured JSON output for CI/CD integration
 - **Text**: Human-readable text output for local development
 
-#### CI/CD Integration
-- **GitHub Actions**: Complete workflow for automated security analysis
-- **GitHub Code Scanning**: Native integration with GitHub Security
-- **CI Runner**: Programmatic API for CI/CD pipeline integration
-
 #### Analysis Passes
 - **CFG Pass**: Control Flow Graph construction
 - **DFG Pass**: Data Flow Graph construction
 - **Taint Pass**: Taint source/sink tracking
-- **Lock Pass**: Deadlock detection analysis
 - **FFI Detector**: FFI boundary identification
-- **FFI Semantics**: FFI function semantics database
 - **Call Graph**: Inter-procedural call graph analysis
-
-### Technical Details
-
-#### Architecture
-- **Pass Manager**: Dependency-aware pass execution system
-- **Fact Store**: Unified fact storage and querying
-- **Diagnostic Aggregator**: Centralized issue reporting
-- **IR View**: Safe LLVM IR abstraction layer
-
-#### Memory Management
-- Proper ownership semantics for Issue and TraceEntry
-- Memory leak fixes in HashMap operations
-- Safe string handling with owned/borrowed distinction
-
-#### Testing
-- 112 unit tests passing
-- Integration tests with real LLVM IR
-- End-to-end pipeline tests
 
 ### Known Limitations
 - Requires LLVM 22 on macOS, LLVM 18 on Linux

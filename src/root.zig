@@ -72,10 +72,10 @@ pub const cross_lang = struct {
     pub const CallGraphPass = @import("pass/analysis/call_graph.zig").CallGraphPass;
     pub const TaintPropagationPass = @import("pass/analysis/taint_propagation.zig").TaintPropagationPass;
     pub const FFIBoundaryPass = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryPass;
-    pub const SinkTracerPass = @import("pass/analysis/sink_tracer.zig").SinkTracerPass;
+    pub const PointerOwnershipPass = @import("pass/analysis/pointer_ownership.zig").PointerOwnershipPass;
+    pub const OwnershipError = @import("pass/analysis/pointer_ownership.zig").OwnershipError;
     pub const TaintError = @import("pass/analysis/taint_propagation.zig").TaintError;
     pub const FFIBoundaryError = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryError;
-    pub const FlowPathError = @import("pass/analysis/sink_tracer.zig").FlowPathError;
 
     pub const TaintState = @import("pass/analysis/taint_state.zig").TaintState;
     pub const TaintInfo = @import("pass/analysis/taint_state.zig").TaintInfo;
@@ -102,15 +102,46 @@ pub const cross_lang = struct {
     pub const FlowPath = @import("pass/analysis/flow_path.zig").FlowPath;
     pub const VulnerabilityReport = @import("pass/analysis/flow_path.zig").VulnerabilityReport;
 
-    pub const classifyRiskLevel = @import("pass/analysis/sink_tracer.zig").classifyRiskLevel;
-    pub const isDangerousSink = @import("pass/analysis/sink_tracer.zig").isDangerousSink;
+    pub const classifyRiskLevel = @import("pass/analysis/flow_path.zig").classifyRiskLevel;
+    pub const isDangerousSink = @import("registry/semantic_registry.zig").SemanticRegistry.isDangerousSink;
 
-    pub const ReturnCheckPass = @import("pass/analysis/issue/return_check.zig").ReturnCheckPass;
     pub const FFIUnsafePass = @import("pass/analysis/issue/ffi_unsafe.zig").FFIUnsafePass;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;
     pub const FFIAnalysisResult = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisResult;
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
     pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
+};
+
+// Export registry system
+pub const registry = struct {
+    pub const SemanticRegistry = @import("registry/semantic_registry.zig").SemanticRegistry;
+    pub const RiskKind = @import("registry/semantic_registry.zig").RiskKind;
+    pub const Severity = @import("registry/semantic_registry.zig").Severity;
+    pub const FunctionSemantics = @import("registry/semantic_registry.zig").FunctionSemantics;
+    pub const MatchType = @import("registry/semantic_registry.zig").MatchType;
+    pub const DynamicRegistry = @import("registry/config_loader.zig").DynamicRegistry;
+    pub const ConfigError = @import("registry/config_loader.zig").ConfigError;
+};
+
+// Export lifetime engine
+pub const lifetime = struct {
+    pub const Owner = @import("lifetime/engine.zig").Owner;
+    pub const LifetimeState = @import("lifetime/engine.zig").LifetimeState;
+    pub const SemanticAction = @import("lifetime/engine.zig").SemanticAction;
+    pub const ResourceFact = @import("lifetime/engine.zig").ResourceFact;
+    pub const IssueType = @import("lifetime/engine.zig").IssueType;
+    pub const Issue = @import("lifetime/engine.zig").Issue;
+    pub const LifetimeEngine = @import("lifetime/engine.zig").LifetimeEngine;
+    pub const EngineStats = @import("lifetime/engine.zig").EngineStats;
+    pub const TransitionRule = @import("lifetime/engine.zig").TransitionRule;
+    pub const TRANSITION_RULES = @import("lifetime/engine.zig").TRANSITION_RULES;
+    pub const SemanticMapper = @import("lifetime/mapper.zig").SemanticMapper;
+    pub const MappedAction = @import("lifetime/mapper.zig").MappedAction;
+    pub const Rule = @import("lifetime/mapper.zig").Rule;
+    pub const RULES = @import("lifetime/mapper.zig").RULES;
+    pub const MatchType = @import("lifetime/mapper.zig").MatchType;
+    pub const LanguageHint = @import("lifetime/engine.zig").LanguageHint;
+    pub const SourceLocation = @import("lifetime/engine.zig").SourceLocation;
 };
 
 // Export output system

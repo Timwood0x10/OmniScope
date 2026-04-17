@@ -37,15 +37,15 @@ run: demo
 ir: $(IR_DIR)
 	@echo "Generating LLVM IR..."
 	
-	# Generate Rust IR
-	@echo "  - Compiling Rust to LLVM IR..."
-	$(CARGO) rustc --release --lib -- --emit=llvm-ir
+	# Generate Rust IR with debug info
+	@echo "  - Compiling Rust to LLVM IR (with debug info)..."
+	$(CARGO) rustc --release --lib -- --emit=llvm-ir -g
 	@# Find and copy the generated Rust IR file from deps directory
 	@find $(BUILD_DIR)/release/deps -name "rust_ffi_demo-*.ll" -exec cp {} $(RUST_IR) \;
 	
-	# Generate C IR
-	@echo "  - Compiling C to LLVM IR..."
-	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names \
+	# Generate C IR with debug info
+	@echo "  - Compiling C to LLVM IR (with debug info)..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
 		c_lib/dangerous.c -o $(C_IR)
 	
 	# Link IR files

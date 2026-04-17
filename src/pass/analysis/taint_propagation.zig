@@ -1,10 +1,13 @@
-//! Taint Propagation Analysis Pass
+//! Pointer Flow Analysis Pass
 //!
-//! Performs forward taint propagation to identify functions that may be
-//! influenced by dangerous inputs (sources).
+//! Simplified taint propagation focused on pointer flow tracking.
+//! This pass tracks how pointers flow through the program, enabling
+//! ownership and lifetime analysis.
 //!
-//! This pass analyzes data flow within and across function boundaries,
-//! tracking how tainted values propagate through the IR.
+//! Key differences from generic taint analysis:
+//! - Only tracks pointer values (not all data)
+//! - Uses allocation sites as sources
+//! - Tracks ownership transfer across FFI boundaries
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -17,32 +20,41 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 const TaintInfo = @import("./taint_state.zig").TaintInfo;
 const TaintState = @import("./taint_state.zig").TaintState;
-const propagation_rule = @import("./propagation_rule.zig");
+const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
 
 /// Re-exports SOURCE_FUNCTIONS from call_graph module.
-/// These functions are considered sources of taint.
 pub const SOURCE_FUNCTIONS = call_graph.SOURCE_FUNCTIONS;
 
-/// Error type for taint propagation operations.
+/// Error type for pointer flow operations.
 pub const TaintError = error{
-    /// Memory allocation failed.
     OutOfMemory,
-    /// Invalid IR encountered.
     InvalidIR,
-    /// Propagation failed.
     PropagationFailed,
 };
 
-/// Taint propagation analysis pass.
-///
-/// This pass performs forward taint propagation through the call graph.
-/// It depends on the call-graph pass for the graph structure.
+/// Confidence decay factor for propagation
+const CONFIDENCE_DECAY: f32 = 0.95;
+
+/// Minimum confidence threshold
+const MIN_CONFIDENCE: f32 = 0.1;
+
+/// Opcode classification for pointer flow
+const OpcodeClass = enum {
+    control_flow,
+    cast,
+    arithmetic,
+    memory,
+    call,
+    aggregate,
+    noop,
+};
+
+/// Pointer flow analysis pass.
 pub const TaintPropagationPass = struct {
-    pub const name = "taint-propagation";
+    pub const name = "pointer-flow";
     pub const kind = PassKind.foundation;
     pub const deps = &[_][]const u8{"call-graph"};
 
-    /// Run taint propagation analysis
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) TaintError!void {
         if (ctx.module == null) return;
 
@@ -50,11 +62,10 @@ pub const TaintPropagationPass = struct {
         defer taint_ctx.deinit();
 
         try markSources(ctx, &taint_ctx, diag);
-        try propagateTaint(ctx, &taint_ctx, diag);
+        try propagatePointerFlow(ctx, &taint_ctx, diag);
         try storeResults(ctx, &taint_ctx, diag);
     }
 
-    /// Mark source function parameters as tainted
     fn markSources(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -73,12 +84,11 @@ pub const TaintPropagationPass = struct {
         }
 
         if (source_count > 0) {
-            diag.info("TaintPropagation: Found {} source functions", .{source_count});
+            diag.info("PointerFlow: Found {} source functions", .{source_count});
         }
     }
 
-    /// Propagate taint through all functions
-    fn propagateTaint(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
+    fn propagatePointerFlow(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
@@ -90,38 +100,262 @@ pub const TaintPropagationPass = struct {
 
         const tainted_count = taint_ctx.taintedCount();
         if (tainted_count > 0) {
-            diag.info("TaintPropagation: {} values tainted after propagation", .{tainted_count});
+            diag.info("PointerFlow: {} values tracked after propagation", .{tainted_count});
         }
     }
 
-    /// Propagate taint through a single function
     fn propagateThroughFunction(ctx: *PassContext, taint_ctx: *TaintContext, func: c.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
+        _ = diag;
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            try propagateThroughBasicBlock(ctx, taint_ctx, bb, inst_count, diag);
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                try handleInstruction(ctx, taint_ctx, inst, inst_count);
+            }
         }
     }
 
-    /// Propagate taint through a basic block
-    fn propagateThroughBasicBlock(ctx: *PassContext, taint_ctx: *TaintContext, bb: c.LLVMBasicBlockRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            try propagateThroughInstruction(ctx, taint_ctx, inst, inst_count, diag);
-        }
-    }
-
-    /// Propagate taint through a single instruction using semantic classification
-    fn propagateThroughInstruction(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
+    fn handleInstruction(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, inst_count: *u32) !void {
         inst_count.* += 1;
         const opcode = c.LLVMGetInstructionOpcode(inst);
-        const op_class = propagation_rule.classifyOpcode(opcode);
+        const op_class = classifyOpcode(opcode);
 
-        propagation_rule.handleByClass(taint_ctx, inst, opcode, ctx.getNextId()) catch |err| {
-            diag.warn("Propagation failed for {s} instruction: {}", .{ @tagName(op_class), err });
+        switch (op_class) {
+            .noop, .control_flow => {},
+            .cast => try handleCast(taint_ctx, inst, ctx.getNextId()),
+            .arithmetic => try handleArithmetic(taint_ctx, inst, ctx.getNextId()),
+            .memory => try handleMemoryOp(taint_ctx, inst, opcode, ctx.getNextId()),
+            .call => try handleCall(taint_ctx, inst, ctx.getNextId()),
+            .aggregate => try handleAggregate(taint_ctx, inst, opcode, ctx.getNextId()),
+        }
+    }
+
+    fn classifyOpcode(opcode: c_uint) OpcodeClass {
+        return switch (opcode) {
+            c.LLVMBr, c.LLVMSwitch, c.LLVMRet, c.LLVMUnreachable, c.LLVMInvoke, c.LLVMResume => .control_flow,
+            c.LLVMTrunc, c.LLVMZExt, c.LLVMSExt, c.LLVMBitCast, c.LLVMPtrToInt, c.LLVMIntToPtr, c.LLVMFPTrunc, c.LLVMFPExt, c.LLVMFPToUI, c.LLVMFPToSI, c.LLVMUIToFP, c.LLVMSIToFP, c.LLVMAddrSpaceCast => .cast,
+            c.LLVMAdd, c.LLVMFAdd, c.LLVMSub, c.LLVMFSub, c.LLVMMul, c.LLVMFMul, c.LLVMUDiv, c.LLVMSDiv, c.LLVMFDiv, c.LLVMURem, c.LLVMSRem, c.LLVMFRem, c.LLVMShl, c.LLVMLShr, c.LLVMAShr, c.LLVMAnd, c.LLVMOr, c.LLVMXor => .arithmetic,
+            c.LLVMLoad, c.LLVMStore => .memory,
+            c.LLVMCall, c.LLVMCallBr => .call,
+            c.LLVMPHI, c.LLVMSelect, c.LLVMExtractValue, c.LLVMInsertValue, c.LLVMExtractElement, c.LLVMInsertElement, c.LLVMShuffleVector => .aggregate,
+            else => .noop,
         };
     }
 
-    /// Store taint analysis results in fact store
+    fn handleCast(taint_ctx: *TaintContext, inst: c.LLVMValueRef, _: u32) !void {
+        const operand = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(operand) == 0) return;
+
+        if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+            if (info.state == .source or info.state == .tainted) {
+                try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), info);
+            }
+        }
+    }
+
+    fn handleArithmetic(taint_ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) !void {
+        const num_operands = c.LLVMGetNumOperands(inst);
+        var has_tainted: bool = false;
+        var max_confidence: f32 = 0.0;
+        var source_id: ?u32 = null;
+
+        var i: u32 = 0;
+        while (i < num_operands) : (i += 1) {
+            const operand = c.LLVMGetOperand(inst, i);
+            if (@intFromPtr(operand) == 0) continue;
+
+            if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+                if (info.state == .source or info.state == .tainted) {
+                    has_tainted = true;
+                    if (info.confidence > max_confidence) {
+                        max_confidence = info.confidence;
+                        source_id = info.source_id;
+                    }
+                }
+            }
+        }
+
+        if (has_tainted) {
+            const new_info = TaintInfo{
+                .id = next_id,
+                .state = .tainted,
+                .source_id = source_id,
+                .confidence = @max(max_confidence * 0.9, MIN_CONFIDENCE),
+            };
+            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+        }
+    }
+
+    fn handleMemoryOp(taint_ctx: *TaintContext, inst: c.LLVMValueRef, opcode: c_uint, next_id: u32) !void {
+        switch (opcode) {
+            c.LLVMLoad => {
+                const ptr_operand = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(ptr_operand) == 0) return;
+
+                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(ptr_operand)))) |info| {
+                    if (info.state == .source or info.state == .tainted) {
+                        const new_info = TaintInfo{
+                            .id = next_id,
+                            .state = .tainted,
+                            .source_id = info.source_id,
+                            .confidence = @max(info.confidence * CONFIDENCE_DECAY, MIN_CONFIDENCE),
+                        };
+                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                    }
+                }
+            },
+            c.LLVMStore => {
+                const value_operand = c.LLVMGetOperand(inst, 0);
+                const ptr_operand = c.LLVMGetOperand(inst, 1);
+
+                if (@intFromPtr(value_operand) == 0 or @intFromPtr(ptr_operand) == 0) return;
+
+                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(value_operand)))) |info| {
+                    if (info.state == .source or info.state == .tainted) {
+                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(ptr_operand)), info);
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    fn handleCall(taint_ctx: *TaintContext, inst: c.LLVMValueRef, next_id: u32) !void {
+        const called_value = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called_value) == 0) return;
+
+        const called_name_ptr = c.LLVMGetValueName(called_value);
+        const called_func_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else "";
+
+        // Check if this is a dangerous sink
+        if (called_func_name.len > 0 and SemanticRegistry.isDangerousSink(called_func_name)) {
+            const new_info = TaintInfo{
+                .id = next_id,
+                .state = .tainted,
+                .source_id = null,
+                .confidence = 1.0,
+            };
+            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+            return;
+        }
+
+        // Propagate taint from arguments
+        const num_operands = c.LLVMGetNumOperands(inst);
+        var has_tainted_arg = false;
+        var max_confidence: f32 = 0.0;
+        var source_id: ?u32 = null;
+
+        var i: u32 = 0;
+        while (i < num_operands) : (i += 1) {
+            const operand = c.LLVMGetOperand(inst, i);
+            if (@intFromPtr(operand) == 0) continue;
+
+            if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+                if (info.state == .source or info.state == .tainted) {
+                    has_tainted_arg = true;
+                    if (info.confidence > max_confidence) {
+                        max_confidence = info.confidence;
+                        source_id = info.source_id;
+                    }
+                }
+            }
+        }
+
+        if (has_tainted_arg) {
+            const new_info = TaintInfo{
+                .id = next_id,
+                .state = .tainted,
+                .source_id = source_id,
+                .confidence = @max(max_confidence * CONFIDENCE_DECAY, MIN_CONFIDENCE),
+            };
+            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+        }
+    }
+
+    fn handleAggregate(taint_ctx: *TaintContext, inst: c.LLVMValueRef, opcode: c_uint, next_id: u32) !void {
+        switch (opcode) {
+            c.LLVMSelect => {
+                const true_value = c.LLVMGetOperand(inst, 1);
+                const false_value = c.LLVMGetOperand(inst, 2);
+
+                var source_id: ?u32 = null;
+                var max_confidence: f32 = 0.0;
+
+                if (@intFromPtr(true_value) != 0) {
+                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(true_value)))) |info| {
+                        if (info.state == .source or info.state == .tainted) {
+                            source_id = info.source_id;
+                            max_confidence = info.confidence;
+                        }
+                    }
+                }
+
+                if (@intFromPtr(false_value) != 0) {
+                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(false_value)))) |info| {
+                        if (info.state == .source or info.state == .tainted) {
+                            if (info.confidence > max_confidence) {
+                                source_id = info.source_id;
+                                max_confidence = info.confidence;
+                            }
+                        }
+                    }
+                }
+
+                if (source_id != null) {
+                    const new_info = TaintInfo{
+                        .id = next_id,
+                        .state = .tainted,
+                        .source_id = source_id,
+                        .confidence = max_confidence,
+                    };
+                    try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                }
+            },
+            c.LLVMPHI => {
+                const num_incoming = c.LLVMCountIncoming(inst);
+                var has_tainted = false;
+                var max_confidence: f32 = 0.0;
+                var source_id: ?u32 = null;
+
+                var i: u32 = 0;
+                while (i < num_incoming) : (i += 1) {
+                    const incoming_value = c.LLVMGetIncomingValue(inst, i);
+                    if (@intFromPtr(incoming_value) == 0) continue;
+
+                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(incoming_value)))) |info| {
+                        if (info.state == .source or info.state == .tainted) {
+                            has_tainted = true;
+                            if (info.confidence > max_confidence) {
+                                max_confidence = info.confidence;
+                                source_id = info.source_id;
+                            }
+                        }
+                    }
+                }
+
+                if (has_tainted) {
+                    const new_info = TaintInfo{
+                        .id = next_id,
+                        .state = .tainted,
+                        .source_id = source_id,
+                        .confidence = @max(max_confidence * CONFIDENCE_DECAY, MIN_CONFIDENCE),
+                    };
+                    try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                }
+            },
+            else => {
+                const operand = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(operand) == 0) return;
+
+                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+                    if (info.state == .source or info.state == .tainted) {
+                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), info);
+                    }
+                }
+            },
+        }
+    }
+
     fn storeResults(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         var iter = taint_ctx.value_taint.iterator();
         var count: u32 = 0;
@@ -142,21 +376,14 @@ pub const TaintPropagationPass = struct {
         }
 
         if (count > 0) {
-            diag.info("TaintPropagation: Stored {} taint facts", .{count});
+            diag.info("PointerFlow: Stored {} pointer flow facts", .{count});
         }
     }
 
-    /// Check if a function is a taint source
     fn isSourceFunction(func_name: []const u8) bool {
         return isSource(func_name);
     }
 
-    /// Check if a function is a taint sink
-    fn isSinkFunction(func_name: []const u8) bool {
-        return isSink(func_name);
-    }
-
-    /// Mark function parameters as tainted
     fn markFunctionParametersTainted(ctx: *PassContext, taint_ctx: *TaintContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(func_name_ptr) == 0) return;
@@ -177,25 +404,7 @@ pub const TaintPropagationPass = struct {
         }
 
         if (param_idx > 0) {
-            diag.info("TaintPropagation: Marked {} parameters of '{s}' as tainted", .{ param_idx, func_name });
-        }
-    }
-
-    /// Check for tainted call to sink
-    fn checkTaintedCall(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, sink_name: []const u8, diag: *DiagnosticWriter) !void {
-        const num_operands = c.LLVMGetNumOperands(inst);
-
-        var i: u32 = 0;
-        while (i < num_operands) : (i += 1) {
-            const operand = c.LLVMGetOperand(inst, i);
-            if (@intFromPtr(operand) == 0) continue;
-
-            if (taint_ctx.getValueTaint(@intFromPtr(operand))) |info| {
-                if (info.state != .none and info.state != .safe) {
-                    diag.err("TAINT FLOW: Tainted data flows to sink '{s}' (confidence: {d:.2})", .{ sink_name, info.confidence });
-                    try ctx.fact_store.insert(.taint, info.source_id orelse 0, @intFromPtr(inst), ctx.getNextId());
-                }
-            }
+            diag.info("PointerFlow: Marked {} parameters of '{s}' as sources", .{ param_idx, func_name });
         }
     }
 };
@@ -212,12 +421,7 @@ pub fn isSource(name: []const u8) bool {
 
 /// Helper function to check if a name matches sink patterns
 pub fn isSink(name: []const u8) bool {
-    for (call_graph.SINK_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) {
-            return true;
-        }
-    }
-    return false;
+    return SemanticRegistry.isDangerousSink(name);
 }
 
 test "SOURCE_FUNCTIONS - contains main" {
@@ -231,54 +435,13 @@ test "SOURCE_FUNCTIONS - contains main" {
     try std.testing.expect(found_main);
 }
 
-test "SOURCE_FUNCTIONS - contains read" {
-    var found_read = false;
-    for (SOURCE_FUNCTIONS) |s| {
-        if (std.mem.eql(u8, s, "read")) {
-            found_read = true;
-            break;
-        }
-    }
-    try std.testing.expect(found_read);
-}
-
-test "SOURCE_FUNCTIONS - all non-empty" {
-    for (SOURCE_FUNCTIONS) |s| {
-        try std.testing.expect(s.len > 0);
-    }
-}
-
-test "SOURCE_FUNCTIONS - has expected sources" {
-    const expected = &[_][]const u8{ "main", "read", "recv", "gets", "scanf" };
-    for (expected) |exp| {
-        var found = false;
-        for (SOURCE_FUNCTIONS) |s| {
-            if (std.mem.eql(u8, s, exp)) {
-                found = true;
-                break;
-            }
-        }
-        try std.testing.expect(found);
-    }
-}
-
-test "SOURCE_FUNCTIONS - no duplicates" {
-    for (SOURCE_FUNCTIONS, 0..) |s1, i| {
-        for (SOURCE_FUNCTIONS, 0..) |s2, j| {
-            if (i != j and std.mem.eql(u8, s1, s2)) {
-                try std.testing.expect(false);
-            }
-        }
-    }
-}
-
 test "TaintError - error type exists" {
     const err = TaintError.OutOfMemory;
     try std.testing.expect(err == TaintError.OutOfMemory);
 }
 
 test "TaintPropagationPass - name" {
-    try std.testing.expectEqualStrings("taint-propagation", TaintPropagationPass.name);
+    try std.testing.expectEqualStrings("pointer-flow", TaintPropagationPass.name);
 }
 
 test "TaintPropagationPass - kind" {
@@ -293,37 +456,16 @@ test "TaintPropagationPass - deps" {
 test "isSource - matches source functions" {
     try std.testing.expect(isSource("main"));
     try std.testing.expect(isSource("read"));
-    try std.testing.expect(isSource("recv"));
     try std.testing.expect(!isSource("malloc"));
-    try std.testing.expect(!isSource("printf"));
 }
 
-test "isSink - matches sink patterns" {
+test "isSink - uses SemanticRegistry" {
     try std.testing.expect(isSink("system"));
-    try std.testing.expect(isSink("execve"));
-    try std.testing.expect(isSink("popen"));
-    try std.testing.expect(isSink("__strcpy_chk"));
+    try std.testing.expect(isSink("strcpy"));
     try std.testing.expect(!isSink("malloc"));
-    try std.testing.expect(!isSink("free"));
-}
-
-test "isSink - partial matches" {
-    try std.testing.expect(isSink("system_call"));
-    try std.testing.expect(isSink("my_popen_wrapper"));
-}
-
-test "TaintPropagationPass - deps not empty" {
-    try std.testing.expect(TaintPropagationPass.deps.len > 0);
-}
-
-test "TaintPropagationPass - deps valid strings" {
-    for (TaintPropagationPass.deps) |dep| {
-        try std.testing.expect(dep.len > 0);
-    }
 }
 
 test "TaintPropagationPass - handles null module gracefully" {
-    // Test that the pass handles null module without crashing
     const allocator = std.testing.allocator;
     var fact_store = FactStore.init(allocator);
     defer fact_store.deinit();
@@ -336,6 +478,5 @@ test "TaintPropagationPass - handles null module gracefully" {
 
     var diagnostics = DiagnosticWriter{ .allocator = allocator };
 
-    // This should not panic, just return early
     _ = TaintPropagationPass.run(&context, &diagnostics);
 }

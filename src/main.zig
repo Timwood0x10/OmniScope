@@ -130,19 +130,13 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
     // Register CallGraphPass (foundation - builds call graph)
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
 
-    // Register TaintPropagationPass (foundation - depends on call-graph)
-    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
-
     // Register FFI boundary detection pass
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
 
-    // Register SinkTracerPass (analysis - depends on ffi-boundary and taint-propagation)
-    try pipeline.registerPass(OmniScope.cross_lang.SinkTracerPass);
+    // Register pointer ownership tracking pass
+    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
 
-    // Register return value check pass
-    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
-
-    // Register FFI unsafe detection pass (depends on ffi-boundary)
+    // Register FFI unsafe detection pass (will be renamed to OwnershipViolationPass in v0.2)
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
 
     // Run static analysis through Pipeline
