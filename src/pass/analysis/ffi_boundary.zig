@@ -23,6 +23,25 @@ pub const FFIBoundaryError = error{
     NoModule,
 };
 
+/// Statistics for FFI boundary analysis
+const FFIBoundaryStats = struct {
+    func_count: u32 = 0,
+    total_boundaries: u32 = 0,
+    cross_lang: u32 = 0,
+    libc: u32 = 0,
+    external_unknown: u32 = 0,
+    dangerous: u32 = 0,
+};
+
+/// Result of analyzing a function for FFI boundaries
+const AnalyzeResult = struct {
+    count: u32 = 0,
+    cross_lang: u32 = 0,
+    libc: u32 = 0,
+    external_unknown: u32 = 0,
+    dangerous_count: u32 = 0,
+};
+
 /// FFI boundary detection pass.
 ///
 /// Identifies cross-language transitions in the call graph and
@@ -100,41 +119,53 @@ pub const FFIBoundaryPass = struct {
             return;
         }
 
-        var boundary_count: u32 = 0;
-        var func_count: u32 = 0;
+        var stats = FFIBoundaryStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            func_count += 1;
+            stats.func_count += 1;
 
             // Skip declarations (only analyze definitions)
             if (c.LLVMIsDeclaration(func) != 0) continue;
 
             // Analyze function for FFI calls
-            boundary_count += try analyzeFunction(ctx, func, diag);
+            const result = try analyzeFunction(ctx, func, diag);
+            stats.total_boundaries += result.count;
+            stats.cross_lang += result.cross_lang;
+            stats.libc += result.libc;
+            stats.external_unknown += result.external_unknown;
+            stats.dangerous += result.dangerous_count;
         }
 
-        diag.info("FFIBoundary: Analyzed {} functions, found {} FFI boundaries", .{
-            func_count,
-            boundary_count,
-        });
+        // Print summary
+        diag.info("FFI Analysis Summary:", .{});
+        diag.info("  Functions analyzed: {}", .{stats.func_count});
+        diag.info("  FFI Boundaries: {}", .{stats.total_boundaries});
+        diag.info("    - Cross-language: {}", .{stats.cross_lang});
+        diag.info("    - External unknown: {}", .{stats.external_unknown});
+        diag.info("    - LibC calls: {}", .{stats.libc});
+        if (stats.dangerous > 0) {
+            diag.err("  Dangerous calls: {}", .{stats.dangerous});
+        } else {
+            diag.info("  Dangerous calls: {}", .{stats.dangerous});
+        }
     }
 
     /// Analyze a single function for FFI boundaries
-    fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !u32 {
-        var boundary_count: u32 = 0;
+    fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
+        var result = AnalyzeResult{ .count = 0, .cross_lang = 0, .libc = 0, .external_unknown = 0, .dangerous_count = 0 };
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 // Check for call instructions
                 if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
-                    if (try checkCallForFFI(ctx, inst, func, diag)) {
-                        boundary_count += 1;
+                    if (try checkCallForFFI(ctx, inst, func, diag, &result)) {
+                        result.count += 1;
                     }
                 }
             }
         }
-        return boundary_count;
+        return result;
     }
 
     /// Check a call instruction for FFI boundary
@@ -143,6 +174,7 @@ pub const FFIBoundaryPass = struct {
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         diag: *DiagnosticWriter,
+        stats: *AnalyzeResult,
     ) !bool {
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return false;
@@ -152,8 +184,12 @@ pub const FFIBoundaryPass = struct {
         if (@intFromPtr(called_name_ptr) == 0) return false;
         const called_name = std.mem.span(called_name_ptr);
 
-        // Skip libc functions (not true FFI boundaries)
+        // Check if it's a dangerous call
+        const is_dangerous = isDangerousFFICall(called_name);
+
+        // Skip libc functions (not true FFI boundaries) - but track them
         if (isLibcFunction(called_name)) {
+            stats.libc += 1;
             return false;
         }
 
@@ -168,6 +204,9 @@ pub const FFIBoundaryPass = struct {
         if (is_external and callee_lang == .unknown) {
             // External unknown functions are potential FFI boundaries
             callee_lang = .unknown;
+            stats.external_unknown += 1;
+        } else if (caller_lang != callee_lang and callee_lang != .unknown) {
+            stats.cross_lang += 1;
         }
 
         // If it's a cross-language call or external unknown, create an FFI boundary
@@ -197,17 +236,25 @@ pub const FFIBoundaryPass = struct {
             // Add to DataFlowGraph
             try ctx.addFFIBoundary(boundary);
 
-            diag.info("FFI Boundary: {s} -> {s} ({s}) -> {s} ({s})", .{
-                @tagName(caller_lang),
-                caller_name,
-                @tagName(boundary_kind),
-                called_name,
-                @tagName(callee_lang),
-            });
+            // Only print dangerous calls with details
+            if (is_dangerous) {
+                stats.dangerous_count += 1;
+                diag.err("DANGEROUS FFI CALL: {s} -> {s}", .{ caller_name, called_name });
+            }
 
             return true;
         }
 
+        return false;
+    }
+
+    /// Check if a function name represents a dangerous FFI call
+    fn isDangerousFFICall(func_name: []const u8) bool {
+        inline for (FFIPatterns.dangerous_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
         return false;
     }
 

@@ -110,17 +110,14 @@ pub const TaintPropagationPass = struct {
         }
     }
 
-    /// Propagate taint through a single instruction
+    /// Propagate taint through a single instruction using semantic classification
     fn propagateThroughInstruction(ctx: *PassContext, taint_ctx: *TaintContext, inst: c.LLVMValueRef, inst_count: *u32, diag: *DiagnosticWriter) !void {
         inst_count.* += 1;
         const opcode = c.LLVMGetInstructionOpcode(inst);
+        const op_class = propagation_rule.classifyOpcode(opcode);
 
-        const rule = propagation_rule.findRule(opcode) orelse {
-            diag.warn("No propagation rule for opcode {}", .{@intFromEnum(opcode)});
-            return;
-        };
-        rule.handler(taint_ctx, inst, ctx.getNextId()) catch |err| {
-            diag.warn("Propagation failed for opcode {}: {}", .{ @intFromEnum(opcode), err });
+        propagation_rule.handleByClass(taint_ctx, inst, opcode, ctx.getNextId()) catch |err| {
+            diag.warn("Propagation failed for {s} instruction: {}", .{ @tagName(op_class), err });
         };
     }
 
@@ -172,10 +169,10 @@ pub const TaintPropagationPass = struct {
             const info = TaintInfo{
                 .id = ctx.getNextId(),
                 .state = .source,
-                .source_id = @intFromPtr(func),
+                .source_id = @truncate(@intFromPtr(func)),
                 .confidence = 1.0,
             };
-            try taint_ctx.setValueTaint(@intFromPtr(arg), info);
+            try taint_ctx.setValueTaint(@truncate(@intFromPtr(arg)), info);
             param_idx += 1;
         }
 

@@ -127,13 +127,22 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
         pipeline.setModule(module_ref);
     }
 
+    // Register CallGraphPass (foundation - builds call graph)
+    try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+
+    // Register TaintPropagationPass (foundation - depends on call-graph)
+    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
+
     // Register FFI boundary detection pass
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+
+    // Register SinkTracerPass (analysis - depends on ffi-boundary and taint-propagation)
+    try pipeline.registerPass(OmniScope.cross_lang.SinkTracerPass);
 
     // Register return value check pass
     try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
 
-    // Register FFI unsafe detection pass
+    // Register FFI unsafe detection pass (depends on ffi-boundary)
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
 
     // Run static analysis through Pipeline
@@ -337,23 +346,6 @@ fn isDangerousFFIPattern(match: *const OmniScope.cross_lang.FFIMatch) bool {
     }
 
     return false;
-}
-
-/// Print analysis results
-fn printResults(pipeline: *Pipeline) void {
-    std.debug.print("\n=== Analysis Results ===\n", .{});
-    const diagnostics = pipeline.getDiagnosticAggregator().getAll();
-
-    if (diagnostics.len == 0) {
-        std.log.info("No issues found.\n", .{});
-    } else {
-        for (diagnostics) |diag| {
-            std.debug.print("[{s}] {s}\n", .{
-                @tagName(diag.severity),
-                diag.message,
-            });
-        }
-    }
 }
 
 pub fn main() !void {

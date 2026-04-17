@@ -63,4 +63,4 @@ benchmarks/*.json
 benchs/output/
 
 # Plan documents (internal design)
-# plan/  # Commented out to allow access to design documents
+plan/

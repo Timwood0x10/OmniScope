@@ -153,13 +153,31 @@ pub const PassContext = struct {
     }
 };
 
-/// Diagnostic writer for pass output
+/// ANSI color codes for terminal output
+const Colors = struct {
+    const reset = "\x1b[0m";
+    const red = "\x1b[31m";
+    const yellow = "\x1b[33m";
+    const green = "\x1b[32m";
+    const blue = "\x1b[34m";
+    const magenta = "\x1b[35m";
+    const cyan = "\x1b[36m";
+    const bold = "\x1b[1m";
+    const dim = "\x1b[2m";
+};
+
+/// Diagnostic writer for pass output with color support
 pub const DiagnosticWriter = struct {
     allocator: Allocator,
+    use_color: bool = true,
 
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
-        _ = self;
-        std.debug.print("[" ++ severity ++ "] " ++ format ++ "\n", args);
+        const color = comptime getSeverityColor(severity);
+        if (self.use_color) {
+            std.debug.print(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
+        } else {
+            std.debug.print("[" ++ severity ++ "] " ++ format ++ "\n", args);
+        }
     }
 
     pub fn info(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
@@ -173,7 +191,30 @@ pub const DiagnosticWriter = struct {
     pub fn err(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
         self.write("ERROR", format, args);
     }
+
+    pub fn critical(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
+        self.write("CRITICAL", format, args);
+    }
+
+    pub fn debug(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
+        self.write("DEBUG", format, args);
+    }
 };
+
+fn getSeverityColor(comptime severity: []const u8) []const u8 {
+    if (comptime std.mem.eql(u8, severity, "CRITICAL")) {
+        return Colors.bold ++ Colors.red;
+    } else if (comptime std.mem.eql(u8, severity, "ERROR")) {
+        return Colors.red;
+    } else if (comptime std.mem.eql(u8, severity, "WARN")) {
+        return Colors.yellow;
+    } else if (comptime std.mem.eql(u8, severity, "INFO")) {
+        return Colors.green;
+    } else if (comptime std.mem.eql(u8, severity, "DEBUG")) {
+        return Colors.dim;
+    }
+    return Colors.reset;
+}
 
 /// Pass comptime wrapper with type validation
 ///

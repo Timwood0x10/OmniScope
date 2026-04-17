@@ -53,9 +53,11 @@ pub const SinkTracerPass = struct {
         var vulnerability_id: u32 = 0;
 
         for (tainted_values) |value_id| {
-            if (try traceFlowPath(ctx.allocator, &taint_ctx, value_id)) |path| {
+            var traced = try traceFlowPath(ctx.allocator, &taint_ctx, value_id);
+            if (traced) |*path| {
                 vulnerability_id += 1;
                 try reportVulnerability(ctx, path, vulnerability_id, diag);
+                path.deinit();
             }
         }
 
@@ -84,19 +86,19 @@ pub const SinkTracerPass = struct {
 
     /// Find all tainted values in the IR
     fn findTaintedValues(ctx: *PassContext) ![]u32 {
-        var tainted = std.ArrayList(u32).init(ctx.allocator);
-        errdefer tainted.deinit();
+        var tainted = std.ArrayList(u32).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
+        errdefer tainted.deinit(ctx.allocator);
 
         const facts = try ctx.query_engine.queryByKind(.taint, ctx.allocator);
         defer ctx.allocator.free(facts);
 
         for (facts) |fact| {
             if (fact.object != 0) {
-                try tainted.append(fact.subject);
+                try tainted.append(ctx.allocator, fact.subject);
             }
         }
 
-        return tainted.toOwnedSlice();
+        return tainted.toOwnedSlice(ctx.allocator);
     }
 
     /// Trace flow path from tainted value to sink
@@ -145,33 +147,44 @@ pub const SinkTracerPass = struct {
     }
 
     /// Report vulnerability with complete information
-    fn reportVulnerability(ctx: *PassContext, path: FlowPath, vuln_id: u32, diag: *DiagnosticWriter) !void {
+    fn reportVulnerability(ctx: *PassContext, path: *FlowPath, vuln_id: u32, diag: *DiagnosticWriter) !void {
         var builder = try VulnerabilityReportBuilder.init(vuln_id, ctx.allocator);
         _ = builder.withRisk(.high);
         _ = builder.withSource("source");
         _ = builder.withSink("sink");
-        _ = builder.withFlowPath(path);
+        _ = builder.withFlowPath(path.*);
         _ = builder.withDescription("Potential data flow vulnerability");
         _ = builder.withRecommendation("Review data flow and add sanitization");
 
         const report = builder.build();
 
-        diag.err("VULNERABILITY DETECTED", .{});
-        diag.err("Risk Level: {s}", .{@tagName(report.risk_level)});
-        diag.err("Source: {s}", .{report.source_func});
-        diag.err("Sink: {s}", .{report.sink_func});
-        diag.err("Cross-language: {}", .{report.flow_path.is_cross_language});
+        switch (report.risk_level) {
+            .critical => diag.critical("VULNERABILITY DETECTED", .{}),
+            .high => diag.err("VULNERABILITY DETECTED", .{}),
+            .medium => diag.warn("POTENTIAL ISSUE DETECTED", .{}),
+            .low => diag.info("LOW RISK ISSUE DETECTED", .{}),
+        }
 
-        diag.err("Flow Path:", .{});
-        for (report.flow_path.steps) |step| {
-            diag.err("  -> {s} (confidence: {d:.2})", .{ step.func_name, step.confidence });
+        diag.warn("Risk Level: {s}", .{@tagName(report.risk_level)});
+        diag.info("Source: {s}", .{report.source_func});
+        diag.info("Sink: {s}", .{report.sink_func});
+
+        if (report.flow_path.is_cross_language) {
+            diag.err("Cross-language data flow detected!", .{});
+        }
+
+        if (report.flow_path.length() > 0) {
+            diag.info("Flow Path ({} steps):", .{report.flow_path.length()});
+            for (report.flow_path.steps.items) |step| {
+                diag.info("  -> {s} (confidence: {d:.2})", .{ step.func_name, step.confidence });
+            }
         }
 
         try ctx.fact_store.insert(
             .vulnerability,
             vuln_id,
             @intFromEnum(report.risk_level),
-            report.flow_path.length(),
+            @truncate(report.flow_path.length()), // usize -> u32, truncation safe for path length
         );
     }
 };
