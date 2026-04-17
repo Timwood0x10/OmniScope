@@ -28,10 +28,10 @@ pub const ReturnCheckPass = struct {
     /// Functions whose return values don't need to be checked (safe to ignore)
     /// These functions either return void or have no meaningful error information
     const SafeReturnFunctions = &[_][]const u8{
-        "free",    // void return, no error checking needed
-        "close",   // return value rarely needs checking in practice
-        "fflush",  // void return
-        "fclose",  // return value rarely needs checking
+        "free", // void return, no error checking needed
+        "close", // return value rarely needs checking in practice
+        "fflush", // void return
+        "fclose", // return value rarely needs checking
     };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {

@@ -71,6 +71,22 @@ run:
 	@echo "Running OmniSope..."
 	@zig build run
 
+# Run rust_ffi_demo demonstration
+demo:
+	@echo "Building and running rust_ffi_demo..."
+	@cd examples/rust_ffi_demo && cargo build 2>/dev/null || echo "Cargo build skipped"
+	@cd examples/rust_ffi_demo && if [ -f "target/combined.bc" ]; then \
+		echo "Running OmniScope analysis on rust_ffi_demo..."; \
+		../../zig-out/bin/OmniSope target/combined.bc; \
+	else \
+		echo "Pre-built demo not found. Building from source..."; \
+		cargo rustc -- --emit=llvm-ir -o target/rust.ll 2>/dev/null || echo "Rust IR generation skipped"; \
+		clang -S -emit-llvm -O0 c_lib/dangerous.c -o target/dangerous.ll 2>/dev/null || echo "C IR generation skipped"; \
+		if [ -f "target/rust.ll" ] && [ -f "target/dangerous.ll" ]; then \
+			llvm-link target/rust.ll target/dangerous.ll -o target/combined.bc 2>/dev/null || echo "LLVM link skipped"; \
+		fi; \
+	fi
+
 # Help message
 help:
 	@echo "Available targets:"
@@ -87,4 +103,5 @@ help:
 	@echo "  make clean-all      - Clean everything including test files"
 	@echo "  make rt             - Build runtime library"
 	@echo "  make run            - Run the application"
+	@echo "  make demo           - Run rust_ffi_demo demonstration"
 	@echo "  make help           - Show this help message"

@@ -50,7 +50,7 @@ __pycache__/
 .Python
 
 # Temporary directories
-output/
+# output/  # Commented out to allow src/output/ source code
 tmp/
 temp/
 benchs/output/
@@ -63,4 +63,4 @@ benchmarks/*.json
 benchs/output/
 
 # Plan documents (internal design)
-plan/
+# plan/  # Commented out to allow access to design documents
