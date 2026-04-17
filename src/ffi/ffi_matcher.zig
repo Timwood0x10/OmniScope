@@ -107,10 +107,10 @@ pub const FFIMatcher = struct {
         self.define_functions.deinit(self.allocator);
 
         for (self.matches.items) |match| {
-            // Only free match.name - declare_func and define_func are value-copied
-            // from declare_functions and define_functions arrays, so their name
+            // Free match.name - it is always an owned allocation from dupe()
+            // declare_func and define_func are value-copied, so their name
             // pointers are already freed above
-            if (match.name.len > 0) self.allocator.free(match.name);
+            self.allocator.free(match.name);
         }
         self.matches.deinit(self.allocator);
     }

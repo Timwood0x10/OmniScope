@@ -13,6 +13,8 @@ const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const TaintContext = @import("./taint_state.zig").TaintContext;
+const FactStore = @import("../../fact/store.zig").FactStore;
+const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 const TaintInfo = @import("./taint_state.zig").TaintInfo;
 const TaintState = @import("./taint_state.zig").TaintState;
 const propagation_rule = @import("./propagation_rule.zig");
@@ -326,11 +328,16 @@ test "TaintPropagationPass - deps valid strings" {
 test "TaintPropagationPass - handles null module gracefully" {
     // Test that the pass handles null module without crashing
     const allocator = std.testing.allocator;
-    var context = PassContext.init(allocator, null, null);
-    defer context.deinit();
+    var fact_store = FactStore.init(allocator);
+    defer fact_store.deinit();
 
-    var diagnostics = DiagnosticWriter.init(allocator);
-    defer diagnostics.deinit();
+    var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = @import("../../dataflow/graph.zig").DataFlowGraph.init(allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+
+    var context = PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph);
+
+    var diagnostics = DiagnosticWriter{ .allocator = allocator };
 
     // This should not panic, just return early
     _ = TaintPropagationPass.run(&context, &diagnostics);

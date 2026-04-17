@@ -82,9 +82,6 @@ pub const DFGPass = struct {
             }
             func = c.LLVMGetNextFunction(func);
         }
-
-        // Clean up
-        self.inst_id_map.deinit();
     }
 
     /// Analyze a function and emit DFG edges
@@ -301,18 +298,15 @@ test "DFGPass - function ID tracking" {
 
     try pass.store.insert(.dfg_edge, 1, 2, 99);
 
-    const fact = store.get(0).?;
+    var fact = store.get(0).?;
     try std.testing.expectEqual(@as(u32, 99), fact.context);
 
     // Verify function ID is correctly stored
-    if (store.queryByKind(.dfg_edge, std.testing.allocator)) |indices| {
-        defer std.testing.allocator.free(indices);
-        try std.testing.expectEqual(@as(usize, 1), indices.len);
-        const fact = store.get(indices[0]).?;
-        try std.testing.expectEqual(@as(u32, 99), fact.context);
-    } else |_| {
-        try std.testing.expect(false);
-    }
+    const indices = try store.queryByKind(.dfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(indices);
+    try std.testing.expectEqual(@as(usize, 1), indices.len);
+    fact = store.get(indices[0]).?;
+    try std.testing.expectEqual(@as(u32, 99), fact.context);
 }
 
 test "DFGPass - inst_id_map consistency" {

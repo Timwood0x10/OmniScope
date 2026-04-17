@@ -82,9 +82,6 @@ pub const CFGPass = struct {
             }
             func = c.LLVMGetNextFunction(func);
         }
-
-        // Clean up
-        self.bb_id_map.deinit();
     }
 
     /// Analyze a function and emit CFG edges

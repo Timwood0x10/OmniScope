@@ -144,7 +144,7 @@ pub const IRLoader = struct {
         defer self.allocator.free(path_c);
 
         var mem_buf: c.LLVMMemoryBufferRef = undefined;
-        var err_msg: [*c]u8 = undefined;
+        var err_msg: [*c]u8 = null;
 
         // Create memory buffer from file
         if (c.LLVMCreateMemoryBufferWithContentsOfFile(

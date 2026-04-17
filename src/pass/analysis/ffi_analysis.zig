@@ -108,7 +108,6 @@ pub const FFIAnalysisPass = struct {
 
         // Step 1: Initialize FFIMatcher and extract functions
         var matcher = try FFIMatcher.init(ctx.allocator);
-        errdefer matcher.deinit();
         self.matcher = matcher;
 
         const safe_module = llvm_safe.Module{ .raw = mod };

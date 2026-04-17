@@ -387,7 +387,6 @@ pub const DataFlowGraph = struct {
         }
 
         const result = self.allocator.alloc(Issue, count) catch return &[_]Issue{};
-        defer self.allocator.free(result);
 
         var index: usize = 0;
         for (self.issues.items) |issue| {
@@ -476,7 +475,13 @@ pub const DataFlowGraph = struct {
         self.nodes.clearRetainingCapacity();
         self.edges.clearRetainingCapacity();
         self.ffi_boundaries.clearRetainingCapacity();
+
+        // Free owned issue messages before clearing
+        for (self.issues.items) |issue| {
+            self.allocator.free(issue.message);
+        }
         self.issues.clearRetainingCapacity();
+
         self.tainted_nodes.clearRetainingCapacity();
 
         // Clear edge indices

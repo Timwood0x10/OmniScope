@@ -13,6 +13,7 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
+const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 
 /// FFI unsafe detection pass
 pub const FFIUnsafePass = struct {
@@ -51,7 +52,7 @@ pub const FFIUnsafePass = struct {
             const vuln_type = classifyVulnerability(boundary.function_name);
             const confidence = calculateConfidence(boundary.function_name, vuln_type);
 
-            const message = try std.fmt.allocPrint(
+            const issue_message = try std.fmt.allocPrint(
                 ctx.allocator,
                 "Unsafe FFI call to '{s}' - {s} (confidence: {d:.2}%)",
                 .{ boundary.function_name, getVulnerabilityDesc(vuln_type), confidence * 100.0 },
@@ -59,13 +60,14 @@ pub const FFIUnsafePass = struct {
 
             const issue = Issue.init(
                 vuln_type,
-                message,
+                issue_message,
                 boundary.location,
                 calculateSeverity(confidence),
                 confidence,
             );
 
             try ctx.addIssue(issue);
+            ctx.allocator.free(issue_message);
             issue_count += 1;
         }
 

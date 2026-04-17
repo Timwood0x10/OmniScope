@@ -108,10 +108,9 @@ pub const ReportGenerator = struct {
 
     fn writeHeader(self: *ReportGenerator, output: *std.ArrayList(u8), report: SecurityReport) !void {
         try output.appendSlice("=== OmniScope Security Analysis Report ===\n");
-        try output.writer().print(
-            "Timestamp: {s}\n",
-            .{self.formatTimestamp(report.timestamp)},
-        );
+        const timestamp = self.formatTimestamp(report.timestamp);
+        defer self.allocator.free(timestamp);
+        try output.writer().print("Timestamp: {s}\n", .{timestamp});
         try output.writer().print(
             "Module: {s}\n",
             .{report.stats.module_name},
@@ -271,7 +270,7 @@ pub const ReportGenerator = struct {
         // timestamp is in seconds since Unix epoch
         // Ensure timestamp is within valid range for i32 (Epoch.seconds type)
         const seconds = if (timestamp >= 0 and timestamp <= std.math.maxInt(i32))
-            @intCast(timestamp)
+            @as(i32, @intCast(timestamp))
         else
             0; // Fallback to epoch if out of range
 

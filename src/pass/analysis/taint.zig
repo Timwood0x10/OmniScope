@@ -13,7 +13,7 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
-const c = @import("../../ir/llvm_raw.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
@@ -23,63 +23,24 @@ pub const TaintPass = struct {
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
 
-    allocator: std.mem.Allocator,
-    ctx: *PassContext,
-    diag: *DiagnosticWriter,
-    store: *FactStore,
-    query: QueryEngine,
-    // Taint graph
-    taint_graph: TaintGraph,
-    // Function ID
-    func_id: u32,
-    // Taint sources
-    sources: std.ArrayList(u32),
-    // Taint sinks
-    sinks: std.ArrayList(u32),
-
-    /// Create a new taint analysis pass
-    pub fn init(allocator: std.mem.Allocator, store: *FactStore) TaintPass {
-        return .{
-            .allocator = allocator,
-            .ctx = undefined,
-            .diag = undefined,
-            .store = store,
-            .query = QueryEngine.init(store),
-            .taint_graph = TaintGraph.init(allocator),
-            .func_id = 0,
-            .sources = std.ArrayList(u32).init(allocator),
-            .sinks = std.ArrayList(u32).init(allocator),
-        };
-    }
-
-    /// Deinitialize the pass
-    pub fn deinit(self: *TaintPass) void {
-        self.taint_graph.deinit();
-        self.sources.deinit();
-        self.sinks.deinit();
-    }
-
-    /// Reset internal state for re-analysis
-    fn reset(self: *TaintPass) void {
-        self.taint_graph.deinit();
-        self.sources.clearAndFree();
-        self.sinks.clearAndFree();
-        self.taint_graph = TaintGraph.init(self.allocator);
-        self.sources = std.ArrayList(u32).init(self.allocator);
-        self.sinks = std.ArrayList(u32).init(self.allocator);
-    }
-
     /// Run the taint analysis pass
     pub fn run(
-        self: *TaintPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
-        // Reset internal state for re-analysis
-        self.reset();
+        _ = diag;
 
-        self.ctx = ctx;
-        self.diag = diag;
+        // Initialize local state
+        var taint_graph = TaintGraph.init(ctx.allocator);
+        defer taint_graph.deinit();
+
+        var sources = std.ArrayList(u32).init(ctx.allocator);
+        defer sources.deinit();
+
+        var sinks = std.ArrayList(u32).init(ctx.allocator);
+        defer sinks.deinit();
+
+        var func_id: u32 = 0;
 
         const module = ctx.module orelse return;
 
@@ -89,17 +50,24 @@ pub const TaintPass = struct {
             const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
-                self.func_id = ctx.getNextId();
+                func_id = ctx.getNextId();
 
                 // Analyze function
-                try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+                try analyzeFunction(ctx, func_id, FunctionRef{ .raw = func_ref }, &taint_graph, &sources, &sinks);
             }
             func = c.LLVMGetNextFunction(func);
         }
     }
 
     /// Analyze a function for taint propagation
-    fn analyzeFunction(self: *TaintPass, func: FunctionRef) !void {
+    fn analyzeFunction(
+        ctx: *PassContext,
+        func_id: u32,
+        func: FunctionRef,
+        taint_graph: *TaintGraph,
+        sources: *std.ArrayList(u32),
+        sinks: *std.ArrayList(u32),
+    ) !void {
         // Get first basic block
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
@@ -111,21 +79,20 @@ pub const TaintPass = struct {
                 // Get opcode
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
-                // Check if this is a call instruction
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-                if (opcode_enum == .Call) {
-                    const inst_id = self.ctx.getNextId();
+                // Check if this is a call instruction (using LLVM opcode constants)
+                if (opcode == c.LLVMCall) {
+                    const inst_id = ctx.getNextId();
 
                     // Check if this is a taint source
-                    if (self.isTaintSource(inst)) {
-                        try self.sources.append(inst_id);
-                        try self.taint_graph.markTaintedFromSource(inst_id, inst_id);
-                        try self.store.insert(.taint, inst_id, inst_id, self.func_id);
+                    if (isTaintSource(inst)) {
+                        try sources.append(inst_id);
+                        try taint_graph.markTaintedFromSource(inst_id, inst_id);
+                        try ctx.fact_store.insert(.taint, inst_id, inst_id, func_id);
                     }
 
                     // Check if this is a taint sink
-                    if (self.isTaintSink(inst)) {
-                        try self.sinks.append(inst_id);
+                    if (isTaintSink(inst)) {
+                        try sinks.append(inst_id);
                     }
                 }
 
@@ -138,26 +105,26 @@ pub const TaintPass = struct {
         }
 
         // Query DFG edges for data flow
-        const dfg_indices = try self.store.queryByKind(.dfg_edge, self.ctx.allocator);
-        defer self.ctx.allocator.free(dfg_indices);
+        const dfg_indices = try ctx.fact_store.queryByKind(.dfg_edge, ctx.allocator);
+        defer ctx.allocator.free(dfg_indices);
 
         // Build taint propagation graph from DFG
         for (dfg_indices) |idx| {
-            const fact = self.store.get(idx).?;
-            try self.taint_graph.addPropagation(fact.subject, fact.object);
+            const fact = ctx.fact_store.get(idx).?;
+            try taint_graph.addPropagation(fact.subject, fact.object);
         }
 
         // Propagate taint
-        try self.taint_graph.propagate();
+        try taint_graph.propagate();
 
         // Check if taint reaches any sinks
-        for (self.sinks.items) |sink| {
-            if (self.taint_graph.isTainted(sink)) {
+        for (sinks.items) |sink| {
+            if (taint_graph.isTainted(sink)) {
                 // Taint reached a sink - emit taint fact
                 // Only associate sources that actually propagated to this sink
-                if (self.taint_graph.getTaintSources(sink)) |sources| {
-                    for (sources) |source| {
-                        try self.store.insert(.taint, source, sink, self.func_id);
+                if (taint_graph.getTaintSources(sink)) |source_list| {
+                    for (source_list) |source| {
+                        try ctx.fact_store.insert(.taint, source, sink, func_id);
                     }
                 }
             }
@@ -165,7 +132,7 @@ pub const TaintPass = struct {
     }
 
     /// Check if a call instruction is a taint source
-    fn isTaintSource(_: *TaintPass, inst: c.LLVMValueRef) bool {
+    fn isTaintSource(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;
@@ -209,7 +176,7 @@ pub const TaintPass = struct {
     }
 
     /// Check if a call instruction is a taint sink
-    fn isTaintSink(_: *TaintPass, inst: c.LLVMValueRef) bool {
+    fn isTaintSink(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetOperand(inst, 0);
         if (called_func == null) return false;

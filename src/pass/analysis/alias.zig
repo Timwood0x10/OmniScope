@@ -102,10 +102,6 @@ pub const AliasPass = struct {
             }
             func = c.LLVMGetNextFunction(func);
         }
-
-        // Clean up
-        self.type_cache.deinit();
-        self.ptr_info_map.deinit();
     }
 
     /// Analyze a function for pointer aliasing

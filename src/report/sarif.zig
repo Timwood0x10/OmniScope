@@ -189,8 +189,7 @@ pub const SarifGenerator = struct {
     }
 
     /// Write SARIF header
-    fn writeHeader(self: *SarifGenerator, output: *std.ArrayList(u8)) !void {
-        _ = self;
+    fn writeHeader(output: *std.ArrayList(u8)) !void {
         try output.appendSlice("{\n");
         try output.writer().print("  \"version\": \"{s}\",\n", .{SARIF_VERSION});
         try output.writer().print("  \"$schema\": \"{s}\",\n", .{SARIF_SCHEMA});
@@ -203,7 +202,7 @@ pub const SarifGenerator = struct {
 
         try self.writeTool(&output);
         try output.appendSlice(",\n");
-        try self.writeInvocations(&output);
+        try writeInvocations(&output);
         try output.appendSlice(",\n");
         try self.writeResults(&output, issues);
 
@@ -233,20 +232,23 @@ pub const SarifGenerator = struct {
             try output.writer().print("              \"id\": \"{s}\",\n", .{rule.id});
             try output.writer().print("              \"name\": \"{s}\",\n", .{rule.name});
             try output.appendSlice("              \"shortDescription\": {\n");
-            const escaped_short = std.json.stringEncode(self.allocator, rule.short_description) catch {
-                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.short_description});
+
+            if (std.json.stringEncode(self.allocator, rule.short_description)) |escaped| {
+                defer self.allocator.free(escaped);
+                try output.writer().print("                \"text\": {s}\n", .{escaped});
             } else {
-                defer self.allocator.free(escaped_short);
-                try output.writer().print("                \"text\": {s}\n", .{escaped_short});
-            };
+                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.short_description});
+            }
+
             try output.appendSlice("              },\n");
             try output.appendSlice("              \"fullDescription\": {\n");
-            const escaped_full = std.json.stringEncode(self.allocator, rule.full_description) catch {
-                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.full_description});
+
+            if (std.json.stringEncode(self.allocator, rule.full_description)) |escaped| {
+                defer self.allocator.free(escaped);
+                try output.writer().print("                \"text\": {s}\n", .{escaped});
             } else {
-                defer self.allocator.free(escaped_full);
-                try output.writer().print("                \"text\": {s}\n", .{escaped_full});
-            };
+                try output.writer().print("                \"text\": \"{s}\"\n", .{rule.full_description});
+            }
             try output.appendSlice("              },\n");
             try output.writer().print("              \"defaultConfiguration\": {{\n", .{});
             try output.writer().print("                \"level\": \"{s}\"\n", .{rule.default_severity});
@@ -259,8 +261,7 @@ pub const SarifGenerator = struct {
     }
 
     /// Write invocations section (peer of tool and results)
-    fn writeInvocations(self: *SarifGenerator, output: *std.ArrayList(u8)) !void {
-        _ = self;
+    fn writeInvocations(output: *std.ArrayList(u8)) !void {
         try output.appendSlice("      \"invocations\": [\n");
         try output.appendSlice("        {\n");
         try output.appendSlice("          \"executionSuccessful\": true\n");
@@ -295,7 +296,7 @@ pub const SarifGenerator = struct {
         try self.writeLocations(output, issue.location);
         try output.appendSlice(",\n");
 
-        try self.writeProperties(output, issue);
+        try writeProperties(output, issue);
 
         if (issue.ffi_boundary) |boundary| {
             try output.appendSlice(",\n");
@@ -307,10 +308,8 @@ pub const SarifGenerator = struct {
 
     /// Write message section
     fn writeMessage(self: *SarifGenerator, output: *std.ArrayList(u8), message: []const u8) !void {
-        _ = self;
         try output.appendSlice("          \"message\": {\n");
         const escaped = std.json.stringEncode(self.allocator, message) catch {
-            // If encoding fails, write unescaped message to avoid crash
             try output.writer().print("            \"text\": \"{s}\"\n", .{message});
             try output.appendSlice("          }");
             return;
@@ -322,27 +321,37 @@ pub const SarifGenerator = struct {
 
     /// Write locations section
     fn writeLocations(self: *SarifGenerator, output: *std.ArrayList(u8), location: Location) !void {
-        _ = self;
         try output.appendSlice("          \"locations\": [\n");
         try output.appendSlice("            {\n");
         try output.appendSlice("              \"physicalLocation\": {\n");
         try output.appendSlice("                \"artifactLocation\": {\n");
 
-        if (location.file) |file| {
-            const escaped_file = std.json.stringEncode(self.allocator, file) catch {
-                try output.writer().print("                  \"uri\": \"{s}\"\n", .{file});
+        const uri_text = if (location.file) |file|
+            file
+        else
+            location.function;
+
+        const escaped_uri = std.json.stringEncode(self.allocator, uri_text) catch {
+            try output.writer().print("                  \"uri\": \"{s}\"\n", .{uri_text});
+            try output.appendSlice("                },\n");
+            try output.appendSlice("                \"region\": {\n");
+            if (location.line) |line| {
+                try output.writer().print("                  \"startLine\": {d}", .{line});
+                if (location.column) |col| {
+                    try output.writer().print(",\n                  \"startColumn\": {d}", .{col});
+                }
+                try output.appendSlice("\n");
             } else {
-                defer self.allocator.free(escaped_file);
-                try output.writer().print("                  \"uri\": {s}\n", .{escaped_file});
-            };
-        } else {
-            const escaped_func = std.json.stringEncode(self.allocator, location.function) catch {
-                try output.writer().print("                  \"uri\": \"{s}\"\n", .{location.function});
-            } else {
-                defer self.allocator.free(escaped_func);
-                try output.writer().print("                  \"uri\": {s}\n", .{escaped_func});
-            };
-        }
+                try output.appendSlice("                  \"startLine\": 1\n");
+            }
+            try output.appendSlice("                }\n");
+            try output.appendSlice("              }\n");
+            try output.appendSlice("            }\n");
+            try output.appendSlice("          }");
+            return;
+        };
+        defer self.allocator.free(escaped_uri);
+        try output.writer().print("                  \"uri\": {s}\n", .{escaped_uri});
 
         try output.appendSlice("                },\n");
         try output.appendSlice("                \"region\": {\n");
@@ -364,8 +373,7 @@ pub const SarifGenerator = struct {
     }
 
     /// Write properties section
-    fn writeProperties(self: *SarifGenerator, output: *std.ArrayList(u8), issue: Issue) !void {
-        _ = self;
+    fn writeProperties(output: *std.ArrayList(u8), issue: Issue) !void {
         try output.appendSlice("          \"properties\": {\n");
         try output.writer().print("            \"confidence\": {d:.2},\n", .{issue.confidence});
         try output.writer().print("            \"severity\": \"{s}\",\n", .{issue.severity.toString()});
@@ -395,27 +403,30 @@ pub const SarifGenerator = struct {
 
     /// Write thread flow location
     fn writeThreadFlowLocation(self: *SarifGenerator, output: *std.ArrayList(u8), boundary: FFIBoundary, step: usize, message: []const u8) !void {
-        _ = self;
         try output.appendSlice("                    {\n");
         try output.appendSlice("                      \"location\": {\n");
         try output.writer().print("                        \"id\": {d},\n", .{step});
         try output.appendSlice("                        \"physicalLocation\": {\n");
         try output.appendSlice("                          \"artifactLocation\": {\n");
-        const escaped_func = std.json.stringEncode(self.allocator, boundary.function_name) catch {
-            try output.writer().print("                            \"uri\": \"{s}\"\n", .{boundary.function_name});
+
+        if (std.json.stringEncode(self.allocator, boundary.function_name)) |escaped| {
+            defer self.allocator.free(escaped);
+            try output.writer().print("                            \"uri\": {s}\n", .{escaped});
         } else {
-            defer self.allocator.free(escaped_func);
-            try output.writer().print("                            \"uri\": {s}\n", .{escaped_func});
-        };
+            try output.writer().print("                            \"uri\": \"{s}\"\n", .{boundary.function_name});
+        }
+
         try output.appendSlice("                          }\n");
         try output.appendSlice("                        },\n");
         try output.appendSlice("                        \"message\": {\n");
-        const escaped_msg = std.json.stringEncode(self.allocator, message) catch {
-            try output.writer().print("                          \"text\": \"{s}\"\n", .{message});
+
+        if (std.json.stringEncode(self.allocator, message)) |escaped| {
+            defer self.allocator.free(escaped);
+            try output.writer().print("                          \"text\": {s}\n", .{escaped});
         } else {
-            defer self.allocator.free(escaped_msg);
-            try output.writer().print("                          \"text\": {s}\n", .{escaped_msg});
-        };
+            try output.writer().print("                          \"text\": \"{s}\"\n", .{message});
+        }
+
         try output.appendSlice("                        }\n");
         try output.appendSlice("                      }\n");
         try output.appendSlice("                    }");

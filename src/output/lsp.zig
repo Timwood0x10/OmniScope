@@ -262,9 +262,6 @@ pub const LSPOutput = struct {
             if (diag.message.len > 0) {
                 self.allocator.free(diag.message);
             }
-            if (diag.code) |code| {
-                self.allocator.free(code);
-            }
         }
         self.allocator.free(diagnostics);
     }

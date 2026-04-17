@@ -13,6 +13,7 @@ const Location = @import("../../../diag/issue.zig").Location;
 const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
+const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 
 /// Return value check pass
 pub const ReturnCheckPass = struct {
@@ -78,7 +79,7 @@ pub const ReturnCheckPass = struct {
         const called_name = std.mem.span(called_name_ptr);
 
         // Remove leading \01_ prefix if present
-        const clean_name = if (called_name.len >= 3 and called_name[0] == '\\' and called_name[1] == '0' and called_name[2] == '1' and called_name[3] == '_')
+        const clean_name = if (called_name.len >= 4 and called_name[0] == '\\' and called_name[1] == '0' and called_name[2] == '1' and called_name[3] == '_')
             called_name[4..]
         else
             called_name;
@@ -117,19 +118,22 @@ pub const ReturnCheckPass = struct {
 
         // Create issue
         const location = Location.init(caller_name);
+        const issue_message = try std.fmt.allocPrint(
+            ctx.allocator,
+            "Unchecked return value from dangerous function '{s}' (confidence: {d:.2}%)",
+            .{ clean_name, confidence * 100.0 },
+        );
+
         const issue = Issue.init(
             .unchecked_return,
-            std.fmt.allocPrint(
-                ctx.allocator,
-                "Unchecked return value from dangerous function '{s}' (confidence: {d:.2}%)",
-                .{ clean_name, confidence * 100.0 },
-            ) catch return false,
+            issue_message,
             location,
             severity,
             confidence,
         );
 
         try ctx.addIssue(issue);
+        ctx.allocator.free(issue_message);
 
         diag.warn("Unchecked return value: {s} -> {s}", .{ caller_name, clean_name });
         return true;

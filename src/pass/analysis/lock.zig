@@ -105,10 +105,6 @@ pub const LockPass = struct {
 
         // Build lock graph and detect deadlocks
         try self.detectDeadlocks(self.ctx.allocator);
-
-        // Clean up
-        self.lock_ops.deinit();
-        self.lock_id_map.deinit();
     }
 
     /// Analyze a function for lock operations
