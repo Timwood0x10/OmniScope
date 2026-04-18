@@ -2,7 +2,7 @@
 
 **Cross-Language FFI/Unsafe Boundary Analyzer**
 
-> **Status: v0.2 Alpha** - Core features implemented, under active testing. Not production-ready.
+> Core features implemented, under active testing. Not production-ready.
 
 OmniScope is a static analysis tool based on LLVM IR, focused on security vulnerability detection across language FFI boundaries.
 
@@ -13,10 +13,12 @@ OmniScope is a static analysis tool based on LLVM IR, focused on security vulner
 **Not a Rust-specific borrow checker, but a universal resource lifetime analysis.**
 
 Traditional tools:
+
 - Focus on single-language memory safety
 - Cannot track ownership transfer across language boundaries
 
 OmniScope's solution:
+
 ```
 Resource Lifetime = Who owns + Is valid + Has escaped
 
@@ -26,6 +28,7 @@ Action: alloc | free | borrow | transfer | reclaim | escape
 ```
 
 This enables analysis of:
+
 - Rust ↔ C ownership transfer
 - Zig ↔ C allocator semantics
 - Go ↔ C cgo memory management
@@ -59,26 +62,26 @@ Extract exact filename, line, and column through LLVM Debug Info:
 
 ### 4. Cross-Language FFI Boundary Detection
 
-| Caller | Callee | Support |
-|--------|--------|---------|
-| Rust | C | ✅ Beta |
-| C++ | C | ✅ Beta |
-| Go | C | ⚠️ Experimental |
-| Zig | C | ⚠️ Experimental |
-| C | C | ✅ Supported |
+| Caller | Callee | Support         |
+| ------ | ------ | --------------- |
+| Rust   | C      | ✅ Beta          |
+| C++    | C      | ✅ Beta          |
+| Go     | C      | ⚠️ Experimental |
+| Zig    | C      | ⚠️ Experimental |
+| C      | C      | ✅ Supported     |
 
 ## Detected Vulnerabilities
 
-| Type | Condition | Severity |
-|------|-----------|----------|
-| Command Injection | `system()`, `popen()`, etc. | CRITICAL |
-| Buffer Overflow | `strcpy()`, `strcat()`, `sprintf()`, etc. | HIGH |
-| Double Free | Same resource freed twice | HIGH |
-| Use After Free | Use after free | HIGH |
-| Memory Leak | Resource not freed | MEDIUM |
-| Format String | `printf()` family vulnerabilities | MEDIUM |
-| Ownership Mismatch | Inconsistent ownership across boundaries | HIGH |
-| Borrow Escape | Borrow escaped to unknown scope | MEDIUM |
+| Type               | Condition                                 | Severity |
+| ------------------ | ----------------------------------------- | -------- |
+| Command Injection  | `system()`, `popen()`, etc.               | CRITICAL |
+| Buffer Overflow    | `strcpy()`, `strcat()`, `sprintf()`, etc. | HIGH     |
+| Double Free        | Same resource freed twice                 | HIGH     |
+| Use After Free     | Use after free                            | HIGH     |
+| Memory Leak        | Resource not freed                        | MEDIUM   |
+| Format String      | `printf()` family vulnerabilities         | MEDIUM   |
+| Ownership Mismatch | Inconsistent ownership across boundaries  | HIGH     |
+| Borrow Escape      | Borrow escaped to unknown scope           | MEDIUM   |
 
 ## Quick Start
 
@@ -291,6 +294,7 @@ make rust-run
 ```
 
 Expected detections:
+
 - `system()` command injection (CRITICAL)
 - `strcpy()` buffer overflow (HIGH)
 - `malloc()` ownership transfer (MEDIUM)
@@ -302,6 +306,7 @@ make cpp-run
 ```
 
 Detects when C++ calls C functions:
+
 - Ownership transfer across boundaries
 - Dangerous C function calls
 
@@ -376,16 +381,16 @@ PointerOwnership: 1 cross-FFI ownership transfers detected
 
 ## Test Coverage
 
-| Example | Languages | Bugs Detected | Detection Rate |
-|---------|-----------|---------------|----------------|
-| rust_ffi_demo | Rust → C | 6 intentional bugs | 6/6 (100%) |
-| cpp_cffi | C++ → C | 7 intentional bugs | 7/7 (100%) |
-| go_cffi | Go → C | 9 intentional bugs | 8/9 (89%) |
-| zig_cffi | Zig → C | 8 intentional bugs | 7/8 (88%) |
+| Example         | Languages | Bugs Detected      | Detection Rate |
+| --------------- | --------- | ------------------ | -------------- |
+| rust\_ffi\_demo | Rust → C  | 6 intentional bugs | 6/6 (100%)     |
+| cpp\_cffi       | C++ → C   | 7 intentional bugs | 7/7 (100%)     |
+| go\_cffi        | Go → C    | 9 intentional bugs | 8/9 (89%)      |
+| zig\_cffi       | Zig → C   | 8 intentional bugs | 7/8 (88%)      |
 
 > **Note**: These are preliminary results from controlled test cases. Real-world accuracy may vary. We are actively collecting more test data to establish reliable precision/recall metrics.
 
-See [examples/TEST_RESULTS.md](examples/TEST_RESULTS.md) for details.
+See [examples/TEST\_RESULTS.md](examples/TEST_RESULTS.md) for details.
 
 ## Limitations
 
@@ -400,28 +405,19 @@ See [examples/TEST_RESULTS.md](examples/TEST_RESULTS.md) for details.
 make bench    # Run performance benchmarks
 ```
 
-| Scale | Functions | Target Time | Target Memory |
-|-------|-----------|-------------|---------------|
-| Small | ~100 | < 100ms | < 50MB |
-| Medium | ~1K | < 1s | < 200MB |
-| Large | ~10K | < 10s | < 1GB |
+| Scale  | Functions | Target Time | Target Memory |
+| ------ | --------- | ----------- | ------------- |
+| Small  | \~100     | < 100ms     | < 50MB        |
+| Medium | \~1K      | < 1s        | < 200MB       |
+| Large  | \~10K     | < 10s       | < 1GB         |
 
 Current benchmark results (ReleaseFast, M1 Pro):
-- FactStore Insert: ~2.5μs/iter (100K facts)
-- Registry Lookup: ~33ns/iter (known function)
-- FFI Detection: ~2ns/iter
+
+- FactStore Insert: \~2.5μs/iter (100K facts)
+- Registry Lookup: \~33ns/iter (known function)
+- FFI Detection: \~2ns/iter
 
 See [bench/README.md](bench/README.md) for details.
-
-## Roadmap
-
-See [plan/v0.2_refactor.md](plan/v0.2_refactor.md)
-
-## Contributing
-
-1. Follow coding conventions in `plan/rules.md`
-2. Add tests
-3. Run `make test` to ensure all tests pass
 
 ## License
 

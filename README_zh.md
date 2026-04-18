@@ -11,10 +11,12 @@ OmniScope 是一个基于 LLVM IR 的静态分析工具，专注于跨语言 FFI
 **不是 Rust 特定的 borrow checker，而是通用的资源生命周期分析。**
 
 传统工具的问题：
+
 - 只关注单一语言的内存安全
 - 无法追踪跨语言边界的所有权转移
 
 OmniScope 的解决方案：
+
 ```
 资源生命周期 = 谁拥有 + 是否有效 + 是否逃逸
 
@@ -24,6 +26,7 @@ Action: alloc | free | borrow | transfer | reclaim | escape
 ```
 
 这使得 OmniScope 能够分析：
+
 - Rust ↔ C 的所有权转移
 - Zig ↔ C 的分配器语义
 - Go ↔ C 的 cgo 内存管理
@@ -57,26 +60,26 @@ pub const Rule = struct {
 
 ### 4. 跨语言 FFI 边界检测
 
-| 调用方 | 被调用方 | 支持状态 |
-|--------|----------|----------|
-| Rust | C | ✅ 完全支持 |
-| C++ | C | ✅ 完全支持 |
-| Go | C | ✅ 完全支持 |
-| Zig | C | ✅ 完全支持 |
-| C | C | ✅ 支持 |
+| 调用方  | 被调用方 | 支持状态   |
+| ---- | ---- | ------ |
+| Rust | C    | ✅ 完全支持 |
+| C++  | C    | ✅ 完全支持 |
+| Go   | C    | ✅ 完全支持 |
+| Zig  | C    | ✅ 完全支持 |
+| C    | C    | ✅ 支持   |
 
 ## 检测的漏洞类型
 
-| 类型 | 检测条件 | 严重程度 |
-|------|----------|----------|
-| 命令注入 | `system()`, `popen()` 等 | CRITICAL |
-| 缓冲区溢出 | `strcpy()`, `strcat()`, `sprintf()` 等 | HIGH |
-| Double Free | 同一资源被释放两次 | HIGH |
-| Use After Free | 释放后继续使用 | HIGH |
-| 内存泄漏 | 资源未释放 | MEDIUM |
-| 格式化字符串 | `printf()` 系列函数漏洞 | MEDIUM |
-| 所有权不一致 | 跨语言边界的所有权不一致 | HIGH |
-| 借用逃逸 | 借用逃逸到未知作用域 | MEDIUM |
+| 类型             | 检测条件                                  | 严重程度     |
+| -------------- | ------------------------------------- | -------- |
+| 命令注入           | `system()`, `popen()` 等               | CRITICAL |
+| 缓冲区溢出          | `strcpy()`, `strcat()`, `sprintf()` 等 | HIGH     |
+| Double Free    | 同一资源被释放两次                             | HIGH     |
+| Use After Free | 释放后继续使用                               | HIGH     |
+| 内存泄漏           | 资源未释放                                 | MEDIUM   |
+| 格式化字符串         | `printf()` 系列函数漏洞                     | MEDIUM   |
+| 所有权不一致         | 跨语言边界的所有权不一致                          | HIGH     |
+| 借用逃逸           | 借用逃逸到未知作用域                            | MEDIUM   |
 
 ## 快速开始
 
@@ -289,6 +292,7 @@ make rust-run
 ```
 
 预期检测：
+
 - `system()` 命令注入 (CRITICAL)
 - `strcpy()` 缓冲区溢出 (HIGH)
 - `malloc()` 所有权转移 (MEDIUM)
@@ -300,6 +304,7 @@ make cpp-run
 ```
 
 检测 C++ 调用 C 函数时的：
+
 - 所有权跨边界转移
 - 危险 C 函数调用
 
@@ -374,14 +379,14 @@ PointerOwnership: 1 cross-FFI ownership transfers detected
 
 ## 测试覆盖
 
-| 示例 | 语言组合 | 检测的漏洞 | 准确率 |
-|------|----------|------------|--------|
-| rust_ffi_demo | Rust → C | 6 个故意埋的 bug | 100% |
-| cpp_cffi | C++ → C | 7 个故意埋的 bug | 100% |
-| go_cffi | Go → C | 9 个故意埋的 bug | 89% |
-| zig_cffi | Zig → C | 8 个故意埋的 bug | 88% |
+| 示例              | 语言组合     | 检测的漏洞       | 准确率  |
+| --------------- | -------- | ----------- | ---- |
+| rust\_ffi\_demo | Rust → C | 6 个故意埋的 bug | 100% |
+| cpp\_cffi       | C++ → C  | 7 个故意埋的 bug | 100% |
+| go\_cffi        | Go → C   | 9 个故意埋的 bug | 89%  |
+| zig\_cffi       | Zig → C  | 8 个故意埋的 bug | 88%  |
 
-详细测试结果见 [examples/TEST_RESULTS.md](examples/TEST_RESULTS.md)
+详细测试结果见 [examples/TEST\_RESULTS.md](examples/TEST_RESULTS.md)
 
 ## 局限性
 
@@ -390,15 +395,7 @@ PointerOwnership: 1 cross-FFI ownership transfers detected
 3. **依赖 Debug Info** - 没有 debug info 时只能显示符号名
 4. **动态特性无法分析** - 函数指针、虚函数调用难以追踪
 
-## 开发计划
-
-详见 [plan/v0.2_refactor.md](plan/v0.2_refactor.md)
-
-## 贡献指南
-
-1. 遵循 `plan/rules.md` 中的编码规范
-2. 添加测试
-3. 运行 `make test` 确保测试通过
+<br />
 
 ## 许可证
 

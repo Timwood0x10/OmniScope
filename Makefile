@@ -39,7 +39,8 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 
 .PHONY: all fmt check test test-unit test-int test-all bench build run clean examples \
         rust cpp go zig rust-run cpp-run go-run zig-run help \
-        corpus corpus-ir corpus-analyze corpus-check
+        corpus corpus-ir corpus-analyze corpus-check \
+        install-deps release
 
 # ========================================
 # Default Target - Run All Tests
@@ -117,6 +118,22 @@ bench:
 	@echo "║                     BENCHMARKS                                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build bench-perf -Doptimize=ReleaseFast
+
+# ========================================
+# Install & Release
+# ========================================
+
+install-deps:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                  INSTALL DEPENDENCIES                          ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/install_deps.sh
+
+release:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                     RELEASE BUILD                              ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/release.sh
 
 # ========================================
 # Build & Run
@@ -376,6 +393,10 @@ help:
 	@echo "  make check       Type check the project"
 	@echo "  make build       Build the project"
 	@echo "  make clean       Clean all build artifacts"
+	@echo ""
+	@echo "Install & Release:"
+	@echo "  make install-deps  Install dependencies (LLVM, Zig)"
+	@echo "  make release       Build release binaries"
 	@echo ""
 	@echo "FFI Analysis Commands:"
 	@echo "  make run         Run all FFI analysis tests"

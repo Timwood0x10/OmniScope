@@ -33,20 +33,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Go → C**: cgo memory safety analysis
 - **Zig → C**: Allocator semantics analysis
 
+#### New Analysis Passes
+- **PointerOwnershipPass**: Flow graph tracking for pointer ownership
+- **TaintPropagationPass**: Pointer flow tracking with allocation sites
+- **FFIBoundaryPass**: FFI boundary detection with Semantic Registry
+- **FFIAnalysisPass**: Ownership violation detection (double_free, use_after_free, ownership_mismatch, leak)
+- **CallGraphPass**: Inter-procedural call graph analysis
+- **Issue Detection Passes**: return_check, malloc_check, free_validation, memory_safety, integer_overflow, ffi_body_check, ffi_unsafe
+
+#### Test Infrastructure
+- **Integration Tests**: 5 tests with 100% Precision/Recall
+- **Issue Verification**: 26 expected issues across sqlite, openssl, zlib bindings
+- **Stability Tests**: 15 tests for crash-free, malformed input, memory leak detection
+- **Stress Tests**: 16 tests for large scale (100K entries), boundary cases, fuzz testing
+
+#### Documentation
+- **English Docs**: API reference, developer guide, user guide, dataflow analysis
+- **Chinese Docs**: Complete translation of all documentation
+- **Architecture Docs**: Module analysis, pipeline design
+
 ### Changed
 
 #### Architecture Simplification
-- Removed unnecessary passes: SinkTracerPass, ReturnCheckPass, propagation_rule.zig
-- Renamed TaintPropagationPass → PointerFlowPass (focused on pointer flow tracking)
-- Renamed FFIAnalysisPass → OwnershipViolationPass (focused on ownership violations)
-- Simplified Pass chain: CallGraph → PointerFlow → FFIBoundary → PointerOwnership → OwnershipViolation
-- Unified Fact types with ownership-specific kinds (ownership_alloc, ownership_free, ownership_transfer, ownership_violation)
+- Removed runtime instrumentation pipeline (instrumentation_stage, runtime_stage, merge_stage, static_stage)
+- Removed plugin ABI system (src/plugin/abi.zig)
+- Removed runtime collector and ring buffer (src/runtime/*)
+- Simplified pipeline to focus on static analysis
 
 #### Improved Detection
 - **FFIBoundaryPass**: Integrated with Semantic Registry for risk assessment
 - **PointerOwnershipPass**: Added flow graph tracking for accurate pointer data flow
-- **OwnershipViolationPass**: Focused on 4 violation types (double_free, use_after_free, ownership_mismatch, leak)
-- **PointerFlowPass**: Simplified from generic taint to pointer-specific flow tracking
+- **FFIAnalysisPass**: Focused on 4 violation types (double_free, use_after_free, ownership_mismatch, leak)
+- **TaintPropagationPass**: Simplified from generic taint to pointer-specific flow tracking
 
 ### Fixed
 
