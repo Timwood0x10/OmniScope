@@ -2,14 +2,14 @@
 # OmniScope Dependencies Installer
 # Supports: macOS (Homebrew) and Linux (apt-get)
 # Uses ZVM for Zig version management
-# Usage: ./scripts/install_deps.sh [--llvm-version=22] [--zig-version=0.15.2]
+# Usage: ./scripts/install_deps.sh [--llvm-version=21] [--zig-version=0.15.2]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-LLVM_VERSION=22
+LLVM_VERSION=21
 ZIG_VERSION="0.15.2"
 
 for arg in "$@"; do

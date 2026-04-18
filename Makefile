@@ -23,9 +23,9 @@
 #   make zig         - Build Zig → C example
 
 ZIG ?= zig
-CLANG ?= clang
-CLANGXX ?= clang++
-LLVM_LINK ?= /opt/homebrew/opt/llvm/bin/llvm-link
+CLANG ?= /opt/homebrew/opt/llvm@21/bin/clang
+CLANGXX ?= /opt/homebrew/opt/llvm@21/bin/clang++
+LLVM_LINK ?= /opt/homebrew/opt/llvm@21/bin/llvm-link
 
 # Directories
 BUILD_DIR ?= build

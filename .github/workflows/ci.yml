@@ -27,7 +27,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Type check
         run: zig build check
 
@@ -49,7 +49,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Run unit tests
         run: zig build unit-test --summary all
 
@@ -71,7 +71,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Run integration tests
         run: zig build test-integration --summary all
 
@@ -93,7 +93,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Run all tests
         run: |
           zig build unit-test --summary all
@@ -120,7 +120,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Run benchmarks
         run: zig build bench-perf -Doptimize=ReleaseFast
 
@@ -142,7 +142,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Build release
         run: zig build -Doptimize=ReleaseSafe
       - name: Upload artifact
@@ -167,7 +167,7 @@ jobs:
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
-        run: brew install llvm@18
+        run: brew install llvm@21
       - name: Build release
         run: zig build -Doptimize=ReleaseSafe
       - name: Upload artifact
@@ -193,7 +193,7 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install LLVM
-        run: brew install llvm@18
+        run: brew install llvm@21
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
@@ -227,7 +227,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev lcov
+          sudo apt-get install -y llvm-21-dev lcov
       - name: Generate coverage
         run: |
           zig build test -Dcoverage || true

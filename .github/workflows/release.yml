@@ -75,7 +75,7 @@ jobs:
       - name: Install LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev
+          sudo apt-get install -y llvm-21-dev
       - name: Build
         run: zig build -Doptimize=ReleaseFast
       - name: Package
@@ -107,7 +107,7 @@ jobs:
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
-        run: brew install llvm@18
+        run: brew install llvm@21
       - name: Build
         run: zig build -Doptimize=ReleaseFast
       - name: Package
@@ -139,7 +139,7 @@ jobs:
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
-        run: brew install llvm@18
+        run: brew install llvm@21
       - name: Build
         run: zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
       - name: Package

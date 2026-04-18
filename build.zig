@@ -5,23 +5,16 @@ fn getDefaultLLVMPath() []const u8 {
     const os = @import("builtin").os.tag;
 
     return switch (os) {
-        .macos => "/opt/homebrew/opt/llvm",
-        .linux => "/usr/lib/llvm-18",
+        .macos => "/opt/homebrew/opt/llvm@21",
+        .linux => "/usr/lib/llvm-21",
         .windows => "C:\\Program Files\\LLVM",
-        else => "/usr/lib/llvm-18",
+        else => "/usr/lib/llvm-21",
     };
 }
 
 /// Get the default LLVM version for the current OS
 fn getDefaultLLVMVersion() []const u8 {
-    const os = @import("builtin").os.tag;
-
-    return switch (os) {
-        .macos => "22",
-        .linux => "18",
-        .windows => "18",
-        else => "18",
-    };
+    return "21";
 }
 
 /// Build configuration for OmniScope
