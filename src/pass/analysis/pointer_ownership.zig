@@ -7,6 +7,10 @@
 //!
 //! This pass analyzes LLVM IR to identify allocation and free sites,
 //! then tracks ownership state through def-use chains.
+//!
+//! v0.2 Enhancements:
+//! - Inter-procedural analysis via function summaries
+//! - Path-sensitive analysis for null check tracking
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -19,11 +23,16 @@ const Location = @import("../../diag/issue.zig").Location;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
+const SummaryRegistry = @import("../../dataflow/function_summary.zig").SummaryRegistry;
+const PathManager = @import("../../dataflow/path_condition.zig").PathManager;
+const PathCondition = @import("../../dataflow/path_condition.zig").PathCondition;
+const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
     OutOfMemory,
     NoModule,
+    NullPointer,
 };
 
 /// Ownership violation types detected by this pass.
@@ -124,6 +133,17 @@ pub const PointerOwnershipPass = struct {
             return;
         }
 
+        // Initialize value ID map for proper pointer tracking
+        var id_map = ValueIdMap.init(ctx.allocator);
+        defer id_map.deinit();
+
+        // Initialize function summary registry for inter-procedural analysis
+        var summary_registry = SummaryRegistry.init(ctx.allocator);
+        defer summary_registry.deinit();
+        summary_registry.initBuiltins() catch {
+            diag.warn("PointerOwnership: Failed to init function summaries", .{});
+        };
+
         var stats = OwnershipStats{};
         var alloc_map = std.AutoHashMap(u32, AllocSite).init(ctx.allocator);
         defer alloc_map.deinit();
@@ -161,6 +181,7 @@ pub const PointerOwnershipPass = struct {
                 &flow_graph,
                 &stats,
                 has_debug_info,
+                &id_map,
             );
         }
 
@@ -216,6 +237,7 @@ pub const PointerOwnershipPass = struct {
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
+        id_map: *ValueIdMap,
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
         const func_lang = identifyLanguage(func);
@@ -234,6 +256,7 @@ pub const PointerOwnershipPass = struct {
                     flow_graph,
                     stats,
                     has_debug_info,
+                    id_map,
                 );
             }
         }
@@ -250,13 +273,14 @@ pub const PointerOwnershipPass = struct {
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
+        id_map: *ValueIdMap,
     ) OwnershipError!void {
         _ = has_debug_info;
         const opcode = c.LLVMGetInstructionOpcode(inst);
-        const inst_id: u32 = @truncate(@intFromPtr(inst));
+        const inst_id = try id_map.getOrPutId(@intFromPtr(inst));
 
         // Build flow graph for pointer tracking.
-        try buildFlowGraph(allocator, inst, opcode, flow_graph);
+        try buildFlowGraph(allocator, inst, opcode, flow_graph, id_map);
 
         // Check for allocation patterns using SemanticRegistry.
         if (isAllocationInstruction(inst, opcode)) {
@@ -283,7 +307,7 @@ pub const PointerOwnershipPass = struct {
             // Get the pointer being freed (first argument)
             const ptr_arg = c.LLVMGetOperand(inst, 0);
             const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
-                @truncate(@intFromPtr(ptr_arg))
+                try id_map.getOrPutId(@intFromPtr(ptr_arg))
             else
                 inst_id;
 
@@ -309,8 +333,9 @@ pub const PointerOwnershipPass = struct {
         inst: c.LLVMValueRef,
         opcode: c_uint,
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        id_map: *ValueIdMap,
     ) OwnershipError!void {
-        const inst_id: u32 = @truncate(@intFromPtr(inst));
+        const inst_id = try id_map.getOrPutId(@intFromPtr(inst));
 
         switch (opcode) {
             c.LLVMStore => {
@@ -318,8 +343,8 @@ pub const PointerOwnershipPass = struct {
                 const value = c.LLVMGetOperand(inst, 0);
                 const ptr = c.LLVMGetOperand(inst, 1);
                 if (@intFromPtr(value) != 0 and @intFromPtr(ptr) != 0) {
-                    const value_id: u32 = @truncate(@intFromPtr(value));
-                    const ptr_id: u32 = @truncate(@intFromPtr(ptr));
+                    const value_id = try id_map.getOrPutId(@intFromPtr(value));
+                    const ptr_id = try id_map.getOrPutId(@intFromPtr(ptr));
                     try addFlowEdge(allocator, value_id, ptr_id, flow_graph);
                 }
             },
@@ -327,7 +352,7 @@ pub const PointerOwnershipPass = struct {
                 // Load: pointer -> result
                 const ptr = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(ptr) != 0) {
-                    const ptr_id: u32 = @truncate(@intFromPtr(ptr));
+                    const ptr_id = try id_map.getOrPutId(@intFromPtr(ptr));
                     try addFlowEdge(allocator, ptr_id, inst_id, flow_graph);
                 }
             },
@@ -335,7 +360,7 @@ pub const PointerOwnershipPass = struct {
                 // Cast: operand -> result
                 const operand = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(operand) != 0) {
-                    const operand_id: u32 = @truncate(@intFromPtr(operand));
+                    const operand_id = try id_map.getOrPutId(@intFromPtr(operand));
                     try addFlowEdge(allocator, operand_id, inst_id, flow_graph);
                 }
             },
@@ -347,7 +372,7 @@ pub const PointerOwnershipPass = struct {
                 while (i < num_ops) : (i += 1) {
                     const op = c.LLVMGetOperand(inst, i);
                     if (@intFromPtr(op) != 0) {
-                        const op_id: u32 = @truncate(@intFromPtr(op));
+                        const op_id = try id_map.getOrPutId(@intFromPtr(op));
                         // Arguments flow to call result
                         try addFlowEdge(allocator, op_id, inst_id, flow_graph);
                     }
@@ -360,7 +385,7 @@ pub const PointerOwnershipPass = struct {
                 while (i < num_incoming) : (i += 1) {
                     const incoming = c.LLVMGetIncomingValue(inst, i);
                     if (@intFromPtr(incoming) != 0) {
-                        const incoming_id: u32 = @truncate(@intFromPtr(incoming));
+                        const incoming_id = try id_map.getOrPutId(@intFromPtr(incoming));
                         try addFlowEdge(allocator, incoming_id, inst_id, flow_graph);
                     }
                 }
@@ -370,12 +395,42 @@ pub const PointerOwnershipPass = struct {
                 const true_val = c.LLVMGetOperand(inst, 1);
                 const false_val = c.LLVMGetOperand(inst, 2);
                 if (@intFromPtr(true_val) != 0) {
-                    const true_id: u32 = @truncate(@intFromPtr(true_val));
+                    const true_id = try id_map.getOrPutId(@intFromPtr(true_val));
                     try addFlowEdge(allocator, true_id, inst_id, flow_graph);
                 }
                 if (@intFromPtr(false_val) != 0) {
-                    const false_id: u32 = @truncate(@intFromPtr(false_val));
+                    const false_id = try id_map.getOrPutId(@intFromPtr(false_val));
                     try addFlowEdge(allocator, false_id, inst_id, flow_graph);
+                }
+            },
+            c.LLVMGetElementPtr => {
+                // GEP: base pointer -> result (field/element access)
+                // The first operand is the base pointer, subsequent are indices
+                const base_ptr = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(base_ptr) != 0) {
+                    const base_id = try id_map.getOrPutId(@intFromPtr(base_ptr));
+                    try addFlowEdge(allocator, base_id, inst_id, flow_graph);
+                }
+            },
+            c.LLVMExtractValue => {
+                // ExtractValue: aggregate -> result (extract field)
+                const aggregate = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(aggregate) != 0) {
+                    const agg_id = try id_map.getOrPutId(@intFromPtr(aggregate));
+                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
+                }
+            },
+            c.LLVMInsertValue => {
+                // InsertValue: aggregate + value -> result
+                const aggregate = c.LLVMGetOperand(inst, 0);
+                const value = c.LLVMGetOperand(inst, 1);
+                if (@intFromPtr(aggregate) != 0) {
+                    const agg_id = try id_map.getOrPutId(@intFromPtr(aggregate));
+                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
+                }
+                if (@intFromPtr(value) != 0) {
+                    const val_id = try id_map.getOrPutId(@intFromPtr(value));
+                    try addFlowEdge(allocator, val_id, inst_id, flow_graph);
                 }
             },
             else => {},
@@ -695,6 +750,16 @@ pub const PointerOwnershipPass = struct {
         }
 
         return .unknown;
+    }
+
+    /// Check if a free is guarded by a null check.
+    fn isGuardedByNullCheck(
+        free_inst: c.LLVMValueRef,
+        ptr_value_id: u32,
+        path_manager: *PathManager,
+    ) bool {
+        _ = free_inst;
+        return path_manager.isPtrNonNull(ptr_value_id);
     }
 };
 

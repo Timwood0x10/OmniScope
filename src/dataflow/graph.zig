@@ -376,7 +376,8 @@ pub const DataFlowGraph = struct {
     ///
     /// Returns:
     ///   - Slice of issues with the specified severity
-    ///   - Caller owns the returned memory and must free it with allocator.free()
+    ///   - Caller owns the returned memory and must free it with the same
+    ///     allocator used by this DataFlowGraph instance.
     pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) []const Issue {
         var count: usize = 0;
         for (self.issues.items) |issue| {
