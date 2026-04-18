@@ -2,7 +2,7 @@
 # OmniScope Dependencies Installer
 # Supports: macOS (Homebrew) and Linux (apt-get)
 # Uses ZVM for Zig version management
-# Usage: ./scripts/install_deps.sh [--llvm-version=22] [--zig-version=0.15.0]
+# Usage: ./scripts/install_deps.sh [--llvm-version=22] [--zig-version=0.15.2]
 
 set -e
 
@@ -27,7 +27,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --llvm-version=N    LLVM version to install (default: 22)"
-            echo "  --zig-version=N     Zig version to install (default: 0.15.0)"
+            echo "  --zig-version=N     Zig version to install (default: 0.15.2)"
             echo "  --help              Show this help message"
             exit 0
             ;;

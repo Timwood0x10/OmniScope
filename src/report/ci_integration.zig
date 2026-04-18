@@ -293,7 +293,7 @@ pub fn generateGitHubWorkflow(allocator: std.mem.Allocator) ![]const u8 {
         \\      - name: Setup Zig
         \\        uses: mlugg/setup-zig@v1
         \\        with:
-        \\          zig-version: 0.15.0
+        \\          zig-version: 0.15.2
         \\
         \\      - name: Build OmniScope
         \\        run: |
