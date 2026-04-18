@@ -113,27 +113,6 @@ test "TaintPropagation - SOURCE_FUNCTIONS imported from call_graph" {
     try std.testing.expect(found_main);
 }
 
-test "SinkTracer - RiskLevel enum ordering" {
-    try std.testing.expect(@intFromEnum(call_graph.SinkTracerPass.RiskLevel.medium) < @intFromEnum(call_graph.SinkTracerPass.RiskLevel.critical));
-}
-
-test "SinkTracer - FlowStep structure" {
-    const step = call_graph.SinkTracerPass.FlowStep{ .funcName = "test" };
-    try std.testing.expectEqualStrings("test", step.funcName);
-}
-
-test "SinkTracer - FlowPath structure" {
-    const steps = &[0]call_graph.SinkTracerPass.FlowStep{};
-    const path = call_graph.SinkTracerPass.FlowPath{
-        .steps = steps,
-        .isCrossLanguage = false,
-        .risk = .medium,
-    };
-    try std.testing.expectEqual(steps.len, path.steps.len);
-    try std.testing.expect(!path.isCrossLanguage);
-    try std.testing.expectEqual(call_graph.SinkTracerPass.RiskLevel.medium, path.risk);
-}
-
 test "FFIBoundary - FFIEdge structure" {
     const edge = call_graph.FFIBoundaryPass.FFIEdge{ .caller = 0, .callee = 1 };
     try std.testing.expectEqual(@as(u32, 0), edge.caller);
@@ -235,15 +214,17 @@ test "Integration - All passes have correct interface" {
 
 test "Integration - Pass metadata types" {
     try std.testing.expectEqualStrings("call-graph", call_graph.CallGraphPass.name);
-    try std.testing.expectEqualStrings("taint-propagation", OmniScope.cross_lang.TaintPropagationPass.name);
+    try std.testing.expectEqualStrings("pointer-flow", OmniScope.cross_lang.TaintPropagationPass.name);
     try std.testing.expectEqualStrings("ffi-boundary", OmniScope.cross_lang.FFIBoundaryPass.name);
-    try std.testing.expectEqualStrings("sink-tracer", OmniScope.cross_lang.SinkTracerPass.name);
+    try std.testing.expectEqualStrings("pointer-ownership", OmniScope.cross_lang.PointerOwnershipPass.name);
+    try std.testing.expectEqualStrings("ownership-violation", OmniScope.cross_lang.OwnershipViolationPass.name);
 }
 
 test "Integration - PassKind values" {
     try std.testing.expectEqual(call_graph.PassKind.foundation, OmniScope.cross_lang.TaintPropagationPass.kind);
     try std.testing.expectEqual(call_graph.PassKind.foundation, OmniScope.cross_lang.FFIBoundaryPass.kind);
-    try std.testing.expectEqual(call_graph.PassKind.analysis, OmniScope.cross_lang.SinkTracerPass.kind);
+    try std.testing.expectEqual(call_graph.PassKind.analysis, OmniScope.cross_lang.PointerOwnershipPass.kind);
+    try std.testing.expectEqual(call_graph.PassKind.analysis, OmniScope.cross_lang.OwnershipViolationPass.kind);
 }
 
 test "Integration - Pass dependencies" {
@@ -255,8 +236,10 @@ test "Integration - Pass dependencies" {
     try std.testing.expect(OmniScope.cross_lang.FFIBoundaryPass.deps.len > 0);
     try std.testing.expectEqualStrings("call-graph", OmniScope.cross_lang.FFIBoundaryPass.deps[0]);
 
-    try std.testing.expect(OmniScope.cross_lang.SinkTracerPass.deps.len > 0);
-    try std.testing.expectEqualStrings("ffi-boundary", OmniScope.cross_lang.SinkTracerPass.deps[0]);
+    try std.testing.expect(OmniScope.cross_lang.PointerOwnershipPass.deps.len > 0);
+    try std.testing.expectEqualStrings("ffi-boundary", OmniScope.cross_lang.PointerOwnershipPass.deps[0]);
+
+    try std.testing.expect(OmniScope.cross_lang.OwnershipViolationPass.deps.len > 0);
 }
 
 test "EdgeCase - Max u32 values in Edge" {

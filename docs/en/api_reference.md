@@ -638,17 +638,31 @@ pub const FFIBoundaryPass = struct {
 };
 ```
 
-### SinkTracerPass
+### PointerOwnershipPass
 
-Traces tainted data flow to sinks.
+Tracks pointer ownership across FFI boundaries.
 
 ```zig
-pub const SinkTracerPass = struct {
-    pub const name = "sink-tracer";
+pub const PointerOwnershipPass = struct {
+    pub const name = "pointer-ownership";
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{"ffi-boundary"};
 
-    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) FlowPathError!void;
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) OwnershipError!void;
+};
+```
+
+### OwnershipViolationPass
+
+Detects ownership violations across FFI boundaries.
+
+```zig
+pub const OwnershipViolationPass = struct {
+    pub const name = "ownership-violation";
+    pub const kind = PassKind.analysis;
+    pub const deps = &[_][]const u8{"cfg", "dfg", "taint"};
+
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) FFIAnalysisError!void;
 };
 ```
 

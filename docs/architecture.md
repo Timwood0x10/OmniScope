@@ -20,17 +20,18 @@ graph TB
     subgraph "Analysis Core"
         Passes --> PassManager[PassManager<br/>pass/manager.zig]
         PassManager --> Static[StaticStage<br/>pipeline/static_stage.zig]
-        PassManager --> Instr[InstrumentationStage<br/>pipeline/instrumentation_stage.zig]
         
         Static --> CallGraph[CallGraphPass]
-        Static --> Taint[TaintPropagationPass]
-        Static --> FFI[FFIBoundaryPass]
-        Static --> Sink[SinkTracerPass]
+        Static --> PointerFlow[PointerFlowPass]
+        Static --> FFIBoundary[FFIBoundaryPass]
+        Static --> PointerOwnership[PointerOwnershipPass]
+        Static --> OwnershipViolation[OwnershipViolationPass]
         
-        Taint --> FactStore[FactStore<br/>fact/store.zig]
-        FFI --> FactStore
+        PointerFlow --> FactStore[FactStore<br/>fact/store.zig]
+        FFIBoundary --> FactStore
         CallGraph --> FactStore
-        Sink --> FactStore
+        PointerOwnership --> FactStore
+        OwnershipViolation --> FactStore
         
         FactStore --> QueryEngine[QueryEngine<br/>fact/query.zig]
         
@@ -38,31 +39,23 @@ graph TB
     end
     
     subgraph "Cross-Language Analysis"
-        FFI --> FFIMatcher[FFIMatcher<br/>ffi/ffi_matcher.zig]
-        FFIMatcher --> FFIDetector[FFIDetector<br/>pass/analysis/ffi_detector.zig]
-        FFIDetector --> Vulns[Vulnerability Detection]
+        FFIBoundary --> FFIMatcher[FFIMatcher<br/>ffi/ffi_matcher.zig]
+        FFIMatcher --> SemanticRegistry[SemanticRegistry<br/>registry/semantic_registry.zig]
+        SemanticRegistry --> OwnershipViolation
     end
     
     Diag --> Output[Output Formatter<br/>output/formatter.zig]
-    Vulns --> Output
+    OwnershipViolation --> Output
     
     Output --> Formats[Output Formats]
     Formats --> Text[Text]
     Formats --> JSON[JSON]
     Formats --> SARIF[SARIF]
     
-    subgraph "Optional Runtime Analysis"
-        Instr --> RuntimeStage[RuntimeStage<br/>pipeline/runtime_stage.zig]
-        RuntimeStage --> RingBuffer[Ring Buffer<br/>runtime/rt_lib/ring_buffer.zig]
-        RingBuffer --> Collector[Event Collector<br/>runtime/collector.zig]
-        Collector --> MergeEngine[MergeEngine<br/>runtime/merge.zig]
-        MergeEngine --> Diag
-    end
-    
-    subgraph "Plugin System"
-        CLI --> Plugins[PluginLoader<br/>plugin/abi.zig]
-        Plugins --> FactStore
-        Plugins --> Diag
+    subgraph "Lifetime Engine"
+        PointerOwnership --> LifetimeEngine[LifetimeEngine<br/>lifetime/engine.zig]
+        LifetimeEngine --> SemanticMapper[SemanticMapper<br/>lifetime/mapper.zig]
+        SemanticMapper --> SemanticRegistry
     end
     
     Text --> Results[Analysis Results]
@@ -75,60 +68,59 @@ graph TB
 
 ```mermaid
 graph LR
-    subgraph "Core Infrastructure"
+    subgraph Core[Core Infrastructure]
         IR[ir/ - LLVM IR Wrappers]
         Engine[engine/ - IR Loading]
         Fact[fact/ - Fact Storage]
+        DataFlow[dataflow/ - Data Flow Graph]
     end
     
-    subgraph "Analysis Framework"
+    subgraph Analysis[Analysis Framework]
         Pass[pass/ - Analysis Passes]
-        Pipeline[pipeline/ - Pipeline Stages]
+        Pipeline[pipeline/ - Pipeline]
         Diag[diag/ - Diagnostics]
     end
     
-    subgraph "Cross-Language Analysis"
-        FFI[ffi/ - FFI Matching]
-        Cross[cross_lang - FFI Detection]
+    subgraph FFIAnalysis[Cross-Language Analysis]
+        FFIMod[ffi/ - FFI Matching]
+        Registry[registry/ - Semantic Registry]
+        Lifetime[lifetime/ - Lifetime Engine]
     end
     
-    subgraph "Output & Runtime"
+    subgraph OutputMod[Output & Reporting]
         Output[output/ - Result Formatting]
-        Runtime[runtime/ - Runtime Data]
+        Report[report/ - Report Generation]
     end
     
-    subgraph "Extensions"
-        Plugin[plugin/ - Plugin System]
+    subgraph TrackMod[Tracking]
         Tracking[tracking/ - Memory Tracking]
     end
     
     IR --> Pass
-    IR --> FFI
+    IR --> FFIMod
     Engine --> Pass
-    Engine --> FFI
+    Engine --> FFIMod
     
     Fact --> Pass
-    Fact --> FFI
-    Fact --> Cross
+    Fact --> FFIMod
     Fact --> Diag
+    Fact --> DataFlow
+    
+    DataFlow --> Pass
     
     Pass --> Pipeline
     Pass --> Diag
-    Pass --> Cross
     
-    FFI --> Cross
-    Cross --> Diag
+    FFIMod --> Registry
+    Registry --> Lifetime
     
-    Pipeline --> Runtime
+    Lifetime --> Pass
+    
     Pipeline --> Output
-    
     Diag --> Output
+    Diag --> Report
     
-    Runtime --> Fact
-    Runtime --> Diag
-    
-    Plugin --> Fact
-    Plugin --> Diag
+    Tracking --> Pass
 ```
 
 ## Data Flow
@@ -140,6 +132,8 @@ sequenceDiagram
     participant Loader as IRLoader
     participant Pass as PassManager
     participant Fact as FactStore
+    participant Registry as SemanticRegistry
+    participant Lifetime as LifetimeEngine
     participant Diag as DiagnosticAggregator
     participant Output as Formatter
     
@@ -147,17 +141,17 @@ sequenceDiagram
     CLI->>Loader: Load IR (.bc/.ll)
     Loader-->>CLI: Module loaded
     
-    alt Single File Mode
-        CLI->>Loader: Direct analysis
-        Loader->>Pass: Run basic analysis
-    else Multi-File Mode
-        CLI->>FFIMatcher: Match FFI functions
-        FFIMatcher->>Pass: Analyze cross-language
-    end
+    CLI->>Pass: Run analysis pipeline
     
-    Pass->>Fact: Store analysis facts
+    Pass->>Fact: Store call graph facts
+    Pass->>Fact: Store pointer flow facts
+    Pass->>Registry: Lookup function semantics
+    Registry-->>Pass: Function metadata
+    
+    Pass->>Lifetime: Track ownership
+    Lifetime->>Fact: Store ownership facts
+    
     Pass->>Diag: Report findings
-    
     Diag->>Output: Format results
     Output-->>CLI: Formatted output
     CLI-->>User: Analysis results
@@ -170,51 +164,114 @@ sequenceDiagram
 
 ### Engine Layer
 - **engine/loader.zig**: IR file loading, LLVM context management
-- **ir/**: LLVM C API wrappers (raw, safe, view)
+- **ir/**: LLVM C API wrappers (raw, safe, view, debug_info, location)
 
 ### Analysis Core
 - **pass/manager.zig**: Pass registration and execution
 - **pass/pass.zig**: Pass context and interfaces
-- **pass/analysis/**: Specific analysis passes
-  - call_graph.zig: Function call graph
-  - taint_propagation.zig: Data flow analysis
+- **pass/foundation/**: Foundation passes (cfg, dfg)
+- **pass/analysis/**: Analysis passes
+  - call_graph.zig: Function call graph construction
+  - taint_propagation.zig: Pointer flow analysis
   - ffi_boundary.zig: FFI boundary detection
-  - sink_tracer.zig: Vulnerability sink tracing
-  - ffi_detector.zig: FFI vulnerability detection
+  - pointer_ownership.zig: Pointer ownership tracking
+  - ffi_analysis.zig: Ownership violation detection
+  - flow_path.zig: Data flow path construction
+  - issue/: Issue-specific passes (ffi_unsafe, free_validation, memory_safety, etc.)
+- **pass/instrumentation/**: Instrumentation planning
+
+### Data Flow
+- **dataflow/graph.zig**: Data flow graph construction
+- **dataflow/node.zig**: Node representation
+- **dataflow/edge.zig**: Edge representation
 
 ### Fact System
 - **fact/store.zig**: Fact storage and indexing
 - **fact/query.zig**: Fact querying engine
 - **fact/fact.zig**: Fact type definitions
+- **fact/ownership_fact.zig**: Ownership-specific facts
 
-### Pipeline System
-- **pipeline/pipeline.zig**: Main analysis coordinator
-- **pipeline/static_stage.zig**: Static analysis stage
-- **pipeline/instrumentation_stage.zig**: IR instrumentation
-- **pipeline/runtime_stage.zig**: Runtime data collection
-- **pipeline/merge_stage.zig**: Static/runtime data merge
+### Semantic Registry
+- **registry/semantic_registry.zig**: Function semantic knowledge base
+- **registry/config_loader.zig**: Dynamic registry from JSON config
+
+### Lifetime Engine
+- **lifetime/engine.zig**: Resource lifetime tracking
+- **lifetime/mapper.zig**: Semantic action mapping
 
 ### Cross-Language Analysis
 - **ffi/ffi_matcher.zig**: Multi-language function matching
-- **cross_lang/**: Cross-language vulnerability detection
 
 ### Output System
-- **output/formatter.zig**: Result formatting (text/JSON/SARIF)
+- **output/formatter.zig**: Result formatting
+- **output/cli.zig**: CLI output
+- **output/sarif.zig**: SARIF format output
+- **output/lsp.zig**: LSP integration
 
-### Runtime Support
-- **runtime/collector.zig**: Event collection
-- **runtime/merge.zig**: Static/runtime data merge
-- **runtime/rt_lib/**: Runtime library for instrumentation
+### Reporting
+- **report/sarif.zig**: SARIF report generation
+- **report/ci_integration.zig**: CI/CD integration
 
-### Extensions
-- **plugin/abi.zig**: Plugin loading and ABI
-- **tracking/**: Memory tracking utilities
+### Diagnostics
 - **diag/aggregator.zig**: Diagnostic collection and reporting
+- **diag/issue.zig**: Issue type definitions
+
+### Tracking
+- **tracking/allocator.zig**: Memory allocation tracking
 
 ## Key Design Principles
 
 1. **Separation of Concerns**: Each layer has distinct responsibilities
-2. **Extensibility**: Plugin system allows custom analysis passes
-3. **Performance**: Efficient fact storage and querying
+2. **Data-Driven Analysis**: Semantic registry provides function knowledge
+3. **Ownership Focus**: Core analysis tracks pointer ownership, not generic taint
 4. **Cross-Language**: Support for multi-language FFI analysis
 5. **Modularity**: Components can be used independently or together
+
+## Analysis Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Analysis Pipeline                            │
+├─────────────────────────────────────────────────────────────────┤
+│  1. IR Loading                                                   │
+│     └── Parse LLVM IR, build module representation               │
+│                                                                  │
+│  2. Call Graph Construction                                      │
+│     └── Build function call relationships                        │
+│                                                                  │
+│  3. Pointer Flow Analysis                                        │
+│     └── Track pointer values through def-use chains              │
+│                                                                  │
+│  4. FFI Boundary Detection                                       │
+│     └── Identify cross-language function calls                   │
+│                                                                  │
+│  5. Ownership Tracking                                           │
+│     └── Track allocation/free sites and ownership state          │
+│                                                                  │
+│  6. Violation Detection                                          │
+│     └── Detect cross-language ownership mismatches               │
+│                                                                  │
+│  7. Report Generation                                            │
+│     └── Format and output findings                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Supported Languages
+
+| Language | Detection | Ownership Tracking | Debug Info |
+|----------|-----------|-------------------|------------|
+| C | ✅ Full | ✅ Full | ✅ Full |
+| C++ | ✅ Full | ✅ Full | ✅ Full |
+| Rust | ✅ Full | ✅ Full | ✅ Full |
+| Zig | ⚠️ Beta | ⚠️ Beta | ✅ Full |
+| Swift | ⚠️ Beta | ⚠️ Beta | ✅ Full |
+| Go | ⚠️ Experimental | ⚠️ Experimental | ✅ Full |
+
+## Issue Detection Categories
+
+| Category | Types | Severity |
+|----------|-------|----------|
+| **Ownership** | Cross-language free mismatch, Double free, Use after free | Critical |
+| **Memory** | Leak, Buffer overflow, Dangling pointer | High |
+| **Security** | Command injection, Format string, Buffer overflow | Critical |
+| **Concurrency** | Data race, Lock order violation | High |

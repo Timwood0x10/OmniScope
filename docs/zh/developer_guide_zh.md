@@ -107,11 +107,11 @@ src/
 │   ├── analysis/         # 分析 pass
 │   │   ├── alias.zig     # 别名分析
 │   │   ├── lock.zig      # 锁分析
-│   │   ├── taint.zig     # 污点分析
 │   │   ├── call_graph.zig     # 调用图
 │   │   ├── ffi_boundary.zig   # FFI 边界
-│   │   ├── sink_tracer.zig    # 汇点追踪器
-│   │   └── taint_propagation.zig # 污点传播
+│   │   ├── pointer_ownership.zig # 指针所有权追踪
+│   │   ├── ffi_analysis.zig   # 所有权违规检测
+│   │   └── taint_propagation.zig # 指针流分析
 │   └── instrumentation/ # 插桩 pass
 ├── fact/                 # 事实系统
 │   ├── fact.zig          # 事实类型
@@ -527,16 +527,25 @@ tests/
 
 ```bash
 # 运行所有测试
-make test
+make test-all
+
+# 运行单元测试
+make test-unit
+
+# 运行集成测试
+make test-int
+
+# 运行 Issue 验证测试
+make test-issues
+
+# 运行稳定性测试
+make test-stability
+
+# 运行性能基准测试
+make bench
 
 # 运行特定测试文件
 zig test src/fact/store.zig
-
-# 运行集成测试
-make integration-test
-
-# 运行端到端测试
-make e2e-test
 
 # 使用详细输出运行测试
 zig test src/pass/pass.zig --summary all
@@ -656,14 +665,19 @@ zig build demo
 ### Makefile 目标
 
 ```bash
-make build      # 构建项目
-make test       # 运行所有测试
-make check      # 检查编译错误
-make fmt        # 格式化代码
-make clean      # 清理构建产物
-make demo       # 运行演示
-make integration-test  # 运行集成测试
-make e2e-test   # 运行端到端测试
+make build          # 构建项目
+make test-all       # 运行所有测试（单元+集成+稳定性）
+make test-unit      # 运行单元测试
+make test-int       # 运行集成测试
+make test-issues    # 运行 Issue 验证测试
+make test-stability # 运行稳定性测试
+make bench          # 运行性能基准测试
+make check          # 检查编译错误
+make fmt            # 格式化代码
+make clean          # 清理构建产物
+make corpus         # 编译测试语料库
+make corpus-analyze # 分析测试语料库
+make run            # 运行 FFI 例子分析
 ```
 
 ---
@@ -912,5 +926,5 @@ heaptrack_print heaptrack.out.*.gz
 
 ---
 
-**最后更新**: 2026-04-14  
-**版本**: 1.0.0
+**最后更新**: 2026-04-17  
+**版本**: v0.2 Alpha

@@ -36,14 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 #### Architecture Simplification
-- Removed unnecessary passes: SinkTracerPass, ReturnCheckPass, TaintPropagationPass
-- Simplified Pass chain: CallGraph → FFIBoundary → PointerOwnership → FFIUnsafe
-- Unified Fact types with ownership-specific kinds
+- Removed unnecessary passes: SinkTracerPass, ReturnCheckPass, propagation_rule.zig
+- Renamed TaintPropagationPass → PointerFlowPass (focused on pointer flow tracking)
+- Renamed FFIAnalysisPass → OwnershipViolationPass (focused on ownership violations)
+- Simplified Pass chain: CallGraph → PointerFlow → FFIBoundary → PointerOwnership → OwnershipViolation
+- Unified Fact types with ownership-specific kinds (ownership_alloc, ownership_free, ownership_transfer, ownership_violation)
 
 #### Improved Detection
 - **FFIBoundaryPass**: Integrated with Semantic Registry for risk assessment
-- **PointerOwnershipPass**: Added Fact integration for ownership tracking
-- **SinkTracerPass**: Uses Semantic Registry for sink classification
+- **PointerOwnershipPass**: Added flow graph tracking for accurate pointer data flow
+- **OwnershipViolationPass**: Focused on 4 violation types (double_free, use_after_free, ownership_mismatch, leak)
+- **PointerFlowPass**: Simplified from generic taint to pointer-specific flow tracking
 
 ### Fixed
 

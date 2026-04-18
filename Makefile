@@ -87,7 +87,13 @@ test-stability:
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build test-stability
 
-test-all: test-unit test-int test-issues test-stability
+test-stress:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                     STRESS TESTS                               ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-stress
+
+test-all: test-unit test-int test-issues test-stability test-stress
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║                  ALL TESTS PASSED                              ║"

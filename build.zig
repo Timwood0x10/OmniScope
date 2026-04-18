@@ -137,50 +137,6 @@ pub fn build(b: *std.Build) void {
     const demo_cmd = b.addRunArtifact(demo_exe);
     demo_step.dependOn(&demo_cmd.step);
 
-    // Benchmark step
-    const bench_step = b.step("bench", "Run benchmarks");
-    const bench_exe = b.addExecutable(.{
-        .name = "benchmark",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("./benchs/benchmark.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "OmniScope", .module = lib_mod },
-            },
-        }),
-    });
-    bench_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-    bench_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    bench_exe.linkSystemLibrary("c");
-    bench_exe.linkSystemLibrary("z");
-    bench_exe.linkSystemLibrary(llvm_lib_name);
-    bench_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    const bench_cmd = b.addRunArtifact(bench_exe);
-    bench_step.dependOn(&bench_cmd.step);
-
-    // Benchmark data compilation step
-    const bench_compile_step = b.step("bench-compile", "Compile real code for benchmarking");
-
-    // Create output directory
-    const mkdir_cmd = b.addSystemCommand(&[_][]const u8{ "mkdir", "-p", "zig-out/bench_data" });
-    bench_compile_step.dependOn(&mkdir_cmd.step);
-
-    // Compile sample_analysis.c to LLVM IR
-    const compile_sample_analysis = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/sample_analysis.ll", "examples/sample_analysis.c" });
-    compile_sample_analysis.step.dependOn(&mkdir_cmd.step);
-    bench_compile_step.dependOn(&compile_sample_analysis.step);
-
-    // Compile logic_bugs.c to LLVM IR
-    const compile_logic_bugs = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/logic_bugs.ll", "examples/logic_bugs.c" });
-    compile_logic_bugs.step.dependOn(&mkdir_cmd.step);
-    bench_compile_step.dependOn(&compile_logic_bugs.step);
-
-    // Compile ntt.c to LLVM IR
-    const compile_ntt = b.addSystemCommand(&[_][]const u8{ "clang", "-S", "-emit-llvm", "-O1", "-o", "zig-out/bench_data/ntt.ll", "examples/ntt.c" });
-    compile_ntt.step.dependOn(&mkdir_cmd.step);
-    bench_compile_step.dependOn(&compile_ntt.step);
-
     // Run step
     const run_step = b.step("run", "Run the application");
     const run_cmd = b.addRunArtifact(exe);
@@ -241,6 +197,10 @@ pub fn build(b: *std.Build) void {
     });
     const run_bench_tests = b.addRunArtifact(bench_tests);
     bench_perf_step.dependOn(&run_bench_tests.step);
+
+    // Alias 'bench' to 'bench-perf' for convenience
+    const bench_step = b.step("bench", "Run performance benchmarks (alias for bench-perf)");
+    bench_step.dependOn(bench_perf_step);
 
     // Integration tests step
     const integration_test_step = b.step("integration-test", "Run integration tests with real IR files");
@@ -303,6 +263,19 @@ pub fn build(b: *std.Build) void {
     });
     const run_stability_tests = b.addRunArtifact(stability_tests);
     stability_test_step.dependOn(&run_stability_tests.step);
+
+    // Stress tests step
+    const stress_test_step = b.step("test-stress", "Run stress tests (large scale, boundary, fuzz)");
+    const stress_test_mod = b.addModule("stress_test", .{
+        .root_source_file = b.path("tests/stress/main.zig"),
+        .target = target,
+    });
+    stress_test_mod.addImport("OmniScope", lib_mod);
+    const stress_tests = b.addTest(.{
+        .root_module = stress_test_mod,
+    });
+    const run_stress_tests = b.addRunArtifact(stress_tests);
+    stress_test_step.dependOn(&run_stress_tests.step);
 
     // E2E tests step
     const e2e_test_step = b.step("e2e-test", "Run end-to-end tests with real IR and Pipeline");
