@@ -139,21 +139,21 @@ generate_release_notes() {
 
 | Platform | Architecture | Download |
 |----------|--------------|----------|
-| macOS | x86_64 | omniscope-$VERSION-macos-x86_64.tar.gz |
-| macOS | aarch64 | omniscope-$VERSION-macos-aarch64.tar.gz |
-| Linux | x86_64 | omniscope-$VERSION-linux-x86_64.tar.gz |
-| Linux | aarch64 | omniscope-$VERSION-linux-aarch64.tar.gz |
+| macOS | x86_64 | OmniScope-$VERSION-macos-x86_64.tar.gz |
+| macOS | aarch64 | OmniScope-$VERSION-macos-aarch64.tar.gz |
+| Linux | x86_64 | OmniScope-$VERSION-linux-x86_64.tar.gz |
+| Linux | aarch64 | OmniScope-$VERSION-linux-aarch64.tar.gz |
 
 ## Requirements
 
-- LLVM 18+ (22 recommended for macOS)
-- Zig 0.15.0+
+- LLVM 21+
+- Zig 0.15.2+
 
 ## Installation
 
 \`\`\`bash
 # Download and extract
-tar -xzf omniscope-$VERSION-<platform>-<arch>.tar.gz
+tar -xzf OmniScope-$VERSION-<platform>-<arch>.tar.gz
 
 # Run
 ./OmniScope --help
@@ -169,26 +169,26 @@ EOF
 
 case "$OS-$ARCH" in
     macos-arm64|macos-aarch64)
-        build_release "native" "omniscope-$VERSION-macos-aarch64"
-        create_archive "omniscope-$VERSION-macos-aarch64" "omniscope-$VERSION-macos-aarch64"
+        build_release "native" "OmniScope-$VERSION-macos-aarch64"
+        create_archive "OmniScope-$VERSION-macos-aarch64" "OmniScope-$VERSION-macos-aarch64"
         ;;
     macos-x86_64)
-        build_release "native" "omniscope-$VERSION-macos-x86_64"
-        create_archive "omniscope-$VERSION-macos-x86_64" "omniscope-$VERSION-macos-x86_64"
+        build_release "native" "OmniScope-$VERSION-macos-x86_64"
+        create_archive "OmniScope-$VERSION-macos-x86_64" "OmniScope-$VERSION-macos-x86_64"
         ;;
     linux-x86_64)
-        build_release "native" "omniscope-$VERSION-linux-x86_64"
-        create_archive "omniscope-$VERSION-linux-x86_64" "omniscope-$VERSION-linux-x86_64"
+        build_release "native" "OmniScope-$VERSION-linux-x86_64"
+        create_archive "OmniScope-$VERSION-linux-x86_64" "OmniScope-$VERSION-linux-x86_64"
         ;;
     linux-aarch64)
-        build_release "native" "omniscope-$VERSION-linux-aarch64"
-        create_archive "omniscope-$VERSION-linux-aarch64" "omniscope-$VERSION-linux-aarch64"
+        build_release "native" "OmniScope-$VERSION-linux-aarch64"
+        create_archive "OmniScope-$VERSION-linux-aarch64" "OmniScope-$VERSION-linux-aarch64"
         ;;
     *)
         echo_error "Unsupported platform: $OS-$ARCH"
         echo_info "Building native target..."
-        build_release "native" "omniscope-$VERSION-$OS-$ARCH"
-        create_archive "omniscope-$VERSION-$OS-$ARCH" "omniscope-$VERSION-$OS-$ARCH"
+        build_release "native" "OmniScope-$VERSION-$OS-$ARCH"
+        create_archive "OmniScope-$VERSION-$OS-$ARCH" "OmniScope-$VERSION-$OS-$ARCH"
         ;;
 esac
 

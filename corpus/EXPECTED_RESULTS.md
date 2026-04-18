@@ -12,9 +12,65 @@ corpus/
 │   ├── zlib_binding.c
 │   └── rust_sqlite_ffi.rs
 ├── small/               # Quick tests (~100 functions)
+│   └── simple_ffi.c
 ├── medium/              # Realistic projects (~1K functions)
+│   └── network_ffi.c
 └── large/               # Stress tests (~10K+ functions)
+    └── stress_patterns.c
 ```
+
+---
+
+## small/simple_ffi.c
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1 | `leak_example` | leak | high | malloc without free |
+| 2 | `use_after_free_example` | use_after_free | critical | Use after free |
+| 3 | `buffer_overflow_example` | buffer_overflow | critical | strcpy without bounds check |
+| 4 | `format_string_example` | format_string | high | printf with user input |
+
+**Total Expected Issues: 4**
+
+---
+
+## medium/network_ffi.c
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1 | `create_socket_leak` | leak | high | socket without close |
+| 2 | `accept_connection_leak` | leak | high | accept without close |
+| 3 | `read_and_free` | use_after_free | critical | Potential use after free |
+| 4 | `process_data` | use_after_free | critical | Use after free in log |
+| 5 | `copy_address` | buffer_overflow | critical | strcpy without bounds |
+| 6 | `log_connection` | format_string | high | printf with user input |
+| 7 | `execute_user_command` | command_injection | critical | system with user input |
+| 8 | `send_data_unchecked` | unchecked_return | medium | send return not checked |
+
+**Total Expected Issues: 8**
+
+---
+
+## large/stress_patterns.c
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1-10 | `leak_func_XX` | leak | high | 10 leak functions |
+| 11-20 | `uaf_func_XX` | use_after_free | critical | 10 UAF functions |
+| 21-30 | `overflow_func_XX` | buffer_overflow | critical | 10 overflow functions |
+| 31-40 | `format_func_XX` | format_string | high | 10 format string functions |
+| 41-50 | `double_free_func_XX` | double_free | critical | 10 double free functions |
+| 51 | `create_data_struct_leak` | leak | high | Struct allocation leak |
+| 52 | `access_after_free` | use_after_free | critical | Access after struct free |
+| 53 | `copy_to_struct` | buffer_overflow | critical | Overflow in struct copy |
+| 54 | `log_data_struct` | format_string | high | Format string in log |
+| 55 | `execute_data_command` | command_injection | critical | Command injection |
+| 56 | `recursive_leak` | leak | high | Leak in recursion |
+| 57 | `loop_leak` | leak | high | Leak in loop |
+| 58 | `conditional_leak` | leak | high | Conditional leak |
+| 59 | `error_path_leak` | leak | high | Leak on error path |
+
+**Total Expected Issues: 59**
 
 ---
 
@@ -91,11 +147,14 @@ corpus/
 
 | Corpus File | Expected Issues | Critical | High | Medium | Low |
 |-------------|-----------------|----------|------|--------|-----|
+| small/simple_ffi.c | 4 | 2 | 2 | 0 | 0 |
+| medium/network_ffi.c | 8 | 4 | 3 | 1 | 0 |
+| large/stress_patterns.c | 59 | 32 | 27 | 0 | 0 |
 | sqlite_binding.c | 6 | 2 | 3 | 1 | 0 |
 | openssl_wrapper.c | 10 | 0 | 7 | 3 | 0 |
 | zlib_binding.c | 10 | 3 | 1 | 5 | 1 |
 | rust_sqlite_ffi.rs | 7 | 3 | 3 | 1 | 0 |
-| **Total** | **33** | **8** | **14** | **10** | **1** |
+| **Total** | **104** | **46** | **46** | **11** | **1** |
 
 ---
 

@@ -376,14 +376,17 @@ pub const DataFlowGraph = struct {
     ///
     /// Returns:
     ///   - Slice of issues with the specified severity
+    ///   - Caller owns the returned memory and must free it with allocator.free()
     pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) []const Issue {
-        // This is a simple implementation that scans all issues
-        // For production, consider building an index
         var count: usize = 0;
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
                 count += 1;
             }
+        }
+
+        if (count == 0) {
+            return &[_]Issue{};
         }
 
         const result = self.allocator.alloc(Issue, count) catch return &[_]Issue{};

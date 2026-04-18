@@ -310,13 +310,7 @@ test "fuzz: random string operations" {
     const allocator = arena.allocator();
 
     var map = std.StringHashMap(u64).init(allocator);
-    defer {
-        var iter = map.iterator();
-        while (iter.next()) |entry| {
-            allocator.free(@constCast(entry.key_ptr.*));
-        }
-        map.deinit();
-    }
+    defer map.deinit();
 
     const patterns = [_][]const u8{ "malloc", "free", "alloc", "test_", "__rust_", "_ZN", "_R" };
 

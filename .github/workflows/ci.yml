@@ -160,7 +160,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: omniscope-linux
+          name: OmniScope-linux
           path: zig-out/bin/OmniScope
 
   build-macos:
@@ -185,7 +185,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: omniscope-macos
+          name: OmniScope-macos
           path: zig-out/bin/OmniScope
 
   examples:
@@ -209,7 +209,7 @@ jobs:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: omniscope-macos
+          name: OmniScope-macos
           path: zig-out/bin/
       - name: Make executable
         run: chmod +x zig-out/bin/OmniScope

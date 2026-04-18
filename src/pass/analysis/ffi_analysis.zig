@@ -59,6 +59,13 @@ pub const OwnershipViolation = struct {
     function_name: []const u8,
     description: []const u8,
     confidence: f32,
+    owns_description: bool = false,
+
+    pub fn deinit(self: *OwnershipViolation, allocator: Allocator) void {
+        if (self.owns_description and self.description.len > 0) {
+            allocator.free(self.description);
+        }
+    }
 };
 
 /// Analysis result
@@ -123,6 +130,9 @@ pub const FFIAnalysisPass = struct {
     pub fn deinit(self: *FFIAnalysisPass) void {
         if (self.matcher) |*m| {
             m.deinit();
+        }
+        for (self.violations.items) |*v| {
+            v.deinit(self.allocator);
         }
         self.violations.deinit();
         self.allocation_sites.deinit();
@@ -311,6 +321,7 @@ pub const FFIAnalysisPass = struct {
                             .{ @tagName(alloc_info.language), @tagName(free_info.language) },
                         ),
                         .confidence = 0.85,
+                        .owns_description = true,
                     });
                 }
             }

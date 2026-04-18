@@ -130,6 +130,12 @@ pub const FFIVulnerability = struct {
     sink_location: ?[]const u8,
     /// Dangerous function call that caused the vulnerability
     dangerous_function: ?[]const u8,
+
+    pub fn deinit(self: *FFIVulnerability, allocator: Allocator) void {
+        if (self.dangerous_function) |df| {
+            allocator.free(df);
+        }
+    }
 };
 
 /// FFI detector pass
@@ -155,6 +161,9 @@ pub const FFIDetector = struct {
 
     /// Clean up resources
     pub fn deinit(self: *FFIDetector) void {
+        for (self.vulnerabilities.items) |*v| {
+            v.deinit(self.allocator);
+        }
         self.vulnerabilities.deinit();
     }
 
