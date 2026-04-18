@@ -218,6 +218,7 @@ test "Integration - CLI output" {
 
     // Create CLI output
     var cli_output = CLIOutput.init(std.testing.allocator, false, false);
+    defer cli_output.deinit();
 
     const diagnostics = pipeline.getDiagnosticAggregator().getAll();
     _ = cli_output.printDiagnostics(diagnostics);

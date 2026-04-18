@@ -453,7 +453,9 @@ test "SarifOutput - write to file" {
 
     const temp_file = "test_output.sarif";
     defer {
-        std.fs.cwd().deleteFile(temp_file) catch {};
+        std.fs.cwd().deleteFile(temp_file) catch |err| {
+            std.log.warn("Failed to delete temp file: {}", .{err});
+        };
     }
 
     try output.writeToFile(temp_file, &[_]Issue{issue});

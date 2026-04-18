@@ -614,7 +614,9 @@ test "SarifGenerator - write to file" {
 
     const temp_file = "test_sarif_output.sarif";
     defer {
-        std.fs.cwd().deleteFile(temp_file) catch {};
+        std.fs.cwd().deleteFile(temp_file) catch |err| {
+            std.log.warn("Failed to delete temp file: {}", .{err});
+        };
     }
 
     try generator.writeToFile(temp_file, &issues);

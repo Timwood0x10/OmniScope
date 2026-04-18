@@ -225,11 +225,11 @@ pub const PathManager = struct {
     allocator: Allocator,
 
     /// Create a new path manager
-    pub fn init(allocator: Allocator) PathManager {
+    pub fn init(allocator: Allocator) !PathManager {
         var paths = std.AutoHashMap(u32, ExecutionPath).init(allocator);
         var initial_path = ExecutionPath.init(allocator, 0);
         initial_path.is_feasible = true;
-        paths.put(0, initial_path) catch {};
+        try paths.put(0, initial_path);
 
         return .{
             .paths = paths,
@@ -448,7 +448,7 @@ test "ExecutionPath - clone" {
 }
 
 test "PathManager - init and deinit" {
-    var manager = PathManager.init(std.testing.allocator);
+    var manager = try PathManager.init(std.testing.allocator);
     defer manager.deinit();
 
     try std.testing.expectEqual(@as(u32, 1), manager.next_id);
@@ -456,7 +456,7 @@ test "PathManager - init and deinit" {
 }
 
 test "PathManager - addCondition" {
-    var manager = PathManager.init(std.testing.allocator);
+    var manager = try PathManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const cond = PathCondition.nullCheck(42, true);
@@ -466,7 +466,7 @@ test "PathManager - addCondition" {
 }
 
 test "PathManager - splitPath" {
-    var manager = PathManager.init(std.testing.allocator);
+    var manager = try PathManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const cond = PathCondition.nullCheck(42, true);
@@ -483,7 +483,7 @@ test "PathManager - splitPath" {
 }
 
 test "PathManager - getStats" {
-    var manager = PathManager.init(std.testing.allocator);
+    var manager = try PathManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const cond = PathCondition.nullCheck(42, true);

@@ -347,7 +347,9 @@ pub const LifetimeEngine = struct {
 
     /// Add an issue to the issue list.
     fn addIssue(self: *LifetimeEngine, issue: Issue) void {
-        self.issues.append(self.allocator, issue) catch {};
+        self.issues.append(self.allocator, issue) catch |err| {
+            std.log.err("LifetimeEngine: Failed to add issue: {}", .{err});
+        };
     }
 
     /// Get all detected issues.
