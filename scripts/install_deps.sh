@@ -157,21 +157,24 @@ install_debian() {
     sudo apt-get update
     
     echo_step "Installing build essentials..."
-    sudo apt-get install -y build-essential cmake curl
+    sudo apt-get install -y build-essential cmake curl wget lsb-release software-properties-common
     
     echo_step "Installing LLVM $LLVM_VERSION..."
+    
+    # LLVM 21+ requires apt.llvm.org repo on Ubuntu 24.04
+    if [[ "$LLVM_VERSION" -ge 21 ]]; then
+        echo_info "Adding LLVM apt repository for LLVM $LLVM_VERSION..."
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-$LLVM_VERSION main"
+        sudo apt-get update
+    fi
+    
     sudo apt-get install -y \
         "llvm-$LLVM_VERSION-dev" \
-        "libllvm$LLVM_VERSION" \
         "clang-$LLVM_VERSION" \
-        "libclang-$LLVM_VERSION-dev" \
-        "libpolly-$LLVM_VERSION-dev" || {
-        echo_error "LLVM $LLVM_VERSION not found in apt. Trying to add LLVM apt repo..."
-        
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-$LLVM_VERSION main" || true
-        sudo apt-get update
-        sudo apt-get install -y "llvm-$LLVM_VERSION-dev" "libllvm$LLVM_VERSION" "clang-$LLVM_VERSION"
+        "libclang-$LLVM_VERSION-dev" || {
+        echo_error "LLVM $LLVM_VERSION installation failed"
+        exit 1
     }
     
     install_zig_via_zvm

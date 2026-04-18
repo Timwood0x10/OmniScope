@@ -26,8 +26,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Type check
         run: zig build check
 
@@ -48,8 +50,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Run unit tests
         run: zig build unit-test --summary all
 
@@ -70,8 +74,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Run integration tests
         run: zig build test-integration --summary all
 
@@ -92,8 +98,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Run all tests
         run: |
           zig build unit-test --summary all
@@ -119,8 +127,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Run benchmarks
         run: zig build bench-perf -Doptimize=ReleaseFast
 
@@ -141,8 +151,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
       - name: Build release
         run: zig build -Doptimize=ReleaseSafe
       - name: Upload artifact
@@ -226,8 +238,10 @@ jobs:
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev lcov
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev lcov
       - name: Generate coverage
         run: |
           zig build test -Dcoverage || true
