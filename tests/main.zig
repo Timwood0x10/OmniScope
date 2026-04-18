@@ -135,7 +135,7 @@ test "IssueType: all variants" {
 // ========================================
 
 test "RiskKind: all variants" {
-    try std.testing.expectEqual(@as(usize, 7), @typeInfo(registry.RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 11), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================
@@ -160,9 +160,11 @@ test "Severity: toString" {
 // ========================================
 
 test "SemanticRegistry: layer counts" {
-    try std.testing.expectEqual(@as(usize, 15), registry.SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 37), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
-    try std.testing.expectEqual(@as(usize, 18), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
+    try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 47), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {

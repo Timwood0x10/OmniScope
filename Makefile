@@ -40,6 +40,7 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 .PHONY: all fmt check test test-unit test-int test-all bench build run clean examples \
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
+        real-world real-world-ir real-world-run \
         install-deps release
 
 # ========================================
@@ -288,6 +289,54 @@ zig-run: zig-ir
 	$(ZIG) build run -- $(ZIG_IR)/combined.bc
 
 # ========================================
+# Real-World FFI Tests (OpenSSL, SQLite, zlib)
+# ========================================
+
+REAL_WORLD_DIR = $(EXAMPLES_DIR)/real_world
+REAL_WORLD_IR = $(REAL_WORLD_DIR)/target
+
+real-world: real-world-run
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              REAL-WORLD FFI TESTS COMPLETE                     ║"
+	@echo "╠════════════════════════════════════════════════════════════════╣"
+	@echo "║  OpenSSL Patterns:  ✓ Analyzed                                ║"
+	@echo "║  SQLite Patterns:   ✓ Analyzed                                ║"
+	@echo "║  zlib Patterns:     ✓ Analyzed                                ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+
+real-world-ir:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║            BUILDING REAL-WORLD FFI TEST IR                     ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@mkdir -p $(REAL_WORLD_IR)/ir
+	
+	@echo "  - Compiling OpenSSL FFI patterns..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(REAL_WORLD_DIR)/openssl_ffi.c -o $(REAL_WORLD_IR)/ir/openssl.ll 2>/dev/null || true
+	
+	@echo "  - Compiling SQLite FFI patterns..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(REAL_WORLD_DIR)/sqlite_ffi.c -o $(REAL_WORLD_IR)/ir/sqlite.ll 2>/dev/null || true
+	
+	@echo "  - Compiling zlib FFI patterns..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(REAL_WORLD_DIR)/zlib_ffi.c -o $(REAL_WORLD_IR)/ir/zlib.ll 2>/dev/null || true
+	
+	@echo "  - Linking IR files..."
+	$(LLVM_LINK) $(REAL_WORLD_IR)/ir/openssl.ll $(REAL_WORLD_IR)/ir/sqlite.ll $(REAL_WORLD_IR)/ir/zlib.ll \
+		-o $(REAL_WORLD_IR)/combined.bc
+	
+	@echo "  Done: $(REAL_WORLD_IR)/combined.bc"
+
+real-world-run: real-world-ir
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║            ANALYZING REAL-WORLD FFI PATTERNS                   ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build run -- $(REAL_WORLD_IR)/combined.bc
+
+# ========================================
 # Clean
 # ========================================
 
@@ -297,6 +346,7 @@ clean:
 	rm -rf $(CPP_IR)
 	rm -rf $(GO_IR)
 	rm -rf $(ZIG_IR)
+	rm -rf $(REAL_WORLD_IR)
 	rm -f $(EXAMPLES_DIR)/zig_cffi/main.ll $(EXAMPLES_DIR)/zig_cffi/main.o
 	rm -rf zig-out .zig-cache
 	rm -rf corpus/*/output
@@ -412,4 +462,9 @@ help:
 	@echo "  make cpp-run     Build and run C++ example"
 	@echo "  make go-run      Build and run Go example"
 	@echo "  make zig-run     Build and run Zig example"
+	@echo ""
+	@echo "Real-World FFI Tests:"
+	@echo "  make real-world      Build and analyze real-world FFI patterns"
+	@echo "  make real-world-ir   Build OpenSSL/SQLite/zlib test IR"
+	@echo "  make real-world-run  Analyze real-world FFI patterns"
 	@echo ""

@@ -33,6 +33,22 @@ pub const RiskKind = enum {
     rust_ownership,
     /// Borrow escapes to FFI (&str.as_ptr, &slice.as_ptr)
     borrow_escaped,
+    /// Memory mapping operations (mmap, munmap, mprotect).
+    /// Requires proper pairing: mmap returns ownership, munmap consumes it.
+    /// Cross-language mismatch risk when mapping shared memory.
+    memory_map,
+    /// File I/O operations (fopen, fclose, fread, fwrite, open, close).
+    /// Resource ownership tracking: fopen/open transfers ownership,
+    /// fclose/close consumes it. Leak risk if not properly paired.
+    file_io,
+    /// Network I/O operations (socket, connect, bind, listen, accept, send, recv).
+    /// Socket ownership: socket/accept transfer ownership, close consumes it.
+    /// Security risk: unverified destinations, untrusted input.
+    network_io,
+    /// Go cgo allocator functions (C.malloc, C.CString, C.CBytes, C.free).
+    /// Go GC does not manage C memory. Must pair C.malloc with C.free.
+    /// Common leak: C.CString returned without caller freeing.
+    go_cgo_alloc,
 };
 
 /// Severity level for risk assessment.
@@ -264,6 +280,254 @@ pub const SemanticRegistry = struct {
             .description = "Free memory - consumes ownership, cross-language mismatch risk",
         },
 
+        // Memory mapping - HIGH (requires munmap to release)
+        .{
+            .pattern = "mmap",
+            .match_type = .exact,
+            .kind = .memory_map,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Map memory - returns ownership, must munmap to release",
+        },
+        .{
+            .pattern = "munmap",
+            .match_type = .exact,
+            .kind = .memory_map,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Unmap memory - consumes ownership, cross-language mismatch risk",
+        },
+        .{
+            .pattern = "mprotect",
+            .match_type = .exact,
+            .kind = .memory_map,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Change memory protection - can enable execution",
+        },
+
+        // File I/O - MEDIUM (resource leak risk)
+        .{
+            .pattern = "fopen",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = true,
+            .description = "Open file - returns ownership, must fclose to release",
+        },
+        .{
+            .pattern = "fclose",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .medium,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Close file - consumes ownership",
+        },
+        .{
+            .pattern = "fread",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Read from file - check return value for errors",
+        },
+        .{
+            .pattern = "fwrite",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Write to file - check return value for errors",
+        },
+        .{
+            .pattern = "fgets",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Read line from file - bounded read, safer than gets",
+        },
+        .{
+            .pattern = "fputs",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Write string to file - check return value",
+        },
+        .{
+            .pattern = "open",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = true,
+            .description = "Open file descriptor - returns ownership, must close",
+        },
+        .{
+            .pattern = "close",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .medium,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Close file descriptor - consumes ownership",
+        },
+        .{
+            .pattern = "read",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Read from file descriptor - check return value",
+        },
+        .{
+            .pattern = "write",
+            .match_type = .exact,
+            .kind = .file_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Write to file descriptor - check return value",
+        },
+
+        // Network I/O - MEDIUM (resource leak and security risk)
+        .{
+            .pattern = "socket",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Create socket - returns ownership, must close",
+        },
+        .{
+            .pattern = "connect",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = true,
+            .description = "Connect to server - verify destination address",
+        },
+        .{
+            .pattern = "bind",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Bind socket to address - check return value",
+        },
+        .{
+            .pattern = "listen",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Listen for connections - check return value",
+        },
+        .{
+            .pattern = "accept",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Accept connection - returns new socket ownership",
+        },
+        .{
+            .pattern = "recv",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Receive data - check return value, handle partial reads",
+        },
+        .{
+            .pattern = "send",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Send data - check return value, handle partial writes",
+        },
+        .{
+            .pattern = "recvfrom",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Receive data from - check return value",
+        },
+        .{
+            .pattern = "sendto",
+            .match_type = .exact,
+            .kind = .network_io,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Send data to - check return value",
+        },
+
         // Format string - MEDIUM
         .{
             .pattern = "printf",
@@ -320,8 +584,108 @@ pub const SemanticRegistry = struct {
         },
     };
 
+    /// Layer 3: Go cgo allocator patterns
+    /// Go's cgo has special memory management rules:
+    /// - C.malloc must be freed with C.free (not Go's GC)
+    /// - C.CString returns memory that must be freed with C.free
+    /// - Go GC does not manage C memory
+    const layer3 = [_]FunctionSemantics{
+        // Go cgo: C.malloc - must free with C.free
+        .{
+            .pattern = "C.malloc",
+            .match_type = .contains,
+            .kind = .go_cgo_alloc,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Go cgo malloc - must free with C.free, not Go GC",
+        },
+        // Go cgo: C.CString - allocates C string, caller must free
+        .{
+            .pattern = "C.CString",
+            .match_type = .contains,
+            .kind = .go_cgo_alloc,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Go cgo CString - caller must free with C.free",
+        },
+        // Go cgo: C.CBytes - allocates C bytes, caller must free
+        .{
+            .pattern = "C.CBytes",
+            .match_type = .contains,
+            .kind = .go_cgo_alloc,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Go cgo CBytes - caller must free with C.free",
+        },
+        // Go cgo: C.free - frees C memory
+        .{
+            .pattern = "C.free",
+            .match_type = .contains,
+            .kind = .go_cgo_alloc,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Go cgo free - frees C memory, not managed by Go GC",
+        },
+    };
+
+    /// Layer 4: Swift FFI patterns
+    /// Swift uses reference counting and has special FFI considerations:
+    /// - UnsafeMutablePointer for C interop
+    /// - withUnsafeBytes/withUnsafeMutableBytes for temporary access
+    /// - Swift mangling: $s prefix
+    const layer4 = [_]FunctionSemantics{
+        // Swift: withUnsafeBytes - temporary pointer access
+        .{
+            .pattern = "withUnsafeBytes",
+            .match_type = .contains,
+            .kind = .borrow_escaped,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Swift unsafe bytes access - pointer valid only in closure",
+        },
+        // Swift: withUnsafeMutableBytes - temporary mutable pointer access
+        .{
+            .pattern = "withUnsafeMutableBytes",
+            .match_type = .contains,
+            .kind = .borrow_escaped,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Swift unsafe mutable bytes - pointer valid only in closure",
+        },
+        // Swift: UnsafeMutablePointer.allocate - must deallocate
+        .{
+            .pattern = "UnsafeMutablePointer",
+            .match_type = .contains,
+            .kind = .allocator,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Swift unsafe pointer allocation - must deallocate",
+        },
+    };
+
     /// Lookup function semantics by name.
-    /// Searches Layer 1 first, then Layer 2.
+    /// Searches Layer 1 first, then Layer 2, 3, 4.
     /// Returns null if function is not in the registry.
     pub fn lookup(func_name: []const u8) ?FunctionSemantics {
         // Search Layer 1 (FFI high-risk functions)
@@ -333,6 +697,20 @@ pub const SemanticRegistry = struct {
 
         // Search Layer 2 (Rust ownership patterns)
         for (layer2) |sem| {
+            if (matchesPattern(func_name, sem.pattern, sem.match_type)) {
+                return sem;
+            }
+        }
+
+        // Search Layer 3 (Go cgo allocator patterns)
+        for (layer3) |sem| {
+            if (matchesPattern(func_name, sem.pattern, sem.match_type)) {
+                return sem;
+            }
+        }
+
+        // Search Layer 4 (Swift FFI patterns)
+        for (layer4) |sem| {
             if (matchesPattern(func_name, sem.pattern, sem.match_type)) {
                 return sem;
             }
@@ -446,16 +824,26 @@ pub const SemanticRegistry = struct {
         return layer2.len;
     }
 
+    /// Get the count of Layer 3 functions.
+    pub fn layer3Count() usize {
+        return layer3.len;
+    }
+
+    /// Get the count of Layer 4 functions.
+    pub fn layer4Count() usize {
+        return layer4.len;
+    }
+
     /// Get total count of known functions.
     pub fn totalCount() usize {
-        return layer1.len + layer2.len;
+        return layer1.len + layer2.len + layer3.len + layer4.len;
     }
 };
 
 // Unit tests
 
 test "SemanticRegistry - RiskKind enum" {
-    try std.testing.expectEqual(@as(usize, 7), @typeInfo(RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 11), @typeInfo(RiskKind).@"enum".fields.len);
 }
 
 test "SemanticRegistry - Severity enum" {
@@ -542,9 +930,63 @@ test "SemanticRegistry - getDescription" {
 }
 
 test "SemanticRegistry - counts" {
-    try std.testing.expectEqual(@as(usize, 16), SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 37), SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 3), SemanticRegistry.layer2Count());
-    try std.testing.expectEqual(@as(usize, 19), SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 4), SemanticRegistry.layer3Count());
+    try std.testing.expectEqual(@as(usize, 3), SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 47), SemanticRegistry.totalCount());
+}
+
+test "SemanticRegistry - mmap/munmap" {
+    const mmap_sem = SemanticRegistry.lookup("mmap").?;
+    try std.testing.expectEqual(RiskKind.memory_map, mmap_sem.kind);
+    try std.testing.expect(mmap_sem.transfers_ownership);
+    try std.testing.expect(mmap_sem.requires_null_check);
+
+    const munmap_sem = SemanticRegistry.lookup("munmap").?;
+    try std.testing.expectEqual(RiskKind.memory_map, munmap_sem.kind);
+    try std.testing.expect(munmap_sem.consumes_ownership);
+}
+
+test "SemanticRegistry - file I/O" {
+    const fopen_sem = SemanticRegistry.lookup("fopen").?;
+    try std.testing.expectEqual(RiskKind.file_io, fopen_sem.kind);
+    try std.testing.expect(fopen_sem.transfers_ownership);
+
+    const fclose_sem = SemanticRegistry.lookup("fclose").?;
+    try std.testing.expectEqual(RiskKind.file_io, fclose_sem.kind);
+    try std.testing.expect(fclose_sem.consumes_ownership);
+}
+
+test "SemanticRegistry - network I/O" {
+    const socket_sem = SemanticRegistry.lookup("socket").?;
+    try std.testing.expectEqual(RiskKind.network_io, socket_sem.kind);
+    try std.testing.expect(socket_sem.transfers_ownership);
+
+    const accept_sem = SemanticRegistry.lookup("accept").?;
+    try std.testing.expectEqual(RiskKind.network_io, accept_sem.kind);
+    try std.testing.expect(accept_sem.transfers_ownership);
+}
+
+test "SemanticRegistry - Go cgo patterns" {
+    const malloc_sem = SemanticRegistry.lookup("C.malloc").?;
+    try std.testing.expectEqual(RiskKind.go_cgo_alloc, malloc_sem.kind);
+    try std.testing.expect(malloc_sem.transfers_ownership);
+
+    const cstring_sem = SemanticRegistry.lookup("C.CString").?;
+    try std.testing.expectEqual(RiskKind.go_cgo_alloc, cstring_sem.kind);
+
+    const free_sem = SemanticRegistry.lookup("C.free").?;
+    try std.testing.expectEqual(RiskKind.go_cgo_alloc, free_sem.kind);
+    try std.testing.expect(free_sem.consumes_ownership);
+}
+
+test "SemanticRegistry - Swift FFI patterns" {
+    const bytes_sem = SemanticRegistry.lookup("withUnsafeBytes").?;
+    try std.testing.expectEqual(RiskKind.borrow_escaped, bytes_sem.kind);
+
+    const ptr_sem = SemanticRegistry.lookup("UnsafeMutablePointer").?;
+    try std.testing.expectEqual(RiskKind.allocator, ptr_sem.kind);
 }
 
 test "SemanticRegistry - as_ptr borrow escape" {
