@@ -6,9 +6,9 @@ fn getDefaultLLVMPath() []const u8 {
 
     return switch (os) {
         .macos => "/opt/homebrew/opt/llvm",
-        .linux => "/usr/lib/llvm",
+        .linux => "/usr/lib/llvm-18",
         .windows => "C:\\Program Files\\LLVM",
-        else => "/usr/lib/llvm",
+        else => "/usr/lib/llvm-18",
     };
 }
 
