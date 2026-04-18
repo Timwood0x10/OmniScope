@@ -6,15 +6,24 @@ on:
   pull_request:
     branches: [master, main]
 
+env:
+  ZIG_VERSION: 0.15.2
+
 jobs:
   check:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -28,9 +37,15 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -44,9 +59,15 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -60,9 +81,15 @@ jobs:
     needs: [test, test-integration]
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -81,9 +108,15 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -97,9 +130,15 @@ jobs:
     needs: test-all
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update
@@ -118,9 +157,15 @@ jobs:
     needs: test-all
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: brew install llvm@18
       - name: Build release
@@ -137,9 +182,15 @@ jobs:
     needs: build-macos
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Install LLVM
         run: brew install llvm@18
@@ -164,9 +215,15 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
-        with:
-          zig-version: 0.15.0
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           sudo apt-get update

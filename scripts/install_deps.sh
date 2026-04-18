@@ -1,7 +1,8 @@
 #!/bin/bash
 # OmniScope Dependencies Installer
 # Supports: macOS (Homebrew) and Linux (apt-get)
-# Usage: ./scripts/install_deps.sh [--llvm-version=22]
+# Uses ZVM for Zig version management
+# Usage: ./scripts/install_deps.sh [--llvm-version=22] [--zig-version=0.15.0]
 
 set -e
 
@@ -9,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 LLVM_VERSION=22
-ZIG_VERSION="0.15.0"
+ZIG_VERSION="0.15.2"
 
 for arg in "$@"; do
     case $arg in
@@ -60,7 +61,7 @@ OS=$(detect_os)
 echo_header
 echo_step "Detected OS: $OS"
 echo_step "LLVM version: $LLVM_VERSION"
-echo_step "Zig version: $ZIG_VERSION"
+echo_step "Zig version: $ZIG_VERSION (via ZVM)"
 echo_header
 
 check_command() {
@@ -68,6 +69,46 @@ check_command() {
         return 0
     fi
     return 1
+}
+
+install_zvm() {
+    echo_step "Installing ZVM (Zig Version Manager)..."
+    
+    if check_command zvm; then
+        echo_info "ZVM already installed"
+        return 0
+    fi
+    
+    curl -sSL https://www.zvm.app/install.sh | bash
+    
+    export ZVM_INSTALL="$HOME/.zvm/self"
+    export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+    
+    if ! check_command zvm; then
+        echo_error "ZVM installation failed"
+        exit 1
+    fi
+    
+    echo_info "ZVM installed successfully"
+    echo_info "Add the following to your shell config (~/.bashrc, ~/.zshrc, etc.):"
+    echo_info '  export ZVM_INSTALL="$HOME/.zvm/self"'
+    echo_info '  export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"'
+}
+
+install_zig_via_zvm() {
+    echo_step "Installing Zig $ZIG_VERSION via ZVM..."
+    
+    export ZVM_INSTALL="$HOME/.zvm/self"
+    export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+    
+    if ! check_command zvm; then
+        install_zvm
+    fi
+    
+    zvm install "$ZIG_VERSION"
+    zvm use "$ZIG_VERSION"
+    
+    echo_info "Zig $(zig version) installed successfully"
 }
 
 install_macos() {
@@ -89,12 +130,7 @@ install_macos() {
         echo_info "LLVM $LLVM_VERSION already installed"
     fi
     
-    echo_step "Installing Zig..."
-    if ! check_command zig; then
-        brew install zig
-    else
-        echo_info "Zig already installed: $(zig version)"
-    fi
+    install_zig_via_zvm
     
     echo_step "Installing additional tools..."
     brew install cmake || true
@@ -121,7 +157,7 @@ install_debian() {
     sudo apt-get update
     
     echo_step "Installing build essentials..."
-    sudo apt-get install -y build-essential cmake
+    sudo apt-get install -y build-essential cmake curl
     
     echo_step "Installing LLVM $LLVM_VERSION..."
     sudo apt-get install -y \
@@ -138,18 +174,7 @@ install_debian() {
         sudo apt-get install -y "llvm-$LLVM_VERSION-dev" "libllvm$LLVM_VERSION" "clang-$LLVM_VERSION"
     }
     
-    echo_step "Installing Zig..."
-    if ! check_command zig; then
-        ZIG_URL="https://ziglang.org/download/$ZIG_VERSION/zig-linux-x86_64-$ZIG_VERSION.tar.xz"
-        echo_info "Downloading Zig from $ZIG_URL"
-        cd /tmp
-        wget -q "$ZIG_URL" -O zig.tar.xz
-        sudo tar -xf zig.tar.xz -C /usr/local --strip-components=1
-        rm zig.tar.xz
-        cd "$PROJECT_ROOT"
-    else
-        echo_info "Zig already installed: $(zig version)"
-    fi
+    install_zig_via_zvm
     
     echo_step "Configuring LLVM paths..."
     LLVM_PREFIX="/usr/lib/llvm-$LLVM_VERSION"
@@ -165,7 +190,7 @@ install_redhat() {
     echo_step "Installing dependencies for RedHat/Fedora..."
     
     echo_step "Installing build essentials..."
-    sudo dnf install -y gcc cmake make || sudo yum install -y gcc cmake make
+    sudo dnf install -y gcc cmake make curl || sudo yum install -y gcc cmake make curl
     
     echo_step "Installing LLVM $LLVM_VERSION..."
     sudo dnf install -y "llvm$LLVM_VERSION-devel" "clang$LLVM_VERSION-devel" || \
@@ -173,21 +198,15 @@ install_redhat() {
         echo_error "LLVM $LLVM_VERSION not found. Please install manually."
     }
     
-    echo_step "Installing Zig..."
-    if ! check_command zig; then
-        ZIG_URL="https://ziglang.org/download/$ZIG_VERSION/zig-linux-x86_64-$ZIG_VERSION.tar.xz"
-        echo_info "Downloading Zig from $ZIG_URL"
-        cd /tmp
-        curl -L "$ZIG_URL" -o zig.tar.xz
-        sudo tar -xf zig.tar.xz -C /usr/local --strip-components=1
-        rm zig.tar.xz
-        cd "$PROJECT_ROOT"
-    fi
+    install_zig_via_zvm
 }
 
 verify_installation() {
     echo_header
     echo_step "Verifying installation..."
+    
+    export ZVM_INSTALL="$HOME/.zvm/self"
+    export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
     
     echo_info "Zig version: $(zig version 2>/dev/null || echo 'NOT FOUND')"
     
