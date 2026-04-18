@@ -119,7 +119,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
     std.log.info("Loaded: {d} functions\n\n", .{func_count});
 
     // Initialize Pipeline with IR module
-    var pipeline = Pipeline.init(allocator);
+    var pipeline = try Pipeline.init(allocator);
     defer pipeline.deinit();
 
     // Set the module for analysis

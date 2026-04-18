@@ -13,7 +13,7 @@ IR_DIR := $(BUILD_DIR)/ir
 CARGO := cargo
 CLANG := clang
 LLVM_LINK := /opt/homebrew/opt/llvm/bin/llvm-link
-OMNISCOPE := $(ROOT_DIR)/zig-out/bin/OmniSope
+OMNISCOPE := $(ROOT_DIR)/zig-out/bin/OmniScope
 
 # Output files
 RUST_IR := $(IR_DIR)/rust.ll

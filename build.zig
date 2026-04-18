@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
 
     // Build main executable
     const exe = b.addExecutable(.{
-        .name = "OmniSope",
+        .name = "OmniScope",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
@@ -194,6 +194,21 @@ pub fn build(b: *std.Build) void {
     // Alias 'bench' to 'bench-perf' for convenience
     const bench_step = b.step("bench", "Run performance benchmarks (alias for bench-perf)");
     bench_step.dependOn(bench_perf_step);
+
+    // Benchmark comparison step
+    const bench_compare_step = b.step("bench-compare", "Run performance comparison benchmarks");
+    const bench_compare_mod = b.addModule("bench_compare", .{
+        .root_source_file = b.path("src/perf/bench_compare.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    bench_compare_mod.addImport("OmniScope", lib_mod);
+    const bench_compare_exe = b.addExecutable(.{
+        .name = "bench-compare",
+        .root_module = bench_compare_mod,
+    });
+    const bench_compare_run = b.addRunArtifact(bench_compare_exe);
+    bench_compare_step.dependOn(&bench_compare_run.step);
 
     // Integration tests step
     const integration_test_step = b.step("integration-test", "Run integration tests with real IR files");

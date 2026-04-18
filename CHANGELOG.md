@@ -5,6 +5,101 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-18
+
+### Added
+
+#### Flow Graph Enhancement
+- **GEP Instruction Tracking**: GetElementPtr for struct field/array element access
+- **ExtractValue/InsertValue**: Aggregate type field access tracking
+- **Pointer Arithmetic**: ptr_offset, type_cast edge types
+- **Control Flow Merge**: phi_merge, select edge types
+- **7 New Edge Types**: gep, extract_value, insert_value, ptr_offset, type_cast, phi_merge, select
+
+#### Inter-procedural Analysis
+- **Function Summary Module**: Parameter flow and side effect tracking
+- **Ownership Behavior**: consumes, transfers, borrows semantics
+- **Built-in Summaries**: malloc, free, calloc, realloc, memcpy, strcpy
+- **Call Graph Integration**: Cross-function pointer flow tracking
+
+#### Path-Sensitive Analysis
+- **Path Condition Tracking**: Null check, bounds check, type check
+- **Execution Path Management**: Path splitting at branches
+- **Feasibility Analysis**: Infeasible path elimination
+- **Guarded Free Detection**: `if (ptr) free(ptr)` pattern recognition
+
+#### ValueIdMap Refactoring
+- **HashMap-based ID Mapping**: Eliminates pointer truncation on 64-bit systems
+- **Collision-free IDs**: Unique 32-bit IDs for all LLVM values
+- **Memory Safe**: Proper allocation and deallocation
+
+#### SARIF Output Enhancement
+- **Code Flows**: Data flow path visualization
+- **Related Locations**: Context-aware location tracking
+- **CWE Taxonomies**: Full CWE classification mapping
+- **Logical Locations**: Function name tracking
+- **Confidence Property**: Analysis confidence in results
+
+#### Semantic Registry Expansion
+- **47 Total Functions** (up from 19):
+  - Layer 1: 37 C standard library functions
+  - Layer 2: 3 Rust ownership patterns
+  - Layer 3: 4 Go cgo allocator patterns
+  - Layer 4: 3 Swift FFI patterns
+- **4 New RiskKind Categories**:
+  - `memory_map`: mmap, munmap, mprotect
+  - `file_io`: fopen, fclose, fread, fwrite, open, close, read, write
+  - `network_io`: socket, connect, bind, listen, accept, send, recv
+  - `go_cgo_alloc`: C.malloc, C.CString, C.CBytes, C.free
+- **22 New Functions**: Memory mapping, file I/O, network I/O
+
+#### Real-World FFI Test Suite
+- **OpenSSL FFI Patterns**: EVP API, BIO, SSL context management
+- **SQLite FFI Patterns**: Database handle, statement lifecycle, transaction safety
+- **zlib FFI Patterns**: Compression stream, file handle management
+- **Test Results Documentation**: Expected vs actual issue detection
+
+### Changed
+
+#### Edge Metadata
+- **Inline GEP Indices**: Fixed memory leak, uses `[4]u64` inline storage
+- **Removed field_name**: Eliminated borrowed reference lifetime issues
+
+#### Error Handling
+- **errdefer in initBuiltins**: Proper cleanup on allocation failure
+- **NullPointer Error**: Documented caller responsibility for null checks
+
+#### Test Assertions
+- **Exact Count Assertions**: Replaced `>= N` with `== N` for regression detection
+
+### Fixed
+
+- **Memory Leak in GEP Indices**: Inline storage instead of slice
+- **Memory Leak in FunctionSummary.init**: Added errdefer
+- **Pointer Truncation**: ValueIdMap with HashMap
+- **SARIF `error` Keyword**: Renamed to `err` to avoid Zig reserved word
+- **Documentation Inconsistency**: All RiskKind variants now documented
+
+### Test Results
+
+| Test Suite | Result |
+|------------|--------|
+| Unit Tests | ✓ All passed |
+| Integration Tests | ✓ 5/5 passed |
+| Issue Verification | ✓ 26 issues detected |
+| Stability Tests | ✓ 15/15 passed |
+| Stress Tests | ✓ 16/16 passed |
+| Real-World FFI | ✓ 42 issues in OpenSSL/SQLite/zlib |
+
+### Statistics
+
+| Metric | v0.2.0 | v0.3.0 | Change |
+|--------|--------|--------|--------|
+| Known Functions | 19 | 47 | +147% |
+| Risk Categories | 7 | 11 | +57% |
+| Edge Types | 7 | 14 | +100% |
+| Test Coverage | 93% | 95% | +2% |
+
 ## [0.2.0] - 2026-04-17
 
 ### Added

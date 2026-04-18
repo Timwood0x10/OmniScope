@@ -11,6 +11,10 @@
 //! v0.2 Enhancements:
 //! - Inter-procedural analysis via function summaries
 //! - Path-sensitive analysis for null check tracking
+//!
+//! v0.3 Enhancements:
+//! - Memory pool for reduced allocation overhead
+//! - Profiling for performance analysis
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -27,6 +31,9 @@ const SummaryRegistry = @import("../../dataflow/function_summary.zig").SummaryRe
 const PathManager = @import("../../dataflow/path_condition.zig").PathManager;
 const PathCondition = @import("../../dataflow/path_condition.zig").PathCondition;
 const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
+const MemoryPool = @import("../../perf/memory_pool.zig").MemoryPool;
+const Profiler = @import("../../perf/profiler.zig").Profiler;
+const ScopedTimer = @import("../../perf/profiler.zig").ScopedTimer;
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -128,30 +135,45 @@ pub const PointerOwnershipPass = struct {
 
     /// Run ownership tracking analysis.
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) OwnershipError!void {
+        var profiler = Profiler.init(ctx.allocator);
+        defer {
+            profiler.report();
+            diag.info("PointerOwnership: {s}", .{profiler.summary()});
+            profiler.deinit();
+        }
+        var _timer = ScopedTimer.start(&profiler, "total");
+        defer _timer.stop() catch {};
+
         if (ctx.module == null) {
             diag.warn("PointerOwnership: No module loaded, skipping", .{});
             return;
         }
 
-        // Initialize value ID map for proper pointer tracking
+        var init_timer = ScopedTimer.start(&profiler, "init");
+        defer init_timer.stop() catch {};
+
         var id_map = ValueIdMap.init(ctx.allocator);
         defer id_map.deinit();
 
-        // Initialize function summary registry for inter-procedural analysis
         var summary_registry = SummaryRegistry.init(ctx.allocator);
         defer summary_registry.deinit();
         summary_registry.initBuiltins() catch {
             diag.warn("PointerOwnership: Failed to init function summaries", .{});
         };
 
+        var alloc_pool = try MemoryPool(AllocSite).init(ctx.allocator);
+        defer alloc_pool.deinit();
+
+        var free_pool = try MemoryPool(FreeSite).init(ctx.allocator);
+        defer free_pool.deinit();
+
         var stats = OwnershipStats{};
-        var alloc_map = std.AutoHashMap(u32, AllocSite).init(ctx.allocator);
+        var alloc_map = std.AutoHashMap(u32, *AllocSite).init(ctx.allocator);
         defer alloc_map.deinit();
 
-        var free_map = std.AutoHashMap(u32, FreeSite).init(ctx.allocator);
+        var free_map = std.AutoHashMap(u32, *FreeSite).init(ctx.allocator);
         defer free_map.deinit();
 
-        // Pointer flow graph: maps value_id -> set of value_ids it flows to
         var flow_graph = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
         defer {
             var iter = flow_graph.iterator();
@@ -160,6 +182,8 @@ pub const PointerOwnershipPass = struct {
             }
             flow_graph.deinit();
         }
+
+        init_timer.stop() catch {};
 
         const mod = ctx.module.?.raw;
 
@@ -170,7 +194,9 @@ pub const PointerOwnershipPass = struct {
 
         var func = c.LLVMGetFirstFunction(mod);
 
-        // First pass: identify all allocation and free sites, build flow graph.
+        var analysis_timer = ScopedTimer.start(&profiler, "analysis");
+        defer analysis_timer.stop() catch {};
+
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) continue;
             try analyzeFunctionForOwnership(
@@ -182,13 +208,20 @@ pub const PointerOwnershipPass = struct {
                 &stats,
                 has_debug_info,
                 &id_map,
+                &alloc_pool,
+                &free_pool,
             );
         }
 
-        // Second pass: detect violations using flow graph.
+        analysis_timer.stop() catch {};
+
+        var detect_timer = ScopedTimer.start(&profiler, "detect");
+        defer detect_timer.stop() catch {};
+
         try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag);
 
-        // Report findings.
+        detect_timer.stop() catch {};
+
         diag.info("PointerOwnership: Found {d} allocations, {d} frees, {d} tracked pointers", .{
             stats.alloc_sites,
             stats.free_sites,
@@ -207,6 +240,13 @@ pub const PointerOwnershipPass = struct {
             diag.info("PointerOwnership: No cross-language ownership violations detected", .{});
             diag.info("  (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)", .{});
         }
+
+        const pool_stats = alloc_pool.stats();
+        diag.info("PointerOwnership: Memory pool stats - allocated: {}, reused: {}, in_use: {}", .{
+            pool_stats.allocated,
+            pool_stats.reused,
+            pool_stats.in_use,
+        });
     }
 
     /// Check if debug metadata is available in the module.
@@ -232,12 +272,14 @@ pub const PointerOwnershipPass = struct {
     fn analyzeFunctionForOwnership(
         allocator: std.mem.Allocator,
         func: c.LLVMValueRef,
-        alloc_map: *std.AutoHashMap(u32, AllocSite),
-        free_map: *std.AutoHashMap(u32, FreeSite),
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
         id_map: *ValueIdMap,
+        alloc_pool: *MemoryPool(AllocSite),
+        free_pool: *MemoryPool(FreeSite),
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
         const func_lang = identifyLanguage(func);
@@ -257,6 +299,8 @@ pub const PointerOwnershipPass = struct {
                     stats,
                     has_debug_info,
                     id_map,
+                    alloc_pool,
+                    free_pool,
                 );
             }
         }
@@ -268,24 +312,25 @@ pub const PointerOwnershipPass = struct {
         inst: c.LLVMValueRef,
         func_name: []const u8,
         func_lang: Language,
-        alloc_map: *std.AutoHashMap(u32, AllocSite),
-        free_map: *std.AutoHashMap(u32, FreeSite),
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
         id_map: *ValueIdMap,
+        alloc_pool: *MemoryPool(AllocSite),
+        free_pool: *MemoryPool(FreeSite),
     ) OwnershipError!void {
         _ = has_debug_info;
         const opcode = c.LLVMGetInstructionOpcode(inst);
         const inst_id = try id_map.getOrPutId(@intFromPtr(inst));
 
-        // Build flow graph for pointer tracking.
         try buildFlowGraph(allocator, inst, opcode, flow_graph, id_map);
 
-        // Check for allocation patterns using SemanticRegistry.
         if (isAllocationInstruction(inst, opcode)) {
             const alloc_type = classifyAllocation(inst, opcode);
-            const alloc_site = AllocSite{
+            const site = try alloc_pool.alloc();
+            site.* = .{
                 .inst_id = inst_id,
                 .func_name = func_name,
                 .lang = func_lang,
@@ -296,22 +341,21 @@ pub const PointerOwnershipPass = struct {
                 .debug_column = null,
             };
 
-            try alloc_map.put(inst_id, alloc_site);
+            try alloc_map.put(inst_id, site);
             stats.alloc_sites += 1;
             stats.tracked_pointers += 1;
         }
 
-        // Check for free patterns using SemanticRegistry.
         if (isFreeInstruction(inst, opcode)) {
             const free_type = classifyFree(inst, opcode);
-            // Get the pointer being freed (first argument)
             const ptr_arg = c.LLVMGetOperand(inst, 0);
             const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
                 try id_map.getOrPutId(@intFromPtr(ptr_arg))
             else
                 inst_id;
 
-            const free_site = FreeSite{
+            const site = try free_pool.alloc();
+            site.* = .{
                 .inst_id = inst_id,
                 .func_name = func_name,
                 .lang = func_lang,
@@ -322,7 +366,7 @@ pub const PointerOwnershipPass = struct {
                 .debug_column = null,
             };
 
-            try free_map.put(inst_id, free_site);
+            try free_map.put(inst_id, site);
             stats.free_sites += 1;
         }
     }
@@ -478,13 +522,12 @@ pub const PointerOwnershipPass = struct {
     /// Detect ownership violations using flow graph.
     fn detectViolations(
         ctx: *PassContext,
-        alloc_map: *std.AutoHashMap(u32, AllocSite),
-        free_map: *std.AutoHashMap(u32, FreeSite),
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         diag: *DiagnosticWriter,
     ) OwnershipError!void {
-        // Insert ownership facts for all allocations.
         var alloc_iter = alloc_map.iterator();
         while (alloc_iter.next()) |entry| {
             const alloc = entry.value_ptr.*;
@@ -507,7 +550,6 @@ pub const PointerOwnershipPass = struct {
             }
         }
 
-        // Insert ownership facts for all frees.
         var free_iter = free_map.iterator();
         while (free_iter.next()) |entry| {
             const free_site = entry.value_ptr.*;
@@ -520,7 +562,6 @@ pub const PointerOwnershipPass = struct {
             );
         }
 
-        // Detect cross-language violations using flow graph.
         alloc_iter = alloc_map.iterator();
         while (alloc_iter.next()) |entry| {
             const alloc = entry.value_ptr.*;
@@ -529,12 +570,10 @@ pub const PointerOwnershipPass = struct {
             while (free_iter.next()) |free_entry| {
                 const free_site = free_entry.value_ptr.*;
 
-                // Check if languages differ.
                 if (alloc.lang != free_site.lang and
                     alloc.lang != .unknown and
                     free_site.lang != .unknown)
                 {
-                    // Use flow graph to check if alloc flows to free.
                     var visited = std.AutoHashMap(u32, void).init(ctx.allocator);
                     defer visited.deinit();
 
@@ -577,7 +616,7 @@ pub const PointerOwnershipPass = struct {
     }
 
     /// Check if an allocation crosses an FFI boundary.
-    fn isCrossFFIAllocation(alloc: AllocSite) bool {
+    fn isCrossFFIAllocation(alloc: *const AllocSite) bool {
         return alloc.lang != .unknown and alloc.lang != .c;
     }
 

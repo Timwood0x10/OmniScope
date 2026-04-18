@@ -3,6 +3,9 @@
 //! This module defines the unified data flow graph that serves as the central
 //! data structure for all analysis passes. It provides a high-level abstraction
 //! over the Fact Store for managing data flow relationships.
+//!
+//! v0.3 Enhancements:
+//! - Arena allocator for batch allocations
 
 const std = @import("std");
 
@@ -23,6 +26,7 @@ const ValueType = @import("node.zig").ValueType;
 const EdgeType = @import("edge.zig").EdgeType;
 
 const FFIMatcher = @import("../ffi/ffi_matcher.zig").FFIMatcher;
+const ArenaAllocator = @import("../perf/memory_pool.zig").ArenaAllocator;
 
 /// Data Flow Graph
 ///
@@ -32,6 +36,8 @@ const FFIMatcher = @import("../ffi/ffi_matcher.zig").FFIMatcher;
 pub const DataFlowGraph = struct {
     /// Memory allocator
     allocator: Allocator,
+    /// Arena allocator for batch allocations
+    arena: ArenaAllocator,
     /// Reference to the underlying fact store
     fact_store: *FactStore,
     /// Reference to the query engine
@@ -56,27 +62,20 @@ pub const DataFlowGraph = struct {
     tainted_nodes: std.ArrayList(u32),
 
     /// Create a new data flow graph
-    ///
-    /// Parameters:
-    ///   - allocator: Memory allocator
-    ///   - fact_store: Reference to fact store
-    ///   - query_engine: Reference to query engine
-    ///
-    /// Returns:
-    ///   - A new DataFlowGraph instance
-    pub fn init(allocator: Allocator, fact_store: *FactStore, query_engine: *QueryEngine) DataFlowGraph {
+    pub fn init(allocator: Allocator, fact_store: *FactStore, query_engine: *QueryEngine) !DataFlowGraph {
         return .{
             .allocator = allocator,
+            .arena = try ArenaAllocator.init(allocator),
             .fact_store = fact_store,
             .query_engine = query_engine,
             .nodes = std.AutoHashMap(u32, DataNode).init(allocator),
-            .edges = std.ArrayList(DataEdge).initCapacity(allocator, 0) catch unreachable,
-            .ffi_boundaries = std.ArrayList(FFIBoundary).initCapacity(allocator, 0) catch unreachable,
-            .issues = std.ArrayList(Issue).initCapacity(allocator, 0) catch unreachable,
+            .edges = try std.ArrayList(DataEdge).initCapacity(allocator, 0),
+            .ffi_boundaries = try std.ArrayList(FFIBoundary).initCapacity(allocator, 0),
+            .issues = try std.ArrayList(Issue).initCapacity(allocator, 0),
             .ffi_matcher = null,
             .outgoing_edges = std.AutoHashMap(u32, []const u32).init(allocator),
             .incoming_edges = std.AutoHashMap(u32, []const u32).init(allocator),
-            .tainted_nodes = std.ArrayList(u32).initCapacity(allocator, 0) catch unreachable,
+            .tainted_nodes = try std.ArrayList(u32).initCapacity(allocator, 0),
         };
     }
 
@@ -86,13 +85,11 @@ pub const DataFlowGraph = struct {
         self.edges.deinit(self.allocator);
         self.ffi_boundaries.deinit(self.allocator);
 
-        // Clean up issue messages (they were allocated with allocPrint)
         for (self.issues.items) |issue| {
             self.allocator.free(issue.message);
         }
         self.issues.deinit(self.allocator);
 
-        // Clean up edge indices
         var outgoing_iter = self.outgoing_edges.iterator();
         while (outgoing_iter.next()) |entry| {
             self.allocator.free(entry.value_ptr.*);
@@ -106,6 +103,7 @@ pub const DataFlowGraph = struct {
         self.incoming_edges.deinit();
 
         self.tainted_nodes.deinit(self.allocator);
+        self.arena.deinit();
     }
 
     /// Add a node to the graph
@@ -511,7 +509,7 @@ test "DataFlowGraph - init and deinit" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), dfg.nodes.count());
@@ -524,7 +522,7 @@ test "DataFlowGraph - addNode" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -542,7 +540,7 @@ test "DataFlowGraph - addNode duplicate" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -560,7 +558,7 @@ test "DataFlowGraph - addEdge" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -584,7 +582,7 @@ test "DataFlowGraph - addEdge invalid node" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -604,7 +602,7 @@ test "DataFlowGraph - markTainted" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -628,7 +626,7 @@ test "DataFlowGraph - addIssue" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -651,7 +649,7 @@ test "DataFlowGraph - getStats" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");
@@ -699,7 +697,7 @@ test "DataFlowGraph - clear" {
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
 
-    var dfg = DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
 
     const location = Location.init("test_func");

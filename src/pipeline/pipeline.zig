@@ -25,14 +25,14 @@ pub const Pipeline = struct {
     module: ?ModuleRef,
 
     /// Create a new analysis pipeline
-    pub fn init(allocator: std.mem.Allocator) Pipeline {
-        const fact_store = allocator.create(FactStore) catch unreachable;
+    pub fn init(allocator: std.mem.Allocator) !Pipeline {
+        const fact_store = try allocator.create(FactStore);
         fact_store.* = FactStore.init(allocator);
 
-        const query_engine = allocator.create(QueryEngine) catch unreachable;
+        const query_engine = try allocator.create(QueryEngine);
         query_engine.* = QueryEngine.init(fact_store);
 
-        const data_flow_graph = DataFlowGraph.init(allocator, fact_store, query_engine);
+        const data_flow_graph = try DataFlowGraph.init(allocator, fact_store, query_engine);
 
         return .{
             .allocator = allocator,
@@ -132,14 +132,14 @@ pub const PipelineResult = struct {
 };
 
 test "Pipeline - init and deinit" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), pipeline.fact_store.count());
 }
 
 test "Pipeline - get components" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     const fact_store = pipeline.getFactStore();
@@ -150,7 +150,7 @@ test "Pipeline - get components" {
 }
 
 test "Pipeline - register pass" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     const TestPass = struct {
@@ -168,7 +168,7 @@ test "Pipeline - register pass" {
 }
 
 test "Pipeline - run static analysis" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     // Register a test pass
@@ -193,7 +193,7 @@ test "Pipeline - run static analysis" {
 }
 
 test "Pipeline - component integration" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     // Register multiple passes with dependencies
@@ -231,7 +231,7 @@ test "Pipeline - component integration" {
 }
 
 test "Pipeline - fact store integration" {
-    var pipeline = Pipeline.init(std.testing.allocator);
+    var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
 
     const fact_store = pipeline.getFactStore();

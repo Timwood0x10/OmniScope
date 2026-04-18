@@ -257,7 +257,7 @@ test "PassContext - init and deinit" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
-    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
     const ctx = PassContext.init(
@@ -276,7 +276,7 @@ test "PassContext - getNextId" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
-    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
     var ctx = PassContext.init(
@@ -301,7 +301,7 @@ test "PassContext - setModule and hasModule" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
-    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
     var ctx = PassContext.init(
@@ -325,7 +325,7 @@ test "PassContext - access to components" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
-    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
     const ctx = PassContext.init(

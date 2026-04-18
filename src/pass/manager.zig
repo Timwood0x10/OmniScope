@@ -237,7 +237,7 @@ test "PassManager - run passes" {
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
-    var data_flow_graph = @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
     const TestPass = struct {
