@@ -394,6 +394,14 @@ PointerOwnership: 1 cross-FFI ownership transfers detected
 2. **过程内分析为主** - 跨函数的数据流分析有限
 3. **依赖 Debug Info** - 没有 debug info 时只能显示符号名
 4. **动态特性无法分析** - 函数指针、虚函数调用难以追踪
+5. **语言检测依赖命名约定** - 跨语言分析（如 `cross_lang_free_mismatch`、`borrow_escape`）依赖于函数命名模式：
+   - **Rust**: `_R` 前缀（RFC 2603）或包含 `alloc::`、`core::`、`std::`
+   - **C++**: `_Z` 前缀（Itanium C++ ABI）或 `operator new/delete`
+   - **Zig**: 包含 `Allocator.` 或 `allocImpl`
+   - **C**: 标准 libc 函数（`malloc`、`free` 等）
+   - **Go (cgo)**: `_cgo_` 前缀或 `C.` 前缀
+
+   不符合这些模式的函数会被归类为 `unknown`，从而无法检测跨语言违规。详细信息请参阅 [corpus/README.md](corpus/README.md#language-detection-limitations)。
 
 <br />
 

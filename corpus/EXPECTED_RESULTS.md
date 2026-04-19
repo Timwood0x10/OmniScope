@@ -9,45 +9,95 @@ corpus/
 ├── ffi-dense/           # FFI-heavy test cases
 │   ├── sqlite_binding.c
 │   ├── openssl_wrapper.c
-│   ├── zlib_binding.c
-│   └── rust_sqlite_ffi.rs
-├── small/               # Quick tests (~100 functions)
-│   └── simple_ffi.c
-├── medium/              # Realistic projects (~1K functions)
-│   └── network_ffi.c
+│   └── zlib_binding.c
+├── small/               # Quick FFI/unsafe tests
+│   ├── rust_ffi_simple.rs
+│   ├── zig_ffi_simple.zig
+│   ├── go_ffi_simple.go
+│   └── cpp_ffi_simple.cpp
+├── medium/              # Boundary and edge case tests
+│   └── boundary_test.c
 └── large/               # Stress tests (~10K+ functions)
     └── stress_patterns.c
 ```
 
 ---
 
-## small/simple_ffi.c
+## small/rust_ffi_simple.rs
 
 | Bug # | Function | Issue Type | Severity | Description |
 |-------|----------|------------|----------|-------------|
-| 1 | `leak_example` | leak | high | malloc without free |
-| 2 | `use_after_free_example` | use_after_free | critical | Use after free |
-| 3 | `buffer_overflow_example` | buffer_overflow | critical | strcpy without bounds check |
-| 4 | `format_string_example` | format_string | high | printf with user input |
+| 1 | `box_into_raw_leak` | leak | high | Box::into_raw without Box::from_raw |
+| 2 | `cstring_into_raw_leak` | leak | high | CString::into_raw without CString::from_raw |
+| 3 | `str_as_ptr_escape` | borrow_escape | critical | &str.as_ptr escape |
+| 4 | `rust_alloc_c_free` | cross_lang_free_mismatch | high | Rust alloc, C free |
 
 **Total Expected Issues: 4**
 
 ---
 
-## medium/network_ffi.c
+## small/zig_ffi_simple.zig
 
 | Bug # | Function | Issue Type | Severity | Description |
 |-------|----------|------------|----------|-------------|
-| 1 | `create_socket_leak` | leak | high | socket without close |
-| 2 | `accept_connection_leak` | leak | high | accept without close |
-| 3 | `read_and_free` | use_after_free | critical | Potential use after free |
-| 4 | `process_data` | use_after_free | critical | Use after free in log |
-| 5 | `copy_address` | buffer_overflow | critical | strcpy without bounds |
-| 6 | `log_connection` | format_string | high | printf with user input |
-| 7 | `execute_user_command` | command_injection | critical | system with user input |
-| 8 | `send_data_unchecked` | unchecked_return | medium | send return not checked |
+| 1 | `zig_alloc_c_free` | cross_lang_free_mismatch | high | Zig allocator, C free |
+| 2 | `allocator_leak` | leak | medium | Zig allocator without free |
+| 3 | `pointer_escape` | borrow_escape | critical | Pointer escape across FFI boundary |
 
-**Total Expected Issues: 8**
+**Total Expected Issues: 3**
+
+---
+
+## small/go_ffi_simple.go
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1 | `CStringLeak` | leak | high | C.CString without C.free |
+| 2 | `CMallocLeak` | leak | high | C.malloc without C.free |
+| 3 | `CBytesLeak` | leak | high | C.CBytes without C.free |
+
+**Total Expected Issues: 3**
+
+---
+
+## small/cpp_ffi_simple.cpp
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1 | `cpp_new_c_free` | cross_lang_free_mismatch | high | C++ new, C free |
+| 2 | `cpp_malloc_cpp_delete` | cross_lang_free_mismatch | high | C malloc, C++ delete |
+| 3 | `raii_escape` | leak | high | RAII object escape |
+
+**Total Expected Issues: 3**
+
+---
+
+## medium/boundary_test.c
+
+| Bug # | Function | Issue Type | Severity | Description |
+|-------|----------|------------|----------|-------------|
+| 1 | `null_ptr_ffi_boundary` | null_dereference | critical | Null pointer at FFI boundary |
+| 2 | `zero_size_alloc` | boundary_error | medium | Zero-size allocation |
+| 3 | `max_size_alloc` | boundary_error | high | Maximum size allocation |
+| 4 | `negative_size_alloc` | boundary_error | high | Negative size cast |
+| 5 | `buffer_at_overflow` | buffer_overflow | critical | Buffer overflow at boundary |
+| 6 | `create_circular_ownership` | leak | high | Circular ownership reference |
+| 7 | `ffi_double_free` | double_free | critical | Double free at FFI boundary |
+| 8 | `ffi_use_after_free` | use_after_free | critical | Use after free at FFI boundary |
+| 9 | `ownership_transfer_to_null` | null_dereference | critical | Transfer to NULL pointer |
+| 10 | `ffi_in_error_path` | leak | medium | FFI allocation in error path |
+| 11 | `nested_ffi_partial_cleanup` | leak | high | Nested FFI with partial cleanup |
+| 12 | `ffi_loop_early_exit` | leak | high | FFI loop with early exit |
+| 13 | `mixed_allocation_sources` | leak | high | Mixed allocation sources |
+| 14 | `ffi_format_string` | format_string | high | FFI with format string |
+| 15 | `ffi_buffer_overflow` | buffer_overflow | critical | FFI with buffer overflow |
+| 16 | `allocation_size_overflow` | boundary_error | high | Allocation size overflow |
+| 17 | `ffi_realloc` | unsafe_operation | high | Realloc on FFI pointer |
+| 18 | `ffi_ptr_escape` | leak | medium | FFI pointer escape through return |
+| 19 | `store_ffi_ptr_global` | leak | medium | FFI pointer stored in global |
+| 20 | `concurrent_ffi_allocs` | leak | high | Concurrent FFI allocations |
+
+**Total Expected Issues: 20**
 
 ---
 
@@ -55,22 +105,20 @@ corpus/
 
 | Bug # | Function | Issue Type | Severity | Description |
 |-------|----------|------------|----------|-------------|
-| 1-10 | `leak_func_XX` | leak | high | 10 leak functions |
-| 11-20 | `uaf_func_XX` | use_after_free | critical | 10 UAF functions |
-| 21-30 | `overflow_func_XX` | buffer_overflow | critical | 10 overflow functions |
-| 31-40 | `format_func_XX` | format_string | high | 10 format string functions |
-| 41-50 | `double_free_func_XX` | double_free | critical | 10 double free functions |
-| 51 | `create_data_struct_leak` | leak | high | Struct allocation leak |
-| 52 | `access_after_free` | use_after_free | critical | Access after struct free |
-| 53 | `copy_to_struct` | buffer_overflow | critical | Overflow in struct copy |
-| 54 | `log_data_struct` | format_string | high | Format string in log |
-| 55 | `execute_data_command` | command_injection | critical | Command injection |
-| 56 | `recursive_leak` | leak | high | Leak in recursion |
-| 57 | `loop_leak` | leak | high | Leak in loop |
-| 58 | `conditional_leak` | leak | high | Conditional leak |
-| 59 | `error_path_leak` | leak | high | Leak on error path |
+| 1-20 | `ffi_alloc_01` through `ffi_alloc_20` | leak | high | FFI allocation without free |
+| 21-40 | `ffi_mismatch_01` through `ffi_mismatch_20` | cross_lang_free_mismatch | high | C alloc, Rust free |
+| 41-60 | `ffi_chain_01` through `ffi_chain_20` | leak | high | FFI ownership transfer chains |
+| 61 | `create_ffi_bundle` | leak | high | Complex nested FFI structure |
+| 62 | `cross_lang_transfer` | leak | medium | Cross-language ownership transfer |
+| 63 | `recursive_ffi_alloc` | leak | high | Recursive FFI allocation |
+| 64 | `loop_ffi_alloc` | leak | high | Loop FFI allocation |
+| 65 | `create_complex_ffi_struct` | leak | high | FFI data flow through complex structure |
+| 66 | `ffi_boundary_stress` | leak | high | FFI boundary crossing stress |
+| 67-70 | `_Z12cpp_rust_mismatchv`, `_RZN12rust_c_mismatch...`, `zig_allocImpl_c_mismatch`, `c_zig_mismatch` | cross_lang_free_mismatch | high | Manual test functions with proper language naming patterns |
 
-**Total Expected Issues: 59**
+**Total Expected Issues: 70 (66 + 4 manual cross-language tests)**
+
+**Note**: Cross-language ownership violations (cross_lang_free_mismatch) are now detected when functions use realistic language naming patterns (e.g., `_R` prefix for Rust, `_Z` prefix for C++, `allocImpl` for Zig). The PointerOwnershipPass was modified to identify language from callee function names instead of caller function names.
 
 ---
 
@@ -145,16 +193,19 @@ corpus/
 
 ## Summary Statistics
 
-| Corpus File | Expected Issues | Critical | High | Medium | Low |
-|-------------|-----------------|----------|------|--------|-----|
-| small/simple_ffi.c | 4 | 2 | 2 | 0 | 0 |
-| medium/network_ffi.c | 8 | 4 | 3 | 1 | 0 |
-| large/stress_patterns.c | 59 | 32 | 27 | 0 | 0 |
-| sqlite_binding.c | 6 | 2 | 3 | 1 | 0 |
-| openssl_wrapper.c | 10 | 0 | 7 | 3 | 0 |
-| zlib_binding.c | 10 | 3 | 1 | 5 | 1 |
-| rust_sqlite_ffi.rs | 7 | 3 | 3 | 1 | 0 |
-| **Total** | **104** | **46** | **46** | **11** | **1** |
+| Corpus Directory | File | Expected Issues | Critical | High | Medium | Low |
+|------------------|------|-----------------|----------|------|--------|-----|
+| small/ | rust_ffi_simple.rs | 4 | 1 | 3 | 0 | 0 |
+| small/ | zig_ffi_simple.zig | 3 | 1 | 2 | 0 | 0 |
+| small/ | go_ffi_simple.go | 3 | 0 | 3 | 0 | 0 |
+| small/ | cpp_ffi_simple.cpp | 3 | 0 | 3 | 0 | 0 |
+| medium/ | boundary_test.c | 20 | 6 | 11 | 3 | 0 |
+| large/ | stress_patterns.c | 70 | 0 | 70 | 0 | 0 |
+| ffi-dense/ | sqlite_binding.c | 6 | 2 | 3 | 1 | 0 |
+| ffi-dense/ | openssl_wrapper.c | 10 | 0 | 7 | 3 | 0 |
+| ffi-dense/ | zlib_binding.c | 10 | 3 | 1 | 5 | 1 |
+| ffi-dense/ | rust_sqlite_ffi.rs | 7 | 3 | 3 | 1 | 0 |
+| **Total** | **10 files** | **136** | **16** | **106** | **13** | **1** |
 
 ---
 
@@ -162,18 +213,22 @@ corpus/
 
 | Issue Type | Count |
 |------------|-------|
-| leak | 13 |
-| use_after_free | 2 |
-| dangling_pointer | 1 |
+| leak | 67 |
+| cross_lang_free_mismatch | 27 |
+| use_after_free | 4 |
 | double_free | 2 |
-| buffer_overflow | 1 |
-| unchecked_return | 3 |
-| format_string | 1 |
+| buffer_overflow | 3 |
+| format_string | 4 |
+| borrow_escape | 3 |
+| null_dereference | 2 |
+| boundary_error | 4 |
+| unsafe_operation | 1 |
+| dangling_pointer | 1 |
+| unchecked_return | 1 |
 | injection | 1 |
 | weak_crypto | 1 |
 | sensitive_data | 2 |
 | uninit_memory | 1 |
-| null_deref | 1 |
 | invalid_param | 1 |
 
 ---

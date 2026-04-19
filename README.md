@@ -398,6 +398,14 @@ See [examples/TEST\_RESULTS.md](examples/TEST_RESULTS.md) for details.
 2. **Primarily intra-procedural** - Limited inter-procedural data flow
 3. **Depends on Debug Info** - Only symbol names without debug info
 4. **Dynamic features** - Function pointers and virtual calls are hard to track
+5. **Language detection relies on naming conventions** - Cross-language analysis (e.g., `cross_lang_free_mismatch`, `borrow_escape`) depends on function naming patterns:
+   - **Rust**: `_R` prefix (RFC 2603) or contains `alloc::`, `core::`, `std::`
+   - **C++**: `_Z` prefix (Itanium C++ ABI) or `operator new/delete`
+   - **Zig**: Contains `Allocator.` or `allocImpl`
+   - **C**: Standard libc functions (`malloc`, `free`, etc.)
+   - **Go (cgo)**: `_cgo_` prefix or `C.` prefix
+
+   Functions that don't follow these patterns are classified as `unknown`, preventing cross-language violation detection. See [corpus/README.md](corpus/README.md#language-detection-limitations) for details.
 
 ## Performance Benchmarks
 

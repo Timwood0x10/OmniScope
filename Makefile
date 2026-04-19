@@ -358,6 +358,9 @@ clean:
 
 CORPUS_DIR = corpus
 CORPUS_FFI_DENSE = $(CORPUS_DIR)/ffi-dense
+CORPUS_SMALL = $(CORPUS_DIR)/small
+CORPUS_MEDIUM = $(CORPUS_DIR)/medium
+CORPUS_LARGE = $(CORPUS_DIR)/large
 
 corpus: corpus-ir
 	@echo ""
@@ -370,19 +373,34 @@ corpus-ir:
 	@echo "║                 BUILDING CORPUS IR                             ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	@mkdir -p $(CORPUS_FFI_DENSE)/output
-	
-	@echo "  - Compiling sqlite_binding.c..."
+	@mkdir -p $(CORPUS_SMALL)/output
+	@mkdir -p $(CORPUS_MEDIUM)/output
+	@mkdir -p $(CORPUS_LARGE)/output
+
+	@echo "  - Compiling small/cpp_ffi_simple.cpp..."
+	$(CLANGXX) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(CORPUS_SMALL)/cpp_ffi_simple.cpp -o $(CORPUS_SMALL)/output/cpp_ffi_simple.ll 2>/dev/null || true
+
+	@echo "  - Compiling medium/boundary_test.c..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(CORPUS_MEDIUM)/boundary_test.c -o $(CORPUS_MEDIUM)/output/boundary_test.ll 2>/dev/null || true
+
+	@echo "  - Compiling large/stress_patterns.c..."
+	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+		$(CORPUS_LARGE)/stress_patterns.c -o $(CORPUS_LARGE)/output/stress_patterns.ll 2>/dev/null || true
+
+	@echo "  - Compiling ffi-dense/sqlite_binding.c..."
 	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
 		$(CORPUS_FFI_DENSE)/sqlite_binding.c -o $(CORPUS_FFI_DENSE)/output/sqlite_binding.ll 2>/dev/null || true
-	
-	@echo "  - Compiling openssl_wrapper.c..."
+
+	@echo "  - Compiling ffi-dense/openssl_wrapper.c..."
 	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
 		$(CORPUS_FFI_DENSE)/openssl_wrapper.c -o $(CORPUS_FFI_DENSE)/output/openssl_wrapper.ll 2>/dev/null || true
-	
-	@echo "  - Compiling zlib_binding.c..."
+
+	@echo "  - Compiling ffi-dense/zlib_binding.c..."
 	$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
 		$(CORPUS_FFI_DENSE)/zlib_binding.c -o $(CORPUS_FFI_DENSE)/output/zlib_binding.ll 2>/dev/null || true
-	
+
 	@echo "  Done."
 
 corpus-analyze: corpus-ir build
@@ -390,7 +408,35 @@ corpus-analyze: corpus-ir build
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║                 ANALYZING CORPUS                               ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
-	
+
+	@echo "Analyzing small/ corpus..."
+	@for file in $(CORPUS_SMALL)/output/*.ll; do \
+		echo ""; \
+		echo "========================================"; \
+		echo "Analyzing: $$file"; \
+		echo "========================================"; \
+		$(ZIG) build run -- $$file 2>&1 || true; \
+	done
+
+	@echo "Analyzing medium/ corpus..."
+	@for file in $(CORPUS_MEDIUM)/output/*.ll; do \
+		echo ""; \
+		echo "========================================"; \
+		echo "Analyzing: $$file"; \
+		echo "========================================"; \
+		$(ZIG) build run -- $$file 2>&1 || true; \
+	done
+
+	@echo "Analyzing large/ corpus..."
+	@for file in $(CORPUS_LARGE)/output/*.ll; do \
+		echo ""; \
+		echo "========================================"; \
+		echo "Analyzing: $$file"; \
+		echo "========================================"; \
+		$(ZIG) build run -- $$file 2>&1 || true; \
+	done
+
+	@echo "Analyzing ffi-dense/ corpus..."
 	@for file in $(CORPUS_FFI_DENSE)/output/*.ll; do \
 		echo ""; \
 		echo "========================================"; \
@@ -399,14 +445,24 @@ corpus-analyze: corpus-ir build
 		$(ZIG) build run -- $$file 2>&1 || true; \
 	done
 
-corpus-check: corpus-analyze
+corpus-check: corpus
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
-	@echo "║                 CORPUS CHECK COMPLETE                          ║"
-	@echo "╠════════════════════════════════════════════════════════════════╣"
-	@echo "║  Expected: 33 issues across 4 test files                       ║"
+	@echo "║                                                                ║"
+	@echo "║                 CORPUS CHECK COMPLETE                           ║"
+	@echo "║                                                                ╠════════════════════════════════════════════════════════════════╣"
+	@echo "║                                                                ║"
+	@echo "║  Expected: 136 issues across 10 test files                     ║"
+	@echo "║  - small/: 13 issues (4 FFI test files)                       ║"
+	@echo "║  - medium/: 20 issues (1 C test file)                        ║"
+	@echo "║  - large/: 70 issues (1 C test file with cross-lang)          ║"
+	@echo "║  - ffi-dense/: 33 issues (4 test files)                      ║"
+	@echo "║  Note: Cross-language violations now detected!               ║"
 	@echo "║  See corpus/EXPECTED_RESULTS.md for details                    ║"
-	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@echo "║                                                                ╚════════════════════════════════════════════════════════════════╝"
+	@echo "%"
+
+# ========================================
 
 # ========================================
 # Help

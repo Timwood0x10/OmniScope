@@ -292,7 +292,6 @@ pub const PointerOwnershipPass = struct {
         free_pool: *MemoryPool(FreeSite),
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
-        const func_lang = identifyLanguage(func);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -302,7 +301,6 @@ pub const PointerOwnershipPass = struct {
                     allocator,
                     inst,
                     func_name,
-                    func_lang,
                     alloc_map,
                     free_map,
                     flow_graph,
@@ -321,7 +319,6 @@ pub const PointerOwnershipPass = struct {
         allocator: std.mem.Allocator,
         inst: c.LLVMValueRef,
         func_name: []const u8,
-        func_lang: Language,
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
         free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
@@ -339,11 +336,12 @@ pub const PointerOwnershipPass = struct {
 
         if (isAllocationInstruction(inst, opcode)) {
             const alloc_type = classifyAllocation(inst, opcode);
+            const callee_lang = identifyLanguageFromCallee(inst, opcode);
             const site = try alloc_pool.alloc();
             site.* = .{
                 .inst_id = inst_id,
                 .func_name = func_name,
-                .lang = func_lang,
+                .lang = callee_lang,
                 .alloc_type = alloc_type,
                 .ptr_value_id = inst_id,
                 .debug_file = null,
@@ -358,6 +356,7 @@ pub const PointerOwnershipPass = struct {
 
         if (isFreeInstruction(inst, opcode)) {
             const free_type = classifyFree(inst, opcode);
+            const callee_lang = identifyLanguageFromCallee(inst, opcode);
             const ptr_arg = c.LLVMGetOperand(inst, 0);
             const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
                 try id_map.getOrPutId(@intFromPtr(ptr_arg))
@@ -368,7 +367,7 @@ pub const PointerOwnershipPass = struct {
             site.* = .{
                 .inst_id = inst_id,
                 .func_name = func_name,
-                .lang = func_lang,
+                .lang = callee_lang,
                 .free_type = free_type,
                 .ptr_value_id = ptr_value_id,
                 .debug_file = null,
@@ -770,6 +769,61 @@ pub const PointerOwnershipPass = struct {
         }
 
         return .heap;
+    }
+
+    /// Identify language from callee function name.
+    fn identifyLanguageFromCallee(inst: c.LLVMValueRef, opcode: c_uint) Language {
+        if (opcode != c.LLVMCall) return .unknown;
+
+        const called_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called_val) == 0) return .unknown;
+
+        const callee_name_ptr = c.LLVMGetValueName(called_val);
+        if (@intFromPtr(callee_name_ptr) == 0) return .unknown;
+
+        const callee_name = std.mem.span(callee_name_ptr);
+
+        // Rust uses _R prefix for v0 mangling (RFC 2603).
+        if (callee_name.len > 2 and
+            callee_name[0] == '_' and
+            callee_name[1] == 'R')
+        {
+            return .rust;
+        }
+
+        // Check for Rust-specific patterns.
+        if (std.mem.indexOf(u8, callee_name, "into_raw") != null or
+            std.mem.indexOf(u8, callee_name, "from_raw") != null or
+            std.mem.indexOf(u8, callee_name, "drop_in_place") != null)
+        {
+            return .rust;
+        }
+
+        // Check for C standard library functions.
+        if (std.mem.eql(u8, callee_name, "malloc") or
+            std.mem.eql(u8, callee_name, "free") or
+            std.mem.eql(u8, callee_name, "calloc") or
+            std.mem.eql(u8, callee_name, "realloc"))
+        {
+            return .c;
+        }
+
+        // C++ mangled names start with _Z.
+        if (callee_name.len > 2 and
+            callee_name[0] == '_' and
+            callee_name[1] == 'Z')
+        {
+            return .cpp;
+        }
+
+        // Check for Zig allocator patterns.
+        if (std.mem.indexOf(u8, callee_name, "Allocator.") != null or
+            std.mem.indexOf(u8, callee_name, "allocImpl") != null)
+        {
+            return .zig;
+        }
+
+        return .unknown;
     }
 
     /// Check if an instruction is a free using SemanticRegistry.
