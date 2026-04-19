@@ -287,7 +287,7 @@ pub const SarifGenerator = struct {
         try output.appendSlice("        {\n");
 
         try output.writer().print("          \"ruleId\": \"{s}\",\n", .{issue.kind.toString()});
-        try output.writer().print("          \"ruleIndex\": {d},\n", .{self.getRuleIndex(issue.kind)});
+        try output.writer().print("          \"ruleIndex\": {d},\n", .{try self.getRuleIndex(issue.kind)});
         try output.writer().print("          \"level\": \"{s}\",\n", .{self.severityToLevel(issue.severity)});
 
         try self.writeMessage(output, issue.message);
@@ -439,15 +439,13 @@ pub const SarifGenerator = struct {
     }
 
     /// Get rule index for issue kind
-    fn getRuleIndex(self: *SarifGenerator, kind: IssueKind) usize {
-        var idx: usize = 0;
+    fn getRuleIndex(self: *SarifGenerator, kind: IssueKind) !usize {
         for (self.rule_list.items, 0..) |rule, i| {
             if (std.mem.eql(u8, rule.id, kind.toString())) {
                 return i;
             }
-            idx = i;
         }
-        return idx;
+        return error.RuleNotFound;
     }
 
     /// Convert severity to SARIF level

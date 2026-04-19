@@ -322,7 +322,7 @@ pub const FreeValidationPass = struct {
         const message = try std.fmt.allocPrint(
             ctx.allocator,
             "{s}() called on {s} pointer (confidence: {d:.2}%)",
-            .{ free_func_name, origin_str, 0.75 * 100.0 },
+            .{ free_func_name, origin_str, 75.0 },
         );
 
         const issue = Issue.initWithTrace(

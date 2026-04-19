@@ -78,7 +78,7 @@ pub fn MemoryPool(comptime T: type) type {
 
             const new_chunk = try self.allocator.create(Chunk);
             new_chunk.* = .{
-                .items = undefined,
+                .items = [_]T{undefined} ** chunk_size,
                 .used = 1,
                 .next = self.current_chunk,
             };

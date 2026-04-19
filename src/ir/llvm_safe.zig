@@ -208,27 +208,3 @@ pub const IRLoader = struct {
         self.context.deinit();
     }
 };
-
-/// Parse LLVM IR from a file with proper error handling
-///
-/// DEPRECATED: This function is fundamentally broken and should not be used.
-/// The returned Module holds a pointer to memory that is freed by loader.deinit().
-/// Use IRLoader directly and manage its lifecycle appropriately instead.
-///
-/// Example correct usage:
-///   var loader = try IRLoader.init(allocator);
-///   defer loader.deinit();
-///   const module = try loader.loadFile(path);
-///   // use module while loader is still alive
-pub fn parseIR(allocator: Allocator, path: []const u8) !Module {
-    _ = allocator;
-    _ = path;
-    return Error.IRLoadFailed;
-}
-
-test "parseIR - deprecated function should not be used" {
-    // parseIR is deprecated because it returns a dangling Module.
-    // Use IRLoader directly instead.
-    const result = parseIR(std.testing.allocator, "nonexistent_file.bc");
-    try std.testing.expectError(Error.IRLoadFailed, result);
-}
