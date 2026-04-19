@@ -431,6 +431,8 @@ pub const FFIBoundary = struct {
         zig,
         /// Swift language
         swift,
+        /// Go language
+        go,
         /// Unknown language
         unknown,
     };

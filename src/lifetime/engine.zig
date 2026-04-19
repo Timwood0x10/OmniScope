@@ -120,6 +120,7 @@ pub const LanguageHint = enum(u8) {
     zig,
     swift,
     cpp,
+    go,
     julia,
     nim,
 };

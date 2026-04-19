@@ -142,6 +142,13 @@ pub const lifetime = struct {
     pub const MatchType = @import("lifetime/mapper.zig").MatchType;
     pub const LanguageHint = @import("lifetime/engine.zig").LanguageHint;
     pub const SourceLocation = @import("lifetime/engine.zig").SourceLocation;
+    pub const BoundaryAnalyzer = @import("lifetime/boundary.zig").BoundaryAnalyzer;
+    pub const FFIBoundary = @import("lifetime/boundary.zig").FFIBoundary;
+    pub const BoundaryViolation = @import("lifetime/boundary.zig").BoundaryViolation;
+    pub const BoundaryIssue = @import("lifetime/boundary.zig").BoundaryIssue;
+    pub const BoundaryDirection = @import("lifetime/boundary.zig").BoundaryDirection;
+    pub const AnalyzerStats = @import("lifetime/boundary.zig").AnalyzerStats;
+    pub const detectLanguage = @import("lifetime/boundary.zig").detectLanguage;
 };
 
 // Export output system

@@ -162,6 +162,58 @@ pub const RULES = [_]Rule{
         .description = "Rust mutable borrow escape",
     },
 
+    // === Go cgo (must be before Zig to match C.malloc before alloc) ===
+    // alloc: C.malloc in cgo
+    .{
+        .symbol_pattern = "C.malloc",
+        .match_type = .contains,
+        .action = .alloc,
+        .lang_hint = .go,
+        .arg_index = null,
+        .returns_resource = true,
+        .description = "Go cgo C memory allocation",
+    },
+    // free: C.free in cgo
+    .{
+        .symbol_pattern = "C.free",
+        .match_type = .contains,
+        .action = .free,
+        .lang_hint = .go,
+        .arg_index = 0,
+        .returns_resource = false,
+        .description = "Go cgo C memory deallocation",
+    },
+    // alloc: C.CString allocates C string (must be freed by C.free)
+    .{
+        .symbol_pattern = "C.CString",
+        .match_type = .contains,
+        .action = .alloc,
+        .lang_hint = .go,
+        .arg_index = null,
+        .returns_resource = true,
+        .description = "Go cgo CString allocation (needs C.free)",
+    },
+    // borrow: C.GoString borrows C string (no ownership transfer)
+    .{
+        .symbol_pattern = "C.GoString",
+        .match_type = .contains,
+        .action = .borrow,
+        .lang_hint = .go,
+        .arg_index = 0,
+        .returns_resource = false,
+        .description = "Go cgo GoString borrow (copies, no ownership)",
+    },
+    // borrow: C.GoBytes borrows C bytes
+    .{
+        .symbol_pattern = "C.GoBytes",
+        .match_type = .contains,
+        .action = .borrow,
+        .lang_hint = .go,
+        .arg_index = 0,
+        .returns_resource = false,
+        .description = "Go cgo GoBytes borrow (copies, no ownership)",
+    },
+
     // === Zig Allocator ===
     // alloc: returns new resource
     .{
@@ -182,6 +234,36 @@ pub const RULES = [_]Rule{
         .arg_index = 0,
         .returns_resource = false,
         .description = "Zig allocator deallocation",
+    },
+    // free: resize/shrink (may consume)
+    .{
+        .symbol_pattern = "resize",
+        .match_type = .contains,
+        .action = .free,
+        .lang_hint = .zig,
+        .arg_index = 0,
+        .returns_resource = false,
+        .description = "Zig allocator resize (may free)",
+    },
+    // transfer: toOwnedSlice transfers ownership
+    .{
+        .symbol_pattern = "toOwnedSlice",
+        .match_type = .contains,
+        .action = .transfer,
+        .lang_hint = .zig,
+        .arg_index = 0,
+        .returns_resource = true,
+        .description = "Zig ArrayList ownership transfer",
+    },
+    // alloc: dupe creates new owned memory
+    .{
+        .symbol_pattern = "dupe",
+        .match_type = .contains,
+        .action = .alloc,
+        .lang_hint = .zig,
+        .arg_index = null,
+        .returns_resource = true,
+        .description = "Zig allocator duplicate",
     },
 
     // === Swift Unsafe ===

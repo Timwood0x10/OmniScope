@@ -17,6 +17,8 @@
 //!         ↓
 //! Lifetime Engine (owner + state transitions)
 //!         ↓
+//! Boundary Analyzer (cross-language contract checker)
+//!         ↓
 //! Issue Detector (leak/UAF/double free/escape)
 //! ```
 //!
@@ -28,6 +30,7 @@
 
 pub const engine = @import("engine.zig");
 pub const mapper = @import("mapper.zig");
+pub const boundary = @import("boundary.zig");
 
 // Re-export key types for convenience
 pub const Owner = engine.Owner;
@@ -45,6 +48,13 @@ pub const SemanticMapper = mapper.SemanticMapper;
 pub const MappedAction = mapper.MappedAction;
 pub const Rule = mapper.Rule;
 pub const RULES = mapper.RULES;
+
+pub const BoundaryAnalyzer = boundary.BoundaryAnalyzer;
+pub const FFIBoundary = boundary.FFIBoundary;
+pub const BoundaryViolation = boundary.BoundaryViolation;
+pub const BoundaryIssue = boundary.BoundaryIssue;
+pub const BoundaryDirection = boundary.BoundaryDirection;
+pub const AnalyzerStats = boundary.AnalyzerStats;
 
 // Re-export types from engine for mapper
 pub const LanguageHint = engine.LanguageHint;

@@ -1,0 +1,18 @@
+[package]
+name = "rust_box_c_free"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust_box_c_free"
+path = "src/main.rs"
+
+[build-dependencies]
+cc = "1.0"
+
+[profile.release]
+opt-level = 0
+debug = true

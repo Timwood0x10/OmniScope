@@ -15,6 +15,7 @@
 //! v0.3 Enhancements:
 //! - Memory pool for reduced allocation overhead
 //! - Profiling for performance analysis
+//! - BoundaryAnalyzer integration for cross-language contract checking
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -34,6 +35,7 @@ const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 const MemoryPool = @import("../../perf/memory_pool.zig").MemoryPool;
 const Profiler = @import("../../perf/profiler.zig").Profiler;
 const ScopedTimer = @import("../../perf/profiler.zig").ScopedTimer;
+const lifetime = @import("../../lifetime/root.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -183,6 +185,14 @@ pub const PointerOwnershipPass = struct {
             flow_graph.deinit();
         }
 
+        var boundary_analyzer = lifetime.BoundaryAnalyzer.init(ctx.allocator);
+        errdefer boundary_analyzer.deinit();
+        defer boundary_analyzer.deinit();
+
+        var lifetime_engine = lifetime.LifetimeEngine.init(ctx.allocator);
+        errdefer lifetime_engine.deinit();
+        defer lifetime_engine.deinit();
+
         init_timer.stop() catch {};
 
         const mod = ctx.module.?.raw;
@@ -218,7 +228,7 @@ pub const PointerOwnershipPass = struct {
         var detect_timer = ScopedTimer.start(&profiler, "detect");
         defer detect_timer.stop() catch {};
 
-        try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag);
+        try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag, &boundary_analyzer, &lifetime_engine);
 
         detect_timer.stop() catch {};
 
@@ -519,7 +529,7 @@ pub const PointerOwnershipPass = struct {
         return false;
     }
 
-    /// Detect ownership violations using flow graph.
+    /// Detect ownership violations using flow graph and boundary analyzer.
     fn detectViolations(
         ctx: *PassContext,
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
@@ -527,17 +537,41 @@ pub const PointerOwnershipPass = struct {
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         diag: *DiagnosticWriter,
+        boundary_analyzer: *lifetime.BoundaryAnalyzer,
+        lifetime_engine: *lifetime.LifetimeEngine,
     ) OwnershipError!void {
         var alloc_iter = alloc_map.iterator();
         while (alloc_iter.next()) |entry| {
             const alloc = entry.value_ptr.*;
 
-            try ctx.fact_store.insert(
-                .ownership_alloc,
-                alloc.ptr_value_id,
-                @intFromEnum(alloc.lang),
-                alloc.inst_id,
-            );
+            const lang_hint = convertLanguageToHint(alloc.lang);
+            if (lifetime_engine.applyAction(
+                .alloc,
+                alloc.func_name,
+                if (alloc.debug_file) |file|
+                    .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                else
+                    null,
+                lang_hint,
+            )) |resource_id| {
+                if (resource_id > std.math.maxInt(u32)) {
+                    diag.warn("Resource ID overflow detected: {d} exceeds u32 range", .{resource_id});
+                }
+                try ctx.fact_store.insert(
+                    .ownership_alloc,
+                    alloc.ptr_value_id,
+                    @truncate(resource_id),
+                    alloc.inst_id,
+                );
+            } else {
+                try ctx.fact_store.insert(
+                    .ownership_alloc,
+                    alloc.ptr_value_id,
+                    @intFromEnum(alloc.lang),
+                    alloc.inst_id,
+                );
+                diag.warn("Failed to track allocation in lifetime engine: {s}", .{alloc.func_name});
+            }
 
             if (isCrossFFIAllocation(alloc)) {
                 stats.cross_ffi_transfers += 1;
@@ -565,10 +599,12 @@ pub const PointerOwnershipPass = struct {
         alloc_iter = alloc_map.iterator();
         while (alloc_iter.next()) |entry| {
             const alloc = entry.value_ptr.*;
+            const alloc_lang_hint = convertLanguageToHint(alloc.lang);
 
             free_iter = free_map.iterator();
             while (free_iter.next()) |free_entry| {
                 const free_site = free_entry.value_ptr.*;
+                const free_lang_hint = convertLanguageToHint(free_site.lang);
 
                 if (alloc.lang != free_site.lang and
                     alloc.lang != .unknown and
@@ -588,18 +624,60 @@ pub const PointerOwnershipPass = struct {
                         const alloc_loc = Location.init(alloc.func_name);
                         const free_loc = Location.init(free_site.func_name);
 
-                        diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
-                        diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.function,
-                            @tagName(alloc.lang),
-                            alloc.inst_id,
-                        });
-                        diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.function,
-                            @tagName(free_site.lang),
-                            free_site.inst_id,
-                        });
-                        diag.warn("  Flow: Pointer flows from allocation to free via data flow", .{});
+                        const boundary_id = boundary_analyzer.registerBoundary(
+                            free_site.func_name,
+                            alloc_lang_hint,
+                            free_lang_hint,
+                            .out,
+                            if (alloc.debug_file) |file|
+                                .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                            else
+                                null,
+                        );
+
+                        const resource_fact = lifetime.ResourceFact{
+                            .id = @as(u64, alloc.inst_id),
+                            .origin_fn = alloc.func_name,
+                            .owner = .caller,
+                            .state = .live,
+                            .action = .alloc,
+                            .location = null,
+                            .lang_hint = alloc_lang_hint,
+                        };
+
+                        if (boundary_analyzer.checkOwnershipViolation(
+                            resource_fact,
+                            .free,
+                            free_lang_hint,
+                            boundary_analyzer.boundaries.items[boundary_id - 1],
+                        )) |violation| {
+                            diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
+                            diag.warn("  Type: {s}", .{@tagName(violation.kind)});
+                            diag.warn("  Alloc: {s} ({s}) at inst {}", .{
+                                alloc_loc.function,
+                                @tagName(alloc.lang),
+                                alloc.inst_id,
+                            });
+                            diag.warn("  Free: {s} ({s}) at inst {}", .{
+                                free_loc.function,
+                                @tagName(free_site.lang),
+                                free_site.inst_id,
+                            });
+                            diag.warn("  Description: {s}", .{violation.description});
+                        } else {
+                            diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
+                            diag.warn("  Alloc: {s} ({s}) at inst {}", .{
+                                alloc_loc.function,
+                                @tagName(alloc.lang),
+                                alloc.inst_id,
+                            });
+                            diag.warn("  Free: {s} ({s}) at inst {}", .{
+                                free_loc.function,
+                                @tagName(free_site.lang),
+                                free_site.inst_id,
+                            });
+                            diag.warn("  Flow: Pointer flows from allocation to free via data flow", .{});
+                        }
 
                         try ctx.fact_store.insert(
                             .ownership_violation,
@@ -613,6 +691,26 @@ pub const PointerOwnershipPass = struct {
                 }
             }
         }
+
+        const boundary_stats = boundary_analyzer.getStats();
+        if (boundary_stats.issue_count > 0) {
+            diag.info("BoundaryAnalyzer: {d} cross-language violations detected", .{
+                boundary_stats.issue_count,
+            });
+        }
+    }
+
+    /// Convert internal Language enum to lifetime.LanguageHint.
+    fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
+        return switch (lang) {
+            .c => .c,
+            .rust => .rust,
+            .zig => .zig,
+            .cpp => .cpp,
+            .go => .go,
+            .swift => .swift,
+            .unknown => .unknown,
+        };
     }
 
     /// Check if an allocation crosses an FFI boundary.

@@ -814,6 +814,21 @@ pub const SemanticRegistry = struct {
         return false;
     }
 
+    /// Get confidence decay factor based on function semantics.
+    /// Higher severity = higher decay (more confidence preserved for dangerous ops).
+    /// Returns 0.95 as default for unknown functions.
+    pub fn getConfidenceDecay(func_name: []const u8) f32 {
+        if (getSeverity(func_name)) |severity| {
+            return switch (severity) {
+                .critical => 0.98, // Critical: preserve most confidence
+                .high => 0.95, // High: standard decay
+                .medium => 0.90, // Medium: slightly more decay
+                .low => 0.85, // Low: more decay
+            };
+        }
+        return 0.95; // Default decay
+    }
+
     /// Get the count of Layer 1 functions.
     pub fn layer1Count() usize {
         return layer1.len;

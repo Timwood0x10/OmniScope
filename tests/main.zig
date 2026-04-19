@@ -492,7 +492,7 @@ test "LifetimeEngine: ownership conflict" {
 // ========================================
 
 test "RULES: count" {
-    try std.testing.expectEqual(@as(usize, 14), lifetime.RULES.len);
+    try std.testing.expectEqual(@as(usize, 22), lifetime.RULES.len);
 }
 
 test "RULES: C malloc rule" {
@@ -528,6 +528,301 @@ test "LanguageHint: all variants" {
     try std.testing.expectEqual(@as(u8, 3), @intFromEnum(lifetime.LanguageHint.zig));
     try std.testing.expectEqual(@as(u8, 4), @intFromEnum(lifetime.LanguageHint.swift));
     try std.testing.expectEqual(@as(u8, 5), @intFromEnum(lifetime.LanguageHint.cpp));
+    try std.testing.expectEqual(@as(u8, 6), @intFromEnum(lifetime.LanguageHint.go));
+}
+
+// ========================================
+// Language Isolation Tests
+// ========================================
+
+test "Language Isolation: Zig rules do not match C functions" {
+    const c_func = "malloc";
+    const mapped = lifetime.SemanticMapper.mapFunction(c_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.c, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
+}
+
+test "Language Isolation: Go rules do not match C functions" {
+    const c_func = "free";
+    const mapped = lifetime.SemanticMapper.mapFunction(c_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.c, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.free, mapped.action);
+}
+
+test "Language Isolation: Zig toOwnedSlice is transfer not alloc" {
+    const zig_func = "ArrayList.toOwnedSlice";
+    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
+}
+
+test "Language Isolation: Go C.CString is alloc" {
+    const go_func = "C.CString";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
+}
+
+test "Language Isolation: Go C.GoString is borrow" {
+    const go_func = "C.GoString";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.borrow, mapped.action);
+}
+
+test "Language Isolation: Rust rules isolated from Zig" {
+    const rust_func = "std::boxed::Box<T>::into_raw";
+    const mapped = lifetime.SemanticMapper.mapFunction(rust_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.rust, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
+}
+
+test "BoundaryAnalyzer: detectLanguage for Go" {
+    try std.testing.expectEqual(lifetime.LanguageHint.go, lifetime.detectLanguage("C.malloc"));
+    try std.testing.expectEqual(lifetime.LanguageHint.go, lifetime.detectLanguage("_cgo_runtime"));
+    try std.testing.expectEqual(lifetime.LanguageHint.c, lifetime.detectLanguage("malloc"));
+}
+
+// ========================================
+// BoundaryAnalyzer Tests
+// ========================================
+
+test "BoundaryAnalyzer: init and deinit" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+    try std.testing.expectEqual(@as(usize, 0), analyzer.boundaries.items.len);
+    try std.testing.expectEqual(@as(usize, 0), analyzer.issues.items.len);
+}
+
+test "BoundaryAnalyzer: registerBoundary" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const id = analyzer.registerBoundary("c_function", .rust, .c, .out, null);
+    try std.testing.expectEqual(@as(u32, 1), id);
+    try std.testing.expectEqual(@as(usize, 1), analyzer.boundaries.items.len);
+    try std.testing.expectEqualStrings("c_function", analyzer.boundaries.items[0].function_name);
+}
+
+test "BoundaryAnalyzer: checkOwnershipViolation rust_freed_by_c" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .live,
+        .action = .alloc,
+        .location = null,
+        .lang_hint = .rust,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "free",
+        .caller_lang = .rust,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    const issue = analyzer.checkOwnershipViolation(resource, .free, .c, boundary);
+    try std.testing.expect(issue != null);
+    try std.testing.expectEqual(lifetime.BoundaryViolation.rust_freed_by_c, issue.?.kind);
+    try std.testing.expectEqual(@as(usize, 1), analyzer.issues.items.len);
+}
+
+test "BoundaryAnalyzer: checkOwnershipViolation zig_freed_by_c" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .live,
+        .action = .alloc,
+        .location = null,
+        .lang_hint = .zig,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "free",
+        .caller_lang = .zig,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    const issue = analyzer.checkOwnershipViolation(resource, .free, .c, boundary);
+    try std.testing.expect(issue != null);
+    try std.testing.expectEqual(lifetime.BoundaryViolation.zig_freed_by_c, issue.?.kind);
+}
+
+test "BoundaryAnalyzer: checkOwnershipViolation go_cstring_leak" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .live,
+        .action = .alloc,
+        .location = null,
+        .lang_hint = .go,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "C.free",
+        .caller_lang = .go,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    const issue = analyzer.checkOwnershipViolation(resource, .free, .c, boundary);
+    try std.testing.expect(issue != null);
+    try std.testing.expectEqual(lifetime.BoundaryViolation.go_cstring_leak, issue.?.kind);
+}
+
+test "BoundaryAnalyzer: checkBorrowEscape" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .borrowed,
+        .action = .borrow,
+        .location = null,
+        .lang_hint = .rust,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "c_store_globally",
+        .caller_lang = .rust,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    const issue = analyzer.checkBorrowEscape(resource, boundary);
+    try std.testing.expect(issue != null);
+    try std.testing.expectEqual(lifetime.BoundaryViolation.borrow_escape, issue.?.kind);
+}
+
+test "BoundaryAnalyzer: getStats" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    _ = analyzer.registerBoundary("func1", .rust, .c, .out, null);
+    _ = analyzer.registerBoundary("func2", .c, .rust, .out, null);
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .live,
+        .action = .alloc,
+        .location = null,
+        .lang_hint = .rust,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "free",
+        .caller_lang = .rust,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    _ = analyzer.checkOwnershipViolation(resource, .free, .c, boundary);
+
+    const stats = analyzer.getStats();
+    try std.testing.expectEqual(@as(u32, 2), stats.boundary_count);
+    try std.testing.expectEqual(@as(u32, 1), stats.issue_count);
+    try std.testing.expectEqual(@as(u32, 1), stats.rust_freed_by_c_count);
+}
+
+test "BoundaryAnalyzer: no violation for same language" {
+    var analyzer = lifetime.BoundaryAnalyzer.init(std.testing.allocator);
+    defer analyzer.deinit();
+
+    const resource = lifetime.ResourceFact{
+        .id = 1,
+        .origin_fn = "test",
+        .owner = .caller,
+        .state = .live,
+        .action = .alloc,
+        .location = null,
+        .lang_hint = .c,
+    };
+
+    const boundary = lifetime.FFIBoundary{
+        .id = 1,
+        .function_name = "free",
+        .caller_lang = .c,
+        .callee_lang = .c,
+        .direction = .out,
+        .location = null,
+    };
+
+    const issue = analyzer.checkOwnershipViolation(resource, .free, .c, boundary);
+    try std.testing.expect(issue == null);
+    try std.testing.expectEqual(@as(usize, 0), analyzer.issues.items.len);
+}
+
+// ========================================
+// Language Adapter Tests
+// ========================================
+
+test "Language Adapter: Zig toOwnedSlice is transfer" {
+    const zig_func = "ArrayList.toOwnedSlice";
+    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
+}
+
+test "Language Adapter: Zig dupe is alloc" {
+    const zig_func = "allocator.dupe";
+    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
+}
+
+test "Language Adapter: Go C.CString is alloc" {
+    const go_func = "C.CString";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
+}
+
+test "Language Adapter: Go C.GoString is borrow" {
+    const go_func = "C.GoString";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.borrow, mapped.action);
+}
+
+test "Language Adapter: Go C.malloc is alloc" {
+    const go_func = "C.malloc";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
+}
+
+test "Language Adapter: Go C.free is free" {
+    const go_func = "C.free";
+    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
+    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
+    try std.testing.expectEqual(lifetime.SemanticAction.free, mapped.action);
 }
 
 // ========================================

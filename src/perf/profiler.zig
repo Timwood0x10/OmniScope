@@ -178,14 +178,20 @@ pub const Profiler = struct {
         const total_ms = self.totalTimeMs();
         const op_count = self.stats.count();
 
-        var buf: [128]u8 = undefined;
-        const text = std.fmt.bufPrint(&buf, "{d} ops, {d:.2}ms total", .{ op_count, total_ms }) catch return "profiling complete";
-
         const Summary = struct {
             var buffer: [128]u8 = undefined;
+            var len: usize = 0;
         };
-        @memcpy(Summary.buffer[0..text.len], text);
-        return Summary.buffer[0..text.len];
+
+        const text = std.fmt.bufPrint(&Summary.buffer, "{d} ops, {d:.2}ms total", .{ op_count, total_ms }) catch {
+            const fallback = "profiling complete";
+            @memcpy(Summary.buffer[0..fallback.len], fallback);
+            Summary.len = fallback.len;
+            return Summary.buffer[0..Summary.len];
+        };
+
+        Summary.len = text.len;
+        return Summary.buffer[0..Summary.len];
     }
 };
 

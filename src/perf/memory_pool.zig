@@ -224,7 +224,7 @@ test "MemoryPool - basic operations" {
     try std.testing.expectEqual(@as(usize, 0), s.freed);
     try std.testing.expectEqual(@as(usize, 2), s.in_use);
 
-    pool.free(item1);
+    try pool.free(item1);
 
     const s2 = pool.stats();
     try std.testing.expectEqual(@as(usize, 1), s2.freed);
@@ -237,7 +237,7 @@ test "MemoryPool - reuse freed items" {
 
     const item1 = try pool.alloc();
     item1.* = 42;
-    pool.free(item1);
+    try pool.free(item1);
 
     const item2 = try pool.alloc();
     try std.testing.expectEqual(@as(u32, 42), item2.*);
