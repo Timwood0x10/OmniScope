@@ -30,14 +30,14 @@ pub const TaintPass = struct {
     sinks: std.ArrayList(u32),
     taint_graph: TaintGraph,
 
-    pub fn init(store: *FactStore, allocator: std.mem.Allocator) !TaintPass {
+    pub fn init(store: *FactStore, allocator: std.mem.Allocator) TaintPass {
         return .{
             .store = store,
             .allocator = allocator,
             .func_id = 0,
             .sources = std.ArrayList(u32).init(allocator),
             .sinks = std.ArrayList(u32).init(allocator),
-            .taint_graph = try TaintGraph.init(allocator),
+            .taint_graph = TaintGraph.init(allocator),
         };
     }
 
@@ -341,6 +341,14 @@ pub const TaintGraph = struct {
     }
 
     /// Propagate taint through the graph
+    ///
+    /// Note: max_iterations is set to 1000 as a safeguard against infinite loops
+    /// in pathological cases. In practice, real-world data flow graphs converge
+    /// much faster (typically < 100 iterations). If convergence is not reached
+    /// within 1000 iterations, the graph is likely malformed or contains a cycle
+    /// that doesn't contribute to the analysis result. This is a design decision
+    /// to ensure termination at the cost of potentially missing some taint
+    /// propagation in extremely complex graphs.
     pub fn propagate(self: *TaintGraph) !void {
         const max_iterations = 1000;
         var iterations: usize = 0;

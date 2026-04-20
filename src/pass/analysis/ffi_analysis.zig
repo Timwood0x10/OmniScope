@@ -203,8 +203,8 @@ pub const FFIAnalysisPass = struct {
 
                     // Check if this is an allocation function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .memory_alloc) {
-                            const ptr_value_id = @as(u64, @truncate(@intFromPtr(inst)));
+                        if (sem.kind == .allocator) {
+                            const ptr_value_id: u64 = @intFromPtr(inst);
                             try self.allocation_sites.put(ptr_value_id, .{
                                 .func_name = func_name,
                                 .language = language,
@@ -247,8 +247,8 @@ pub const FFIAnalysisPass = struct {
 
                     // Check if this is a free function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .memory_free) {
-                            const ptr_value_id = @as(u64, @truncate(@intFromPtr(inst)));
+                        if (sem.kind == .deallocator) {
+                            const ptr_value_id: u64 = @intFromPtr(inst);
                             try self.free_sites.put(ptr_value_id, .{
                                 .func_name = func_name,
                                 .language = language,

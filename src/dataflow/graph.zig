@@ -378,9 +378,10 @@ pub const DataFlowGraph = struct {
     ///
     /// Returns:
     ///   - Newly allocated slice of issues with the specified severity
-    ///   - Returns empty slice (not null) if no matches found or on OOM
+    ///   - Returns empty slice (not null) if no matches found
+    ///   - Returns error on OOM
     ///   - Caller owns the returned memory
-    pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) []const Issue {
+    pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) ![]Issue {
         var count: usize = 0;
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
@@ -392,7 +393,7 @@ pub const DataFlowGraph = struct {
             return &[_]Issue{};
         }
 
-        const result = self.allocator.alloc(Issue, count) catch return &[_]Issue{};
+        const result = try self.allocator.alloc(Issue, count);
 
         var index: usize = 0;
         for (self.issues.items) |issue| {

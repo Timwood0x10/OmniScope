@@ -19,6 +19,11 @@ pub const FactStore = struct {
     ctx: std.ArrayList(u32),
 
     /// Create a new fact store
+    ///
+    /// Note: initCapacity with non-zero capacity uses catch unreachable because
+    /// allocation failure here is considered fatal (process cannot continue without
+    /// its fact store). This is a design decision - we panic rather than handle
+    /// OOM during initialization since the fact store is core infrastructure.
     pub fn init(allocator: std.mem.Allocator) FactStore {
         return .{
             .allocator = allocator,

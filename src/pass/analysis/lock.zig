@@ -203,9 +203,29 @@ pub const LockPass = struct {
         const func_name = c.LLVMGetValueName(called_func);
         const func_name_slice = std.mem.span(func_name);
 
-        // Check if it's a lock acquire function
-        return std.mem.indexOf(u8, func_name_slice, "lock") != null and
-            std.mem.indexOf(u8, func_name_slice, "unlock") == null;
+        // Check for common lock acquire patterns (more precise than just "lock")
+        const lock_patterns = [_][]const u8{
+            "pthread_mutex_lock",
+            "pthread_spin_lock",
+            "pthread_rwlock_rdlock",
+            "pthread_rwlock_wrlock",
+            "lock_acquire",
+            "_lock",
+            ".lock",
+        };
+
+        for (lock_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name_slice, pattern) != null) {
+                // Ensure it's not an unlock pattern
+                if (std.mem.indexOf(u8, func_name_slice, "unlock") == null and
+                    std.mem.indexOf(u8, func_name_slice, "_unlock") == null)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// Get or create lock ID for a lock object
