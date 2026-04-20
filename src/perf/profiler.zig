@@ -174,24 +174,12 @@ pub const Profiler = struct {
     }
 
     /// Get a summary string (uses static buffer, not thread-safe)
-    pub fn summary(self: *const Profiler) []const u8 {
+    /// NOTE: This function is not thread-safe. Caller must ensure single-threaded access.
+    pub fn summary(self: *const Profiler, buffer: []u8) ![]const u8 {
         const total_ms = self.totalTimeMs();
         const op_count = self.stats.count();
 
-        const Summary = struct {
-            var buffer: [128]u8 = undefined;
-            var len: usize = 0;
-        };
-
-        const text = std.fmt.bufPrint(&Summary.buffer, "{d} ops, {d:.2}ms total", .{ op_count, total_ms }) catch {
-            const fallback = "profiling complete";
-            @memcpy(Summary.buffer[0..fallback.len], fallback);
-            Summary.len = fallback.len;
-            return Summary.buffer[0..Summary.len];
-        };
-
-        Summary.len = text.len;
-        return Summary.buffer[0..Summary.len];
+        return std.fmt.bufPrint(buffer, "{d} ops, {d:.2}ms total", .{ op_count, total_ms });
     }
 };
 

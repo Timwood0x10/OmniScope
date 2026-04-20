@@ -173,6 +173,7 @@ pub const SummaryRegistry = struct {
     /// Register a function summary
     pub fn register(self: *SummaryRegistry, summary: FunctionSummary) !void {
         const name_copy = try self.allocator.dupe(u8, summary.name);
+        errdefer self.allocator.free(name_copy);
         try self.summaries.put(name_copy, summary);
     }
 

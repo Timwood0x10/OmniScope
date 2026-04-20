@@ -369,13 +369,17 @@ pub const DataFlowGraph = struct {
 
     /// Get issues by severity
     ///
-    /// Parameters:
+    /// WARNING: Unlike most getters in this struct which return borrowed slices,
+    /// this function allocates new memory. The caller MUST free the returned
+    /// slice using the same allocator used by this DataFlowGraph instance.
+    ///
+    /// Arguments:
     ///   - severity: Severity level to filter by
     ///
     /// Returns:
-    ///   - Slice of issues with the specified severity
-    ///   - Caller owns the returned memory and must free it with the same
-    ///     allocator used by this DataFlowGraph instance.
+    ///   - Newly allocated slice of issues with the specified severity
+    ///   - Returns empty slice (not null) if no matches found or on OOM
+    ///   - Caller owns the returned memory
     pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) []const Issue {
         var count: usize = 0;
         for (self.issues.items) |issue| {

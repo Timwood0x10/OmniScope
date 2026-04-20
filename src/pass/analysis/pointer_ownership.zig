@@ -140,7 +140,8 @@ pub const PointerOwnershipPass = struct {
         var profiler = Profiler.init(ctx.allocator);
         defer {
             profiler.report();
-            diag.info("PointerOwnership: {s}", .{profiler.summary()});
+            var buffer: [256]u8 = undefined;
+            diag.info("PointerOwnership: {s}", .{profiler.summary(&buffer) catch "N/A"});
             profiler.deinit();
         }
         var _timer = ScopedTimer.start(&profiler, "total");
@@ -644,7 +645,9 @@ pub const PointerOwnershipPass = struct {
                             .lang_hint = alloc_lang_hint,
                         };
 
-                        if (boundary_analyzer.checkOwnershipViolation(
+                        if (boundary_id == 0) {
+                            diag.warn("Failed to register FFI boundary for analysis", .{});
+                        } else if (boundary_analyzer.checkOwnershipViolation(
                             resource_fact,
                             .free,
                             free_lang_hint,

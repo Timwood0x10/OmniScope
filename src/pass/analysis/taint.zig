@@ -23,26 +23,45 @@ pub const TaintPass = struct {
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
 
+    store: *FactStore,
+    allocator: std.mem.Allocator,
+    func_id: u32,
+    sources: std.ArrayList(u32),
+    sinks: std.ArrayList(u32),
+    taint_graph: TaintGraph,
+
+    pub fn init(store: *FactStore, allocator: std.mem.Allocator) !TaintPass {
+        return .{
+            .store = store,
+            .allocator = allocator,
+            .func_id = 0,
+            .sources = std.ArrayList(u32).init(allocator),
+            .sinks = std.ArrayList(u32).init(allocator),
+            .taint_graph = try TaintGraph.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *TaintPass) void {
+        self.taint_graph.deinit();
+        self.sources.deinit();
+        self.sinks.deinit();
+    }
+
     /// Run the taint analysis pass
     pub fn run(
+        self: *TaintPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
         _ = diag;
 
-        // Initialize local state
-        var taint_graph = TaintGraph.init(ctx.allocator);
-        defer taint_graph.deinit();
-
-        var sources = std.ArrayList(u32).init(ctx.allocator);
-        defer sources.deinit();
-
-        var sinks = std.ArrayList(u32).init(ctx.allocator);
-        defer sinks.deinit();
-
-        var func_id: u32 = 0;
-
         const module = ctx.module orelse return;
+
+        // Reset for new run
+        self.func_id = 0;
+        self.sources.clearRetainingCapacity();
+        self.sinks.clearRetainingCapacity();
+        self.taint_graph.reset();
 
         // Iterate over all functions
         var func = c.LLVMGetFirstFunction(module.raw);
@@ -50,10 +69,10 @@ pub const TaintPass = struct {
             const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
-                func_id = ctx.getNextId();
+                self.func_id = ctx.getNextId();
 
                 // Analyze function
-                try analyzeFunction(ctx, func_id, FunctionRef{ .raw = func_ref }, &taint_graph, &sources, &sinks);
+                try self.analyzeFunction(ctx, FunctionRef{ .raw = func_ref });
             }
             func = c.LLVMGetNextFunction(func);
         }
@@ -61,12 +80,9 @@ pub const TaintPass = struct {
 
     /// Analyze a function for taint propagation
     fn analyzeFunction(
+        self: *TaintPass,
         ctx: *PassContext,
-        func_id: u32,
         func: FunctionRef,
-        taint_graph: *TaintGraph,
-        sources: *std.ArrayList(u32),
-        sinks: *std.ArrayList(u32),
     ) !void {
         // Get first basic block
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
@@ -85,14 +101,14 @@ pub const TaintPass = struct {
 
                     // Check if this is a taint source
                     if (isTaintSource(inst)) {
-                        try sources.append(inst_id);
-                        try taint_graph.markTaintedFromSource(inst_id, inst_id);
-                        try ctx.fact_store.insert(.taint, inst_id, inst_id, func_id);
+                        try self.sources.append(inst_id);
+                        try self.taint_graph.markTaintedFromSource(inst_id, inst_id);
+                        try self.store.insert(.taint, inst_id, inst_id, self.func_id);
                     }
 
                     // Check if this is a taint sink
                     if (isTaintSink(inst)) {
-                        try sinks.append(inst_id);
+                        try self.sinks.append(inst_id);
                     }
                 }
 
@@ -111,20 +127,20 @@ pub const TaintPass = struct {
         // Build taint propagation graph from DFG
         for (dfg_indices) |idx| {
             const fact = ctx.fact_store.get(idx).?;
-            try taint_graph.addPropagation(fact.subject, fact.object);
+            try self.taint_graph.addPropagation(fact.subject, fact.object);
         }
 
         // Propagate taint
-        try taint_graph.propagate();
+        try self.taint_graph.propagate();
 
         // Check if taint reaches any sinks
-        for (sinks.items) |sink| {
-            if (taint_graph.isTainted(sink)) {
+        for (self.sinks.items) |sink| {
+            if (self.taint_graph.isTainted(sink)) {
                 // Taint reached a sink - emit taint fact
                 // Only associate sources that actually propagated to this sink
-                if (taint_graph.getTaintSources(sink)) |source_list| {
+                if (self.taint_graph.getTaintSources(sink)) |source_list| {
                     for (source_list) |source| {
-                        try ctx.fact_store.insert(.taint, source, sink, func_id);
+                        try self.store.insert(.taint, source, sink, self.func_id);
                     }
                 }
             }
@@ -255,6 +271,16 @@ pub const TaintGraph = struct {
             entry.value_ptr.deinit();
         }
         self.taint_sources.deinit();
+    }
+
+    /// Reset the taint graph for reuse (clear all data)
+    pub fn reset(self: *TaintGraph) void {
+        self.tainted_values.clearRetainingCapacity();
+        self.propagation_edges.clearRetainingCapacity();
+        var iter = self.taint_sources.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.clearRetainingCapacity();
+        }
     }
 
     /// Mark a value as tainted from a specific source
@@ -403,41 +429,31 @@ test "TaintPass - emit taint fact" {
 }
 
 test "TaintPass - known taint sources" {
-    var store = FactStore.init(std.testing.allocator);
-    defer store.deinit();
-
-    var pass = TaintPass.init(&store);
-
     // Test known taint sources
-    try std.testing.expect(pass.isKnownTaintSource("read"));
-    try std.testing.expect(pass.isKnownTaintSource("recv"));
-    try std.testing.expect(pass.isKnownTaintSource("getenv"));
-    try std.testing.expect(pass.isKnownTaintSource("fgets"));
-    try std.testing.expect(pass.isKnownTaintSource("scanf"));
+    try std.testing.expect(TaintPass.isKnownTaintSourceByName("read"));
+    try std.testing.expect(TaintPass.isKnownTaintSourceByName("recv"));
+    try std.testing.expect(TaintPass.isKnownTaintSourceByName("getenv"));
+    try std.testing.expect(TaintPass.isKnownTaintSourceByName("fgets"));
+    try std.testing.expect(TaintPass.isKnownTaintSourceByName("scanf"));
 
     // Test non-sources
-    try std.testing.expect(!pass.isKnownTaintSource("malloc"));
-    try std.testing.expect(!pass.isKnownTaintSource("free"));
-    try std.testing.expect(!pass.isKnownTaintSource("printf")); // printf is a sink, not a source
+    try std.testing.expect(!TaintPass.isKnownTaintSourceByName("malloc"));
+    try std.testing.expect(!TaintPass.isKnownTaintSourceByName("free"));
+    try std.testing.expect(!TaintPass.isKnownTaintSourceByName("printf")); // printf is a sink, not a source
 }
 
 test "TaintPass - known taint sinks" {
-    var store = FactStore.init(std.testing.allocator);
-    defer store.deinit();
-
-    var pass = TaintPass.init(&store);
-
     // Test known taint sinks
-    try std.testing.expect(pass.isKnownTaintSink("system"));
-    try std.testing.expect(pass.isKnownTaintSink("exec"));
-    try std.testing.expect(pass.isKnownTaintSink("popen"));
-    try std.testing.expect(pass.isKnownTaintSink("printf"));
-    try std.testing.expect(pass.isKnownTaintSink("sprintf"));
+    try std.testing.expect(TaintPass.isKnownTaintSinkByName("system"));
+    try std.testing.expect(TaintPass.isKnownTaintSinkByName("exec"));
+    try std.testing.expect(TaintPass.isKnownTaintSinkByName("popen"));
+    try std.testing.expect(TaintPass.isKnownTaintSinkByName("printf"));
+    try std.testing.expect(TaintPass.isKnownTaintSinkByName("sprintf"));
 
     // Test non-sinks
-    try std.testing.expect(!pass.isKnownTaintSink("malloc"));
-    try std.testing.expect(!pass.isKnownTaintSink("free"));
-    try std.testing.expect(!pass.isKnownTaintSink("read")); // read is a source, not a sink
+    try std.testing.expect(!TaintPass.isKnownTaintSinkByName("malloc"));
+    try std.testing.expect(!TaintPass.isKnownTaintSinkByName("free"));
+    try std.testing.expect(!TaintPass.isKnownTaintSinkByName("read")); // read is a source, not a sink
 }
 
 test "TaintPass - taint source tracking" {

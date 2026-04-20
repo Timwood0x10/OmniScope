@@ -85,10 +85,11 @@ pub const Pipeline = struct {
         try self.run();
 
         const end_time = std.time.nanoTimestamp();
+        const duration_ns = @max(@as(i128, 0), end_time - start_time);
 
         return PipelineResult{
             .fact_count = self.fact_store.count(),
-            .execution_time_ns = @intCast(end_time - start_time),
+            .execution_time_ns = @intCast(duration_ns),
         };
     }
 

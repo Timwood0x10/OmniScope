@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 
 /// Represents taint state for a value or variable.
 /// Used to track how data flows through the program.
@@ -37,7 +38,9 @@ pub const TaintInfo = struct {
 pub const TaintContext = struct {
     allocator: Allocator,
     mutex: std.Thread.Mutex,
-    /// Taint info indexed by value pointer address
+    /// Value ID mapper to avoid pointer truncation collisions
+    value_id_map: ValueIdMap,
+    /// Taint info indexed by value ID
     value_taint: std.AutoHashMap(u32, TaintInfo),
     /// Parameter taint indexed by function ID
     param_taint: std.AutoHashMap(u32, std.ArrayList(TaintInfo)),
@@ -49,6 +52,7 @@ pub const TaintContext = struct {
         return .{
             .allocator = allocator,
             .mutex = std.Thread.Mutex{},
+            .value_id_map = ValueIdMap.init(allocator),
             .value_taint = std.AutoHashMap(u32, TaintInfo).init(allocator),
             .param_taint = std.AutoHashMap(u32, std.ArrayList(TaintInfo)).init(allocator),
             .return_taint = std.AutoHashMap(u32, TaintInfo).init(allocator),
@@ -64,6 +68,22 @@ pub const TaintContext = struct {
         }
         self.param_taint.deinit();
         self.return_taint.deinit();
+        self.value_id_map.deinit();
+    }
+
+    /// Get or create a unique ID for a pointer value.
+    /// This replaces direct pointer truncation to avoid collisions.
+    pub fn getValueId(self: *TaintContext, ptr: anytype) !u32 {
+        const ptr_val = @intFromPtr(ptr);
+        if (ptr_val == 0) return error.NullPointer;
+        return self.value_id_map.getOrCreateId(ptr_val);
+    }
+
+    /// Get or create a unique ID from an already-converted usize value.
+    /// Use this when you already have @intFromPtr result.
+    pub fn getValueIdFromUsize(self: *TaintContext, ptr_val: usize) !u32 {
+        if (ptr_val == 0) return error.NullPointer;
+        return self.value_id_map.getOrCreateId(ptr_val);
     }
 
     /// Set taint info for a value
@@ -118,7 +138,7 @@ pub const TaintContext = struct {
     pub fn getTaintedValues(self: *TaintContext, allocator: Allocator) ![]u32 {
         self.mutex.lock();
         defer self.mutex.unlock();
-        var values = std.ArrayList(u32).initCapacity(allocator, 0) catch unreachable;
+        var values = std.ArrayList(u32).init(allocator);
         errdefer values.deinit(allocator);
 
         var iter = self.value_taint.iterator();

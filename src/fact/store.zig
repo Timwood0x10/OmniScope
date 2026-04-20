@@ -55,12 +55,17 @@ pub const FactStore = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
+        const orig_len = self.kinds.items.len;
+        errdefer {
+            self.kinds.shrinkRetainingCapacity(orig_len);
+            self.subj.shrinkRetainingCapacity(orig_len);
+            self.obj.shrinkRetainingCapacity(orig_len);
+            self.ctx.shrinkRetainingCapacity(orig_len);
+        }
+
         try self.kinds.append(self.allocator, kind);
-        errdefer _ = self.kinds.pop();
         try self.subj.append(self.allocator, subject);
-        errdefer _ = self.subj.pop();
         try self.obj.append(self.allocator, object);
-        errdefer _ = self.obj.pop();
         try self.ctx.append(self.allocator, context);
     }
 

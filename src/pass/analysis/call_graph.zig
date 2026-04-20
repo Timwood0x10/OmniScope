@@ -328,7 +328,6 @@ pub const CallGraphPass = struct {
     }
 
     fn classifyRisk(func_name: []const u8) enum { medium, critical } {
-        // Use exact match for critical risk functions
         if (std.mem.eql(u8, func_name, "system") or
             std.mem.eql(u8, func_name, "exec") or
             std.mem.eql(u8, func_name, "popen"))
@@ -339,15 +338,13 @@ pub const CallGraphPass = struct {
     }
 
     fn isSink(func_name: []const u8) bool {
-        // Use exact match for sink detection
         for (SINK_PATTERNS) |pattern| {
-            if (std.mem.eql(u8, func_name, pattern)) {
+            if (contains(func_name, pattern)) {
                 return true;
             }
         }
-        // Also check dangerous functions list
         for (DANGEROUS_FUNCTIONS) |func| {
-            if (std.mem.eql(u8, func_name, func)) {
+            if (contains(func_name, func)) {
                 return true;
             }
         }

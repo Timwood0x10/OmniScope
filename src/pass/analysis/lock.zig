@@ -549,21 +549,16 @@ test "LockPass - lock ID map consistency" {
 }
 
 test "LockPass - known lock function detection" {
-    var store = FactStore.init(std.testing.allocator);
-    defer store.deinit();
-
-    var pass = LockPass.init(&store);
-
     // Test known lock functions
-    try std.testing.expect(pass.isKnownLockFunction("pthread_mutex_lock"));
-    try std.testing.expect(pass.isKnownLockFunction("pthread_mutex_unlock"));
-    try std.testing.expect(pass.isKnownLockFunction("pthread_spin_lock"));
-    try std.testing.expect(pass.isKnownLockFunction("lock_acquire"));
+    try std.testing.expect(LockPass.isKnownLockFunctionByName("pthread_mutex_lock"));
+    try std.testing.expect(LockPass.isKnownLockFunctionByName("pthread_mutex_unlock"));
+    try std.testing.expect(LockPass.isKnownLockFunctionByName("pthread_spin_lock"));
+    try std.testing.expect(LockPass.isKnownLockFunctionByName("lock_acquire"));
 
     // Test unknown functions
-    try std.testing.expect(!pass.isKnownLockFunction("malloc"));
-    try std.testing.expect(!pass.isKnownLockFunction("free"));
-    try std.testing.expect(!pass.isKnownLockFunction("printf"));
+    try std.testing.expect(!LockPass.isKnownLockFunctionByName("malloc"));
+    try std.testing.expect(!LockPass.isKnownLockFunctionByName("free"));
+    try std.testing.expect(!LockPass.isKnownLockFunctionByName("printf"));
 }
 
 test "LockPass - lock acquire vs release detection" {

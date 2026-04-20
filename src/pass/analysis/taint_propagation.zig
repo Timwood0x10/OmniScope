@@ -167,7 +167,6 @@ pub const TaintPropagationPass = struct {
     }
 
     fn handleControlFlow(taint_ctx: *TaintContext, path_manager: *PathManager, inst: c.LLVMValueRef, opcode: c_uint, next_id: u32) !void {
-        _ = taint_ctx;
         _ = next_id;
 
         if (opcode == c.LLVMBr) {
@@ -186,7 +185,7 @@ pub const TaintPropagationPass = struct {
 
                             if (is_null_check) {
                                 const ptr_value = if (c.LLVMIsNull(rhs) != 0) lhs else rhs;
-                                const ptr_id: u32 = @truncate(@intFromPtr(ptr_value));
+                                const ptr_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(ptr_value));
 
                                 const is_not_null = predicate == c.LLVMIntNE;
                                 const cond = PathCondition.nullCheck(ptr_id, is_not_null);
@@ -215,9 +214,11 @@ pub const TaintPropagationPass = struct {
         const operand = c.LLVMGetOperand(inst, 0);
         if (@intFromPtr(operand) == 0) return;
 
-        if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+        const operand_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(operand));
+        if (taint_ctx.getValueTaint(operand_id)) |info| {
             if (info.state == .source or info.state == .tainted) {
-                try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), info);
+                const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                try taint_ctx.setValueTaint(inst_id, info);
             }
         }
     }
@@ -231,9 +232,11 @@ pub const TaintPropagationPass = struct {
         var i: u32 = 0;
         while (i < num_operands) : (i += 1) {
             const operand = c.LLVMGetOperand(inst, i);
-            if (@intFromPtr(operand) == 0) continue;
+            const operand_val = @intFromPtr(operand);
+            if (operand_val == 0) continue;
 
-            if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+            const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
+            if (taint_ctx.getValueTaint(operand_id)) |info| {
                 if (info.state == .source or info.state == .tainted) {
                     has_tainted = true;
                     if (info.confidence > max_confidence) {
@@ -251,7 +254,8 @@ pub const TaintPropagationPass = struct {
                 .source_id = source_id,
                 .confidence = @max(max_confidence * 0.9, MIN_CONFIDENCE),
             };
-            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+            const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+            try taint_ctx.setValueTaint(inst_id, new_info);
         }
     }
 
@@ -259,9 +263,11 @@ pub const TaintPropagationPass = struct {
         switch (opcode) {
             c.LLVMLoad => {
                 const ptr_operand = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(ptr_operand) == 0) return;
+                const ptr_val = @intFromPtr(ptr_operand);
+                if (ptr_val == 0) return;
 
-                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(ptr_operand)))) |info| {
+                const ptr_id = try taint_ctx.getValueIdFromUsize(ptr_val);
+                if (taint_ctx.getValueTaint(ptr_id)) |info| {
                     if (info.state == .source or info.state == .tainted) {
                         const new_info = TaintInfo{
                             .id = next_id,
@@ -269,19 +275,24 @@ pub const TaintPropagationPass = struct {
                             .source_id = info.source_id,
                             .confidence = @max(info.confidence * CONFIDENCE_DECAY, MIN_CONFIDENCE),
                         };
-                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                        const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                        try taint_ctx.setValueTaint(inst_id, new_info);
                     }
                 }
             },
             c.LLVMStore => {
                 const value_operand = c.LLVMGetOperand(inst, 0);
                 const ptr_operand = c.LLVMGetOperand(inst, 1);
+                const value_val = @intFromPtr(value_operand);
+                const ptr_val = @intFromPtr(ptr_operand);
 
-                if (@intFromPtr(value_operand) == 0 or @intFromPtr(ptr_operand) == 0) return;
+                if (value_val == 0 or ptr_val == 0) return;
 
-                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(value_operand)))) |info| {
+                const value_id = try taint_ctx.getValueIdFromUsize(value_val);
+                if (taint_ctx.getValueTaint(value_id)) |info| {
                     if (info.state == .source or info.state == .tainted) {
-                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(ptr_operand)), info);
+                        const ptr_id = try taint_ctx.getValueIdFromUsize(ptr_val);
+                        try taint_ctx.setValueTaint(ptr_id, info);
                     }
                 }
             },
@@ -308,9 +319,11 @@ pub const TaintPropagationPass = struct {
             var i: u32 = 0;
             while (i < num_operands) : (i += 1) {
                 const operand = c.LLVMGetOperand(inst, i);
-                if (@intFromPtr(operand) == 0) continue;
+                const operand_val = @intFromPtr(operand);
+                if (operand_val == 0) continue;
 
-                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+                const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
+                if (taint_ctx.getValueTaint(operand_id)) |info| {
                     if (info.state == .source or info.state == .tainted) {
                         has_tainted_arg = true;
                         if (info.confidence > max_confidence) {
@@ -330,7 +343,8 @@ pub const TaintPropagationPass = struct {
                         .source_id = source_id,
                         .confidence = new_confidence,
                     };
-                    try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                    const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                    try taint_ctx.setValueTaint(inst_id, new_info);
                 }
             }
             return;
@@ -346,8 +360,9 @@ pub const TaintPropagationPass = struct {
                 var i: u32 = 0;
                 while (i < num_operands) : (i += 1) {
                     const operand = c.LLVMGetOperand(inst, i);
-                    if (@intFromPtr(operand) == 0) continue;
-                    const operand_id: u32 = @truncate(@intFromPtr(operand));
+                    const operand_val = @intFromPtr(operand);
+                    if (operand_val == 0) continue;
+                    const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
 
                     // If we know the pointer is not null on this path, reduce risk
                     if (pm.isPtrNonNull(operand_id)) {
@@ -362,7 +377,8 @@ pub const TaintPropagationPass = struct {
                 .source_id = null,
                 .confidence = confidence,
             };
-            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+            const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+            try taint_ctx.setValueTaint(inst_id, new_info);
             return;
         }
 
@@ -375,9 +391,11 @@ pub const TaintPropagationPass = struct {
         var i: u32 = 0;
         while (i < num_operands) : (i += 1) {
             const operand = c.LLVMGetOperand(inst, i);
-            if (@intFromPtr(operand) == 0) continue;
+            const operand_val = @intFromPtr(operand);
+            if (operand_val == 0) continue;
 
-            if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
+            const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
+            if (taint_ctx.getValueTaint(operand_id)) |info| {
                 if (info.state == .source or info.state == .tainted) {
                     has_tainted_arg = true;
                     if (info.confidence > max_confidence) {
@@ -401,7 +419,8 @@ pub const TaintPropagationPass = struct {
                 .source_id = source_id,
                 .confidence = @max(max_confidence * decay_factor, MIN_CONFIDENCE),
             };
-            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+            const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+            try taint_ctx.setValueTaint(inst_id, new_info);
         }
     }
 
@@ -415,7 +434,8 @@ pub const TaintPropagationPass = struct {
                 var max_confidence: f32 = 0.0;
 
                 if (@intFromPtr(true_value) != 0) {
-                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(true_value)))) |info| {
+                    const true_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(true_value));
+                    if (taint_ctx.getValueTaint(true_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             source_id = info.source_id;
                             max_confidence = info.confidence;
@@ -424,7 +444,8 @@ pub const TaintPropagationPass = struct {
                 }
 
                 if (@intFromPtr(false_value) != 0) {
-                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(false_value)))) |info| {
+                    const false_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(false_value));
+                    if (taint_ctx.getValueTaint(false_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             if (info.confidence > max_confidence) {
                                 source_id = info.source_id;
@@ -441,7 +462,8 @@ pub const TaintPropagationPass = struct {
                         .source_id = source_id,
                         .confidence = max_confidence,
                     };
-                    try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                    const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                    try taint_ctx.setValueTaint(inst_id, new_info);
                 }
             },
             c.LLVMPHI => {
@@ -453,9 +475,11 @@ pub const TaintPropagationPass = struct {
                 var i: u32 = 0;
                 while (i < num_incoming) : (i += 1) {
                     const incoming_value = c.LLVMGetIncomingValue(inst, i);
-                    if (@intFromPtr(incoming_value) == 0) continue;
+                    const incoming_val = @intFromPtr(incoming_value);
+                    if (incoming_val == 0) continue;
 
-                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(incoming_value)))) |info| {
+                    const incoming_id = try taint_ctx.getValueIdFromUsize(incoming_val);
+                    if (taint_ctx.getValueTaint(incoming_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             has_tainted = true;
                             if (info.confidence > max_confidence) {
@@ -473,23 +497,16 @@ pub const TaintPropagationPass = struct {
                         .source_id = source_id,
                         .confidence = @max(max_confidence * CONFIDENCE_DECAY, MIN_CONFIDENCE),
                     };
-                    try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
-                }
-            },
-            else => {
-                const operand = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(operand) == 0) return;
-
-                if (taint_ctx.getValueTaint(@truncate(@intFromPtr(operand)))) |info| {
-                    if (info.state == .source or info.state == .tainted) {
-                        try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), info);
-                    }
+                    const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                    try taint_ctx.setValueTaint(inst_id, new_info);
                 }
             },
             c.LLVMGetElementPtr => {
                 const base_ptr = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(base_ptr) != 0) {
-                    if (taint_ctx.getValueTaint(@truncate(@intFromPtr(base_ptr)))) |info| {
+                const base_val = @intFromPtr(base_ptr);
+                if (base_val != 0) {
+                    const base_id = try taint_ctx.getValueIdFromUsize(base_val);
+                    if (taint_ctx.getValueTaint(base_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             const num_indices = c.LLVMGetNumIndices(inst);
                             const depth_factor: f32 = 1.0 - (@as(f32, @floatFromInt(num_indices)) * GEP_DEPTH_CONFIDENCE_FACTOR);
@@ -501,8 +518,22 @@ pub const TaintPropagationPass = struct {
                                 .source_id = info.source_id,
                                 .confidence = new_confidence,
                             };
-                            try taint_ctx.setValueTaint(@truncate(@intFromPtr(inst)), new_info);
+                            const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                            try taint_ctx.setValueTaint(inst_id, new_info);
                         }
+                    }
+                }
+            },
+            else => {
+                const operand = c.LLVMGetOperand(inst, 0);
+                const operand_val = @intFromPtr(operand);
+                if (operand_val == 0) return;
+
+                const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
+                if (taint_ctx.getValueTaint(operand_id)) |info| {
+                    if (info.state == .source or info.state == .tainted) {
+                        const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                        try taint_ctx.setValueTaint(inst_id, info);
                     }
                 }
             },
@@ -546,13 +577,15 @@ pub const TaintPropagationPass = struct {
         var param_idx: u32 = 0;
 
         while (@intFromPtr(arg) != 0) : (arg = c.LLVMGetNextParam(arg)) {
+            const func_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(func));
             const info = TaintInfo{
                 .id = ctx.getNextId(),
                 .state = .source,
-                .source_id = @truncate(@intFromPtr(func)),
+                .source_id = func_id,
                 .confidence = 1.0,
             };
-            try taint_ctx.setValueTaint(@truncate(@intFromPtr(arg)), info);
+            const arg_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(arg));
+            try taint_ctx.setValueTaint(arg_id, info);
             param_idx += 1;
         }
 
