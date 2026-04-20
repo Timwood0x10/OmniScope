@@ -22,7 +22,7 @@
 #   make go          - Build Go → C example
 #   make zig         - Build Zig → C example
 
-ZIG ?= zig
+ZIG ?= /Users/scc/.zvm/bin/zig
 CLANG ?= /opt/homebrew/opt/llvm@21/bin/clang
 CLANGXX ?= /opt/homebrew/opt/llvm@21/bin/clang++
 LLVM_LINK ?= /opt/homebrew/opt/llvm@21/bin/llvm-link

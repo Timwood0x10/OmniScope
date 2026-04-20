@@ -71,6 +71,19 @@ pub const TaintPass = struct {
                 // Assign function ID
                 self.func_id = ctx.getNextId();
 
+                // Register func_symbol fact for name -> id mapping
+                const func_name_ptr = c.LLVMGetValueName(func_ref);
+                if (@intFromPtr(func_name_ptr) != 0) {
+                    const func_name = std.mem.span(func_name_ptr);
+                    const name_hash = std.hash.Fnv1a.hash(func_name);
+                    try self.store.insert(
+                        .func_symbol,
+                        self.func_id,
+                        name_hash,
+                        0,
+                    );
+                }
+
                 // Analyze function
                 try self.analyzeFunction(ctx, FunctionRef{ .raw = func_ref });
             }

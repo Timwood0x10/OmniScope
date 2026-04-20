@@ -569,15 +569,33 @@ pub const FFIDetector = struct {
     /// Check if tainted data flows from declare to define
     fn hasTaintedDataFlow(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) !bool {
         _ = self;
-        _ = ffi_match;
 
-        const taint_facts = try ctx.query_engine.queryByKind(.taint, ctx.allocator);
-        defer ctx.allocator.free(taint_facts);
+        const func_name = if (ffi_match.define_func) |f| f.name else ffi_match.name;
+        const target_hash = std.hash.Fnv1a.hash(func_name);
 
-        // Return true if any taint facts exist
-        // TODO: Implement more precise tracking by matching function IDs
-        // when function-to-ID mapping is available
-        return taint_facts.len > 0;
+        const symbols = try ctx.query_engine.queryByKind(.func_symbol, ctx.allocator);
+        defer ctx.allocator.free(symbols);
+
+        var target_func_id: ?u32 = null;
+        for (symbols) |fact| {
+            if (fact.object == target_hash) {
+                target_func_id = fact.subject;
+                break;
+            }
+        }
+
+        if (target_func_id == null) return false;
+
+        const context_facts = try ctx.query_engine.queryByContext(target_func_id.?, ctx.allocator);
+        defer ctx.allocator.free(context_facts);
+
+        for (context_facts) |fact| {
+            if (fact.kind == .taint) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Report a vulnerability

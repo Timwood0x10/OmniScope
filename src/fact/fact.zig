@@ -33,6 +33,8 @@ pub const FactKind = enum(u8) {
     ownership_transfer,
     /// Ownership violation detected
     ownership_violation,
+    /// Function symbol mapping (func_id -> name_hash)
+    func_symbol,
 };
 
 /// Fact represents a single analysis fact

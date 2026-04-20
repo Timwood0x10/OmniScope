@@ -68,16 +68,16 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
 
     // Add LLVM library path and link LLVM library
-    exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    exe.linkSystemLibrary("c");
-    exe.linkSystemLibrary("z");
+    exe.root_module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    exe.root_module.linkSystemLibrary("c", .{});
+    exe.root_module.linkSystemLibrary("z", .{});
 
     // Link LLVM library with version suffix
     const llvm_lib_name = b.fmt("LLVM-{s}", .{llvm_version});
-    exe.linkSystemLibrary(llvm_lib_name);
+    exe.root_module.linkSystemLibrary(llvm_lib_name, .{});
 
     // Add rpath for runtime library loading
-    exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    exe.root_module.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
 
     // Apply LTO if enabled
     if (enable_lto) {

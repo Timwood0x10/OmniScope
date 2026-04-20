@@ -90,8 +90,8 @@ pub const FFIAnalysisPass = struct {
     /// Track allocation sites: ptr_value_id -> allocation info
     allocation_sites: std.AutoHashMap(u64, AllocationInfo),
 
-    /// Track free sites: ptr_value_id -> free info
-    free_sites: std.AutoHashMap(u64, FreeInfo),
+    /// Track free sites: ptr_value_id -> list of free info (allows tracking multiple frees per pointer)
+    free_sites: std.AutoHashMap(u64, std.ArrayList(FreeInfo)),
 
     const AllocationInfo = struct {
         func_name: []const u8,
@@ -123,7 +123,7 @@ pub const FFIAnalysisPass = struct {
             .matcher = null,
             .violations = std.ArrayList(OwnershipViolation).init(allocator),
             .allocation_sites = std.AutoHashMap(u64, AllocationInfo).init(allocator),
-            .free_sites = std.AutoHashMap(u64, FreeInfo).init(allocator),
+            .free_sites = std.AutoHashMap(u64, std.ArrayList(FreeInfo)).init(allocator),
         };
     }
 
@@ -136,7 +136,13 @@ pub const FFIAnalysisPass = struct {
         }
         self.violations.deinit();
         self.allocation_sites.deinit();
-        self.free_sites.deinit();
+        {
+            var iter = self.free_sites.iterator();
+            while (iter.next()) |entry| {
+                entry.value_ptr.*.deinit();
+            }
+            self.free_sites.deinit();
+        }
     }
 
     pub fn run(self: *FFIAnalysisPass, ctx: *PassContext, diag: *DiagnosticWriter) !void {
@@ -245,16 +251,22 @@ pub const FFIAnalysisPass = struct {
                     if (@intFromPtr(called_name_ptr) == 0) continue;
                     const called_name = std.mem.span(called_name_ptr);
 
-                    // Check if this is a free function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
                         if (sem.kind == .deallocator) {
                             const ptr_value_id: u64 = @intFromPtr(inst);
-                            try self.free_sites.put(ptr_value_id, .{
+                            const free_info = FreeInfo{
                                 .func_name = func_name,
                                 .language = language,
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
-                            });
+                            };
+                            if (self.free_sites.get(ptr_value_id)) |list| {
+                                try list.append(free_info);
+                            } else {
+                                var list = std.ArrayList(FreeInfo).init(self.allocator);
+                                try list.append(free_info);
+                                try self.free_sites.put(ptr_value_id, list);
+                            }
                         }
                     }
                 }
@@ -267,31 +279,21 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn detectDoubleFree(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
-        // Group free sites by the pointer they free
-        // For simplicity, we track by function name patterns
-
+        // Check each pointer to see if it was freed multiple times
         var iter = self.free_sites.iterator();
         while (iter.next()) |entry| {
-            const free_info = entry.value_ptr.*;
+            const free_list = entry.value_ptr.*;
 
-            // Check if there's another free for the same allocation
-            // This is a simplified check - real implementation would need data flow
-            var inner_iter = self.free_sites.iterator();
-            while (inner_iter.next()) |inner_entry| {
-                if (entry.key_ptr.* == inner_entry.key_ptr.*) continue;
-
-                const other_free = inner_entry.value_ptr.*;
-                if (std.mem.eql(u8, free_info.func_name, other_free.func_name)) {
-                    // Same function freeing multiple times - potential double free
-                    try self.violations.append(.{
-                        .violation_type = .double_free,
-                        .severity = .critical,
-                        .function_name = free_info.func_name,
-                        .description = "Potential double free detected",
-                        .confidence = 0.7,
-                    });
-                    break;
-                }
+            // If a pointer was freed more than once, it's a double free
+            if (free_list.items.len > 1) {
+                const first_free = free_list.items[0];
+                try self.violations.append(.{
+                    .violation_type = .double_free,
+                    .severity = .critical,
+                    .function_name = first_free.func_name,
+                    .description = "Potential double free detected: pointer freed multiple times",
+                    .confidence = 0.9,
+                });
             }
         }
     }
@@ -304,25 +306,28 @@ pub const FFIAnalysisPass = struct {
 
             var free_iter = self.free_sites.iterator();
             while (free_iter.next()) |free_entry| {
-                const free_info = free_entry.value_ptr.*;
+                const free_list = free_entry.value_ptr.*;
 
-                // Check if allocation and free are from different languages
-                if (alloc_info.language != free_info.language and
-                    alloc_info.language != .unknown and
-                    free_info.language != .unknown)
-                {
-                    try self.violations.append(.{
-                        .violation_type = .ownership_mismatch,
-                        .severity = .high,
-                        .function_name = free_info.func_name,
-                        .description = try std.fmt.allocPrint(
-                            self.allocator,
-                            "Cross-language free: allocated in {s}, freed in {s}",
-                            .{ @tagName(alloc_info.language), @tagName(free_info.language) },
-                        ),
-                        .confidence = 0.85,
-                        .owns_description = true,
-                    });
+                // Iterate through all FreeInfo entries for this pointer
+                for (free_list.items) |free_info| {
+                    // Check if allocation and free are from different languages
+                    if (alloc_info.language != free_info.language and
+                        alloc_info.language != .unknown and
+                        free_info.language != .unknown)
+                    {
+                        try self.violations.append(.{
+                            .violation_type = .ownership_mismatch,
+                            .severity = .high,
+                            .function_name = free_info.func_name,
+                            .description = try std.fmt.allocPrint(
+                                self.allocator,
+                                "Cross-language free: allocated in {s}, freed in {s}",
+                                .{ @tagName(alloc_info.language), @tagName(free_info.language) },
+                            ),
+                            .confidence = 0.85,
+                            .owns_description = true,
+                        });
+                    }
                 }
             }
         }
