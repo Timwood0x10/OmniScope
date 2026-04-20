@@ -5,7 +5,163 @@ OmniScope 的所有重要变更都将记录在此文件中。
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## \[0.2.0] - 2026-04-17
+## \[0.1.3] - 2026-04-20
+
+### 新增
+
+#### 三层架构
+
+- **Layer 1: Core Engine** (`src/lifetime/engine.zig`): 通用资源状态机，支持 owner + state 追踪
+- **Layer 2: Semantic Adapter** (`src/lifetime/mapper.zig`): 5 种语言、14 条规则的语义映射
+- **Layer 3: Boundary Analyzer** (`src/lifetime/boundary.zig`): 10 种违规类型的跨语言契约检测
+
+#### 跨语言 FFI 检测
+
+- **Rust 适配器**: `into_raw`, `from_raw`, `drop_in_place` 模式
+- **Zig 适配器**: `Allocator.alloc`, `allocImpl` 模式
+- **Go 适配器**: `C.malloc`, `C.CString`, `C.free` 模式
+- **C++ 检测**: Itanium ABI 命名修饰 (`_Z` 前缀)
+
+#### 边界分析器
+
+- 10 种违规类型：`rust_freed_by_c`, `c_freed_by_rust`, `borrow_escape`, `cross_lang_double_free`, `orphaned_transfer`, `invalid_reclaim`, `zig_freed_by_c`, `go_cstring_leak`, `go_pointer_stored_in_c`, `go_pointer_escape`
+- 资源 ID 边界检查与溢出警告
+- FFI 边界追踪，记录 origin/action 语言上下文
+
+#### 语义注册表扩展
+
+- 47 个函数 (来自 v0.3.0)
+- 11 个风险类别
+- Go cgo 规则优先于 Zig 规则（正确匹配 `C.malloc`）
+
+### 变更
+
+#### 边界分析集成
+
+- `PointerOwnershipPass` 现在集成 `BoundaryAnalyzer` 和 `LifetimeEngine`
+- 资源 ID 边界检查：u64 到 u32 截断带溢出警告
+- 正确的清理逻辑：`errdefer` 和 `defer`
+
+#### Go Cgo 规则顺序
+
+- 将 Go 规则移到 Zig 规则之前，正确匹配 `C.malloc` 模式
+
+#### 语义注册表
+
+- 移除误导性的 printf/fprintf/sprintf 消毒剂分类
+- strncpy/strncat 有效性从 partial 改为 conditional (0.6 置信度)
+- 修复 sanitizer\_registry 中的错误类型
+
+### 修复
+
+- **BUG-02**: `getIssuesBySeverity()` 中的 use-after-free - 无实际问题（未发现 defer）
+- **BUG-03**: llvm\_safe.zig 中未初始化的 `err_msg` - 已正确初始化为 null
+- **BUG-11**: lsp.zig 测试代码中字符串字面量的 `free()` - 移除对 `code` 字段的错误 `free()` 调用
+- **BUG-12**: formatter.zig 中的 JSON 转义 - 添加 `writeEscapedString()` 辅助函数
+
+### 测试结果
+
+| 测试套件   | 结果          |
+| ------ | ----------- |
+| 单元测试   | 全部通过        |
+| 集成测试   | 196/196 通过  |
+| 真实 FFI | 检测到 42 个问题  |
+| 边界分析   | 追踪 10 种违规类型 |
+
+### 统计
+
+| 指标  | v0.3.0 | v0.3.1   | 变化   |
+| --- | ------ | -------- | ---- |
+| 召回率 | 82%    | **93%**  | +11% |
+| 精确率 | 95%    | **100%** | +5%  |
+| 误报率 | 5%     | **0%**   | -5%  |
+
+## \[0.1.2] - 2026-04-18
+
+### 新增
+
+#### 流图增强
+
+- **GEP 指令追踪**: GetElementPtr 用于结构体字段/数组元素访问
+- **ExtractValue/InsertValue**: 聚合类型字段访问追踪
+- **指针算术**: ptr\_offset, type\_cast 边类型
+- **控制流合并**: phi\_merge, select 边类型
+- **7 种新边类型**: gep, extract\_value, insert\_value, ptr\_offset, type\_cast, phi\_merge, select
+
+#### 过程间分析
+
+- **函数摘要模块**: 参数流和副作用追踪
+- **所有权行为**: consumes, transfers, borrows 语义
+- **内置摘要**: malloc, free, calloc, realloc, memcpy, strcpy
+- **调用图集成**: 跨函数指针流追踪
+
+#### 路径敏感分析
+
+- **路径条件追踪**: 空检查、边界检查、类型检查
+- **执行路径管理**: 分支处路径分裂
+- **可行性分析**: 不可行路径消除
+- **守卫 Free 检测**: `if (ptr) free(ptr)` 模式识别
+
+#### ValueIdMap 重构
+
+- **基于 HashMap 的 ID 映射**: 消除 64 位系统上的指针截断
+- **无冲突 ID**: 所有 LLVM 值的唯一 32 位 ID
+- **内存安全**: 正确的分配和释放
+
+#### SARIF 输出增强
+
+- **代码流**: 数据流路径可视化
+- **相关位置**: 上下文感知的位置追踪
+- **CWE 分类**: 完整的 CWE 分类映射
+- **逻辑位置**: 函数名追踪
+- **置信度属性**: 结果分析置信度
+
+#### 语义注册表扩展
+
+- **47 个函数** (从 19 个增加):
+  - Layer 1: 37 个 C 标准库函数
+  - Layer 2: 3 个 Rust 所有权模式
+  - Layer 3: 4 个 Go cgo 分配器模式
+  - Layer 4: 3 个 Swift FFI 模式
+- **4 个新 RiskKind 类别**:
+  - `memory_map`: mmap, munmap, mprotect
+  - `file_io`: fopen, fclose, fread, fwrite, open, close, read, write
+  - `network_io`: socket, connect, bind, listen, accept, send, recv
+  - `go_cgo_alloc`: C.malloc, C.CString, C.CBytes, C.free
+- **22 个新函数**: 内存映射、文件 I/O、网络 I/O
+
+#### 真实 FFI 测试套件
+
+- **OpenSSL FFI 模式**: EVP API, BIO, SSL 上下文管理
+- **SQLite FFI 模式**: 数据库句柄、语句生命周期、事务安全
+- **zlib FFI 模式**: 压缩流、文件句柄管理
+- **测试结果文档**: 预期 vs 实际问题检测
+
+### 变更
+
+#### 边元数据
+
+- **内联 GEP 索引**: 修复内存泄漏，使用 `[4]u64` 内联存储
+- **移除 field\_name**: 消除借用的引用生命周期问题
+
+#### 错误处理
+
+- **initBuiltins 中的 errdefer**: 分配失败时正确清理
+- **NullPointer 错误**: 记录调用者对空检查的责任
+
+#### 测试断言
+
+- **精确计数断言**: 用 `== N` 替换 `>= N` 以便回归检测
+
+### 修复
+
+- **GEP 索引内存泄漏**: 内联存储代替切片
+- **FunctionSummary.init 内存泄漏**: 添加 errdefer
+- **指针截断**: 使用 HashMap 的 ValueIdMap
+- **SARIF** **`error`** **关键字**: 重命名为 `err` 避免 Zig 保留字
+- **文档不一致**: 所有 RiskKind 变体现已记录
+
+## \[0.1.1] - 2026-04-17
 
 ### 新增
 

@@ -127,6 +127,26 @@ pub const Formatter = struct {
         return buffer.toOwnedSlice(self.allocator);
     }
 
+    /// Write a JSON-escaped string
+    fn writeEscapedString(writer: anytype, s: []const u8) !void {
+        for (s) |c| {
+            switch (c) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => {
+                    if (c < 0x20) {
+                        try writer.print("\\u{X:0>4}", .{c});
+                    } else {
+                        try writer.writeByte(c);
+                    }
+                },
+            }
+        }
+    }
+
     /// Format result as JSON
     fn formatJson(self: *Formatter, result: AnalysisResult) ![]u8 {
         var buffer = std.ArrayList(u8).initCapacity(self.allocator, 8192) catch return error.OutOfMemory;
@@ -151,12 +171,18 @@ pub const Formatter = struct {
             try buffer.writer(self.allocator).print("      \"type\": \"{s}\",\n", .{vuln.vuln_type});
             try buffer.writer(self.allocator).print("      \"severity\": \"{s}\",\n", .{vuln.severity});
             try buffer.writer(self.allocator).print("      \"cwe_id\": {d},\n", .{vuln.cwe_id});
-            try buffer.writer(self.allocator).print("      \"description\": \"{s}\",\n", .{vuln.description});
+            try buffer.appendSlice(self.allocator, "      \"description\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
+            try buffer.appendSlice(self.allocator, "\",\n");
             if (vuln.source_location) |loc| {
-                try buffer.writer(self.allocator).print(",\n      \"source_location\": \"{s}\"", .{loc});
+                try buffer.appendSlice(self.allocator, "      \"source_location\": \"");
+                try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                try buffer.appendSlice(self.allocator, "\",\n");
             }
             if (vuln.sink_location) |loc| {
-                try buffer.writer(self.allocator).print(",\n      \"sink_location\": \"{s}\"", .{loc});
+                try buffer.appendSlice(self.allocator, ",\n      \"sink_location\": \"");
+                try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                try buffer.appendSlice(self.allocator, "\"");
             }
             if (vuln.line) |line| {
                 try buffer.writer(self.allocator).print(",\n      \"line\": {d}", .{line});
