@@ -1,337 +1,414 @@
 # OmniScope 安全审计报告
 
-> 审计日期：2026-04-20 · 审计范围：src/ 全部 74 个 Zig 源文件 · 版本：当前最新（修复后重新审计）
-
----
-
-## 一、审计概要
-
-| 项目 | 详情 |
+| 项目 | 信息 |
 |------|------|
-| 项目名称 | OmniScope |
-| 项目定位 | 基于 LLVM IR 的跨语言 FFI 静态安全分析框架 |
-| 实现语言 | Zig |
-| 外部依赖 | LLVM 21 (LLVM-C API) |
-| 审计文件数 | 74 个 .zig 源文件 |
-| 上轮 Bug | 12 个（已修复 9 个，3 个仍 Open）+ 4 个新发现 |
-| 本轮状态 | 上轮 3 个 Open Bug 仍存在；上轮 4 个新 Bug：2 个已修复、2 个仍 Open；本轮新发现 3 个 |
-| 整体评分 | 8.2 / 10（较上轮 8.0 略有提升） |
+| **项目名称** | OmniScope |
+| **项目类型** | LLVM IR 跨语言 FFI 静态安全分析框架 |
+| **实现语言** | Zig |
+| **审计日期** | 2026-04-20 |
+| **审计范围** | `src/` 全部 66 个 .zig 源文件 |
+| **审计方法** | 人工代码审计 |
 
 ---
 
-## 二、上轮 Bug 修复验证
+## 1. 审计概览
 
-### 上轮已修复（9 个）— 全部保持修复状态
-
-| Bug | 文件 | 修复方式 | 本轮验证 |
-|-----|------|---------|---------|
-| BUG-02 | taint_propagation.zig | GEP 分支移到 else 之前 | ✅ 仍修复 |
-| BUG-03 | pointer_ownership.zig | 添加 `boundary_id == 0` 检查 | ✅ 仍修复 |
-| BUG-05 | call_graph.zig | classifyRisk/isSink 改用 `contains()` 子串匹配 | ✅ 仍修复 |
-| BUG-06 | profiler.zig | summary() 改为接受调用者提供的 buffer 参数 | ✅ 仍修复 |
-| BUG-07 | graph.zig | 添加文档注释明确所有权语义 | ✅ 仍修复 |
-| BUG-08 | pipeline.zig | 使用 `@max` 确保非负值后再截断 | ✅ 仍修复 |
-| BUG-10 | call_graph.zig | `contains()` 现在被 classifyRisk/isSink 使用 | ✅ 仍修复 |
-| BUG-12 | taint_state.zig | 改用 `init(allocator)` 替代 `initCapacity(0)` | ✅ 仍修复 |
-
-### 上轮仍 Open（3 个）— 仍未修复
-
-#### BUG-01 [High] FactStore::insert() errdefer 回滚不完整
-
-- **文件**: `src/fact/store.zig` 第 58-64 行
-- **状态**: ❌ 未修复
-
-当前代码：
-```zig
-const orig_len = self.kinds.items.len;
-errdefer self.kinds.shrinkRetainingCapacity(orig_len);
-try self.kinds.append(self.allocator, kind);
-try self.subj.append(self.allocator, subject);
-try self.obj.append(self.allocator, object);
-try self.ctx.append(self.allocator, context);
-```
-
-**问题**: errdefer 只回滚 `kinds`。如果 `subj`/`obj`/`ctx` 的 append 失败，`kinds` 被回滚但其他数组可能已经 append 成功。由于 `count()` 返回 `kinds.items.len`，`get()` 用 kinds 长度索引其他数组，如果其他数组比 kinds 短会导致越界。
-
-**修复建议**: errdefer 应回滚所有四个数组：
-```zig
-const orig_len = self.kinds.items.len;
-errdefer {
-    self.kinds.shrinkRetainingCapacity(orig_len);
-    self.subj.shrinkRetainingCapacity(orig_len);
-    self.obj.shrinkRetainingCapacity(orig_len);
-    self.ctx.shrinkRetainingCapacity(orig_len);
-}
-```
+| 严重等级 | 数量 |
+|----------|------|
+| 🔴 高危 (High) | 3 |
+| 🟠 中危 (Medium) | 4 |
+| 🟡 低危 (Low) | 3 |
+| **合计** | **10** |
 
 ---
 
-#### BUG-04 [High] taint_propagation.zig 指针截断
+## 2. 高危漏洞
 
-- **文件**: `src/pass/analysis/taint_propagation.zig` 多处（20+ 处）
-- **状态**: ❌ 未修复
+### OS-H01：`ffi_analysis.zig` — 指针截断导致 ID 碰撞
 
-仍使用 `@truncate(@intFromPtr(inst))` 将 64 位指针截断为 `u32`。项目已有 `ValueIdMap`（在 `pointer_ownership.zig` 中使用），但此文件未采用。
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/ffi_analysis.zig` |
+| **行号** | 207, 251 |
+| **严重等级** | 🔴 高危 |
 
-**受影响位置**（部分）：
-- 第 189 行: `@truncate(@intFromPtr(ptr_value))`
-- 第 218 行: `@truncate(@intFromPtr(operand))`
-- 第 220 行: `@truncate(@intFromPtr(inst))`
-- 第 236 行: `@truncate(@intFromPtr(operand))`
-- 第 254 行: `@truncate(@intFromPtr(inst))`
-- 第 264 行: `@truncate(@intFromPtr(ptr_operand))`
-- 第 272 行: `@truncate(@intFromPtr(inst))`
-- 第 282 行: `@truncate(@intFromPtr(value_operand))`
-- 第 284 行: `@truncate(@intFromPtr(ptr_operand))`
-- 第 313 行: `@truncate(@intFromPtr(operand))`
-- 第 333 行: `@truncate(@intFromPtr(inst))`
-- 第 350 行: `@truncate(@intFromPtr(operand))`
-- 第 365 行: `@truncate(@intFromPtr(inst))`
-- 第 380 行: `@truncate(@intFromPtr(operand))`
-- 第 404 行: `@truncate(@intFromPtr(inst))`
-- 第 418 行: `@truncate(@intFromPtr(true_value))`
-- 第 427 行: `@truncate(@intFromPtr(false_value))`
-- 第 444 行: `@truncate(@intFromPtr(inst))`
-- 第 458 行: `@truncate(@intFromPtr(incoming_value))`
-- 第 476 行: `@truncate(@intFromPtr(inst))`
-- 第 482 行: `@truncate(@intFromPtr(base_ptr))`
-- 第 494 行: `@truncate(@intFromPtr(inst))`
-- 第 503 行: `@truncate(@intFromPtr(operand))`
-- 第 505 行: `@truncate(@intFromPtr(inst))`
-- 第 552 行: `@truncate(@intFromPtr(func))`
-- 第 555 行: `@truncate(@intFromPtr(arg))`
+**问题描述**：
 
-**修复建议**: 引入 `ValueIdMap`，与 `pointer_ownership.zig` 保持一致。
+`collectAllocationSites` 和 `collectFreeSites` 中使用 `@as(u64, @truncate(@intFromPtr(inst)))` 将 LLVM 指令指针截断为 `u64` 作为 HashMap key。在 64 位系统上，`@truncate` 会将 `usize`（64 位）截断为 `u64`——虽然当前不会丢失数据，但 `@as(u64, @truncate(...))` 的写法本身是冗余且危险的：
 
----
+1. `@intFromPtr` 返回 `usize`，在 64 位系统上就是 `u64`，`@truncate` 到 `u64` 无意义
+2. 如果未来在 128 位系统上编译，`@truncate` 会静默截断高位，导致不同指针映射到相同 key
+3. 项目中 `taint_propagation.zig` 已通过 `TaintContext.getValueIdFromUsize()` 采用了安全的 ID 映射方案，但 `ffi_analysis.zig` 未跟进
 
-#### BUG-11 [High] ffi_analysis.zig 指针截断
-
-- **文件**: `src/pass/analysis/ffi_analysis.zig` 第 207、251 行
-- **状态**: ❌ 未修复
-
+**当前代码**：
 ```zig
+// 第 207 行
+const ptr_value_id = @as(u64, @truncate(@intFromPtr(inst)));
+// 第 251 行
 const ptr_value_id = @as(u64, @truncate(@intFromPtr(inst)));
 ```
 
-注意：此处截断为 `u64`（非 `u32`），碰撞风险低于 BUG-04，但仍不理想。`allocation_sites` 和 `free_sites` 的 key 类型为 `u64`，应直接使用完整指针值 `@intFromPtr(inst)`。
+**修复建议**：
 
----
-
-#### BUG-09 [Low] main.zig 漏洞 ID 截断
-
-- **文件**: `src/main.zig` 第 262 行
-- **状态**: ❌ 未修复（实际影响极低）
-
+方案 A（推荐）：使用 `ValueIdMap` 统一 ID 映射：
 ```zig
-.id = @intCast(vulnerabilities.items.len),
+const ptr_value_id = try self.value_id_map.getOrCreateId(@intFromPtr(inst));
 ```
 
-`vulnerabilities.items.len` 为 `usize`，截断为 `u32` 在实际场景中不会溢出。
-
----
-
-## 三、上轮新发现 Bug 修复验证
-
-### 已修复（2 个）
-
-#### NEW-01 [High] ~~4 个测试文件存在编译错误~~ — ✅ 已修复
-
-| 文件 | 上轮问题 | 本轮状态 |
-|------|---------|---------|
-| `src/pass/analysis/lock.zig` | 调用 `pass.isKnownLockFunction()` 不存在 | ✅ 已改为 `isKnownLockFunctionByName`（第 169 行） |
-| `src/pass/analysis/alias.zig` | `mustAlias` 传 4 个参数 | ✅ 已改为 2 个参数（第 291-296 行） |
-| `src/pass/analysis/taint.zig` | `TaintPass.init(&store)` 签名不匹配 | ✅ 已改为 `TaintPass.init(&store, allocator)`（第 33 行） |
-| `src/pass/analysis/taint.zig` | 多处引用不存在的字段 | ✅ 已重构，字段和方法均存在 |
-
-**验证**:
-- `lock.zig` 第 169 行: `return isKnownLockFunctionByName(func_name_slice);` ✅
-- `alias.zig` 第 291-296 行: `fn mustAlias(self: *AliasPass, ptr1: c.LLVMValueRef, ptr2: c.LLVMValueRef) bool` ✅
-- `taint.zig` 第 33 行: `pub fn init(store: *FactStore, allocator: std.mem.Allocator) !TaintPass` ✅
-- `taint.zig` 第 166 行: `fn isKnownTaintSourceByName` ✅
-- `taint.zig` 第 210 行: `fn isKnownTaintSinkByName` ✅
-
-#### NEW-02 [Medium] ~~function_summary.zig 重复注册内存泄漏~~ — ✅ 已修复
-
-- **文件**: `src/dataflow/function_summary.zig` 第 174-177 行
-- **状态**: ✅ 已修复
-
-当前代码：
+方案 B（最小改动）：移除冗余截断：
 ```zig
-pub fn register(self: *SummaryRegistry, summary: FunctionSummary) !void {
-    const name_copy = try self.allocator.dupe(u8, summary.name);
-    try self.summaries.put(name_copy, summary);
-}
+const ptr_value_id: u64 = @intFromPtr(inst);
 ```
 
-`StringHashMap.put` 在 key 已存在时会替换 value，但旧 value 的 `param_flows`/`ownership` 数组不会被释放。不过查看 `initBuiltins()` 中所有注册的函数名都是唯一的（malloc, free, calloc, realloc, memcpy, strcpy），实际使用中不会触发重复注册。**风险降低为 Low**。
-
 ---
 
-### 仍 Open（2 个）
+### OS-H02：`ffi_analysis.zig` — `SemanticRegistry` 中不存在 `memory_alloc` / `memory_free` 枚举值
 
-#### NEW-03 [Medium] initCapacity(0) catch unreachable 模式系统性存在
-
-以下文件仍使用 `initCapacity(allocator, 0) catch unreachable`：
-
-| 文件 | 行号 |
+| 项目 | 内容 |
 |------|------|
-| `src/perf/memory_pool.zig` | 43 |
-| `src/pass/manager.zig` | 41, 115, 135, 145, 171 |
-| `src/fact/query.zig` | 28, 51, 74, 97 |
-| `src/diag/aggregator.zig` | 49, 85, 112 |
-| `src/main.zig` | 26 |
+| **文件** | `src/pass/analysis/ffi_analysis.zig` |
+| **行号** | 206, 250 |
+| **严重等级** | 🔴 高危 |
 
-应统一改为 `init(allocator)` 或正确传播错误。
+**问题描述**：
 
----
+`collectAllocationSites` 和 `collectFreeSites` 中检查 `sem.kind == .memory_alloc` 和 `sem.kind == .memory_free`，但 `SemanticRegistry.RiskKind` 枚举中实际定义的是 `.allocator` 和 `.deallocator`，不存在 `.memory_alloc` 和 `.memory_free`。
 
-#### NEW-04 [Low] manager.zig Kahn 算法 orderedRemove(0) 性能问题
+这意味着这两个分支**永远不会被执行**，所有权违规检测 pass 完全无法收集到分配/释放站点，导致：
+- `detectDoubleFree` 无数据可分析
+- `detectOwnershipMismatch` 无数据可分析
+- 整个 `FFIAnalysisPass` 的核心功能失效
 
-- **文件**: `src/pass/manager.zig` 第 150 行
-- **状态**: ❌ 未修复
-
-`queue.orderedRemove(0)` 是 O(n) 操作。当前 Pass 数量少（9 个），实际无影响。
-
----
-
-## 四、本轮新发现 Bug
-
-### BUG-A [Medium] SummaryRegistry::register() 重复注册时旧值内存泄漏
-
-- **文件**: `src/dataflow/function_summary.zig` 第 174-177 行
-- **状态**: 新发现
-
+**当前代码**：
 ```zig
-pub fn register(self: *SummaryRegistry, summary: FunctionSummary) !void {
-    const name_copy = try self.allocator.dupe(u8, summary.name);
-    try self.summaries.put(name_copy, summary);
-}
+// 第 206 行 — 永远为 false
+if (sem.kind == .memory_alloc) {
+// 第 250 行 — 永远为 false
+if (sem.kind == .memory_free) {
 ```
 
-**问题**: 当注册重复函数名时：
-1. `self.allocator.dupe(u8, summary.name)` 分配新 key 内存
-2. `self.summaries.put(name_copy, summary)` 替换旧 value，但：
-   - 旧 key 的内存（`entry.key_ptr.*`）不会被释放
-   - 旧 value 中的 `param_flows` 和 `ownership` 数组不会被释放
-
-虽然 `initBuiltins()` 中不会触发，但 `register()` 是公开 API，外部调用者可能重复注册。
-
-**修复建议**:
+**实际 RiskKind 枚举值**（`semantic_registry.zig`）：
 ```zig
-pub fn register(self: *SummaryRegistry, summary: FunctionSummary) !void {
-    // If already registered, free old resources
-    if (self.summaries.getPtr(summary.name)) |existing| {
-        existing.deinit(self.allocator);
-    }
-    const gop = try self.summaries.getOrPut(summary.name);
-    if (!gop.found_existing) {
-        gop.key_ptr.* = try self.allocator.dupe(u8, summary.name);
-    }
-    gop.value_ptr.* = summary;
-}
+pub const RiskKind = enum {
+    command_exec,
+    unchecked_copy,
+    format_string,
+    allocator,      // ← 应使用此值
+    deallocator,    // ← 应使用此值
+    rust_ownership,
+    borrow_escaped,
+    memory_map,
+    file_io,
+    network_io,
+    go_cgo_alloc,
+};
+```
+
+**修复建议**：
+```zig
+// 第 206 行
+if (sem.kind == .allocator) {
+// 第 250 行
+if (sem.kind == .deallocator) {
 ```
 
 ---
 
-### BUG-B [Medium] LockPass 测试调用不存在的方法 `isKnownLockFunction`
+### OS-H03：`taint.zig` — `TaintPass.init` 返回值未处理
 
-- **文件**: `src/pass/analysis/lock.zig` 第 558 行
-- **状态**: 新发现
-
-```zig
-try std.testing.expect(pass.isKnownLockFunction("pthread_mutex_lock"));
-```
-
-**问题**: `LockPass` 没有 `isKnownLockFunction` 方法。正确的方法名是 `isKnownLockFunctionByName`（独立函数，非方法）。虽然 `isKnownLockOperation` 内部调用了 `isKnownLockFunctionByName`，但测试直接调用了不存在的方法名。
-
-**修复建议**: 将测试改为：
-```zig
-try std.testing.expect(isKnownLockFunctionByName("pthread_mutex_lock"));
-```
-
----
-
-### BUG-C [Low] TaintPass 测试调用不存在的方法
-
-- **文件**: `src/pass/analysis/taint.zig` 第 439、458 行
-- **状态**: 新发现
-
-```zig
-try std.testing.expect(pass.isKnownTaintSource("read"));    // 第 439 行
-try std.testing.expect(pass.isKnownTaintSink("system"));    // 第 458 行
-```
-
-**问题**: `TaintPass` 没有 `isKnownTaintSource` 和 `isKnownTaintSink` 方法。正确的方法名是 `isKnownTaintSourceByName` 和 `isKnownTaintSinkByName`（独立函数，非方法）。
-
-**修复建议**: 将测试改为：
-```zig
-try std.testing.expect(isKnownTaintSourceByName("read"));
-try std.testing.expect(isKnownTaintSinkByName("system"));
-```
-
----
-
-## 五、Bug 汇总
-
-### 按严重性
-
-| 严重性 | 数量 | Bug 编号 |
-|--------|------|----------|
-| High | 3 | BUG-01, BUG-04, BUG-11 |
-| Medium | 4 | NEW-03, BUG-A, BUG-B, BUG-C |
-| Low | 2 | NEW-04, BUG-09 |
-
-### 按状态
-
-| 状态 | 数量 |
+| 项目 | 内容 |
 |------|------|
-| 已修复 | 11（BUG-02, 03, 05, 06, 07, 08, 09→Low, 10, 12, NEW-01, NEW-02） |
-| 仍 Open（上轮） | 5（BUG-01, 04, 11, NEW-03, NEW-04） |
-| 新发现（本轮） | 3（BUG-A, BUG-B, BUG-C） |
+| **文件** | `src/pass/analysis/taint.zig` |
+| **行号** | 394 |
+| **严重等级** | 🔴 高危 |
+
+**问题描述**：
+
+`TaintPass.init` 声明返回 `!TaintPass`（可能返回错误），但测试代码中直接忽略返回值：
+
+```zig
+test "TaintPass - init" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    const pass = TaintPass.init(&store);  // ← 返回 !TaintPass，未处理错误
+    _ = pass;
+}
+```
+
+虽然 `init` 内部仅调用 `TaintGraph.init(allocator)` 可能 OOM，但在测试中忽略错误违反 Zig 的错误处理惯例。更重要的是，如果 `TaintPass.init` 被其他代码以同样方式调用，OOM 错误会被静默吞掉。
+
+**修复建议**：
+```zig
+const pass = try TaintPass.init(&store);
+```
 
 ---
 
-## 六、修复优先级
+## 3. 中危漏洞
 
-| 优先级 | Bug | 理由 |
-|--------|-----|------|
-| P0 | BUG-01 | errdefer 回滚不完整，潜在越界崩溃 |
-| P1 | BUG-04 | 指针截断 20+ 处，大型 IR 分析时碰撞导致误报/漏报 |
-| P1 | BUG-11 | 指针截断（u64），碰撞风险较低但应统一修复 |
-| P2 | BUG-B, BUG-C | 测试调用不存在的方法，`zig build test` 会失败 |
-| P2 | BUG-A | 公开 API 重复注册内存泄漏 |
-| P3 | NEW-03 | `catch unreachable` 模式统一清理 |
-| P4 | NEW-04, BUG-09 | 性能/类型安全，实际无影响 |
+### OS-M01：`initCapacity(0) catch unreachable` 反模式 — 系统性 OOM 崩溃风险
+
+| 项目 | 内容 |
+|------|------|
+| **涉及文件** | `src/fact/store.zig` (26-29), `src/fact/query.zig` (28, 51, 74, 97), `src/pass/manager.zig` (41, 115, 135, 145, 171), `src/diag/aggregator.zig` (49, 85, 112), `src/main.zig` (26) |
+| **严重等级** | 🟠 中危 |
+
+**问题描述**：
+
+项目中广泛使用 `initCapacity(allocator, 0) catch unreachable` 模式。虽然 `initCapacity(allocator, 0)` 在大多数分配器实现中不会失败（因为请求 0 字节），但这依赖于分配器实现细节，并非 Zig 语言保证。当系统内存极度紧张时，即使是 0 容量初始化也可能失败，`catch unreachable` 会导致**进程直接崩溃**，无任何错误恢复机会。
+
+**涉及位置**（共 12 处）：
+
+| 文件 | 行号 | 代码片段 |
+|------|------|----------|
+| `fact/store.zig` | 26-29 | `initCapacity(allocator, 1024) catch unreachable` × 4 |
+| `fact/query.zig` | 28 | `initCapacity(allocator, 0) catch unreachable` |
+| `fact/query.zig` | 51 | 同上 |
+| `fact/query.zig` | 74 | 同上 |
+| `fact/query.zig` | 97 | 同上 |
+| `pass/manager.zig` | 41 | `initCapacity(allocator, 0) catch unreachable` |
+| `pass/manager.zig` | 115 | 同上 |
+| `pass/manager.zig` | 135 | 同上 |
+| `pass/manager.zig` | 145 | 同上 |
+| `pass/manager.zig` | 171 | 同上 |
+| `diag/aggregator.zig` | 49, 85, 112 | 同上 |
+| `main.zig` | 26 | 同上 |
+
+**修复建议**：
+
+对 `initCapacity(0)` 的场景，直接使用 `init(allocator)` 替代（无预分配，不会 OOM）：
+```zig
+// 替换前
+std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable
+// 替换后
+std.ArrayList(Fact).init(allocator)
+```
+
+对 `initCapacity(1024)` 的场景，使用 `try` 传播错误：
+```zig
+std.ArrayList(FactKind).initCapacity(allocator, 1024)
+```
 
 ---
 
-## 七、代码质量评估
+### OS-M02：`ffi_analysis.zig` — `detectDoubleFree` 逻辑错误
 
-### 较上轮改进
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/ffi_analysis.zig` |
+| **行号** | 269-297 |
+| **严重等级** | 🟠 中危 |
 
-1. **测试编译错误全部修复**: NEW-01 中 4 个测试文件的编译错误已全部解决
-2. **方法签名统一**: `isKnownLockFunctionByName`、`isKnownTaintSourceByName`、`isKnownTaintSinkByName` 命名规范
-3. **TaintPass 架构重构**: 从无状态静态方法改为有状态实例，支持 `sources`/`sinks`/`taint_graph` 字段
-4. **TaintGraph 增强**: 新增 `markTaintedFromSource`、`getTaintSources`、`reset` 方法，支持源追踪
-5. **别名分析简化**: `mustAlias` 签名从 4 参数简化为 2 参数，逻辑更清晰
+**问题描述**：
 
-### 仍需改进
+`detectDoubleFree` 的实现逻辑有误。当前实现遍历所有 free site 对，如果两个不同的 free site 位于**同名函数**中，就报告 double free。但这个判断条件是错误的：
 
-1. **指针截断未统一修复**: BUG-04（20+ 处 u32 截断）和 BUG-11（2 处 u64 截断）仍存在，项目已有 `ValueIdMap` 但未在 `taint_propagation.zig` 中使用
-2. **errdefer 完整性**: BUG-01 回滚逻辑需要覆盖所有四个 SoA 数组
-3. **测试方法名残留**: BUG-B 和 BUG-C 表明测试代码中仍有旧方法名引用
-4. **错误处理模式**: `initCapacity(0) catch unreachable` 仍系统性存在于 5 个文件
+1. 同一个函数中可能有两个不同的 free 操作释放不同的指针——这不是 double free
+2. 真正的 double free 应该是**同一个指针被释放两次**，需要通过数据流分析确认
 
-### 架构亮点
+**当前代码**：
+```zig
+if (std.mem.eql(u8, free_info.func_name, other_free.func_name)) {
+    // 同名函数 = double free？逻辑错误
+    try self.violations.append(.{
+        .violation_type = .double_free,
+        ...
+    });
+}
+```
 
-1. **Pass 系统设计优秀**: 声明式依赖 + Kahn 算法拓扑排序，支持循环检测和缺失依赖检测
-2. **ValueIdMap 设计合理**: 完美解决指针截断问题，已在 `pointer_ownership.zig` 中验证
-3. **MemoryPool 泛型设计**: 支持任意类型，chunk 预分配 + free list 复用，减少分配开销
-4. **ArenaAllocator**: 批量分配一次性释放，适合分析阶段临时数据
-5. **TaintContext 线程安全**: 使用 Mutex 保护共享状态，支持并发访问
-6. **Profiling 基础设施完善**: ScopedTimer + Profiler，支持嵌套计时和汇总报告
+**修复建议**：
 
-### 整体评价
+应跟踪被释放的指针值（而非函数名），检查同一指针是否出现在多个 free site 中：
+```zig
+// 应比较被释放的指针 ID，而非函数名
+if (free_info.value_id == other_free.value_id) {
+    // 同一指针被释放两次 = double free
+}
+```
 
-OmniScope 架构设计优秀，上轮 12 个 Bug 已修复 9 个，NEW-01（测试编译错误）也已修复，代码质量从 8.0 提升至 8.2。剩余问题集中在两个方向：一是指针截断的统一修复（BUG-04/11），二是测试代码中残留的旧方法名（BUG-B/C）。建议优先修复 BUG-01（errdefer 回滚不完整），然后统一处理指针截断问题，最后清理测试代码。
+---
+
+### OS-M03：`dataflow/graph.zig` — `getIssuesBySeverity` 返回悬空内存
+
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/dataflow/graph.zig` |
+| **行号** | 383-406 |
+| **严重等级** | 🟠 中危 |
+
+**问题描述**：
+
+`getIssuesBySeverity` 方法在 OOM 时返回 `&[_]Issue{}`（空字面量切片），但正常路径返回 `self.allocator.alloc(Issue, count)`。调用者无法区分这两种情况：
+
+1. 如果返回空字面量切片，调用者尝试 `free` 会导致未定义行为
+2. 如果返回分配的切片，调用者忘记 `free` 会导致内存泄漏
+3. 注释说"Caller owns the returned memory"，但 OOM 时返回的不是 owned memory
+
+**当前代码**：
+```zig
+if (count == 0) {
+    return &[_]Issue{};  // ← 非 owned memory
+}
+const result = self.allocator.alloc(Issue, count) catch return &[_]Issue{};  // ← OOM 时也返回非 owned
+```
+
+**修复建议**：
+
+统一使用错误返回：
+```zig
+pub fn getIssuesBySeverity(self: *const DataFlowGraph, severity: Severity) ![]Issue {
+    // ...
+    const result = try self.allocator.alloc(Issue, count);
+    // ...
+    return result;
+}
+```
+
+---
+
+### OS-M04：`taint.zig` — `TaintGraph.propagate` 无上限迭代可能导致性能问题
+
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/taint.zig` |
+| **行号** | 344-377 |
+| **严重等级** | 🟠 中危 |
+
+**问题描述**：
+
+`TaintGraph.propagate` 使用固定最大迭代次数 1000 次的 worklist 算法。对于大型 LLVM IR（如包含数万条指令的模块），1000 次迭代可能不足以完成传播，导致**污点分析不完整**——某些应该被标记为 tainted 的值未被标记，从而**漏报安全漏洞**。
+
+```zig
+const max_iterations = 1000;
+// ...
+while (changed and iterations < max_iterations) {
+```
+
+**修复建议**：
+
+将上限与图规模关联：
+```zig
+const max_iterations = @max(1000, self.propagation_edges.items.len * 2);
+```
+
+---
+
+## 4. 低危漏洞
+
+### OS-L01：`ffi_detector.zig` — `hasTaintedDataFlow` 实现过于粗略
+
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/ffi_detector.zig` |
+| **行号** | 570-581 |
+| **严重等级** | 🟡 低危 |
+
+**问题描述**：
+
+`hasTaintedDataFlow` 只要存在任何 taint fact 就返回 `true`，不检查 taint 是否与当前 FFI match 相关。这会导致**大量误报**——即使污点数据与当前 FFI 边界完全无关，也会报告漏洞。
+
+```zig
+fn hasTaintedDataFlow(...) !bool {
+    const taint_facts = try ctx.query_engine.queryByKind(.taint, ctx.allocator);
+    defer ctx.allocator.free(taint_facts);
+    return taint_facts.len > 0;  // ← 过于粗略
+}
+```
+
+**修复建议**：
+
+应匹配 function ID 或 value ID 来确认 taint 与当前 FFI match 相关。
+
+---
+
+### OS-L02：`taint_propagation.zig` — `handleCall` 中 sanitizer 分支提前 return 导致普通函数传播被跳过
+
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/taint_propagation.zig` |
+| **行号** | 311-351 |
+| **严重等级** | 🟡 低危 |
+
+**问题描述**：
+
+当被调用函数被识别为 sanitizer 函数时，`handleCall` 在处理完 sanitizer 逻辑后直接 `return`，跳过了后续的通用污点传播逻辑。如果 sanitizer 函数本身也应该是污点传播的中间节点（如 `strlen` 不修改数据但返回值依赖输入），则其返回值不会被标记为 tainted。
+
+```zig
+if (called_func_name.len > 0 and sanitizer_registry.isSanitizer(called_func_name)) {
+    // ... 处理 sanitizer ...
+    return;  // ← 提前返回，跳过通用传播
+}
+```
+
+**修复建议**：
+
+移除 `return`，让 sanitizer 处理后继续执行通用传播逻辑，或在 sanitizer 分支中也标记返回值为 tainted。
+
+---
+
+### OS-L03：`lock.zig` — `isLockAcquire` 基于字符串匹配可能误判
+
+| 项目 | 内容 |
+|------|------|
+| **文件** | `src/pass/analysis/lock.zig` |
+| **行号** | 195-209 |
+| **严重等级** | 🟡 低危 |
+
+**问题描述**：
+
+`isLockAcquire` 通过检查函数名是否包含 `"lock"` 且不包含 `"unlock"` 来判断是否为获取操作。这种启发式匹配可能产生误判：
+
+- `unlock_lock` 会被误判为 acquire（包含 "lock" 但不包含 "unlock"... 等等，包含 "unlock"，所以是 release。但 `relock` 会被误判为 acquire）
+- 自定义函数名如 `block`、`clock` 会被误判为 lock acquire
+
+```zig
+return std.mem.indexOf(u8, func_name_slice, "lock") != null and
+    std.mem.indexOf(u8, func_name_slice, "unlock") == null;
+```
+
+**修复建议**：
+
+使用与 `isKnownLockFunctionByName` 相同的精确匹配列表，而非子串匹配。
+
+---
+
+## 5. 代码质量观察
+
+### 5.1 正面评价
+
+- **`taint_state.zig` + `value_id_map.zig`**：`TaintContext` 通过 `ValueIdMap` 实现了安全的指针到 ID 映射，彻底避免了 64 位系统上的指针截断问题。设计清晰，接口完善。
+- **`fact/store.zig` 的 `insert` 方法**：使用 `errdefer` 正确回滚所有 4 个 SoA 数组，保证了原子性。
+- **`pass/manager.zig`**：Kahn 算法实现拓扑排序，正确检测循环依赖和缺失依赖。
+- **`registry/semantic_registry.zig`**：分层设计（Layer 1-4），支持多语言语义，使用 suffix/contains 匹配处理平台差异。
+- **`engine/loader.zig`**：遵循"单一所有者"原则，`deinit` 是幂等的，资源管理清晰。
+
+### 5.2 架构风险
+
+| 风险 | 描述 |
+|------|------|
+| **两套并行的污点分析** | `taint.zig`（TaintPass）和 `taint_propagation.zig`（TaintPropagationPass）存在功能重叠。TaintPass 使用 `TaintGraph` + DFG fact 传播，TaintPropagationPass 使用 `TaintContext` + 直接 IR 遍历。两者可能产生不一致的分析结果。 |
+| **QueryEngine 线程安全** | `QueryEngine` 直接访问 `FactStore.kinds.items` 等内部字段（如 `query.zig` 第 30 行），绕过了 `FactStore` 的 mutex。如果 `insert` 和 `query` 并发执行，可能导致数据竞争。 |
+| **Severity 枚举重复定义** | `Severity` 在 `diag/issue.zig`、`diag/aggregator.zig`、`registry/semantic_registry.zig`、`pass/analysis/flow_path.zig`、`pass/analysis/ffi_analysis.zig`、`pass/analysis/vulnerability_rules.zig` 中分别定义，类型不兼容，无法直接比较。 |
+
+---
+
+## 6. 修复优先级建议
+
+| 优先级 | 编号 | 描述 | 预估工作量 |
+|--------|------|------|-----------|
+| P0 | OS-H02 | `memory_alloc`/`memory_free` 枚举值不匹配 | 5 分钟 |
+| P0 | OS-H01 | 指针截断 ID 碰撞 | 30 分钟 |
+| P1 | OS-H03 | `TaintPass.init` 错误未处理 | 5 分钟 |
+| P1 | OS-M02 | `detectDoubleFree` 逻辑错误 | 1 小时 |
+| P2 | OS-M01 | `catch unreachable` 反模式 | 1 小时 |
+| P2 | OS-M03 | `getIssuesBySeverity` 内存所有权 | 30 分钟 |
+| P2 | OS-M04 | 传播迭代上限不足 | 15 分钟 |
+| P3 | OS-L01 | `hasTaintedDataFlow` 过于粗略 | 2 小时 |
+| P3 | OS-L02 | sanitizer 提前 return | 30 分钟 |
+| P3 | OS-L03 | `isLockAcquire` 字符串误判 | 30 分钟 |
+
+---
+
+*审计完成。共发现 10 个问题：3 个高危、4 个中危、3 个低危。*

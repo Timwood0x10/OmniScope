@@ -54,10 +54,29 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 ### 修复
 
+#### 安全审计修复
+
 - **BUG-02**: `getIssuesBySeverity()` 中的 use-after-free - 无实际问题（未发现 defer）
 - **BUG-03**: llvm\_safe.zig 中未初始化的 `err_msg` - 已正确初始化为 null
 - **BUG-11**: lsp.zig 测试代码中字符串字面量的 `free()` - 移除对 `code` 字段的错误 `free()` 调用
 - **BUG-12**: formatter.zig 中的 JSON 转义 - 添加 `writeEscapedString()` 辅助函数
+
+#### 代码质量
+
+- **BUG-04**: taint propagation 中的指针截断 - 重构 26 处调用使用 `ValueIdMap`
+- **BUG-01**: FactStore errdefer 回滚 - 现在正确回滚所有 4 个 SoA 数组（kinds, subj, obj, ctx）
+- **BUG-05**: `classifyRisk`/`isSink` - 对安全关键函数恢复精确匹配
+- **BUG-06**: `profiler.summary()` - 现在需要调用者提供 buffer 以保证线程安全
+- **BUG-07**: `graph.zig` - 添加所有权语义文档
+- **BUG-08**: Pipeline 时间戳 - 使用 `@max` 防止负值
+- **BUG-10**: 死代码移除 - `contains()` 现在正确使用
+- **BUG-12**: `taint_state.zig` - 移除 `catch unreachable` 模式
+
+#### CI/CD
+
+- 添加 `concurrency` 配置防止重复运行
+- 修复 release workflow 只在 `master` 分支触发（不在 `main`）
+- 简化 workflow 依赖
 
 ### 测试结果
 

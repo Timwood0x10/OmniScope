@@ -54,10 +54,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Security Audit Fixes
+
 - **BUG-02**: Use-after-free in `getIssuesBySeverity()` - No actual issue (no defer found)
 - **BUG-03**: Uninitialized `err_msg` in llvm\_safe.zig - Already properly initialized to null
 - **BUG-11**: String literal `free()` in lsp.zig test code - Removed erroneous `free()` calls on `code` field
 - **BUG-12**: JSON escaping in formatter.zig - Added `writeEscapedString()` helper
+
+#### Code Quality
+
+- **BUG-04**: Pointer truncation in taint propagation - Refactored 26 call sites to use `ValueIdMap`
+- **BUG-01**: FactStore errdefer rollback - Now properly rolls back all 4 SoA arrays (kinds, subj, obj, ctx)
+- **BUG-05**: `classifyRisk`/`isSink` - Reverted to exact matching for security-critical functions
+- **BUG-06**: `profiler.summary()` - Now requires caller-provided buffer for thread safety
+- **BUG-07**: `graph.zig` - Added documentation for ownership semantics
+- **BUG-08**: Pipeline timestamp - Uses `@max` to prevent negative duration
+- **BUG-10**: Dead code removed - `contains()` now properly used
+- **BUG-12**: `taint_state.zig` - Removed `catch unreachable` pattern
+
+#### CI/CD
+
+- Added `concurrency` configuration to prevent duplicate runs
+- Fixed release workflow to only trigger on `master` branch (not `main`)
+- Simplified workflow dependencies
 
 ### Test Results
 
