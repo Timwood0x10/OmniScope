@@ -6,10 +6,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., 0.2.0)'
-        required: false
 
 permissions:
   contents: write
@@ -18,9 +14,24 @@ env:
   ZIG_VERSION: 0.15.2
 
 jobs:
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CI workflow
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: CI Status
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          running-workflow-name: CI Gate
+
   get-version:
     name: Get Version
     runs-on: ubuntu-latest
+    needs: ci-gate
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -29,154 +40,172 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${{ github.ref#refs/tags/v }}"
           else
-            VERSION=$(cat VERSION 2>/dev/null || echo "0.2.0")
+            VERSION=$(cat VERSION 2>/dev/null || echo "0.1.3")
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
-  build-linux:
-    name: Build Linux
+  build-linux-x86_64:
+    name: Build (Linux x86_64)
+    needs: [ci-gate, get-version]
     runs-on: ubuntu-latest
-    needs: [get-version]
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          source /home/runner/.zvm/bin/zvm.zsh
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
       - name: Install LLVM
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
           sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
           sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Build
-        run: zig build -Doptimize=ReleaseFast
+
+      - name: Build Release
+        run: |
+          source /home/runner/.zvm/bin/zvm.zsh
+          make build
+
       - name: Package
         run: |
           mkdir -p dist
           cp zig-out/bin/OmniScope dist/OmniScope-${{ needs.get-version.outputs.version }}-linux-x86_64
-          cd dist && tar -czvf OmniScope-${{ needs.get-version.outputs.version }}-linux-x86_64.tar.gz OmniScope-${{ needs.get-version.outputs.version }}-linux-x86_64
-      - name: Upload artifact
+          chmod +x dist/OmniScope-${{ needs.get-version.outputs.version }}-linux-x86_64
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-binary
-          path: dist/*.tar.gz
+          name: OmniScope-linux-x86_64
+          path: dist/OmniScope-${{ needs.get-version.outputs.version }}-linux-x86_64
+          retention-days: 1
 
-  build-macos:
-    name: Build macOS
+  build-macos-aarch64:
+    name: Build (macOS aarch64)
+    needs: [ci-gate, get-version]
     runs-on: macos-latest
-    needs: [get-version]
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          source $HOME/.zvm/bin/zvm.zsh
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: brew install llvm@21
-      - name: Build
-        run: zig build -Doptimize=ReleaseFast
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp zig-out/bin/OmniScope dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64
-          cd dist && tar -czvf OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64.tar.gz OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-binary
-          path: dist/*.tar.gz
 
-  build-macos-arm:
-    name: Build macOS ARM
-    runs-on: macos-latest
-    needs: [get-version]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: brew install llvm@21
-      - name: Build
-        run: zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+
+      - name: Build Release
+        run: |
+          source $HOME/.zvm/bin/zvm.zsh
+          make build
+
       - name: Package
         run: |
           mkdir -p dist
           cp zig-out/bin/OmniScope dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-aarch64
-          cd dist && tar -czvf OmniScope-${{ needs.get-version.outputs.version }}-macos-aarch64.tar.gz OmniScope-${{ needs.get-version.outputs.version }}-macos-aarch64
-      - name: Upload artifact
+          chmod +x dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-aarch64
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-arm-binary
-          path: dist/*.tar.gz
+          name: OmniScope-macos-aarch64
+          path: dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-aarch64
+          retention-days: 1
 
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    needs: [get-version, build-linux, build-macos, build-macos-arm]
+  build-macos-x86_64:
+    name: Build (macOS x86_64)
+    needs: [ci-gate, get-version]
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          source $HOME/.zvm/bin/zvm.zsh
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+
+      - name: Install LLVM
+        run: brew install llvm@21
+
+      - name: Build Release
+        run: |
+          source $HOME/.zvm/bin/zvm.zsh
+          make build
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp zig-out/bin/OmniScope dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64
+          chmod +x dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          path: dist
-      - name: Prepare release assets
-        run: |
-          mkdir -p release-assets
-          find dist -name "*.tar.gz" -exec cp {} release-assets/ \;
-      - name: Generate checksums
-        run: |
-          cd release-assets
-          sha256sum *.tar.gz > checksums.sha256
-      - name: Extract changelog for version
+          name: OmniScope-macos-x86_64
+          path: dist/OmniScope-${{ needs.get-version.outputs.version }}-macos-x86_64
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [build-linux-x86_64, build-macos-aarch64, build-macos-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read CHANGELOG
         id: changelog
         run: |
           VERSION="${{ needs.get-version.outputs.version }}"
-          # Extract changelog section for this version
-          CHANGELOG_CONTENT=$(awk -v ver="$VERSION" '
-            /^## \[/ { in_section=0 }
-            /^## \['"$ver"'\]/ { in_section=1; next }
-            in_section { print }
-          ' CHANGELOG.md | sed 's/^#*/#/g' | head -50)
-          echo "content<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      - name: Create Release
+          CHANGELOG=$(awk "
+            /^## .*\[.*${VERSION}.*\]/ { found=1; next }
+            found && /^## .*\[/ { exit }
+            found { print }
+          " CHANGELOG.md)
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG=$(cat CHANGELOG.md)
+          fi
+          echo "$CHANGELOG" > /tmp/release_body.md
+          echo "Extracted changelog for v${VERSION}"
+
+      - name: Download Linux x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: OmniScope-linux-x86_64
+          path: dist
+
+      - name: Download macOS aarch64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: OmniScope-macos-aarch64
+          path: dist
+
+      - name: Download macOS x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: OmniScope-macos-x86_64
+          path: dist
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.get-version.outputs.tag }}
           name: OmniScope ${{ needs.get-version.outputs.tag }}
-          body: |
-            ## OmniScope ${{ needs.get-version.outputs.version }}
-
-            ${{ steps.changelog.outputs.content }}
-
-            See [CHANGELOG.md](CHANGELOG.md) for full history.
-          files: release-assets/*
+          body_path: /tmp/release_body.md
           draft: false
-          prerelease: ${{ contains(needs.get-version.outputs.version, '-') }}
+          prerelease: false
+          files: |
+            dist/OmniScope-*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
