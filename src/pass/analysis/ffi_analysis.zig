@@ -342,6 +342,7 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn detectLanguageFromDwarf(func: c.LLVMValueRef) ?Language {
+        if (@intFromPtr(func) == 0) return null;
         const subprogram = debug_info.getFunctionSubprogram(func) orelse return null;
         const compile_unit = subprogram.getCompileUnit() orelse return null;
         const dwarf_lang = compile_unit.getLanguage();
@@ -357,7 +358,7 @@ pub const FFIAnalysisPass = struct {
         };
     }
 
-    fn detectLanguage(_: *FFIAnalysisPass, func_name: []const u8) Language {
+    fn detectLanguage(func_name: []const u8) Language {
         if (func_name.len >= 2) {
             if (std.mem.startsWith(u8, func_name, "_ZN") or
                 std.mem.startsWith(u8, func_name, "_R"))
@@ -386,7 +387,7 @@ pub const FFIAnalysisPass = struct {
         return .c;
     }
 
-    fn detectLanguageWithDwarf(func: c.LLVMValueRef, func_name: []const u8) Language {
+    fn detectLanguageWithDwarf(_: *FFIAnalysisPass, func: c.LLVMValueRef, func_name: []const u8) Language {
         if (detectLanguageFromDwarf(func)) |lang| {
             return lang;
         }

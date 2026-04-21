@@ -6,6 +6,7 @@
 //! This pass is stateless - it analyzes the IR directly and emits diagnostics.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -74,6 +75,55 @@ pub fn isLibC(func_name: []const u8) bool {
         }
     }
     return false;
+}
+
+/// Resolve indirect call to a list of candidate functions based on type signature.
+///
+/// Type-based devirtualization: LLVM IR is strongly typed, so an indirect call's
+/// candidate targets are limited to functions whose signatures match the call's
+/// function type. This provides a conservative may-call set.
+///
+/// Returns a slice of function pointers. Caller must free the returned slice
+/// by calling `allocator.free(result)`.
+pub fn resolveIndirectCall(
+    allocator: Allocator,
+    mod: c.LLVMModuleRef,
+    call_inst: c.LLVMValueRef,
+) ![]usize {
+    const called_val = c.LLVMGetCalledValue(call_inst);
+    if (@intFromPtr(called_val) == 0) return &[_]usize{};
+
+    const call_type = c.LLVMTypeOf(called_val);
+    if (@intFromPtr(call_type) == 0) return &[_]usize{};
+
+    var candidates = try std.ArrayList(usize).initCapacity(allocator, 16);
+    defer candidates.deinit(allocator);
+
+    var func = c.LLVMGetFirstFunction(mod);
+    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+        const func_type = c.LLVMTypeOf(func);
+        if (@intFromPtr(func_type) == 0) continue;
+
+        if (c.LLVMCountParams(func) == c.LLVMCountParamTypes(call_type) and
+            c.LLVMGetReturnType(call_type) == c.LLVMGetReturnType(func_type))
+        {
+            var param_match = true;
+            const param_count = c.LLVMCountParams(func);
+            for (0..param_count) |i| {
+                const func_param = c.LLVMGetParam(func, @intCast(i));
+                const call_param = c.LLVMGetParam(called_val, @intCast(i));
+                if (c.LLVMTypeOf(func_param) != c.LLVMTypeOf(call_param)) {
+                    param_match = false;
+                    break;
+                }
+            }
+            if (param_match) {
+                try candidates.append(allocator, @intFromPtr(func));
+            }
+        }
+    }
+
+    return try candidates.toOwnedSlice(allocator);
 }
 
 /// Functions that are considered sources of taint.
@@ -196,12 +246,30 @@ pub const CallGraphPass = struct {
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
                     const called_val = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called_val) != 0) {
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        if (@intFromPtr(called_name_ptr) != 0) {
-                            const called_name = std.mem.span(called_name_ptr);
+                    if (@intFromPtr(called_val) == 0) continue;
+
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    if (@intFromPtr(called_name_ptr) != 0) {
+                        const called_name = std.mem.span(called_name_ptr);
+                        for (nodes.items, 0..) |*callee_node, callee_idx| {
+                            if (std.mem.eql(u8, callee_node.name, called_name)) {
+                                try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
+                                break;
+                            }
+                        }
+                    } else {
+                        const module = c.LLVMGetGlobalParent(caller_node.func_ref);
+                        const candidates = try resolveIndirectCall(allocator, module, inst);
+                        defer allocator.free(candidates);
+
+                        for (candidates) |candidate| {
+                            const candidate_val = @as(c.LLVMValueRef, @ptrFromInt(candidate));
+                            const candidate_name_ptr = c.LLVMGetValueName(candidate_val);
+                            if (@intFromPtr(candidate_name_ptr) == 0) continue;
+                            const candidate_name = std.mem.span(candidate_name_ptr);
+
                             for (nodes.items, 0..) |*callee_node, callee_idx| {
-                                if (std.mem.eql(u8, callee_node.name, called_name)) {
+                                if (std.mem.eql(u8, callee_node.name, candidate_name)) {
                                     try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
                                     break;
                                 }
@@ -500,4 +568,10 @@ test "SINK_PATTERNS - system is a sink" {
         }
     }
     try std.testing.expect(found_system);
+}
+
+test "resolveIndirectCall - null returns empty" {
+    const result = try resolveIndirectCall(std.testing.allocator, null, null);
+    defer std.testing.allocator.free(result);
+    try std.testing.expect(result.len == 0);
 }

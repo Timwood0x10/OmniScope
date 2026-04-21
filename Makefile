@@ -22,10 +22,20 @@
 #   make go          - Build Go → C example
 #   make zig         - Build Zig → C example
 
-ZIG ?= $(shell which zig 2>/dev/null || echo "zig")
-CLANG ?= $(shell which clang 2>/dev/null || echo "clang")
-CLANGXX ?= $(shell which clang++ 2>/dev/null || echo "clang++")
-LLVM_LINK ?= $(shell which llvm-link 2>/dev/null || echo "llvm-link")
+ifeq ($(OS),Windows_NT)
+    DETECTED_OS := windows
+    TOOL_QUERY := where
+    REDIRECT := 2>nul
+else
+    DETECTED_OS := unix
+    TOOL_QUERY := which
+    REDIRECT := 2>/dev/null
+endif
+
+ZIG = $(shell $(TOOL_QUERY) zig $(REDIRECT) || echo zig)
+CLANG = $(shell $(TOOL_QUERY) clang $(REDIRECT) || echo clang)
+CLANGXX = $(shell $(TOOL_QUERY) clang++ $(REDIRECT) || echo clang++)
+LLVM_LINK = $(shell $(TOOL_QUERY) llvm-link $(REDIRECT) || echo llvm-link)
 
 # Directories
 BUILD_DIR ?= build

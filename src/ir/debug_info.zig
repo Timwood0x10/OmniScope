@@ -205,6 +205,7 @@ pub const DISubprogram = struct {
     }
 
     pub fn getCompileUnit(self: DISubprogram) ?DICompileUnit {
+        if (self.raw == null) return null;
         const cu = c.LLVMGetSubprogramCompileUnit(self.raw);
         if (cu == null) return null;
         return DICompileUnit{ .raw = cu };
