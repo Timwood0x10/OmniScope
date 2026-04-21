@@ -513,4 +513,4 @@ OmniScope 的设计参考了以下项目和研究：
 
 ## 许可证
 
-MIT License
+Apache License 2.0

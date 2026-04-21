@@ -107,9 +107,10 @@ pub const TaintPass = struct {
             while (inst != null) {
                 // Get opcode
                 const opcode = c.LLVMGetInstructionOpcode(inst);
+                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
-                // Check if this is a call instruction (using LLVM opcode constants)
-                if (opcode == c.LLVMCall) {
+                // Check if this is a call instruction
+                if (opcode_enum == .Call) {
                     const inst_id = ctx.getNextId();
 
                     // Check if this is a taint source

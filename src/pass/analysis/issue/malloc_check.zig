@@ -102,9 +102,10 @@ pub const MallocCheckPass = struct {
         alloc_results: *std.AutoHashMap(c.LLVMValueRef, AllocInfo),
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
+        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
         // Check for allocation call
-        if (opcode == c.LLVMCall) {
+        if (opcode_enum == .Call) {
             const called = c.LLVMGetCalledValue(inst);
             if (@intFromPtr(called) != 0) {
                 const name_ptr = c.LLVMGetValueName(called);
@@ -156,9 +157,10 @@ pub const MallocCheckPass = struct {
         diag: *DiagnosticWriter,
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
+        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
         // Skip the allocation call itself and null checks
-        if (opcode == c.LLVMCall or opcode == c.LLVMICmp) {
+        if (opcode_enum == .Call or opcode_enum == .ICmp) {
             return false;
         }
 

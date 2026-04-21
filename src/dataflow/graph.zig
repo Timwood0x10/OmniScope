@@ -398,7 +398,14 @@ pub const DataFlowGraph = struct {
         var index: usize = 0;
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
-                result[index] = issue;
+                const message_copy = try self.allocator.dupe(u8, issue.message);
+                result[index] = .{
+                    .kind = issue.kind,
+                    .message = message_copy,
+                    .location = issue.location,
+                    .severity = issue.severity,
+                    .confidence = issue.confidence,
+                };
                 index += 1;
             }
         }

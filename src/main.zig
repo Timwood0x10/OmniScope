@@ -78,7 +78,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);
-        } else if (arg[0] == '-') {
+        } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
             try config.input_files.append(allocator, arg);

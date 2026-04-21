@@ -115,7 +115,7 @@ pub const FreeValidationPass = struct {
             }
         }
 
-        // Second pass: check free calls
+        // Third pass: check free calls
         bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);

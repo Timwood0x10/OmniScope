@@ -1,9 +1,10 @@
 {"issues": [
-  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
-  {"kind": "buffer_overflow", "message": "Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)", "severity": "medium"},
-  {"kind": "buffer_overflow", "message": "Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)", "severity": "medium"},
-  {"kind": "command_injection", "message": "Unsafe FFI call to '_system' - Command injection vulnerability (confidence: 65.00%)", "severity": "medium"},
-  {"kind": "ffi_unsafe_call", "message": "Unsafe FFI call to 'c_free' - General FFI safety issue (confidence: 50.00%)", "severity": "medium"},
-  {"kind": "ffi_unsafe_call", "message": "Unsafe FFI call to 'c_free_string' - General FFI safety issue (confidence: 55.00%)", "severity": "medium"},
-  {"kind": "command_injection", "message": "Unsafe FFI call to 'c_system_call' - Command injection vulnerability (confidence: 70.00%)", "severity": "high"}
-]}
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"buffer_overflow","message":"Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"buffer_overflow","message":"Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"command_injection","message":"Unsafe FFI call to '_system' - Command injection vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"ffi_unsafe_call","message":"Unsafe FFI call to 'c_free' - General FFI safety issue (confidence: 50.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"ffi_unsafe_call","message":"Unsafe FFI call to 'c_free_string' - General FFI safety issue (confidence: 55.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"command_injection","message":"Unsafe FFI call to 'c_system_call' - Command injection vulnerability (confidence: 70.00%)","severity":"high","location":{"file":"unknown","line":0,"column":0}}
+]}}
