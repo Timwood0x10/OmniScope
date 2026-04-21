@@ -291,8 +291,40 @@ src/
 
 ### Requirements
 
-- Zig 0.15+
-- LLVM 18+ (macOS: `brew install llvm`)
+- **Zig**: 0.15.2+ (managed via [zvm](https://www.zvm.app))
+- **LLVM**: 18+ (21 recommended)
+
+**Environment Setup:**
+
+```bash
+# Install zvm and Zig
+curl -sSL https://www.zvm.app/install.sh | bash
+source ~/.zshrc  # or ~/.bashrc
+zvm install 0.15.2
+zvm use 0.15.2
+
+# Install LLVM
+# macOS:
+brew install llvm@21
+
+# Linux (Ubuntu/Debian):
+wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
+sudo apt-get update && sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
+
+# Ensure tools are in PATH
+export PATH="$(which zig):$(which clang):$(which clang++):$(which llvm-link):$PATH"
+```
+
+**Required Tools in PATH:**
+- `zig` - Zig compiler
+- `clang` - C compiler (with LLVM IR emission support)
+- `clang++` - C++ compiler
+- `llvm-link` - LLVM IR linker
+
+**Platform Notes:**
+- **Linux x86_64 / macOS ARM64**: Pre-built binaries available via CI
+- **Windows / macOS x86_64**: Build from source using the commands below
 
 ### Build
 

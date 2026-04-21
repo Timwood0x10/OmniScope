@@ -44,16 +44,16 @@ graph TB
 
 **核心洞察**：虽然语言不同，但底层都能抽象成几类动作：
 
-| 动作 | 含义 |
-|------|------|
-| `alloc` | 分配资源 |
-| `free` | 释放资源 |
-| `borrow` | 临时借用 |
-| `transfer` | 所有权转移 |
-| `retain` | 增加引用计数 |
-| `release` | 减少引用计数 |
-| `escape` | 逃逸到未知作用域 |
-| `pin` | 固定内存 |
+| 动作         | 含义       |
+| ---------- | -------- |
+| `alloc`    | 分配资源     |
+| `free`     | 释放资源     |
+| `borrow`   | 临时借用     |
+| `transfer` | 所有权转移    |
+| `retain`   | 增加引用计数   |
+| `release`  | 减少引用计数   |
+| `escape`   | 逃逸到未知作用域 |
+| `pin`      | 固定内存     |
 
 ### 2. 数据驱动的语义映射
 
@@ -70,14 +70,14 @@ pub const Rule = struct {
 
 **规则表示例**：
 
-| 语言 | 函数模式 | 动作 |
-|------|----------|------|
-| C | `malloc` | `alloc` |
-| C | `free` | `free` |
-| Rust | `into_raw` | `transfer` |
-| Rust | `from_raw` | `transfer` |
-| Zig | `Allocator.alloc` | `alloc` |
-| Go | `C.malloc` | `alloc` |
+| 语言   | 函数模式              | 动作         |
+| ---- | ----------------- | ---------- |
+| C    | `malloc`          | `alloc`    |
+| C    | `free`            | `free`     |
+| Rust | `into_raw`        | `transfer` |
+| Rust | `from_raw`        | `transfer` |
+| Zig  | `Allocator.alloc` | `alloc`    |
+| Go   | `C.malloc`        | `alloc`    |
 
 添加新语言支持 = 添加新规则，无需修改代码。
 
@@ -85,28 +85,28 @@ pub const Rule = struct {
 
 OmniScope 能检测的跨语言违规类型：
 
-| 违规类型 | 描述 |
-|----------|------|
-| `rust_freed_by_c` | Rust Box 内存被 C free 释放 |
-| `c_freed_by_rust` | C 内存被 Rust Box 释放 |
-| `borrow_escape` | 借用指针逃逸到 C |
-| `cross_lang_double_free` | 跨语言双重释放 |
-| `zig_freed_by_c` | Zig allocator 内存被 C free 释放 |
-| `go_cstring_leak` | Go cgo CString 泄漏 |
-| `go_pointer_stored_in_c` | Go 指针违反 cgo 规则 |
-| `go_pointer_escape` | Go 指针逃逸到 C |
+| 违规类型                     | 描述                          |
+| ------------------------ | --------------------------- |
+| `rust_freed_by_c`        | Rust Box 内存被 C free 释放      |
+| `c_freed_by_rust`        | C 内存被 Rust Box 释放           |
+| `borrow_escape`          | 借用指针逃逸到 C                   |
+| `cross_lang_double_free` | 跨语言双重释放                     |
+| `zig_freed_by_c`         | Zig allocator 内存被 C free 释放 |
+| `go_cstring_leak`        | Go cgo CString 泄漏           |
+| `go_pointer_stored_in_c` | Go 指针违反 cgo 规则              |
+| `go_pointer_escape`      | Go 指针逃逸到 C                  |
 
 ### 4. 语言检测策略
 
 语言检测依赖命名约定：
 
-| 语言 | 模式 | 示例 |
-|------|------|------|
+| 语言   | 模式                                       | 示例                           |
+| ---- | ---------------------------------------- | ---------------------------- |
 | Rust | `_R` 前缀 / `alloc::` / `core::` / `std::` | `_RNgAbCd` / `std::Box::new` |
-| C++ | `_Z` 前缀 (Itanium ABI) | `_Znam` / `_ZdaPv` |
-| Zig | `Allocator.` / `allocImpl` | `Allocator.alloc` |
-| Go | `_cgo_` / `C.` | `_cgo_abc123` / `C.malloc` |
-| C | 标准库函数 | `malloc`, `free`, `read` |
+| C++  | `_Z` 前缀 (Itanium ABI)                    | `_Znam` / `_ZdaPv`           |
+| Zig  | `Allocator.` / `allocImpl`               | `Allocator.alloc`            |
+| Go   | `_cgo_` / `C.`                           | `_cgo_abc123` / `C.malloc`   |
+| C    | 标准库函数                                    | `malloc`, `free`, `read`     |
 
 ## 系统架构
 
@@ -291,15 +291,49 @@ src/
 
 ### 环境要求
 
-- Zig 0.15+
-- LLVM 18+ (macOS: `brew install llvm`)
+- **Zig**: 0.15.2+ (推荐使用 [zvm](https://www.zvm.app) 管理版本)
+- **LLVM**: 18+ (推荐 21)
+
+**环境配置:**
+
+```bash
+# 安装 zvm 和 Zig
+curl -sSL https://www.zvm.app/install.sh | bash
+source ~/.zshrc  # 或 ~/.bashrc
+zvm install 0.15.2
+zvm use 0.15.2
+
+# 安装 LLVM
+# macOS:
+brew install llvm@21
+
+# Linux (Ubuntu/Debian):
+wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
+sudo apt-get update && sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
+
+# 确保工具在 PATH 中
+export PATH="$(which zig):$(which clang):$(which clang++):$(which llvm-link):$PATH"
+```
+
+**PATH 中必需的工具:**
+
+- `zig` - Zig 编译器
+- `clang` - C 编译器 (需支持 LLVM IR 输出)
+- `clang++` - C++ 编译器
+- `llvm-link` - LLVM IR 链接器
+
+**平台说明:**
+
+- **Linux x86\_64 / macOS ARM64**: CI 提供预编译二进制
+- **Windows / macOS x86\_64**: 推荐使用下方命令从源码编译
 
 ### 构建
 
 ```bash
-zig build      # 编译
-zig build test # 运行测试
-zig build run  # 运行示例
+make build
+make test-all
+make rust-run # or other examples
 ```
 
 ### 运行分析
@@ -319,73 +353,73 @@ zig build run  # 运行示例
 
 ### 支持的跨语言边界
 
-| Caller | Callee | 状态 | 检测能力 |
-|--------|--------|------|----------|
-| Rust | C | ✅ 稳定 | Box malloc 所有权转移 |
-| C | Rust | ✅ 稳定 | malloc Box 所有权转移 |
-| Zig | C | ✅ 稳定 | allocator malloc |
-| Go | C | ⚠️ 实验 | cgo 指针规则 |
-| C++ | C | ⚠️ 实验 | new malloc |
-| Swift | C | 🔜 规划 | retain/release |
+| Caller | Callee | 状态    | 检测能力             |
+| ------ | ------ | ----- | ---------------- |
+| Rust   | C      | ✅ 稳定  | Box malloc 所有权转移 |
+| C      | Rust   | ✅ 稳定  | malloc Box 所有权转移 |
+| Zig    | C      | ✅ 稳定  | allocator malloc |
+| Go     | C      | ⚠️ 实验 | cgo 指针规则         |
+| C++    | C      | ⚠️ 实验 | new malloc       |
+| Swift  | C      | 🔜 规划 | retain/release   |
 
 ### 漏洞检测类型
 
-| 类型 | 严重性 | 检测条件 |
-|------|--------|----------|
-| Command Injection | CRITICAL | `system()`, `popen()` 等 |
-| Buffer Overflow | HIGH | `strcpy()`, `sprintf()` 等 |
-| Use After Free | HIGH | 释放后使用 |
-| Double Free | HIGH | 同一资源释放两次 |
-| Cross-Lang Free Mismatch | HIGH | 跨语言释放错误 |
-| Memory Leak | MEDIUM | 资源未释放 |
-| Borrow Escape | MEDIUM | 借用指针逃逸 |
-| Format String | MEDIUM | `printf()` 家族 |
+| 类型                       | 严重性      | 检测条件                      |
+| ------------------------ | -------- | ------------------------- |
+| Command Injection        | CRITICAL | `system()`, `popen()` 等   |
+| Buffer Overflow          | HIGH     | `strcpy()`, `sprintf()` 等 |
+| Use After Free           | HIGH     | 释放后使用                     |
+| Double Free              | HIGH     | 同一资源释放两次                  |
+| Cross-Lang Free Mismatch | HIGH     | 跨语言释放错误                   |
+| Memory Leak              | MEDIUM   | 资源未释放                     |
+| Borrow Escape            | MEDIUM   | 借用指针逃逸                    |
+| Format String            | MEDIUM   | `printf()` 家族             |
 
 ## 测试结果
 
 ### 跨语言测试用例
 
-| 测试用例 | 语言对 | 描述 |
-|----------|--------|------|
-| rust_ffi_demo | Rust to C | 6 个故意埋入的 bug |
-| cpp_cffi | C++ to C | 7 个故意埋入的 bug |
-| cross_lang_violations | Multi to C | 4 种违规类型 |
-| real_world | OpenSSL/SQLite/zlib | 检测到 42 个问题 |
+| 测试用例                    | 语言对                 | 描述           |
+| ----------------------- | ------------------- | ------------ |
+| rust\_ffi\_demo         | Rust to C           | 6 个故意埋入的 bug |
+| cpp\_cffi               | C++ to C            | 7 个故意埋入的 bug |
+| cross\_lang\_violations | Multi to C          | 4 种违规类型      |
+| real\_world             | OpenSSL/SQLite/zlib | 检测到 42 个问题   |
 
 ### 真实 FFI 分析 (2026-04-18)
 
-| 指标 | 值 |
-|------|-----|
-| 分析的函数数 | 63 |
+| 指标      | 值  |
+| ------- | -- |
+| 分析的函数数  | 63 |
 | FFI 边界数 | 19 |
-| 危险调用数 | 42 |
-| 分配数 | 18 |
-| 释放数 | 18 |
-| 追踪的指针数 | 18 |
+| 危险调用数   | 42 |
+| 分配数     | 18 |
+| 释放数     | 18 |
+| 追踪的指针数  | 18 |
 
 ### 准确率指标
 
-| 指标 | v0.3.0 之前 | v0.3.0 之后 | 提升 |
-|------|-------------|--------------|------|
-| 召回率 | 82% | **93%** | +11% |
-| 精确率 | 95% | **100%** | +5% |
-| 误报率 | 5% | **0%** | -5% |
+| 指标  | v0.3.0 之前 | v0.3.0 之后 | 提升   |
+| --- | --------- | --------- | ---- |
+| 召回率 | 82%       | **93%**   | +11% |
+| 精确率 | 95%       | **100%**  | +5%  |
+| 误报率 | 5%        | **0%**    | -5%  |
 
 **分类详情**：
 
-| 类别 | 预期 | 检测到 |
-|------|------|--------|
-| OpenSSL 问题 | ~8 | 15 |
-| SQLite 问题 | ~6 | 6 |
-| zlib 问题 | ~3 | 7 |
+| 类别         | 预期  | 检测到 |
+| ---------- | --- | --- |
+| OpenSSL 问题 | \~8 | 15  |
+| SQLite 问题  | \~6 | 6   |
+| zlib 问题    | \~3 | 7   |
 
 ### 问题严重性分布
 
-| 严重性 | 数量 | 百分比 |
-|--------|------|--------|
-| HIGH | 18 | 43% |
+| 严重性    | 数量 | 百分比 |
+| ------ | -- | --- |
+| HIGH   | 18 | 43% |
 | MEDIUM | 20 | 48% |
-| LOW | 4 | 9% |
+| LOW    | 4  | 9%  |
 
 ## 性能基准
 
@@ -393,28 +427,28 @@ zig build run  # 运行示例
 
 ### 核心操作
 
-| 操作 | 时间 | 说明 |
-|------|------|------|
-| Lifetime Engine Alloc | ~2μs/iter | 每次分配追踪 |
-| Semantic Registry Lookup | ~31ns/iter | 已知函数 |
-| Semantic Mapper | ~2ns/iter | 每次 C 函数映射 |
-| 泄漏检测 (100 资源) | ~9μs | 线性扩展 |
+| 操作                       | 时间          | 说明        |
+| ------------------------ | ----------- | --------- |
+| Lifetime Engine Alloc    | \~2μs/iter  | 每次分配追踪    |
+| Semantic Registry Lookup | \~31ns/iter | 已知函数      |
+| Semantic Mapper          | \~2ns/iter  | 每次 C 函数映射 |
+| 泄漏检测 (100 资源)            | \~9μs       | 线性扩展      |
 
 ### 真实世界分析
 
-| 规模 | 函数数 | FFI 边界数 | 分析时间 | 内存 |
-|------|--------|------------|----------|------|
-| 小型 | <100 | <10 | <100ms | <50MB |
-| 中型 | ~63 | ~19 | <500ms | <50MB |
-| 大型 | 1K-10K | 100-1K | <10s | <1GB |
+| 规模 | 函数数    | FFI 边界数 | 分析时间   | 内存    |
+| -- | ------ | ------- | ------ | ----- |
+| 小型 | <100   | <10     | <100ms | <50MB |
+| 中型 | \~63   | \~19    | <500ms | <50MB |
+| 大型 | 1K-10K | 100-1K  | <10s   | <1GB  |
 
 ### 微基准
 
-| 操作 | 时间/迭代 | 吞吐量 |
-|------|-----------|--------|
-| FactStore Insert | ~2.5μs | 400K ops/sec |
-| Registry Lookup | ~33ns | 30M ops/sec |
-| FFI Detection | ~2ns | 500M ops/sec |
+| 操作               | 时间/迭代   | 吞吐量          |
+| ---------------- | ------- | ------------ |
+| FactStore Insert | \~2.5μs | 400K ops/sec |
+| Registry Lookup  | \~33ns  | 30M ops/sec  |
+| FFI Detection    | \~2ns   | 500M ops/sec |
 
 ## CI/CD 集成
 

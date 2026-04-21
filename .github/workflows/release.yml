@@ -104,45 +104,45 @@ jobs:
           path: dist/OmniScope-macos-aarch64
           retention-days: 1
 
-  build-macos-x86_64:
-    name: Build (macOS x86_64)
-    needs: ci-gate
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-
-      - name: Install LLVM
-        run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
-
-      - name: Build Release
-        run: make build
-
-      - name: Package
-        run: |
-          mkdir -p dist
-          cp zig-out/bin/OmniScope dist/OmniScope-macos-x86_64
-          chmod +x dist/OmniScope-macos-x86_64
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: OmniScope-macos-x86_64
-          path: dist/OmniScope-macos-x86_64
-          retention-days: 1
+  # build-macos-x86_64:
+  #   name: Build (macOS x86_64)
+  #   needs: ci-gate
+  #   runs-on: macos-13
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install ZVM and Zig
+  #       run: |
+  #         curl -sSL https://www.zvm.app/install.sh | bash
+  #         export ZVM_INSTALL="$HOME/.zvm/self"
+  #         export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+  #         zvm install ${{ env.ZIG_VERSION }}
+  #         zvm use ${{ env.ZIG_VERSION }}
+  #         echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+  #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
+  #
+  #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+  #
+  #     - name: Build Release
+  #       run: make build
+  #
+  #     - name: Package
+  #       run: |
+  #         mkdir -p dist
+  #         cp zig-out/bin/OmniScope dist/OmniScope-macos-x86_64
+  #         chmod +x dist/OmniScope-macos-x86_64
+  #
+  #     - name: Upload Artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: OmniScope-macos-x86_64
+  #         path: dist/OmniScope-macos-x86_64
+  #         retention-days: 1
 
   release:
     name: Create Release
-    needs: [build-linux-x86_64, build-macos-aarch64, build-macos-x86_64]
+    needs: [build-linux-x86_64, build-macos-aarch64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -181,12 +181,6 @@ jobs:
           name: OmniScope-macos-aarch64
           path: dist
 
-      - name: Download macOS x86_64 binary
-        uses: actions/download-artifact@v4
-        with:
-          name: OmniScope-macos-x86_64
-          path: dist
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -198,6 +192,5 @@ jobs:
           files: |
             dist/OmniScope-linux-x86_64
             dist/OmniScope-macos-aarch64
-            dist/OmniScope-macos-x86_64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

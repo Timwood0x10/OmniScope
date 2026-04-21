@@ -149,53 +149,53 @@ jobs:
           path: zig-out/bin/OmniScope
           retention-days: 5
 
-  test-macos-x86:
-    name: Test (macOS x86_64)
-    needs: quality-gate
-    runs-on: macos-13
-    env:
-      MAKEFLAGS: >-
-        ZIG=zig
-        CLANG=clang
-        CLANGXX=clang++
-        LLVM_LINK=llvm-link
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-
-      - name: Install LLVM
-        run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
-
-      - name: Build
-        run: make build
-
-      - name: Unit Tests
-        run: make test-unit
-
-      - name: Integration Tests
-        run: make test-int
-
-      - name: Issue Verification Tests
-        run: make test-issues
-
-      - name: Stability Tests
-        run: make test-stability
-
-      - name: Upload macOS x86_64 Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: OmniScope-macos-x86_64
-          path: zig-out/bin/OmniScope
-          retention-days: 5
+  # test-macos-x86:
+  #   name: Test (macOS x86_64)
+  #   needs: quality-gate
+  #   runs-on: macos-13
+  #   env:
+  #     MAKEFLAGS: >-
+  #       ZIG=zig
+  #       CLANG=clang
+  #       CLANGXX=clang++
+  #       LLVM_LINK=llvm-link
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install ZVM and Zig
+  #       run: |
+  #         curl -sSL https://www.zvm.app/install.sh | bash
+  #         export ZVM_INSTALL="$HOME/.zvm/self"
+  #         export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+  #         zvm install ${{ env.ZIG_VERSION }}
+  #         zvm use ${{ env.ZIG_VERSION }}
+  #         echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+  #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
+  #
+  #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+  #
+  #     - name: Build
+  #       run: make build
+  #
+  #     - name: Unit Tests
+  #       run: make test-unit
+  #
+  #     - name: Integration Tests
+  #       run: make test-int
+  #
+  #     - name: Issue Verification Tests
+  #       run: make test-issues
+  #
+  #     - name: Stability Tests
+  #       run: make test-stability
+  #
+  #     - name: Upload macOS x86_64 Binary
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: OmniScope-macos-x86_64
+  #         path: zig-out/bin/OmniScope
+  #         retention-days: 5
 
   run-examples-linux:
     name: Run Examples (Linux x86_64)
@@ -284,56 +284,56 @@ jobs:
       - name: Run Real-World FFI Analysis
         run: make real-world-run
 
-  run-examples-macos-x86:
-    name: Run Examples (macOS x86_64)
-    needs: test-macos-x86
-    runs-on: macos-13
-    env:
-      MAKEFLAGS: >-
-        ZIG=zig
-        CLANG=clang
-        CLANGXX=clang++
-        LLVM_LINK=llvm-link
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-
-      - name: Install LLVM
-        run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
-
-      - name: Build
-        run: make build
-
-      - name: Build FFI Examples (C/C++)
-        run: make cpp
-
-      - name: Run C++ FFI Analysis
-        run: make cpp-run
-
-      - name: Build Real-World FFI Examples
-        run: make real-world
-
-      - name: Run Real-World FFI Analysis
-        run: make real-world-run
+  # run-examples-macos-x86:
+  #   name: Run Examples (macOS x86_64)
+  #   needs: test-macos-x86
+  #   runs-on: macos-13
+  #   env:
+  #     MAKEFLAGS: >-
+  #       ZIG=zig
+  #       CLANG=clang
+  #       CLANGXX=clang++
+  #       LLVM_LINK=llvm-link
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install ZVM and Zig
+  #       run: |
+  #         curl -sSL https://www.zvm.app/install.sh | bash
+  #         export ZVM_INSTALL="$HOME/.zvm/self"
+  #         export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+  #         zvm install ${{ env.ZIG_VERSION }}
+  #         zvm use ${{ env.ZIG_VERSION }}
+  #         echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+  #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
+  #
+  #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+  #
+  #     - name: Build
+  #       run: make build
+  #
+  #     - name: Build FFI Examples (C/C++)
+  #       run: make cpp
+  #
+  #     - name: Run C++ FFI Analysis
+  #       run: make cpp-run
+  #
+  #     - name: Build Real-World FFI Examples
+  #       run: make real-world
+  #
+  #     - name: Run Real-World FFI Analysis
+  #       run: make real-world-run
 
   ci-status:
     name: CI Status
     if: always()
-    needs: [test-linux, test-macos-arm, test-macos-x86, run-examples-linux, run-examples-macos-arm, run-examples-macos-x86]
+    needs: [test-linux, test-macos-arm, run-examples-linux, run-examples-macos-arm]
     runs-on: ubuntu-latest
     steps:
       - name: Check CI results
         run: |
-          for result in "${{ needs.test-linux.result }}" "${{ needs.test-macos-arm.result }}" "${{ needs.test-macos-x86.result }}" "${{ needs.run-examples-linux.result }}" "${{ needs.run-examples-macos-arm.result }}" "${{ needs.run-examples-macos-x86.result }}"; do
+          for result in "${{ needs.test-linux.result }}" "${{ needs.test-macos-arm.result }}" "${{ needs.run-examples-linux.result }}" "${{ needs.run-examples-macos-arm.result }}"; do
             if [ "$result" = "failure" ]; then
               echo "::error::CI failed – at least one job failed"
               exit 1
