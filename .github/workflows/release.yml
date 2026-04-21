@@ -108,7 +108,7 @@ jobs:
 
   build-macos-arm:
     name: Build macOS ARM
-    runs-on: macos-latest
+    runs-on: macos-14
     needs: [get-version]
     steps:
       - uses: actions/checkout@v4
@@ -121,23 +121,13 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Download LLVM
-        run: |
-          LLVM_VERSION="21.0.0"
-          LLVM_DIR="/tmp/llvm"
-          mkdir -p "$LLVM_DIR"
-          curl -sSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang+llvm-${LLVM_VERSION}-arm64-apple-darwin.tar.xz" -o /tmp/llvm.tar.xz
-          tar -xf /tmp/llvm.tar.xz -C "$LLVM_DIR" --strip-components=1
-          rm /tmp/llvm.tar.xz
-          echo "LLVM_DIR=$LLVM_DIR" >> $GITHUB_ENV
-          echo "PATH=$LLVM_DIR/bin:$PATH" >> $GITHUB_PATH
+      - name: Install LLVM
+        run: brew install llvm
       - name: Build
         run: |
-          export CC="$LLVM_DIR/bin/clang"
-          export CXX="$LLVM_DIR/bin/clang++"
-          export LDFLAGS="-L$LLVM_DIR/lib -lz"
-          export CPPFLAGS="-I$LLVM_DIR/include"
-          export LIBRARY_PATH="$LLVM_DIR/lib"
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
+          export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
           zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
       - name: Package
         run: |
