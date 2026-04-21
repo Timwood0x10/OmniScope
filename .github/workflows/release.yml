@@ -32,7 +32,7 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
           elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref#refs/tags/v }}"
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION=$(cat VERSION 2>/dev/null || echo "0.2.0")
           fi
