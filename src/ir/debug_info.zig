@@ -203,6 +203,12 @@ pub const DISubprogram = struct {
     pub fn getLine(self: DISubprogram) u32 {
         return c.LLVMGetSubprogramLine(self.raw);
     }
+
+    pub fn getCompileUnit(self: DISubprogram) ?DICompileUnit {
+        const cu = c.LLVMGetSubprogramCompileUnit(self.raw);
+        if (cu == null) return null;
+        return DICompileUnit{ .raw = cu };
+    }
 };
 
 pub const DILocation = struct {
