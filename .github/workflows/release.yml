@@ -151,6 +151,19 @@ jobs:
         run: |
           cd release-assets
           sha256sum *.tar.gz > checksums.sha256
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          # Extract changelog section for this version
+          CHANGELOG_CONTENT=$(awk -v ver="$VERSION" '
+            /^## \[/ { in_section=0 }
+            /^## \['"$ver"'\]/ { in_section=1; next }
+            in_section { print }
+          ' CHANGELOG.md | sed 's/^#*/#/g' | head -50)
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -159,7 +172,9 @@ jobs:
           body: |
             ## OmniScope ${{ needs.get-version.outputs.version }}
 
-            See CHANGELOG.md for details.
+            ${{ steps.changelog.outputs.content }}
+
+            See [CHANGELOG.md](CHANGELOG.md) for full history.
           files: release-assets/*
           draft: false
           prerelease: ${{ contains(needs.get-version.outputs.version, '-') }}
