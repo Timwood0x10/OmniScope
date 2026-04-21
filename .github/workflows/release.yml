@@ -88,10 +88,13 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: brew install llvm@21
+      - name: Install LLVM and dependencies
+        run: brew install llvm@21 zlib
       - name: Build
-        run: zig build -Doptimize=ReleaseFast
+        run: |
+          export LDFLAGS="-L/opt/homebrew/lib -lz"
+          export LIBRARY_PATH="/opt/homebrew/lib"
+          zig build -Doptimize=ReleaseFast
       - name: Package
         run: |
           mkdir -p dist
@@ -118,10 +121,17 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: brew install llvm@21
+      - name: Install LLVM and dependencies
+        run: |
+          brew install llvm@21 zlib
+          export LDFLAGS="-L/opt/homebrew/lib"
+          export CPPFLAGS="-I/opt/homebrew/include"
+          export LIBRARY_PATH="/opt/homebrew/lib:$LIBRARY_PATH"
       - name: Build
-        run: zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+        run: |
+          export LDFLAGS="-L/opt/homebrew/lib -lz"
+          export LIBRARY_PATH="/opt/homebrew/lib"
+          zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
       - name: Package
         run: |
           mkdir -p dist
