@@ -112,7 +112,7 @@ pub const PassManager = struct {
         // Initialize in-degree and adjacency
         for (0..num_passes) |i| {
             in_degree[i] = 0;
-            try adjacency.append(self.allocator, std.ArrayList(usize).initCapacity(self.allocator, 0) catch unreachable);
+            try adjacency.append(self.allocator, try std.ArrayList(usize).initCapacity(self.allocator, 0));
         }
 
         // Build graph
@@ -132,7 +132,7 @@ pub const PassManager = struct {
         }
 
         // Kahn's algorithm
-        var queue = std.ArrayList(usize).initCapacity(self.allocator, num_passes) catch unreachable;
+        var queue = try std.ArrayList(usize).initCapacity(self.allocator, num_passes);
         defer queue.deinit(self.allocator);
 
         // Find all nodes with in-degree 0
@@ -142,7 +142,7 @@ pub const PassManager = struct {
             }
         }
 
-        var result = std.ArrayList(usize).initCapacity(self.allocator, num_passes) catch unreachable;
+        var result = try std.ArrayList(usize).initCapacity(self.allocator, num_passes);
         defer result.deinit(self.allocator);
 
         while (queue.items.len > 0) {

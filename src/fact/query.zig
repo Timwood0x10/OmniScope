@@ -25,7 +25,7 @@ pub const QueryEngine = struct {
         kind: FactKind,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.kinds.items[i] == kind) {
                 const fact = Fact.init(
@@ -48,7 +48,7 @@ pub const QueryEngine = struct {
         subject: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.subj.items[i] == subject) {
                 const fact = Fact.init(
@@ -71,7 +71,7 @@ pub const QueryEngine = struct {
         object: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.obj.items[i] == object) {
                 const fact = Fact.init(
@@ -94,7 +94,7 @@ pub const QueryEngine = struct {
         context: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.ctx.items[i] == context) {
                 const fact = Fact.init(

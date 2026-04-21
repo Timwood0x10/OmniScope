@@ -82,7 +82,7 @@ pub const DiagnosticAggregator = struct {
         severity: Severity,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
+        var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
 
         for (self.diagnostics.items) |diag| {
             if (diag.severity == severity) {
@@ -109,7 +109,7 @@ pub const DiagnosticAggregator = struct {
         kind: DiagnosticKind,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
+        var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
 
         for (self.diagnostics.items) |diag| {
             if (diag.kind == kind) {

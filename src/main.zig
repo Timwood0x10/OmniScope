@@ -410,9 +410,8 @@ fn isDangerousFFIPattern(match: *const OmniScope.cross_lang.FFIMatch) bool {
         "popen",
         "eval",
         "shell",
-        "debug", // Debug functions often have format string vulnerabilities
-        "dump", // Dump functions often have format string vulnerabilities
-        "verify", // Verify functions often call system commands
+        "run_command",
+        "execute_command",
     };
 
     for (dangerous_patterns) |pattern| {
