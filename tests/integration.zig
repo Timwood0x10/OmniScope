@@ -218,6 +218,7 @@ test "Integration - CLI output" {
 
     // Create CLI output
     var cli_output = CLIOutput.init(std.testing.allocator, false, false);
+    defer cli_output.deinit();
 
     const diagnostics = pipeline.getDiagnosticAggregator().getAll();
     _ = cli_output.printDiagnostics(diagnostics);
@@ -419,4 +420,27 @@ test "Integration - diagnostic aggregation" {
     try std.testing.expectEqual(@as(usize, 1), summary.error_count);
     try std.testing.expectEqual(@as(usize, 1), summary.warning_count);
     try std.testing.expectEqual(@as(usize, 1), summary.info_count);
+}
+
+test "Integration - Plugin system initialization" {
+    var pipeline = Pipeline.init(std.testing.allocator);
+    defer pipeline.deinit();
+
+    // Initialize plugin system
+    try pipeline.initPluginSystem();
+
+    // Verify plugin loader is created
+    try std.testing.expectEqual(@as(usize, 1), pipeline.getPluginCount());
+}
+
+test "Integration - Plugin system query" {
+    var pipeline = Pipeline.init(std.testing.allocator);
+    defer pipeline.deinit();
+
+    // Initialize plugin system
+    try pipeline.initPluginSystem();
+
+    // Query plugins (should return 0 diagnostics since no plugins loaded)
+    const diag_count = try pipeline.queryPlugins();
+    try std.testing.expectEqual(@as(usize, 0), diag_count);
 }

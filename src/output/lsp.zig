@@ -262,9 +262,6 @@ pub const LSPOutput = struct {
             if (diag.message.len > 0) {
                 self.allocator.free(diag.message);
             }
-            if (diag.code) |code| {
-                self.allocator.free(code);
-            }
         }
         self.allocator.free(diagnostics);
     }
@@ -341,9 +338,6 @@ test "LSPOutput - convert single diagnostic" {
 
     const lsp_diag = try output.convertDiagnostic(diag, file_map);
     defer output.allocator.free(lsp_diag.message);
-    if (lsp_diag.code) |code| {
-        output.allocator.free(code);
-    }
 
     try std.testing.expectEqual(LSPSeverity.Error, lsp_diag.severity);
     try std.testing.expectEqualStrings("Test error diagnostic", lsp_diag.message);
@@ -491,9 +485,6 @@ test "LSPOutput - all diagnostic kinds" {
 
         const lsp_diag = try output.convertDiagnostic(diag, file_map);
         defer output.allocator.free(lsp_diag.message);
-        if (lsp_diag.code) |code| {
-            output.allocator.free(code);
-        }
 
         try std.testing.expect(lsp_diag.code != null);
     }

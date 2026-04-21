@@ -48,6 +48,11 @@ pub const CLIOutput = struct {
         };
     }
 
+    /// Flush and cleanup
+    pub fn deinit(self: *CLIOutput) void {
+        self.stderr_writer.flush() catch {};
+    }
+
     /// Print diagnostics to stderr
     ///
     /// Parameters:
@@ -166,8 +171,6 @@ pub const CLIOutput = struct {
 
     /// Print diagnostic header
     fn printDiagnosticHeader(self: *CLIOutput, writer: anytype, diag: Diagnostic) !void {
-        _ = self;
-
         // Print severity label with appropriate color
         switch (diag.severity) {
             .err => {
@@ -197,7 +200,6 @@ pub const CLIOutput = struct {
 
     /// Print confidence score
     fn printConfidence(self: *CLIOutput, writer: anytype, diag: Diagnostic) !void {
-        _ = self;
         try writer.writeAll("  ");
         try self.printColored(writer, Color.dim, "confidence: ");
         try writer.print("{d:.2}\n", .{diag.confidence});
@@ -205,7 +207,6 @@ pub const CLIOutput = struct {
 
     /// Print location
     fn printLocation(self: *CLIOutput, writer: anytype, diag: Diagnostic) !void {
-        _ = self;
         try writer.writeAll("  ");
         try self.printColored(writer, Color.dim, "location: ");
         try writer.print("{d}\n", .{diag.loc});
@@ -214,7 +215,6 @@ pub const CLIOutput = struct {
     /// Print diagnostic kind
     fn printDiagnosticKind(self: *CLIOutput, writer: anytype, kind: DiagnosticKind) !void {
         _ = self;
-
         const kind_str = switch (kind) {
             .static_issue => "static",
             .runtime_issue => "runtime",

@@ -21,6 +21,20 @@ pub const FactKind = enum(u8) {
     taint,
     /// Memory allocation
     allocation,
+    /// FFI boundary crossing
+    ffi_boundary,
+    /// Detected vulnerability
+    vulnerability,
+    /// Ownership allocation event
+    ownership_alloc,
+    /// Ownership free event
+    ownership_free,
+    /// Ownership transfer across boundary
+    ownership_transfer,
+    /// Ownership violation detected
+    ownership_violation,
+    /// Function symbol mapping (func_id -> name_hash)
+    func_symbol,
 };
 
 /// Fact represents a single analysis fact

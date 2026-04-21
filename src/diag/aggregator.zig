@@ -5,8 +5,27 @@
 //! and produces unified reports.
 
 const std = @import("std");
-const MergedEvent = @import("../runtime/merge.zig").MergedEvent;
-const Anomaly = @import("../runtime/merge.zig").Anomaly;
+
+/// Simplified event representation (temporary until runtime/merge.zig is implemented)
+pub const MergedEvent = struct {
+    tag: u32,
+    tid: u32,
+    loc: u32,
+    arg: u32,
+    timestamp: u64,
+    confidence: f32,
+
+    pub fn isHighConfidence(self: MergedEvent) bool {
+        return self.confidence >= 0.7;
+    }
+};
+
+/// Simplified anomaly representation
+pub const Anomaly = struct {
+    loc: u32,
+    description: []const u8,
+    confidence: f32,
+};
 
 /// Free a diagnostics slice returned by getBySeverity or getByKind
 ///
@@ -63,7 +82,7 @@ pub const DiagnosticAggregator = struct {
         severity: Severity,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
+        var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
 
         for (self.diagnostics.items) |diag| {
             if (diag.severity == severity) {
@@ -90,7 +109,7 @@ pub const DiagnosticAggregator = struct {
         kind: DiagnosticKind,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
-        var filtered = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable;
+        var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
 
         for (self.diagnostics.items) |diag| {
             if (diag.kind == kind) {
@@ -405,4 +424,42 @@ test "DiagnosticAggregator - clear" {
     aggregator.clear();
 
     try std.testing.expectEqual(@as(usize, 0), aggregator.diagnostics.items.len);
+}
+
+test "DiagnosticAggregator - multiple diagnostics same severity" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    // Add multiple diagnostics with same severity
+    try aggregator.add(Diagnostic{
+        .kind = .static_issue,
+        .severity = .err,
+        .loc = 1,
+        .message = "Error 1",
+        .confidence = 0.9,
+    });
+
+    try aggregator.add(Diagnostic{
+        .kind = .runtime_issue,
+        .severity = .err,
+        .loc = 2,
+        .message = "Error 2",
+        .confidence = 0.7,
+    });
+
+    const errors = try aggregator.getBySeverity(.err, std.testing.allocator);
+    defer freeDiagnosticsSlice(std.testing.allocator, errors);
+    try std.testing.expectEqual(@as(usize, 2), errors.len);
+}
+
+test "DiagnosticAggregator - empty aggregation" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    // Get summary with no diagnostics
+    const summary = try aggregator.generateSummary(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 0), summary.total);
+    try std.testing.expectEqual(@as(usize, 0), summary.error_count);
+    try std.testing.expectEqual(@as(usize, 0), summary.warning_count);
+    try std.testing.expectEqual(@as(usize, 0), summary.info_count);
 }

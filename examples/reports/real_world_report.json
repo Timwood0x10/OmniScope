@@ -1,0 +1,20 @@
+{"issues": [
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
+  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}}
+]}}

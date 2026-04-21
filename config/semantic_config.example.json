@@ -1,0 +1,59 @@
+{
+  "functions": [
+    {
+      "pattern": "run_command",
+      "match_type": "exact",
+      "kind": "command_exec",
+      "severity": "critical",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": true,
+      "description": "Execute shell command wrapper - command injection risk"
+    },
+    {
+      "pattern": "copy_user_input",
+      "match_type": "exact",
+      "kind": "unchecked_copy",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": true,
+      "description": "Copy user input wrapper - buffer overflow risk"
+    },
+    {
+      "pattern": "ffi_alloc",
+      "match_type": "exact",
+      "kind": "allocator",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "FFI allocation wrapper - returns ownership, check for null"
+    },
+    {
+      "pattern": "ffi_free",
+      "match_type": "exact",
+      "kind": "deallocator",
+      "severity": "high",
+      "consumes_ownership": true,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "FFI deallocation wrapper - consumes ownership"
+    },
+    {
+      "pattern": "safe_memcpy",
+      "match_type": "exact",
+      "kind": "unchecked_copy",
+      "severity": "low",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Safe memcpy wrapper with bounds checking"
+    }
+  ]
+}

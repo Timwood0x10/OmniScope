@@ -128,7 +128,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all cfg_edge facts to find frequently executed paths
-        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch return;
+        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(cfg_facts);
 
         // Count how many successors each basic block has
@@ -164,7 +167,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all alias_may facts
-        const alias_facts = self.query.queryByKind(.alias_may, ctx.allocator) catch return;
+        const alias_facts = self.query.queryByKind(.alias_may, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(alias_facts);
 
         // For each alias_may fact, instrument both pointers
@@ -194,7 +200,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all cfg_edge facts to identify loops
-        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch return;
+        const cfg_facts = self.query.queryByKind(.cfg_edge, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(cfg_facts);
 
         // Build a map of back edges (edges that point to earlier blocks)
@@ -246,7 +255,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all lock_acquire facts
-        const lock_acquire_facts = self.query.queryByKind(.lock_acquire, ctx.allocator) catch return;
+        const lock_acquire_facts = self.query.queryByKind(.lock_acquire, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(lock_acquire_facts);
 
         // Instrument all lock acquire points
@@ -259,7 +271,10 @@ pub const InstrumentationPlanner = struct {
         }
 
         // Query all lock_release facts
-        const lock_release_facts = self.query.queryByKind(.lock_release, ctx.allocator) catch return;
+        const lock_release_facts = self.query.queryByKind(.lock_release, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(lock_release_facts);
 
         // Instrument all lock release points
@@ -281,7 +296,10 @@ pub const InstrumentationPlanner = struct {
         _ = diag;
 
         // Query all taint facts
-        const taint_facts = self.query.queryByKind(.taint, ctx.allocator) catch return;
+        const taint_facts = self.query.queryByKind(.taint, ctx.allocator) catch {
+            // If we can't query facts, just skip this optimization
+            return;
+        };
         defer ctx.allocator.free(taint_facts);
 
         // Instrument all taint sources and sinks
@@ -335,13 +353,13 @@ pub const InstrumentationPlan = struct {
     pub fn init(allocator: std.mem.Allocator) InstrumentationPlan {
         return .{
             .allocator = allocator,
-            .instrumentations = std.ArrayList(Instrumentation).init(allocator),
+            .instrumentations = std.ArrayList(Instrumentation).initCapacity(allocator, 16) catch unreachable,
         };
     }
 
     /// Deinitialize the instrumentation plan
     pub fn deinit(self: *InstrumentationPlan) void {
-        self.instrumentations.deinit();
+        self.instrumentations.deinit(self.allocator);
     }
 
     /// Add an instrumentation point
@@ -350,7 +368,7 @@ pub const InstrumentationPlan = struct {
         inst_id: u32,
         location: u32,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = 0, // Default tag
             .location = location,
@@ -366,12 +384,30 @@ pub const InstrumentationPlan = struct {
         location: u32,
         event_tag: u8,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
             .priority = @intFromEnum(Priority.medium),
             .score = 0.0,
+        });
+    }
+
+    /// Add an instrumentation point with custom score
+    pub fn addInstrumentationWithScore(
+        self: *InstrumentationPlan,
+        inst_id: u32,
+        location: u32,
+        event_tag: u8,
+        priority: Priority,
+        score: f32,
+    ) !void {
+        try self.instrumentations.append(self.allocator, .{
+            .inst_id = inst_id,
+            .event_tag = event_tag,
+            .location = location,
+            .priority = @intFromEnum(priority),
+            .score = score,
         });
     }
 
@@ -383,17 +419,17 @@ pub const InstrumentationPlan = struct {
         event_tag: u8,
         priority: Priority,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
             .priority = @intFromEnum(priority),
-            .score = @floatFromInt(@intFromEnum(priority)),
+            .score = 0.0,
         });
     }
 
     /// Add an instrumentation point with priority and score
-    pub fn addInstrumentationWithScore(
+    pub fn addInstrumentationWithPriorityAndScore(
         self: *InstrumentationPlan,
         inst_id: u32,
         location: u32,
@@ -401,7 +437,7 @@ pub const InstrumentationPlan = struct {
         priority: Priority,
         score: f32,
     ) !void {
-        try self.instrumentations.append(.{
+        try self.instrumentations.append(self.allocator, .{
             .inst_id = inst_id,
             .event_tag = event_tag,
             .location = location,
@@ -462,7 +498,7 @@ pub const InstrumentationPlan = struct {
     /// Merge another instrumentation plan
     pub fn merge(self: *InstrumentationPlan, other: *const InstrumentationPlan) !void {
         for (other.instrumentations.items) |inst| {
-            try self.instrumentations.append(inst);
+            try self.instrumentations.append(self.allocator, inst);
         }
     }
 
@@ -473,7 +509,7 @@ pub const InstrumentationPlan = struct {
         var seen = std.AutoHashMap(u32, Instrumentation).init(self.allocator);
         defer seen.deinit();
 
-        var optimized = std.ArrayList(Instrumentation).init(self.allocator);
+        var optimized = std.ArrayList(Instrumentation).initCapacity(self.allocator, 16) catch unreachable;
 
         for (self.instrumentations.items) |inst| {
             // Check if we already have an instrumentation at this location
@@ -494,10 +530,10 @@ pub const InstrumentationPlan = struct {
         // Collect all unique instrumentations
         var iter = seen.iterator();
         while (iter.next()) |entry| {
-            try optimized.append(entry.value_ptr.*);
+            try optimized.append(self.allocator, entry.value_ptr.*);
         }
 
-        self.instrumentations.deinit();
+        self.instrumentations.deinit(self.allocator);
         self.instrumentations = optimized;
     }
 };

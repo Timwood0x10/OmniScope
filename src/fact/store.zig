@@ -12,15 +12,22 @@ const FactKind = @import("fact.zig").FactKind;
 /// Principle: Structure of Arrays for cache-friendliness and append-only for parallelism
 pub const FactStore = struct {
     allocator: std.mem.Allocator,
+    mutex: std.Thread.Mutex,
     kinds: std.ArrayList(FactKind),
     subj: std.ArrayList(u32),
     obj: std.ArrayList(u32),
     ctx: std.ArrayList(u32),
 
     /// Create a new fact store
+    ///
+    /// Note: initCapacity with non-zero capacity uses catch unreachable because
+    /// allocation failure here is considered fatal (process cannot continue without
+    /// its fact store). This is a design decision - we panic rather than handle
+    /// OOM during initialization since the fact store is core infrastructure.
     pub fn init(allocator: std.mem.Allocator) FactStore {
         return .{
             .allocator = allocator,
+            .mutex = std.Thread.Mutex{},
             .kinds = std.ArrayList(FactKind).initCapacity(allocator, 1024) catch unreachable,
             .subj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
             .obj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
@@ -50,6 +57,17 @@ pub const FactStore = struct {
         object: u32,
         context: u32,
     ) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        const orig_len = self.kinds.items.len;
+        errdefer {
+            self.kinds.shrinkRetainingCapacity(orig_len);
+            self.subj.shrinkRetainingCapacity(orig_len);
+            self.obj.shrinkRetainingCapacity(orig_len);
+            self.ctx.shrinkRetainingCapacity(orig_len);
+        }
+
         try self.kinds.append(self.allocator, kind);
         try self.subj.append(self.allocator, subject);
         try self.obj.append(self.allocator, object);
@@ -75,7 +93,9 @@ pub const FactStore = struct {
     /// Query facts by kind
     ///
     /// Returns a slice of indices matching the given kind
-    pub fn queryByKind(self: *const FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
+    pub fn queryByKind(self: *FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         var indices = std.ArrayList(usize).initCapacity(allocator, 128) catch unreachable;
         for (self.kinds.items, 0..) |k, i| {
             if (k == kind) {
@@ -230,6 +250,45 @@ test "FactStore - boundary values" {
     try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.subject);
     try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.object);
     try std.testing.expectEqual(@as(u32, 0xFFFFFFFF), second.context);
+}
+
+test "FactStore - zero values" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert fact with all zero values
+    try store.insert(.cfg_edge, 0, 0, 0);
+
+    try std.testing.expectEqual(@as(usize, 1), store.count());
+    const fact = store.get(0).?;
+    try std.testing.expectEqual(FactKind.cfg_edge, fact.kind);
+    try std.testing.expectEqual(@as(u32, 0), fact.subject);
+    try std.testing.expectEqual(@as(u32, 0), fact.object);
+    try std.testing.expectEqual(@as(u32, 0), fact.context);
+}
+
+test "FactStore - mixed operations" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts of different kinds
+    try store.insert(.cfg_edge, 1, 2, 0);
+    try store.insert(.dfg_edge, 3, 4, 0);
+    try store.insert(.cfg_edge, 5, 6, 0);
+
+    // Query by kind
+    const cfg_facts = try store.queryByKind(.cfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(cfg_facts);
+    try std.testing.expectEqual(@as(usize, 2), cfg_facts.len);
+
+    const dfg_facts = try store.queryByKind(.dfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(dfg_facts);
+    try std.testing.expectEqual(@as(usize, 1), dfg_facts.len);
+
+    // Query non-existent kind
+    const taint_facts = try store.queryByKind(.taint, std.testing.allocator);
+    defer std.testing.allocator.free(taint_facts);
+    try std.testing.expectEqual(@as(usize, 0), taint_facts.len);
 }
 
 test "FactStore - all fact kinds" {

@@ -25,7 +25,7 @@ pub const QueryEngine = struct {
         kind: FactKind,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.kinds.items[i] == kind) {
                 const fact = Fact.init(
@@ -48,7 +48,7 @@ pub const QueryEngine = struct {
         subject: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.subj.items[i] == subject) {
                 const fact = Fact.init(
@@ -71,7 +71,7 @@ pub const QueryEngine = struct {
         object: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.obj.items[i] == object) {
                 const fact = Fact.init(
@@ -94,7 +94,7 @@ pub const QueryEngine = struct {
         context: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        var facts = std.ArrayList(Fact).initCapacity(allocator, 0) catch unreachable;
+        var facts = try std.ArrayList(Fact).initCapacity(allocator, 0);
         for (0..self.store.count()) |i| {
             if (self.store.ctx.items[i] == context) {
                 const fact = Fact.init(
@@ -264,4 +264,32 @@ test "QueryEngine - query on large dataset" {
     for (ctx_facts) |fact| {
         try std.testing.expectEqual(@as(u32, 5), fact.context);
     }
+}
+
+test "QueryEngine - query with zero values" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    // Insert facts with zero values
+    try store.insert(.cfg_edge, 0, 0, 0);
+    try store.insert(.dfg_edge, 0, 0, 0);
+
+    var engine = QueryEngine.init(&store);
+
+    // Query by subject with zero
+    const facts = try engine.queryBySubject(0, std.testing.allocator);
+    defer std.testing.allocator.free(facts);
+    try std.testing.expectEqual(@as(usize, 2), facts.len);
+}
+
+test "QueryEngine - query empty store" {
+    var store = FactStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    var engine = QueryEngine.init(&store);
+
+    // Query on empty store should return empty results
+    const facts = try engine.queryByKind(.cfg_edge, std.testing.allocator);
+    defer std.testing.allocator.free(facts);
+    try std.testing.expectEqual(@as(usize, 0), facts.len);
 }

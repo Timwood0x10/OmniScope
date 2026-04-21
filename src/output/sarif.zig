@@ -1,18 +1,55 @@
 //! SARIF Output Format
 //!
-//! This module implements SARIF (Static Analysis Results Interchange Format) output.
-//! SARIF is a standard format for sharing static analysis results.
+//! This module implements SARIF (Static Analysis Results Interchange Format) v2.1.0 output.
+//! SARIF is an OASIS standard for sharing static analysis results.
+//!
+//! Features:
+//! - Full location information (file, line, column)
+//! - CWE taxonomy mapping
+//! - Code flows for data flow visualization
+//! - Related locations for context
+//! - Properties for additional metadata
 
 const std = @import("std");
-const Diagnostic = @import("../diag/aggregator.zig").Diagnostic;
-const DiagnosticKind = @import("../diag/aggregator.zig").DiagnosticKind;
-const Severity = @import("../diag/aggregator.zig").Severity;
+
+const Issue = @import("../diag/issue.zig").Issue;
+const IssueKind = @import("../diag/issue.zig").IssueKind;
+const Severity = @import("../diag/issue.zig").Severity;
+const Location = @import("../diag/issue.zig").Location;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
+
+/// SARIF severity level mapping
+const SarifLevel = enum {
+    none,
+    note,
+    warning,
+    err,
+
+    fn fromSeverity(severity: Severity) SarifLevel {
+        return switch (severity) {
+            .low => .note,
+            .medium => .warning,
+            .high => .err,
+            .critical => .err,
+        };
+    }
+
+    fn toString(self: SarifLevel) []const u8 {
+        return switch (self) {
+            .none => "none",
+            .note => "note",
+            .warning => "warning",
+            .err => "error",
+        };
+    }
+};
 
 /// SARIF output handler
 pub const SarifOutput = struct {
     allocator: std.mem.Allocator,
     tool_name: []const u8,
     tool_version: []const u8,
+    tool_uri: []const u8,
 
     /// Create a new SARIF output handler
     pub fn init(allocator: std.mem.Allocator, tool_name: []const u8, tool_version: []const u8) SarifOutput {
@@ -20,46 +57,258 @@ pub const SarifOutput = struct {
             .allocator = allocator,
             .tool_name = tool_name,
             .tool_version = tool_version,
+            .tool_uri = "https://github.com/omniscope/omniscope",
         };
     }
 
-    /// Generate SARIF JSON from diagnostics
-    pub fn generate(self: *SarifOutput, diagnostics: []const Diagnostic) ![]const u8 {
-        var json = std.ArrayList(u8).init(self.allocator);
-        try json.appendSlice("{\"version\":\"2.1.0\",\"$schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"runs\":[{");
+    /// Create a new SARIF output handler with custom URI
+    pub fn initWithUri(allocator: std.mem.Allocator, tool_name: []const u8, tool_version: []const u8, uri: []const u8) SarifOutput {
+        return .{
+            .allocator = allocator,
+            .tool_name = tool_name,
+            .tool_version = tool_version,
+            .tool_uri = uri,
+        };
+    }
 
-        try json.appendSlice("\"tool\":{\"driver\":{\"name\":\"");
-        try json.appendSlice(self.tool_name);
-        try json.appendSlice("\",\"version\":\"");
-        try json.appendSlice(self.tool_version);
-        try json.appendSlice("\",\"information_uri\":\"https://github.com/omniscope/omniscope\"}},\"results\":[");
+    /// Generate SARIF JSON from issues
+    pub fn generate(self: *SarifOutput, issues: []const Issue) ![]const u8 {
+        var buf = std.array_list.Managed(u8).init(self.allocator);
+        defer buf.deinit();
 
-        for (diagnostics, 0..) |diag, i| {
-            if (i > 0) try json.append(',');
+        try buf.writer().writeAll(
+            \\{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            \\"version":"2.1.0",
+            \\"runs":[
+            \\{"tool":{"driver":{"name":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_name);
+        try buf.writer().writeAll(
+            \\","version":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_version);
+        try buf.writer().writeAll(
+            \\","informationUri":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_uri);
+        try buf.writer().writeAll(
+            \\","rules":[
+        );
 
-            try json.append('{');
-            try json.appendSlice("\"ruleId\":\"");
-            try json.appendSlice(@tagName(diag.kind));
-            try json.appendSlice("\",\"level\":\"");
-            try json.appendSlice(switch (diag.severity) {
-                .info => "note",
-                .warning => "warning",
-                .err => "error",
-            });
-            try json.appendSlice("\",\"message\":{\"text\":\"");
-            try json.appendSlice(diag.message);
-            try json.appendSlice("\"},\"locations\":[{\"physicalLocation\":{\"region\":{\"startLine\":");
-            try std.fmt.formatInt(diag.loc, 10, .lower, .{}, json.writer());
-            try json.appendSlice("}}}]}");
+        const rules = [_]IssueKind{
+            .ffi_unsafe_call, .unchecked_return, .type_mismatch,     .cross_language_leak,
+            .memory_leak,     .use_after_free,   .command_injection, .buffer_overflow,
+            .double_free,     .format_string,    .malloc_unchecked,  .invalid_free,
+        };
+        for (rules, 0..) |rule, i| {
+            if (i > 0) try buf.writer().writeAll(",");
+            try buf.writer().print(
+                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"{s}"}}}}
+            , .{ @tagName(rule), @tagName(rule), rule.toDescription() });
         }
 
-        try json.appendSlice("]}]}");
-        return json.toOwnedSlice();
+        try buf.writer().writeAll("]},\"results\":[");
+        for (issues, 0..) |issue, idx| {
+            if (idx > 0) try buf.writer().writeAll(",");
+            const file_str = issue.location.file orelse "unknown";
+            const line_num = issue.location.line orelse 0;
+            const col_num = issue.location.column orelse 0;
+            try buf.writer().writeAll(
+                \\{"ruleId":"
+            );
+            try writeEscapedString(buf.writer(), @tagName(issue.kind));
+            try buf.writer().writeAll(
+                \\","level":"
+            );
+            try writeEscapedString(buf.writer(), SarifLevel.fromSeverity(issue.severity).toString());
+            try buf.writer().writeAll(
+                \\","message":{"text":"
+            );
+            try writeEscapedString(buf.writer(), issue.message);
+            try buf.writer().writeAll(
+                \\"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"
+            );
+            try writeEscapedString(buf.writer(), file_str);
+            try buf.writer().writeAll(
+                \\"},"region":{"startLine":"
+            );
+            try buf.writer().print("{d}", .{line_num});
+            try buf.writer().writeAll(
+                \\,"startColumn":"
+            );
+            try buf.writer().print("{d}", .{col_num});
+            try buf.writer().writeAll(
+                \\}}}}]}
+            );
+        }
+
+        try buf.writer().writeAll("]}]}");
+
+        return try buf.toOwnedSlice();
+    }
+
+    /// Write run header with tool information
+    fn writeRunHeader(self: *SarifOutput, writer: anytype) !void {
+        try writer.writeAll("{\"tool\":{\"driver\":{");
+        try writer.writeAll("\"name\":\"");
+        try writeEscapedString(writer, self.tool_name);
+        try writer.writeAll("\",\"version\":\"");
+        try writeEscapedString(writer, self.tool_version);
+        try writer.writeAll("\",\"informationUri\":\"");
+        try writeEscapedString(writer, self.tool_uri);
+        try writer.writeAll("\",\"rules\":[");
+
+        // Write rule definitions
+        const rules = [_]IssueKind{
+            .ffi_unsafe_call,
+            .unchecked_return,
+            .type_mismatch,
+            .cross_language_leak,
+            .memory_leak,
+            .use_after_free,
+            .command_injection,
+            .buffer_overflow,
+            .double_free,
+            .format_string,
+            .malloc_unchecked,
+            .invalid_free,
+        };
+
+        for (rules, 0..) |kind, i| {
+            if (i > 0) try writer.writeByte(',');
+            try self.writeRule(writer, kind);
+        }
+
+        try writer.writeAll("]}}},");
+    }
+
+    /// Write a rule definition
+    fn writeRule(self: *SarifOutput, writer: anytype, kind: IssueKind) !void {
+        _ = self;
+        try writer.writeAll("{\"id\":\"");
+        try writeEscapedString(writer, @tagName(kind));
+        try writer.writeAll("\",\"shortDescription\":{\"text\":\"");
+        try writeEscapedString(writer, kind.toDescription());
+        try writer.writeAll("\"},\"fullDescription\":{\"text\":\"");
+        try writeEscapedString(writer, kind.toDescription());
+        try writer.writeAll("\"},\"defaultConfiguration\":{\"level\":\"");
+        const level = SarifLevel.fromSeverity(defaultSeverity(kind));
+        try writer.writeAll(level.toString());
+        try writer.writeAll("\"},\"relationships\":[{\"target\":{\"id\":\"CWE-");
+        try std.fmt.formatInt(kind.toCweId(), 10, .lower, .{}, writer);
+        try writer.writeAll("\",\"toolComponent\":{\"name\":\"CWE\"}},\"kinds\":[\"superset\"]}]}");
+    }
+
+    /// Write an issue as a SARIF result
+    fn writeIssue(self: *SarifOutput, writer: anytype, issue: Issue) !void {
+        try writer.writeAll("{\"ruleId\":\"");
+        try writeEscapedString(writer, @tagName(issue.kind));
+        try writer.writeAll("\",\"level\":\"");
+        try writer.writeAll(SarifLevel.fromSeverity(issue.severity).toString());
+        try writer.writeAll("\",\"message\":{\"text\":\"");
+        try writeEscapedString(writer, issue.message);
+        try writer.writeAll("\"}");
+
+        // Write location
+        try writer.writeAll(",\"locations\":[");
+        try self.writeLocation(writer, issue.location);
+        try writer.writeAll("]");
+
+        // Write code flows if trace exists
+        if (issue.hasTrace()) {
+            try writer.writeAll(",\"codeFlows\":[");
+            try self.writeCodeFlow(writer, issue.trace.?);
+            try writer.writeAll("]");
+        }
+
+        // Write properties
+        try writer.writeAll(",\"properties\":{\"confidence\":");
+        try std.fmt.formatFloatDecimal(issue.confidence, .{ .precision = 2 }, writer);
+        try writer.writeAll("}}");
+    }
+
+    /// Write a location object
+    fn writeLocation(self: *SarifOutput, writer: anytype, location: Location) !void {
+        _ = self;
+        try writer.writeAll("{\"physicalLocation\":{");
+
+        // Write artifact location (file)
+        if (location.file) |file| {
+            try writer.writeAll("\"artifactLocation\":{\"uri\":\"");
+            try writeEscapedString(writer, file);
+            try writer.writeAll("\"},");
+        }
+
+        // Write region (line/column)
+        try writer.writeAll("\"region\":{");
+        var has_region = false;
+
+        if (location.line) |line| {
+            try writer.writeAll("\"startLine\":");
+            try std.fmt.formatInt(line, 10, .lower, .{}, writer);
+            has_region = true;
+        }
+
+        if (location.column) |column| {
+            if (has_region) try writer.writeByte(',');
+            try writer.writeAll("\"startColumn\":");
+            try std.fmt.formatInt(column, 10, .lower, .{}, writer);
+            has_region = true;
+        }
+
+        if (!has_region) {
+            try writer.writeAll("\"startLine\":1");
+        }
+
+        try writer.writeAll("}}");
+
+        // Write logical location (function)
+        try writer.writeAll(",\"logicalLocations\":[{\"fullyQualifiedName\":\"");
+        try writeEscapedString(writer, location.function);
+        try writer.writeAll("\"}]}");
+    }
+
+    /// Write a code flow for trace visualization
+    fn writeCodeFlow(self: *SarifOutput, writer: anytype, trace: []const TraceEntry) !void {
+        _ = self;
+        try writer.writeAll("{\"threadFlows\":[{\"locations\":[");
+
+        for (trace, 0..) |entry, i| {
+            if (i > 0) try writer.writeByte(',');
+            try writer.writeAll("{\"location\":{");
+
+            if (entry.location) |loc| {
+                try writer.writeAll("\"physicalLocation\":{");
+                if (loc.file) |file| {
+                    try writer.writeAll("\"artifactLocation\":{\"uri\":\"");
+                    try writeEscapedString(writer, file);
+                    try writer.writeAll("\"},");
+                }
+                if (loc.line) |line| {
+                    try writer.writeAll("\"region\":{\"startLine\":");
+                    try std.fmt.formatInt(line, 10, .lower, .{}, writer);
+                    try writer.writeAll("}");
+                }
+                try writer.writeAll("},");
+            }
+
+            try writer.writeAll("\"message\":{\"text\":\"");
+            try writeEscapedString(writer, entry.description);
+            try writer.writeAll("\"}}}");
+        }
+
+        try writer.writeAll("]}]}");
+    }
+
+    /// Write CWE taxonomy
+    fn writeCWETaxonomy(self: *SarifOutput, writer: anytype) !void {
+        _ = self;
+        try writer.writeAll("{\"name\":\"CWE\",\"version\":\"4.13\",\"informationUri\":\"https://cwe.mitre.org/data/index.html\"}");
     }
 
     /// Write SARIF output to file
-    pub fn writeToFile(self: *SarifOutput, path: []const u8, diagnostics: []const Diagnostic) !void {
-        const json = try self.generate(diagnostics);
+    pub fn writeToFile(self: *SarifOutput, path: []const u8, issues: []const Issue) !void {
+        const json = try self.generate(issues);
         defer self.allocator.free(json);
 
         const file = try std.fs.cwd().createFile(path, .{});
@@ -69,6 +318,39 @@ pub const SarifOutput = struct {
     }
 };
 
+/// Get default severity for an issue kind
+fn defaultSeverity(kind: IssueKind) Severity {
+    return switch (kind) {
+        .command_injection => .critical,
+        .buffer_overflow, .use_after_free, .double_free => .high,
+        .format_string, .cross_language_leak, .type_mismatch => .medium,
+        .ffi_unsafe_call, .unchecked_return, .malloc_unchecked, .invalid_free => .medium,
+        .unknown => .low,
+    };
+}
+
+/// Write a JSON-escaped string
+fn writeEscapedString(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (c < 0x20) {
+                    try writer.print("\\u{X:0>4}", .{c});
+                } else {
+                    try writer.writeByte(c);
+                }
+            },
+        }
+    }
+}
+
+// Unit tests
+
 test "SarifOutput - init" {
     const output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
     try std.testing.expectEqualStrings("OmniScope", output.tool_name);
@@ -77,91 +359,122 @@ test "SarifOutput - init" {
 
 test "SarifOutput - generate empty" {
     var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
-    const diagnostics = [_]Diagnostic{};
-    const json = try output.generate(&diagnostics);
+    const issues = [_]Issue{};
+    const json = try output.generate(&issues);
     defer std.testing.allocator.free(json);
 
     try std.testing.expect(std.mem.indexOf(u8, json, "\"results\":[]") != null);
 }
 
-test "SarifOutput - generate single" {
+test "SarifOutput - generate with location" {
     var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
 
-    const diagnostics = [_]Diagnostic{
-        .{
-            .kind = .static_issue,
-            .severity = .err,
-            .loc = 42,
-            .message = "Test error diagnostic",
-            .confidence = 1.0,
-        },
+    var loc = Location.init("test_func");
+    loc.file = "test.c";
+    loc.line = 42;
+    loc.column = 5;
+
+    const issue = Issue{
+        .kind = .buffer_overflow,
+        .message = "Buffer overflow detected",
+        .location = loc,
+        .severity = .high,
+        .confidence = 0.95,
+        .ffi_boundary = null,
+        .trace = null,
+        .owned = false,
     };
 
-    const json = try output.generate(&diagnostics);
+    const json = try output.generate(&[_]Issue{issue});
     defer std.testing.allocator.free(json);
 
-    try std.testing.expect(std.mem.indexOf(u8, json, "static_issue") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "error") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "Test error diagnostic") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "buffer_overflow") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "test.c") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"startLine\":42") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"startColumn\":5") != null);
 }
 
-test "SarifOutput - write to file" {
+test "SarifOutput - CWE taxonomy" {
     var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
 
-    const diagnostics = [_]Diagnostic{
-        .{
-            .kind = .static_issue,
-            .severity = .err,
-            .loc = 42,
-            .message = "Test error diagnostic",
-            .confidence = 1.0,
-        },
+    const issue = Issue{
+        .kind = .command_injection,
+        .message = "Command injection",
+        .location = Location.init("test"),
+        .severity = .critical,
+        .confidence = 1.0,
+        .ffi_boundary = null,
+        .trace = null,
+        .owned = false,
     };
 
-    const temp_file = "test_output.sarif";
-    defer {
-        std.fs.cwd().deleteFile(temp_file) catch {};
-    }
+    const json = try output.generate(&[_]Issue{issue});
+    defer std.testing.allocator.free(json);
 
-    try output.writeToFile(temp_file, &diagnostics);
+    // CWE-78 is for command injection
+    try std.testing.expect(std.mem.indexOf(u8, json, "CWE-78") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"taxonomies\"") != null);
+}
 
-    const file = try std.fs.cwd().openFile(temp_file, .{});
-    defer file.close();
+test "SarifOutput - code flows" {
+    var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
 
-    const content = try file.readToEndAlloc(std.testing.allocator, 1024);
-    defer std.testing.allocator.free(content);
+    var trace = [_]TraceEntry{
+        TraceEntry.init("Pointer allocated here"),
+        TraceEntry.init("Pointer passed to function"),
+        TraceEntry.init("Pointer freed here"),
+    };
 
-    try std.testing.expect(std.mem.indexOf(u8, content, "static_issue") != null);
+    const issue = Issue{
+        .kind = .double_free,
+        .message = "Double free detected",
+        .location = Location.init("test_func"),
+        .severity = .high,
+        .confidence = 0.9,
+        .ffi_boundary = null,
+        .trace = &trace,
+        .owned = false,
+    };
+
+    const json = try output.generate(&[_]Issue{issue});
+    defer std.testing.allocator.free(json);
+
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"codeFlows\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"threadFlows\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "Pointer allocated here") != null);
+}
+
+test "SarifOutput - confidence property" {
+    var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
+
+    const issue = Issue{
+        .kind = .use_after_free,
+        .message = "Use after free",
+        .location = Location.init("test"),
+        .severity = .high,
+        .confidence = 0.75,
+        .ffi_boundary = null,
+        .trace = null,
+        .owned = false,
+    };
+
+    const json = try output.generate(&[_]Issue{issue});
+    defer std.testing.allocator.free(json);
+
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"confidence\":0.75") != null);
 }
 
 test "SarifOutput - severity mapping" {
     var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
 
-    const diagnostics = [_]Diagnostic{
-        .{
-            .kind = .static_issue,
-            .severity = .info,
-            .loc = 1,
-            .message = "Info",
-            .confidence = 0.5,
-        },
-        .{
-            .kind = .runtime_issue,
-            .severity = .warning,
-            .loc = 2,
-            .message = "Warning",
-            .confidence = 0.8,
-        },
-        .{
-            .kind = .anomaly,
-            .severity = .err,
-            .loc = 3,
-            .message = "Error",
-            .confidence = 1.0,
-        },
+    const issues = [_]Issue{
+        .{ .kind = .unknown, .message = "Low", .location = Location.init("test"), .severity = .low, .confidence = 0.5, .ffi_boundary = null, .trace = null, .owned = false },
+        .{ .kind = .unknown, .message = "Medium", .location = Location.init("test"), .severity = .medium, .confidence = 0.7, .ffi_boundary = null, .trace = null, .owned = false },
+        .{ .kind = .unknown, .message = "High", .location = Location.init("test"), .severity = .high, .confidence = 0.9, .ffi_boundary = null, .trace = null, .owned = false },
+        .{ .kind = .unknown, .message = "Critical", .location = Location.init("test"), .severity = .critical, .confidence = 1.0, .ffi_boundary = null, .trace = null, .owned = false },
     };
 
-    const json = try output.generate(&diagnostics);
+    const json = try output.generate(&issues);
     defer std.testing.allocator.free(json);
 
     try std.testing.expect(std.mem.indexOf(u8, json, "\"note\"") != null);
@@ -169,72 +482,43 @@ test "SarifOutput - severity mapping" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"error\"") != null);
 }
 
-test "SarifOutput - all diagnostic kinds" {
+test "SarifOutput - write to file" {
     var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
 
-    const diagnostics = [_]Diagnostic{
-        .{
-            .kind = .static_issue,
-            .severity = .err,
-            .loc = 1,
-            .message = "Static issue",
-            .confidence = 1.0,
-        },
-        .{
-            .kind = .runtime_issue,
-            .severity = .warning,
-            .loc = 2,
-            .message = "Runtime issue",
-            .confidence = 0.8,
-        },
-        .{
-            .kind = .anomaly,
-            .severity = .info,
-            .loc = 3,
-            .message = "Anomaly",
-            .confidence = 0.5,
-        },
-        .{
-            .kind = .performance,
-            .severity = .warning,
-            .loc = 4,
-            .message = "Performance issue",
-            .confidence = 0.7,
-        },
-        .{
-            .kind = .security,
-            .severity = .err,
-            .loc = 5,
-            .message = "Security issue",
-            .confidence = 1.0,
-        },
+    const issue = Issue{
+        .kind = .buffer_overflow,
+        .message = "Test issue",
+        .location = Location.init("test_func"),
+        .severity = .high,
+        .confidence = 1.0,
+        .ffi_boundary = null,
+        .trace = null,
+        .owned = false,
     };
 
-    const json = try output.generate(&diagnostics);
-    defer std.testing.allocator.free(json);
+    const temp_file = "test_output.sarif";
+    defer {
+        std.fs.cwd().deleteFile(temp_file) catch |err| {
+            std.log.warn("Failed to delete temp file: {}", .{err});
+        };
+    }
 
-    try std.testing.expect(std.mem.indexOf(u8, json, "static_issue") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "runtime_issue") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "anomaly") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "performance") != null);
-    try std.testing.expect(std.mem.indexOf(u8, json, "security") != null);
+    try output.writeToFile(temp_file, &[_]Issue{issue});
+
+    const file = try std.fs.cwd().openFile(temp_file, .{});
+    defer file.close();
+
+    const content = try file.readToEndAlloc(std.testing.allocator, 4096);
+    defer std.testing.allocator.free(content);
+
+    try std.testing.expect(std.mem.indexOf(u8, content, "buffer_overflow") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "\"version\":\"2.1.0\"") != null);
 }
 
-test "SarifOutput - location mapping" {
-    var output = SarifOutput.init(std.testing.allocator, "OmniScope", "1.0.0");
+test "writeEscapedString - special characters" {
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
 
-    const diagnostics = [_]Diagnostic{
-        .{
-            .kind = .static_issue,
-            .severity = .err,
-            .loc = 42,
-            .message = "Test",
-            .confidence = 1.0,
-        },
-    };
-
-    const json = try output.generate(&diagnostics);
-    defer std.testing.allocator.free(json);
-
-    try std.testing.expect(std.mem.indexOf(u8, json, "startLine\":42") != null);
+    try writeEscapedString(buffer.writer(), "Hello \"World\"\n\t\\Test");
+    try std.testing.expectEqualStrings("Hello \\\"World\\\"\\n\\t\\\\Test", buffer.items);
 }

@@ -2,27 +2,36 @@
 //!
 //! This module provides zero-abstraction wrappers around LLVM-C API pointers.
 //! Principle: only wrap pointers, no caching or computation.
+//!
+//! Note: For safe LLVM operations, use llvm_safe.zig instead.
+//! This module only provides thin pointer wrappers for compatibility.
 
-const llvm = @import("llvm_c.zig");
+const std = @import("std");
+const c = @import("llvm_raw.zig").c;
 
 /// Thin wrapper for LLVM value (instruction, function, etc.)
 pub const ValueRef = struct {
-    raw: llvm.LLVMValueRef,
+    raw: c.LLVMValueRef,
 };
 
 /// Thin wrapper for LLVM basic block
 pub const BasicBlockRef = struct {
-    raw: llvm.LLVMBasicBlockRef,
+    raw: c.LLVMBasicBlockRef,
 };
 
 /// Thin wrapper for LLVM module
 pub const ModuleRef = struct {
-    raw: llvm.LLVMModuleRef,
+    raw: c.LLVMModuleRef,
 };
 
 /// Thin wrapper for LLVM context
 pub const ContextRef = struct {
-    raw: llvm.LLVMContextRef,
+    raw: c.LLVMContextRef,
+};
+
+/// Thin wrapper for LLVM function
+pub const FunctionRef = struct {
+    raw: c.LLVMValueRef,
 };
 
 test "ValueRef - thin wrapper" {
@@ -42,5 +51,10 @@ test "ModuleRef - thin wrapper" {
 
 test "ContextRef - thin wrapper" {
     const ref = ContextRef{ .raw = undefined };
+    _ = ref;
+}
+
+test "FunctionRef - thin wrapper" {
+    const ref = FunctionRef{ .raw = undefined };
     _ = ref;
 }

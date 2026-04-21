@@ -1,6 +1,6 @@
 # IDE and Editor
 .vscode/
-
+.idea/
 *.swp
 *.swo
 *~
@@ -31,6 +31,36 @@ zig-test-*.log
 # OS specific
 Thumbs.db
 desktop.ini
+
+# LLVM IR files (generated)
+*.bc
+*.ll
+
+# Rust/Cargo artifacts
+target/
+Cargo.lock
+
+# Node artifacts
+node_modules/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Temporary directories
+# output/  # Commented out to allow src/output/ source code
+tmp/
+temp/
+benchs/output/
+examples/ntt_ffi/target/
+
+# Benchmark results
+benchmarks/results/
+benchmarks/*.csv
+benchmarks/*.json
+benchs/output/
 
 # Plan documents (internal design)
 plan/
