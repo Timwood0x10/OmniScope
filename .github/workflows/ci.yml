@@ -27,19 +27,25 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source /home/runner/.zvm/bin/zvm.zsh
-          zvm i ${{ env.ZIG_VERSION }}
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
+      - name: Install LLVM
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
 
       - name: Lint & Format Check
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make fmt
+        run: make fmt
 
       - name: Type Check
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make check
+        run: make check
 
   test-linux:
     name: Test (Linux x86_64)
@@ -57,9 +63,12 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source /home/runner/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: |
@@ -69,29 +78,19 @@ jobs:
           sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
 
       - name: Build
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Unit Tests
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make test-unit
+        run: make test-unit
 
       - name: Integration Tests
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make test-int
+        run: make test-int
 
       - name: Issue Verification Tests
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make test-issues
+        run: make test-issues
 
       - name: Stability Tests
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make test-stability
+        run: make test-stability
 
       - name: Upload Linux Binary
         uses: actions/upload-artifact@v4
@@ -116,37 +115,30 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source $HOME/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: brew install llvm@21
 
       - name: Build
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Unit Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-unit
+        run: make test-unit
 
       - name: Integration Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-int
+        run: make test-int
 
       - name: Issue Verification Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-issues
+        run: make test-issues
 
       - name: Stability Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-stability
+        run: make test-stability
 
       - name: Upload macOS aarch64 Binary
         uses: actions/upload-artifact@v4
@@ -171,37 +163,30 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source $HOME/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: brew install llvm@21
 
       - name: Build
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Unit Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-unit
+        run: make test-unit
 
       - name: Integration Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-int
+        run: make test-int
 
       - name: Issue Verification Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-issues
+        run: make test-issues
 
       - name: Stability Tests
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make test-stability
+        run: make test-stability
 
       - name: Upload macOS x86_64 Binary
         uses: actions/upload-artifact@v4
@@ -226,9 +211,12 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source /home/runner/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: |
@@ -238,29 +226,19 @@ jobs:
           sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
 
       - name: Build
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Build FFI Examples (C/C++)
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make cpp
+        run: make cpp
 
       - name: Run C++ FFI Analysis
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make cpp-run
+        run: make cpp-run
 
       - name: Build Real-World FFI Examples
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make real-world
+        run: make real-world
 
       - name: Run Real-World FFI Analysis
-        run: |
-          source /home/runner/.zvm/bin/zvm.zsh
-          make real-world-run
+        run: make real-world-run
 
   run-examples-macos-arm:
     name: Run Examples (macOS aarch64)
@@ -278,37 +256,30 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source $HOME/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: brew install llvm@21
 
       - name: Build
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Build FFI Examples (C/C++)
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make cpp
+        run: make cpp
 
       - name: Run C++ FFI Analysis
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make cpp-run
+        run: make cpp-run
 
       - name: Build Real-World FFI Examples
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make real-world
+        run: make real-world
 
       - name: Run Real-World FFI Analysis
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make real-world-run
+        run: make real-world-run
 
   run-examples-macos-x86:
     name: Run Examples (macOS x86_64)
@@ -326,37 +297,30 @@ jobs:
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
-          source $HOME/.zvm/bin/zvm.zsh
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
           zvm install ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
 
       - name: Install LLVM
         run: brew install llvm@21
 
       - name: Build
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make build
+        run: make build
 
       - name: Build FFI Examples (C/C++)
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make cpp
+        run: make cpp
 
       - name: Run C++ FFI Analysis
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make cpp-run
+        run: make cpp-run
 
       - name: Build Real-World FFI Examples
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make real-world
+        run: make real-world
 
       - name: Run Real-World FFI Analysis
-        run: |
-          source $HOME/.zvm/bin/zvm.zsh
-          make real-world-run
+        run: make real-world-run
 
   ci-status:
     name: CI Status
