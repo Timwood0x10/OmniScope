@@ -91,7 +91,7 @@ pub fn resolveIndirectCall(
     call_inst: c.LLVMValueRef,
 ) ![]usize {
     const called_val = c.LLVMGetCalledValue(call_inst);
-    if (@intFromPtr(called_val) == 0) return &[_]usize{};
+    if (called_val == null) return &[_]usize{};
 
     const call_type = c.LLVMTypeOf(called_val);
     if (@intFromPtr(call_type) == 0) return &[_]usize{};
