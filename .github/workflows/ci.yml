@@ -4,11 +4,15 @@ on:
   push:
     branches: [master, main, improve]
   pull_request:
-    branches: [master, main]
+    branches: [master]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  workflows: write
 
 env:
   ZIG_VERSION: 0.15.2
