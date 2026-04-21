@@ -40,8 +40,9 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref#refs/tags/v }}"
+          REF="${{ github.ref }}"
+          if [[ "$REF" == refs/tags/v* ]]; then
+            VERSION="${REF#refs/tags/v}"
           else
             VERSION=$(cat VERSION 2>/dev/null || echo "0.1.3")
           fi
