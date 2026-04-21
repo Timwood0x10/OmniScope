@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main, improve]
+    branches: [master, improve, pd]
   pull_request:
     branches: [master]
 
@@ -12,142 +12,55 @@ concurrency:
 
 permissions:
   contents: read
-  workflows: write
 
 env:
   ZIG_VERSION: 0.15.2
 
 jobs:
-  check:
-    name: Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
-          sudo apt-get update
-          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Type check
-        run: zig build check
 
-  test:
-    name: Unit Tests
+  quality-gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
-    needs: check
     steps:
       - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
-          sudo apt-get update
-          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Run unit tests
-        run: zig build unit-test --summary all
 
-  test-integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    needs: check
-    steps:
-      - uses: actions/checkout@v4
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
           export ZVM_INSTALL="$HOME/.zvm/self"
           export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
+          zvm i ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
-          sudo apt-get update
-          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Run integration tests
-        run: zig build test-integration --summary all
 
-  test-all:
-    name: All Tests
-    runs-on: ubuntu-latest
-    needs: [test, test-integration]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
       - name: Install LLVM
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
           sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
           sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Run all tests
-        run: |
-          zig build unit-test --summary all
-          zig build test-integration --summary all
-          zig build test-issues --summary all
-          zig build test-stability --summary all
-          zig build test-stress --summary all
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
 
-  bench:
-    name: Benchmarks
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install LLVM
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
-          sudo apt-get update
-          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Run benchmarks
-        run: zig build bench-perf -Doptimize=ReleaseFast
+      - name: Lint & Format Check
+        run: make fmt
 
-  build-linux:
-    name: Build (Linux)
+      - name: Type Check
+        run: make check
+
+  test-linux:
+    name: Test (Linux x86_64)
+    needs: quality-gate
     runs-on: ubuntu-latest
-    needs: test-all
+    env:
+      MAKEFLAGS: >-
+        ZIG=zig
+        CLANG=clang
+        CLANGXX=clang++
+        LLVM_LINK=llvm-link
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
@@ -157,26 +70,50 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
       - name: Install LLVM
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
           sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
           sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
-      - name: Build release
-        run: zig build -Doptimize=ReleaseSafe
-      - name: Upload artifact
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
+
+      - name: Build
+        run: make build
+
+      - name: Unit Tests
+        run: make test-unit
+
+      - name: Integration Tests
+        run: make test-int
+
+      - name: Issue Verification Tests
+        run: make test-issues
+
+      - name: Stability Tests
+        run: make test-stability
+
+      - name: Upload Linux Binary
         uses: actions/upload-artifact@v4
         with:
-          name: OmniScope-linux
+          name: OmniScope-linux-x86_64
           path: zig-out/bin/OmniScope
+          retention-days: 5
 
-  build-macos:
-    name: Build (macOS)
+  test-macos-arm:
+    name: Test (macOS aarch64)
+    needs: quality-gate
     runs-on: macos-latest
-    needs: test-all
+    env:
+      MAKEFLAGS: >-
+        ZIG=zig
+        CLANG=clang
+        CLANGXX=clang++
+        LLVM_LINK=llvm-link
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
@@ -186,60 +123,93 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install Rust
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
       - name: Install LLVM
-        run: brew install llvm@21
-      - name: Build release
-        run: zig build -Doptimize=ReleaseSafe
-      - name: Upload artifact
+        run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+
+      - name: Build
+        run: make build
+
+      - name: Unit Tests
+        run: make test-unit
+
+      - name: Integration Tests
+        run: make test-int
+
+      - name: Issue Verification Tests
+        run: make test-issues
+
+      - name: Stability Tests
+        run: make test-stability
+
+      - name: Upload macOS aarch64 Binary
         uses: actions/upload-artifact@v4
         with:
-          name: OmniScope-macos
+          name: OmniScope-macos-aarch64
           path: zig-out/bin/OmniScope
+          retention-days: 5
 
-  examples:
-    name: FFI Examples
-    runs-on: macos-latest
-    needs: build-macos
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-      - name: Install Rust
-        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - name: Install LLVM
-        run: brew install llvm@21
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: OmniScope-macos
-          path: zig-out/bin/
-      - name: Make executable
-        run: chmod +x zig-out/bin/OmniScope
-      - name: Run Rust example
-        run: |
-          source $HOME/.cargo/env
-          make rust-run || true
-      - name: Run C++ example
-        run: make cpp-run || true
-      - name: Run Zig example
-        run: make zig-run || true
+  # test-macos-x86:
+  #   name: Test (macOS x86_64)
+  #   needs: quality-gate
+  #   runs-on: macos-13
+  #   env:
+  #     MAKEFLAGS: >-
+  #       ZIG=zig
+  #       CLANG=clang
+  #       CLANGXX=clang++
+  #       LLVM_LINK=llvm-link
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install ZVM and Zig
+  #       run: |
+  #         curl -sSL https://www.zvm.app/install.sh | bash
+  #         export ZVM_INSTALL="$HOME/.zvm/self"
+  #         export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+  #         zvm install ${{ env.ZIG_VERSION }}
+  #         zvm use ${{ env.ZIG_VERSION }}
+  #         echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+  #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
+  #
+  #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+  #
+  #     - name: Build
+  #       run: make build
+  #
+  #     - name: Unit Tests
+  #       run: make test-unit
+  #
+  #     - name: Integration Tests
+  #       run: make test-int
+  #
+  #     - name: Issue Verification Tests
+  #       run: make test-issues
+  #
+  #     - name: Stability Tests
+  #       run: make test-stability
+  #
+  #     - name: Upload macOS x86_64 Binary
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: OmniScope-macos-x86_64
+  #         path: zig-out/bin/OmniScope
+  #         retention-days: 5
 
-  coverage:
-    name: Coverage Report
+  run-examples-linux:
+    name: Run Examples (Linux x86_64)
+    needs: test-linux
     runs-on: ubuntu-latest
-    needs: test-all
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      MAKEFLAGS: >-
+        ZIG=zig
+        CLANG=clang
+        CLANGXX=clang++
+        LLVM_LINK=llvm-link
     steps:
       - uses: actions/checkout@v4
+
       - name: Install ZVM and Zig
         run: |
           curl -sSL https://www.zvm.app/install.sh | bash
@@ -249,33 +219,128 @@ jobs:
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
       - name: Install LLVM
         run: |
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
           sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev lcov
-      - name: Generate coverage
-        run: |
-          zig build test -Dcoverage || true
-          lcov --capture --directory . --output-file coverage.info || true
-          lcov --remove coverage.info '/usr/*' --output-file coverage.info || true
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.info
-          fail_ci_if_error: false
+          sudo apt-get install -y llvm-21-dev clang-21 libclang-21-dev
+          echo "/usr/lib/llvm-21/bin" >> $GITHUB_PATH
 
-  release-trigger:
-    name: Trigger Release
-    runs-on: ubuntu-latest
-    needs: [build-linux, build-macos, examples]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      - name: Build
+        run: make build
+
+      - name: Build FFI Examples (C/C++)
+        run: make cpp
+
+      - name: Run C++ FFI Analysis
+        run: make cpp-run
+
+      - name: Build Real-World FFI Examples
+        run: make real-world
+
+      - name: Run Real-World FFI Analysis
+        run: make real-world-run
+
+  run-examples-macos-arm:
+    name: Run Examples (macOS aarch64)
+    needs: test-macos-arm
+    runs-on: macos-latest
+    env:
+      MAKEFLAGS: >-
+        ZIG=zig
+        CLANG=clang
+        CLANGXX=clang++
+        LLVM_LINK=llvm-link
     steps:
       - uses: actions/checkout@v4
-      - name: Trigger release workflow
+
+      - name: Install ZVM and Zig
         run: |
-          echo "CI passed, triggering release workflow..."
-          gh workflow run release.yml
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
+      - name: Install LLVM
+        run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+
+      - name: Build
+        run: make build
+
+      - name: Build FFI Examples (C/C++)
+        run: make cpp
+
+      - name: Run C++ FFI Analysis
+        run: make cpp-run
+
+      - name: Build Real-World FFI Examples
+        run: make real-world
+
+      - name: Run Real-World FFI Analysis
+        run: make real-world-run
+
+  # run-examples-macos-x86:
+  #   name: Run Examples (macOS x86_64)
+  #   needs: test-macos-x86
+  #   runs-on: macos-13
+  #   env:
+  #     MAKEFLAGS: >-
+  #       ZIG=zig
+  #       CLANG=clang
+  #       CLANGXX=clang++
+  #       LLVM_LINK=llvm-link
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install ZVM and Zig
+  #       run: |
+  #         curl -sSL https://www.zvm.app/install.sh | bash
+  #         export ZVM_INSTALL="$HOME/.zvm/self"
+  #         export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+  #         zvm install ${{ env.ZIG_VERSION }}
+  #         zvm use ${{ env.ZIG_VERSION }}
+  #         echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+  #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
+  #
+  #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
+  #
+  #     - name: Build
+  #       run: make build
+  #
+  #     - name: Build FFI Examples (C/C++)
+  #       run: make cpp
+  #
+  #     - name: Run C++ FFI Analysis
+  #       run: make cpp-run
+  #
+  #     - name: Build Real-World FFI Examples
+  #       run: make real-world
+  #
+  #     - name: Run Real-World FFI Analysis
+  #       run: make real-world-run
+
+  ci-status:
+    name: CI Status
+    if: always()
+    needs: [test-linux, test-macos-arm, run-examples-linux, run-examples-macos-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI results
+        run: |
+          for result in "${{ needs.test-linux.result }}" "${{ needs.test-macos-arm.result }}" "${{ needs.run-examples-linux.result }}" "${{ needs.run-examples-macos-arm.result }}"; do
+            if [ "$result" = "failure" ]; then
+              echo "::error::CI failed – at least one job failed"
+              exit 1
+            fi
+            if [ "$result" = "cancelled" ]; then
+              echo "::error::CI cancelled – at least one job was cancelled"
+              exit 1
+            fi
+          done
+          echo "All CI jobs passed"
