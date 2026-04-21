@@ -22,10 +22,10 @@
 #   make go          - Build Go → C example
 #   make zig         - Build Zig → C example
 
-ZIG ?= /Users/scc/.zvm/bin/zig
-CLANG ?= /opt/homebrew/opt/llvm@21/bin/clang
-CLANGXX ?= /opt/homebrew/opt/llvm@21/bin/clang++
-LLVM_LINK ?= /opt/homebrew/opt/llvm@21/bin/llvm-link
+ZIG ?= $(shell which zig 2>/dev/null || echo "zig")
+CLANG ?= $(shell which clang 2>/dev/null || echo "clang")
+CLANGXX ?= $(shell which clang++ 2>/dev/null || echo "clang++")
+LLVM_LINK ?= $(shell which llvm-link 2>/dev/null || echo "llvm-link")
 
 # Directories
 BUILD_DIR ?= build

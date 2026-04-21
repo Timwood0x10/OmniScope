@@ -29,7 +29,7 @@ jobs:
           curl -sSL https://www.zvm.app/install.sh | bash
           export ZVM_INSTALL="$HOME/.zvm/self"
           export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm install ${{ env.ZIG_VERSION }}
+          zvm i ${{ env.ZIG_VERSION }}
           zvm use ${{ env.ZIG_VERSION }}
           echo "$HOME/.zvm/bin" >> $GITHUB_PATH
           echo "$HOME/.zvm/self" >> $GITHUB_PATH
