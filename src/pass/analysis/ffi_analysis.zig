@@ -210,7 +210,9 @@ pub const FFIAnalysisPass = struct {
                     // Check if this is an allocation function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
                         if (sem.kind == .allocator) {
-                            const ptr_value_id: u64 = @intFromPtr(inst);
+                            // Get the return value (the allocated pointer)
+                            const ptr_value: c.LLVMValueRef = inst;
+                            const ptr_value_id: u64 = @intFromPtr(ptr_value);
                             try self.allocation_sites.put(ptr_value_id, .{
                                 .func_name = func_name,
                                 .language = language,
@@ -253,7 +255,12 @@ pub const FFIAnalysisPass = struct {
 
                     if (SemanticRegistry.lookup(called_name)) |sem| {
                         if (sem.kind == .deallocator) {
-                            const ptr_value_id: u64 = @intFromPtr(inst);
+                            const ptr_arg = c.LLVMGetOperand(inst, 1);
+                            if (ptr_arg == null) {
+                                diag.warn("Free operation missing pointer argument at {s}", .{func_name});
+                                continue;
+                            }
+                            const ptr_value_id: u64 = @intFromPtr(ptr_arg orelse continue);
                             const free_info = FreeInfo{
                                 .func_name = func_name,
                                 .language = language,
@@ -264,6 +271,7 @@ pub const FFIAnalysisPass = struct {
                                 try list.append(free_info);
                             } else {
                                 var list = std.ArrayList(FreeInfo).init(self.allocator);
+                                errdefer list.deinit();
                                 try list.append(free_info);
                                 try self.free_sites.put(ptr_value_id, list);
                             }

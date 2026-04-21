@@ -6,6 +6,8 @@ const call_graph = OmniScope.cross_lang;
 const llvm_safe = OmniScope.ir.llvm_safe;
 const IRLoader = OmniScope.engine.IRLoader;
 const FunctionRef = OmniScope.ir.view.FunctionRef;
+const SarifOutput = OmniScope.output.SarifOutput;
+const Issue = OmniScope.diag.Issue;
 
 /// Main entry point error set
 pub const MainError = error{
@@ -20,6 +22,8 @@ const Config = struct {
     verbose: bool = false,
     debug: bool = false,
     input_files: std.ArrayList([]const u8),
+    output_format: OutputFormat = .text,
+    output_file: ?[]const u8 = null,
 
     fn init(allocator: std.mem.Allocator) Config {
         return .{
@@ -29,7 +33,16 @@ const Config = struct {
 
     fn deinit(self: *Config, allocator: std.mem.Allocator) void {
         self.input_files.deinit(allocator);
+        if (self.output_file) |path| {
+            allocator.free(path);
+        }
     }
+};
+
+const OutputFormat = enum {
+    text,
+    json,
+    sarif,
 };
 
 /// Parse command line arguments
@@ -51,6 +64,20 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.debug = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
             config.show_version = true;
+        } else if (std.mem.eql(u8, arg, "--json")) {
+            config.output_format = .json;
+        } else if (std.mem.eql(u8, arg, "--sarif")) {
+            config.output_format = .sarif;
+        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
+            const output_file = args.next() orelse {
+                std.debug.print("Error: --output requires a file path\n", .{});
+                return error.InvalidOption;
+            };
+            if (output_file.len == 0) {
+                std.debug.print("Error: --output requires a non-empty file path\n", .{});
+                return error.InvalidOption;
+            }
+            config.output_file = try allocator.dupe(u8, output_file);
         } else if (arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -73,6 +100,9 @@ fn showHelp() void {
         \\  -v, --verbose       Enable verbose logging
         \\  -d, --debug         Enable debug logging
         \\  --version           Show version information
+        \\  --json              Output in JSON format
+        \\  --sarif             Output in SARIF format
+        \\  -o, --output <file>  Write output to file
         \\
         \\Analysis Types:
         \\  Cross-Language Data Flow (default)
@@ -103,7 +133,7 @@ fn showHelp() void {
 ///   - FileNotFound: IR file does not exist
 ///   - InvalidIR: IR file is corrupted or invalid
 ///   - OutOfMemory: Memory allocation failed
-fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
+fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config: Config) !void {
     std.log.info("=== OmniScope IR Analysis ===\n", .{});
     std.log.info("File: {s}\n\n", .{path});
 
@@ -148,9 +178,74 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
 
     // Print issues detected by Pipeline
     const issues = pipeline.getIssues();
+
     if (issues.len > 0) {
-        std.log.info("Issues detected: {d}\n", .{issues.len});
+        if (config.output_format == .json) {
+            const json_output = formatIssuesAsJson(allocator, issues) catch |err| {
+                std.log.err("Failed to format JSON output: {}", .{err});
+                return;
+            };
+            defer allocator.free(json_output);
+
+            if (config.output_file) |output_path| {
+                const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
+                    std.log.err("Failed to create output file '{s}': {}", .{ output_path, err });
+                    return;
+                };
+                defer file.close();
+                file.writeAll(json_output) catch |err| {
+                    std.log.err("Failed to write to file '{s}': {}", .{ output_path, err });
+                    return;
+                };
+                std.log.info("Report saved to: {s}\n", .{output_path});
+            } else {
+                std.debug.print("{s}\n", .{json_output});
+            }
+        } else if (config.output_format == .sarif) {
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.0");
+            const sarif_output = sarif.generate(issues) catch |err| {
+                std.log.err("Failed to generate SARIF output: {}", .{err});
+                return;
+            };
+            defer allocator.free(sarif_output);
+
+            if (config.output_file) |output_path| {
+                const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
+                    std.log.err("Failed to create output file '{s}': {}", .{ output_path, err });
+                    return;
+                };
+                defer file.close();
+                file.writeAll(sarif_output) catch |err| {
+                    std.log.err("Failed to write to file '{s}': {}", .{ output_path, err });
+                    return;
+                };
+                std.log.info("SARIF report saved to: {s}\n", .{output_path});
+            } else {
+                std.debug.print("{s}\n", .{sarif_output});
+            }
+        } else {
+            std.log.info("Issues detected: {d}\n", .{issues.len});
+        }
     }
+}
+
+fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue) ![]u8 {
+    var output = std.array_list.Managed(u8).init(allocator);
+    defer output.deinit();
+
+    try output.writer().writeAll("{\"issues\": [\n");
+    for (issues, 0..) |issue, idx| {
+        if (idx > 0) try output.writer().writeAll(",\n");
+        const file_str = issue.location.file orelse "unknown";
+        const line_num = issue.location.line orelse 0;
+        const col_num = issue.location.column orelse 0;
+        try output.writer().print(
+            \\  {{"kind":"{s}","message":"{s}","severity":"{s}","location":{{"file":"{s}","line":{d},"column":{d}}}}}
+        , .{ @tagName(issue.kind), issue.message, @tagName(issue.severity), file_str, line_num, col_num });
+    }
+    try output.writer().writeAll("\n]}}\n");
+
+    return try output.toOwnedSlice();
 }
 
 /// Callback function to count functions during iteration.
@@ -372,7 +467,7 @@ pub fn main() !void {
     }
 
     if (config.input_files.items.len == 1) {
-        try runSingleFileAnalysis(allocator, config.input_files.items[0]);
+        try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
     } else {
         try runMultiFileAnalysis(config.input_files.items);
     }

@@ -1,0 +1,9 @@
+{"issues": [
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"},
+  {"kind": "memory_leak", "message": "Memory allocated but never freed", "severity": "medium"}
+]}

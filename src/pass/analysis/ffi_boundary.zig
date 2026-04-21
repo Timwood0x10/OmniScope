@@ -221,8 +221,12 @@ pub const FFIBoundaryPass = struct {
             // Report high-risk libc functions from Semantic Registry
             if (is_dangerous) {
                 stats.dangerous_count += 1;
-                const caller_demangled = demangleRustName(caller_name);
-                const callee_demangled = demangleRustName(called_name);
+                const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
+                const caller_was_allocated = @intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr);
+                defer if (caller_was_allocated) ctx.allocator.free(caller_demangled);
+                const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
+                const callee_was_allocated = @intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr);
+                defer if (callee_was_allocated) ctx.allocator.free(callee_demangled);
                 const sem = semantics.?;
 
                 const severity_str = sem.severity.toString();
@@ -295,8 +299,10 @@ pub const FFIBoundaryPass = struct {
             // Print dangerous calls with detailed risk info from Semantic Registry
             if (is_dangerous) {
                 stats.dangerous_count += 1;
-                const caller_demangled = demangleRustName(caller_name);
-                const callee_demangled = demangleRustName(called_name);
+                const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
+                defer if (@intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr)) ctx.allocator.free(caller_demangled);
+                const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
+                defer if (@intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr)) ctx.allocator.free(callee_demangled);
                 const sem = semantics.?;
 
                 // Format risk message based on severity
@@ -395,11 +401,10 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Demangle a Rust mangled name to a readable format
-    /// Returns the original name if not a valid Rust mangled name
-    fn demangleRustName(mangled: []const u8) []const u8 {
-        // Rust mangled names start with _ZN
+    /// Returns an allocated string that caller must free.
+    fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) ![]u8 {
         if (mangled.len < 4 or mangled[0] != '_' or mangled[1] != 'Z' or mangled[2] != 'N') {
-            return mangled;
+            return try allocator.dupe(u8, mangled);
         }
 
         var pos: usize = 3;
@@ -416,19 +421,17 @@ pub const FFIBoundaryPass = struct {
             }
 
             if (len == 0 or pos >= mangled.len or pos + len > mangled.len) break;
-            if (len > 50) break; // Skip unreasonable lengths
+            if (len > 50) break;
 
             const slice = mangled[pos .. pos + len];
             pos += len;
 
-            // Skip template markers and special characters
             if (slice.len == 0) continue;
             if (slice[0] == '$' or slice[0] == 'C' or slice[0] == '{' or slice[0] == '}') {
                 if (pos < mangled.len and mangled[pos] == 'E') pos += 1;
                 continue;
             }
 
-            // Skip common Rust namespace prefixes
             if (comp_count == 0) {
                 if (std.mem.eql(u8, slice, "core") or
                     std.mem.eql(u8, slice, "alloc") or
@@ -441,7 +444,6 @@ pub const FFIBoundaryPass = struct {
                 }
             }
 
-            // Collect meaningful components
             if (comp_count > 0 or
                 (!std.mem.eql(u8, slice, "core") and
                     !std.mem.eql(u8, slice, "alloc") and
@@ -457,16 +459,13 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Format: namespace::function_name
         if (comp_count >= 2) {
-            var buf: [128]u8 = undefined;
-            const result = std.fmt.bufPrint(&buf, "{s}::{s}", .{ components[0], components[1] }) catch return mangled;
-            return result;
+            return std.fmt.allocPrint(allocator, "{s}::{s}", .{ components[0], components[1] });
         } else if (comp_count == 1) {
-            return components[0];
+            return try allocator.dupe(u8, components[0]);
         }
 
-        return mangled;
+        return try allocator.dupe(u8, mangled);
     }
 
     /// Classify the boundary kind based on caller and callee languages

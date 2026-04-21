@@ -214,6 +214,16 @@ rust-ir:
 rust-run: rust-ir
 	$(ZIG) build run -- $(RUST_IR)/combined.bc
 
+rust-json: rust-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --json -o $(EXAMPLES_DIR)/reports/rust_report.json $(RUST_IR)/combined.bc
+	@echo "JSON report saved to $(EXAMPLES_DIR)/reports/rust_report.json"
+
+rust-sarif: rust-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/rust_report.sarif $(RUST_IR)/combined.bc
+	@echo "SARIF report saved to $(EXAMPLES_DIR)/reports/rust_report.sarif"
+
 # ========================================
 # C++ → C FFI Example
 # ========================================
@@ -240,6 +250,14 @@ cpp-ir:
 cpp-run: cpp-ir
 	$(ZIG) build run -- $(CPP_IR)/combined.bc
 
+cpp-json: cpp-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --json -o $(EXAMPLES_DIR)/reports/cpp_report.json $(CPP_IR)/combined.bc
+
+cpp-sarif: cpp-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/cpp_report.sarif $(CPP_IR)/combined.bc
+
 # ========================================
 # Go → C FFI Example
 # ========================================
@@ -261,6 +279,14 @@ go-ir:
 
 go-run: go-ir
 	$(ZIG) build run -- $(GO_IR)/combined.bc
+
+go-json: go-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --json -o $(EXAMPLES_DIR)/reports/go_report.json $(GO_IR)/combined.bc
+
+go-sarif: go-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/go_report.sarif $(GO_IR)/combined.bc
 
 # ========================================
 # Zig → C FFI Example
@@ -287,6 +313,14 @@ zig-ir:
 
 zig-run: zig-ir
 	$(ZIG) build run -- $(ZIG_IR)/combined.bc
+
+zig-json: zig-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --json -o $(EXAMPLES_DIR)/reports/zig_report.json $(ZIG_IR)/combined.bc
+
+zig-sarif: zig-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/zig_report.sarif $(ZIG_IR)/combined.bc
 
 # ========================================
 # Real-World FFI Tests (OpenSSL, SQLite, zlib)
@@ -330,11 +364,29 @@ real-world-ir:
 	@echo "  Done: $(REAL_WORLD_IR)/combined.bc"
 
 real-world-run: real-world-ir
-	@echo ""
-	@echo "╔════════════════════════════════════════════════════════════════╗"
-	@echo "║            ANALYZING REAL-WORLD FFI PATTERNS                   ║"
-	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build run -- $(REAL_WORLD_IR)/combined.bc
+
+real-world-json: real-world-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --json -o $(EXAMPLES_DIR)/reports/real_world_report.json $(REAL_WORLD_IR)/combined.bc
+
+real-world-sarif: real-world-ir
+	@mkdir -p $(EXAMPLES_DIR)/reports
+	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/real_world_report.sarif $(REAL_WORLD_IR)/combined.bc
+
+# ========================================
+# All Reports
+# ========================================
+
+reports-json: rust-json cpp-json go-json zig-json real-world-json
+	@echo ""
+	@echo "All JSON reports generated:"
+	@ls -la $(EXAMPLES_DIR)/reports/*.json
+
+reports-sarif: rust-sarif cpp-sarif go-sarif zig-sarif real-world-sarif
+	@echo ""
+	@echo "All SARIF reports generated:"
+	@ls -la $(EXAMPLES_DIR)/reports/*.sarif
 
 # ========================================
 # Clean
@@ -523,4 +575,18 @@ help:
 	@echo "  make real-world      Build and analyze real-world FFI patterns"
 	@echo "  make real-world-ir   Build OpenSSL/SQLite/zlib test IR"
 	@echo "  make real-world-run  Analyze real-world FFI patterns"
+	@echo ""
+	@echo "Report Commands (JSON/SARIF):"
+	@echo "  make rust-json           Generate Rust JSON report"
+	@echo "  make rust-sarif         Generate Rust SARIF report"
+	@echo "  make cpp-json           Generate C++ JSON report"
+	@echo "  make cpp-sarif         Generate C++ SARIF report"
+	@echo "  make go-json            Generate Go JSON report"
+	@echo "  make go-sarif          Generate Go SARIF report"
+	@echo "  make zig-json           Generate Zig JSON report"
+	@echo "  make zig-sarif         Generate Zig SARIF report"
+	@echo "  make real-world-json    Generate real-world JSON report"
+	@echo "  make real-world-sarif  Generate real-world SARIF report"
+	@echo "  make reports-json       Generate all JSON reports"
+	@echo "  make reports-sarif     Generate all SARIF reports"
 	@echo ""

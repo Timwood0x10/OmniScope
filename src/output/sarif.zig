@@ -73,34 +73,78 @@ pub const SarifOutput = struct {
 
     /// Generate SARIF JSON from issues
     pub fn generate(self: *SarifOutput, issues: []const Issue) ![]const u8 {
-        var json = std.ArrayList(u8).init(self.allocator);
-        const writer = json.writer();
+        var buf = std.array_list.Managed(u8).init(self.allocator);
+        defer buf.deinit();
 
-        // SARIF header
-        try writer.writeAll("{\"version\":\"2.1.0\",");
-        try writer.writeAll("\"$schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",");
-        try writer.writeAll("\"runs\":[");
+        try buf.writer().writeAll(
+            \\{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            \\"version":"2.1.0",
+            \\"runs":[
+            \\{"tool":{"driver":{"name":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_name);
+        try buf.writer().writeAll(
+            \\","version":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_version);
+        try buf.writer().writeAll(
+            \\","informationUri":"
+        );
+        try writeEscapedString(buf.writer(), self.tool_uri);
+        try buf.writer().writeAll(
+            \\","rules":[
+        );
 
-        // Run entry
-        try self.writeRunHeader(writer);
-        try writer.writeAll("\"results\":[");
-
-        // Write each issue
-        for (issues, 0..) |issue, i| {
-            if (i > 0) try writer.writeByte(',');
-            try self.writeIssue(writer, issue);
+        const rules = [_]IssueKind{
+            .ffi_unsafe_call, .unchecked_return, .type_mismatch,     .cross_language_leak,
+            .memory_leak,     .use_after_free,   .command_injection, .buffer_overflow,
+            .double_free,     .format_string,    .malloc_unchecked,  .invalid_free,
+        };
+        for (rules, 0..) |rule, i| {
+            if (i > 0) try buf.writer().writeAll(",");
+            try buf.writer().print(
+                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"{s}"}}}}
+            , .{ @tagName(rule), @tagName(rule), rule.toDescription() });
         }
 
-        try writer.writeAll("],");
+        try buf.writer().writeAll("]},\"results\":[");
+        for (issues, 0..) |issue, idx| {
+            if (idx > 0) try buf.writer().writeAll(",");
+            const file_str = issue.location.file orelse "unknown";
+            const line_num = issue.location.line orelse 0;
+            const col_num = issue.location.column orelse 0;
+            try buf.writer().writeAll(
+                \\{"ruleId":"
+            );
+            try writeEscapedString(buf.writer(), @tagName(issue.kind));
+            try buf.writer().writeAll(
+                \\","level":"
+            );
+            try writeEscapedString(buf.writer(), SarifLevel.fromSeverity(issue.severity).toString());
+            try buf.writer().writeAll(
+                \\","message":{"text":"
+            );
+            try writeEscapedString(buf.writer(), issue.message);
+            try buf.writer().writeAll(
+                \\"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"
+            );
+            try writeEscapedString(buf.writer(), file_str);
+            try buf.writer().writeAll(
+                \\"},"region":{"startLine":"
+            );
+            try buf.writer().print("{d}", .{line_num});
+            try buf.writer().writeAll(
+                \\,"startColumn":"
+            );
+            try buf.writer().print("{d}", .{col_num});
+            try buf.writer().writeAll(
+                \\}}}}]}
+            );
+        }
 
-        // Write rules (taxonomies)
-        try writer.writeAll("\"taxonomies\":[");
-        try self.writeCWETaxonomy(writer);
-        try writer.writeAll("]");
+        try buf.writer().writeAll("]}]}");
 
-        try writer.writeAll("}]}");
-
-        return json.toOwnedSlice();
+        return try buf.toOwnedSlice();
     }
 
     /// Write run header with tool information
@@ -120,6 +164,7 @@ pub const SarifOutput = struct {
             .unchecked_return,
             .type_mismatch,
             .cross_language_leak,
+            .memory_leak,
             .use_after_free,
             .command_injection,
             .buffer_overflow,

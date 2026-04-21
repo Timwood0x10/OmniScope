@@ -157,6 +157,7 @@ pub const output = struct {
     pub const OutputFormat = @import("output/formatter.zig").OutputFormat;
     pub const AnalysisResult = @import("output/formatter.zig").AnalysisResult;
     pub const Vulnerability = @import("output/formatter.zig").Vulnerability;
+    pub const SarifOutput = @import("output/sarif.zig").SarifOutput;
 };
 
 // Simple test to verify test system works

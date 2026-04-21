@@ -228,8 +228,9 @@ pub const FFIDetector = struct {
             const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
 
             if (has_taint) {
+                self.vulnerability_count += 1;
                 const vuln = FFIVulnerability{
-                    .id = self.vulnerability_count,
+                    .id = self.vulnerability_count - 1,
                     .vuln_type = .command_injection,
                     .severity = .critical,
                     .ffi_match = ffi_match,
@@ -272,8 +273,9 @@ pub const FFIDetector = struct {
             const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
 
             if (has_taint) {
+                self.vulnerability_count += 1;
                 const vuln = FFIVulnerability{
-                    .id = self.vulnerability_count,
+                    .id = self.vulnerability_count - 1,
                     .vuln_type = .buffer_overflow,
                     .severity = .critical,
                     .ffi_match = ffi_match,
@@ -315,8 +317,9 @@ pub const FFIDetector = struct {
             const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
 
             if (has_taint) {
+                self.vulnerability_count += 1;
                 const vuln = FFIVulnerability{
-                    .id = self.vulnerability_count,
+                    .id = self.vulnerability_count - 1,
                     .vuln_type = .format_string,
                     .severity = .high,
                     .ffi_match = ffi_match,
@@ -352,8 +355,9 @@ pub const FFIDetector = struct {
             const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
 
             if (has_taint) {
+                self.vulnerability_count += 1;
                 const vuln = FFIVulnerability{
-                    .id = self.vulnerability_count,
+                    .id = self.vulnerability_count - 1,
                     .vuln_type = .use_after_free,
                     .severity = .high,
                     .ffi_match = ffi_match,
@@ -382,8 +386,9 @@ pub const FFIDetector = struct {
             const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
 
             if (has_taint) {
+                self.vulnerability_count += 1;
                 const vuln = FFIVulnerability{
-                    .id = self.vulnerability_count,
+                    .id = self.vulnerability_count - 1,
                     .vuln_type = .integer_overflow,
                     .severity = .medium,
                     .ffi_match = ffi_match,

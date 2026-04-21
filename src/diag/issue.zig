@@ -17,6 +17,8 @@ pub const IssueKind = enum {
     type_mismatch,
     /// Memory leak across language boundary
     cross_language_leak,
+    /// General memory leak (not necessarily cross-language)
+    memory_leak,
     /// Use after free across language boundary
     use_after_free,
     /// Command injection vulnerability
@@ -41,6 +43,7 @@ pub const IssueKind = enum {
             .unchecked_return => "unchecked_return",
             .type_mismatch => "type_mismatch",
             .cross_language_leak => "cross_language_leak",
+            .memory_leak => "memory_leak",
             .use_after_free => "use_after_free",
             .command_injection => "command_injection",
             .buffer_overflow => "buffer_overflow",
@@ -61,6 +64,7 @@ pub const IssueKind = enum {
             .unchecked_return => 252, // CWE-252: Unchecked Return Value
             .type_mismatch => 704, // CWE-704: Incorrect Type Conversion or Cast
             .cross_language_leak => 401, // CWE-401: Memory Leak
+            .memory_leak => 401, // CWE-401: Memory Leak
             .use_after_free => 416, // CWE-416: Use After Free
             .command_injection => 78, // CWE-78: OS Command Injection
             .buffer_overflow => 120, // CWE-120: Buffer Overflow
@@ -79,6 +83,7 @@ pub const IssueKind = enum {
             .unchecked_return => "Function return value not checked after call",
             .type_mismatch => "Type mismatch across FFI boundary",
             .cross_language_leak => "Memory leak across language boundary",
+            .memory_leak => "Memory allocated but never freed",
             .use_after_free => "Use after free across language boundary",
             .command_injection => "Command injection vulnerability",
             .buffer_overflow => "Buffer overflow vulnerability",

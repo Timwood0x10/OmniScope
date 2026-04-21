@@ -52,10 +52,11 @@ pub const FFIUnsafePass = struct {
             const vuln_type = classifyVulnerability(boundary.function_name);
             const confidence = calculateConfidence(boundary.function_name, vuln_type);
 
+            const clean_name = cleanFunctionName(boundary.function_name);
             const issue_message = try std.fmt.allocPrint(
                 ctx.allocator,
                 "Unsafe FFI call to '{s}' - {s} (confidence: {d:.2}%)",
-                .{ boundary.function_name, getVulnerabilityDesc(vuln_type), confidence * 100.0 },
+                .{ clean_name, getVulnerabilityDesc(vuln_type), confidence * 100.0 },
             );
 
             const issue = Issue.init(
@@ -162,6 +163,13 @@ pub const FFIUnsafePass = struct {
         } else {
             return .low;
         }
+    }
+
+    fn cleanFunctionName(func_name: []const u8) []const u8 {
+        if (func_name.len > 0 and func_name[0] < 32) {
+            return func_name[1..];
+        }
+        return func_name;
     }
 };
 

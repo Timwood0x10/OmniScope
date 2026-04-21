@@ -76,14 +76,14 @@ pub const TaintContext = struct {
     pub fn getValueId(self: *TaintContext, ptr: anytype) !u32 {
         const ptr_val = @intFromPtr(ptr);
         if (ptr_val == 0) return error.NullPointer;
-        return self.value_id_map.getOrCreateId(ptr_val);
+        return self.value_id_map.getOrPutId(ptr_val);
     }
 
     /// Get or create a unique ID from an already-converted usize value.
     /// Use this when you already have @intFromPtr result.
     pub fn getValueIdFromUsize(self: *TaintContext, ptr_val: usize) !u32 {
         if (ptr_val == 0) return error.NullPointer;
-        return self.value_id_map.getOrCreateId(ptr_val);
+        return self.value_id_map.getOrPutId(ptr_val);
     }
 
     /// Set taint info for a value
