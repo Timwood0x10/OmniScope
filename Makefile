@@ -51,7 +51,7 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
-        install-deps release
+        install-deps release benchmark benchmark-full
 
 # ========================================
 # Default Target - Run All Tests
@@ -129,6 +129,41 @@ bench:
 	@echo "║                     BENCHMARKS                                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build bench-perf -Doptimize=ReleaseFast
+
+# ========================================
+# Detection Rate Benchmark
+# ========================================
+
+benchmark: corpus
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              DETECTION RATE BENCHMARK                         ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/benchmark.sh
+
+benchmark-json: corpus
+	@mkdir -p benchmark-output
+	./scripts/benchmark.sh --json > benchmark-output/benchmark-results.json
+	@echo "JSON report saved to benchmark-output/benchmark-results.json"
+
+benchmark-ci: corpus
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              CI BENCHMARK (exit code = pass/fail)             ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/benchmark.sh --ci
+
+benchmark-full: test-all bench benchmark
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FULL BENCHMARK SUITE COMPLETE                    ║"
+	@echo "╠════════════════════════════════════════════════════════════════╣"
+	@echo "║  Unit Tests:        ✓ Passed                                  ║"
+	@echo "║  Integration Tests: ✓ Passed                                  ║"
+	@echo "║  Issue Verification:✓ Passed                                  ║"
+	@echo "║  Stability Tests:   ✓ Passed                                  ║"
+	@echo "║  Stress Tests:      ✓ Passed                                  ║"
+	@echo "║  Micro Benchmarks:  ✓ Completed                               ║"
+	@echo "║  Detection Rate:    ✓ Calculated                              ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
 
 # ========================================
 # Install & Release
@@ -555,6 +590,13 @@ help:
 	@echo "  make corpus-ir   Compile corpus to LLVM IR"
 	@echo "  make corpus-analyze  Analyze corpus with OmniScope"
 	@echo "  make corpus-check    Analyze and check expected issues"
+	@echo ""
+	@echo "Benchmark Commands:"
+	@echo "  make bench          Run micro-benchmarks (component-level timing)"
+	@echo "  make benchmark      Run detection rate benchmark on corpus"
+	@echo "  make benchmark-json  Export benchmark results as JSON"
+	@echo "  make benchmark-ci    CI mode (exit code = pass/fail)"
+	@echo "  make benchmark-full  Run complete benchmark suite"
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make fmt         Format source code"

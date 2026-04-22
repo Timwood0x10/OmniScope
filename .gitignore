@@ -64,3 +64,5 @@ benchs/output/
 
 # Plan documents (internal design)
 plan/
+
+*.raw
