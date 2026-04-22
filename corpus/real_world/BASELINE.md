@@ -2,7 +2,7 @@
 
 > **Purpose**: Every code change must be validated against these baselines to prevent regression.
 > **Rule**: If a change causes baseline numbers to shift, it must be intentional and documented here.
-> **Last Updated**: 2026-04-22 (Post Phase 3: P2+P3+P6)
+> **Last Updated**: 2026-04-22 (Post Phase 3 + Bug Scan B-01~B-03)
 
 ---
 
@@ -10,11 +10,11 @@
 
 | Project | Version | IR Size | Functions | Issues | Time | Leaks | NullDeref | FFI Risk |
 |---------|---------|--------|-----------|--------|------|-------|-----------|----------|
-| **SQLite** | 3.47.2 | 727K lines / 40MB | 3,237 | **~12** | 5.9s | **0** ✅ | 3 | 9 |
+| **SQLite** | 3.47.2 | 727K lines / 40MB | 3,237 | **9** | 5.8s | **0** ✅ | **0** ✅ | 9 |
 | **libcurl** | 8.14.0 | 2,915 lines / 192K | 68 | **1** | 0.05s | 0 | 0 | 7 |
 | **libuv** | 1.50.0 | 6,112 lines / 256K | 145 | **1** | 0.07s | 0 | 0 | 3 |
 
-**Total: 3 real-world projects, 3,450 functions, ~14 issues, ~6.0s total analysis time**
+**Total: 3 real-world projects, 3,450 functions, 11 issues, ~5.92s total analysis time**
 
 ---
 
@@ -33,11 +33,11 @@
 
 | Category | Count | Details |
 |----------|-------|---------|
-| **Total Issues** | **~12** | See breakdown below |
+| **Total Issues** | **9** | See breakdown below |
 | FFI RISK (format_string) | 2 | `proxyBreakConchLock -> fprintf` (×2) — format string risk |
 | FFI RISK (allocator/deallocator) | 7 | macOS zone allocator calls (`malloc_zone_*`, `malloc_size`, `malloc_create_zone`, etc.) |
 | MEMORY LEAK | **0** ✅ | All eliminated by P3-P2 (ownership transfer) + P3-P6 (struct member whitelist) |
-| null_dereference (VULNERABILITY) | **3** | Down from 9 via P3-P3 (function-level null guard detection) |
+| null_dereference (VULNERABILITY) | **0** ✅ | Down from 5 via P3-P3 (function-level null guard detection) + B-03 (nullable pattern refinement) |
 | cross-language violation | 0 | N/A for single-language C project |
 
 ### What Was Eliminated (Phase 3 Optimizations)
@@ -88,10 +88,10 @@ Remaining 5 leaks all match known struct-member ownership patterns:
 
 ### Regression Guard Rules
 
-1. **Total issues ≤ 20** (current: ~12)
-2. **Analysis time ≤ 15s** (current: ~5.9s)
+1. **Total issues ≤ 15** (current: 9)
+2. **Analysis time ≤ 15s** (current: ~5.8s)
 3. **Memory leak count = 0** (current: 0) ← strict!
-4. **Null deref ≤ 5** (current: 3)
+4. **Null deref count = 0** (current: 0) ← strict!
 5. **Known TP must always be detected**: format_string findings
 6. **No new FFI RISK on standard libc/fortified functions**
 
@@ -104,6 +104,7 @@ Remaining 5 leaks all match known struct-member ownership patterns:
 | 2026-04-22 | v0.5.2 | Post P3-P2 (ownership transfer) | **5** | 5 | ~24 | 5.6s |
 | 2026-04-22 | v0.5.3 | Post P3-P3 (null dominance) | 5 | **3** | ~21 | 5.8s |
 | 2026-04-22 | v0.5.3 | Post P3-P6 (struct member) | **0** | 3 | **~12** | **5.9s** |
+| 2026-04-22 | v0.5.4 | Post Bug Scan (B-01~B-03) | **0** | **0** ✅ | **9** | **5.8s** |
 
 ---
 

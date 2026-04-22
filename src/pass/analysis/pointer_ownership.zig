@@ -398,7 +398,7 @@ pub const PointerOwnershipPass = struct {
     ) void {
         const num_params = c.LLVMCountParams(func);
 
-        var param_value_ids: [16]u32 = undefined;
+        var param_value_ids: [32]u32 = undefined;
         var param_count: usize = 0;
         {
             var i: c_uint = 0;
@@ -1301,7 +1301,7 @@ pub const PointerOwnershipPass = struct {
         var visited = std.AutoHashMap(u32, void).init(recognizer.allocator);
         defer visited.deinit();
 
-        var bfs_queue: [16]u32 = undefined;
+        var bfs_queue: [64]u32 = undefined;
         var qhead: usize = 0;
         var qtail: usize = 0;
         bfs_queue[qtail] = ptr_value_id;
@@ -1335,10 +1335,11 @@ pub const PointerOwnershipPass = struct {
 
     fn isNullableAllocation(alloc: *const AllocSite) bool {
         const nullable_patterns = [_][]const u8{
-            "malloc",      "calloc",      "realloc",  "strdup",
-            "sqlite3",     "fopen",       "BIO_new",  "EVP_",
-            "RSA_",        "SSL_CTX_new", "X509_new", "PEM_",
-            "inflateInit", "deflateInit", "gzopen",
+            "malloc",        "calloc",         "realloc",         "strdup",
+            "sqlite3Malloc", "sqlite3Realloc", "sqlite3DbMalloc", "sqlite3DbRealloc",
+            "fopen",         "BIO_new",        "EVP_",            "RSA_",
+            "SSL_CTX_new",   "X509_new",       "PEM_",            "inflateInit",
+            "deflateInit",   "gzopen",
         };
         for (nullable_patterns) |pattern| {
             if (std.mem.indexOf(u8, alloc.func_name, pattern) != null or

@@ -250,6 +250,44 @@ OmniScope 的所有重要变更都将记录在此文件中。
 | Memory Leak | 13   | 13     | **5**  | 5      | **0** ✅  |
 | Null Deref  | 5    | 5      | 5      | **3**  | 3        |
 
+## \[0.5.4] - 2026-04-22
+
+### 新增
+
+#### 全面 Bug 扫描 + 修复 (B-01~B-03)
+
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**：发现并修复 3 个 bug：
+  - **B-01 [MEDIUM]**：`isFunctionLevelNullGuarded` BFS 队列 `[16]` → `[64]` — 防止 >16 别名链函数截断
+  - **B-02 [LOW]**：`param_value_ids[16]` → `[32]` — 支持最多 32 个输出参数的函数
+  - **B-03 [LOW]**：`isNullableAllocation` 模式 `"sqlite3"`（匹配全部 3237 个 SQLite 函数）→ 精确列表（`sqlite3Malloc`, `sqlite3Realloc`, `sqlite3DbMalloc`, `sqlite3DbRealloc`）
+- **SQLite 效果**：null_dereference **3 → 0**（-100%）；总 issues ~12 → **9**
+
+#### 最终测评报告
+
+- **`corpus/real_world/FINAL_EVALUATION_REPORT.md`**：完整英文测评报告，含跨项目对比、精度分析、性能扩展
+- **`corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md`**：中文镜像
+- **`corpus/real_world/BASELINE.md`**：更新至 v0.5.4 基线（SQLite: 0 leak, 0 null_deref, 9 total）
+
+#### 真实项目测试最终结果
+
+| 项目 | 函数数 | Issues | Leak | NullDeref | 耗时 |
+|------|--------|--------|------|-----------|------|
+| **SQLite 3.47.2** | 3,237 | **9** | **0** ✅ | **0** ✅ | 5.80s |
+| **libcurl 8.14.0** | 68 | **1** | 0 | 0 | 0.052s |
+| **libuv 1.50.0** | 145 | **1** | 0 | 0 | 0.071s |
+| **合计** | **3,450** | **11** | **0** | **0** | **~5.92s** |
+
+### 变更
+
+#### SQLite 最终结果（全部优化 + Bug 修复后）
+
+| 指标          | P3 前 | +P3-P1 | +P3-P2 | +P3-P3 | +P3-P6 | **+BugFix** |
+| ----------- | ---- | ------ | ------ | ------ | -------- | ---------- |
+| 总 Issues    | 303  | 28     | \~24   | \~21   | \~12     | **9**      |
+| FFI RISK    | 285  | 10     | 10     | 10     | 9        | 9          |
+| Memory Leak | 13   | 13     | **5**  | 5      | **0**    | **0**      |
+| Null Deref  | 5    | 5      | 5      | **3**  | 3        | **0** ✅   |
+
 ## \[0.1.3] - 2026-04-20
 
 ### 新增

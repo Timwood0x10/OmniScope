@@ -243,6 +243,44 @@ All notable changes to OmniScope will be documented in this file.
 | Null Deref | 5 | 5 | 5 | **3** | 3 |
 | **FP Elimination** | — | -96.5% | -62% leak | -67% null | **-100% leak** |
 
+## \[0.5.4] - 2026-04-22
+
+### Added
+
+#### Comprehensive Bug Scan + Fixes (B-01~B-03)
+
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: Three bugs found and fixed:
+  - **B-01 [MEDIUM]**: `isFunctionLevelNullGuarded` BFS queue `[16]` → `[64]` — prevents truncation on functions with >16 alias chains
+  - **B-02 [LOW]**: `param_value_ids[16]` → `[32]` — supports functions with up to 32 output parameters
+  - **B-03 [LOW]**: `isNullableAllocation` pattern `"sqlite3"` (matches ALL 3237 SQLite functions) → precise list (`sqlite3Malloc`, `sqlite3Realloc`, `sqlite3DbMalloc`, `sqlite3DbRealloc`)
+- **Impact on SQLite**: null_dereference **3 → 0** (-100%); total issues ~12 → **9**
+
+#### Final Evaluation Report
+
+- **`corpus/real_world/FINAL_EVALUATION_REPORT.md`**: Complete English evaluation report with cross-project comparison, precision analysis, performance scaling
+- **`corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md`**: Chinese mirror of above
+- **`corpus/real_world/BASELINE.md`**: Updated to v0.5.4 baselines (SQLite: 0 leak, 0 null_deref, 9 total)
+
+#### Real-World Test Results (Final)
+
+| Project | Functions | Issues | Leaks | NullDeref | Time |
+|---------|-----------|--------|-------|-----------|------|
+| **SQLite 3.47.2** | 3,237 | **9** | **0** ✅ | **0** ✅ | 5.80s |
+| **libcurl 8.14.0** | 68 | **1** | 0 | 0 | 0.052s |
+| **libuv 1.50.0** | 145 | **1** | 0 | 0 | 0.071s |
+| **Combined** | **3,450** | **11** | **0** | **0** | **~5.92s** |
+
+### Changed
+
+#### SQLite Final Results (Post All Optimizations + Bug Fix)
+
+| Metric | Pre-P3 | +P3-P1 | +P3-P2 | +P3-P3 | +P3-P6 | **+BugFix** |
+|--------|--------|--------|--------|--------|--------|------------|
+| Total Issues | 303 | 28 | ~24 | ~21 | ~12 | **9** |
+| FFI RISK | 285 | 10 | 10 | 10 | 9 | 9 |
+| Memory Leak | 13 | 13 | **5** | 5 | **0** | **0** |
+| Null Deref | 5 | 5 | 5 | **3** | 3 | **0** ✅ |
+
 ## \[0.1.3] - 2026-04-20
 
 ### Added
