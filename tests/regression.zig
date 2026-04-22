@@ -13,13 +13,13 @@ const registry = OmniScope.registry;
 
 test "Regression: layer counts unchanged" {
     const expected = struct {
-        l1: usize = 58,
+        l1: usize = 64,
         l2: usize = 3,
         l3: usize = 4,
         l4: usize = 8,
-        l5: usize = 25,
+        l5: usize = 29,
         l6: usize = 54,
-        total: usize = 152,
+        total: usize = 162,
     };
 
     try std.testing.expectEqual(expected.l1, registry.SemanticRegistry.layer1Count());
@@ -45,10 +45,9 @@ test "Regression: RiskKind has exactly 13 variants" {
 
 test "Regression: critical functions always detected" {
     const critical_functions = [_][]const u8{
-        "malloc", "free", "system", "popen",
-        "strcpy", "sprintf", "gets",
-        "into_raw", "from_raw",
-        "operator new", "operator delete",
+        "malloc",   "free",         "system",          "popen",
+        "strcpy",   "sprintf",      "gets",            "into_raw",
+        "from_raw", "operator new", "operator delete",
     };
 
     for (critical_functions) |func| {
@@ -66,9 +65,9 @@ test "Regression: critical functions always detected" {
 
 test "Regression: allocators transfer ownership" {
     const allocators = [_][]const u8{
-        "malloc", "calloc", "realloc",
-        "GeneralPurposeAllocator", "ArenaAllocator",
-        "operator new", "make_unique", "make_shared",
+        "malloc",                  "calloc",         "realloc",
+        "GeneralPurposeAllocator", "ArenaAllocator", "operator new",
+        "make_unique",             "make_shared",
     };
 
     for (allocators) |func| {
@@ -79,7 +78,7 @@ test "Regression: allocators transfer ownership" {
 
 test "Regression: deallocators consume ownership" {
     const deallocators = [_][]const u8{
-        "free", "destroy(", "free(",
+        "free",            ".free(",            "allocator.free",
         "operator delete", "operator delete[]",
     };
 
@@ -95,9 +94,9 @@ test "Regression: deallocators consume ownership" {
 
 test "Regression: functions requiring null check" {
     const null_check_required = [_][]const u8{
-        "malloc", "calloc", "realloc",
-        "fopen", "dlopen",
-        ".?", "dynamic_cast",
+        "malloc",       "calloc", "realloc",
+        "fopen",        "dlopen", ".?",
+        "dynamic_cast",
     };
 
     for (null_check_required) |func| {

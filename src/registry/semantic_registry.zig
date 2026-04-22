@@ -273,6 +273,76 @@ pub const SemanticRegistry = struct {
             .description = "Reallocate memory - consumes old, returns new ownership",
         },
 
+        // macOS / Darwin Zone Allocators (system C runtime)
+        // These are NOT Zig allocators — they're part of the macOS malloc subsystem.
+        // Classifying them as zig_allocator was a bug (fixed 2026-04-22).
+        .{
+            .pattern = "malloc_zone_malloc",
+            .match_type = .exact,
+            .kind = .allocator,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "macOS zone malloc - system allocator",
+        },
+        .{
+            .pattern = "malloc_zone_free",
+            .match_type = .exact,
+            .kind = .deallocator,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "macOS zone free - system deallocator",
+        },
+        .{
+            .pattern = "malloc_zone_realloc",
+            .match_type = .exact,
+            .kind = .allocator,
+            .severity = .low,
+            .consumes_ownership = true,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "macOS zone realloc - system reallocator",
+        },
+        .{
+            .pattern = "malloc_size",
+            .match_type = .exact,
+            .kind = .allocator,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "macOS allocation size query - no ownership transfer",
+        },
+        .{
+            .pattern = "malloc_default_zone",
+            .match_type = .exact,
+            .kind = .allocator,
+            .severity = .low,
+            .consumes_ownership = false,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "macOS default zone accessor - returns zone pointer",
+        },
+        .{
+            .pattern = "malloc_create_zone",
+            .match_type = .exact,
+            .kind = .allocator,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "macOS create allocation zone - caller must destroy with malloc_destroy_zone",
+        },
+
         // Deallocator - HIGH (cross-language free mismatch risk)
         .{
             .pattern = "free",
@@ -1041,9 +1111,11 @@ pub const SemanticRegistry = struct {
             .requires_taint_check = false,
             .description = "Zig page allocator - system memory allocation",
         },
-        // Zig: allocator.alloc
+        // Zig: allocator.alloc — must be qualified (Allocator.alloc, .alloc, etc.)
+        // NOTE: Bare "alloc" would match C functions like malloc_zone_malloc, sqlite3MemMalloc.
+        // We require explicit Zig allocator context to avoid misclassifying C code.
         .{
-            .pattern = "alloc",
+            .pattern = ".alloc(",
             .match_type = .contains,
             .kind = .zig_allocator,
             .severity = .medium,
@@ -1051,11 +1123,10 @@ pub const SemanticRegistry = struct {
             .transfers_ownership = true,
             .requires_null_check = true,
             .requires_taint_check = false,
-            .description = "Zig allocator alloc - returns optional pointer, requires null check",
+            .description = "Zig allocator alloc - method call form",
         },
-        // Zig: allocator.create
         .{
-            .pattern = "create(",
+            .pattern = "allocator.alloc",
             .match_type = .contains,
             .kind = .zig_allocator,
             .severity = .medium,
@@ -1063,11 +1134,34 @@ pub const SemanticRegistry = struct {
             .transfers_ownership = true,
             .requires_null_check = true,
             .requires_taint_check = false,
-            .description = "Zig allocator create - single item allocation",
+            .description = "Zig allocator alloc - field access form",
         },
-        // Zig: allocator.destroy
+        // Zig: allocator.create — must be qualified
         .{
-            .pattern = "destroy(",
+            .pattern = ".create(",
+            .match_type = .contains,
+            .kind = .zig_allocator,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Zig allocator create - method call form",
+        },
+        .{
+            .pattern = "allocator.create",
+            .match_type = .contains,
+            .kind = .zig_allocator,
+            .severity = .medium,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = true,
+            .requires_taint_check = false,
+            .description = "Zig allocator create - field access form",
+        },
+        // Zig: allocator.destroy — must be qualified
+        .{
+            .pattern = ".destroy(",
             .match_type = .contains,
             .kind = .zig_allocator,
             .severity = .high,
@@ -1075,11 +1169,10 @@ pub const SemanticRegistry = struct {
             .transfers_ownership = false,
             .requires_null_check = false,
             .requires_taint_check = false,
-            .description = "Zig allocator destroy - frees memory, ownership consumed",
+            .description = "Zig allocator destroy - method call form",
         },
-        // Zig: allocator.free
         .{
-            .pattern = "free(",
+            .pattern = "allocator.destroy",
             .match_type = .contains,
             .kind = .zig_allocator,
             .severity = .high,
@@ -1087,7 +1180,30 @@ pub const SemanticRegistry = struct {
             .transfers_ownership = false,
             .requires_null_check = false,
             .requires_taint_check = false,
-            .description = "Zig allocator free - frees memory, ownership consumed",
+            .description = "Zig allocator destroy - field access form",
+        },
+        // Zig: allocator.free — must be qualified
+        .{
+            .pattern = ".free(",
+            .match_type = .contains,
+            .kind = .zig_allocator,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Zig allocator free - method call form",
+        },
+        .{
+            .pattern = "allocator.free",
+            .match_type = .contains,
+            .kind = .zig_allocator,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "Zig allocator free - field access form",
         },
         // Zig: ArrayList.init
         .{

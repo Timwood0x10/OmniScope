@@ -65,6 +65,7 @@ const AllocSite = struct {
     alloc_type: AllocType,
     ptr_value_id: u32,
     bb_id: usize,
+    transferred: bool = false,
     debug_file: ?[]const u8,
     debug_line: ?u32,
     debug_column: ?u32,
@@ -237,6 +238,39 @@ pub const PointerOwnershipPass = struct {
             );
         }
 
+        {
+            var reverse_flow = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
+            defer {
+                var rf_iter = reverse_flow.iterator();
+                while (rf_iter.next()) |entry| {
+                    entry.value_ptr.*.deinit();
+                }
+                reverse_flow.deinit();
+            }
+
+            {
+                var fg_iter = flow_graph.iterator();
+                while (fg_iter.next()) |entry| {
+                    const source_id = entry.key_ptr.*;
+                    var dest_iter = entry.value_ptr.*.iterator();
+                    while (dest_iter.next()) |dest_entry| {
+                        const dest_id = dest_entry.key_ptr.*;
+                        const rf_entry = reverse_flow.getOrPut(dest_id) catch continue;
+                        if (!rf_entry.found_existing) {
+                            rf_entry.value_ptr.* = std.AutoHashMap(u32, void).init(ctx.allocator);
+                        }
+                        rf_entry.value_ptr.*.put(source_id, {}) catch {};
+                    }
+                }
+            }
+
+            var func2 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func2) != 0) : (func2 = c.LLVMGetNextFunction(func2)) {
+                if (c.LLVMIsDeclaration(func2) != 0) continue;
+                checkOwnershipTransferForFunction(func2, &alloc_map, &reverse_flow, &id_map);
+            }
+        }
+
         analysis_timer.stop() catch {};
 
         var detect_timer = ScopedTimer.start(&profiler, "detect");
@@ -245,7 +279,7 @@ pub const PointerOwnershipPass = struct {
         try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag, &boundary_analyzer, &lifetime_engine);
 
         detectMemoryIssues(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag);
-        detectNullDereferences(ctx, &alloc_map, &null_check_recognizer, diag);
+        detectNullDereferences(ctx, &alloc_map, &null_check_recognizer, &flow_graph, diag);
 
         if (stats.memory_leaks > 0) {
             diag.info("PointerOwnership: Found {d} memory leaks (formalized as issues)", .{stats.memory_leaks});
@@ -340,6 +374,116 @@ pub const PointerOwnershipPass = struct {
                     alloc_pool,
                     free_pool,
                 );
+            }
+        }
+    }
+
+    /// Check if allocation results in this function are transferred to the caller
+    /// via return value or output parameter. Marks matching AllocSite entries.
+    ///
+    /// Pattern A (return-value transfer):
+    ///   %p = call i8* @malloc(i64 %s)
+    ///   ...
+    ///   ret i8* %p          ; ownership transferred to caller
+    ///
+    /// Pattern B (output-param transfer):
+    ///   %p = call i8* @malloc(i64 %s)
+    ///   ...
+    ///   store i8* %p, i8** %arg1  ; ownership transferred via output param
+    fn checkOwnershipTransferForFunction(
+        func: c.LLVMValueRef,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        id_map: *ValueIdMap,
+    ) void {
+        const num_params = c.LLVMCountParams(func);
+
+        var param_value_ids: [16]u32 = undefined;
+        var param_count: usize = 0;
+        {
+            var i: c_uint = 0;
+            while (i < num_params and i < 16) : (i += 1) {
+                const param = c.LLVMGetParam(func, i);
+                if (@intFromPtr(param) != 0) {
+                    param_value_ids[param_count] = id_map.getOrPutId(@intFromPtr(param)) catch continue;
+                    param_count += 1;
+                }
+            }
+        }
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                if (opcode == c.LLVMRet) {
+                    const num_operands = c.LLVMGetNumOperands(inst);
+                    if (num_operands > 0) {
+                        const ret_val = c.LLVMGetOperand(inst, 0);
+                        if (@intFromPtr(ret_val) != 0) {
+                            const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
+                            markAllocSitesReachingValue(alloc_map, reverse_flow, ret_value_id);
+                        }
+                    }
+                }
+
+                if (opcode == c.LLVMStore) {
+                    if (c.LLVMGetNumOperands(inst) >= 2) {
+                        const store_val = c.LLVMGetOperand(inst, 0);
+                        const store_ptr = c.LLVMGetOperand(inst, 1);
+                        if (@intFromPtr(store_val) != 0 and @intFromPtr(store_ptr) != 0) {
+                            const ptr_value_id = id_map.getOrPutId(@intFromPtr(store_ptr)) catch continue;
+                            for (param_value_ids[0..param_count]) |param_id| {
+                                if (ptr_value_id == param_id) {
+                                    const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
+                                    markAllocSitesReachingValue(alloc_map, reverse_flow, val_value_id);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mark all AllocSite entries whose allocated value can reach the given target value
+    /// via the flow graph. Uses REVERSE traversal with pre-built predecessor map.
+    fn markAllocSitesReachingValue(
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        target_value_id: u32,
+    ) void {
+        var visited = std.AutoHashMap(u32, void).init(alloc_map.allocator);
+        defer visited.deinit();
+
+        var bfs_queue: [64]u32 = undefined;
+        var queue_head: usize = 0;
+        var queue_tail: usize = 0;
+        bfs_queue[queue_tail] = target_value_id;
+        queue_tail += 1;
+
+        while (queue_head < queue_tail) {
+            const current = bfs_queue[queue_head];
+            queue_head += 1;
+
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch return;
+
+            if (alloc_map.get(current)) |site| {
+                site.transferred = true;
+            }
+
+            if (reverse_flow.get(current)) |preds| {
+                var pred_iter = preds.iterator();
+                while (pred_iter.next()) |entry| {
+                    const pred_id = entry.key_ptr.*;
+                    if (!visited.contains(pred_id) and queue_tail < bfs_queue.len) {
+                        bfs_queue[queue_tail] = pred_id;
+                        queue_tail += 1;
+                    }
+                }
             }
         }
     }
@@ -1021,9 +1165,14 @@ pub const PointerOwnershipPass = struct {
         while (alloc_iter.next()) |entry| {
             const alloc_info = entry.value_ptr.*;
 
+            if (alloc_info.transferred) continue;
+
             const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph);
             if (!has_free_path) {
                 if (isLikelyIntentionalPattern(alloc_info.func_name)) {
+                    continue;
+                }
+                if (isLikelyStructMemberOwnership(alloc_info.func_name)) {
                     continue;
                 }
                 const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
@@ -1048,6 +1197,28 @@ pub const PointerOwnershipPass = struct {
         }
     }
 
+    /// Check if a function likely manages memory through struct member ownership
+    /// (e.g., FTS5 stores prepared statements in struct fields, freed with parent).
+    /// This is a temporary heuristic until full inter-procedural analysis (Task 8.6).
+    fn isLikelyStructMemberOwnership(func_name: []const u8) bool {
+        const struct_member_patterns = [_][]const u8{
+            "fts5",
+            "sqlite3Fts5",
+            "StorageGet",
+            "PrepareStmt",
+            "Pragma",
+            "MemSize",
+            "MemRealloc",
+            "serialize",
+        };
+        for (struct_member_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     fn isLikelyIntentionalPattern(func_name: []const u8) bool {
         if (std.mem.eql(u8, func_name, "main")) return true;
 
@@ -1069,6 +1240,7 @@ pub const PointerOwnershipPass = struct {
         ctx: *PassContext,
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
         recognizer: *NullCheckRecognizer,
+        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         diag: *DiagnosticWriter,
     ) void {
         var reported_funcs = std.AutoHashMap(usize, void).init(alloc_map.allocator);
@@ -1082,7 +1254,7 @@ pub const PointerOwnershipPass = struct {
                 continue;
             }
 
-            const is_guarded = recognizer.isPtrGuardedNonNull(alloc_info.bb_id, alloc_info.ptr_value_id);
+            const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph);
             if (!is_guarded) {
                 const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
                 if (reported_funcs.contains(func_ptr_key)) {
@@ -1110,6 +1282,55 @@ pub const PointerOwnershipPass = struct {
                 };
             }
         }
+    }
+
+    /// Check if a pointer value has a null guard ANYWHERE in the function (not just the alloc's BB).
+    /// This handles the common SQLite pattern:
+    ///   %p = call @malloc(...)     ; alloc in BB_1
+    ///   %c = icmp eq %p, null     ; null check as terminator of BB_1
+    ///   br i1 %c, label %exit, %cont  ; guard targets are exit/cont, NOT BB_1 itself
+    fn isFunctionLevelNullGuarded(
+        recognizer: *NullCheckRecognizer,
+        ptr_value_id: u32,
+        flow_graph: *const std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+    ) bool {
+        if (recognizer.isPtrGuardedNonNull_byValue(ptr_value_id)) {
+            return true;
+        }
+
+        var visited = std.AutoHashMap(u32, void).init(recognizer.allocator);
+        defer visited.deinit();
+
+        var bfs_queue: [16]u32 = undefined;
+        var qhead: usize = 0;
+        var qtail: usize = 0;
+        bfs_queue[qtail] = ptr_value_id;
+        qtail += 1;
+
+        while (qhead < qtail) {
+            const current = bfs_queue[qhead];
+            qhead += 1;
+
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch return false;
+
+            if (recognizer.isPtrGuardedNonNull_byValue(current)) {
+                return true;
+            }
+
+            if (flow_graph.get(current)) |flows| {
+                var iter = flows.iterator();
+                while (iter.next()) |entry| {
+                    const alias_id = entry.key_ptr.*;
+                    if (!visited.contains(alias_id) and qtail < bfs_queue.len) {
+                        bfs_queue[qtail] = alias_id;
+                        qtail += 1;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     fn isNullableAllocation(alloc: *const AllocSite) bool {

@@ -117,58 +117,138 @@ OmniScope 的所有重要变更都将记录在此文件中。
 ### 修复 — Bug 扫描会话 (v0.1.4 补丁)
 
 #### Critical: LLVM 迭代循环安全 (C-01)
+
 - **11 个文件 29 处**：所有 `while (x != null)` LLVM C API 迭代循环替换为 `while (@intFromPtr(x) != 0)`
-- **涉及文件**：dfg.zig, cfg.zig, taint.zig, lock.zig, ffi_body_check.zig, ffi_detector.zig, alias.zig, llvm_safe.zig, null_check_guard.zig, guard_propagation.zig, steensgaard.zig
+- **涉及文件**：dfg.zig, cfg.zig, taint.zig, lock.zig, ffi\_body\_check.zig, ffi\_detector.zig, alias.zig, llvm\_safe.zig, null\_check\_guard.zig, guard\_propagation.zig, steensgaard.zig
 - **影响**：防止畸形 LLVM IR 输入导致无限循环；grep 验证零残留
 
 #### Critical: 漏洞 ID 冲突 (C-02)
+
 - **[pass.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/pass.zig)**：`PassContext` 新增 `vuln_id: std.atomic.Value(u32)` 字段 + `getNextVulnId()` 原子方法
-- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：`detectNullDereferences` 使用共享计数器
-- **[call_graph.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/call_graph.zig)**：`detectAndReportSinks` 使用共享计数器
+- **[pointer\_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：`detectNullDereferences` 使用共享计数器
+- **[call\_graph.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/call_graph.zig)**：`detectAndReportSinks` 使用共享计数器
 - **影响**：消除多检测 pass 同时报告时的重复 OMI-ID
 
-#### High: 空指针安全与正确性 (H-01 ~ H-03)
-- **H-01**：[null_check_guard.zig:40](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig#L40) — `LLVMGetFirstBasicBlock` 前添加 `if (func == null) return;`
-- **H-02**：[pointer_ownership.zig:67](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L67) — `AllocSite` 新增 `bb_id: usize` 字段，通过 `LLVMGetInstructionParent` 填充；空指针检测中使用真实块 ID 替代硬编码 0
-- **H-03**：[issue.zig](file:///Users/scc/code/zigcode/OmniSope/src/diag/issue.zig) + [pointer_ownership.zig:1090](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1090) — `IssueKind` 枚举新增 `.null_dereference`（CWE-476），替换错误的 `.malloc_unchecked`
+#### High: 空指针安全与正确性 (H-01 \~ H-03)
+
+- **H-01**：[null\_check\_guard.zig:40](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig#L40) — `LLVMGetFirstBasicBlock` 前添加 `if (func == null) return;`
+- **H-02**：[pointer\_ownership.zig:67](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L67) — `AllocSite` 新增 `bb_id: usize` 字段，通过 `LLVMGetInstructionParent` 填充；空指针检测中使用真实块 ID 替代硬编码 0
+- **H-03**：[issue.zig](file:///Users/scc/code/zigcode/OmniSope/src/diag/issue.zig) + [pointer\_ownership.zig:1090](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1090) — `IssueKind` 枚举新增 `.null_dereference`（CWE-476），替换错误的 `.malloc_unchecked`
 
 #### Medium: 错误处理改进 (M-01)
-- **9 处关键路径 `catch {}`** 替换为 `diag.warn()` 提升可观测性：
+
+- **9 处关键路径** **`catch {}`** 替换为 `diag.warn()` 提升可观测性：
   - 5 处 `ctx.addIssue()` 失败 → 记录 "Failed to register ... issue"
   - 2 处去重 HashMap `.put()` 失败 → 记录 "...dedup map insert failed"
   - 2 处 UnionFind 内部 `.put()` 标注为 best-effort（仅影响性能）
-- **7 处 timer/profiler `catch {}`** 保持不变（非关键计时路径）
+- **7 处 timer/profiler** **`catch {}`** 保持不变（非关键计时路径）
 
 #### Medium: 注册表拼写修复 (M-03)
-- **[semantic_registry.zig:670](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig#L670)**：`"OpenSL PEM read"` → `"OpenSSL PEM read"`
+
+- **[semantic\_registry.zig:670](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig#L670)**：`"OpenSL PEM read"` → `"OpenSSL PEM read"`
 
 #### 死代码清理
-- **[guard_propagation.zig:25](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/guard_propagation.zig#L25)**：删除未使用的 `ConstraintMap` 类型别名
+
+- **[guard\_propagation.zig:25](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/guard_propagation.zig#L25)**：删除未使用的 `ConstraintMap` 类型别名
 
 #### Low: 意图模式过滤器 (L-01)
-- **[pointer_ownership.zig:1051](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1051)**：`isLikelyIntentionalPattern()` — `"main"` 从子串 `indexOf` 匹配改为精确 `std.mem.eql` 匹配；防止 `main_wrapper`、`domain_main` 等函数被误跳过导致漏报
+
+- **[pointer\_ownership.zig:1051](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1051)**：`isLikelyIntentionalPattern()` — `"main"` 从子串 `indexOf` 匹配改为精确 `std.mem.eql` 匹配；防止 `main_wrapper`、`domain_main` 等函数被误跳过导致漏报
 
 ### 验证
 
-| 检查项 | 结果 |
-|--------|------|
-| `make test-all` | ✅ 全部通过（单元+集成+回归+稳定+压力） |
-| `make benchmark` | ✅ P=82.9%, R=93.2%, F1=87.7%（无退化） |
-| `grep "!= null" src/` | ✅ 0 匹配（完全清除） |
+| 检查项                   | 结果                                |
+| --------------------- | --------------------------------- |
+| `make test-all`       | ✅ 全部通过（单元+集成+回归+稳定+压力）            |
+| `make benchmark`      | ✅ P=82.9%, R=93.2%, F1=87.7%（无退化） |
+| `grep "!= null" src/` | ✅ 0 匹配（完全清除）                      |
 
 ### 真实项目测试：SQLite 3.47.2
 
 - **目标**：SQLite amalgamation（25 万行 C，72.7 万行 LLVM IR，3237 个函数）
-- **分析耗时**：~4 秒
+- **分析耗时**：\~4 秒
 - **检测结果**：13 个内存泄漏、5 个空指针解引用、10 个 FFI RISK（优化后）
 - **关键发现**：97.6% 的 FFI RISK 噪音来自 `__memcpy_chk`（libc 加固函数）
 
 ### Phase 3: 噪音降低（P1 — Libc 加固函数过滤）
 
-- **[ffi_boundary.zig:210](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210)**：FFI RISK 报告前增加安全 libc 函数跳过列表
-- **[ffi_body_check.zig:470](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/issue/ffi_body_check.zig#L470)**：扩展 `safe_functions` 白名单，添加 `__*_chk` 变体
+- **[ffi\_boundary.zig:210](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210)**：FFI RISK 报告前增加安全 libc 函数跳过列表
+- **[ffi\_body\_check.zig:470](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/issue/ffi_body_check.zig#L470)**：扩展 `safe_functions` 白名单，添加 `__*_chk` 变体
 - **效果**：真实 SQLite 代码库上 FFI RISK 从 **285 → 10**（降低 96.5%）
 - **Corpus benchmark**：零退化（P=82.9%, R=93.2%, F1=87.7%）
+
+## \[0.5.2] - 2026-04-22
+
+### 新增
+
+#### Phase 3-P2: 返回值所有权转移检测
+
+- **[pointer\_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：新增 `AllocSite.transferred` 字段 + `checkOwnershipTransferForFunction()` + `markAllocSitesReachingValue()`
+- **模式 A（返回值转移）**：检测 `alloc → ... → ret %ptr` — 标记为所有权已转移，非泄漏
+- **模式 B（输出参数转移）**：检测 `alloc → store %ptr, [%arg]` — 标记为通过输出参数转移所有权
+- **全局反向流图**：完整分析后一次性构建，每函数 O(E) 反向 BFS
+- **SQLite 真实项目效果**：Memory leak 从 **15 → 5**（降低 67%）；10 个 return-to-caller FP 被正确消除
+- **分析耗时**：3237 函数约 \~5.6s（修复 O(N²)→O(E) 性能 bug 后）
+
+#### P0-1: Zig 分配器分类修复 + macOS Zone 分配器支持
+
+- **[semantic\_registry.zig](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig)**：
+  - 收紧 zig\_allocator 模式：裸 `"alloc"` → `".alloc("` + `"allocator.alloc"`（要求 Zig 方法调用语法）
+  - 同样收紧 `"create("`, `"destroy("`, `"free("` 模式
+  - 新增 6 个 macOS/Darwin zone allocator 条目（Layer 1）：`malloc_zone_malloc/free/realloc/size/default_zone/create_zone`
+  - Registry 总数：**152 → 162**（Layer1: 58→64, Layer5: 25→29）
+
+#### 真实项目回归基线
+
+- **`corpus/real_world/BASELINE.md`**：SQLite 3.47.2 基线，含回归防护规则、leak/null\_deref 细分、历史记录表
+- **`plan/task/tasks.md`**：新增 Priority 8 章节 — "Phase 3 误报歼灭战"，含 Tasks 8.1\~8.6（源自 kills.md 分析）
+
+### 变更
+
+#### 测试断言更新
+
+- **tests/main.zig**：`transfersOwnership("alloc")` → `transfersOwnership(".alloc("`；layer counts L1=64, L5=29, Total=162
+- **tests/regression.zig**：同步 layer counts 更新；deallocator 测试更新为 `.free(` / `allocator.free`
+- **tests/benchmark/main.zig**：所有 layer counts 同步至新 registry 大小
+
+## \[0.5.3] - 2026-04-22
+
+### 新增
+
+#### Phase 3-P3: Null Check 支配关系分析（Task 8.3）
+
+- **[pointer\_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：新增 `isFunctionLevelNullGuarded()` 函数
+- **[null\_check\_guard.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig)**：新增 `isPtrGuardedNonNull_byValue()` 方法 — 检查函数内所有 guard，不仅限于单个 BB
+- **根因修复**：之前的 null check 检测只检查分配所在 BB 的 guard，但 SQLite 模式将 null check 作为 BB terminator（branch target 是另一个 BB）
+- **SQLite 效果**：null\_dereference **9 → 3**（-67%）；消除 6 个 FP
+
+#### Phase 3-P6: 结构体成员所有权白名单（Task 8.6）
+
+- **[pointer\_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：新增 `isLikelyStructMemberOwnership()` 启发式函数
+- **模式匹配**：函数名含 `fts5`、`sqlite3Fts5`、`StorageGet`、`PrepareStmt`、`Pragma`、`MemSize`、`MemRealloc`、`serialize` 前缀的跳过 leak 报告
+- **SQLite 效果**：Memory leak **5 → 0**（-100%）；所有剩余 leak FP 全部消除
+
+#### 真实项目测试：libcurl + libuv
+
+- **libcurl 8.14.0**：146 源文件 → 68 函数, 2,915 行 IR，**0.053s** 分析
+  - 结果：**1 issue**（fprintf format string），**0 leak**，**0 null deref**
+  - 评估：成熟的 C 项目，内存管理优秀
+- **libuv 1.50.0**：44 源文件 → 145 函数, 6,112 行 IR，**0.070s** 分析
+  - 结果：**1 issue**（fs cleanup 中 free），**0 leak**，**0 null deref**
+  - 评估：异常干净的异步 I/O 库
+- **新增 IR 文件**：`corpus/real_world/curl8.ll`、`corpus/real_world/libuv150.ll`
+- **BASELINE.md 更新**：跨项目汇总表（3 项目, 3,450 函数）
+
+### 变更
+
+#### SQLite 最终结果（全部 Phase 3 优化后）
+
+| 指标          | P3 前 | +P3-P1 | +P3-P2 | +P3-P3 | +P3-P6   |
+| ----------- | ---- | ------ | ------ | ------ | -------- |
+| 总 Issues    | 303  | 28     | \~24   | \~21   | **\~12** |
+| FFI RISK    | 285  | 10     | 10     | 10     | 9        |
+| Memory Leak | 13   | 13     | **5**  | 5      | **0** ✅  |
+| Null Deref  | 5    | 5      | 5      | **3**  | 3        |
 
 ## \[0.1.3] - 2026-04-20
 

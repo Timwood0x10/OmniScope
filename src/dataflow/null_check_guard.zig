@@ -127,6 +127,20 @@ pub const NullCheckRecognizer = struct {
             return guard.is_not_null_branch;
         }
     }
+
+    /// Check if ANY null guard in the function covers this pointer value.
+    /// Unlike isPtrGuardedNonNull (which checks a specific BB), this checks
+    /// all guards regardless of their branch target.
+    pub fn isPtrGuardedNonNull_byValue(self: *NullCheckRecognizer, value_id: u32) bool {
+        var iter = self.guards.iterator();
+        while (iter.next()) |entry| {
+            const guard = entry.value_ptr.*;
+            if (guard.value_id == value_id) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 test "NullCheckRecognizer - init and deinit" {
