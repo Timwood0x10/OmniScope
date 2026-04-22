@@ -31,6 +31,8 @@ pub const IssueKind = enum {
     format_string,
     /// Malloc result used without null check
     malloc_unchecked,
+    /// Null pointer dereference (nullable allocation used without guard)
+    null_dereference,
     /// Free called on non-malloc pointer
     invalid_free,
     /// Unknown issue type
@@ -50,6 +52,7 @@ pub const IssueKind = enum {
             .double_free => "double_free",
             .format_string => "format_string",
             .malloc_unchecked => "malloc_unchecked",
+            .null_dereference => "null_dereference",
             .invalid_free => "invalid_free",
             .unknown => "unknown",
         };
@@ -71,6 +74,7 @@ pub const IssueKind = enum {
             .double_free => 415, // CWE-415: Double Free
             .format_string => 134, // CWE-134: Format String Vulnerability
             .malloc_unchecked => 252, // CWE-252: Unchecked Return Value
+            .null_dereference => 476, // CWE-476: NULL Pointer Dereference
             .invalid_free => 590, // CWE-590: Free of Memory Not on Heap
             .unknown => 0,
         };
@@ -90,6 +94,7 @@ pub const IssueKind = enum {
             .double_free => "Double free across language boundary",
             .format_string => "Format string vulnerability",
             .malloc_unchecked => "Malloc result used without null check",
+            .null_dereference => "Null pointer dereference - nullable allocation used without guard",
             .invalid_free => "Free called on non-malloc pointer",
             .unknown => "Unknown issue type",
         };

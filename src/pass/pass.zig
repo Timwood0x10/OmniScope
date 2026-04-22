@@ -34,6 +34,7 @@ pub const PassContext = struct {
     query_engine: *QueryEngine,
     data_flow_graph: *DataFlowGraph,
     next_id: std.atomic.Value(u32),
+    vuln_id: std.atomic.Value(u32),
 
     /// Create a new pass context
     pub fn init(
@@ -49,7 +50,8 @@ pub const PassContext = struct {
             .fact_store = fact_store,
             .query_engine = query_engine,
             .data_flow_graph = data_flow_graph,
-            .next_id = std.atomic.Value(u32).init(1), // Start from 1 (0 is reserved)
+            .next_id = std.atomic.Value(u32).init(1),
+            .vuln_id = std.atomic.Value(u32).init(0),
         };
     }
 
@@ -59,6 +61,11 @@ pub const PassContext = struct {
     ///   - u32: A unique ID (thread-safe)
     pub fn getNextId(self: *PassContext) u32 {
         return self.next_id.fetchAdd(1, .seq_cst);
+    }
+
+    /// Get a unique vulnerability ID (shared across all detection passes)
+    pub fn getNextVulnId(self: *PassContext) u32 {
+        return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
     }
 
     /// Set the IR module

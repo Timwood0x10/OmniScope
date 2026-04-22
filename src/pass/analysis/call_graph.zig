@@ -210,7 +210,7 @@ pub const CallGraphPass = struct {
         classifyFunctions(&nodes);
         markSources(&nodes);
         try propagateTaint(ctx.allocator, &nodes, &edges);
-        try detectAndReportSinks(ctx.allocator, &nodes, &edges, diag);
+        try detectAndReportSinks(ctx, &nodes, &edges, diag);
     }
 
     fn buildNodes(allocator: std.mem.Allocator, mod: c.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
@@ -343,14 +343,13 @@ pub const CallGraphPass = struct {
         }
     }
 
-    fn detectAndReportSinks(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge), diag: *DiagnosticWriter) !void {
+    fn detectAndReportSinks(ctx: *PassContext, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge), diag: *DiagnosticWriter) !void {
         _ = edges;
-        var vulnerability_id: u32 = 0;
 
         for (nodes.items) |node| {
             if (node.is_tainted and isSink(node.name)) {
                 const risk = classifyRisk(node.name);
-                vulnerability_id += 1;
+                const vulnerability_id = ctx.getNextVulnId();
 
                 diag.err("VULNERABILITY OMI-{d:0>3}", .{vulnerability_id});
                 diag.err("Severity: {s}", .{@tagName(risk)});
@@ -359,7 +358,7 @@ pub const CallGraphPass = struct {
 
                 var current_id: ?u32 = node.id;
                 var path_length: usize = 0;
-                var visited = std.AutoHashMap(u32, void).init(allocator);
+                var visited = std.AutoHashMap(u32, void).init(ctx.allocator);
                 defer visited.deinit();
 
                 while (current_id != null and path_length < 64) : (path_length += 1) {

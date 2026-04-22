@@ -66,3 +66,5 @@ benchs/output/
 plan/
 
 *.raw
+
+*.zip

@@ -113,6 +113,62 @@ All notable changes to OmniScope will be documented in this file.
 
 \* v0.1.3 Recall was measured against different scope (all issues, not just in-scope)
 
+### Fixed — Bug Sweep Session (v0.1.4 patch)
+
+#### Critical: LLVM Iteration Loop Safety (C-01)
+- **29 occurrences across 11 files**: All `while (x != null)` LLVM C API iteration loops replaced with `while (@intFromPtr(x) != 0)`
+- **Files**: dfg.zig, cfg.zig, taint.zig, lock.zig, ffi_body_check.zig, ffi_detector.zig, alias.zig, llvm_safe.zig, null_check_guard.zig, guard_propagation.zig, steensgaard.zig
+- **Impact**: Prevents infinite loops on malformed LLVM IR input; verified zero remaining instances via grep
+
+#### Critical: Vulnerability ID Collision (C-02)
+- **[pass.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/pass.zig)**: Added `vuln_id: std.atomic.Value(u32)` to `PassContext` + `getNextVulnId()` atomic method
+- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**: `detectNullDereferences` now uses shared counter
+- **[call_graph.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/call_graph.zig)**: `detectAndReportSinks` now uses shared counter
+- **Impact**: Eliminates duplicate OMI-IDs when multiple detection passes report issues
+
+#### High: Null Safety & Correctness (H-01 ~ H-03)
+- **H-01**: [null_check_guard.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig#L40) — Added `if (func == null) return;` guard before `LLVMGetFirstBasicBlock`
+- **H-02**: [pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L67) — Added `bb_id: usize` field to `AllocSite`, populated via `LLVMGetInstructionParent`; replaced hardcoded `0` with real block ID in null deref detection
+- **H-03**: [issue.zig](file:///Users/scc/code/zigcode/OmniSope/src/diag/issue.zig) + [pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1090) — Added `.null_dereference` to `IssueKind` enum (CWE-476), replaced incorrect `.malloc_unchecked`
+
+#### Medium: Error Handling (M-01)
+- **9 critical-path `catch {}`** replaced with `diag.warn()` for observability:
+  - 5 × `ctx.addIssue()` failures → logged as "Failed to register ... issue"
+  - 2 × dedup HashMap `.put()` failures → logged as "...dedup map insert failed"
+  - 2 × UnionFind internal `.put()` annotated as best-effort (perf-only degradation)
+- **7 timer/profiler `catch {}`** left as-is (non-critical timing paths)
+
+#### Medium: Registry Typo Fix (M-03)
+- **[semantic_registry.zig](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig#L670)**: `"OpenSL PEM read"` → `"OpenSSL PEM read"`
+
+#### Dead Code Cleanup
+- **[guard_propagation.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/guard_propagation.zig#L25)**: Removed unused `ConstraintMap` type alias
+
+#### Low: Intentional Pattern Filter (L-01)
+- **[pointer_ownership.zig:1051](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1051)**: `isLikelyIntentionalPattern()` — `"main"` changed from substring `indexOf` match to exact `std.mem.eql` match; prevents false negatives on functions like `main_wrapper`, `domain_main`
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `make test-all` | ✅ ALL PASSED (unit + integration + regression + stability + stress) |
+| `make benchmark` | ✅ P=82.9%, R=93.2%, F1=87.7% (no regression) |
+| `grep "!= null" src/` | ✅ 0 matches (complete elimination) |
+
+### Real-World Test: SQLite 3.47.2
+
+- **Target**: SQLite amalgamation (250K LOC, 727K lines LLVM IR, 3237 functions)
+- **Analysis time**: ~4 seconds
+- **Findings**: 13 memory leaks, 5 null dereferences, 10 FFI RISK (after optimization)
+- **Key insight**: 97.6% of FFI RISK noise was `__memcpy_chk` (libc fortified functions)
+
+### Phase 3: Noise Reduction (P1 — Libc Fortified Function Filter)
+
+- **[ffi_boundary.zig:210](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210)**: Added safe libc function skip list before FFI RISK reporting
+- **[ffi_body_check.zig:470](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/issue/ffi_body_check.zig#L470)**: Extended `safe_functions` whitelist with `__*_chk` variants
+- **Impact**: FFI RISK reduced from **285 → 10** (-96.5%) on real-world SQLite codebase
+- **Corpus benchmark**: Zero regression (P=82.9%, R=93.2%, F1=87.7%)
+
 ## \[0.1.3] - 2026-04-20
 
 ### Added

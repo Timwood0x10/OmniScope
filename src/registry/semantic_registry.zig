@@ -667,7 +667,7 @@ pub const SemanticRegistry = struct {
             .transfers_ownership = true,
             .requires_null_check = true,
             .requires_taint_check = false,
-            .description = "OpenSL PEM read (allocates object)",
+            .description = "OpenSSL PEM read (allocates object)",
         },
 
         // SQLite3 API

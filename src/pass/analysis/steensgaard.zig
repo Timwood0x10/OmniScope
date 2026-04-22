@@ -167,7 +167,7 @@ pub const UnionFind = struct {
                 return x;
             }
             const root = self.find(p);
-            self.parent.put(x, root) catch {};
+            self.parent.put(x, root) catch {}; // Path compression best-effort; failure only affects perf
             return root;
         }
         return x;
@@ -189,7 +189,7 @@ pub const UnionFind = struct {
         } else {
             try self.parent.put(root_y, root_x);
             const new_rank = rank_x + 1;
-            self.rank.put(root_x, new_rank) catch {};
+            self.rank.put(root_x, new_rank) catch {}; // Rank update best-effort; failure only degrades tree balance
         }
     }
 };

@@ -69,6 +69,7 @@ pub const Pipeline = struct {
             .query_engine = self.query_engine,
             .data_flow_graph = &self.data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
+            .vuln_id = std.atomic.Value(u32).init(0),
         };
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };

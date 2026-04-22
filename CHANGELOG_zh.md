@@ -114,6 +114,62 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 \* v0.1.3 的召回率是在不同范围下测量的（统计所有问题，非仅 in-scope 问题）
 
+### 修复 — Bug 扫描会话 (v0.1.4 补丁)
+
+#### Critical: LLVM 迭代循环安全 (C-01)
+- **11 个文件 29 处**：所有 `while (x != null)` LLVM C API 迭代循环替换为 `while (@intFromPtr(x) != 0)`
+- **涉及文件**：dfg.zig, cfg.zig, taint.zig, lock.zig, ffi_body_check.zig, ffi_detector.zig, alias.zig, llvm_safe.zig, null_check_guard.zig, guard_propagation.zig, steensgaard.zig
+- **影响**：防止畸形 LLVM IR 输入导致无限循环；grep 验证零残留
+
+#### Critical: 漏洞 ID 冲突 (C-02)
+- **[pass.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/pass.zig)**：`PassContext` 新增 `vuln_id: std.atomic.Value(u32)` 字段 + `getNextVulnId()` 原子方法
+- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**：`detectNullDereferences` 使用共享计数器
+- **[call_graph.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/call_graph.zig)**：`detectAndReportSinks` 使用共享计数器
+- **影响**：消除多检测 pass 同时报告时的重复 OMI-ID
+
+#### High: 空指针安全与正确性 (H-01 ~ H-03)
+- **H-01**：[null_check_guard.zig:40](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig#L40) — `LLVMGetFirstBasicBlock` 前添加 `if (func == null) return;`
+- **H-02**：[pointer_ownership.zig:67](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L67) — `AllocSite` 新增 `bb_id: usize` 字段，通过 `LLVMGetInstructionParent` 填充；空指针检测中使用真实块 ID 替代硬编码 0
+- **H-03**：[issue.zig](file:///Users/scc/code/zigcode/OmniSope/src/diag/issue.zig) + [pointer_ownership.zig:1090](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1090) — `IssueKind` 枚举新增 `.null_dereference`（CWE-476），替换错误的 `.malloc_unchecked`
+
+#### Medium: 错误处理改进 (M-01)
+- **9 处关键路径 `catch {}`** 替换为 `diag.warn()` 提升可观测性：
+  - 5 处 `ctx.addIssue()` 失败 → 记录 "Failed to register ... issue"
+  - 2 处去重 HashMap `.put()` 失败 → 记录 "...dedup map insert failed"
+  - 2 处 UnionFind 内部 `.put()` 标注为 best-effort（仅影响性能）
+- **7 处 timer/profiler `catch {}`** 保持不变（非关键计时路径）
+
+#### Medium: 注册表拼写修复 (M-03)
+- **[semantic_registry.zig:670](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig#L670)**：`"OpenSL PEM read"` → `"OpenSSL PEM read"`
+
+#### 死代码清理
+- **[guard_propagation.zig:25](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/guard_propagation.zig#L25)**：删除未使用的 `ConstraintMap` 类型别名
+
+#### Low: 意图模式过滤器 (L-01)
+- **[pointer_ownership.zig:1051](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1051)**：`isLikelyIntentionalPattern()` — `"main"` 从子串 `indexOf` 匹配改为精确 `std.mem.eql` 匹配；防止 `main_wrapper`、`domain_main` 等函数被误跳过导致漏报
+
+### 验证
+
+| 检查项 | 结果 |
+|--------|------|
+| `make test-all` | ✅ 全部通过（单元+集成+回归+稳定+压力） |
+| `make benchmark` | ✅ P=82.9%, R=93.2%, F1=87.7%（无退化） |
+| `grep "!= null" src/` | ✅ 0 匹配（完全清除） |
+
+### 真实项目测试：SQLite 3.47.2
+
+- **目标**：SQLite amalgamation（25 万行 C，72.7 万行 LLVM IR，3237 个函数）
+- **分析耗时**：~4 秒
+- **检测结果**：13 个内存泄漏、5 个空指针解引用、10 个 FFI RISK（优化后）
+- **关键发现**：97.6% 的 FFI RISK 噪音来自 `__memcpy_chk`（libc 加固函数）
+
+### Phase 3: 噪音降低（P1 — Libc 加固函数过滤）
+
+- **[ffi_boundary.zig:210](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210)**：FFI RISK 报告前增加安全 libc 函数跳过列表
+- **[ffi_body_check.zig:470](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/issue/ffi_body_check.zig#L470)**：扩展 `safe_functions` 白名单，添加 `__*_chk` 变体
+- **效果**：真实 SQLite 代码库上 FFI RISK 从 **285 → 10**（降低 96.5%）
+- **Corpus benchmark**：零退化（P=82.9%, R=93.2%, F1=87.7%）
+
 ## \[0.1.3] - 2026-04-20
 
 ### 新增

@@ -1036,19 +1036,24 @@ pub const PointerOwnershipPass = struct {
                         Location.init(alloc_info.func_name),
                         .medium,
                         0.7,
-                    )) catch {};
+                    )) catch {
+                        diag.warn("Failed to register leak issue", .{});
+                    };
                     diag.warn("MEMORY LEAK: Memory allocated but never freed in {s}", .{alloc_info.func_name});
-                    reported_func_ptrs.put(func_ptr_key, {}) catch {};
+                    reported_func_ptrs.put(func_ptr_key, {}) catch {
+                        diag.warn("Leak dedup map insert failed", .{});
+                    };
                 }
             }
         }
     }
 
     fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+        if (std.mem.eql(u8, func_name, "main")) return true;
+
         const intentional_prefixes = [_][]const u8{
             "correct_", "valid_",  "example_", "good_",
             "safe_",    "proper_", "fixed_",   "ok_",
-            "main",
         };
         for (intentional_prefixes) |prefix| {
             if (std.mem.indexOf(u8, func_name, prefix) != null) {
@@ -1066,7 +1071,6 @@ pub const PointerOwnershipPass = struct {
         recognizer: *NullCheckRecognizer,
         diag: *DiagnosticWriter,
     ) void {
-        var vulnerability_id: u32 = 0;
         var reported_funcs = std.AutoHashMap(usize, void).init(alloc_map.allocator);
         defer reported_funcs.deinit();
 
@@ -1085,21 +1089,25 @@ pub const PointerOwnershipPass = struct {
                     continue;
                 }
 
-                vulnerability_id += 1;
+                const vulnerability_id = ctx.getNextVulnId();
                 ctx.addIssue(Issue.init(
-                    .malloc_unchecked,
+                    .null_dereference,
                     "Potential null dereference: pointer used without null check",
                     Location.init(alloc_info.func_name),
                     .critical,
                     0.85,
-                )) catch {};
+                )) catch {
+                    diag.warn("Failed to register null_deref issue", .{});
+                };
 
                 diag.err("VULNERABILITY OMI-{d:0>3}", .{vulnerability_id});
                 diag.err("Severity: critical", .{});
                 diag.err("Type: null_dereference", .{});
                 diag.err("  [Source] {s}() - allocation may return NULL, used without null guard", .{alloc_info.func_name});
 
-                reported_funcs.put(func_ptr_key, {}) catch {};
+                reported_funcs.put(func_ptr_key, {}) catch {
+                    diag.warn("Null deref dedup map insert failed", .{});
+                };
             }
         }
     }
@@ -1195,7 +1203,9 @@ pub const PointerOwnershipPass = struct {
                         Location.init(free_info.func_name),
                         .high,
                         0.8,
-                    )) catch {};
+                    )) catch {
+                        diag.warn("Failed to register double_free issue", .{});
+                    };
                     diag.warn("DOUBLE-FREE: Pointer freed multiple times in {s}", .{free_info.func_name});
                     continue;
                 };
@@ -1205,7 +1215,9 @@ pub const PointerOwnershipPass = struct {
                     Location.init(free_info.func_name),
                     .high,
                     0.8,
-                )) catch {};
+                )) catch {
+                    diag.warn("Failed to register double_free issue (count)", .{});
+                };
                 ctx.allocator.free(msg);
                 diag.warn("DOUBLE-FREE: Pointer freed {d} times in {s}", .{ free_count, free_info.func_name });
             }
@@ -1237,7 +1249,9 @@ pub const PointerOwnershipPass = struct {
                         Location.init(free_info.func_name),
                         .high,
                         0.8,
-                    )) catch {};
+                    )) catch {
+                        diag.warn("Failed to register use_after_free issue", .{});
+                    };
                     diag.warn("USE-AFTER-FREE: Pointer used after being freed in {s}", .{
                         free_info.func_name,
                     });

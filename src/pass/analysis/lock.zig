@@ -91,7 +91,7 @@ pub const LockPass = struct {
 
         // Iterate over all functions
         var func = c.LLVMGetFirstFunction(module.raw);
-        while (func != null) {
+        while (@intFromPtr(func) != 0) {
             const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
                 // Assign function ID
@@ -112,11 +112,11 @@ pub const LockPass = struct {
         // Get first basic block
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
-        while (bb != null) {
+        while (@intFromPtr(bb) != 0) {
             // Get first instruction
             var inst = c.LLVMGetFirstInstruction(bb);
 
-            while (inst != null) {
+            while (@intFromPtr(inst) != 0) {
                 // Check if this is a lock operation
                 if (self.isLockOperation(inst)) {
                     const is_acquire = self.isLockAcquire(inst);

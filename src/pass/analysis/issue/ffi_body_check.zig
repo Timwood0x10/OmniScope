@@ -78,9 +78,9 @@ fn pointsToStoreOfMallocResult(ptr: c.LLVMValueRef, malloc_result: c.LLVMValueRe
     // Iterate through ALL basic blocks in the function
     // to find if there's a store to this pointer with malloc_result
     var bb = c.LLVMGetFirstBasicBlock(func);
-    while (bb != null) {
+    while (@intFromPtr(bb) != 0) {
         var inst = c.LLVMGetFirstInstruction(bb);
-        while (inst != null) {
+        while (@intFromPtr(inst) != 0) {
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode == c.LLVMStore) {
                 const store_ptr = c.LLVMGetOperand(inst, 1);
@@ -158,7 +158,7 @@ fn isMallocUnchecked(malloc_result: c.LLVMValueRef, ctx: *AnalysisContext, bound
     // Check instructions after malloc for null check
     // Handle common LLVM IR pattern: malloc -> store -> load -> icmp
     var inst = c.LLVMGetNextInstruction(malloc_result);
-    while (inst != null) {
+    while (@intFromPtr(inst) != 0) {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Skip store instructions (intermediate storage)
@@ -461,12 +461,19 @@ fn getVulnerabilityDesc(vuln_type: IssueKind) []const u8 {
 fn isSafeUtilityFunction(func_name: []const u8) bool {
     // Safe utility functions that don't need analysis
     const safe_functions = &[_][]const u8{
-        "puts",       "putchar", "putchar_unlocked",
-        "memcpy",     "memmove", "memset",
-        "strlen",     "strcmp",  "strncmp",
-        "strcasecmp", "atoi",    "atol",
-        "atof",       "abs",     "labs",
+        "puts",          "putchar",       "putchar_unlocked",
+        "memcpy",        "memmove",       "memset",
+        "strlen",        "strcmp",        "strncmp",
+        "strcasecmp",    "atoi",          "atol",
+        "atof",          "abs",           "labs",
         "llabs",
+        // Libc fortified variants (glibc __*_chk functions)
+        // These are compiler-inserted bounds-checked versions of standard
+        // functions and are NOT FFI safety issues — they're safer than
+        // the originals. Filtering them eliminates ~97% of FFI RISK noise.
+                "__memcpy_chk",  "__memmove_chk",
+        "__memset_chk",  "__strcpy_chk",  "__strcat_chk",
+        "__strncpy_chk", "__sprintf_chk", "__snprintf_chk",
     };
 
     for (safe_functions) |pattern| {
@@ -570,10 +577,10 @@ pub const FFIBodyCheckPass = struct {
 
         // Iterate through all basic blocks
         var bb = c.LLVMGetFirstBasicBlock(func);
-        while (bb != null) {
+        while (@intFromPtr(bb) != 0) {
             // Iterate through all instructions in the basic block
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (inst != null) {
+            while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check if this is a call instruction

@@ -70,7 +70,7 @@ pub const CFGPass = struct {
 
         // Iterate over all functions
         var func = c.LLVMGetFirstFunction(module.raw);
-        while (func != null) {
+        while (@intFromPtr(func) != 0) {
             // Check if this is a function (not global variable, etc.)
             const func_ref = c.LLVMIsAFunction(func);
             if (func_ref != null) {
@@ -89,7 +89,7 @@ pub const CFGPass = struct {
         // Get first basic block
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
-        while (bb != null) {
+        while (@intFromPtr(bb) != 0) {
             // Assign ID to basic block
             const bb_id = self.ctx.getNextId();
             try self.bb_id_map.put(bb, bb_id);

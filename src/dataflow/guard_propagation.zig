@@ -22,8 +22,6 @@ pub const PtrConstraint = struct {
     state: lifetime.LifetimeState,
 };
 
-pub const ConstraintMap = std.AutoHashMap(usize, std.ArrayList(PtrConstraint));
-
 pub const GuardPropagation = struct {
     allocator: Allocator,
     constraint_maps: std.AutoHashMap(usize, std.ArrayList(PtrConstraint)),
