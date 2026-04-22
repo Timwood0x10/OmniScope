@@ -51,6 +51,7 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
+        baseline-check \
         install-deps release benchmark benchmark-full
 
 # ========================================
@@ -420,6 +421,16 @@ real-world-sarif: real-world-ir
 	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/real_world_report.sarif $(REAL_WORLD_IR)/combined.bc
 
 # ========================================
+# Baseline Regression Check (Task 8.4)
+# ========================================
+
+baseline-check: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              BASELINE REGRESSION CHECK                       ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/baseline_check.sh
+
+# ========================================
 # All Reports
 # ========================================
 
@@ -627,6 +638,9 @@ help:
 	@echo "  make real-world      Build and analyze real-world FFI patterns"
 	@echo "  make real-world-ir   Build OpenSSL/SQLite/zlib test IR"
 	@echo "  make real-world-run  Analyze real-world FFI patterns"
+	@echo ""
+	@echo "Regression Guard:"
+	@echo "  make baseline-check  Run baseline regression test (SQLite + curl + libuv)"
 	@echo ""
 	@echo "Report Commands (JSON/SARIF):"
 	@echo "  make rust-json           Generate Rust JSON report"

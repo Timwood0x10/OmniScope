@@ -35,6 +35,8 @@ pub const PassContext = struct {
     data_flow_graph: *DataFlowGraph,
     next_id: std.atomic.Value(u32),
     vuln_id: std.atomic.Value(u32),
+    raii_func_set: std.AutoHashMap(usize, void),
+    meyers_singleton_set: std.AutoHashMap(usize, void),
 
     /// Create a new pass context
     pub fn init(
@@ -52,6 +54,8 @@ pub const PassContext = struct {
             .data_flow_graph = data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
             .vuln_id = std.atomic.Value(u32).init(0),
+            .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
+            .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
         };
     }
 

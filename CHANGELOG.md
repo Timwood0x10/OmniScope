@@ -281,6 +281,182 @@ All notable changes to OmniScope will be documented in this file.
 | Memory Leak | 13 | 13 | **5** | 5 | **0** | **0** |
 | Null Deref | 5 | 5 | 5 | **3** | 3 | **0** ✅ |
 
+## \[0.5.6] - 2026-04-22
+
+### Added
+
+#### C++ Project Support (Real-World Testing)
+
+- **[semantic_registry.zig](src/registry/semantic_registry.zig)**: Added 4 Itanium C++ ABI mangled names to Layer 6:
+  - `_Znwm` → `operator new(unsigned long)` (scalar, `.cpp_allocator`)
+  - `_Znam` → `operator new[](unsigned long)` (array, `.cpp_allocator`)
+  - _ZdlPv` → `operator delete(void*)` (scalar, `.deallocator`)
+  - `_ZdaPv` → `operator delete[](void*)` (array, `.deallocator`)
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: `isAllocationInstruction()` now accepts `.cpp_allocator` kind
+- **[corpus/real_world/jsoncpp195.ll]**: New test IR — jsoncpp 1.9.5 (90K lines, 1,537 functions, C++)
+- **[corpus/real_world/cpp_test.cpp]**: Synthetic C++ test exercising `new`/`delete`/`unique_ptr`/`shared_ptr`/STL
+
+#### Struct-Member Ownership Detection (GEP+Store Pattern)
+
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: New third-pass analysis `detectStructMemberStores()`:
+  - Scans all `store` instructions in each function
+  - If stored value is a known allocation AND destination is a GEP (struct field access)
+  - Marks `AllocSite.stored_to_struct_field = true`
+  - Leak detection skips these allocations (complements function-name heuristic)
+- **AllocSite** struct: New `stored_to_struct_field: bool = false` field
+
+#### Real-World Validation Results (jsoncpp 1.9.5)
+
+| Metric | Value |
+|--------|------|
+| Functions analyzed | 1,537 |
+| Allocations detected | 110 (`_Znwm`/`_Znam` correctly matched) |
+| Frees detected | 2 (`_ZdlPv`/`_ZdaPv` correctly matched) |
+| Issues reported | 40 (37 leak FP + 3 FFI) |
+| Real bugs found | **0** ✅ |
+| Analysis time | 3.31s |
+
+**Key C++ findings**:
+- 37/40 issues are RAII-related FPs (`std::unique_ptr`/`std::map` destructor cleanup invisible intra-procedurally)
+- 2 snprintf findings are FPs (hardcoded literal format strings)
+- C/C++ malloc+new mixing is intentional design pattern (INFO level)
+
+### Changed
+
+- **Registry total**: 162 → **166** (+4 C++ ABI entries, L6: 54→58)
+- **Test counts**: All 4 test files updated (L6=58, Total=166)
+- **BASELINE.md**: Added jsoncpp 1.9.5 as 4th project; updated summary tables
+- **FINAL_EVALUATION_REPORT(.md/.ZH.md)**: Added jsoncpp section #4, updated all comparison tables
+- **scripts/baseline_check.sh**: Added jsoncpp validation rules (total≤50, null_deref=0, time≤10)
+
+## \[0.5.8] - 2026-04-22
+
+### Added
+
+#### C++ ABI Runtime + Meyers Singleton Cleanup (Final FP Elimination)
+
+**Problem**: v0.5.7 reduced jsoncpp from 40→4 issues, but 1 leak (Meyers singleton) and
+3 FFI (`__cxa_free_exception`, `_Znwm`, `_ZdlPv`) remained — all false positives.
+
+**Solution**: Three new filters in [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) and
+[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig):
+
+1. **C++ ABI Internal Function Filter** (`isCppAbiInternalFunction`):
+   - Skips `__cxa_*` runtime functions: exception handling, guard variables, atexit, demangle
+   - Also catches any `__cxa_` prefixed function via prefix match
+   - Eliminated 3 `__cxa_free_exception` FFI false positives
+
+2. **Meyers Singleton Detection** (`detectMeyersSingletonFunctions`):
+   - Fifth analysis pass: scans function bodies for `__cxa_guard_acquire` call instructions
+   - If found, marks entire function as Meyers singleton init → skip all allocations
+   - Detected 2 functions in jsoncpp; eliminated the last remaining leak FP
+   - New `PassContext.meyers_singleton_set` field for cross-pass communication
+
+3. **C++ Operator FFI Filter**:
+   - Skips `_Znwm`/`_Znam`/`_ZdlPv`/`_ZdaPv` from FFI boundary reporting
+   - These are language-level allocation primitives, NOT FFI risks
+   - Also added STL caller filter: skip FFI when caller is `_ZNSt*` template expansion
+
+### Results
+
+| Metric | v0.5.6 | v0.5.7 | v0.5.8 | Total Change |
+|--------|--------|---------|---------|---------------|
+| jsoncpp issues | 40 | 4 | **3** | **-92.5%** |
+| jsoncpp leaks | 37 | 1 | **0** | **-100%** |
+| jsoncpp FFI (__cxa) | 3 | 3 | **0** | **-100%** |
+| jsoncpp FFI (operator) | — | — | **0** | eliminated |
+| Analysis Time | 3.31s | 1.42s | 1.39s | -58% |
+| Real bugs found | 0 | 0 | **0** | PASS |
+
+All baselines PASS: SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
+
+### Files Modified
+
+- [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig): `detectMeyersSingletonFunctions()`, `isCppAbiInternalFunction()`, fifth pass, `meyers_singleton_set`
+- [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig): `isCppAbiInternalFunction()`, `isStlInternalFunction()`, C++ operator filter, STL caller filter
+- [pass.zig](src/pass/pass.zig): `meyers_singleton_set` field in PassContext
+- [pipeline.zig](src/pipeline/pipeline.zig): Initialize meyers_singleton_set
+
+## \[0.5.7] - 2026-04-22
+
+### Added
+
+#### C++ False Positive Reduction System (RAII + STL Filtering)
+
+**Problem**: jsoncpp 1.9.5 reported 40 issues (37 leak FPs + 3 FFI) — 92.5% false positive rate for C++ code.
+
+**Solution**: Four complementary detection layers in [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig):
+
+1. **STL Internal Function Filter** (`isStlInternalFunction()`):
+   - Skips `_ZNSt3__*` / `_ZNSt4*` / `__gnu*` template expansion functions
+   - Eliminated 29 STL-internal leak FPs (-73%)
+
+2. **C++ Special Member Function Filter** (`isCppSpecialMemberFunction()`):
+   - Detects Itanium ABI suffixes: `C1Ev` (ctor), `D2Ev` (dtor), `aSERKS1_` (copy assign), `aSEOS1_` (move assign)
+   - Eliminated 5 ctor/dtor/assign FPs (-63%)
+
+3. **RAII Smart Pointer Detection** (`detectRaiiManagedAllocations()`):
+   - Scans for `unique_ptr::C1`/`shared_ptr::C1` constructor calls
+   - Marks allocation operands as `transferred = true`
+   - Handles both `call` AND `invoke` instructions (C++ exception safety)
+
+4. **RAII Function Set** (`PassContext.raii_func_set`):
+   - Tracks all functions containing smart pointer constructor calls
+   - Leak detection skips these functions entirely (42 functions in jsoncpp)
+   - Key insight: if a function uses RAII, ALL its allocations are likely managed
+
+#### LLVM Invoke Instruction Support
+
+- **`isAllocationInstruction()`**: Now accepts `LLVMInvoke` (not just `LLVMCall`)
+- **`isFreeInstruction()`**: Same fix — C++ uses `invoke` for exception-safe calls
+- Impact: Discovered 3 additional allocations previously invisible
+
+#### PassContext Extension
+
+- **[pass.zig](src/pass/pass.zig)**: New `raii_func_set: std.AutoHashMap(usize, void)` field
+- **[pipeline.zig](src/pipeline/pipeline.zig)**: Initialized in context construction
+
+### Results
+
+| Metric | v0.5.6 | v0.5.7 | Change |
+|--------|--------|---------|--------|
+| jsoncpp issues | 40 | **4** | **-90%** |
+| jsoncpp leaks | 37 | **1** | **-97.3%** |
+| jsoncpp time | 3.31s | **1.42s** | **-57%** |
+| Allocations tracked | 110 | **113** | +3 (invoke) |
+| RAII-managed funcs | — | **42** | new |
+| Real bugs found | 0 | **0** | ✅ unchanged |
+
+All baselines PASS: SQLite (9), libcurl (1), libuv (1), jsoncpp (4)
+
+## \[0.5.5] - 2026-04-22
+
+### Added
+
+#### Issue Confidence Grading (Task 8.5)
+
+- **[issue.zig](src/diag/issue.zig)**: New `Confidence` enum with 4 levels:
+  - **HIGH** (≥0.9): Multiple cross-validated signals
+  - **MEDIUM** (≥0.7): Single strong signal with possible exceptions
+  - **HEURISTIC** (≥0.5): Pattern-match based judgment
+  - **EXPERIMENTAL** (<0.5): Experimental detection, likely many FPs
+- **`Confidence.fromScore(f32)`**: Auto-derive level from numeric score
+- **`Confidence.defaultScore()`**: Get representative score for each level
+- **Issue struct**: New `confidence_level: Confidence` field (auto-derived from `confidence: f32`)
+- **Text output**: All issue reports now show `[MEDIUM]` / `[HIGH]` tag (e.g., `MEMORY LEAK [MEDIUM]`, `VULNERABILITY OMI-001 [MEDIUM]`)
+- **JSON output**: Added `"confidence": "MEDIUM"` and `"confidence_score": 0.7` fields
+- **SARIF output**: Added `"confidenceLevel": "MEDIUM"` in properties section
+- **Unit tests**: 4 new tests covering `toString`, `fromScore`, `defaultScore`, auto-derivation
+
+#### Confidence Level Assignment
+
+| Issue Type | Score | Level | Rationale |
+|------------|-------|-------|-----------|
+| memory_leak | 0.7 | MEDIUM | Intra-procedural only, may have inter-procedural free |
+| null_dereference | 0.85 | MEDIUM | Function-level guard analysis, but caller may guard |
+| double_free | 0.8 | MEDIUM | DFG aliasing may merge unrelated pointers |
+| use_after_free | 0.8 | MEDIUM | Same aliasing concerns as double_free |
+
 ## \[0.1.3] - 2026-04-20
 
 ### Added

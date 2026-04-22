@@ -101,6 +101,45 @@ pub const IssueKind = enum {
     }
 };
 
+/// Confidence level enumeration
+///
+/// Defines how trustworthy a detected issue is, based on evidence strength.
+pub const Confidence = enum(u8) {
+    /// Multiple cross-validated signals (e.g., alloc + no free + no transfer + no escape)
+    high = 0,
+    /// Single strong signal but may have exceptions (e.g., intra-procedural leak)
+    medium = 1,
+    /// Heuristic pattern match (e.g., function name convention, naming inference)
+    heuristic = 2,
+    /// Experimental detection, likely to have many FPs
+    experimental = 3,
+
+    pub fn toString(self: Confidence) []const u8 {
+        return switch (self) {
+            .high => "HIGH",
+            .medium => "MEDIUM",
+            .heuristic => "HEURISTIC",
+            .experimental => "EXPERIMENTAL",
+        };
+    }
+
+    pub fn fromScore(score: f32) Confidence {
+        if (score >= 0.9) return .high;
+        if (score >= 0.7) return .medium;
+        if (score >= 0.5) return .heuristic;
+        return .experimental;
+    }
+
+    pub fn defaultScore(self: Confidence) f32 {
+        return switch (self) {
+            .high => 0.95,
+            .medium => 0.75,
+            .heuristic => 0.55,
+            .experimental => 0.35,
+        };
+    }
+};
+
 /// Severity level enumeration
 ///
 /// Defines the severity levels for issues.
@@ -197,6 +236,8 @@ pub const Issue = struct {
     severity: Severity,
     /// Confidence score (0.0 - 1.0)
     confidence: f32,
+    /// Confidence level (HIGH / MEDIUM / HEURISTIC / EXPERIMENTAL)
+    confidence_level: Confidence,
     /// Related FFI boundary if applicable
     ffi_boundary: ?FFIBoundary,
     /// Trace entries showing reasoning path
@@ -228,6 +269,7 @@ pub const Issue = struct {
             .location = location,
             .severity = severity,
             .confidence = confidence,
+            .confidence_level = Confidence.fromScore(confidence),
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
@@ -260,6 +302,7 @@ pub const Issue = struct {
             .location = location,
             .severity = severity,
             .confidence = confidence,
+            .confidence_level = Confidence.fromScore(confidence),
             .ffi_boundary = null,
             .trace = trace,
             .owned = true,
@@ -685,6 +728,7 @@ test "Issue - hasTrace" {
         .location = location,
         .severity = .high,
         .confidence = 0.9,
+        .confidence_level = .high,
         .ffi_boundary = null,
         .trace = &[_]TraceEntry{},
         .owned = false,
@@ -724,4 +768,46 @@ test "IssueKind - toDescription" {
     try std.testing.expectEqualStrings("Command injection vulnerability", IssueKind.command_injection.toDescription());
     try std.testing.expectEqualStrings("Malloc result used without null check", IssueKind.malloc_unchecked.toDescription());
     try std.testing.expectEqualStrings("Free called on non-malloc pointer", IssueKind.invalid_free.toDescription());
+}
+
+test "Confidence - toString" {
+    try std.testing.expectEqualStrings("HIGH", Confidence.high.toString());
+    try std.testing.expectEqualStrings("MEDIUM", Confidence.medium.toString());
+    try std.testing.expectEqualStrings("HEURISTIC", Confidence.heuristic.toString());
+    try std.testing.expectEqualStrings("EXPERIMENTAL", Confidence.experimental.toString());
+}
+
+test "Confidence - fromScore" {
+    try std.testing.expectEqual(Confidence.high, Confidence.fromScore(1.0));
+    try std.testing.expectEqual(Confidence.high, Confidence.fromScore(0.9));
+    try std.testing.expectEqual(Confidence.high, Confidence.fromScore(0.95));
+    try std.testing.expectEqual(Confidence.medium, Confidence.fromScore(0.85));
+    try std.testing.expectEqual(Confidence.medium, Confidence.fromScore(0.7));
+    try std.testing.expectEqual(Confidence.heuristic, Confidence.fromScore(0.55));
+    try std.testing.expectEqual(Confidence.heuristic, Confidence.fromScore(0.5));
+    try std.testing.expectEqual(Confidence.experimental, Confidence.fromScore(0.4));
+    try std.testing.expectEqual(Confidence.experimental, Confidence.fromScore(0.0));
+}
+
+test "Confidence - defaultScore" {
+    try std.testing.approxEqAbs(@as(f32, 0.95), Confidence.high.defaultScore(), 0.01);
+    try std.testing.approxEqAbs(@as(f32, 0.75), Confidence.medium.defaultScore(), 0.01);
+    try std.testing.approxEqAbs(@as(f32, 0.55), Confidence.heuristic.defaultScore(), 0.01);
+    try std.testing.approxEqAbs(@as(f32, 0.35), Confidence.experimental.defaultScore(), 0.01);
+}
+
+test "Issue - confidence_level auto-derived from score" {
+    const location = Location.init("test_func");
+
+    const issue_high = Issue.init(.memory_leak, "high confidence", location, .high, 0.95);
+    try std.testing.expectEqual(Confidence.high, issue_high.confidence_level);
+
+    const issue_medium = Issue.init(.null_dereference, "medium confidence", location, .critical, 0.75);
+    try std.testing.expectEqual(Confidence.medium, issue_medium.confidence_level);
+
+    const issue_heuristic = Issue.init(.double_free, "heuristic confidence", location, .medium, 0.55);
+    try std.testing.expectEqual(Confidence.heuristic, issue_heuristic.confidence_level);
+
+    const issue_exp = Issue.init(.use_after_free, "experimental", location, .high, 0.3);
+    try std.testing.expectEqual(Confidence.experimental, issue_exp.confidence_level);
 }

@@ -221,7 +221,7 @@ test "benchmark: registry layer counts match expected" {
     try testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
-    try testing.expectEqual(@as(usize, 54), registry.SemanticRegistry.layer6Count());
+    try testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
 
     const total = registry.SemanticRegistry.layer1Count() +
         registry.SemanticRegistry.layer2Count() +
@@ -229,7 +229,7 @@ test "benchmark: registry layer counts match expected" {
         registry.SemanticRegistry.layer4Count() +
         registry.SemanticRegistry.layer5Count() +
         registry.SemanticRegistry.layer6Count();
-    try testing.expectEqual(@as(usize, 162), total);
+    try testing.expectEqual(@as(usize, 166), total);
 }
 
 test "benchmark: registry known functions respond correctly" {

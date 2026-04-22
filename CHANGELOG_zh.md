@@ -288,6 +288,179 @@ OmniScope 的所有重要变更都将记录在此文件中。
 | Memory Leak | 13   | 13     | **5**  | 5      | **0**    | **0**      |
 | Null Deref  | 5    | 5      | 5      | **3**  | 3        | **0** ✅   |
 
+## \[0.5.6] - 2026-04-22
+
+### 新增
+
+#### C++ 项目支持（真实世界测试）
+
+- **[semantic_registry.zig](src/registry/semantic_registry.zig)**：新增 4 个 Itanium C++ ABI 修饰名到 Layer 6：
+  - `_Znwm` → `operator new(unsigned long)` (标量, `.cpp_allocator`)
+  - `_Znam` → `operator new[](unsigned long)` (数组, `.cpp_allocator`)
+  - `_ZdlPv` → `operator delete(void*)` (标量, `.deallocator`)
+  - `_ZdaPv` → `operator delete[](void*)` (数组, `.deallocator`)
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**：`isAllocationInstruction()` 现在接受 `.cpp_allocator` 类型
+- **[corpus/real_world/jsoncpp195.ll]**：新测试 IR — jsoncpp 1.9.5（90K 行，1,537 函数，C++）
+- **[corpus/real_world/cpp_test.cpp]**：合成 C++ 测试，覆盖 `new`/`delete`/`unique_ptr`/`shared_ptr`/STL
+
+#### 结构体成员所有权检测（GEP+Store 模式）
+
+- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**：新增第三遍分析 `detectStructMemberStores()`：
+  - 扫描每个函数的所有 `store` 指令
+  - 若存储的值是已知分配 且 目标是 GEP（结构体字段访问）→ 标记 `stored_to_struct_field = true`
+  - Leak 检测跳过这些分配（补充函数名启发式）
+- **AllocSite** 结构体：新增 `stored_to_struct_field: bool = false` 字段
+
+#### 真实项目验证结果（jsoncpp 1.9.5）
+
+| 指标 | 值 |
+|------|-----|
+| 分析函数数 | 1,537 |
+| 检测到的分配 | 110（`_Znwm`/`_Znam` 正确匹配）|
+| 检测到的释放 | 2（`_ZdlPv`/`_ZdaPv` 正确匹配）|
+| 报告 Issues | 40（37 leak FP + 3 FFI）|
+| 发现的真实 Bug | **0** ✅ |
+| 分析耗时 | 3.31s |
+
+**C++ 分析关键发现**：
+- 40 个 issue 中 37 个是 RAII 相关 FP（`std::unique_ptr`/`std::map` 析构函数清理在 intra-procedural 中不可见）
+- 2 个 snprintf 发现是 FP（硬编码字面量格式串）
+- C/C++ malloc+new 混用是有意设计模式（INFO 级别）
+
+### 变更
+
+- **Registry 总数**：162 → **166**（+4 C++ ABI 条目，L6: 54→58）
+- **测试计数**：全部 4 个测试文件已更新（L6=58, Total=166）
+- **BASELINE.md**：新增 jsoncpp 1.9.5 为第 4 个测试项目；更新汇总表
+- **FINAL_EVALUATION_REPORT(.md/.ZH.md)**：新增 jsoncpp 项目 #4 章节，更新所有对比表
+- **scripts/baseline_check.sh**：新增 jsoncpp 验证规则（total≤50, null_deref=0, time≤10）
+
+## \[0.5.8] - 2026-04-22
+
+### 新增
+
+#### C++ ABI 运行时 + Meyers 单例清理（最终 FP 消除）
+
+**问题**：v0.5.7 将 jsoncpp 从 40→4 个 issue，但残留 1 个泄漏（Meyers 单例）和
+3 个 FFI（`__cxa_free_exception`、`_Znwm`、`_ZdlPv`）— 全部为误报。
+
+**方案**：在 [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) 和
+[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig) 中新增三重过滤器：
+
+1. **C++ ABI 内部函数过滤** (`isCppAbiInternalFunction`)：
+   - 跳过 `__cxa_*` 运行时函数：异常处理、守卫变量、atexit、demangle
+   - 通过前缀匹配捕获所有 `__cxa_` 函数
+   - 消除 3 个 `__cxa_free_exception` FFI 误报
+
+2. **Meyers 单例检测** (`detectMeyersSingletonFunctions`)：
+   - 第五遍分析：扫描函数体中的 `__cxa_guard_acquire` 调用指令
+   - 若发现，将整个函数标记为 Meyers 单例初始化 → 跳过所有分配
+   - 在 jsoncpp 中检测到 2 个函数；消除最后 1 个泄漏误报
+   - 新增 `PassContext.meyers_singleton_set` 字段用于跨 pass 通信
+
+3. **C++ 操作符 FFI 过滤**：
+   - 从 FFI 边界报告中跳过 `_Znwm`/`_Znam`/`_ZdlPv`/`_ZdaPv`
+   - 这些是语言级分配原语，不是 FFI 风险
+   - 新增 STL 调用方过滤：调用方为 `_ZNSt*` 模板展开时跳过 FFI
+
+### 成果
+
+| 指标 | v0.5.6 | v0.5.7 | v0.5.8 | 总变化 |
+|------|--------|---------|---------|--------|
+| jsoncpp issues | 40 | 4 | **3** | **-92.5%** |
+| jsoncpp 泄漏 | 37 | 1 | **0** | **-100%** |
+| jsoncpp FFI (__cxa) | 3 | 3 | **0** | **-100%** |
+| jsoncpp FFI (操作符) | — | — | **0** | 已消除 |
+| 分析耗时 | 3.31s | 1.42s | 1.39s | -58% |
+| 真实 bug | 0 | 0 | **0** | ✅ |
+
+全部基线通过：SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
+
+### 修改文件
+
+- [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)：`detectMeyersSingletonFunctions()`、`isCppAbiInternalFunction()`、第五遍、`meyers_singleton_set`
+- [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig)：`isCppAbiInternalFunction()`、`isStlInternalFunction()`、C++ 操作符过滤、STL 调用方过滤
+- [pass.zig](src/pass/pass.zig)：PassContext 新增 `meyers_singleton_set` 字段
+- [pipeline.zig](src/pipeline/pipeline.zig)：初始化 meyers_singleton_set
+
+## \[0.5.7] - 2026-04-22
+
+### 新增
+
+#### C++ 误报消减系统（RAII + STL 过滤）
+
+**问题**：jsoncpp 1.9.5 报告 40 个 issue（37 个泄漏 FP + 3 个 FFI）— C++ 代码误报率高达 92.5%。
+
+**方案**：在 [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig) 中实现四层互补检测：
+
+1. **STL 内部函数过滤** (`isStlInternalFunction()`)：
+   - 跳过 `_ZNSt3__*` / `_ZNSt4*` / `__gnu*` 模板展开函数
+   - 消除 29 个 STL 内部泄漏 FP（-73%）
+
+2. **C++ 特殊成员函数过滤** (`isCppSpecialMemberFunction()`)：
+   - 检测 Itanium ABI 后缀：`C1Ev`（构造）、`D2Ev`（析构）、`aSERKS1_`（拷贝赋值）、`aSEOS1_`（移动赋值）
+   - 消除 5 个构造/析构/赋值 FP（-63%）
+
+3. **RAII 智能指针检测** (`detectRaiiManagedAllocations()`)：
+   - 扫描 `unique_ptr::C1`/`shared_ptr::C1` 构造函数调用
+   - 将分配操作数标记为 `transferred = true`
+   - 同时处理 `call` 和 `invoke` 指令（C++ 异常安全）
+
+4. **RAII 函数集合** (`PassContext.raii_func_set`)：
+   - 追踪所有包含智能指针构造调用的函数
+   - 泄漏检测完全跳过这些函数（jsoncpp 中 42 个函数）
+   - 核心洞察：若函数使用 RAII，则其所有分配很可能被管理
+
+#### LLVM Invoke 指令支持
+
+- **`isAllocationInstruction()`**：现接受 `LLVMInvoke`（不仅 `LLVMCall`）
+- **`isFreeInstruction()`**：同样修复 — C++ 对可能抛异常的调用使用 `invoke`
+- 影响：发现之前不可见的 3 个额外分配
+
+#### PassContext 扩展
+
+- **[pass.zig](src/pass/pass.zig)**：新增 `raii_func_set` 字段
+- **[pipeline.zig](src/pipeline/pipeline.zig)**：上下文构建时初始化
+
+### 成果
+
+| 指标 | v0.5.6 | v0.5.7 | 变化 |
+|------|--------|---------|------|
+| jsoncpp issues | 40 | **4** | **-90%** |
+| jsoncpp 泄漏 | 37 | **1** | **-97.3%** |
+| jsoncpp 耗时 | 3.31s | **1.42s** | **-57%** |
+| 追踪分配数 | 110 | **113** | +3 (invoke) |
+| RAII 管理函数 | — | **42** | 新增 |
+| 真实 bug | 0 | **0** | ✅ 不变 |
+
+全部基线通过：SQLite (9)、libcurl (1)、libuv (1)、jsoncpp (4)
+
+## \[0.5.5] - 2026-04-22
+
+#### Issue 可信度分级 (Task 8.5)
+
+- **[issue.zig](src/diag/issue.zig)**：新增 `Confidence` 枚举，4 个级别：
+  - **HIGH** (≥0.9)：多重证据交叉验证
+  - **MEDIUM** (≥0.7)：单一强信号但可能有例外
+  - **HEURISTIC** (≥0.5)：基于模式匹配的启发式判断
+  - **EXPERIMENTAL** (<0.5)：实验性检测，可能大量 FP
+- **`Confidence.fromScore(f32)`**：从数值分数自动派生级别
+- **`Confidence.defaultScore()`**：获取每个级别的代表分数
+- **Issue 结构体**：新增 `confidence_level: Confidence` 字段（从 `confidence: f32` 自动派生）
+- **文本输出**：所有 issue 报告现在显示 `[MEDIUM]` / `[HIGH]` 标签（如 `MEMORY LEAK [MEDIUM]`, `VULNERABILITY OMI-001 [MEDIUM]`）
+- **JSON 输出**：新增 `"confidence": "MEDIUM"` 和 `"confidence_score": 0.7 字段`
+- **SARIF 输出**：properties 中新增 `"confidenceLevel": "MEDIUM"`
+- **单元测试**：4 个新测试覆盖 `toString`、`fromScore`、`defaultScore`、自动派生
+
+#### 各 Issue 类型的置信度分配
+
+| Issue 类型 | 分数 | 级别 | 原因 |
+|------------|------|------|------|
+| memory_leak | 0.7 | MEDIUM | 仅函数内分析，可能有跨函数 free |
+| null_dereference | 0.85 | MEDIUM | 函数级 null guard 分析，但调用者可能 guard |
+| double_free | 0.8 | MEDIUM | DFG 别名分析可能合并不相关指针 |
+| use_after_free | 0.8 | MEDIUM | 与 double_free 相同的别名问题 |
+
 ## \[0.1.3] - 2026-04-20
 
 ### 新增

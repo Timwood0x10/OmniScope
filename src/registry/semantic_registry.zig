@@ -2066,6 +2066,55 @@ pub const SemanticRegistry = struct {
             .requires_taint_check = false,
             .description = "C++ std::pair - two-element container",
         },
+        // ── Itanium C++ ABI mangled names (for raw LLVM IR) ──
+        // _Znwm = operator new(unsigned long)
+        .{
+            .pattern = "_Znwm",
+            .match_type = .exact,
+            .kind = .cpp_allocator,
+            .severity = .high,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "C++ operator new (mangled: _Znwm) - scalar allocation",
+        },
+        // _Znam = operator new[](unsigned long)
+        .{
+            .pattern = "_Znam",
+            .match_type = .exact,
+            .kind = .cpp_allocator,
+            .severity = .high,
+            .consumes_ownership = false,
+            .transfers_ownership = true,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "C++ operator new[] (mangled: _Znam) - array allocation",
+        },
+        // _ZdlPv = operator delete(void*)
+        .{
+            .pattern = "_ZdlPv",
+            .match_type = .exact,
+            .kind = .deallocator,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "C++ operator delete (mangled: _ZdlPv) - scalar deallocation",
+        },
+        // _ZdaPv = operator delete[](void*)
+        .{
+            .pattern = "_ZdaPv",
+            .match_type = .exact,
+            .kind = .deallocator,
+            .severity = .high,
+            .consumes_ownership = true,
+            .transfers_ownership = false,
+            .requires_null_check = false,
+            .requires_taint_check = false,
+            .description = "C++ operator delete[] (mangled: _ZdaPv) - array deallocation",
+        },
     };
 
     /// Lookup function semantics by name.

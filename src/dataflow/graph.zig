@@ -405,6 +405,10 @@ pub const DataFlowGraph = struct {
                     .location = issue.location,
                     .severity = issue.severity,
                     .confidence = issue.confidence,
+                    .confidence_level = issue.confidence_level,
+                    .ffi_boundary = issue.ffi_boundary,
+                    .trace = issue.trace,
+                    .owned = false,
                 };
                 index += 1;
             }

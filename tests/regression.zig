@@ -18,8 +18,8 @@ test "Regression: layer counts unchanged" {
         l3: usize = 4,
         l4: usize = 8,
         l5: usize = 29,
-        l6: usize = 54,
-        total: usize = 162,
+        l6: usize = 58,
+        total: usize = 166,
     };
 
     try std.testing.expectEqual(expected.l1, registry.SemanticRegistry.layer1Count());
