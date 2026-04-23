@@ -64,3 +64,15 @@ benchs/output/
 
 # Plan documents (internal design)
 plan/
+
+*.raw
+
+*.zip
+
+corpus/real_world/curl-*/
+corpus/real_world/sqlite-amalgamation-3470200/
+corpus/real_world/libuv-*/
+
+*.tar.gz
+*.tar.xz
+*.tar.bz2

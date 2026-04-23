@@ -135,7 +135,7 @@ test "IssueType: all variants" {
 // ========================================
 
 test "RiskKind: all variants" {
-    try std.testing.expectEqual(@as(usize, 11), @typeInfo(registry.RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 13), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================
@@ -160,11 +160,13 @@ test "Severity: toString" {
 // ========================================
 
 test "SemanticRegistry: layer counts" {
-    try std.testing.expectEqual(@as(usize, 37), registry.SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 64), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
-    try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer4Count());
-    try std.testing.expectEqual(@as(usize, 47), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
+    try std.testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
+    try std.testing.expectEqual(@as(usize, 166), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {
@@ -207,6 +209,68 @@ test "SemanticRegistry: borrow_escaped functions" {
 }
 
 // ========================================
+// Semantic Registry - Layer 5 (Zig) Tests
+// ========================================
+
+test "SemanticRegistry: Zig allocator functions" {
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("GeneralPurposeAllocator").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("ArenaAllocator").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("pageAllocator").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("c_allocator").?);
+}
+
+test "SemanticRegistry: Zig alloc/free ownership" {
+    try std.testing.expect(registry.SemanticRegistry.transfersOwnership(".alloc("));
+    try std.testing.expect(!registry.SemanticRegistry.transfersOwnership(".free("));
+    try std.testing.expect(registry.SemanticRegistry.consumesOwnership(".free("));
+}
+
+test "SemanticRegistry: Zig container types" {
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("ArrayList").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("HashMap").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("AutoHashMap").?);
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, registry.SemanticRegistry.getRiskKind("StringHashMap").?);
+}
+
+test "SemanticRegistry: Zig optional handling" {
+    const sem = registry.SemanticRegistry.lookup(".?") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(sem.requires_null_check);
+}
+
+// ========================================
+// Semantic Registry - Layer 6 (C++) Tests
+// ========================================
+
+test "SemanticRegistry: C++ new/delete functions" {
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("operator new").?);
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("operator delete").?);
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("operator new[]").?);
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("operator delete[]").?);
+}
+
+test "SemanticRegistry: C++ smart pointers" {
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("unique_ptr").?);
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("shared_ptr").?);
+    try std.testing.expectEqual(registry.RiskKind.borrow_escaped, registry.SemanticRegistry.getRiskKind("weak_ptr").?);
+}
+
+test "SemanticRegistry: C++ move semantics" {
+    try std.testing.expectEqual(registry.RiskKind.rust_ownership, registry.SemanticRegistry.getRiskKind("std::move").?);
+    try std.testing.expect(registry.SemanticRegistry.transfersOwnership("std::move"));
+}
+
+test "SemanticRegistry: C++ STL containers" {
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("std::vector").?);
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, registry.SemanticRegistry.getRiskKind("std::string").?);
+    try std.testing.expectEqual(registry.RiskKind.borrow_escaped, registry.SemanticRegistry.getRiskKind("std::optional").?);
+}
+
+test "SemanticRegistry: C++ RAII locks" {
+    try std.testing.expectEqual(registry.RiskKind.borrow_escaped, registry.SemanticRegistry.getRiskKind("unique_lock").?);
+    try std.testing.expectEqual(registry.RiskKind.borrow_escaped, registry.SemanticRegistry.getRiskKind("lock_guard").?);
+}
+
+// ========================================
 // Semantic Registry - Platform Tests
 // ========================================
 
@@ -221,6 +285,75 @@ test "SemanticRegistry: macOS variants" {
 test "SemanticRegistry: Linux variants" {
     try std.testing.expectEqual(registry.RiskKind.command_exec, registry.SemanticRegistry.getRiskKind("system").?);
     try std.testing.expectEqual(registry.RiskKind.unchecked_copy, registry.SemanticRegistry.getRiskKind("strcpy").?);
+}
+
+// ========================================
+// Regression Tests
+// ========================================
+
+test "Regression: layer counts unchanged" {
+    try std.testing.expectEqual(@as(usize, 64), registry.SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
+    try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
+    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
+    try std.testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
+    try std.testing.expectEqual(@as(usize, 166), registry.SemanticRegistry.totalCount());
+}
+
+test "Regression: critical functions always detected" {
+    const critical_functions = [_][]const u8{
+        "malloc",       "free",            "system",   "popen",
+        "strcpy",       "sprintf",         "into_raw", "from_raw",
+        "operator new", "operator delete",
+    };
+
+    for (critical_functions) |func| {
+        const sem = registry.SemanticRegistry.lookup(func) orelse return error.MissingCriticalFunction;
+        _ = sem;
+    }
+}
+
+test "Regression: allocators transfer ownership" {
+    const allocators = [_][]const u8{
+        "malloc",                  "calloc",         "realloc",
+        "GeneralPurposeAllocator", "ArenaAllocator", "operator new",
+        "make_unique",             "make_shared",
+    };
+
+    for (allocators) |func| {
+        const sem = registry.SemanticRegistry.lookup(func) orelse continue;
+        try std.testing.expect(sem.transfers_ownership);
+    }
+}
+
+test "Regression: deallocators consume ownership" {
+    const deallocators = [_][]const u8{
+        "free",            "destroy(",          "free(",
+        "operator delete", "operator delete[]",
+    };
+
+    for (deallocators) |func| {
+        const sem = registry.SemanticRegistry.lookup(func) orelse continue;
+        try std.testing.expect(sem.consumes_ownership);
+    }
+}
+
+test "Regression: cross-language detection" {
+    const malloc_sem = registry.SemanticRegistry.lookup("malloc") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(registry.RiskKind.allocator, malloc_sem.kind);
+
+    const into_raw_sem = registry.SemanticRegistry.lookup("into_raw") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(registry.RiskKind.rust_ownership, into_raw_sem.kind);
+
+    const unsafe_sem = registry.SemanticRegistry.lookup("UnsafeMutablePointer") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(registry.RiskKind.allocator, unsafe_sem.kind);
+
+    const gpa_sem = registry.SemanticRegistry.lookup("GeneralPurposeAllocator") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(registry.RiskKind.zig_allocator, gpa_sem.kind);
+
+    const new_sem = registry.SemanticRegistry.lookup("operator new") orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(registry.RiskKind.cpp_allocator, new_sem.kind);
 }
 
 // ========================================

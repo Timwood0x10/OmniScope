@@ -435,10 +435,10 @@ pub const FFIDetector = struct {
 
     /// Check if function calls any dangerous function
     fn callsDangerousFunction(self: *FFIDetector, func: FunctionInfo, dangerous_funcs: []const []const u8) !?[]const u8 {
-        var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
-        while (bb != null) {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (inst != null) {
+            while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
@@ -475,9 +475,9 @@ pub const FFIDetector = struct {
         // 3. Check if that pointer is used after the free
 
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
-        while (bb != null) {
+        while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (inst != null) {
+            while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
@@ -523,7 +523,7 @@ pub const FFIDetector = struct {
         const bb = c.LLVMGetInstructionParent(after_inst);
         var inst = c.LLVMGetFirstInstruction(bb);
 
-        while (inst != null) {
+        while (@intFromPtr(inst) != 0) {
             if (found_after_inst) {
                 // Check if this instruction uses the pointer
                 const num_operands = c.LLVMGetNumOperands(inst);
@@ -547,9 +547,9 @@ pub const FFIDetector = struct {
         _ = self;
 
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
-        while (bb != null) {
+        while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (inst != null) {
+            while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 

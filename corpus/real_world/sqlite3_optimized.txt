@@ -1,0 +1,1230 @@
+info: === OmniScope IR Analysis ===
+
+info: File: corpus/real_world/sqlite3.ll
+
+
+debug: Loading file: corpus/real_world/sqlite3.ll
+info: Loaded: 3237 functions
+
+
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_str_append -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:32409:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3StrAccumEnlarge -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:32354:42
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: enlargeAndAppend -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:32390:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_randomness -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:34266:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_randomness -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:34271:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3OsRandomness -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:26532:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: unixRandomness -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:45286:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: unixRandomness -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:45287:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_serialize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53747:18
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_serialize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53785:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: backupOnePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:82428:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_value_dup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:90887:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemSetStr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:84155:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemCopy -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:84036:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3DbStrDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:31238:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3LoadExtension -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:138568:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3LoadExtension -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:138577:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3LoadExtension -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:138614:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_get_table_cb -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:152564:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3FindFunction -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:128220:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: openDatabase -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:184426:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3_set_clientdata -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:184913:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: appendText -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:185803:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3DecOrHexToI64 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:36064:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: dbReallocFinish -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:31191:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: strAccumFinishRealloc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:32431:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: unixRead -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:41851:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: unixRead -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:41855:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyTakeConch -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:46015:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyBreakConchLock -> fprintf
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:45852:3
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyBreakConchLock -> fprintf
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:45863:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[31m[ERROR][0m [MEDIUM] FFI RISK: findInodeInfo -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:39958:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyGetDbPathForUnixFile -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:46288:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyCreateConchPathname -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:46212:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: proxyCreateConchPathname -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:46228:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: findCreateFileMode -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:44664:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: appendOnePathElement -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:45106:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memdbRead -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53223:23
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memdbRead -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53227:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memdbWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53280:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:73262:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62084:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62090:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62092:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62102:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62103:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62116:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3PagerOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:62117:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memdbOpen -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:53549:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: pager_write_pagelist -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:61677:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memjrnlRead -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:106483:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memjrnlWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:106584:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: memjrnlWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:106610:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BitvecSet -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:54117:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walIndexWriteHdr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:65963:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walIndexWriteHdr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:65965:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walRestartHdr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:67166:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walBeginShmUnreliable -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:67836:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walIndexTryHdr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:67623:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walIndexRecover -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:66463:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walIndexRecover -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:66545:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walEncodeFrame -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:65994:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: writeJournalHdr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:58703:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: readDbPage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:60268:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: pager_playback_one_page -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:59680:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: pager_playback_one_page -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:59691:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WalUndo -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:68761:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: walMerge -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:66860:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: newDatabase -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:74174:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: accessPayload -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:75906:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: copyPayload -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:75707:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: copyPayload -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:75710:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77202:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77226:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77232:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77255:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77257:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: allocateBtreePage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77322:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BitvecClear -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:54157:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemFinalize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:83442:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemGrow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:83209:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Int64ToText -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:35899:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:94954:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:95199:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:95203:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:96569:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:97099:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:97106:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeExec -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:97204:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemMove -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:84060:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeMemShallowCopy -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:84019:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeSorterInit -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:104122:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeInsert -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:80195:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeInsert -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:80219:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeInsert -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:80274:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeTransferRow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:80323:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3BtreeTransferRow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:80355:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeSorterRowkey -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:105857:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeSorterWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:105013:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: serialGet -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:89064:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fillInCell -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77714:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fillInCell -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77772:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fillInCell -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77775:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: insertCellFast -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:78065:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: pageFindSlot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:72434:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: defragmentPage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:72350:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: defragmentPage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:72374:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_deeper -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79657:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_deeper -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79659:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_nonroot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:78959:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_nonroot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79079:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_nonroot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79088:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_nonroot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79343:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: balance_nonroot -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:79419:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: copyNodeContent -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:78760:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: copyNodeContent -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:78761:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: rebuildPage -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:78252:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: insertCell -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77940:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: insertCell -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:77980:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: vdbePmaWriteBlob -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:104629:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: vdbePmaReadBlob -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:103695:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: vdbePmaReadBlob -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:103712:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: serialGet7 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:89077:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: findCollSeqEntry -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:127883:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3DbStrNDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:31249:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3DefaultRowEst -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:126523:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3GetInt32 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:36109:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VtabCreateModule -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:156422:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3CollapseDatabaseArray -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:122583:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeSwap -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:85135:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: synthCollSeq -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:127817:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: yyGrowStack -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:176102:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3AddColumn -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:123505:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3AddColumn -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:123543:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: tokenExpr -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:173973:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3CreateIndex -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:126117:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3CreateIndex -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:126199:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3CreateForeignKey -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:125612:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3CreateForeignKey -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:125646:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3SrcListAppendList -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:127109:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3ExprAlloc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:110349:25
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3AlterBeginAddColumn -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:117261:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VtabOverloadFunction -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:157569:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VdbeAddOp4Dup8 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:85471:16
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3SrcListDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:111279:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: exprDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:111046:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: exprDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:111051:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: exprDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:111071:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: exprDup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:111119:18
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: createTableStmt -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:124129:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3NestedParse -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:122283:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resizeIndexObject -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:124149:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resizeIndexObject -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:124152:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resizeIndexObject -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:124155:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resizeIndexObject -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:124158:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resolveAlias -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:107168:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: resolveAlias -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:107169:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3SubqueryColumnTypes -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:146099:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3ColumnSetColl -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:122705:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WindowRewrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:171778:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: wherePathSolver -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:168963:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WhereCodeOneLoopStart -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:160666:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WhereCodeOneLoopStart -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:160669:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: whereClauseInsert -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:161367:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3IsLikeFunction -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:131637:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: whereLoopResize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:165720:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: whereLoopXfer -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:165738:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: whereLoopXfer -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:165739:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: whereOrMove -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:163390:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WhereRealloc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:163472:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3WhereOkOnePass -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:163366:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fkActionTrigger -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:133545:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3VListAdd -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:36974:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: triggerStepAllocate -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:153146:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: attachFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:121221:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3ParseUri -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:184295:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: replaceFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:130789:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: replaceFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:130795:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: concatFuncCore -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:130919:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: concatFuncCore -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:130922:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: renameEditSql -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:117953:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: renameEditSql -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:117976:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: renameEditSql -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:117994:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonParseFuncArg -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:209628:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonParseFuncArg -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:209673:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonLookupStep -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:209103:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonLookupStep -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:209105:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonLookupStep -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:209107:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonBlobMakeEditable -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:207307:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonBlobAppendNode -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:207393:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonBlobEdit -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:208716:22
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonAppendRawNZ -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206743:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonAppendRaw -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206734:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonStringGrow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206702:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonAppendString -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206885:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonAppendString -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206891:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonStringExpandAndAppend -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:206726:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonMergePatch -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:210299:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonMergePatch -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:210300:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: jsonMergePatch -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:210306:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemMalloc -> malloc_zone_malloc
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:26989:7
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemFree -> malloc_zone_free
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27021:3
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemRealloc -> malloc_zone_realloc
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27059:13
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemRealloc -> malloc_size
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27064:7
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemSize -> malloc_size
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27037:15
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemInit -> malloc_default_zone
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27108:20
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemInit -> malloc_create_zone
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27112:20
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3MemInit -> malloc_set_zone_name
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:27113:5
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig allocator alloc - returns optional pointer, requires null check
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5CreateAux -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:254551:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5LocaleFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:254998:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5LocaleFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:255000:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5LocaleFunc -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:255003:17
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5Strndup -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:237186:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5ConfigGobbleWord -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:237770:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5ConfigParseSpecial -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:237622:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5BufferAppendBlob -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:236965:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5StructureWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:243663:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5ConfigParseRank -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:238189:19
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5ConfigParseRank -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:238209:27
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5ExprAddChildren -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:240687:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5ExprSynonymList -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:238956:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5ParseTokenize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:240164:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5CloneColset -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:240556:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5IndexQuery -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:249322:20
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5SetupTokendataIter -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:249208:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5SetupPrefixIter -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:248614:23
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5FlushOneHash -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247835:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5FlushOneHash -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247919:17
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5FlushOneHash -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247935:19
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5DoSecureDelete -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247476:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5DoSecureDelete -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247647:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5SecureDeleteOverflow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247422:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5SecureDeleteOverflow -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:247435:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5StructureMakeWritable -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:243307:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5StructureMakeWritable -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:243320:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5StructurePromoteTo -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:243739:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5HashQuery -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:242203:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5MergePrefixLists -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:248454:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5MergePrefixLists -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:248456:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5MergePrefixLists -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:248472:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5AppendPoslist -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:248161:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PoslistCallback -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:245701:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PoslistFilterCallback -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:245785:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PoslistFilterCallback -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:245797:13
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5IndexExtractColset -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:245940:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5ExprClonePhrase -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:240338:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5HashWrite -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:241982:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: sqlite3Fts5TermsetAdd -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:237281:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5NewTokenizerModule -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:254598:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5UnicodeTokenize -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257215:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5AsciiCreate -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:256792:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterCreate -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257314:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterCb -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257908:3
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep1B -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257845:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep1B2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257597:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep1B2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257605:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep1B2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257613:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257632:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257637:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257646:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257651:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257660:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257669:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257678:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257683:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257688:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257693:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257698:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257707:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257712:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257717:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257726:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257731:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257736:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257741:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257750:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257755:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep2 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257760:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep3 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257779:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep3 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257796:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep3 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257801:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5PorterStep3 -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:257826:11
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5VocabFilterMethod -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:259988:9
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5VocabInitVtab -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:259544:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[31m[ERROR][0m [MEDIUM] FFI RISK: fts5VocabInitVtab -> __memcpy_chk
+[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniSope/corpus/real_world/sqlite-amalgamation-3470200/sqlite3.c:259545:7
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Memory copy (fortified) - requires correct size argument
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 3237
+[32m[INFO][0m   FFI Boundaries: 1590
+[32m[INFO][0m     - Cross-language: 22
+[32m[INFO][0m     - External unknown: 1568
+[32m[INFO][0m     - LibC calls: 79
+[31m[ERROR][0m   Dangerous calls: 285
+[32m[INFO][0m   Semantic Registry: 152 functions known
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in sqlite3Pragma
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in pragmaVtabFilter
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5IndexPrepareStmt
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5StorageGetStmt
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in sqlite3_serialize
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in sqlite3_exec
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5FindRankFunction
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5StorageCount
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in sqlite3Fts5ConfigLoad
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in execSql
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5PrepareStatement
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in sqlite3_deserialize
+[33m[WARN][0m MEMORY LEAK: Memory allocated but never freed in fts5VocabOpenMethod
+[31m[ERROR][0m VULNERABILITY OMI-001
+[31m[ERROR][0m Severity: critical
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m   [Source] sqlite3Pragma() - allocation may return NULL, used without null guard
+[31m[ERROR][0m VULNERABILITY OMI-002
+[31m[ERROR][0m Severity: critical
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m   [Source] sqlite3_serialize() - allocation may return NULL, used without null guard
+[31m[ERROR][0m VULNERABILITY OMI-003
+[31m[ERROR][0m Severity: critical
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m   [Source] sqlite3_exec() - allocation may return NULL, used without null guard
+[31m[ERROR][0m VULNERABILITY OMI-004
+[31m[ERROR][0m Severity: critical
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m   [Source] sqlite3Fts5ConfigLoad() - allocation may return NULL, used without null guard
+[31m[ERROR][0m VULNERABILITY OMI-005
+[31m[ERROR][0m Severity: critical
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m   [Source] sqlite3_deserialize() - allocation may return NULL, used without null guard
+[32m[INFO][0m PointerOwnership: Found 13 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 13 allocations, 31 frees, 13 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 13, reused: 0, in_use: 13
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    2      2319.38   1159690.10   2319233.63
+detect                                  2         2.64      1319.17      1327.88
+total                                   1      2319.24   2319239.46   2319239.46
+analysis                                2      3437.65   1718824.54   1719492.29
+[32m[INFO][0m PointerOwnership: 4 ops, 8078.91ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 1590 boundaries, found 8 issues
+info: Analysis complete
+
+info: Functions processed: 3237
+
+info: Facts generated: 44
+
+info: Issues detected: 26
+

@@ -22,6 +22,7 @@ const FFIMatch = ffi_matcher.FFIMatch;
 
 const llvm_safe = @import("../../ir/llvm_safe.zig");
 const c = @import("../../ir/llvm_raw.zig").c;
+const debug_info = @import("../../ir/debug_info.zig");
 
 const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
@@ -191,7 +192,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            const language = self.detectLanguage(func_name);
+            const language = self.detectLanguageWithDwarf(func, func_name);
 
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -237,7 +238,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            const language = self.detectLanguage(func_name);
+            const language = self.detectLanguageWithDwarf(func, func_name);
 
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -245,7 +246,6 @@ pub const FFIAnalysisPass = struct {
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                     const opcode = c.LLVMGetInstructionOpcode(inst);
                     if (opcode != c.LLVMCall) continue;
-
                     const called = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called) == 0) continue;
 
@@ -341,8 +341,24 @@ pub const FFIAnalysisPass = struct {
         }
     }
 
-    fn detectLanguage(_: *FFIAnalysisPass, func_name: []const u8) Language {
-        // Rust mangled names start with _ZN or _R
+    fn detectLanguageFromDwarf(func: c.LLVMValueRef) ?Language {
+        if (@intFromPtr(func) == 0) return null;
+        const subprogram = debug_info.getFunctionSubprogram(func) orelse return null;
+        const compile_unit = subprogram.getCompileUnit() orelse return null;
+        const dwarf_lang = compile_unit.getLanguage();
+
+        return switch (dwarf_lang) {
+            .C => .c,
+            .C_plus_plus, .C_plus_plus_03, .C_plus_plus_11, .C_plus_plus_14, .C_plus_plus_17, .C_plus_plus_20, .C_plus_plus_23 => .cpp,
+            .Rust => .rust,
+            .Zig => .zig,
+            .Swift => .swift,
+            .Go, .Go_language => .go,
+            else => null,
+        };
+    }
+
+    fn detectLanguage(func_name: []const u8) Language {
         if (func_name.len >= 2) {
             if (std.mem.startsWith(u8, func_name, "_ZN") or
                 std.mem.startsWith(u8, func_name, "_R"))
@@ -350,13 +366,11 @@ pub const FFIAnalysisPass = struct {
                 return .rust;
             }
 
-            // C++ mangled names start with _Z
             if (std.mem.startsWith(u8, func_name, "_Z")) {
                 return .cpp;
             }
         }
 
-        // Check for language-specific patterns
         if (std.mem.indexOf(u8, func_name, "std::") != null) {
             return .cpp;
         }
@@ -371,6 +385,13 @@ pub const FFIAnalysisPass = struct {
         }
 
         return .c;
+    }
+
+    fn detectLanguageWithDwarf(_: *FFIAnalysisPass, func: c.LLVMValueRef, func_name: []const u8) Language {
+        if (detectLanguageFromDwarf(func)) |lang| {
+            return lang;
+        }
+        return detectLanguage(func_name);
     }
 
     fn storeResults(self: *FFIAnalysisPass, ctx: *PassContext) !void {
@@ -436,4 +457,21 @@ test "FFIAnalysisPass - detectLanguage" {
 
 test "FFIAnalysisPass - name is ownership-violation" {
     try std.testing.expectEqualStrings("ownership-violation", FFIAnalysisPass.name);
+}
+
+test "FFIAnalysisPass - detectLanguage fallback" {
+    var pass = FFIAnalysisPass.init(std.testing.allocator, undefined);
+    defer pass.deinit();
+
+    try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_ZN4core3ptr"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_R"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZSt"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.c, pass.detectLanguage("malloc"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.zig, pass.detectLanguage("Allocator.alloc"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.swift, pass.detectLanguage("UnsafeMutablePointer"));
+}
+
+test "FFIAnalysisPass - detectLanguageFromDwarf with null returns null" {
+    const result = FFIAnalysisPass.detectLanguageFromDwarf(null);
+    try std.testing.expect(result == null);
 }

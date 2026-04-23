@@ -1,0 +1,56 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature] "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Description
+        Please describe the feature or enhancement you'd like to request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      placeholder: Describe the problem or motivation behind this feature...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      placeholder: Describe your proposed solution...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      placeholder: Describe any alternatives you've considered...
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      placeholder: Add any other context or screenshots...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: type
+    attributes:
+      label: Feature Type
+      options:
+        - label: "New Language Support (Rust/C/Zig/Go/etc.)"
+        - label: "New Violation Detection"
+        - label: "Performance Improvement"
+        - label: "CLI/UX Improvement"
+        - label: "Documentation"
+        - label: "CI/CD"
+        - label: "Other"

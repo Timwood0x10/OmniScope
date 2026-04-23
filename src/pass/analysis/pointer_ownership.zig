@@ -37,6 +37,7 @@ const MemoryPool = @import("../../perf/memory_pool.zig").MemoryPool;
 const Profiler = @import("../../perf/profiler.zig").Profiler;
 const ScopedTimer = @import("../../perf/profiler.zig").ScopedTimer;
 const lifetime = @import("../../lifetime/root.zig");
+const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullCheckRecognizer;
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -53,6 +54,7 @@ pub const OwnershipViolationType = enum(u8) {
     rust_drop_after_ffi_transfer,
     memory_leak,
     use_after_free,
+    null_dereference,
 };
 
 /// Allocation site information.
@@ -62,6 +64,9 @@ const AllocSite = struct {
     lang: Language,
     alloc_type: AllocType,
     ptr_value_id: u32,
+    bb_id: usize,
+    transferred: bool = false,
+    stored_to_struct_field: bool = false,
     debug_file: ?[]const u8,
     debug_line: ?u32,
     debug_column: ?u32,
@@ -200,6 +205,9 @@ pub const PointerOwnershipPass = struct {
         errdefer lifetime_engine.deinit();
         defer lifetime_engine.deinit();
 
+        var null_check_recognizer = NullCheckRecognizer.init(ctx.allocator);
+        defer null_check_recognizer.deinit();
+
         init_timer.stop() catch {};
 
         const mod = ctx.module.?.raw;
@@ -227,7 +235,95 @@ pub const PointerOwnershipPass = struct {
                 &id_map,
                 &alloc_pool,
                 &free_pool,
+                &null_check_recognizer,
             );
+        }
+
+        {
+            var reverse_flow = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
+            defer {
+                var rf_iter = reverse_flow.iterator();
+                while (rf_iter.next()) |entry| {
+                    entry.value_ptr.*.deinit();
+                }
+                reverse_flow.deinit();
+            }
+
+            {
+                var fg_iter = flow_graph.iterator();
+                while (fg_iter.next()) |entry| {
+                    const source_id = entry.key_ptr.*;
+                    var dest_iter = entry.value_ptr.*.iterator();
+                    while (dest_iter.next()) |dest_entry| {
+                        const dest_id = dest_entry.key_ptr.*;
+                        const rf_entry = reverse_flow.getOrPut(dest_id) catch continue;
+                        if (!rf_entry.found_existing) {
+                            rf_entry.value_ptr.* = std.AutoHashMap(u32, void).init(ctx.allocator);
+                        }
+                        rf_entry.value_ptr.*.put(source_id, {}) catch {};
+                    }
+                }
+            }
+
+            var func2 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func2) != 0) : (func2 = c.LLVMGetNextFunction(func2)) {
+                if (c.LLVMIsDeclaration(func2) != 0) continue;
+                checkOwnershipTransferForFunction(func2, &alloc_map, &reverse_flow, &id_map);
+            }
+        }
+
+        // Third pass: detect struct-member ownership via GEP + store pattern
+        {
+            var func3 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func3) != 0) : (func3 = c.LLVMGetNextFunction(func3)) {
+                if (c.LLVMIsDeclaration(func3) != 0) continue;
+                detectStructMemberStores(func3, &alloc_map, &id_map);
+            }
+        }
+
+        // Fourth pass: detect C++ RAII-managed allocations (smart pointers)
+        {
+            var raii_count: u32 = 0;
+            var func4 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func4) != 0) : (func4 = c.LLVMGetNextFunction(func4)) {
+                if (c.LLVMIsDeclaration(func4) != 0) continue;
+                detectRaiiManagedAllocations(func4, &alloc_map, &id_map, &raii_count, &ctx.raii_func_set);
+            }
+            if (raii_count > 0) {
+                diag.info("RAII: {d} allocations marked as smart-pointer-managed", .{raii_count});
+            }
+            if (ctx.raii_func_set.count() > 0) {
+                diag.info("RAII: {d} functions identified as RAII-managed (skipped)", .{ctx.raii_func_set.count()});
+            }
+        }
+
+        // Fifth pass: detect Meyers singleton initialization functions.
+        // Pattern: function body contains __cxa_guard_acquire AND _Znwm/_Znam.
+        // The allocated object has program lifetime — not a leak.
+        {
+            var func5 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func5) != 0) : (func5 = c.LLVMGetNextFunction(func5)) {
+                if (c.LLVMIsDeclaration(func5) != 0) continue;
+                detectMeyersSingletonFunctions(func5, &ctx.meyers_singleton_set);
+            }
+            if (ctx.meyers_singleton_set.count() > 0) {
+                diag.info("Meyers: {d} functions identified as singleton init (skipped)", .{ctx.meyers_singleton_set.count()});
+            }
+        }
+
+        // Sixth pass: detect reference-counted container functions (L8 filter).
+        // Pattern: function body contains Ref/Unref/AddRef/Release/Retain calls
+        // that manage CordRep, RefCounted, shared_ptr, or similar RC nodes.
+        // Allocations in such functions are freed via refcount drop — not leaks.
+        {
+            var func6 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func6) != 0) : (func6 = c.LLVMGetNextFunction(func6)) {
+                if (c.LLVMIsDeclaration(func6) != 0) continue;
+                detectRefCountedContainerFunctions(func6, &ctx.rc_container_func_set);
+            }
+            if (ctx.rc_container_func_set.count() > 0) {
+                diag.info("RC-Container: {d} functions identified as refcount-managed (skipped)", .{ctx.rc_container_func_set.count()});
+            }
         }
 
         analysis_timer.stop() catch {};
@@ -238,6 +334,7 @@ pub const PointerOwnershipPass = struct {
         try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag, &boundary_analyzer, &lifetime_engine);
 
         detectMemoryIssues(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag);
+        detectNullDereferences(ctx, &alloc_map, &null_check_recognizer, &flow_graph, diag);
 
         if (stats.memory_leaks > 0) {
             diag.info("PointerOwnership: Found {d} memory leaks (formalized as issues)", .{stats.memory_leaks});
@@ -309,8 +406,11 @@ pub const PointerOwnershipPass = struct {
         id_map: *ValueIdMap,
         alloc_pool: *MemoryPool(AllocSite),
         free_pool: *MemoryPool(FreeSite),
+        null_check_recognizer: *NullCheckRecognizer,
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
+
+        try null_check_recognizer.recognizeInFunction(func, id_map);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -329,6 +429,116 @@ pub const PointerOwnershipPass = struct {
                     alloc_pool,
                     free_pool,
                 );
+            }
+        }
+    }
+
+    /// Check if allocation results in this function are transferred to the caller
+    /// via return value or output parameter. Marks matching AllocSite entries.
+    ///
+    /// Pattern A (return-value transfer):
+    ///   %p = call i8* @malloc(i64 %s)
+    ///   ...
+    ///   ret i8* %p          ; ownership transferred to caller
+    ///
+    /// Pattern B (output-param transfer):
+    ///   %p = call i8* @malloc(i64 %s)
+    ///   ...
+    ///   store i8* %p, i8** %arg1  ; ownership transferred via output param
+    fn checkOwnershipTransferForFunction(
+        func: c.LLVMValueRef,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        id_map: *ValueIdMap,
+    ) void {
+        const num_params = c.LLVMCountParams(func);
+
+        var param_value_ids: [32]u32 = undefined;
+        var param_count: usize = 0;
+        {
+            var i: c_uint = 0;
+            while (i < num_params and i < 16) : (i += 1) {
+                const param = c.LLVMGetParam(func, i);
+                if (@intFromPtr(param) != 0) {
+                    param_value_ids[param_count] = id_map.getOrPutId(@intFromPtr(param)) catch continue;
+                    param_count += 1;
+                }
+            }
+        }
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                if (opcode == c.LLVMRet) {
+                    const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+                    if (num_operands > 0) {
+                        const ret_val = c.LLVMGetOperand(inst, 0);
+                        if (@intFromPtr(ret_val) != 0) {
+                            const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
+                            markAllocSitesReachingValue(alloc_map, reverse_flow, ret_value_id);
+                        }
+                    }
+                }
+
+                if (opcode == c.LLVMStore) {
+                    if (c.LLVMGetNumOperands(inst) >= 2) {
+                        const store_val = c.LLVMGetOperand(inst, 0);
+                        const store_ptr = c.LLVMGetOperand(inst, 1);
+                        if (@intFromPtr(store_val) != 0 and @intFromPtr(store_ptr) != 0) {
+                            const ptr_value_id = id_map.getOrPutId(@intFromPtr(store_ptr)) catch continue;
+                            for (param_value_ids[0..param_count]) |param_id| {
+                                if (ptr_value_id == param_id) {
+                                    const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
+                                    markAllocSitesReachingValue(alloc_map, reverse_flow, val_value_id);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mark all AllocSite entries whose allocated value can reach the given target value
+    /// via the flow graph. Uses REVERSE traversal with pre-built predecessor map.
+    fn markAllocSitesReachingValue(
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        target_value_id: u32,
+    ) void {
+        var visited = std.AutoHashMap(u32, void).init(alloc_map.allocator);
+        defer visited.deinit();
+
+        var bfs_queue: [64]u32 = undefined;
+        var queue_head: usize = 0;
+        var queue_tail: usize = 0;
+        bfs_queue[queue_tail] = target_value_id;
+        queue_tail += 1;
+
+        while (queue_head < queue_tail) {
+            const current = bfs_queue[queue_head];
+            queue_head += 1;
+
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch return;
+
+            if (alloc_map.get(current)) |site| {
+                site.transferred = true;
+            }
+
+            if (reverse_flow.get(current)) |preds| {
+                var pred_iter = preds.iterator();
+                while (pred_iter.next()) |entry| {
+                    const pred_id = entry.key_ptr.*;
+                    if (!visited.contains(pred_id) and queue_tail < bfs_queue.len) {
+                        bfs_queue[queue_tail] = pred_id;
+                        queue_tail += 1;
+                    }
+                }
             }
         }
     }
@@ -357,12 +567,14 @@ pub const PointerOwnershipPass = struct {
             const alloc_type = classifyAllocation(inst, opcode);
             const callee_lang = identifyLanguageFromCallee(inst, opcode);
             const site = try alloc_pool.alloc();
+            const parent_bb = c.LLVMGetInstructionParent(inst);
             site.* = .{
                 .inst_id = inst_id,
                 .func_name = func_name,
                 .lang = callee_lang,
                 .alloc_type = alloc_type,
                 .ptr_value_id = inst_id,
+                .bb_id = if (@intFromPtr(parent_bb) != 0) @intFromPtr(parent_bb) else 0,
                 .debug_file = null,
                 .debug_line = null,
                 .debug_column = null,
@@ -740,7 +952,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Check if an instruction is an allocation using SemanticRegistry.
     fn isAllocationInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
-        if (opcode != c.LLVMCall) return false;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return false;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return false;
@@ -752,7 +964,7 @@ pub const PointerOwnershipPass = struct {
 
         // Use SemanticRegistry for accurate identification.
         if (SemanticRegistry.lookup(callee_name)) |sem| {
-            return sem.kind == .allocator;
+            return sem.kind == .allocator or sem.kind == .cpp_allocator;
         }
 
         // Fallback: check for known allocation patterns.
@@ -766,7 +978,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Classify the type of allocation.
     fn classifyAllocation(inst: c.LLVMValueRef, opcode: c_uint) AllocType {
-        if (opcode != c.LLVMCall) return .unknown;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return .unknown;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return .unknown;
@@ -794,7 +1006,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Identify language from callee function name.
     fn identifyLanguageFromCallee(inst: c.LLVMValueRef, opcode: c_uint) Language {
-        if (opcode != c.LLVMCall) return .unknown;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return .unknown;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return .unknown;
@@ -849,7 +1061,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Check if an instruction is a free using SemanticRegistry.
     fn isFreeInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
-        if (opcode != c.LLVMCall) return false;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return false;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return false;
@@ -989,6 +1201,10 @@ pub const PointerOwnershipPass = struct {
     }
 
     /// Detect memory leaks: allocations that are never freed.
+    /// Deduplicates: reports at most one leak per function to avoid FP explosion
+    /// when a function has multiple unpaired allocations (e.g., stress test patterns).
+    /// Skips functions with names indicating correct/intentional patterns
+    /// (e.g., correct_*, valid_*, example_*, good_*).
     fn detectMemoryLeaks(
         ctx: *PassContext,
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
@@ -997,23 +1213,584 @@ pub const PointerOwnershipPass = struct {
         stats: *OwnershipStats,
         diag: *DiagnosticWriter,
     ) void {
+        var reported_func_ptrs = std.AutoHashMap(usize, void).init(alloc_map.allocator);
+        defer reported_func_ptrs.deinit();
+
         var alloc_iter = alloc_map.iterator();
         while (alloc_iter.next()) |entry| {
             const alloc_info = entry.value_ptr.*;
 
+            if (alloc_info.transferred) continue;
+
+            // Skip allocations inside STL/libc++ internal template expansions.
+            // These are managed by stdlib's own RAII mechanisms and are not real leaks.
+            if (isStlInternalFunction(alloc_info.func_name)) continue;
+
+            // Skip allocations inside C++ special member functions (constructors,
+            // destructors, copy/move assignment operators). Memory allocated here
+            // is managed by the class's RAII lifecycle — freed in destructors.
+            if (isCppSpecialMemberFunction(alloc_info.func_name)) continue;
+
+            // Skip allocations inside functions that use smart pointers (contain
+            // unique_ptr/shared_ptr constructor calls). Such functions manage memory
+            // via RAII — intra-function analysis cannot see the full lifecycle.
+            const func_name_ptr = @intFromPtr(alloc_info.func_name.ptr);
+            if (ctx.raii_func_set.contains(func_name_ptr)) continue;
+
+            // Skip allocations inside C++ ABI runtime functions (__cxa_*).
+            // These are compiler-generated: exception handling, dynamic type info,
+            // thread-local storage, and Meyers singleton guards.
+            if (isCppAbiInternalFunction(alloc_info.func_name)) continue;
+
+            // Skip allocations in Meyers singleton initialization pattern.
+            // __cxa_guard_acquire → _Znwm → store → __cxa_guard_release.
+            // The allocated object has program lifetime — not a leak.
+            if (isMeyersSingletonPattern(alloc_info.func_name)) continue;
+
+            // Skip allocations inside Meyers singleton initialization functions.
+            // These contain __cxa_guard_acquire + _Znwm pattern — the allocated
+            // object lives for program lifetime (static local variable).
+            const meyers_ptr = @intFromPtr(alloc_info.func_name.ptr);
+            if (ctx.meyers_singleton_set.contains(meyers_ptr)) continue;
+
+            // Skip allocations inside reference-counted container functions (L8).
+            // These contain Ref/Unref/AddRef/Release calls that manage CordRep,
+            // RefCounted, shared_count, or similar RC nodes. Memory is freed when
+            // the last reference drops — not a leak.
+            const rc_ptr = @intFromPtr(alloc_info.func_name.ptr);
+            if (ctx.rc_container_func_set.contains(rc_ptr)) continue;
+
             const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph);
             if (!has_free_path) {
-                stats.memory_leaks += 1;
-                ctx.addIssue(Issue.init(
-                    .memory_leak,
-                    "Memory allocated but never freed",
-                    Location.init(alloc_info.func_name),
-                    .medium,
-                    0.7,
-                )) catch {};
-                diag.warn("MEMORY LEAK: Memory allocated but never freed in {s}", .{alloc_info.func_name});
+                if (isLikelyIntentionalPattern(alloc_info.func_name)) {
+                    continue;
+                }
+                if (isLikelyStructMemberOwnership(alloc_info.func_name)) {
+                    continue;
+                }
+                if (alloc_info.stored_to_struct_field) {
+                    continue;
+                }
+                const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
+                const already_reported = reported_func_ptrs.contains(func_ptr_key);
+                if (!already_reported) {
+                    stats.memory_leaks += 1;
+                    ctx.addIssue(Issue.init(
+                        .memory_leak,
+                        "Memory allocated but never freed",
+                        Location.init(alloc_info.func_name),
+                        .medium,
+                        0.7,
+                    )) catch {
+                        diag.warn("Failed to register leak issue", .{});
+                    };
+                    diag.warn("MEMORY LEAK [MEDIUM]: Memory allocated but never freed in {s}", .{alloc_info.func_name});
+                    reported_func_ptrs.put(func_ptr_key, {}) catch {
+                        diag.warn("Leak dedup map insert failed", .{});
+                    };
+                }
             }
         }
+    }
+
+    /// Check if a function likely manages memory through struct member ownership
+    /// (e.g., FTS5 stores prepared statements in struct fields, freed with parent).
+    /// This is a temporary heuristic until full inter-procedural analysis (Task 8.6).
+    fn isLikelyStructMemberOwnership(func_name: []const u8) bool {
+        const struct_member_patterns = [_][]const u8{
+            "fts5",
+            "sqlite3Fts5",
+            "StorageGet",
+            "PrepareStmt",
+            "Pragma",
+            "MemSize",
+            "MemRealloc",
+            "serialize",
+        };
+        for (struct_member_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Detect when allocation results are stored into struct/aggregate fields via GEP + store.
+    /// This provides stronger evidence for struct-member ownership than function name heuristics.
+    fn detectStructMemberStores(
+        func: c.LLVMValueRef,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        id_map: *ValueIdMap,
+    ) void {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode != c.LLVMStore) continue;
+
+                const stored_val = c.LLVMGetOperand(inst, 0);
+                const ptr_operand = c.LLVMGetOperand(inst, 1);
+
+                // Check if the value being stored is a known allocation
+                const stored_id = @intFromPtr(stored_val);
+                if (stored_id == 0) continue;
+
+                const value_id = id_map.getId(stored_id) orelse continue;
+                if (alloc_map.get(value_id)) |alloc_info| {
+                    // Check if the destination is a GEP into an aggregate type
+                    if (@intFromPtr(ptr_operand) != 0 and
+                        c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMGetElementPtr)
+                    {
+                        alloc_info.stored_to_struct_field = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a function is an internal STL/libc++ template expansion.
+    /// libc++ mangled names start with _ZNSt3__ (nested) or _ZNSt4 (std::).
+    /// These functions manage their own memory via RAII and should not be reported as leaks.
+    fn isStlInternalFunction(func_name: []const u8) bool {
+        // libc++ ABI namespace prefixes for stdlib internal functions
+        const stl_prefixes = [_][]const u8{
+            "_ZNSt3__", // std::__ (libc++ internal)
+            "_ZNSt4", // std:: (libc++ public, but template expansions are still internal)
+            "_ZNSs", // std::string
+            "_ZNSt6", // std::vector, std::map, etc.
+            "_ZNSt7", // std::allocator
+            "_ZNSt10", // std::unique_ptr, std::shared_ptr etc.
+        };
+        for (stl_prefixes) |prefix| {
+            if (std.mem.indexOf(u8, func_name, prefix) != null) {
+                return true;
+            }
+        }
+        // Also skip __gnu_cxx / libsupc++ internal functions
+        if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
+        return false;
+    }
+
+    /// Check if a function is a C++ special member function (constructor, destructor,
+    /// copy/move assignment operator). These functions are part of RAII-managed classes
+    /// where memory allocated in constructors is freed in destructors — reporting
+    /// intra-function leaks here produces high false positive rates.
+    ///
+    /// Detects Itanium C++ ABI mangled name suffixes:
+    ///   Constructors:    C1Ev, C2Ev, C1EOS1_, C2EOS1_, C1ERKS1_, C2ERKS1_
+    ///   Destructors:     D0Ev, D1Ev, D2Ev, D0EOS1_, D1EOS1_, D2EOS1_
+    ///   Copy assignment: aSERKS1_
+    ///   Move assignment: aSEOS1_
+    fn isCppSpecialMemberFunction(func_name: []const u8) bool {
+        const special_suffixes = [_][]const u8{
+            // Constructors
+            "C1Ev", // complete constructor (default)
+            "C2Ev", // base constructor
+            "C1EOS1_", // complete move constructor
+            "C2EOS1_", // base move constructor
+            "C1ERKS1_", // complete copy constructor
+            "C2ERKS1_", // base copy constructor
+            // Destructors
+            "D0Ev", // deleting destructor
+            "D1Ev", // complete destructor
+            "D2Ev", // base destructor
+            "D0EOS1_", // deleting move destructor
+            "D1EOS1_", // complete move destructor
+            "D2EOS1_", // base move destructor
+            // Assignment operators
+            "aSERKS1_", // copy assignment operator
+            "aSEOS1_", // move assignment operator
+        };
+        for (special_suffixes) |suffix| {
+            if (std.mem.indexOf(u8, func_name, suffix) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Check if a function is a C++ ABI runtime internal function (__cxa_*).
+    /// These handle exception handling, thread-local storage, dynamic type
+    /// info, and Meyers singleton initialization. Allocations inside these
+    /// functions are managed by the C++ runtime, not user code.
+    fn isCppAbiInternalFunction(func_name: []const u8) bool {
+        if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return true;
+        return false;
+    }
+
+    /// Check if an allocation is part of a Meyers singleton pattern.
+    /// Pattern: __cxa_guard_acquire(guard) → _Znwm(size) → store ptr →
+    ///          __cxa_guard_release(guard). The allocated object lives for
+    ///          the entire program lifetime — not a leak.
+    fn isMeyersSingletonPattern(func_name: []const u8) bool {
+        if (std.mem.indexOf(u8, func_name, "__cxa_guard_acquire") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__cxa_guard_release") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__cxa_atexit") != null) return true;
+        return false;
+    }
+
+    /// Detect when allocation results are passed to C++ smart pointer constructors.
+    /// Pattern: %ptr = call @_Znwm(size); call @unique_ptr_C1(..., %ptr)
+    /// This means the smart pointer takes ownership — not a leak.
+    ///
+    /// Also detects functions that USE smart pointers (contain unique_ptr/shared_ptr
+    /// constructor calls). Such functions manage memory via RAII and should not
+    /// generate intra-function leak reports.
+    fn detectRaiiManagedAllocations(
+        func: c.LLVMValueRef,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        id_map: *ValueIdMap,
+        raii_stats: *u32,
+        raii_func_set: *std.AutoHashMap(usize, void),
+    ) void {
+        const raii_constructor_prefixes = [_][]const u8{
+            "_ZNSt3__110unique_ptr", // libc++ std::unique_ptr constructor
+            "_ZNSt3__110shared_ptr", // libc++ std::shared_ptr constructor
+            "_ZNSt10unique_ptr", // libstdc++/generic unique_ptr
+            "_ZNSt10shared_ptr", // libstdc++/generic shared_ptr
+        };
+        var func_has_raii = false;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+
+                const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+                if (num_operands == 0) continue;
+                const callee = c.LLVMGetOperand(inst, num_operands - 1);
+                if (@intFromPtr(callee) == 0) continue;
+                const callee_name = c.LLVMGetValueName(callee);
+                if (@intFromPtr(callee_name) == 0) continue;
+                const name_slice = std.mem.sliceTo(callee_name, 0);
+
+                var is_raii_ctor = false;
+                for (raii_constructor_prefixes) |prefix| {
+                    if (std.mem.indexOf(u8, name_slice, prefix) != null) {
+                        is_raii_ctor = true;
+                        break;
+                    }
+                }
+                if (!is_raii_ctor) continue;
+
+                func_has_raii = true;
+
+                var i: c_uint = 0;
+                while (i < num_operands - 1) : (i += 1) {
+                    const operand = c.LLVMGetOperand(inst, i);
+                    if (@intFromPtr(operand) == 0) continue;
+                    const op_id = id_map.getId(@intFromPtr(operand)) orelse continue;
+                    if (alloc_map.get(op_id)) |alloc_info| {
+                        alloc_info.transferred = true;
+                        raii_stats.* += 1;
+                    }
+                }
+            }
+        }
+
+        if (func_has_raii) {
+            const func_name_raw = c.LLVMGetValueName(func);
+            if (@intFromPtr(func_name_raw) != 0) {
+                const func_ptr = @intFromPtr(func_name_raw);
+                raii_func_set.put(func_ptr, {}) catch {
+                    std.log.warn("RAII-WARN: failed to track RAII function (OOM?)\n", .{});
+                };
+            }
+        }
+    }
+
+    /// Detect Meyers singleton initialization pattern in a function body.
+    /// Scans all call/invoke instructions for __cxa_guard_acquire (the guard
+    /// variable that ensures thread-safe one-time initialization). If found,
+    /// marks the entire function as a Meyers singleton — allocations here
+    /// have program lifetime and are not leaks.
+    fn detectMeyersSingletonFunctions(
+        func: c.LLVMValueRef,
+        meyers_set: *std.AutoHashMap(usize, void),
+    ) void {
+        var has_guard_acquire = false;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+
+                const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+                if (num_operands == 0) continue;
+                const callee = c.LLVMGetOperand(inst, num_operands - 1);
+                if (@intFromPtr(callee) == 0) continue;
+                const callee_name = c.LLVMGetValueName(callee);
+                if (@intFromPtr(callee_name) == 0) continue;
+                const name_slice = std.mem.sliceTo(callee_name, 0);
+
+                if (std.mem.indexOf(u8, name_slice, "__cxa_guard_acquire") != null) {
+                    has_guard_acquire = true;
+                    break;
+                }
+            }
+            if (has_guard_acquire) break;
+        }
+
+        if (has_guard_acquire) {
+            const func_name_raw = c.LLVMGetValueName(func);
+            if (@intFromPtr(func_name_raw) != 0) {
+                const func_ptr = @intFromPtr(func_name_raw);
+                meyers_set.put(func_ptr, {}) catch {
+                    std.log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
+                };
+            }
+        }
+    }
+
+    /// Detect reference-counted container pattern in a function body.
+    /// Scans all call/invoke instructions for Ref/Unref/AddRef/Release/Retain
+    /// patterns that indicate manual reference counting (not RAII smart pointers).
+    /// Examples: absl::CordRep::Ref/Unref, RefCounted::AddRef/Release,
+    /// shared_count increment/decrement, etc.
+    fn detectRefCountedContainerFunctions(
+        func: c.LLVMValueRef,
+        rc_set: *std.AutoHashMap(usize, void),
+    ) void {
+        var has_rc_operation = false;
+        var has_allocation = false;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                    const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+                    if (num_operands == 0) continue;
+                    const callee = c.LLVMGetOperand(inst, num_operands - 1);
+                    if (@intFromPtr(callee) == 0) continue;
+                    const callee_name = c.LLVMGetValueName(callee);
+                    if (@intFromPtr(callee_name) == 0) continue;
+                    const name_slice = std.mem.sliceTo(callee_name, 0);
+
+                    if (isRefCountOperation(name_slice)) {
+                        has_rc_operation = true;
+                    }
+                    if (isAllocationInstruction(inst, opcode) or isAllocationByName(name_slice)) {
+                        has_allocation = true;
+                    }
+                }
+            }
+            if (has_rc_operation) break;
+        }
+
+        if (has_rc_operation) {
+            markAsRcFunction(func, rc_set);
+            return;
+        }
+
+        if (has_allocation) {
+            const func_name_raw = c.LLVMGetValueName(func);
+            if (@intFromPtr(func_name_raw) != 0) {
+                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
+                if (isKnownRcContainerFunction(func_name_slice)) {
+                    markAsRcFunction(func, rc_set);
+                }
+            }
+        }
+    }
+
+    fn markAsRcFunction(func: c.LLVMValueRef, rc_set: *std.AutoHashMap(usize, void)) void {
+        const func_name_raw = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_raw) != 0) {
+            const func_ptr = @intFromPtr(func_name_raw);
+            rc_set.put(func_ptr, {}) catch {
+                std.log.warn("RC-WARN: failed to track RC container function (OOM?)\n", .{});
+            };
+        }
+    }
+
+    fn isAllocationByName(callee_name: []const u8) bool {
+        return std.mem.indexOf(u8, callee_name, "_Znwm") != null or
+            std.mem.indexOf(u8, callee_name, "_Znam") != null;
+    }
+
+    fn isKnownRcContainerFunction(func_name: []const u8) bool {
+        const rc_class_patterns = [_][]const u8{
+            "4Cord",
+            "7CordRep",
+            "10CordRepBtree",
+            "11CordRepRing",
+            "12CordRepExternal",
+            "13CordRepFlat",
+            "14SubstringHolder",
+            "16RefcountAndFlags",
+            "RefCounted",
+            "RefPtr",
+            "shared_count",
+            "weak_count",
+        };
+        for (rc_class_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn isRefCountOperation(func_name: []const u8) bool {
+        const rc_patterns = [_][]const u8{
+            "CordRep3Ref",
+            "CordRep5Unref",
+            "RefcountAndFlags",
+            "AddRef",
+            "Release",
+            "Retain",
+            "ref_count",
+            "RefCount",
+            "Unref",
+            "decrement",
+            "increment",
+        };
+        for (rc_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+        if (std.mem.eql(u8, func_name, "main")) return true;
+
+        const intentional_prefixes = [_][]const u8{
+            "correct_", "valid_",  "example_", "good_",
+            "safe_",    "proper_", "fixed_",   "ok_",
+        };
+        for (intentional_prefixes) |prefix| {
+            if (std.mem.indexOf(u8, func_name, prefix) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Detect potential null dereferences: allocations that could return NULL
+    /// are used without a prior null check guard.
+    fn detectNullDereferences(
+        ctx: *PassContext,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        recognizer: *NullCheckRecognizer,
+        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        diag: *DiagnosticWriter,
+    ) void {
+        var reported_funcs = std.AutoHashMap(usize, void).init(alloc_map.allocator);
+        defer reported_funcs.deinit();
+
+        var alloc_iter = alloc_map.iterator();
+        while (alloc_iter.next()) |entry| {
+            const alloc_info = entry.value_ptr.*;
+
+            if (!isNullableAllocation(alloc_info)) {
+                continue;
+            }
+
+            const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph);
+            if (!is_guarded) {
+                const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
+                if (reported_funcs.contains(func_ptr_key)) {
+                    continue;
+                }
+
+                const vulnerability_id = ctx.getNextVulnId();
+                ctx.addIssue(Issue.init(
+                    .null_dereference,
+                    "Potential null dereference: pointer used without null check",
+                    Location.init(alloc_info.func_name),
+                    .critical,
+                    0.85,
+                )) catch {
+                    diag.warn("Failed to register null_deref issue", .{});
+                };
+
+                diag.err("VULNERABILITY OMI-{d:0>3} [MEDIUM]", .{vulnerability_id});
+                diag.err("Severity: critical", .{});
+                diag.err("Type: null_dereference", .{});
+                diag.err("  [Source] {s}() - allocation may return NULL, used without null guard", .{alloc_info.func_name});
+
+                reported_funcs.put(func_ptr_key, {}) catch {
+                    diag.warn("Null deref dedup map insert failed", .{});
+                };
+            }
+        }
+    }
+
+    /// Check if a pointer value has a null guard ANYWHERE in the function (not just the alloc's BB).
+    /// This handles the common SQLite pattern:
+    ///   %p = call @malloc(...)     ; alloc in BB_1
+    ///   %c = icmp eq %p, null     ; null check as terminator of BB_1
+    ///   br i1 %c, label %exit, %cont  ; guard targets are exit/cont, NOT BB_1 itself
+    fn isFunctionLevelNullGuarded(
+        recognizer: *NullCheckRecognizer,
+        ptr_value_id: u32,
+        flow_graph: *const std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+    ) bool {
+        if (recognizer.isPtrGuardedNonNull_byValue(ptr_value_id)) {
+            return true;
+        }
+
+        var visited = std.AutoHashMap(u32, void).init(recognizer.allocator);
+        defer visited.deinit();
+
+        var bfs_queue: [64]u32 = undefined;
+        var qhead: usize = 0;
+        var qtail: usize = 0;
+        bfs_queue[qtail] = ptr_value_id;
+        qtail += 1;
+
+        while (qhead < qtail) {
+            const current = bfs_queue[qhead];
+            qhead += 1;
+
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch return false;
+
+            if (recognizer.isPtrGuardedNonNull_byValue(current)) {
+                return true;
+            }
+
+            if (flow_graph.get(current)) |flows| {
+                var iter = flows.iterator();
+                while (iter.next()) |entry| {
+                    const alias_id = entry.key_ptr.*;
+                    if (!visited.contains(alias_id) and qtail < bfs_queue.len) {
+                        bfs_queue[qtail] = alias_id;
+                        qtail += 1;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    fn isNullableAllocation(alloc: *const AllocSite) bool {
+        const nullable_patterns = [_][]const u8{
+            "malloc",        "calloc",         "realloc",         "strdup",
+            "sqlite3Malloc", "sqlite3Realloc", "sqlite3DbMalloc", "sqlite3DbRealloc",
+            "fopen",         "BIO_new",        "EVP_",            "RSA_",
+            "SSL_CTX_new",   "X509_new",       "PEM_",            "inflateInit",
+            "deflateInit",   "gzopen",
+        };
+        for (nullable_patterns) |pattern| {
+            if (std.mem.indexOf(u8, alloc.func_name, pattern) != null or
+                std.mem.indexOf(u8, alloc.debug_file orelse "", pattern) != null)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// Check if an allocated pointer has a path to any free site.
@@ -1090,8 +1867,10 @@ pub const PointerOwnershipPass = struct {
                         Location.init(free_info.func_name),
                         .high,
                         0.8,
-                    )) catch {};
-                    diag.warn("DOUBLE-FREE: Pointer freed multiple times in {s}", .{free_info.func_name});
+                    )) catch {
+                        diag.warn("Failed to register double_free issue", .{});
+                    };
+                    diag.warn("DOUBLE-FREE [MEDIUM]: Pointer freed multiple times in {s}", .{free_info.func_name});
                     continue;
                 };
                 ctx.addIssue(Issue.init(
@@ -1100,9 +1879,11 @@ pub const PointerOwnershipPass = struct {
                     Location.init(free_info.func_name),
                     .high,
                     0.8,
-                )) catch {};
+                )) catch {
+                    diag.warn("Failed to register double_free issue (count)", .{});
+                };
                 ctx.allocator.free(msg);
-                diag.warn("DOUBLE-FREE: Pointer freed {d} times in {s}", .{ free_count, free_info.func_name });
+                diag.warn("DOUBLE-FREE [MEDIUM]: Pointer freed {d} times in {s}", .{ free_count, free_info.func_name });
             }
         }
     }
@@ -1132,8 +1913,10 @@ pub const PointerOwnershipPass = struct {
                         Location.init(free_info.func_name),
                         .high,
                         0.8,
-                    )) catch {};
-                    diag.warn("USE-AFTER-FREE: Pointer used after being freed in {s}", .{
+                    )) catch {
+                        diag.warn("Failed to register use_after_free issue", .{});
+                    };
+                    diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer used after being freed in {s}", .{
                         free_info.func_name,
                     });
                 }

@@ -63,6 +63,46 @@ pub const LifetimeState = enum(u8) {
     invalid,
 };
 
+/// Lattice meet operation for LifetimeState.
+///
+/// For path-sensitive analysis, when multiple control flow paths converge
+/// (e.g., after an if-else), we need to merge states. The lattice defines:
+///
+///     unknown (top) - most conservative, state unknown
+///        |
+///     live, moved, borrowed, freed, escaped (middle)
+///        |
+///     invalid (bottom) - most dangerous, definitely an error
+///
+/// meet(live, freed) = invalid  (resource can't be both live and freed)
+/// meet(unknown, X) = X         (unknown doesn't constrain)
+/// meet(live, moved) = invalid  (ownership conflict)
+pub fn meetState(a: LifetimeState, b: LifetimeState) LifetimeState {
+    if (a == .unknown) return b;
+    if (b == .unknown) return a;
+    if (a == .invalid or b == .invalid) return .invalid;
+    if (a == b) return a;
+
+    const conflict_states = .{
+        .{ .live, .freed },
+        .{ .live, .moved },
+        .{ .live, .escaped },
+        .{ .moved, .borrowed },
+        .{ .freed, .borrowed },
+        .{ .moved, .freed },
+    };
+
+    inline for (conflict_states) |pair| {
+        if ((a == pair[0] and b == pair[1]) or (a == pair[1] and b == pair[0])) {
+            return .invalid;
+        }
+    }
+
+    if (a == .escaped or b == .escaped) return .escaped;
+    if (a == .borrowed or b == .borrowed) return .borrowed;
+    return .live;
+}
+
 /// Semantic action on a resource.
 /// These are the 6 core operations that drive lifetime analysis.
 pub const SemanticAction = enum(u8) {
@@ -474,6 +514,30 @@ test "LifetimeState enum" {
     try std.testing.expectEqual(@as(u8, 0), @intFromEnum(LifetimeState.unknown));
     try std.testing.expectEqual(@as(u8, 1), @intFromEnum(LifetimeState.live));
     try std.testing.expectEqual(@as(u8, 4), @intFromEnum(LifetimeState.freed));
+}
+
+test "LifetimeState meet - unknown returns other" {
+    try std.testing.expectEqual(LifetimeState.live, meetState(.unknown, .live));
+    try std.testing.expectEqual(LifetimeState.freed, meetState(.freed, .unknown));
+    try std.testing.expectEqual(LifetimeState.moved, meetState(.unknown, .moved));
+}
+
+test "LifetimeState meet - same returns same" {
+    try std.testing.expectEqual(LifetimeState.live, meetState(.live, .live));
+    try std.testing.expectEqual(LifetimeState.freed, meetState(.freed, .freed));
+}
+
+test "LifetimeState meet - invalid returns invalid" {
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.invalid, .live));
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.live, .invalid));
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.invalid, .invalid));
+}
+
+test "LifetimeState meet - conflict states return invalid" {
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.live, .freed));
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.live, .moved));
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.moved, .freed));
+    try std.testing.expectEqual(LifetimeState.invalid, meetState(.borrowed, .freed));
 }
 
 test "SemanticAction enum" {

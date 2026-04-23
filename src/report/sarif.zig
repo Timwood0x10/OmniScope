@@ -376,6 +376,7 @@ pub const SarifGenerator = struct {
     fn writeProperties(output: *std.ArrayList(u8), issue: Issue) !void {
         try output.appendSlice("          \"properties\": {\n");
         try output.writer().print("            \"confidence\": {d:.2},\n", .{issue.confidence});
+        try output.writer().print("            \"confidenceLevel\": \"{s}\",\n", .{issue.confidence_level.toString()});
         try output.writer().print("            \"severity\": \"{s}\",\n", .{issue.severity.toString()});
         try output.writer().print("            \"cwe\": \"CWE-{d}\"", .{issue.kind.toCweId()});
         try output.appendSlice("\n          }");

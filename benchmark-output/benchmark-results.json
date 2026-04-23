@@ -1,0 +1,35 @@
+{
+  "benchmark_id": "omniscope-20260422-190249",
+  "timestamp": "2026-04-22T11:02:49Z",
+  "environment": {
+    "os": "Darwin",
+    "cpu": "Apple M3 Max",
+    "zig_version": "0.15.2",
+    "build_mode": "ReleaseFast"
+  },
+  "results": {
+    "total_tp": 67,
+    "total_fp": 13,
+    "total_fn": 6,
+    "total_detected": 80,
+    "total_expected": 73,
+    "precision": 0.8375,
+    "recall": 0.9178,
+    "f1_score": 0.8758,
+    "false_positive_rate": 0
+  },
+  "targets": {
+    "precision": 0.95,
+    "recall": 0.88,
+    "f1_score": 0.91
+  },
+  "per_file": [
+
+    {"file": "cpp_ffi_simple.ll", "detected": 2, "expected": 3},
+    {"file": "boundary_test.ll", "detected": 9, "expected": 14},
+    {"file": "stress_patterns.ll", "detected": 46, "expected": 44},
+    {"file": "openssl_wrapper.ll", "detected": 8, "expected": 4},
+    {"file": "sqlite_binding.ll", "detected": 7, "expected": 4},
+    {"file": "zlib_binding.ll", "detected": 8, "expected": 4}
+  ]
+}

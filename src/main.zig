@@ -70,11 +70,11 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.output_format = .sarif;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             const output_file = args.next() orelse {
-                std.debug.print("Error: --output requires a file path\n", .{});
+                std.log.err("Error: --output requires a file path\n", .{});
                 return error.InvalidOption;
             };
             if (output_file.len == 0) {
-                std.debug.print("Error: --output requires a non-empty file path\n", .{});
+                std.log.err("Error: --output requires a non-empty file path\n", .{});
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);
@@ -240,8 +240,8 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue) ![]u8
         const line_num = issue.location.line orelse 0;
         const col_num = issue.location.column orelse 0;
         try output.writer().print(
-            \\  {{"kind":"{s}","message":"{s}","severity":"{s}","location":{{"file":"{s}","line":{d},"column":{d}}}}}
-        , .{ @tagName(issue.kind), issue.message, @tagName(issue.severity), file_str, line_num, col_num });
+            \\  {{"kind":"{s}","message":"{s}","severity":"{s}","confidence":"{s}","confidence_score":{d:.1},"location":{{"file":"{s}","line":{d},"column":{d}}}}}
+        , .{ @tagName(issue.kind), issue.message, @tagName(issue.severity), issue.confidence_level.toString(), issue.confidence, file_str, line_num, col_num });
     }
     try output.writer().writeAll("\n]}}\n");
 

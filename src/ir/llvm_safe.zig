@@ -51,7 +51,7 @@ pub const Module = struct {
         var count: usize = 0;
         var func = c.LLVMGetFirstFunction(self.raw);
 
-        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             count += 1;
         }
 
@@ -69,7 +69,7 @@ pub const Module = struct {
     pub fn getFunction(self: Module, name: []const u8) ?Function {
         var func = c.LLVMGetFirstFunction(self.raw);
 
-        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name = c.LLVMGetValueName(func);
             const func_name_slice = std.mem.span(func_name);
 
@@ -89,7 +89,7 @@ pub const Module = struct {
     ) !void {
         var func = c.LLVMGetFirstFunction(self.raw);
 
-        while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             try callback(.{ .raw = func }, ctx);
         }
     }

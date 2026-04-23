@@ -22,10 +22,20 @@
 #   make go          - Build Go → C example
 #   make zig         - Build Zig → C example
 
-ZIG ?= $(shell which zig 2>/dev/null || echo "zig")
-CLANG ?= $(shell which clang 2>/dev/null || echo "clang")
-CLANGXX ?= $(shell which clang++ 2>/dev/null || echo "clang++")
-LLVM_LINK ?= $(shell which llvm-link 2>/dev/null || echo "llvm-link")
+ifeq ($(OS),Windows_NT)
+    DETECTED_OS := windows
+    TOOL_QUERY := where
+    REDIRECT := 2>nul
+else
+    DETECTED_OS := unix
+    TOOL_QUERY := which
+    REDIRECT := 2>/dev/null
+endif
+
+ZIG = $(shell $(TOOL_QUERY) zig $(REDIRECT) || echo zig)
+CLANG = $(shell $(TOOL_QUERY) clang $(REDIRECT) || echo clang)
+CLANGXX = $(shell $(TOOL_QUERY) clang++ $(REDIRECT) || echo clang++)
+LLVM_LINK = $(shell $(TOOL_QUERY) llvm-link $(REDIRECT) || echo llvm-link)
 
 # Directories
 BUILD_DIR ?= build
@@ -41,7 +51,8 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
-        install-deps release
+        baseline-check \
+        install-deps release benchmark benchmark-full
 
 # ========================================
 # Default Target - Run All Tests
@@ -119,6 +130,41 @@ bench:
 	@echo "║                     BENCHMARKS                                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build bench-perf -Doptimize=ReleaseFast
+
+# ========================================
+# Detection Rate Benchmark
+# ========================================
+
+benchmark: corpus
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              DETECTION RATE BENCHMARK                         ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/benchmark.sh
+
+benchmark-json: corpus
+	@mkdir -p benchmark-output
+	./scripts/benchmark.sh --json > benchmark-output/benchmark-results.json
+	@echo "JSON report saved to benchmark-output/benchmark-results.json"
+
+benchmark-ci: corpus
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              CI BENCHMARK (exit code = pass/fail)             ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/benchmark.sh --ci
+
+benchmark-full: test-all bench benchmark
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FULL BENCHMARK SUITE COMPLETE                    ║"
+	@echo "╠════════════════════════════════════════════════════════════════╣"
+	@echo "║  Unit Tests:        ✓ Passed                                  ║"
+	@echo "║  Integration Tests: ✓ Passed                                  ║"
+	@echo "║  Issue Verification:✓ Passed                                  ║"
+	@echo "║  Stability Tests:   ✓ Passed                                  ║"
+	@echo "║  Stress Tests:      ✓ Passed                                  ║"
+	@echo "║  Micro Benchmarks:  ✓ Completed                               ║"
+	@echo "║  Detection Rate:    ✓ Calculated                              ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
 
 # ========================================
 # Install & Release
@@ -375,6 +421,16 @@ real-world-sarif: real-world-ir
 	$(ZIG) build run -- --sarif -o $(EXAMPLES_DIR)/reports/real_world_report.sarif $(REAL_WORLD_IR)/combined.bc
 
 # ========================================
+# Baseline Regression Check (Task 8.4)
+# ========================================
+
+baseline-check: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              BASELINE REGRESSION CHECK                       ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/baseline_check.sh
+
+# ========================================
 # All Reports
 # ========================================
 
@@ -546,6 +602,13 @@ help:
 	@echo "  make corpus-analyze  Analyze corpus with OmniScope"
 	@echo "  make corpus-check    Analyze and check expected issues"
 	@echo ""
+	@echo "Benchmark Commands:"
+	@echo "  make bench          Run micro-benchmarks (component-level timing)"
+	@echo "  make benchmark      Run detection rate benchmark on corpus"
+	@echo "  make benchmark-json  Export benchmark results as JSON"
+	@echo "  make benchmark-ci    CI mode (exit code = pass/fail)"
+	@echo "  make benchmark-full  Run complete benchmark suite"
+	@echo ""
 	@echo "Development Commands:"
 	@echo "  make fmt         Format source code"
 	@echo "  make check       Type check the project"
@@ -575,6 +638,9 @@ help:
 	@echo "  make real-world      Build and analyze real-world FFI patterns"
 	@echo "  make real-world-ir   Build OpenSSL/SQLite/zlib test IR"
 	@echo "  make real-world-run  Analyze real-world FFI patterns"
+	@echo ""
+	@echo "Regression Guard:"
+	@echo "  make baseline-check  Run baseline regression test (SQLite + curl + libuv)"
 	@echo ""
 	@echo "Report Commands (JSON/SARIF):"
 	@echo "  make rust-json           Generate Rust JSON report"

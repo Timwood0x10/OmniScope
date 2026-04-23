@@ -308,6 +308,19 @@ pub fn build(b: *std.Build) void {
     run_e2e_tests.step.dependOn(b.getInstallStep());
     e2e_test_step.dependOn(&run_e2e_tests.step);
 
+    // Benchmark performance tests step
+    const bench_test_step = b.step("test-benchmark", "Run performance benchmark tests (latency, memory, throughput)");
+    const bench_test_mod = b.addModule("bench_test", .{
+        .root_source_file = b.path("tests/benchmark/main.zig"),
+        .target = target,
+    });
+    bench_test_mod.addImport("OmniScope", lib_mod);
+    const bench_perf_tests = b.addTest(.{
+        .root_module = bench_test_mod,
+    });
+    const run_bench_perf_tests = b.addRunArtifact(bench_perf_tests);
+    bench_test_step.dependOn(&run_bench_perf_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{

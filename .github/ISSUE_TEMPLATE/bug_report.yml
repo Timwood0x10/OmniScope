@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a bug to help us improve OmniScope
+title: "[Bug] "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug Description
+        Please describe the bug clearly.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: Describe the bug in detail...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. First step...
+        2. Second step...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: What should happen...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: What actually happens...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: version
+    attributes:
+      label: OmniScope Version
+      options:
+        - v0.2.0
+        - v0.1.3
+        - v0.1.2
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux x86_64
+        - macOS ARM64 (Apple Silicon)
+        - macOS x86_64
+        - Windows
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      placeholder: Paste any relevant error messages or logs...
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      placeholder: Add any other context about the problem...
+    validations:
+      required: false

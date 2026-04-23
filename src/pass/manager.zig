@@ -259,6 +259,7 @@ test "PassManager - run passes" {
         .query_engine = &query_engine,
         .data_flow_graph = &data_flow_graph,
         .next_id = std.atomic.Value(u32).init(1),
+        .vuln_id = std.atomic.Value(u32).init(0),
     };
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };
     try manager.run(&ctx, &diag);
