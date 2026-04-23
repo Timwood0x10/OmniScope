@@ -91,54 +91,96 @@ git push origin feature/my-new-feature
 
 ```
 src/
-├── main.zig              # CLI 入口点
-├── root.zig              # 库公共 API
-├── ir/                   # IR 层
-│   ├── llvm_c.zig        # LLVM-C API 绑定
-│   ├── view.zig          # IR 视图包装器
-│   ├── location.zig      # 源代码位置
-│   └── debug_info.zig    # 调试信息
-├── pass/                 # Pass 系统
-│   ├── pass.zig          # Pass 接口
-│   ├── manager.zig       # Pass 管理器
-│   ├── foundation/       # 基础 pass
-│   │   ├── cfg.zig       # 控制流图
-│   │   └── dfg.zig       # 数据流图
-│   ├── analysis/         # 分析 pass
-│   │   ├── alias.zig     # 别名分析
-│   │   ├── lock.zig      # 锁分析
-│   │   ├── call_graph.zig     # 调用图
-│   │   ├── ffi_boundary.zig   # FFI 边界
-│   │   ├── pointer_ownership.zig # 指针所有权追踪
-│   │   ├── ffi_analysis.zig   # 所有权违规检测
-│   │   └── taint_propagation.zig # 指针流分析
-│   └── instrumentation/ # 插桩 pass
-├── fact/                 # 事实系统
-│   ├── fact.zig          # 事实类型
-│   ├── store.zig         # SoA 事实存储
-│   └── query.zig         # 查询引擎
-├── runtime/              # 运行时子系统
-│   ├── rt_lib/           # 运行时库
-│   │   ├── probes.zig    # 探针函数
-│   │   └── ring_buffer.zig # 无锁环形缓冲区
-│   ├── collector.zig     # 事件收集器
-│   ├── decoder.zig       # 事件解码器
-│   └── merge.zig         # 合并引擎
-├── diag/                 # 诊断
-│   ├── diag.zig          # 诊断类型
-│   └── aggregator.zig    # 诊断聚合
-├── plugin/               # 插件系统
-│   ├── abi.zig           # 插件 ABI
-│   └── host.zig          # 插件宿主
-├── output/               # 输出适配器
-│   ├── cli.zig           # CLI 输出
-│   ├── sarif.zig         # SARIF 格式
-│   └── lsp.zig           # LSP 集成
-└── log/                  # 日志系统
-    ├── log.zig           # 日志 API
-    ├── error.zig         # 错误类型
-    └── debug.zig         # 调试工具
-```
+├── main.zig                  # CLI 入口点
+├── root.zig                  # 库公共 API
+├── ir/                      # LLVM IR 包装器
+│   ├── llvm_raw.zig         # 原始 LLVM C API 绑定
+│   ├── llvm_safe.zig        # 安全包装器
+│   ├── view.zig             # IR 视图工具
+│   ├── location.zig          # 源代码位置跟踪
+│   └── debug_info.zig       # 调试信息解析
+├── engine/                   # 核心引擎
+│   └── loader.zig           # IR 文件加载
+├── pass/                     # 分析 passes
+│   ├── pass.zig             # PassContext + Pass 接口
+│   ├── manager.zig          # Pass 管理器
+│   ├── foundation/          # 基础 passes
+│   │   ├── cfg.zig         # 控制流图
+│   │   └── dfg.zig         # 数据流图
+│   ├── analysis/           # 分析 passes
+│   │   ├── pointer_ownership.zig    # 核心内存泄漏/UAF (936 行)
+│   │   ├── allocation_classifier.zig  # AllocType/FreeType (206 行)
+│   │   ├── cpp_fp_reduction.zig       # C++ 8 层 FP 过滤 (937 行)
+│   │   ├── rust_ffi_auditor.zig       # Rust FFI 审计器 (464 行) ← v0.2.0
+│   │   ├── ffi_detector.zig          # FFI 边界检测
+│   │   ├── ffi_analysis.zig          # FFI 分析
+│   │   ├── ffi_boundary.zig          # FFI 边界分析器
+│   │   ├── ffi_info.zig             # FFI 信息注册表
+│   │   ├── ffi_semantics.zig         # FFI 语义注册表
+│   │   ├── call_graph.zig           # 调用图 + 污染路径
+│   │   ├── taint.zig                 # 污染分析
+│   │   ├── taint_propagation.zig     # 污染传播
+│   │   ├── taint_state.zig           # 污染状态管理
+│   │   ├── lock.zig                 # 锁分析 (719 行)
+│   │   ├── alias.zig                # 别名分析
+│   │   ├── steensgaard.zig          # Steensgaard 指针分析
+│   │   ├── vulnerability_rules.zig  # 漏洞规则引擎
+│   │   ├── flow_path.zig             # 数据流路径分析
+│   │   └── issue/                    # 问题特定检查器
+│   │       ├── ffi_unsafe.zig       # 不安全 FFI 调用
+│   │       ├── ffi_body_check.zig   # FFI 函数体检查
+│   │       ├── malloc_check.zig     # malloc 验证
+│   │       ├── free_validation.zig  # free() 验证
+│   │       ├── memory_safety.zig    # 内存安全检查
+│   │       ├── return_check.zig     # 返回值检查
+│   │       └── integer_overflow.zig  # 整数溢出
+│   └── instrumentation/      # 插桩 passes
+│       └── planner.zig    # 插桩规划器
+├── fact/                     # 事实存储系统 (SoA 布局)
+│   ├── fact.zig           # 事实类型定义
+│   ├── store.zig           # 事实存储
+│   ├── query.zig           # 查询引擎
+│   └── ownership_fact.zig  # 所有权事实
+├── dataflow/                 # 数据流分析
+│   ├── graph.zig           # DFG 构建
+│   ├── node.zig            # 数据流节点
+│   ├── edge.zig            # 数据流边
+│   ├── guard_propagation.zig # Guard 传播
+│   ├── null_check_guard.zig # 空值检查分析
+│   ├── path_condition.zig  # 路径条件
+│   ├── value_id_map.zig    # 值 ID 映射
+│   └── function_summary.zig # 函数摘要
+├── lifetime/                 # 生命周期和边界分析
+│   ├── engine.zig          # 生命周期引擎
+│   ├── boundary.zig        # 跨语言边界分析器
+│   ├── mapper.zig          # 生命周期映射器
+│   └── root.zig            # 生命周期模块根
+├── registry/                 # 语义注册表
+│   ├── semantic_registry.zig # 函数语义知识库
+│   ├── config_loader.zig   # JSON 配置加载器
+│   └── sanitizer_registry.zig # 消毒剂注册表
+├── diag/                     # 诊断
+│   ├── issue.zig           # 问题类型 + 置信度系统
+│   └── aggregator.zig      # 诊断聚合
+├── output/                   # 输出适配器
+│   ├── cli.zig            # CLI 输出
+│   ├── formatter.zig       # 文本格式化器
+│   ├── sarif.zig          # SARIF v2.1.0 输出
+│   └── lsp.zig            # LSP 集成
+├── report/                   # 报告生成
+│   ├── mod.zig            # 报告生成器
+│   ├── sarif.zig          # SARIF 报告 (v2.1.0)
+│   └── ci_integration.zig # CI/CD 集成
+├── pipeline/                 # 分析管道
+│   └── pipeline.zig       # 管道编排
+├── tracking/                 # 内存跟踪
+│   ├── allocator.zig      # 分配跟踪
+│   └── mod.zig            # 跟踪模块
+└── perf/                     # 性能分析
+    ├── profiler.zig        # 性能分析器
+    ├── memory_pool.zig     # 内存池
+    ├── analysis_context.zig # 分析上下文
+    └── bench_compare.zig    # 基准比较
 
 ### 模块依赖
 

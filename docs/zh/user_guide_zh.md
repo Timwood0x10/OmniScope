@@ -188,22 +188,32 @@ OmniSope [选项] <输入文件>
 | `-v, --verbose` | 启用详细日志 |
 | `-d, --debug` | 启用调试日志 |
 | `--version` | 显示版本信息 |
+| `--json` | 以稳定 JSON Schema v1 格式输出 |
+| `--sarif` | 以 SARIF v2.1.0 格式输出 |
+| `-o, --output <文件>` | 输出文件路径 |
+| `-l, --level <级别>` | 最低严重级别 (critical/high/medium/low) |
 
 ### 示例
 
 **基本分析：**
 ```bash
-./zig-out/bin/OmniSope program.bc
+./zig-out/bin/OmniSope program.ll
 ```
 
-**详细输出：**
+**JSON 输出：**
 ```bash
-./zig-out/bin/OmniSope -v program.bc
+./zig-out/bin/OmniSope --json program.ll > results.json
+./zig-out/bin/OmniSope --json -o results.json program.ll
 ```
 
-**调试模式：**
+**SARIF 输出（GitHub Code Scanning 兼容）：**
 ```bash
-./zig-out/bin/OmniSope -d program.bc
+./zig-out/bin/OmniSope --sarif -o results.sarif program.ll
+```
+
+**按严重级别过滤：**
+```bash
+./zig-out/bin/OmniSope -l high program.ll
 ```
 
 ---

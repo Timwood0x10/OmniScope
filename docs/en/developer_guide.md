@@ -91,53 +91,96 @@ git push origin feature/my-new-feature
 
 ```
 src/
-├── main.zig              # CLI entry point
-├── root.zig              # Library public API
-├── ir/                   # IR layer
-│   ├── llvm_c.zig        # LLVM-C API bindings
-│   ├── view.zig          # IR view wrappers
-│   ├── location.zig      # Source location
-│   └── debug_info.zig    # Debug information
-├── pass/                 # Pass system
-│   ├── pass.zig          # Pass interface
-│   ├── manager.zig       # Pass manager
-│   ├── foundation/       # Foundation passes
-│   │   ├── cfg.zig       # Control flow graph
-│   │   └── dfg.zig       # Data flow graph
-│   ├── analysis/         # Analysis passes
-│   │   ├── alias.zig     # Alias analysis
-│   │   ├── lock.zig      # Lock analysis
-│   │   ├── taint.zig     # Taint analysis
-│   │   ├── call_graph.zig     # Call graph
-│   │   ├── ffi_boundary.zig   # FFI boundary
-│   │   ├── sink_tracer.zig    # Sink tracer
-│   │   └── taint_propagation.zig # Taint propagation
-│   └── instrumentation/ # Instrumentation passes
-├── fact/                 # Fact system
-│   ├── fact.zig          # Fact types
-│   ├── store.zig         # SoA fact storage
-│   └── query.zig         # Query engine
-├── runtime/              # Runtime subsystem
-│   ├── rt_lib/           # Runtime library
-│   │   ├── probes.zig    # Probe functions
-│   │   └── ring_buffer.zig # Lock-free ring buffer
-│   ├── collector.zig     # Event collector
-│   ├── decoder.zig       # Event decoder
-│   └── merge.zig         # Merge engine
-├── diag/                 # Diagnostics
-│   ├── diag.zig          # Diagnostic types
-│   └── aggregator.zig    # Diagnostic aggregation
-├── plugin/               # Plugin system
-│   ├── abi.zig           # Plugin ABI
-│   └── host.zig          # Plugin host
-├── output/               # Output adapters
-│   ├── cli.zig           # CLI output
-│   ├── sarif.zig         # SARIF format
-│   └── lsp.zig           # LSP integration
-└── log/                  # Logging system
-    ├── log.zig           # Logging API
-    ├── error.zig         # Error types
-    └── debug.zig         # Debug utilities
+├── main.zig                  # CLI entry point
+├── root.zig                  # Library public API
+├── ir/                       # LLVM IR wrappers
+│   ├── llvm_raw.zig         # Raw LLVM C API bindings
+│   ├── llvm_safe.zig        # Safe wrappers
+│   ├── view.zig             # IR view utilities
+│   ├── location.zig          # Source location tracking
+│   └── debug_info.zig       # Debug information parsing
+├── engine/                   # Core engine
+│   └── loader.zig           # IR file loading
+├── pass/                     # Analysis passes
+│   ├── pass.zig             # PassContext + Pass interface
+│   ├── manager.zig          # Pass manager
+│   ├── foundation/          # Foundation passes
+│   │   ├── cfg.zig         # Control flow graph
+│   │   └── dfg.zig         # Data flow graph
+│   ├── analysis/           # Analysis passes
+│   │   ├── pointer_ownership.zig    # Core memory leak/UAF (936 lines)
+│   │   ├── allocation_classifier.zig  # AllocType/FreeType (206 lines)
+│   │   ├── cpp_fp_reduction.zig       # C++ 8-layer FP filter (937 lines)
+│   │   ├── rust_ffi_auditor.zig       # Rust FFI auditor (464 lines) ← v0.2.0
+│   │   ├── ffi_detector.zig          # FFI boundary detection
+│   │   ├── ffi_analysis.zig          # FFI analysis
+│   │   ├── ffi_boundary.zig          # FFI boundary analyzer
+│   │   ├── ffi_info.zig              # FFI info registry
+│   │   ├── ffi_semantics.zig         # FFI semantic registry
+│   │   ├── call_graph.zig            # Call graph + tainted paths
+│   │   ├── taint.zig                 # Taint analysis
+│   │   ├── taint_propagation.zig     # Taint propagation
+│   │   ├── taint_state.zig           # Taint state management
+│   │   ├── lock.zig                  # Lock analysis (719 lines)
+│   │   ├── alias.zig                 # Alias analysis
+│   │   ├── steensgaard.zig           # Steensgaard pointer analysis
+│   │   ├── vulnerability_rules.zig  # Vulnerability rule engine
+│   │   ├── flow_path.zig             # Data flow path analysis
+│   │   └── issue/                    # Issue-specific checkers
+│   │       ├── ffi_unsafe.zig        # Unsafe FFI calls
+│   │       ├── ffi_body_check.zig    # FFI function body checks
+│   │       ├── malloc_check.zig      # malloc validation
+│   │       ├── free_validation.zig   # free() validation
+│   │       ├── memory_safety.zig     # Memory safety checks
+│   │       ├── return_check.zig      # Return value checks
+│   │       └── integer_overflow.zig  # Integer overflow
+│   └── instrumentation/      # Instrumentation passes
+│       └── planner.zig      # Instrumentation planner
+├── fact/                     # Fact storage system (SoA layout)
+│   ├── fact.zig            # Fact type definitions
+│   ├── store.zig            # Fact store
+│   ├── query.zig            # Query engine
+│   └── ownership_fact.zig   # Ownership facts
+├── dataflow/                 # Data flow analysis
+│   ├── graph.zig            # DFG construction
+│   ├── node.zig             # Data flow nodes
+│   ├── edge.zig             # Data flow edges
+│   ├── guard_propagation.zig # Guard propagation
+│   ├── null_check_guard.zig # Null check analysis
+│   ├── path_condition.zig   # Path conditions
+│   ├── value_id_map.zig     # Value ID mapping
+│   └── function_summary.zig # Function summaries
+├── lifetime/                 # Lifetime & boundary analysis
+│   ├── engine.zig          # Lifetime engine
+│   ├── boundary.zig        # Cross-language boundary analyzer
+│   ├── mapper.zig          # Lifetime mapper
+│   └── root.zig            # Lifetime module root
+├── registry/                 # Semantic registry
+│   ├── semantic_registry.zig # Function semantic knowledge base
+│   ├── config_loader.zig    # JSON config loader
+│   └── sanitizer_registry.zig # Sanitizer registry
+├── diag/                     # Diagnostics
+│   ├── issue.zig            # Issue types + Confidence system
+│   └── aggregator.zig       # Diagnostic aggregation
+├── output/                   # Output adapters
+│   ├── cli.zig             # CLI output
+│   ├── formatter.zig        # Text formatter
+│   ├── sarif.zig           # SARIF v2.1.0 output
+│   └── lsp.zig             # LSP integration
+├── report/                   # Report generation
+│   ├── mod.zig             # Report generator
+│   ├── sarif.zig           # SARIF report (v2.1.0)
+│   └── ci_integration.zig  # CI/CD integration
+├── pipeline/                 # Analysis pipeline
+│   └── pipeline.zig        # Pipeline orchestration
+├── tracking/                 # Memory tracking
+│   ├── allocator.zig       # Allocation tracking
+│   └── mod.zig             # Tracking module
+└── perf/                     # Performance analysis
+    ├── profiler.zig         # Profiler
+    ├── memory_pool.zig     # Memory pool
+    ├── analysis_context.zig # Analysis context
+    └── bench_compare.zig    # Benchmark comparison
 ```
 
 ### Module Dependencies
@@ -146,24 +189,22 @@ src/
 main.zig
   └── root.zig
         ├─> ir/
+        ├─> engine/
         ├─> pass/
+        │     ├─> pass.zig (PassContext)
+        │     ├─> analysis/ (pointer_ownership, cpp_fp_reduction, rust_ffi_auditor...)
+        │     ├─> foundation/ (cfg, dfg)
+        │     └─> manager.zig
         ├─> fact/
-        ├─> runtime/
-        ├─> diag/
-        ├─> plugin/
+        ├─> dataflow/
+        ├─> lifetime/
+        ├─> registry/
+        ├─> diag/ (issue.zig)
         ├─> output/
-        └─> log/
-
-pass/
-  ├─> ir/
-  ├─> fact/
-  └─> log/
-
-fact/
-  └─> log/
-
-runtime/
-  └─> log/
+        ├─> report/
+        ├─> pipeline/
+        ├─> tracking/
+        └─> perf/
 ```
 
 ---

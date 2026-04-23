@@ -1,263 +1,153 @@
-# Issue Detection Passes
+# Issue Detection
 
 ## Overview
 
-Multiple specialized passes for detecting security and code quality issues. The v0.3.0 release includes improved accuracy and new detection capabilities.
+OmniScope detects 14 types of security and memory safety issues through multi-layer analysis. Every issue includes a **Confidence Level** and **Reason** field for triage.
 
-## Location
+## IssueKind Taxonomy (v0.2.0)
 
-```text
-src/pass/analysis/issue/
-├── ffi_body_check.zig
-├── ffi_unsafe.zig
-├── free_validation.zig
-├── integer_overflow.zig
-├── malloc_check.zig
-├── memory_safety.zig
-└── return_check.zig
-```
+| IssueKind | Severity | CWE | Confidence | Description |
+|-----------|----------|-----|------------|-------------|
+| `memory_leak` | HIGH | 401 | 0.70-0.85 | Allocation without matching free |
+| `use_after_free` | CRITICAL | 416 | 0.80-0.90 | Pointer used after deallocation |
+| `double_free` | CRITICAL | 415 | 0.85-0.95 | Same pointer freed twice |
+| `invalid_free` | HIGH | 590 | 0.80-0.90 | free() on non-heap pointer |
+| `borrow_escape` | HIGH | 704 | 0.75-0.85 | as_ptr result may dangle after drop |
+| `cross_language_leak` | HIGH | 401 | 0.80-0.90 | Rust-alloc freed by C free() |
+| `ffi_unsafe_call` | HIGH | 686 | 0.65-0.80 | FFI call without validation |
+| `unchecked_return` | MEDIUM | 253 | 0.70-0.80 | Return value not checked |
+| `type_mismatch` | MEDIUM | 704 | 0.65-0.75 | FFI type mismatch |
+| `null_dereference` | CRITICAL | 476 | 0.85 | Nullable allocation used without guard |
+| `command_injection` | CRITICAL | 78 | 0.75-0.90 | Untrusted input to shell |
+| `format_string` | CRITICAL | 134 | 0.85-0.95 | User input to format string |
+| `buffer_overflow` | CRITICAL | 119 | 0.75-0.90 | Buffer boundary violation |
+| `malloc_unchecked` | MEDIUM | 190 | 0.70-0.80 | malloc result not checked |
 
-## Accuracy Improvements (v0.3.0)
+## Confidence System
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| True Positives | 4/5 | 28/30 | +13% |
-| False Positives | 0 | 0 | Unchanged |
-| False Negatives | 1 | 2 | -1 |
-| Precision | 100% | 100% | Unchanged |
-| Recall | 80% | 93% | +13% |
-| F1 Score | 0.89 | 0.96 | +0.07 |
+Every issue is assigned one of four confidence levels:
 
-## FFIBodyCheckPass
+| Level | Score Range | Action |
+|-------|------------|--------|
+| **HIGH** | ≥ 0.90 | Fix immediately |
+| **MEDIUM** | ≥ 0.70 | Review required |
+| **HEURISTIC** | ≥ 0.50 | Investigate |
+| **EXPERIMENTAL** | < 0.50 | Research only |
 
-Detects dangerous function calls inside FFI boundary functions.
-
-```zig
-pub const FFIBodyCheckPass = struct {
-    pub const name = "ffi-body-check";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{"ffi-boundary"};
-};
-```
-
-### Detection
-
-| Issue Type | Severity | Detection Rate |
-|------------|----------|----------------|
-| Unchecked malloc results | MEDIUM | 100% |
-| Free on non-malloc pointers | HIGH | 95% |
-| Double free | HIGH | 100% |
-| Unknown FFI pointer usage | MEDIUM | 90% |
-| Format string vulnerabilities | MEDIUM | 100% |
-| Command injection | CRITICAL | 100% |
-
-## FFIUnsafePass
-
-Identifies unsafe FFI calls based on dangerous function patterns.
+### Confidence Assignment Examples
 
 ```zig
-pub const FFIUnsafePass = struct {
-    pub const name = "ffi-unsafe";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{"ffi-boundary"};
+// HIGH confidence: Direct pattern match with full context
+Issue.initWithReason(
+    .double_free,
+    "Double free detected",
+    location,
+    .critical,
+    0.95,
+    "Same pointer freed twice in same function with no intervening allocation",
+)
 
-    const DangerousPatterns = &[_][]const u8{
-        "system", "exec", "popen", "malloc", "free", "strcpy", "gets",
-    };
-};
+// MEDIUM confidence: Heuristic match
+Issue.initWithReason(
+    .ffi_unsafe_call,
+    "Unsafe FFI call detected",
+    location,
+    .high,
+    0.75,
+    "extern \"C\" function called with potentially untrusted pointer",
+)
 ```
 
-### Dangerous Patterns
+## Detection Layers
 
-| Pattern | Risk Kind | Severity |
-|---------|-----------|----------|
-| `system`, `exec`, `popen` | command_exec | CRITICAL |
-| `malloc`, `free` | allocator/deallocator | MEDIUM/HIGH |
-| `strcpy`, `gets` | unchecked_copy | HIGH |
+### Layer 1-3: Core Ownership Tracking
 
-## FreeValidationPass
+Located in `src/pass/analysis/pointer_ownership.zig` (936 lines)
 
-Detects calls to free() on non-malloc pointers.
+- Build `alloc_map` (all allocations)
+- Build `free_map` (all deallocations)
+- Build `flow_graph` (reachability via SSA)
+- Ownership transfer detection (return-value / output-param)
 
-```zig
-pub const FreeValidationPass = struct {
-    pub const name = "free-validation";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
-};
+### Layer 4-8: C++ False Positive Reduction
+
+Located in `src/pass/analysis/cpp_fp_reduction.zig` (937 lines)
+
+| Layer | Filter | Eliminates |
+|-------|--------|------------|
+| L1 | STL internal | `_ZSt*`, `std::*` |
+| L2 | Special members | ctor/dtor/copy/move |
+| L3 | RAII | unique_ptr/shared_ptr scope |
+| L4 | C++ ABI | `_Znwm`, `_ZdlPv`, `_ZdaPv` |
+| L5 | Operator overload | `operator*`, `operator->` |
+| L6 | Meyers singleton | Static local + double-check |
+| L7 | RC containers | Ref/Unref/AddRef/Release |
+| L8 | Rust FFI pairing | into_raw/from_raw |
+
+### Layer 9: Rust FFI Auditor
+
+Located in `src/pass/analysis/rust_ffi_auditor.zig` (464 lines)
+
+| Rule | Issue | Pattern |
+|------|-------|---------|
+| R1 | `unpaired_into_raw` | `Box::into_raw()` without matching `from_raw()` |
+| R2 | `borrow_escape` | `as_ptr()` on local passed to FFI |
+| R3 | `cross_lang_alloc_mismatch` | `_Znwm` → C `free()` |
+| R4 | `unsafe_ffi_call` | `extern "C"` without validation |
+| R5 | `extern_c_type_mismatch` | Type mismatch in extern decl |
+| R6 | `no_mangle_export` | `#[no_mangle]` without ownership |
+
+## Output Formats
+
+### Text (Default)
+```
+VULNERABILITY OMI-001 [high] [Confidence: medium]
+Type: borrow_escape
+Reason: as_ptr() on local String/Vec passed to extern C - may dangle after drop
 ```
 
-### Detection
-
-- **invalid_free** - Free on non-malloc pointers
-
-### Pointer Origins
-
-| Origin | Description | Safe to Free |
-|--------|-------------|--------------|
-| `from_malloc` | From malloc/calloc/realloc | ✅ Yes |
-| `from_param` | From function parameter | ⚠️ Check ownership |
-| `from_global` | From global variable | ❌ No |
-| `unknown` | Unknown origin | ⚠️ Review needed |
-
-## IntegerOverflowPass
-
-Detects potential integer overflow in arithmetic operations.
-
-```zig
-pub const IntegerOverflowPass = struct {
-    pub const name = "integer-overflow";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
-};
-```
-
-### Operations Analyzed
-
-- `add`, `sub`, `mul`
-
-### Detection Conditions
-
-- Non-constant values
-- Small bit-width integers (i8, i16)
-- Result may exceed type range
-
-## MallocCheckPass
-
-Detects malloc return values used without null check.
-
-```zig
-pub const MallocCheckPass = struct {
-    pub const name = "malloc-check";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
-};
-```
-
-### Detection
-
-- **malloc_unchecked** - Malloc used without null check
-
-### Functions Checked
-
-- `malloc`, `calloc`, `realloc`, `aligned_alloc`, `reallocarray`
-
-### Path-Sensitive Analysis (New in v0.3.0)
-
-Now recognizes guarded patterns:
-```c
-char* ptr = malloc(size);
-if (ptr == NULL) return -1;  // Recognized as null check
-ptr[0] = '\0';  // Safe after check
-```
-
-## MemorySafetyPass
-
-Detects memory safety issues (double free).
-
-```zig
-pub const MemorySafetyPass = struct {
-    pub const name = "memory-safety";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
-};
-```
-
-### Detection
-
-- **double_free** - Same pointer freed twice
-
-### Path-Sensitive Analysis (New in v0.3.0)
-
-Recognizes guarded free patterns:
-```c
-if (ptr != NULL) {
-    free(ptr);  // Guarded free - not a double free
+### JSON (Stable Schema v1)
+```json
+{
+  "id": "OMI-001",
+  "kind": "borrow_escape",
+  "severity": "high",
+  "confidence": "MEDIUM",
+  "confidence_score": 0.80,
+  "cwe_id": 704,
+  "reason": "as_ptr() on local String/Vec passed to extern C",
+  "message": "Potential as_ptr borrow escape",
+  "location": {"function": "leak_cstring"}
 }
 ```
 
-## ReturnCheckPass
-
-Detects unchecked return values from dangerous functions.
-
-```zig
-pub const ReturnCheckPass = struct {
-    pub const name = "return-check";
-    pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
-};
-```
-
-### Dangerous Functions
-
-- `malloc`, `open`, `system`, `fork`, `pthread_create`
-
-### Detection
-
-- **unchecked_return** - Return value not used
-
-### Safe to Ignore
-
-- `printf`, `fclose` - Output/close functions
-
-## Severity Levels
-
-| Level | Description | Example |
-|-------|-------------|---------|
-| **critical** | Direct security vulnerability | Command injection |
-| **high** | Likely security issue | Buffer overflow |
-| **medium** | Potential issue | Missing null check |
-| **low** | Code quality issue | Unchecked return |
-
-## Confidence Scores
-
-| Range | Interpretation |
-|-------|----------------|
-| 0.0 - 0.3 | Low confidence, may be false positive |
-| 0.3 - 0.7 | Medium confidence, needs review |
-| 0.7 - 1.0 | High confidence, likely real issue |
-
-## Usage Example
-
-```zig
-var malloc_check = MallocCheckPass.init(ctx, diag, store, query);
-defer malloc_check.deinit();
-
-const result = try malloc_check.run(func_id);
-for (result.issues) |issue| {
-    std.debug.print("[{}] {} (confidence: {:.2})\n", .{
-        issue.severity, issue.message, issue.confidence
-    });
+### SARIF v2.1.0
+```json
+{
+  "ruleId": "borrow_escape",
+  "level": "error",
+  "message": {
+    "text": "Potential as_ptr borrow escape"
+  },
+  "properties": {
+    "confidence": 0.80,
+    "confidenceLevel": "MEDIUM",
+    "reason": "as_ptr() on local String/Vec passed to extern C",
+    "cwe": "CWE-704"
+  }
 }
 ```
 
-## Test Results
+## Baseline Results
 
-### Example Detection (dangerous.c)
+| Project | Issues | Leaks | FFI Risks | Confidence |
+|---------|--------|-------|-----------|------------|
+| SQLite 3.47.2 | 8 | 0 | 2 | MEDIUM |
+| ripgrep 14.1.1 | **0** | 0 | 0 | — |
+| rust_sqlite | 6 | 4 | 2 | MEDIUM |
+| jsoncpp 1.9.5 | 3 | 0 | 0 | HIGH |
 
-| Issue | Location | Severity | Detected |
-|-------|----------|----------|----------|
-| Command Injection | L54 | CRITICAL | ✅ |
-| Buffer Overflow (sprintf) | L49 | HIGH | ✅ |
-| Buffer Overflow (strcpy) | L84 | HIGH | ✅ |
-| Format String | L58 | MEDIUM | ✅ |
-| Missing NULL Check | L107 | MEDIUM | ✅ |
-| Double Free Risk | L141 | HIGH | ✅ |
+---
 
-### Real-World Results
-
-| Library | Issues Found | Categories |
-|---------|--------------|------------|
-| OpenSSL | 15 | Double free, memory leak, use-after-free |
-| SQLite | 6 | Ownership transfer, allocator patterns |
-| zlib | 7 | File I/O, memory leak |
-
-## Integration with Other Passes
-
-| Pass | Dependencies | Output Used By |
-|------|--------------|----------------|
-| FFIBodyCheckPass | ffi-boundary | taint, ownership |
-| FFIUnsafePass | ffi-boundary | issue detection |
-| FreeValidationPass | - | memory-safety |
-| MallocCheckPass | - | memory-safety |
-| MemorySafetyPass | - | lifetime |
+**Last Updated**: 2026-04-23
+**Version**: v0.2.0

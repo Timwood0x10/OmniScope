@@ -188,22 +188,32 @@ OmniSope [options] <input-file>
 | `-v, --verbose` | Enable verbose logging |
 | `-d, --debug` | Enable debug logging |
 | `--version` | Show version information |
+| `--json` | Output in Stable JSON Schema v1 format |
+| `--sarif` | Output in SARIF v2.1.0 format |
+| `-o, --output <file>` | Output file path |
+| `-l, --level <level>` | Minimum severity level (critical/high/medium/low) |
 
 ### Examples
 
 **Basic analysis:**
 ```bash
-./zig-out/bin/OmniSope program.bc
+./zig-out/bin/OmniSope program.ll
 ```
 
-**Verbose output:**
+**JSON output:**
 ```bash
-./zig-out/bin/OmniSope -v program.bc
+./zig-out/bin/OmniSope --json program.ll > results.json
+./zig-out/bin/OmniSope --json -o results.json program.ll
 ```
 
-**Debug mode:**
+**SARIF output (GitHub Code Scanning compatible):**
 ```bash
-./zig-out/bin/OmniSope -d program.bc
+./zig-out/bin/OmniSope --sarif -o results.sarif program.ll
+```
+
+**Filter by severity:**
+```bash
+./zig-out/bin/OmniSope -l high program.ll
 ```
 
 ---
