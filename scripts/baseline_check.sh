@@ -38,8 +38,20 @@ check_rule() {
             FAIL_COUNT=$((FAIL_COUNT + 1))
             return 1
         fi
+    elif [ "$strict" = "min" ]; then
+        # min: actual must be >= expected (test files should find at least N bugs)
+        if [ "$actual" -lt "$expected" ]; then
+            echo -e "  ${RED}✗ UNDER-DETECTION${RESET} $name: expected≥$expected actual=$actual"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+            return 1
+        fi
+        if [ "$actual" -gt "$expected" ]; then
+            echo -e "  ${GREEN}✓ OVER-DETECTED${RESET} $name: expected≥$expected actual=$actual"
+            WARN_COUNT=$((WARN_COUNT + 1))
+            return 0
+        fi
     else
-        # non-strict: actual must be <= expected (allow improvement)
+        # max (non-strict): actual must be <= expected (allow improvement)
         if [ "$actual" -gt "$expected" ]; then
             echo -e "  ${RED}✗ REGRESSION${RESET} $name: max=$expected actual=$actual"
             FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -103,8 +115,8 @@ run_project() {
         IFS=':' read -r rule_name rule_type rule_expected <<< "$rule_spec"
         case "$rule_name" in
             total) check_rule "Total Issues" "$rule_expected" "$detected_count" "$rule_type" ;;
-            leak)  check_rule "Memory Leaks" "$rule_expected" "$leaks" "strict" ;;
-            null_deref) check_rule "Null Deref" "$rule_expected" "$null_derefs" "strict" ;;
+            leak)  check_rule "Memory Leaks" "$rule_expected" "$leaks" "$rule_type" ;;
+            null_deref) check_rule "Null Deref" "$rule_expected" "$null_derefs" "$rule_type" ;;
             time)  check_rule "Time (s)" "$rule_expected" "$(printf '%.*f' 0 "$elapsed")" "$rule_type" ;;
         esac
     done
@@ -145,6 +157,18 @@ run_project "jsoncpp 1.9.5" "$CORPUS_DIR/jsoncpp195.ll" \
 # abseil-cpp rules: total≤15, null_deref=0(strict), time≤2
 run_project "abseil-cpp 2024" "$CORPUS_DIR/abseil2024.ll" \
     "total:max:15" "null_deref:strict:0" "time:max:2"
+
+# ripgrep 14.1.1 (Rust): total≤5, leak=0(strict), time≤2
+run_project "ripgrep 14.1.1 (Rust)" "$CORPUS_DIR/ripgrep141.ll" \
+    "total:max:5" "leak:strict:0" "time:max:2"
+
+# rust_sqlite_ffi (Rust test): total≤15, leak≤10 (non-strict), time≤5
+run_project "rust-sqlite-ffi (Rust test)" "$CORPUS_DIR/rust_sqlite.ll" \
+    "total:max:15" "leak:max:10" "time:max:5"
+
+# openssl_wrapper (C crypto test): total≤25, leak≥5, time≤1
+run_project "openssl_wrapper (crypto test)" "$CORPUS_DIR/openssl_wrapper.ll" \
+    "total:max:25" "leak:min:5" "time:max:1"
 
 # Summary
 echo ""

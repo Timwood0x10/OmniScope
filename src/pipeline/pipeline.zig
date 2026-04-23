@@ -74,6 +74,7 @@ pub const Pipeline = struct {
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(self.allocator),
         };
+        defer ctx.deinit();
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
 

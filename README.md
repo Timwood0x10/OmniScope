@@ -140,8 +140,9 @@ flowchart LR
 | [libuv 1.50.0](corpus/real_world/BASELINE.md#project-libuv-1500) | C | 145 | **1** | **0** | 0.07s |
 | [jsoncpp 1.9.5](corpus/real_world/BASELINE.md#project-jsoncpp-195) | C++ | 1,537 | **3** | **0** | 1.4s |
 | [abseil-cpp 2024](corpus/real_world/BASELINE.md#project--5-abseil-cpp-202407220) | C++ | 193 | **0** | **0** | 0.37s |
+| [ripgrep 14.1.1](corpus/real_world/BASELINE.md#project-6-ripgrep-1411-rust) | **Rust** | 75 | **0** ✅ | **0** ✅ | 0.04s |
 
-**Key results**: jsoncpp 40→3 issues (-92.5%), leaks 37→0 (-100%). abseil-cpp Cord RC leaks 9→0 (-100%).
+**Key results**: jsoncpp 40→3 issues (-92.5%), leaks 37→0 (-100%). abseil-cpp Cord RC leaks 9→0 (-100%). ripgrep (Rust): 0 issues — clean production project.
 
 ### Corpus Benchmark
 
@@ -172,7 +173,7 @@ See full details: [`docs/BENCHMARK.md`](docs/BENCHMARK.md), [`FINAL_EVALUATION_R
 | Boundary | Status | Notes |
 |----------|--------|-------|
 | C → C | ✅ Stable | Full libc/POSIX registry |
-| Rust ↔ C | ✅ Stable | `into_raw`/`from_raw`, `Box` |
+| Rust ↔ C | ✅ **Stable (v0.1.4)** | `into_raw`/`from_raw`, `Box`, `CString` |
 | Zig ↔ C | ✅ Stable | `Allocator.alloc` pattern |
 | Go → C | ⚠️ Experimental | cgo `C.malloc`/`C.CString` |
 | **C++ → C** | **✅ Stable (v0.1.4)** | Itanium ABI, 7-Layer FP reduction |

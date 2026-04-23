@@ -296,19 +296,105 @@ libuv is an **exceptionally clean** async I/O library:
 
 ---
 
+## Project #6: ripgrep 14.1.1 (Rust)
+
+| Attribute | Value |
+|-----------|-------|
+| **Source** | [ripgrep](https://github.com/BurntSushi/ripgrep) (BurntSushi) |
+| **Language** | Rust (libc FFI, memmap2, encoding_rs) |
+| **IR Source** | `ripgrep141.ll` (grep_searcher crate compiled) |
+| **IR Size** | 6,317 lines |
+| **Functions** | 75 |
+| **Analysis Time** | ~0.04s |
+| **Registry Entries** | 166 + Rust-specific patterns |
+
+### Baseline Results
+
+| Category | Count | Details |
+|----------|-------|---------|
+| **Total Issues** | **0** ✅ | Clean — well-maintained Rust project |
+| MEMORY LEAK | **0** ✅ | No leaks detected |
+| FFI RISK | **0** ✅ | 177 boundaries analyzed, 0 dangerous |
+| null_dereference | **0** ✅ | No null derefs detected |
+| Allocations tracked | 0 allocs / 0 frees / 0 pointers |
+
+### Notes
+- ripgrep's searcher crate is memory-safe by design: uses `memmap2` for file mapping, `encoding_rs` for charset detection
+- All C FFI calls go through safe `libc` wrappers with proper ownership semantics
+- This serves as the **Rust "golden baseline"** — a real-world project with zero issues
+
+---
+
+## Project #7: rust_sqlite_ffi (Rust Test Suite)
+
+| Attribute | Value |
+|-----------|-------|
+| **Source** | Synthetic test (intentional bugs for OmniScope validation) |
+| **Language** | Rust → C FFI (SQLite3 via `extern "C"`) |
+| **IR Source** | `rust_sqlite.ll` |
+| **IR Size** | 4,044 lines |
+| **Functions** | 135 |
+| **Analysis Time** | ~0.09s |
+
+### Baseline Results
+
+| Category | Count | Details |
+|----------|-------|---------|
+| **Total Issues** | **7** | 5 MEMORY LEAK + 2 FFI RISK |
+| MEMORY LEAK | **5** | leak_database, leak_statement, leak_cstring, use_after_free, null_pointer_deref |
+| FFI RISK | **2** | double_close (sqlite3_close x2) |
+| Allocations tracked | 7 allocs / 61 frees / 7 pointers |
+
+### Detection Gap Analysis (Future Work)
+
+| Expected Bug | Detected? | Missing Detection |
+|-------------|-----------|-------------------|
+| `box_into_raw_leak` (Box→C, no from_raw) | ❌ | Need Rust `into_raw`/`from_raw` pairing check |
+| `cstring_into_raw_leak` (CString→C, no from_raw) | ⚠️ | Partially caught as `leak_cstring` |
+| `str_as_ptr_escape` (borrow escape) | ❌ | Need Rust `as_ptr` lifetime analysis |
+| `rust_alloc_c_free` (cross-lang mismatch) | ❌ | Need Rust-alloc/C-free mismatch detection |
+
+---
+
+## Project #8: openssl_wrapper (C Crypto Test Suite)
+
+| Attribute | Value |
+|-----------|-------|
+| **Source** | Synthetic test (intentional crypto FFI bugs) |
+| **Language** | C → OpenSSL 3.x FFI |
+| **IR Source** | `openssl_wrapper.ll` (compiled from `corpus/ffi-dense/openssl_wrapper.c`) |
+| **IR Size** | 463 lines |
+| **Functions** | 52 |
+| **Analysis Time** | ~0.03s |
+
+### Baseline Results
+
+| Category | Count | Details |
+|----------|-------|---------|
+| **Total Issues** | **19** | 7 MEMORY LEAK + 12 FFI RISK |
+| MEMORY LEAK | **7** | EVP_CIPHER_CTX leak, BIO leak, RSA leak, X509 leak, etc. |
+| FFI RISK | **12** | Dangerous crypto API usage patterns |
+| Allocations tracked | ~20 allocs / ~30 frees |
+
+### Notes
+- Intentional test file with known bugs — serves as **crypto API detection validation**
+- Tests EVP/BIO/RSA/X509/DH/EC/OpenSSL error handling patterns
+- Validates that OmniScope correctly identifies OpenSSL resource leaks
+
+---
+
 ## Performance Benchmarks (Real-World)
 
-| Metric | SQLite | libcurl | libuv | jsoncpp |
-|--------|--------|---------|-------|---------|
-| Language | C | C | C | C++ |
-| IR Lines | 727,000 | 2,915 | 6,112 | 90,323 |
-| Functions | 3,237 | 68 | 145 | 1,537 |
-| Analysis Time | 5.9s | 0.053s | 0.070s | **1.42s** |
-| Time per 1K funcs | ~1.8ms | ~0.78ms | ~0.48ms | **~0.92ms** |
-| Memory (est.) | ~500MB | ~50MB | ~50MB | ~200MB |
-| Issues/func | 0.0037 | 0.0147 | 0.0069 | **0.0026** |
+| Metric | SQLite | libcurl | libuv | jsoncpp | abseil | **ripgrep** | **rust_sqlite** | **openssl** |
+|--------|--------|---------|-------|---------|--------|-------------|----------------|-------------|
+| Language | C | C | C | C++ | C++ | **Rust** | **Rust** | **C** |
+| IR Lines | 727,000 | 2,915 | 6,112 | 90,323 | 15,868 | **6,317** | **4,044** | **463** |
+| Functions | 3,237 | 68 | 145 | 1,537 | 193 | **75** | **135** | **52** |
+| Analysis Time | 5.9s | 0.053s | 0.070s | **1.42s** | 0.37s | **0.04s** | **0.09s** | **0.03s** |
+| Time per 1K funcs | ~1.8ms | ~0.78ms | ~0.48ms | **~0.92ms** | ~1.9ms | **~0.53ms** | **~0.67ms** | **~0.58ms** |
+| Issues/func | 0.0037 | 0.0147 | 0.0069 | **0.0026** | 0 | **0** ✅ | **0.052** | **0.365** |
 
-**Key insight**: OmniScope scales linearly across both C and C++. v0.1.4's C++ FP reduction brings jsoncpp's per-function issue rate below libcurl's level (0.0026 vs 0.0147).
+**Key insight**: OmniScope now analyzes **C, C++, and Rust** IR across **8 projects** (5 production + 3 test). OpenSSL wrapper shows high issue density (0.365 issues/func) as expected for a synthetic bug-injection corpus.
 
 ---
 

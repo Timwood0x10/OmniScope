@@ -74,6 +74,13 @@ pub const PassContext = struct {
         return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
     }
 
+    /// Release all resources held by this context
+    pub fn deinit(self: *PassContext) void {
+        self.raii_func_set.deinit();
+        self.meyers_singleton_set.deinit();
+        self.rc_container_func_set.deinit();
+    }
+
     /// Set the IR module
     ///
     /// Parameters:
@@ -280,6 +287,7 @@ test "PassContext - init and deinit" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     try std.testing.expect(!ctx.hasModule());
 }
@@ -299,6 +307,7 @@ test "PassContext - getNextId" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     const id1 = ctx.getNextId();
     const id2 = ctx.getNextId();
@@ -324,6 +333,7 @@ test "PassContext - setModule and hasModule" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     try std.testing.expect(!ctx.hasModule());
 
@@ -348,6 +358,7 @@ test "PassContext - access to components" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     // Verify access to components
     _ = ctx.fact_store;

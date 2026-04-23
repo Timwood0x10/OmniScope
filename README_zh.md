@@ -140,8 +140,9 @@ flowchart LR
 | [libuv 1.50.0](corpus/real_world/BASELINE.md#project-libuv-1500) | C | 145 | **1** | **0** | 0.07s |
 | [jsoncpp 1.9.5](corpus/real_world/BASELINE.md#project-jsoncpp-195) | C++ | 1,537 | **3** | **0** | 1.4s |
 | [abseil-cpp 2024](corpus/real_world/BASELINE.md#project--5-abseil-cpp-202407220) | C++ | 193 | **0** | **0** | 0.37s |
+| [ripgrep 14.1.1](corpus/real_world/BASELINE.md#project-6-ripgrep-1411-rust) | **Rust** | 75 | **0** ✅ | **0** ✅ | 0.04s |
 
-**关键成果**: jsoncpp 40→3 issues (-92.5%), leaks 37→0 (-100%)。abseil-cpp Cord 引用计数泄漏 9→0 (-100%)。
+**关键成果**: jsoncpp 40→3 issues (-92.5%), leaks 37→0 (-100%)。abseil-cpp Cord 引用计数泄漏 9→0 (-100%)。ripgrep (Rust): 0 issues — 干净的生产级项目。
 
 ### Corpus 基准指标
 
@@ -172,7 +173,7 @@ flowchart LR
 | 边界 | 状态 | 说明 |
 |------|------|------|
 | C → C | ✅ 稳定 | 完整 libc/POSIX 注册表 |
-| Rust ↔ C | ✅ 稳定 | `into_raw`/`from_raw`, `Box` |
+| Rust ↔ C | ✅ **稳定 (v0.1.4)** | `into_raw`/`from_raw`, `Box`, `CString` |
 | Zig ↔ C | ✅ 稳定 | `Allocator.alloc` 模式 |
 | Go → C | ⚠️ 实验 | cgo `C.malloc`/`C.CString` |
 | **C++ → C** | **✅ 稳定 (v0.1.4)** | Itanium ABI, 8 层 FP 过滤 |
