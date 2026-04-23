@@ -489,33 +489,36 @@ pub fn detectDoubleFree(
     stats: *OwnershipStats,
     diag: *DiagnosticWriter,
 ) void {
+    _ = flow_graph;
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
+        const ptr_id = free_info.ptr_value_id;
 
-        var free_count: u32 = 1;
-        if (flow_graph.get(free_info.inst_id)) |flow| {
-            var flow_iter = flow.iterator();
-            while (flow_iter.next()) |flow_entry| {
-                const target = flow_entry.key_ptr.*;
-                if (free_map.contains(target)) free_count += 1;
+        var free_count: u32 = 0;
+
+        var inner_iter = free_map.iterator();
+        while (inner_iter.next()) |inner_entry| {
+            const inner_free_info = inner_entry.value_ptr.*;
+            if (inner_free_info.ptr_value_id == ptr_id) {
+                free_count += 1;
             }
         }
 
         if (free_count > 1) {
             stats.double_frees += 1;
-            const msg = std.fmt.allocPrint(ctx.allocator, "Pointer freed {d} times", .{free_count}) catch {
+            const msg = std.fmt.allocPrint(ctx.allocator, "Pointer {d} freed {d} times", .{ ptr_id, free_count }) catch {
                 ctx.addIssue(Issue.init(.double_free, "Pointer freed multiple times", Location.init(free_info.func_name), .high, 0.8)) catch {
                     diag.warn("Failed to register double_free issue", .{});
                 };
-                diag.warn("DOUBLE-FREE [MEDIUM]: Pointer freed multiple times in {s}", .{free_info.func_name});
+                diag.warn("DOUBLE-FREE [MEDIUM]: Pointer {d} freed multiple times in {s}", .{ ptr_id, free_info.func_name });
                 continue;
             };
             ctx.addIssue(Issue.init(.double_free, msg, Location.init(free_info.func_name), .high, 0.8)) catch {
                 diag.warn("Failed to register double_free issue (count)", .{});
             };
             ctx.allocator.free(msg);
-            diag.warn("DOUBLE-FREE [MEDIUM]: Pointer freed {d} times in {s}", .{ free_count, free_info.func_name });
+            diag.warn("DOUBLE-FREE [MEDIUM]: Pointer {d} freed {d} times in {s}", .{ ptr_id, free_count, free_info.func_name });
         }
     }
 }
@@ -530,19 +533,26 @@ pub fn detectUseAfterFree(
 ) void {
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
-        const ptr = entry.key_ptr.*;
         const free_info = entry.value_ptr.*;
+        const ptr_id = free_info.ptr_value_id;
 
-        if (flow_graph.get(ptr)) |flow| {
-            var visited = std.AutoHashMap(u32, void).init(flow_graph.allocator);
-            defer visited.deinit();
-
-            if (hasUseAfterFree(ptr, flow, flow_graph, &visited)) {
-                stats.use_after_frees += 1;
-                ctx.addIssue(Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
-                    diag.warn("Failed to register use_after_free issue", .{});
-                };
-                diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer used after being freed in {s}", .{free_info.func_name});
+        var flow_iter = flow_graph.iterator();
+        while (flow_iter.next()) |flow_entry| {
+            const from_id = flow_entry.key_ptr.*;
+            if (from_id == ptr_id) {
+                const flows = flow_entry.value_ptr;
+                var target_iter = flows.iterator();
+                while (target_iter.next()) |target_entry| {
+                    const to_id = target_entry.key_ptr.*;
+                    if (free_map.contains(to_id)) {
+                        stats.use_after_frees += 1;
+                        ctx.addIssue(Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
+                            diag.warn("Failed to register use_after_free issue", .{});
+                        };
+                        diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer used after being freed in {s}", .{free_info.func_name});
+                        break;
+                    }
+                }
             }
         }
     }

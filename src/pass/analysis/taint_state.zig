@@ -139,17 +139,17 @@ pub const TaintContext = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         var values = std.ArrayList(u32).init(allocator);
-        errdefer values.deinit(allocator);
+        errdefer values.deinit();
 
         var iter = self.value_taint.iterator();
         while (iter.next()) |entry| {
             const info = entry.value_ptr.*;
             if (info.state == .source or info.state == .tainted) {
-                try values.append(allocator, entry.key_ptr.*);
+                try values.append(entry.key_ptr.*);
             }
         }
 
-        return values.toOwnedSlice(allocator);
+        return values.toOwnedSlice();
     }
 
     /// Get count of tainted values

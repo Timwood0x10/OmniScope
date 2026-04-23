@@ -289,8 +289,8 @@ pub const LockPass = struct {
                     if (other_op.inst_id < lock_a_op.inst_id and other_op.is_acquire) {
                         // Check if this lock has been released before lock_a_op
                         var released = false;
-                        for (lock_a_ops) |a_op| {
-                            if (a_op.inst_id > other_op.inst_id and a_op.inst_id < lock_a_op.inst_id and !a_op.is_acquire) {
+                        for (self.lock_ops.items) |a_op| {
+                            if (a_op.inst_id > other_op.inst_id and a_op.inst_id < lock_a_op.inst_id and !a_op.is_acquire and a_op.lock_id == other_op.lock_id) {
                                 released = true;
                                 break;
                             }

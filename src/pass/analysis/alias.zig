@@ -206,25 +206,10 @@ pub const AliasPass = struct {
         // Check if this pointer is in our map
         if (self.ptr_info_map.get(ptr_operand)) |ptr_info| {
             // Found a memory operation on a known pointer
-            // Emit alias facts with other pointers of the same type
-            var iter = self.ptr_info_map.iterator();
-            while (iter.next()) |entry| {
-                const other_ptr_info = entry.value_ptr.*;
-
-                // Skip if it's the same pointer
-                if (entry.key_ptr.* == ptr_operand) continue;
-
-                // Check if same type
-                if (other_ptr_info.type_id == type_id) {
-                    // Same type: may alias
-                    try self.store.insert(.alias_may, ptr_info.inst_id, other_ptr_info.inst_id, self.func_id);
-
-                    // Check if must alias (same base pointer)
-                    if (self.mustAlias(ptr_operand, entry.key_ptr.*)) {
-                        try self.store.insert(.alias_must, ptr_info.inst_id, other_ptr_info.inst_id, self.func_id);
-                    }
-                }
-            }
+            // Just track the operation - alias fact emission is handled by analyzePointerAliasing
+            // to avoid duplicate facts
+            _ = ptr_info;
+            _ = type_id;
         }
     }
 
@@ -289,10 +274,38 @@ pub const AliasPass = struct {
 
     /// Check if two pointers must alias
     fn mustAlias(self: *AliasPass, ptr1: c.LLVMValueRef, ptr2: c.LLVMValueRef) bool {
-        _ = self;
+        if (ptr1 == ptr2) return true;
 
-        // Simplified: must alias if same pointer
-        return ptr1 == ptr2;
+        const ptr1_info = self.ptr_info_map.get(ptr1);
+        const ptr2_info = self.ptr_info_map.get(ptr2);
+        if (ptr1_info == null or ptr2_info == null) return false;
+
+        if (ptr1_info.?.type_id != ptr2_info.?.type_id) return false;
+
+        const ptr1_opcode = c.LLVMGetInstructionOpcode(ptr1);
+        const ptr2_opcode = c.LLVMGetInstructionOpcode(ptr2);
+
+        if (ptr1_opcode == c.LLVMAlloca and ptr2_opcode == c.LLVMAlloca) {
+            return ptr1 == ptr2;
+        }
+
+        if (ptr1_opcode == c.LLVMGetElementPtr and ptr2_opcode == c.LLVMGetElementPtr) {
+            const ptr1_base = c.LLVMGetOperand(ptr1, 0);
+            const ptr2_base = c.LLVMGetOperand(ptr2, 0);
+            if (ptr1_base != null and ptr2_base != null) {
+                return ptr1_base == ptr2_base;
+            }
+        }
+
+        if (ptr1_opcode == c.LLVMBitCast and ptr2_opcode == c.LLVMBitCast) {
+            const ptr1_base = c.LLVMGetOperand(ptr1, 0);
+            const ptr2_base = c.LLVMGetOperand(ptr2, 0);
+            if (ptr1_base != null and ptr2_base != null) {
+                return self.mustAlias(ptr1_base, ptr2_base);
+            }
+        }
+
+        return false;
     }
 
     /// Check if two pointers may alias based on type

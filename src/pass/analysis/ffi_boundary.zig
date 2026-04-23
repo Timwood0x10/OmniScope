@@ -431,9 +431,20 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Check for Zig patterns
+        // Check for Zig patterns (be more specific to avoid false positives)
         for (FFIPatterns.zig_patterns) |pattern| {
             if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                // Check for additional Zig-specific patterns
+                if (std.mem.indexOf(u8, func_name, "zig_") != null or
+                    std.mem.indexOf(u8, func_name, "@") != null)
+                {
+                    return .zig;
+                }
+                // If only matched "extern" or "c_" prefix without Zig indicators,
+                // it's likely a C function with extern declaration
+                if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
+                    continue;
+                }
                 return .zig;
             }
         }

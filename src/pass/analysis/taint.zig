@@ -341,7 +341,9 @@ pub const TaintGraph = struct {
             if (self.taint_sources.get(from)) |from_sources| {
                 if (try self.taint_sources.getOrPut(to)) |*entry| {
                     for (from_sources.items) |src| {
-                        try entry.value_ptr.append(src);
+                        if (!entry.value_ptr.contains(src)) {
+                            try entry.value_ptr.append(src);
+                        }
                     }
                 } else {
                     var sources = std.ArrayList(u32).init(self.allocator);

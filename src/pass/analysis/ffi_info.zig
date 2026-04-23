@@ -51,7 +51,7 @@ pub const FFIBoundaryDetector = struct {
     pub fn init(allocator: Allocator) FFIBoundaryDetector {
         var self_val: FFIBoundaryDetector = .{
             .allocator = allocator,
-            .boundaries = std.ArrayList(FFIBoundaryInfo).initCapacity(allocator, 0) catch unreachable,
+            .boundaries = std.ArrayList(FFIBoundaryInfo).init(allocator),
             .language_patterns = std.StringHashMap(FFIKind).init(allocator),
         };
         self_val.initPatterns();

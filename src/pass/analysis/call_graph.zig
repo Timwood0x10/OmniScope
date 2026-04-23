@@ -109,10 +109,11 @@ pub fn resolveIndirectCall(
         {
             var param_match = true;
             const param_count = c.LLVMCountParams(func);
+            const num_operands = c.LLVMGetNumOperands(call_inst);
             for (0..param_count) |i| {
                 const func_param = c.LLVMGetParam(func, @intCast(i));
-                const call_param = c.LLVMGetParam(called_val, @intCast(i));
-                if (c.LLVMTypeOf(func_param) != c.LLVMTypeOf(call_param)) {
+                const call_arg = c.LLVMGetOperand(call_inst, @as(c_uint, @intCast(num_operands)) - @as(c_uint, @intCast(param_count)) + @as(c_uint, @intCast(i)));
+                if (c.LLVMTypeOf(func_param) != c.LLVMTypeOf(call_arg)) {
                     param_match = false;
                     break;
                 }
@@ -396,9 +397,9 @@ pub const CallGraphPass = struct {
     }
 
     fn classifyRisk(func_name: []const u8) enum { medium, critical } {
-        if (std.mem.eql(u8, func_name, "system") or
-            std.mem.eql(u8, func_name, "exec") or
-            std.mem.eql(u8, func_name, "popen"))
+        if (contains(func_name, "system") or
+            contains(func_name, "exec") or
+            contains(func_name, "popen"))
         {
             return .critical;
         }
@@ -412,7 +413,7 @@ pub const CallGraphPass = struct {
             }
         }
         for (DANGEROUS_FUNCTIONS) |func| {
-            if (contains(func_name, func)) {
+            if (std.mem.eql(u8, func_name, func)) {
                 return true;
             }
         }

@@ -101,7 +101,8 @@ pub const ConstraintGen = struct {
 
     fn handleAlloca(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
         const result_id = try id_map.getOrPutId(@intFromPtr(inst));
-        try self.constraints.append(.{ .lhs = result_id, .rhs = result_id, .kind = .address_of });
+        const alloca_id = try id_map.getOrPutId(@intFromPtr(inst) + 1);
+        try self.constraints.append(.{ .lhs = result_id, .rhs = alloca_id, .kind = .address_of });
     }
 
     fn handleGEP(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
@@ -131,10 +132,24 @@ pub const ConstraintGen = struct {
     }
 
     fn handleCall(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
-        // TODO: Implement call handling for points-to analysis
-        _ = self;
-        _ = inst;
-        _ = id_map;
+        const called_func = c.LLVMGetCalledFunction(inst);
+        if (called_func == null) return;
+
+        const num_args = c.LLVMGetNumOperands(inst);
+        const result_id = try id_map.getOrPutId(@intFromPtr(inst));
+
+        const callee = c.LLVMGetOperand(inst, num_args - 1);
+        if (callee == null) return;
+        const callee_id = try id_map.getOrPutId(@intFromPtr(callee));
+
+        for (0..num_args - 1) |i| {
+            const arg = c.LLVMGetOperand(inst, @intCast(i));
+            if (arg == null) continue;
+            const arg_id = try id_map.getOrPutId(@intFromPtr(arg));
+            try self.constraints.append(.{ .lhs = callee_id, .rhs = arg_id, .kind = .indirect });
+        }
+
+        try self.constraints.append(.{ .lhs = result_id, .rhs = callee_id, .kind = .assign });
     }
 };
 
@@ -232,6 +247,9 @@ pub const PointsToAnalysis = struct {
                     try self.addPointsTo(constraint.lhs, constraint.rhs);
                 },
                 .assign => {
+                    try self.union_find.unite(constraint.lhs, constraint.rhs);
+                },
+                .indirect => {
                     try self.union_find.unite(constraint.lhs, constraint.rhs);
                 },
             }

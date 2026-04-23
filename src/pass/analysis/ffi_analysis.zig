@@ -115,6 +115,7 @@ pub const FFIAnalysisPass = struct {
         cpp,
         zig,
         swift,
+        go,
     };
 
     pub fn init(allocator: Allocator, store: *FactStore) FFIAnalysisPass {
