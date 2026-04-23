@@ -384,7 +384,24 @@ pub const SarifGenerator = struct {
         try output.writer().print("            \"severity\": \"{s}\",\n", .{issue.severity.toString()});
         try output.writer().print("            \"cwe\": \"CWE-{d}\"", .{issue.kind.toCweId()});
         if (issue.reason.len > 0) {
-            try output.writer().print(",\n            \"reason\": \"{s}\"", .{issue.reason});
+            try output.writer().print(",\n            \"reason\": \"", .{});
+            for (issue.reason) |c| {
+                switch (c) {
+                    '"' => try output.writer().writeAll("\\\""),
+                    '\\' => try output.writer().writeAll("\\\\"),
+                    '\n' => try output.writer().writeAll("\\n"),
+                    '\r' => try output.writer().writeAll("\\r"),
+                    '\t' => try output.writer().writeAll("\\t"),
+                    else => {
+                        if (c < 0x20) {
+                            try output.writer().print("\\u{X:0>4}", .{c});
+                        } else {
+                            try output.writer().writeByte(c);
+                        }
+                    },
+                }
+            }
+            try output.appendSlice("\"");
         }
         try output.appendSlice("\n          }");
     }

@@ -85,8 +85,9 @@ pub const DataFlowGraph = struct {
         self.edges.deinit(self.allocator);
         self.ffi_boundaries.deinit(self.allocator);
 
-        for (self.issues.items) |issue| {
+        for (self.issues.items) |*issue| {
             self.allocator.free(issue.message);
+            issue.deinit(self.allocator);
         }
         self.issues.deinit(self.allocator);
 
@@ -164,6 +165,7 @@ pub const DataFlowGraph = struct {
         // Update indices
         if (self.outgoing_edges.get(edge.from)) |outgoing| {
             const new_list = try self.allocator.alloc(u32, outgoing.len + 1);
+            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..outgoing.len], outgoing);
             new_list[@intCast(outgoing.len)] = @intCast(edge_index);
             self.allocator.free(outgoing);
@@ -172,6 +174,7 @@ pub const DataFlowGraph = struct {
 
         if (self.incoming_edges.get(edge.to)) |incoming| {
             const new_list = try self.allocator.alloc(u32, incoming.len + 1);
+            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..incoming.len], incoming);
             new_list[@intCast(incoming.len)] = @intCast(edge_index);
             self.allocator.free(incoming);
@@ -408,7 +411,7 @@ pub const DataFlowGraph = struct {
                     .confidence_level = issue.confidence_level,
                     .ffi_boundary = issue.ffi_boundary,
                     .trace = issue.trace,
-                    .owned = false,
+                    .owned = true,
                 };
                 index += 1;
             }
@@ -494,26 +497,28 @@ pub const DataFlowGraph = struct {
         self.edges.clearRetainingCapacity();
         self.ffi_boundaries.clearRetainingCapacity();
 
-        // Free owned issue messages before clearing
-        for (self.issues.items) |issue| {
+        for (self.issues.items) |*issue| {
             self.allocator.free(issue.message);
+            issue.deinit(self.allocator);
         }
         self.issues.clearRetainingCapacity();
 
         self.tainted_nodes.clearRetainingCapacity();
 
-        // Clear edge indices
         var outgoing_iter = self.outgoing_edges.iterator();
         while (outgoing_iter.next()) |entry| {
             self.allocator.free(entry.value_ptr.*);
         }
-        self.outgoing_edges.clearRetainingCapacity();
+        self.outgoing_edges.clearAndFree();
 
         var incoming_iter = self.incoming_edges.iterator();
         while (incoming_iter.next()) |entry| {
             self.allocator.free(entry.value_ptr.*);
         }
-        self.incoming_edges.clearRetainingCapacity();
+        self.incoming_edges.clearAndFree();
+
+        self.outgoing_edges = std.AutoHashMap(u32, []const u32).init(self.allocator);
+        self.incoming_edges = std.AutoHashMap(u32, []const u32).init(self.allocator);
     }
 };
 

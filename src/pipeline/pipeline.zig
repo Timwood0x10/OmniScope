@@ -27,7 +27,7 @@ pub const Pipeline = struct {
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
         const fact_store = try allocator.create(FactStore);
-        fact_store.* = FactStore.init(allocator);
+        fact_store.* = try FactStore.init(allocator);
 
         const query_engine = try allocator.create(QueryEngine);
         query_engine.* = QueryEngine.init(fact_store);

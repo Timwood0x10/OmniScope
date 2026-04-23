@@ -59,6 +59,15 @@ pub const LIBC_FUNCTIONS = &[_][]const u8{
 pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
     "system",
     "exec",
+    "execve",
+    "execvp",
+    "execv",
+    "execl",
+    "execlp",
+    "execle",
+    "fexecve",
+    "posix_spawn",
+    "posix_spawnp",
     "popen",
     "gets",
     "strcpy",
@@ -105,11 +114,13 @@ pub fn resolveIndirectCall(
         if (@intFromPtr(func_type) == 0) continue;
 
         if (c.LLVMCountParams(func) == c.LLVMCountParamTypes(call_type) and
+            c.LLVMGetTypeKind(call_type) == c.LLVMGetTypeKind(func_type) and
             c.LLVMGetReturnType(call_type) == c.LLVMGetReturnType(func_type))
         {
             var param_match = true;
             const param_count = c.LLVMCountParams(func);
             const num_operands = c.LLVMGetNumOperands(call_inst);
+            if (num_operands < param_count) continue;
             for (0..param_count) |i| {
                 const func_param = c.LLVMGetParam(func, @intCast(i));
                 const call_arg = c.LLVMGetOperand(call_inst, @as(c_uint, @intCast(num_operands)) - @as(c_uint, @intCast(param_count)) + @as(c_uint, @intCast(i)));
@@ -397,9 +408,11 @@ pub const CallGraphPass = struct {
     }
 
     fn classifyRisk(func_name: []const u8) enum { medium, critical } {
-        if (contains(func_name, "system") or
-            contains(func_name, "exec") or
-            contains(func_name, "popen"))
+        if (std.mem.eql(u8, func_name, "system") or
+            std.mem.indexOf(u8, func_name, "_exec") != null or
+            std.mem.eql(u8, func_name, "popen") or
+            std.mem.eql(u8, func_name, "exec") or
+            std.mem.indexOf(u8, func_name, "execl") != null)
         {
             return .critical;
         }
@@ -407,13 +420,13 @@ pub const CallGraphPass = struct {
     }
 
     fn isSink(func_name: []const u8) bool {
-        for (SINK_PATTERNS) |pattern| {
-            if (contains(func_name, pattern)) {
+        for (DANGEROUS_FUNCTIONS) |func| {
+            if (std.mem.eql(u8, func_name, func)) {
                 return true;
             }
         }
-        for (DANGEROUS_FUNCTIONS) |func| {
-            if (std.mem.eql(u8, func_name, func)) {
+        for (SINK_PATTERNS) |pattern| {
+            if (std.mem.eql(u8, func_name, pattern)) {
                 return true;
             }
         }

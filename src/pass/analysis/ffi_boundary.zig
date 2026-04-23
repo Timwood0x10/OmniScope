@@ -470,7 +470,9 @@ pub const FFIBoundaryPass = struct {
 
             var len: usize = 0;
             while (pos < mangled.len and mangled[pos] >= '0' and mangled[pos] <= '9') {
-                len = len * 10 + @as(usize, mangled[pos] - '0');
+                const new_len = std.math.mul(usize, len, 10) catch break;
+                const digit = @as(usize, mangled[pos] - '0');
+                len = std.math.add(usize, new_len, digit) catch break;
                 pos += 1;
             }
 

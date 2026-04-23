@@ -17,12 +17,12 @@ pub const Timer = struct {
         };
     }
 
-    /// Get elapsed time in nanoseconds
     pub fn elapsedNs(self: *const Timer) u64 {
         const end = time.Instant.now() catch unreachable;
         return end.since(self.start_time);
     }
 
+    /// Get elapsed time in microseconds
     /// Get elapsed time in microseconds
     pub fn elapsedUs(self: *const Timer) f64 {
         return @as(f64, @floatFromInt(self.elapsedNs())) / 1000.0;
@@ -97,6 +97,7 @@ pub const Profiler = struct {
             entry.value_ptr.max_ns = @max(entry.value_ptr.max_ns, ns);
         } else {
             const name_copy = try self.allocator.dupe(u8, name);
+            errdefer self.allocator.free(name_copy);
             entry.key_ptr.* = name_copy;
             entry.value_ptr.* = .{
                 .name = name_copy,

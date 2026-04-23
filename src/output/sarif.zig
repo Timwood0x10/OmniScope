@@ -103,8 +103,12 @@ pub const SarifOutput = struct {
         for (rules, 0..) |rule, i| {
             if (i > 0) try buf.writer().writeAll(",");
             try buf.writer().print(
-                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"{s}"}}}}
-            , .{ @tagName(rule), @tagName(rule), rule.toDescription() });
+                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"}}
+            , .{ @tagName(rule), @tagName(rule) });
+            try writeEscapedString(buf.writer(), rule.toDescription());
+            try buf.writer().writeAll(
+                \\"}}}
+            );
         }
 
         try buf.writer().writeAll("]},\"results\":[");

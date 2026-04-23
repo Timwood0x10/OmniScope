@@ -495,7 +495,7 @@ pub const PointerOwnershipPass = struct {
                         const ret_val = c.LLVMGetOperand(inst, 0);
                         if (@intFromPtr(ret_val) != 0) {
                             const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
-                            markAllocSitesReachingValue(alloc_map, reverse_flow, ret_value_id);
+                            markAllocSitesReachingValue(alloc_map, reverse_flow, ret_value_id) catch {};
                         }
                     }
                 }
@@ -509,7 +509,7 @@ pub const PointerOwnershipPass = struct {
                             for (param_value_ids[0..param_count]) |param_id| {
                                 if (ptr_value_id == param_id) {
                                     const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
-                                    markAllocSitesReachingValue(alloc_map, reverse_flow, val_value_id);
+                                    markAllocSitesReachingValue(alloc_map, reverse_flow, val_value_id) catch {};
                                     break;
                                 }
                             }
@@ -526,19 +526,16 @@ pub const PointerOwnershipPass = struct {
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
         reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         target_value_id: u32,
-    ) void {
+    ) !void {
         var visited = std.AutoHashMap(u32, void).init(alloc_map.allocator);
         defer visited.deinit();
 
-        var bfs_queue: [64]u32 = undefined;
-        var queue_head: usize = 0;
-        var queue_tail: usize = 0;
-        bfs_queue[queue_tail] = target_value_id;
-        queue_tail += 1;
+        var bfs_queue = try std.ArrayList(u32).initCapacity(alloc_map.allocator, 32);
+        defer bfs_queue.deinit(alloc_map.allocator);
+        try bfs_queue.append(alloc_map.allocator, target_value_id);
 
-        while (queue_head < queue_tail) {
-            const current = bfs_queue[queue_head];
-            queue_head += 1;
+        while (bfs_queue.items.len > 0) {
+            const current = bfs_queue.orderedRemove(0);
 
             if (visited.contains(current)) continue;
             visited.put(current, {}) catch return;
@@ -551,9 +548,8 @@ pub const PointerOwnershipPass = struct {
                 var pred_iter = preds.iterator();
                 while (pred_iter.next()) |entry| {
                     const pred_id = entry.key_ptr.*;
-                    if (!visited.contains(pred_id) and queue_tail < bfs_queue.len) {
-                        bfs_queue[queue_tail] = pred_id;
-                        queue_tail += 1;
+                    if (!visited.contains(pred_id)) {
+                        try bfs_queue.append(alloc_map.allocator, pred_id);
                     }
                 }
             }

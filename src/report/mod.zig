@@ -96,7 +96,7 @@ pub const ReportGenerator = struct {
     }
 
     pub fn generate(self: *ReportGenerator, report: SecurityReport) ![]const u8 {
-        var output = std.ArrayList(u8).initCapacity(self.allocator, 4096) catch return "";
+        var output = std.ArrayList(u8).initCapacity(self.allocator, 4096) catch return error.OutOfMemory;
         errdefer output.deinit();
 
         try self.writeHeader(&output, report);
@@ -297,7 +297,7 @@ pub const ReportGenerator = struct {
         ) catch "1970-01-01 00:00:00";
 
         // Allocate on heap to return []const u8 (caller must free this)
-        return self.allocator.dupe(u8, formatted) catch "1970-01-01 00:00:00";
+        return self.allocator.dupe(u8, formatted);
     }
 
     fn confidenceLabel(self: *ReportGenerator, confidence: f32) []const u8 {

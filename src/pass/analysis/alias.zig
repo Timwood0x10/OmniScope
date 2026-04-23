@@ -265,8 +265,7 @@ pub const AliasPass = struct {
             return type_id;
         }
 
-        // Use pointer address as type ID (simplified)
-        const type_id = @intFromPtr(type_ref);
+        const type_id: u32 = @truncate(@intFromPtr(type_ref));
         try self.type_cache.put(type_ref, type_id);
 
         return type_id;

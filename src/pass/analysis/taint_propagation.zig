@@ -509,7 +509,7 @@ pub const TaintPropagationPass = struct {
                     if (taint_ctx.getValueTaint(base_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             const num_indices = c.LLVMGetNumIndices(inst);
-                            const depth_factor: f32 = 1.0 - (@as(f32, @floatFromInt(num_indices)) * GEP_DEPTH_CONFIDENCE_FACTOR);
+                            const depth_factor: f32 = @max(0.0, 1.0 - (@as(f32, @floatFromInt(num_indices)) * GEP_DEPTH_CONFIDENCE_FACTOR));
                             const new_confidence = info.confidence * @max(depth_factor, MIN_GEP_DEPTH_CONFIDENCE);
 
                             const new_info = TaintInfo{

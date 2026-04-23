@@ -111,7 +111,7 @@ pub const GuardPropagation = struct {
                 const pred_bb_id = @intFromPtr(pred_bb);
 
                 const value = c.LLVMGetIncomingValue(inst, pred_idx);
-                const value_id = @intFromPtr(value);
+                const value_id: u32 = @truncate(@intFromPtr(value));
 
                 if (self.isPtrNullAtBlock(pred_bb_id, value_id)) {
                     has_null = true;
@@ -121,7 +121,7 @@ pub const GuardPropagation = struct {
                 }
             }
 
-            const result_id = @intFromPtr(inst);
+            const result_id: u32 = @truncate(@intFromPtr(inst));
             if (has_null and has_non_null) {
                 try self.mergeConstraint(bb_id, result_id, .unknown);
             } else if (has_null) {

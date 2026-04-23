@@ -22,7 +22,16 @@ pub const FFIUnsafePass = struct {
     pub const deps = &[_][]const u8{"ffi-boundary"};
 
     const DangerousPatterns = &[_][]const u8{
-        "system", "exec", "popen", "malloc", "free", "strcpy", "gets",
+        "system",      "popen",
+        "exec",        "execve",
+        "execvp",      "execv",
+        "execl",       "execlp",
+        "execle",      "fexecve",
+        "posix_spawn", "posix_spawnp",
+        "malloc",      "free",
+        "realloc",     "calloc",
+        "strcpy",      "strcat",
+        "gets",        "sprintf",
     };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
@@ -76,8 +85,9 @@ pub const FFIUnsafePass = struct {
     }
 
     pub fn isDangerous(func_name: []const u8) bool {
+        const clean = if (func_name.len > 0 and func_name[0] < 32) func_name[1..] else func_name;
         for (DangerousPatterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            if (std.mem.eql(u8, clean, pattern)) {
                 return true;
             }
         }
@@ -90,6 +100,16 @@ pub const FFIUnsafePass = struct {
         {
             return .command_injection;
         }
+        if (std.mem.eql(u8, func_name, "printf") or
+            std.mem.eql(u8, func_name, "fprintf") or
+            std.mem.eql(u8, func_name, "sprintf") or
+            std.mem.eql(u8, func_name, "snprintf") or
+            std.mem.eql(u8, func_name, "vprintf") or
+            std.mem.eql(u8, func_name, "vfprintf") or
+            std.mem.eql(u8, func_name, "syslog"))
+        {
+            return .format_string;
+        }
         if (std.mem.indexOf(u8, func_name, "strcpy") != null or
             std.mem.indexOf(u8, func_name, "gets") != null)
         {
@@ -101,6 +121,7 @@ pub const FFIUnsafePass = struct {
     fn getVulnerabilityDesc(vuln_type: IssueKind) []const u8 {
         return switch (vuln_type) {
             .command_injection => "Command injection vulnerability",
+            .format_string => "Format string vulnerability - user-controlled format string",
             .buffer_overflow => "Buffer overflow vulnerability",
             else => "General FFI safety issue",
         };

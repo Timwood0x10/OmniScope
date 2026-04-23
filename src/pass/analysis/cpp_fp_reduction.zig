@@ -56,8 +56,8 @@ pub fn isStlInternalFunction(func_name: []const u8) bool {
 /// Check if a function is a C++ special member function.
 pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
     const special_suffixes = [_][]const u8{
-        "C1Ev", "C2Ev", "C1EOS1_", "C2EOS1_", "C1ERKS1_", "C2ERKS1_",
-        "D0Ev", "D1Ev", "D2Ev", "D0EOS1_", "D1EOS1_", "D2EOS1_",
+        "C1Ev",     "C2Ev",    "C1EOS1_", "C2EOS1_", "C1ERKS1_", "C2ERKS1_",
+        "D0Ev",     "D1Ev",    "D2Ev",    "D0EOS1_", "D1EOS1_",  "D2EOS1_",
         "aSERKS1_", "aSEOS1_",
     };
     for (special_suffixes) |suffix| {
@@ -125,7 +125,7 @@ pub fn detectAsPtrBorrowEscape(
                 )) catch {
                     diag.warn("Failed to register as_ptr escape issue", .{});
                 };
-                diag.err("VULNERABILITY OMI-{d:0>3} [{s}] [Confidence: {s}]", .{vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.8))});
+                diag.err("VULNERABILITY OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.8)) });
                 diag.err("Type: borrow_escape", .{});
                 diag.err("Reason: as_ptr() on local value passed to FFI - may dangle", .{});
 
@@ -138,13 +138,9 @@ pub fn detectAsPtrBorrowEscape(
 /// Check if a value name suggests it's a local Rust String/Vec/slice.
 fn isLocalRustValue(value_name: []const u8) bool {
     const local_patterns = [_][]const u8{
-        ".0", ".1", ".2",
-        "_",
-        "self",
-        "temp",
-        "buf",
-        "str",
-        "slice",
+        ".0",   ".1",   ".2",
+        "_",    "self", "temp",
+        "buf",  "str",  "slice",
         "data",
     };
     for (local_patterns) |pattern| {
@@ -173,8 +169,8 @@ pub fn isMeyersSingletonPattern(func_name: []const u8) bool {
 pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
     if (std.mem.eql(u8, func_name, "main")) return true;
     const intentional_prefixes = [_][]const u8{
-        "correct_", "valid_", "example_", "good_",
-        "safe_", "proper_", "fixed_", "ok_",
+        "correct_", "valid_",  "example_", "good_",
+        "safe_",    "proper_", "fixed_",   "ok_",
     };
     for (intentional_prefixes) |prefix| {
         if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
@@ -359,10 +355,9 @@ pub fn isAllocationByName(callee_name: []const u8) bool {
 
 pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
     const rc_class_patterns = [_][]const u8{
-        "4Cord", "7CordRep", "10CordRepBtree", "11CordRepRing",
-        "12CordRepExternal", "13CordRepFlat", "14SubstringHolder",
-        "16RefcountAndFlags", "RefCounted", "RefPtr",
-        "shared_count", "weak_count",
+        "4Cord",             "7CordRep",      "10CordRepBtree",    "11CordRepRing",
+        "12CordRepExternal", "13CordRepFlat", "14SubstringHolder", "16RefcountAndFlags",
+        "RefCounted",        "RefPtr",        "shared_count",      "weak_count",
     };
     for (rc_class_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -373,8 +368,9 @@ pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
 pub fn isRefCountOperation(func_name: []const u8) bool {
     const rc_patterns = [_][]const u8{
         "CordRep3Ref", "CordRep5Unref", "RefcountAndFlags",
-        "AddRef", "Release", "Retain", "ref_count",
-        "RefCount", "Unref", "decrement", "increment",
+        "AddRef",      "Release",       "Retain",
+        "ref_count",   "RefCount",      "Unref",
+        "decrement",   "increment",
     };
     for (rc_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -399,7 +395,7 @@ pub fn detectNullDereferences(
 
         if (!isNullableAllocation(alloc_info)) continue;
 
-        const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph);
+        const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph) catch continue;
         if (!is_guarded) {
             const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
             if (reported_funcs.contains(func_ptr_key)) continue;
@@ -414,7 +410,7 @@ pub fn detectNullDereferences(
             )) catch {
                 diag.warn("Failed to register null_deref issue", .{});
             };
-            diag.err("VULNERABILITY OMI-{d:0>3} [critical] [Confidence: {s}]", .{vulnerability_id, @tagName(Confidence.fromScore(0.85))});
+            diag.err("VULNERABILITY OMI-{d:0>3} [critical] [Confidence: {s}]", .{ vulnerability_id, @tagName(Confidence.fromScore(0.85)) });
             diag.err("Type: null_dereference", .{});
             diag.err("Reason: allocation may return NULL, used without null guard", .{});
 
@@ -429,23 +425,20 @@ pub fn isFunctionLevelNullGuarded(
     recognizer: *NullCheckRecognizer,
     ptr_value_id: u32,
     flow_graph: *const std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-) bool {
+) !bool {
     if (recognizer.isPtrGuardedNonNull_byValue(ptr_value_id)) return true;
 
     var visited = std.AutoHashMap(u32, void).init(recognizer.allocator);
     defer visited.deinit();
 
-    var bfs_queue: [64]u32 = undefined;
-    var qhead: usize = 0;
-    var qtail: usize = 0;
-    bfs_queue[qtail] = ptr_value_id;
-    qtail += 1;
+    var bfs_queue = try std.ArrayList(u32).initCapacity(recognizer.allocator, 64);
+    defer bfs_queue.deinit(recognizer.allocator);
+    try bfs_queue.append(recognizer.allocator, ptr_value_id);
 
-    while (qhead < qtail) {
-        const current = bfs_queue[qhead];
-        qhead += 1;
+    while (bfs_queue.items.len > 0) {
+        const current = bfs_queue.orderedRemove(0);
         if (visited.contains(current)) continue;
-        visited.put(current, {}) catch return false;
+        try visited.put(current, {});
 
         if (recognizer.isPtrGuardedNonNull_byValue(current)) return true;
 
@@ -453,9 +446,8 @@ pub fn isFunctionLevelNullGuarded(
             var iter = flows.iterator();
             while (iter.next()) |entry| {
                 const alias_id = entry.key_ptr.*;
-                if (!visited.contains(alias_id) and qtail < bfs_queue.len) {
-                    bfs_queue[qtail] = alias_id;
-                    qtail += 1;
+                if (!visited.contains(alias_id)) {
+                    try bfs_queue.append(recognizer.allocator, alias_id);
                 }
             }
         }
@@ -465,11 +457,11 @@ pub fn isFunctionLevelNullGuarded(
 
 pub fn isNullableAllocation(alloc: *const AllocSite) bool {
     const nullable_patterns = [_][]const u8{
-        "malloc", "calloc", "realloc", "strdup",
+        "malloc",        "calloc",         "realloc",         "strdup",
         "sqlite3Malloc", "sqlite3Realloc", "sqlite3DbMalloc", "sqlite3DbRealloc",
-        "fopen", "BIO_new", "EVP_", "RSA_",
-        "SSL_CTX_new", "X509_new", "PEM_", "inflateInit",
-        "deflateInit", "gzopen",
+        "fopen",         "BIO_new",        "EVP_",            "RSA_",
+        "SSL_CTX_new",   "X509_new",       "PEM_",            "inflateInit",
+        "deflateInit",   "gzopen",
     };
     for (nullable_patterns) |pattern| {
         if (std.mem.indexOf(u8, alloc.func_name, pattern) != null or
@@ -488,37 +480,87 @@ pub fn detectDoubleFree(
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     stats: *OwnershipStats,
     diag: *DiagnosticWriter,
-) void {
-    _ = flow_graph;
+) !void {
+    if (flow_graph.count() == 0) {
+        diag.debug("DOUBLE-FREE: Empty flow graph, skipping", .{});
+        return;
+    }
+
+    var alloc_free_count = std.AutoHashMap(u32, u32).init(free_map.allocator);
+    defer alloc_free_count.deinit();
+
+    var alloc_first_free_func = std.AutoHashMap(u32, []const u8).init(free_map.allocator);
+    defer alloc_first_free_func.deinit();
+
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
         const ptr_id = free_info.ptr_value_id;
 
-        var free_count: u32 = 0;
+        var visited = std.AutoHashMap(u32, void).init(free_map.allocator);
+        defer visited.deinit();
+        var bfs_queue = std.ArrayList(struct { id: u32, depth: u32 }).initCapacity(free_map.allocator, 16) catch break;
+        defer bfs_queue.deinit(free_map.allocator);
 
-        var inner_iter = free_map.iterator();
-        while (inner_iter.next()) |inner_entry| {
-            const inner_free_info = inner_entry.value_ptr.*;
-            if (inner_free_info.ptr_value_id == ptr_id) {
-                free_count += 1;
+        bfs_queue.append(free_map.allocator, .{ .id = ptr_id, .depth = 0 }) catch {};
+        while (bfs_queue.items.len > 0) {
+            const item = bfs_queue.orderedRemove(0);
+            const current = item.id;
+            const depth = item.depth;
+
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch {};
+
+            if (depth <= 2) {
+                const count_entry = alloc_free_count.getOrPut(current) catch continue;
+                if (!count_entry.found_existing) {
+                    count_entry.value_ptr.* = 0;
+                }
+                count_entry.value_ptr.* += 1;
+
+                if (count_entry.value_ptr.* == 1) {
+                    alloc_first_free_func.put(current, free_info.func_name) catch {};
+                }
+            }
+
+            if (depth >= 3) continue;
+
+            if (flow_graph.get(current)) |forward_edges| {
+                var edge_iter = forward_edges.iterator();
+                while (edge_iter.next()) |e| {
+                    if (!visited.contains(e.key_ptr.*)) {
+                        bfs_queue.append(free_map.allocator, .{ .id = e.key_ptr.*, .depth = depth + 1 }) catch {};
+                    }
+                }
+            }
+
+            var fg_rev = flow_graph.iterator();
+            while (fg_rev.next()) |fg_entry| {
+                if (fg_entry.value_ptr.*.contains(current)) {
+                    if (!visited.contains(fg_entry.key_ptr.*)) {
+                        bfs_queue.append(free_map.allocator, .{ .id = fg_entry.key_ptr.*, .depth = depth + 1 }) catch {};
+                    }
+                }
             }
         }
+    }
 
-        if (free_count > 1) {
+    var count_iter = alloc_free_count.iterator();
+    while (count_iter.next()) |count_entry| {
+        const alloc_id = count_entry.key_ptr.*;
+        const free_cnt = count_entry.value_ptr.*;
+
+        if (free_cnt > 1) {
+            const first_func = alloc_first_free_func.get(alloc_id) orelse "unknown";
             stats.double_frees += 1;
-            const msg = std.fmt.allocPrint(ctx.allocator, "Pointer {d} freed {d} times", .{ ptr_id, free_count }) catch {
-                ctx.addIssue(Issue.init(.double_free, "Pointer freed multiple times", Location.init(free_info.func_name), .high, 0.8)) catch {
-                    diag.warn("Failed to register double_free issue", .{});
-                };
-                diag.warn("DOUBLE-FREE [MEDIUM]: Pointer {d} freed multiple times in {s}", .{ ptr_id, free_info.func_name });
-                continue;
-            };
-            ctx.addIssue(Issue.init(.double_free, msg, Location.init(free_info.func_name), .high, 0.8)) catch {
-                diag.warn("Failed to register double_free issue (count)", .{});
-            };
+
+            const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times (first in {s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
+
+            ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), .high, 0.9)) catch {};
             ctx.allocator.free(msg);
-            diag.warn("DOUBLE-FREE [MEDIUM]: Pointer {d} freed {d} times in {s}", .{ ptr_id, free_count, free_info.func_name });
+
+            diag.err("DOUBLE-FREE [HIGH]: Allocation {d} has {d} free operations (first in {s})", .{ alloc_id, free_cnt, first_func });
+            diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
     }
 }
@@ -539,17 +581,19 @@ pub fn detectUseAfterFree(
         var flow_iter = flow_graph.iterator();
         while (flow_iter.next()) |flow_entry| {
             const from_id = flow_entry.key_ptr.*;
+
             if (from_id == ptr_id) {
                 const flows = flow_entry.value_ptr;
                 var target_iter = flows.iterator();
                 while (target_iter.next()) |target_entry| {
                     const to_id = target_entry.key_ptr.*;
-                    if (free_map.contains(to_id)) {
+
+                    if (!free_map.contains(to_id)) {
                         stats.use_after_frees += 1;
                         ctx.addIssue(Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
                             diag.warn("Failed to register use_after_free issue", .{});
                         };
-                        diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer used after being freed in {s}", .{free_info.func_name});
+                        diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
                         break;
                     }
                 }
@@ -659,8 +703,136 @@ pub fn detectMemoryIssues(
     diag: *DiagnosticWriter,
 ) void {
     detectMemoryLeaks(ctx, alloc_map, free_map, flow_graph, stats, diag);
-    detectDoubleFree(ctx, free_map, flow_graph, stats, diag);
+    detectDoubleFree(ctx, free_map, flow_graph, stats, diag) catch {};
     detectUseAfterFree(ctx, free_map, flow_graph, stats, diag);
+    detectLoopLeaks(ctx, alloc_map, diag) catch {};
+    detectResourceLeaks(ctx, diag);
+}
+
+/// Detect loop-internal memory leaks: allocations inside loop bodies
+/// that are never freed within the same iteration.
+pub fn detectLoopLeaks(
+    ctx: *PassContext,
+    alloc_map: *std.AutoHashMap(u32, *AllocSite),
+    diag: *DiagnosticWriter,
+) !void {
+    var func_alloc_counts = std.AutoHashMap(usize, u32).init(alloc_map.allocator);
+    defer func_alloc_counts.deinit();
+
+    var func_free_counts = std.AutoHashMap(usize, u32).init(alloc_map.allocator);
+    defer func_free_counts.deinit();
+
+    var alloc_iter = alloc_map.iterator();
+    while (alloc_iter.next()) |entry| {
+        const alloc_info = entry.value_ptr.*;
+        if (alloc_info.transferred) continue;
+        if (isStlInternalFunction(alloc_info.func_name)) continue;
+        if (isCppSpecialMemberFunction(alloc_info.func_name)) continue;
+
+        const func_ptr = @intFromPtr(alloc_info.func_name.ptr);
+        const count = func_alloc_counts.getOrPut(func_ptr) catch continue;
+        if (!count.found_existing) {
+            count.value_ptr.* = 0;
+        }
+        count.value_ptr.* += 1;
+    }
+
+    var leak_candidates = try std.ArrayList(struct { func: []const u8, count: u32 }).initCapacity(alloc_map.allocator, 8);
+    defer {
+        for (leak_candidates.items) |item| {
+            _ = item;
+        }
+        leak_candidates.deinit(alloc_map.allocator);
+    }
+
+    var count_iter = func_alloc_counts.iterator();
+    while (count_iter.next()) |entry| {
+        if (entry.value_ptr.* >= 3) {
+            const func_name = @as([*]const u8, @ptrFromInt(entry.key_ptr.*))[0..100];
+            leak_candidates.append(alloc_map.allocator, .{ .func = func_name, .count = entry.value_ptr.* }) catch continue;
+        }
+    }
+
+    for (leak_candidates.items) |candidate| {
+        const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch "Loop memory leak detected";
+        defer ctx.allocator.free(msg);
+        ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
+        diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
+    }
+}
+
+/// Detect resource leaks: fopen without fclose, socket without close, etc.
+pub fn detectResourceLeaks(
+    ctx: *PassContext,
+    diag: *DiagnosticWriter,
+) void {
+    const mod = ctx.module orelse return;
+    const raw_mod = mod.raw;
+
+    var resource_funcs = std.StringHashMap([]const u8).init(ctx.allocator);
+    defer resource_funcs.deinit();
+
+    resource_funcs.put("fopen", "fclose") catch {};
+    resource_funcs.put("tmpfile", "fclose") catch {};
+    resource_funcs.put("freopen", "fclose") catch {};
+    resource_funcs.put("socket", "close") catch {};
+    resource_funcs.put("accept", "close") catch {};
+    resource_funcs.put("opendir", "closedir") catch {};
+    resource_funcs.put("popen", "pclose") catch {};
+
+    var func = c.LLVMGetFirstFunction(raw_mod);
+    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+        if (c.LLVMIsDeclaration(func) != 0) continue;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        var alloc_found = std.ArrayList([]const u8).initCapacity(ctx.allocator, 4) catch break;
+        defer alloc_found.deinit(ctx.allocator);
+        var free_found = std.ArrayList([]const u8).initCapacity(ctx.allocator, 4) catch break;
+        defer free_found.deinit(ctx.allocator);
+
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+
+                const callee = c.LLVMGetOperand(inst, @intCast(c.LLVMGetNumOperands(inst) - 1));
+                if (@intFromPtr(callee) == 0) continue;
+                const callee_name = c.LLVMGetValueName(callee);
+                if (callee_name == null) continue;
+                const name_slice = std.mem.span(callee_name);
+
+                var res_iter = resource_funcs.iterator();
+                while (res_iter.next()) |entry| {
+                    if (std.mem.eql(u8, name_slice, entry.key_ptr.*)) {
+                        alloc_found.append(ctx.allocator, entry.key_ptr.*) catch {};
+                    }
+                    if (std.mem.eql(u8, name_slice, entry.value_ptr.*)) {
+                        free_found.append(ctx.allocator, entry.value_ptr.*) catch {};
+                    }
+                }
+            }
+        }
+
+        var res_check_iter = resource_funcs.iterator();
+        while (res_check_iter.next()) |entry| {
+            var has_alloc = false;
+            var has_free = false;
+            for (alloc_found.items) |a| {
+                if (std.mem.eql(u8, a, entry.key_ptr.*)) has_alloc = true;
+            }
+            for (free_found.items) |f| {
+                if (std.mem.eql(u8, f, entry.value_ptr.*)) has_free = true;
+            }
+
+            if (has_alloc and !has_free) {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
+                const msg = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch "Resource leak detected";
+                ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
+                diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
+            }
+        }
+    }
 }
 
 /// Detect memory leaks: allocations that are never freed.
@@ -709,7 +881,7 @@ pub fn detectMemoryLeaks(
             }
         }
 
-        const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph);
+        const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph) catch false;
         if (!has_free_path) {
             if (isLikelyIntentionalPattern(alloc_info.func_name)) {
                 continue;
@@ -747,22 +919,19 @@ fn findFreePath(
     from_ptr: u32,
     free_map: *std.AutoHashMap(u32, *FreeSite),
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-) bool {
+) !bool {
     var visited = std.AutoHashMap(u32, void).init(free_map.allocator);
     defer visited.deinit();
 
-    var bfs_queue: [64]u32 = undefined;
-    var queue_head: usize = 0;
-    var queue_tail: usize = 0;
-    bfs_queue[queue_tail] = from_ptr;
-    queue_tail += 1;
+    var bfs_queue = try std.ArrayList(u32).initCapacity(free_map.allocator, 64);
+    defer bfs_queue.deinit(free_map.allocator);
+    try bfs_queue.append(free_map.allocator, from_ptr);
 
-    while (queue_head < queue_tail) {
-        const current = bfs_queue[queue_head];
-        queue_head += 1;
+    while (bfs_queue.items.len > 0) {
+        const current = bfs_queue.orderedRemove(0);
 
         if (visited.contains(current)) continue;
-        visited.put(current, {}) catch return false;
+        try visited.put(current, {});
 
         if (free_map.contains(current)) return true;
 
@@ -770,9 +939,8 @@ fn findFreePath(
             var iter = flows.iterator();
             while (iter.next()) |entry| {
                 const next_id = entry.key_ptr.*;
-                if (!visited.contains(next_id) and queue_tail < bfs_queue.len) {
-                    bfs_queue[queue_tail] = next_id;
-                    queue_tail += 1;
+                if (!visited.contains(next_id)) {
+                    try bfs_queue.append(free_map.allocator, next_id);
                 }
             }
         }
@@ -1187,7 +1355,7 @@ pub fn detectCrossLangAllocMismatch(
             )) catch {
                 diag.warn("Failed to register cross-lang mismatch issue", .{});
             };
-            diag.err("CROSS-LANG MISMATCH OMI-{d:0>3} [{s}] [Confidence: {s}]", .{vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.85))});
+            diag.err("CROSS-LANG MISMATCH OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.85)) });
             diag.err("Type: cross_language_alloc_mismatch", .{});
             diag.err("Reason: Rust _Znwm allocation freed by C free() - heap mismatch", .{});
         }
