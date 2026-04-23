@@ -170,7 +170,9 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
 
     // Run static analysis through Pipeline
+    const analysis_start = std.time.milliTimestamp();
     const result = try pipeline.runStaticAnalysis();
+    const analysis_time_ms: u64 = @intCast(std.time.milliTimestamp() - analysis_start);
 
     std.log.info("Analysis complete\n", .{});
     std.log.info("Functions processed: {d}\n", .{func_count});
@@ -179,9 +181,9 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     // Print issues detected by Pipeline
     const issues = pipeline.getIssues();
 
-    if (issues.len > 0) {
+    if (issues.len > 0 or config.output_format == .json) {
         if (config.output_format == .json) {
-            const json_output = formatIssuesAsJson(allocator, issues) catch |err| {
+            const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
                 std.log.err("Failed to format JSON output: {}", .{err});
                 return;
             };
@@ -202,7 +204,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.0");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.5");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;
@@ -229,21 +231,75 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     }
 }
 
-fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue) ![]u8 {
+fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, analysis_time_ms: u64) ![]u8 {
     var output = std.array_list.Managed(u8).init(allocator);
     defer output.deinit();
 
-    try output.writer().writeAll("{\"issues\": [\n");
+    const timestamp = std.time.timestamp();
+    const writer = output.writer();
+
+    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.5\",\"timestamp\":");
+    try writer.print("{d}", .{timestamp});
+    try writer.writeAll(",\"summary\":{");
+    try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });
+    try writer.writeAll("},\"issues\":[\n");
+
     for (issues, 0..) |issue, idx| {
-        if (idx > 0) try output.writer().writeAll(",\n");
-        const file_str = issue.location.file orelse "unknown";
-        const line_num = issue.location.line orelse 0;
-        const col_num = issue.location.column orelse 0;
-        try output.writer().print(
-            \\  {{"kind":"{s}","message":"{s}","severity":"{s}","confidence":"{s}","confidence_score":{d:.1},"location":{{"file":"{s}","line":{d},"column":{d}}}}}
-        , .{ @tagName(issue.kind), issue.message, @tagName(issue.severity), issue.confidence_level.toString(), issue.confidence, file_str, line_num, col_num });
+        if (idx > 0) try writer.writeAll(",\n");
+
+        const id_str = try std.fmt.allocPrint(allocator, "OMI-{d:0>3}", .{idx + 1});
+        defer allocator.free(id_str);
+
+        const file_str = issue.location.file orelse null;
+        const line_num = issue.location.line orelse null;
+        const col_num = issue.location.column orelse null;
+        const cwe_id = issue.kind.toCweId();
+
+        try writer.writeAll("  {\"id\":\"");
+        try writer.writeAll(id_str);
+        try writer.writeAll("\",\"kind\":\"");
+        try writer.writeAll(@tagName(issue.kind));
+        try writer.writeAll("\",\"severity\":\"");
+        try writer.writeAll(@tagName(issue.severity));
+        try writer.writeAll("\",\"confidence\":\"");
+        try writer.writeAll(issue.confidence_level.toString());
+        try writer.writeAll("\",\"confidence_score\":");
+        try writer.print("{d:.2}", .{issue.confidence});
+        try writer.writeAll(",\"cwe_id\":");
+        try writer.print("{d}", .{cwe_id});
+
+        if (issue.reason.len > 0) {
+            try writer.writeAll(",\"reason\":\"");
+            try writer.writeAll(issue.reason);
+            try writer.writeAll("\"");
+        }
+
+        try writer.writeAll(",\"message\":\"");
+        try writer.writeAll(issue.message);
+        try writer.writeAll("\",\"location\":{");
+
+        try writer.writeAll("\"function\":\"");
+        try writer.writeAll(issue.location.function);
+        try writer.writeAll("\"");
+
+        if (file_str) |f| {
+            try writer.writeAll(",\"file\":\"");
+            try writer.writeAll(f);
+            try writer.writeAll("\"");
+        }
+        if (line_num) |l| {
+            try writer.writeAll(",\"line\":");
+            try writer.print("{d}", .{l});
+        }
+        if (col_num) |c| {
+            try writer.writeAll(",\"column\":");
+            try writer.print("{d}", .{c});
+        }
+
+        try writer.writeAll("}}");
     }
-    try output.writer().writeAll("\n]}}\n");
+
+    try writer.writeAll("\n]}\n");
 
     return try output.toOwnedSlice();
 }
@@ -456,7 +512,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v1.0.0\n", .{});
+        std.debug.print("OmniScope v0.1.5\n", .{});
         return;
     }
 

@@ -38,6 +38,8 @@ pub const PassContext = struct {
     raii_func_set: std.AutoHashMap(usize, void),
     meyers_singleton_set: std.AutoHashMap(usize, void),
     rc_container_func_set: std.AutoHashMap(usize, void),
+    rust_into_raw_set: std.AutoHashMap(usize, void),
+    rust_from_raw_set: std.AutoHashMap(usize, void),
 
     /// Create a new pass context
     pub fn init(
@@ -58,6 +60,8 @@ pub const PassContext = struct {
             .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
+            .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
         };
     }
 
@@ -79,6 +83,8 @@ pub const PassContext = struct {
         self.raii_func_set.deinit();
         self.meyers_singleton_set.deinit();
         self.rc_container_func_set.deinit();
+        self.rust_into_raw_set.deinit();
+        self.rust_from_raw_set.deinit();
     }
 
     /// Set the IR module

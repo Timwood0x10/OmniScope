@@ -29,7 +29,7 @@ pub const ToolInfo = struct {
 /// Default tool info for OmniScope
 pub const DEFAULT_TOOL_INFO = ToolInfo{
     .name = "OmniScope",
-    .version = "0.1.0",
+    .version = "0.1.5",
     .information_uri = "https://github.com/omniscope/omniscope",
 };
 
@@ -58,10 +58,11 @@ pub const SarifRule = struct {
             .full_description = kind.toDescription(),
             .help_uri_base = "https://cwe.mitre.org/data/definitions/",
             .default_severity = switch (kind) {
-                .command_injection, .buffer_overflow, .use_after_free => "error",
+                .memory_leak, .command_injection, .buffer_overflow, .use_after_free => "error",
                 .double_free, .format_string, .malloc_unchecked, .invalid_free => "error",
                 .ffi_unsafe_call, .unchecked_return, .type_mismatch => "warning",
-                .cross_language_leak => "warning",
+                .cross_language_leak, .null_dereference => "warning",
+                .borrow_escape => "error",
                 .unknown => "note",
             },
             .cwe_id = cwe_id,
@@ -150,6 +151,7 @@ pub const SarifGenerator = struct {
     /// Initialize default rules
     fn initRules(self: *SarifGenerator) !void {
         const kinds = [_]IssueKind{
+            .memory_leak,
             .ffi_unsafe_call,
             .unchecked_return,
             .type_mismatch,
@@ -161,6 +163,8 @@ pub const SarifGenerator = struct {
             .format_string,
             .malloc_unchecked,
             .invalid_free,
+            .null_dereference,
+            .borrow_escape,
         };
 
         for (kinds) |kind| {
@@ -379,6 +383,9 @@ pub const SarifGenerator = struct {
         try output.writer().print("            \"confidenceLevel\": \"{s}\",\n", .{issue.confidence_level.toString()});
         try output.writer().print("            \"severity\": \"{s}\",\n", .{issue.severity.toString()});
         try output.writer().print("            \"cwe\": \"CWE-{d}\"", .{issue.kind.toCweId()});
+        if (issue.reason.len > 0) {
+            try output.writer().print(",\n            \"reason\": \"{s}\"", .{issue.reason});
+        }
         try output.appendSlice("\n          }");
     }
 

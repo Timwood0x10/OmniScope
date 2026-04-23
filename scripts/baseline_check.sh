@@ -170,6 +170,14 @@ run_project "rust-sqlite-ffi (Rust test)" "$CORPUS_DIR/rust_sqlite.ll" \
 run_project "openssl_wrapper (crypto test)" "$CORPUS_DIR/openssl_wrapper.ll" \
     "total:max:25" "leak:min:5" "time:max:1"
 
+# wasmtime_test (Rust+C FFI): total≤50, leak=0(strict), time≤30
+run_project "wasmtime_test (Rust+C FFI)" "$CORPUS_DIR/wasmtime_test.ll" \
+    "total:max:50" "leak:strict:0" "time:max:30"
+
+# wabt_wast2json (C++ WebAssembly Toolkit): total≤10, leak≤5, time≤1
+run_project "wabt_wast2json (C++ WasmToolkit)" "$CORPUS_DIR/wabt_wast2json.ll" \
+    "total:max:10" "leak:max:5" "time:max:1"
+
 # Summary
 echo ""
 echo -e "${BOLD}═════════════════════════════════════════════════════════════════${RESET}"

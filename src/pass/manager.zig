@@ -252,15 +252,14 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
-    var ctx = PassContext{
-        .allocator = std.testing.allocator,
-        .module = null,
-        .fact_store = &fact_store,
-        .query_engine = &query_engine,
-        .data_flow_graph = &data_flow_graph,
-        .next_id = std.atomic.Value(u32).init(1),
-        .vuln_id = std.atomic.Value(u32).init(0),
-    };
+    var ctx = PassContext.init(
+        std.testing.allocator,
+        null,
+        &fact_store,
+        &query_engine,
+        &data_flow_graph,
+    );
+    defer ctx.deinit();
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };
     try manager.run(&ctx, &diag);
 }

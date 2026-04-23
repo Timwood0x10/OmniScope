@@ -351,8 +351,9 @@ pub const CallGraphPass = struct {
                 const risk = classifyRisk(node.name);
                 const vulnerability_id = ctx.getNextVulnId();
 
-                diag.err("VULNERABILITY OMI-{d:0>3}", .{vulnerability_id});
-                diag.err("Severity: {s}", .{@tagName(risk)});
+                diag.err("VULNERABILITY OMI-{d:0>3} [{s}] [Confidence: MEDIUM]", .{ vulnerability_id, @tagName(risk) });
+                diag.err("Type: tainted_path_to_sink", .{});
+                diag.err("Reason: Untrusted data flows to sensitive sink without validation", .{});
 
                 diag.err("Path:", .{});
 

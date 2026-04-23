@@ -2,7 +2,77 @@
 
 All notable changes to OmniScope will be documented in this file.
 
-## \[0.1.4] - 2026-04-22
+## [0.2.0] - 2026-04-23
+
+### Added
+
+#### Rust FFI Auditor (Task 11.3)
+
+- **`src/pass/analysis/rust_ffi_auditor.zig`**: New independent module (464 lines) for dedicated Rust↔C FFI analysis
+- **6 detection rules**: Unpaired into_raw, as_ptr borrow escape, cross-lang alloc mismatch, unsafe FFI calls, extern "C" type mismatch, #[no_mangle] export ownership
+- **Structured output**: `RustFfiFinding` with `generateReport()` for formatted audit reports
+- **7 unit tests**: Covering all detection helpers (isRustIntoRawCall, isRustFromRawCall, isRustAsPtrCall, isCFreeCall, isExternCCall)
+
+#### Stable JSON Schema v1 (Task 11.1)
+
+- **`src/main.zig`**: `formatIssuesAsJson()` upgraded with stable schema:
+  - `schema_version`, `tool_version`, `timestamp`, `summary` (functions/issues/time_ms)
+  - Per-issue: `id` (OMI-NNN), `cwe_id`, `reason`, `confidence_level`
+- **CLI**: `--json` flag outputs machine-parseable JSON
+
+#### SARIF v2.1.0 Upgrade (Task 11.2)
+
+- **`src/output/sarif.zig`** + **`src/report/sarif.zig`**: Both upgraded
+  - Version: 0.1.0 → 0.1.5
+  - +3 rules: `memory_leak`, `null_dereference`, `borrow_escape`
+  - Properties: +`confidenceLevel`, +`reason`
+- **GitHub Code Scanning compatible**: Full rule definitions, level mapping, CWE taxonomy
+
+#### Confidence System (2.0 W1)
+
+- **`src/diag/issue.zig`**: Enhanced with:
+  - `Confidence` enum: HIGH/MEDIUM/HEURISTIC/EXPERIMENTAL
+  - `initWithReason()` constructor for reason field population
+  - All output formats now include `[Confidence: LEVEL]` and `Reason:`
+
+#### Unified Report Format (Task 7.7)
+
+- **4 output points unified** to format: `VULNERABILITY OMI-NNN [SEV] [Confidence: LEVEL]`
+  - `cpp_fp_reduction.zig`: borrow_escape, cross-lang mismatch, null_deref
+  - `ffi_detector.zig`: FFI vulnerability reports
+  - `call_graph.zig`: Tainted path to sink
+
+#### New Baseline Projects (Tasks 9.4b)
+
+- **`wabt_wast2json.ll`**: WebAssembly Binary Toolkit (C++), 125 funcs, 2 issues, 0.07s
+- **`wasmtime_test.ll`**: Wasmtime runtime (Rust+C), 974 funcs, 82K IR, 1 issue, 2.5s
+- **Baseline total**: 10 projects (4 C + 2 C++ + 3 Rust + 1 test), 6,441 functions
+
+### Changed
+
+#### File Splitting (Task 10.1) — Rules Compliance
+
+| Original | Split Into | Lines |
+|----------|-----------|-------|
+| pointer_ownership.zig (1985 lines) | pointer_ownership.zig | 936 |
+| | allocation_classifier.zig | 206 |
+| | cpp_fp_reduction.zig | 937 |
+
+All files now comply with rules.md §49 (≤1000 lines per file).
+
+#### Ownership Transfer Detection (Task 8.2)
+
+- SQLite leak=0 confirmed via return-value + output-param transfer detection
+- Pattern A: `%ptr = ret` → ownership transferred to caller
+- Pattern B: `store ptr, [%arg+N]` → ownership transferred via output param
+
+### Technical Whitepaper
+
+- **`docs/WHITEPAPER.md`**: Comprehensive technical document covering architecture, 8-layer FP system, 10-project validation results, confidence system, and roadmap.
+
+---
+
+## [0.1.4] - 2026-04-22
 
 ### Added
 
