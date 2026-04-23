@@ -154,20 +154,25 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Read CHANGELOG
+      - name: Read Release Notes
         id: changelog
         run: |
-          VERSION=$(cat VERSION)
-          CHANGELOG=$(awk "
-            /^## .*\[.*${VERSION}.*\]/ { found=1; next }
-            found && /^## .*\[/ { exit }
-            found { print }
-          " CHANGELOG.md)
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG=$(cat CHANGELOG.md)
+          if [ -f RELEASE_NOTES.md ]; then
+            cp RELEASE_NOTES.md /tmp/release_body.md
+            echo "Using RELEASE_NOTES.md for release notes"
+          else
+            VERSION=$(cat VERSION)
+            CHANGELOG=$(awk "
+              /^## .*\[.*${VERSION}.*\]/ { found=1; next }
+              found && /^## .*\[/ { exit }
+              found { print }
+            " CHANGELOG.md)
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG=$(cat CHANGELOG.md)
+            fi
+            echo "$CHANGELOG" > /tmp/release_body.md
+            echo "Falling back to CHANGELOG.md"
           fi
-          echo "$CHANGELOG" > /tmp/release_body.md
-          echo "Extracted changelog for v${VERSION}"
 
       - name: Download Linux x86_64 binary
         uses: actions/download-artifact@v4

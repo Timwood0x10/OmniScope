@@ -978,7 +978,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Classify the type of allocation.
     fn classifyAllocation(inst: c.LLVMValueRef, opcode: c_uint) AllocType {
-        if (opcode != c.LLVMCall) return .unknown;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return .unknown;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return .unknown;
@@ -1006,7 +1006,7 @@ pub const PointerOwnershipPass = struct {
 
     /// Identify language from callee function name.
     fn identifyLanguageFromCallee(inst: c.LLVMValueRef, opcode: c_uint) Language {
-        if (opcode != c.LLVMCall) return .unknown;
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return .unknown;
 
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return .unknown;
