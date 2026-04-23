@@ -19,6 +19,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Issue = @import("../../diag/issue.zig").Issue;
+const Severity = @import("../../diag/issue.zig").Severity;
 const Confidence = @import("../../diag/issue.zig").Confidence;
 const Location = @import("../../diag/issue.zig").Location;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
@@ -488,14 +489,20 @@ pub fn detectDoubleFree(
 
     var alloc_free_count = std.AutoHashMap(u32, u32).init(free_map.allocator);
     defer alloc_free_count.deinit();
-
     var alloc_first_free_func = std.AutoHashMap(u32, []const u8).init(free_map.allocator);
     defer alloc_first_free_func.deinit();
 
+    // Collect free operations with RAII filtering
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
         const ptr_id = free_info.ptr_value_id;
+
+        // Skip RAII-managed functions (C++ destructors, smart pointers, etc.)
+        if (isStlInternalFunction(free_info.func_name)) continue;
+        if (isCppSpecialMemberFunction(free_info.func_name)) continue;
+        const func_name_ptr = @intFromPtr(free_info.func_name.ptr);
+        if (ctx.raii_func_set.contains(func_name_ptr)) continue;
 
         var visited = std.AutoHashMap(u32, void).init(free_map.allocator);
         defer visited.deinit();
@@ -554,12 +561,23 @@ pub fn detectDoubleFree(
             const first_func = alloc_first_free_func.get(alloc_id) orelse "unknown";
             stats.double_frees += 1;
 
+            // Threshold logic: differentiate real bugs from cleanup patterns
+            // == 2: Classic double-free bug → HIGH severity
+            // > 2: Cleanup loop pattern → MEDIUM severity (likely FP)
+            const is_classic_bug = (free_cnt == 2);
+            const severity: Severity = if (is_classic_bug) .high else .medium;
+            const confidence: f32 = if (is_classic_bug) 0.9 else 0.6;
+            const level_tag = if (is_classic_bug) "[HIGH]" else "[MEDIUM]";
+
             const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times (first in {s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
 
-            ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), .high, 0.9)) catch {};
+            ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
             ctx.allocator.free(msg);
 
-            diag.err("DOUBLE-FREE [HIGH]: Allocation {d} has {d} free operations (first in {s})", .{ alloc_id, free_cnt, first_func });
+            diag.err("DOUBLE-FREE {s}: Allocation {d} has {d} free operations (first in {s})", .{ level_tag, alloc_id, free_cnt, first_func });
+            if (!is_classic_bug) {
+                diag.warn("  Note: >2 frees suggests cleanup loop pattern (possible FP)", .{});
+            }
             diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
     }
@@ -729,7 +747,9 @@ pub fn detectLoopLeaks(
         if (isStlInternalFunction(alloc_info.func_name)) continue;
         if (isCppSpecialMemberFunction(alloc_info.func_name)) continue;
 
+        // Additional RAII filtering: skip functions in RAII-managed context
         const func_ptr = @intFromPtr(alloc_info.func_name.ptr);
+        if (ctx.raii_func_set.contains(func_ptr)) continue;
         const count = func_alloc_counts.getOrPut(func_ptr) catch continue;
         if (!count.found_existing) {
             count.value_ptr.* = 0;

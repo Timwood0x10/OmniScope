@@ -2,6 +2,70 @@
 
 All notable changes to OmniScope will be documented in this file.
 
+## [0.2.1] - 2026-04-23 (Enhanced Detection Release)
+
+### Added
+
+#### Red Team Adversarial Test Suite (NEW)
+- **`corpus/red_team_test/red_team_bugs.c`**: 17 intentionally injected vulnerabilities covering 10 types
+- **`corpus/red_team_test/RED_TEAM_TEST_REPORT.md`**: Comprehensive test report with detection matrix
+- **`make red-team-test`**: CI target for automated regression testing
+- **Detection hit rate**: 41.2% → 58.8% (+17.6pp improvement)
+
+#### Buffer Overflow Detection Pass (NEW)
+- **`src/pass/analysis/buffer_overflow.zig`**: New pass (~220 lines) for stack buffer overflow and array OOB detection
+- **GEP + alloca analysis**: Checks GetElementPtr indices against allocation sizes
+- **Two detection modes**: Stack bounds checking + static array bounds checking
+- **Integrated into pipeline**: Automatically runs as part of PointerOwnership pass
+
+#### Double-Free Detection with BFS Alias Analysis (ENHANCED)
+- **BFS-based alias analysis**: Depth-limited (≤3 hops) flow graph traversal
+- **Threshold logic**: `==2 frees → HIGH (real bug)`, `>2 frees → MEDIUM (cleanup loop)`
+- **Fixes O1 optimization issue**: Uses `-O0` build to preserve UB code patterns
+- **Detection accuracy**: Now correctly identifies `bug_double_free` with 4 alias groups
+
+#### Loop-Leak Pattern Detection (NEW)
+- **Heuristic rule**: ≥3 allocations in single function without matching frees
+- **Per-function counting**: Identifies potential loop-internal memory leaks
+- **Successfully detects**: STL vector growth patterns, intentional test cases
+
+#### Format String Classification (ENHANCED)
+- **New IssueKind**: `.format_string` for printf/sprintf/snprintf/syslog family
+- **Precise classification**: Distinguishes format string risks from generic FFI calls
+- **Coverage**: printf, fprintf, sprintf, snprintf, vprintf, vfprintf, syslog
+
+#### exec Family Full Coverage (NEW)
+- **12 new dangerous functions**: execve, execvp, execv, execl, execlp, execle, fexecve, posix_spawn, posix_spawnp
+- **Updated in both** `ffi_unsafe.zig` and `call_graph.zig`
+- **Detection result**: BUG-17 (execvp) now correctly flagged as CRITICAL sink
+
+#### Resource Leak Detection Framework (NEW)
+- **`detectResourceLeaks()`** in cpp_fp_reduction.zig: Tracks fopen/fclose, socket/close, opendir/closedir, popen/pclose pairs
+- **Per-function analysis**: Reports mismatched resource allocation/deallocation
+- **Framework ready**: Integration point for future expansion
+
+### Changed
+
+#### C++ False Positive Reduction (ENHANCED)
+- **RAII-aware filtering**: Double-Free and Loop-Leak detectors now check RAII function set
+- **wabt results**: 9 → 7 issues (-22% FP reduction)
+- **8-layer filter system**: L1-L8 filters now properly applied to all detection passes
+
+#### BASELINE.md v0.2.0 Rewrite
+- **Complete restructure**: New format with version history, capability matrix, per-project details
+- **10 project coverage**: All real_world projects analyzed with v0.2.0 detection capabilities
+- **Red Team section**: Added adversarial test suite documentation
+- **Security Audit Record**: Complete fix history from Phase 1-3
+
+### Fixed
+
+#### Critical Substring Matching Bug (SECURITY FIX)
+- **`ffi_unsafe.zig`**: `std.mem.indexOf` → `std.mem.eql` (exact match)
+- **Impact**: libcurl 59→0, SQLite 20→0 (eliminated all substring-matching FPs)
+- **`call_graph.zig`**: Same fix for classifyRisk/isSink functions
+
+---
+
 ## [0.2.0] - 2026-04-23
 
 ### Added

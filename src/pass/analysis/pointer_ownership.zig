@@ -41,6 +41,7 @@ const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullC
 
 const alloc_classifier = @import("allocation_classifier.zig");
 const cpp_fp = @import("cpp_fp_reduction.zig");
+const buffer_overflow = @import("buffer_overflow.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -352,6 +353,10 @@ pub const PointerOwnershipPass = struct {
         detectCrossLangAllocMismatch(ctx, &alloc_map, &free_map, &flow_graph, diag);
         detectMemoryIssues(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag);
         detectNullDereferences(ctx, &alloc_map, &null_check_recognizer, &flow_graph, diag);
+
+        buffer_overflow.BufferOverflowPass.run(ctx, diag) catch |err| {
+            diag.warn("BufferOverflow: Detection failed: {}", .{err});
+        };
 
         if (stats.memory_leaks > 0) {
             diag.info("PointerOwnership: Found {d} memory leaks (formalized as issues)", .{stats.memory_leaks});

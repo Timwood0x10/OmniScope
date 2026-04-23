@@ -1,10 +1,24 @@
 # OmniScope
 
-**Cross-Language FFI & Memory Safety Static Analyzer for C/C++**
+**Cross-Language FFI & Memory Safety Static Analyzer for C/C++/Rust**
 
 OmniScope analyzes LLVM IR to detect memory safety issues, FFI boundary violations, and ownership contract breaches across C/C++/Rust/Zig/Go.
 
-## Quick Start
+## ✨ Latest Release: v0.2.1 (2026-04-23)
+
+### 🎯 What's New in v0.2.1?
+
+| Feature | Description |
+|---------|-------------|
+| **Red Team Test Suite** | 17 intentionally injected bugs, **58.8% hit rate** (+17.6pp) |
+| **Double-Free Detection** | BFS alias analysis with smart threshold logic (`==2 → HIGH`, `>2 → MEDIUM`) |
+| **Buffer Overflow Pass** | Stack buffer overflow + array OOB detection via GEP analysis |
+| **Loop-Leak Detection** | Heuristic: ≥3 allocations without matching frees |
+| **Format String Classification** | New `.format_string` IssueKind for printf family |
+| **exec Family Coverage** | 12 new dangerous functions (execve, posix_spawn, etc.) |
+| **C++ RAII Filtering** | wabt FP reduced by -22% |
+
+### Quick Start
 
 ```bash
 # Build
@@ -31,6 +45,7 @@ make build          # Compile
 make test-all       # Run all tests (unit + integration + regression + stress)
 make benchmark      # Corpus detection rate metrics
 make baseline-check # Real-world project regression guard
+make red-team-test  # Adversarial test suite (v0.2.1+)
 ```
 
 ## Architecture

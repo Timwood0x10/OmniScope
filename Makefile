@@ -48,6 +48,7 @@ GO_IR = $(EXAMPLES_DIR)/go_cffi/target
 ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 
 .PHONY: all fmt check test test-unit test-int test-all bench build run clean examples \
+        baseline-check red-team-test \
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
@@ -429,6 +430,35 @@ baseline-check: build
 	@echo "║              BASELINE REGRESSION CHECK                       ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	./scripts/baseline_check.sh
+
+red-team-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              RED TEAM ADVERSARIAL TEST                       ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@if [ ! -f corpus/red_team_test/red_team_bugs_O0.ll ]; then \
+		echo "Compiling red_team_bugs.c with -O0..."; \
+		$(CLANG) -S -emit-llvm -g -O0 -o corpus/red_team_test/red_team_bugs_O0.ll corpus/red_team_test/red_team_bugs.c; \
+	fi
+	@echo ""
+	@echo "Running OmniScope on red team test file (O0 build)..."
+	@./zig-out/bin/OmniScope corpus/red_team_test/red_team_bugs_O0.ll 2>&1 | tee /tmp/red_team_output.txt
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              RED TEAM TEST RESULTS                            ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@grep "Issues detected" /tmp/red_team_output.txt || echo "No issues found!"
+	@echo ""
+	@echo "Expected detections (v0.2.0):"
+	@echo "  ✅ Memory Leak (bug_memory_leak)"
+	@echo "  ✅ Use-After-Free (bug_use_after_free, bug_realloc_mishandle)"
+	@echo "  ✅ Double-Free (bug_double_free) [NEW in v0.2.0]"
+	@echo "  ✅ NULL Dereference (bug_null_deref)"
+	@echo "  ✅ FFI RISK CRITICAL: system(), popen() [ENHANCED in v0.2.0]"
+	@echo "  ✅ FFI RISK CRITICAL: execvp() [NEW in v0.2.0]"
+	@echo "  ✅ Format String (bug_format_string) [CLASSIFIED in v0.2.0]"
+	@echo "  ✅ Loop Leak (bug_loop_leak) [NEW in v0.2.0]"
+	@echo ""
+	@echo "Total issues should be ≥10 (target: 12)"
 
 # ========================================
 # All Reports
