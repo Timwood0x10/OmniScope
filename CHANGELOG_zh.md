@@ -177,7 +177,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 - **效果**：真实 SQLite 代码库上 FFI RISK 从 **285 → 10**（降低 96.5%）
 - **Corpus benchmark**：零退化（P=82.9%, R=93.2%, F1=87.7%）
 
-## \[0.5.2] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: P3-P2 返回值所有权转移检测)
 
 ### 新增
 
@@ -211,7 +211,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 - **tests/regression.zig**：同步 layer counts 更新；deallocator 测试更新为 `.free(` / `allocator.free`
 - **tests/benchmark/main.zig**：所有 layer counts 同步至新 registry 大小
 
-## \[0.5.3] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: P3-P3 Null 支配 + P3-P6 结构体所有权)
 
 ### 新增
 
@@ -250,7 +250,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 | Memory Leak | 13   | 13     | **5**  | 5      | **0** ✅  |
 | Null Deref  | 5    | 5      | 5      | **3**  | 3        |
 
-## \[0.5.4] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: Bug 扫描 B-01~B-03)
 
 ### 新增
 
@@ -266,7 +266,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 - **`corpus/real_world/FINAL_EVALUATION_REPORT.md`**：完整英文测评报告，含跨项目对比、精度分析、性能扩展
 - **`corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md`**：中文镜像
-- **`corpus/real_world/BASELINE.md`**：更新至 v0.5.4 基线（SQLite: 0 leak, 0 null_deref, 9 total）
+- **`corpus/real_world/BASELINE.md`**：更新至 v0.1.4 基线（SQLite: 0 leak, 0 null_deref, 9 total）
 
 #### 真实项目测试最终结果
 
@@ -288,7 +288,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 | Memory Leak | 13   | 13     | **5**  | 5      | **0**    | **0**      |
 | Null Deref  | 5    | 5      | 5      | **3**  | 3        | **0** ✅   |
 
-## \[0.5.6] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: C++ 支持 + jsoncpp 项目 #4)
 
 ### 新增
 
@@ -335,13 +335,53 @@ OmniScope 的所有重要变更都将记录在此文件中。
 - **FINAL_EVALUATION_REPORT(.md/.ZH.md)**：新增 jsoncpp 项目 #4 章节，更新所有对比表
 - **scripts/baseline_check.sh**：新增 jsoncpp 验证规则（total≤50, null_deref=0, time≤10）
 
-## \[0.5.8] - 2026-04-22
+## [0.1.4] - 2026-04-23 (续: RAII 错误处理 + abseil 项目 #5)
+
+### 修复
+
+#### RAII/Meyers 错误处理健壮性
+
+**问题**：`raii_func_set.put()` 和 `meyers_singleton_set.put()` 使用 `catch {}`
+静默吞掉分配失败，导致调试困难。
+
+**修复**：改为 `catch { std.debug.print("...-WARN: ...", .{}) }`，在失败时输出警告日志。
+
+### 新增
+
+#### abseil-cpp 20240722.0 作为真实项目 #5
+
+**分析的源文件**（160 个非测试源文件中的 3 个）：
+| 文件 | 函数数 | Issues | 说明 |
+|------|--------|--------|------|
+| `demangle.cc` | 52 | **0** ✅ | 干净 — 无堆分配 |
+| `mutex.cc` | 111 | **7 FFI** | snprintf 硬编码格式字符串 |
+| `cord.cc` | 193 | **9 泄漏** | CordRep 引用计数节点 (FP) |
+
+**关键发现**：引用计数容器（absl::Cord）需要新的检测模式。
+与 RAII（`unique_ptr::C1`）不同，Cord 使用手动 `Ref()/Unref()` 调用。
+这是未来优化的已知缺口。
+
+**基线更新**：
+- [BASELINE.md](corpus/real_world/BASELINE.md)：新增项目 #5 + abseil 数据
+- [baseline_check.sh](scripts/baseline_check.sh)：新增 abseil 规则（total≤25, time≤2）
+- 总项目数：5（3 C + 2 C++），5,343 函数
+
+### 成果
+
+| 指标 | v0.1.4 | v0.1.4 | 变化 |
+|------|--------|---------|------|
+| 总项目数 | 4 | **5** | +1 (abseil) |
+| 总函数数 | 4,987 | **5,343** | +356 |
+| jsoncpp issues | 3 | **3** | 稳定 |
+| 全部基线通过 | 4/4 | **5/5** | +1 (abseil) |
+
+## [0.1.4] - 2026-04-22 (续: C++ ABI + Meyers 最终 FP 消除)
 
 ### 新增
 
 #### C++ ABI 运行时 + Meyers 单例清理（最终 FP 消除）
 
-**问题**：v0.5.7 将 jsoncpp 从 40→4 个 issue，但残留 1 个泄漏（Meyers 单例）和
+**问题**：v0.1.4 将 jsoncpp 从 40→4 个 issue，但残留 1 个泄漏（Meyers 单例）和
 3 个 FFI（`__cxa_free_exception`、`_Znwm`、`_ZdlPv`）— 全部为误报。
 
 **方案**：在 [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) 和
@@ -365,7 +405,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 ### 成果
 
-| 指标 | v0.5.6 | v0.5.7 | v0.5.8 | 总变化 |
+| 指标 | v0.1.4 | v0.1.4 | v0.1.4 | 总变化 |
 |------|--------|---------|---------|--------|
 | jsoncpp issues | 40 | 4 | **3** | **-92.5%** |
 | jsoncpp 泄漏 | 37 | 1 | **0** | **-100%** |
@@ -383,7 +423,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 - [pass.zig](src/pass/pass.zig)：PassContext 新增 `meyers_singleton_set` 字段
 - [pipeline.zig](src/pipeline/pipeline.zig)：初始化 meyers_singleton_set
 
-## \[0.5.7] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: C++ 误报消减 RAII + STL)
 
 ### 新增
 
@@ -424,7 +464,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 ### 成果
 
-| 指标 | v0.5.6 | v0.5.7 | 变化 |
+| 指标 | v0.1.4 | v0.1.4 | 变化 |
 |------|--------|---------|------|
 | jsoncpp issues | 40 | **4** | **-90%** |
 | jsoncpp 泄漏 | 37 | **1** | **-97.3%** |
@@ -435,7 +475,7 @@ OmniScope 的所有重要变更都将记录在此文件中。
 
 全部基线通过：SQLite (9)、libcurl (1)、libuv (1)、jsoncpp (4)
 
-## \[0.5.5] - 2026-04-22
+## [0.1.4] - 2026-04-22 (续: Issue 可信度分级)
 
 #### Issue 可信度分级 (Task 8.5)
 

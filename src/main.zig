@@ -70,11 +70,11 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.output_format = .sarif;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             const output_file = args.next() orelse {
-                std.debug.print("Error: --output requires a file path\n", .{});
+                std.log.err("Error: --output requires a file path\n", .{});
                 return error.InvalidOption;
             };
             if (output_file.len == 0) {
-                std.debug.print("Error: --output requires a non-empty file path\n", .{});
+                std.log.err("Error: --output requires a non-empty file path\n", .{});
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);

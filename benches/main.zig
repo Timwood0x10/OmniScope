@@ -16,7 +16,7 @@ const mapper = OmniScope.lifetime;
 // Benchmark helper
 fn benchmark(comptime name: []const u8, comptime func: fn () void, iterations: usize) !void {
     if (builtin.mode != .ReleaseFast) {
-        std.debug.print("WARNING: Run benchmarks with -Doptimize=ReleaseFast\n", .{});
+        std.log.warn("WARNING: Run benchmarks with -Doptimize=ReleaseFast\n", .{});
     }
 
     const start = std.time.nanoTimestamp();

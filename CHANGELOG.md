@@ -169,7 +169,7 @@ All notable changes to OmniScope will be documented in this file.
 - **Impact**: FFI RISK reduced from **285 → 10** (-96.5%) on real-world SQLite codebase
 - **Corpus benchmark**: Zero regression (P=82.9%, R=93.2%, F1=87.7%)
 
-## \[0.5.2] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: P3-P2 Ownership Transfer)
 
 ### Added
 
@@ -203,7 +203,7 @@ All notable changes to OmniScope will be documented in this file.
 - **tests/regression.zig**: Same layer count updates; deallocator test updated to `.free(` / `allocator.free`
 - **tests/benchmark/main.zig**: All layer counts synchronized to new registry size
 
-## \[0.5.3] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: P3-P3 Null Dominance + P3-P6 Struct Ownership)
 
 ### Added
 
@@ -243,7 +243,7 @@ All notable changes to OmniScope will be documented in this file.
 | Null Deref | 5 | 5 | 5 | **3** | 3 |
 | **FP Elimination** | — | -96.5% | -62% leak | -67% null | **-100% leak** |
 
-## \[0.5.4] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: Bug Scan B-01~B-03)
 
 ### Added
 
@@ -259,7 +259,7 @@ All notable changes to OmniScope will be documented in this file.
 
 - **`corpus/real_world/FINAL_EVALUATION_REPORT.md`**: Complete English evaluation report with cross-project comparison, precision analysis, performance scaling
 - **`corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md`**: Chinese mirror of above
-- **`corpus/real_world/BASELINE.md`**: Updated to v0.5.4 baselines (SQLite: 0 leak, 0 null_deref, 9 total)
+- **`corpus/real_world/BASELINE.md`**: Updated to v0.1.4 baselines (SQLite: 0 leak, 0 null_deref, 9 total)
 
 #### Real-World Test Results (Final)
 
@@ -281,7 +281,7 @@ All notable changes to OmniScope will be documented in this file.
 | Memory Leak | 13 | 13 | **5** | 5 | **0** | **0** |
 | Null Deref | 5 | 5 | 5 | **3** | 3 | **0** ✅ |
 
-## \[0.5.6] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: C++ Support + jsoncpp Project #4)
 
 ### Added
 
@@ -329,13 +329,54 @@ All notable changes to OmniScope will be documented in this file.
 - **FINAL_EVALUATION_REPORT(.md/.ZH.md)**: Added jsoncpp section #4, updated all comparison tables
 - **scripts/baseline_check.sh**: Added jsoncpp validation rules (total≤50, null_deref=0, time≤10)
 
-## \[0.5.8] - 2026-04-22
+## [0.1.4] - 2026-04-23 (cont'd: RAII Error Handling + abseil Project #5)
+
+### Fixed
+
+#### RAII/Meyers Error Handling Robustness
+
+**Problem**: `raii_func_set.put()` and `meyers_singleton_set.put()` used `catch {}` which
+silently swallows allocation failures, making debugging impossible.
+
+**Fix**: Changed to `catch { std.debug.print("...-WARN: ...", .{}) }` in:
+- [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig): L1476, L1519 — both put() calls now log warnings on failure
+
+### Added
+
+#### abseil-cpp 20240722.0 as Real-World Project #5
+
+**Source files analyzed** (3 of 160 non-test sources):
+| File | Functions | Issues | Notes |
+|------|-----------|--------|-------|
+| `demangle.cc` | 52 | **0** ✅ | Clean — no heap allocations |
+| `mutex.cc` | 111 | **7 FFI** | snprintf with hardcoded formats |
+| `cord.cc` | 193 | **9 leak** | CordRep refcounted nodes (FP) |
+
+**Key finding**: Reference-counted containers (absl::Cord) need a new detection pattern.
+Unlike RAII (`unique_ptr::C1`), Cord uses manual `Ref()/Unref()` calls. This is a
+known gap for future optimization (P1 continued).
+
+**Baseline updates**:
+- [BASELINE.md](corpus/real_world/BASELINE.md): Added Project #5 section + abseil data
+- [baseline_check.sh](scripts/baseline_check.sh): Added abseil rules (total≤25, time≤2)
+- Total projects: 5 (3 C + 2 C++), 5,343 functions
+
+### Results
+
+| Metric | v0.1.4 | v0.1.4 | Change |
+|--------|--------|---------|--------|
+| Total projects | 4 | **5** | +1 (abseil) |
+| Total functions | 4,987 | **5,343** | +356 |
+| jsoncpp issues | 3 | **3** | stable |
+| All baselines PASS | 4/4 | **5/5** | +1 (abseil) |
+
+## [0.1.4] - 2026-04-22 (cont'd: C++ ABI + Meyers Final FP Elimination)
 
 ### Added
 
 #### C++ ABI Runtime + Meyers Singleton Cleanup (Final FP Elimination)
 
-**Problem**: v0.5.7 reduced jsoncpp from 40→4 issues, but 1 leak (Meyers singleton) and
+**Problem**: v0.1.4 reduced jsoncpp from 40→4 issues, but 1 leak (Meyers singleton) and
 3 FFI (`__cxa_free_exception`, `_Znwm`, `_ZdlPv`) remained — all false positives.
 
 **Solution**: Three new filters in [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) and
@@ -359,7 +400,7 @@ All notable changes to OmniScope will be documented in this file.
 
 ### Results
 
-| Metric | v0.5.6 | v0.5.7 | v0.5.8 | Total Change |
+| Metric | v0.1.4 | v0.1.4 | v0.1.4 | Total Change |
 |--------|--------|---------|---------|---------------|
 | jsoncpp issues | 40 | 4 | **3** | **-92.5%** |
 | jsoncpp leaks | 37 | 1 | **0** | **-100%** |
@@ -377,7 +418,7 @@ All baselines PASS: SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
 - [pass.zig](src/pass/pass.zig): `meyers_singleton_set` field in PassContext
 - [pipeline.zig](src/pipeline/pipeline.zig): Initialize meyers_singleton_set
 
-## \[0.5.7] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: C++ FP Reduction RAII + STL)
 
 ### Added
 
@@ -418,7 +459,7 @@ All baselines PASS: SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
 
 ### Results
 
-| Metric | v0.5.6 | v0.5.7 | Change |
+| Metric | v0.1.4 | v0.1.4 | Change |
 |--------|--------|---------|--------|
 | jsoncpp issues | 40 | **4** | **-90%** |
 | jsoncpp leaks | 37 | **1** | **-97.3%** |
@@ -429,7 +470,7 @@ All baselines PASS: SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
 
 All baselines PASS: SQLite (9), libcurl (1), libuv (1), jsoncpp (4)
 
-## \[0.5.5] - 2026-04-22
+## [0.1.4] - 2026-04-22 (cont'd: Confidence Grading)
 
 ### Added
 

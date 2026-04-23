@@ -138,9 +138,13 @@ run_project "libcurl 8.14.0" "$CORPUS_DIR/curl8.ll" \
 run_project "libuv 1.50.0" "$CORPUS_DIR/libuv150.ll" \
     "total:max:5" "leak:strict:0" "time:max:1"
 
-# jsoncpp rules: total≤50, null_deref=0(strict), time≤10
+# jsoncpp rules: total≤10, leak=0(strict), null_deref=0(strict), time≤5
 run_project "jsoncpp 1.9.5" "$CORPUS_DIR/jsoncpp195.ll" \
-    "total:max:50" "null_deref:strict:0" "time:max:10"
+    "total:max:10" "leak:strict:0" "null_deref:strict:0" "time:max:5"
+
+# abseil-cpp rules: total≤15, null_deref=0(strict), time≤2
+run_project "abseil-cpp 2024" "$CORPUS_DIR/abseil2024.ll" \
+    "total:max:15" "null_deref:strict:0" "time:max:2"
 
 # Summary
 echo ""

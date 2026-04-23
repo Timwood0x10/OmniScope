@@ -311,6 +311,21 @@ pub const PointerOwnershipPass = struct {
             }
         }
 
+        // Sixth pass: detect reference-counted container functions (L8 filter).
+        // Pattern: function body contains Ref/Unref/AddRef/Release/Retain calls
+        // that manage CordRep, RefCounted, shared_ptr, or similar RC nodes.
+        // Allocations in such functions are freed via refcount drop — not leaks.
+        {
+            var func6 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func6) != 0) : (func6 = c.LLVMGetNextFunction(func6)) {
+                if (c.LLVMIsDeclaration(func6) != 0) continue;
+                detectRefCountedContainerFunctions(func6, &ctx.rc_container_func_set);
+            }
+            if (ctx.rc_container_func_set.count() > 0) {
+                diag.info("RC-Container: {d} functions identified as refcount-managed (skipped)", .{ctx.rc_container_func_set.count()});
+            }
+        }
+
         analysis_timer.stop() catch {};
 
         var detect_timer = ScopedTimer.start(&profiler, "detect");
@@ -1238,6 +1253,13 @@ pub const PointerOwnershipPass = struct {
             const meyers_ptr = @intFromPtr(alloc_info.func_name.ptr);
             if (ctx.meyers_singleton_set.contains(meyers_ptr)) continue;
 
+            // Skip allocations inside reference-counted container functions (L8).
+            // These contain Ref/Unref/AddRef/Release calls that manage CordRep,
+            // RefCounted, shared_count, or similar RC nodes. Memory is freed when
+            // the last reference drops — not a leak.
+            const rc_ptr = @intFromPtr(alloc_info.func_name.ptr);
+            if (ctx.rc_container_func_set.contains(rc_ptr)) continue;
+
             const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph);
             if (!has_free_path) {
                 if (isLikelyIntentionalPattern(alloc_info.func_name)) {
@@ -1473,7 +1495,9 @@ pub const PointerOwnershipPass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_raw) != 0) {
                 const func_ptr = @intFromPtr(func_name_raw);
-                raii_func_set.put(func_ptr, {}) catch {};
+                raii_func_set.put(func_ptr, {}) catch {
+                    std.log.warn("RAII-WARN: failed to track RAII function (OOM?)\n", .{});
+                };
             }
         }
     }
@@ -1516,9 +1540,125 @@ pub const PointerOwnershipPass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_raw) != 0) {
                 const func_ptr = @intFromPtr(func_name_raw);
-                meyers_set.put(func_ptr, {}) catch {};
+                meyers_set.put(func_ptr, {}) catch {
+                    std.log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
+                };
             }
         }
+    }
+
+    /// Detect reference-counted container pattern in a function body.
+    /// Scans all call/invoke instructions for Ref/Unref/AddRef/Release/Retain
+    /// patterns that indicate manual reference counting (not RAII smart pointers).
+    /// Examples: absl::CordRep::Ref/Unref, RefCounted::AddRef/Release,
+    /// shared_count increment/decrement, etc.
+    fn detectRefCountedContainerFunctions(
+        func: c.LLVMValueRef,
+        rc_set: *std.AutoHashMap(usize, void),
+    ) void {
+        var has_rc_operation = false;
+        var has_allocation = false;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                    const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+                    if (num_operands == 0) continue;
+                    const callee = c.LLVMGetOperand(inst, num_operands - 1);
+                    if (@intFromPtr(callee) == 0) continue;
+                    const callee_name = c.LLVMGetValueName(callee);
+                    if (@intFromPtr(callee_name) == 0) continue;
+                    const name_slice = std.mem.sliceTo(callee_name, 0);
+
+                    if (isRefCountOperation(name_slice)) {
+                        has_rc_operation = true;
+                    }
+                    if (isAllocationInstruction(inst, opcode) or isAllocationByName(name_slice)) {
+                        has_allocation = true;
+                    }
+                }
+            }
+            if (has_rc_operation) break;
+        }
+
+        if (has_rc_operation) {
+            markAsRcFunction(func, rc_set);
+            return;
+        }
+
+        if (has_allocation) {
+            const func_name_raw = c.LLVMGetValueName(func);
+            if (@intFromPtr(func_name_raw) != 0) {
+                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
+                if (isKnownRcContainerFunction(func_name_slice)) {
+                    markAsRcFunction(func, rc_set);
+                }
+            }
+        }
+    }
+
+    fn markAsRcFunction(func: c.LLVMValueRef, rc_set: *std.AutoHashMap(usize, void)) void {
+        const func_name_raw = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_raw) != 0) {
+            const func_ptr = @intFromPtr(func_name_raw);
+            rc_set.put(func_ptr, {}) catch {
+                std.log.warn("RC-WARN: failed to track RC container function (OOM?)\n", .{});
+            };
+        }
+    }
+
+    fn isAllocationByName(callee_name: []const u8) bool {
+        return std.mem.indexOf(u8, callee_name, "_Znwm") != null or
+            std.mem.indexOf(u8, callee_name, "_Znam") != null;
+    }
+
+    fn isKnownRcContainerFunction(func_name: []const u8) bool {
+        const rc_class_patterns = [_][]const u8{
+            "4Cord",
+            "7CordRep",
+            "10CordRepBtree",
+            "11CordRepRing",
+            "12CordRepExternal",
+            "13CordRepFlat",
+            "14SubstringHolder",
+            "16RefcountAndFlags",
+            "RefCounted",
+            "RefPtr",
+            "shared_count",
+            "weak_count",
+        };
+        for (rc_class_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn isRefCountOperation(func_name: []const u8) bool {
+        const rc_patterns = [_][]const u8{
+            "CordRep3Ref",
+            "CordRep5Unref",
+            "RefcountAndFlags",
+            "AddRef",
+            "Release",
+            "Retain",
+            "ref_count",
+            "RefCount",
+            "Unref",
+            "decrement",
+            "increment",
+        };
+        for (rc_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     fn isLikelyIntentionalPattern(func_name: []const u8) bool {

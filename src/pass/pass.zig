@@ -37,6 +37,7 @@ pub const PassContext = struct {
     vuln_id: std.atomic.Value(u32),
     raii_func_set: std.AutoHashMap(usize, void),
     meyers_singleton_set: std.AutoHashMap(usize, void),
+    rc_container_func_set: std.AutoHashMap(usize, void),
 
     /// Create a new pass context
     pub fn init(
@@ -56,6 +57,7 @@ pub const PassContext = struct {
             .vuln_id = std.atomic.Value(u32).init(0),
             .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
+            .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
         };
     }
 
