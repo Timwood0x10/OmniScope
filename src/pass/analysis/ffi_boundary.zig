@@ -23,6 +23,9 @@ const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 const Severity = @import("../../registry/semantic_registry.zig").Severity;
 
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
+
+// Phase 4: Cross-Language Noise Reduction Engine
+const NoiseReduction = @import("noise_reduction.zig");
 const SourceLocation = @import("../../ir/debug_info.zig").SourceLocation;
 
 /// Error type for FFI boundary detection operations.
@@ -230,6 +233,44 @@ pub const FFIBoundaryPass = struct {
     /// Analyze a single function for FFI boundaries
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
         var result = AnalyzeResult{ .count = 0, .cross_lang = 0, .libc = 0, .external_unknown = 0, .dangerous_count = 0 };
+
+        // Phase 4: Noise Reduction — classify function origin before analysis
+        const func_name_ptr = c.LLVMGetValueName(func);
+        const func_name = if (@intFromPtr(func_name_ptr) != 0)
+            std.mem.span(func_name_ptr)
+        else
+            "unknown";
+
+        // Classify function origin using noise reduction system
+        // Note: Layer 2 (Path-based filter) requires LLVM debug info APIs that may not be available.
+        // Using Layer 1 (Name-based) only for now — covers ~80% of noise reduction cases.
+        const noise_config = NoiseReduction.NoiseReductionConfig{
+            .focus_user_code = true,
+        };
+        const classification = NoiseReduction.classifyFunction(func_name, null, noise_config);
+
+        // Skip compiler-generated functions entirely (Layer 1 + Layer 3)
+        if (classification.origin == .compiler_generated) {
+            diag.debug("NOISE-SKIP [{s}]: {s}", .{
+                classification.origin.toString(), func_name,
+            });
+            return result;
+        }
+
+        // For stdlib functions, only analyze if explicitly requested
+        if (classification.origin == .stdlib and !noise_config.include_stdlib) {
+            diag.debug("STDLIB-SKIP: {s}", .{func_name});
+            return result;
+        }
+
+        // Log user code / third-party for visibility
+        if (classification.origin == .user) {
+            diag.debug("ANALYZE [USER]: {s}", .{func_name});
+        } else {
+            diag.debug("ANALYZE [{s}]: {s}", .{ classification.origin.toString(), func_name });
+        }
+
+        // Continue with normal FFI boundary detection...
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
