@@ -67,7 +67,7 @@ pub const BufferOverflowPass = struct {
 
                         // If pointer comes from GEP, check bounds
                         if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMGetElementPtr) {
-                            if (checkStackBounds(func, ptr_operand, diag)) |vuln| {
+                            if (checkStackBounds(ctx.allocator, func, ptr_operand, diag)) |vuln| {
                                 overflow_count += 1;
                                 try reportIssue(ctx, vuln, diag);
                             }
@@ -76,7 +76,7 @@ pub const BufferOverflowPass = struct {
 
                     // Also check raw GEP instructions for array OOB
                     if (opcode == c.LLVMGetElementPtr) {
-                        if (checkArrayBounds(func, inst, diag)) |vuln| {
+                        if (checkArrayBounds(ctx.allocator, func, inst, diag)) |vuln| {
                             oob_count += 1;
                             try reportIssue(ctx, vuln, diag);
                         }
@@ -99,7 +99,7 @@ pub const BufferOverflowPass = struct {
 
     /// Check if a GEP instruction accessing an alloca result exceeds bounds.
     /// Returns an issue if the last index is a constant exceeding allocation size.
-    fn checkStackBounds(func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+    fn checkStackBounds(allocator: std.mem.Allocator, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
         const base_ptr = c.LLVMGetOperand(gep, 0);
         if (@intFromPtr(base_ptr) == 0) return null;
 
@@ -115,6 +115,15 @@ pub const BufferOverflowPass = struct {
         const dl = c.LLVMGetModuleDataLayout(module);
         const type_size = c.LLVMABISizeOfType(dl, alloc_type);
         if (type_size <= 0) return null;
+
+        // Get element size to calculate max element count
+        const elem_type = c.LLVMGetElementType(alloc_type);
+        if (@intFromPtr(elem_type) == 0) return null;
+        const elem_size = c.LLVMABISizeOfType(dl, elem_type);
+        if (elem_size <= 0) return null;
+
+        // Calculate maximum number of elements that can be accessed
+        const max_elements = type_size / elem_size;
 
         // Get number of GEP operands (indices)
         const num_operands = c.LLVMGetNumOperands(gep);
@@ -139,15 +148,16 @@ pub const BufferOverflowPass = struct {
         // Only flag constant indices that exceed allocation size
         if (!last_index_is_const) return null;
 
-        if (last_index_value >= @as(i64, @intCast(type_size))) {
+        if (last_index_value >= @as(i64, @intCast(max_elements))) {
             const func_name = c.LLVMGetValueName(func);
 
-            diag.warn("STACK-OVERFLOW [HIGH]: GEP index {d} exceeds allocation size {d} in {s}", .{
-                last_index_value,                                  type_size,
+            diag.warn("STACK-OVERFLOW [HIGH]: GEP index {d} exceeds element count {d} in {s}", .{
+                last_index_value,                                  max_elements,
                 if (func_name) |n| std.mem.span(n) else "unknown",
             });
 
-            return Issue.init(.buffer_overflow, std.fmt.allocPrint(std.heap.page_allocator, "Stack buffer overflow: access at offset {d} exceeds allocation of {d} bytes", .{ last_index_value, type_size }) catch "Stack buffer overflow detected", Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.85);
+            const msg = std.fmt.allocPrint(allocator, "Stack buffer overflow: element index {d} exceeds allocation of {d} elements", .{ last_index_value, max_elements }) catch "Stack buffer overflow detected";
+            return Issue.init(.buffer_overflow, msg, Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.85);
         }
 
         return null;
@@ -155,7 +165,7 @@ pub const BufferOverflowPass = struct {
 
     /// Check if a GEP instruction on a global/static array exceeds bounds.
     /// Returns an issue if index exceeds declared array length.
-    fn checkArrayBounds(func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+    fn checkArrayBounds(allocator: std.mem.Allocator, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
         const base_ptr = c.LLVMGetOperand(gep, 0);
         if (@intFromPtr(base_ptr) == 0) return null;
 
@@ -163,14 +173,15 @@ pub const BufferOverflowPass = struct {
         const base_type = c.LLVMTypeOf(base_ptr);
         if (@intFromPtr(base_type) == 0) return null;
 
-        const elem_type = c.LLVMGetElementType(base_type);
-        if (@intFromPtr(elem_type) == 0) return null;
+        // Get the element type (what the pointer points to)
+        const pointed_type = c.LLVMGetElementType(base_type);
+        if (@intFromPtr(pointed_type) == 0) return null;
 
-        // Only check array types (not structs or primitives)
-        const is_array = c.LLVMGetTypeKind(elem_type) == c.LLVMArrayTypeKind;
+        // Check if the pointed-to type is an array
+        const is_array = c.LLVMGetTypeKind(pointed_type) == c.LLVMArrayTypeKind;
         if (!is_array) return null;
 
-        const array_size = c.LLVMGetArrayLength(elem_type);
+        const array_size = c.LLVMGetArrayLength(pointed_type);
         if (array_size <= 0) return null;
 
         // Validate indices similar to stack bounds check
@@ -200,7 +211,8 @@ pub const BufferOverflowPass = struct {
                 last_index_value, array_size,
             });
 
-            return Issue.init(.buffer_overflow, std.fmt.allocPrint(std.heap.page_allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected", Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.8);
+            const msg = std.fmt.allocPrint(allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected";
+            return Issue.init(.buffer_overflow, msg, Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.8);
         }
 
         return null;

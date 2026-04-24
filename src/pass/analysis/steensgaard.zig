@@ -250,7 +250,23 @@ pub const PointsToAnalysis = struct {
                     try self.union_find.unite(constraint.lhs, constraint.rhs);
                 },
                 .indirect => {
-                    try self.union_find.unite(constraint.lhs, constraint.rhs);
+                    // For indirect constraints (*p = q), we need to propagate
+                    // the points-to relationship from q to all targets of p.
+                    // This is a simplified approach; full Steensgaard requires lambda nodes.
+                    const p_targets = self.getPointsTo(constraint.lhs);
+                    const q_targets = self.getPointsTo(constraint.rhs);
+
+                    // Unite all targets of p with all targets of q
+                    for (p_targets) |p_target| {
+                        for (q_targets) |q_target| {
+                            try self.union_find.unite(p_target, q_target);
+                        }
+                    }
+
+                    // Also unite the pointers themselves if they have points-to sets
+                    if (p_targets.len > 0 and q_targets.len > 0) {
+                        try self.union_find.unite(constraint.lhs, constraint.rhs);
+                    }
                 },
             }
         }

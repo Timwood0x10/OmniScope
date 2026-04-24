@@ -29,7 +29,7 @@ const BenchResult = struct {
 
 /// Run standard allocation benchmark
 fn benchStandardAlloc(allocator: Allocator, iterations: usize) !BenchResult {
-    const timer = Timer.start();
+    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
@@ -55,7 +55,7 @@ fn benchMemoryPool(allocator: Allocator, iterations: usize) !BenchResult {
     var pool = try MemoryPool(u64).init(allocator);
     defer pool.deinit();
 
-    const timer = Timer.start();
+    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
@@ -81,7 +81,7 @@ fn benchArenaAlloc(allocator: Allocator, iterations: usize) !BenchResult {
     var ctx = try AnalysisContext.init(allocator);
     defer ctx.deinit();
 
-    const timer = Timer.start();
+    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
@@ -106,7 +106,7 @@ fn benchHashMapStandard(allocator: Allocator, iterations: usize) !BenchResult {
     var map = std.AutoHashMap(u32, u64).init(allocator);
     defer map.deinit();
 
-    const timer = Timer.start();
+    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
@@ -134,7 +134,7 @@ fn benchHashMapArena(allocator: Allocator, iterations: usize) !BenchResult {
     var map = std.AutoHashMap(u32, u64).init(arena_alloc);
     defer map.deinit();
 
-    const timer = Timer.start();
+    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;

@@ -168,8 +168,12 @@ pub const Formatter = struct {
             if (i > 0) try buffer.appendSlice(self.allocator, ",\n");
             try buffer.appendSlice(self.allocator, "    {\n");
             try buffer.writer(self.allocator).print("      \"id\": \"VULN-{d}\",\n", .{vuln.id});
-            try buffer.writer(self.allocator).print("      \"type\": \"{s}\",\n", .{vuln.vuln_type});
-            try buffer.writer(self.allocator).print("      \"severity\": \"{s}\",\n", .{vuln.severity});
+            try buffer.appendSlice(self.allocator, "      \"type\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try buffer.appendSlice(self.allocator, "\",\n");
+            try buffer.appendSlice(self.allocator, "      \"severity\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.severity);
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("      \"cwe_id\": {d},\n", .{vuln.cwe_id});
             try buffer.appendSlice(self.allocator, "      \"description\": \"");
             try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);

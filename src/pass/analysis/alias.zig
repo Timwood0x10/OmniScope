@@ -46,6 +46,8 @@ pub const AliasPass = struct {
     ptr_info_map: std.AutoHashMap(c.LLVMValueRef, PointerInfo),
     // Function ID
     func_id: u32,
+    // Next type ID counter to avoid pointer truncation
+    next_type_id: u32,
 
     /// Create a new alias analysis pass
     pub fn init(allocator: std.mem.Allocator, store: *FactStore) AliasPass {
@@ -57,6 +59,7 @@ pub const AliasPass = struct {
             .type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator),
             .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator),
             .func_id = 0,
+            .next_type_id = 0,
         };
     }
 
@@ -265,7 +268,8 @@ pub const AliasPass = struct {
             return type_id;
         }
 
-        const type_id: u32 = @truncate(@intFromPtr(type_ref));
+        const type_id = self.next_type_id;
+        self.next_type_id += 1;
         try self.type_cache.put(type_ref, type_id);
 
         return type_id;

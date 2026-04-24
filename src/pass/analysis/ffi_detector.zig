@@ -191,6 +191,7 @@ pub const FFIDetector = struct {
             if (!match.isValid()) continue;
 
             const vulnerabilities = try self.analyzeFFIMatch(ctx, match);
+            defer self.allocator.free(vulnerabilities);
             for (vulnerabilities) |vuln| {
                 try self.vulnerabilities.append(vuln);
                 try self.reportVulnerability(&vuln, diag);

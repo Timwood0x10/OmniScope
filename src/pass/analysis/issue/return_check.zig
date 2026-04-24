@@ -78,9 +78,9 @@ pub const ReturnCheckPass = struct {
         if (@intFromPtr(called_name_ptr) == 0) return false;
         const called_name = std.mem.span(called_name_ptr);
 
-        // Remove leading \01_ prefix if present
-        const clean_name = if (called_name.len >= 4 and called_name[0] == '\\' and called_name[1] == '0' and called_name[2] == '1' and called_name[3] == '_')
-            called_name[4..]
+        // Remove leading \x01_ prefix if present (LLVM uses \x01 for private/extern linkage flags)
+        const clean_name = if (called_name.len >= 4 and called_name[0] == '\x01' and called_name[1] == '_')
+            called_name[2..]
         else
             called_name;
 

@@ -779,10 +779,11 @@ pub fn detectLoopLeaks(
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
     diag: *DiagnosticWriter,
 ) !void {
-    var func_alloc_counts = std.AutoHashMap(usize, u32).init(alloc_map.allocator);
+    // Store function name directly instead of pointer to avoid unsafe casts
+    var func_alloc_counts = std.StringHashMap(u32).init(alloc_map.allocator);
     defer func_alloc_counts.deinit();
 
-    var func_free_counts = std.AutoHashMap(usize, u32).init(alloc_map.allocator);
+    var func_free_counts = std.StringHashMap(u32).init(alloc_map.allocator);
     defer func_free_counts.deinit();
 
     var alloc_iter = alloc_map.iterator();
@@ -795,7 +796,7 @@ pub fn detectLoopLeaks(
         // Additional RAII filtering: skip functions in RAII-managed context
         const func_ptr = @intFromPtr(alloc_info.func_name.ptr);
         if (ctx.raii_func_set.contains(func_ptr)) continue;
-        const count = func_alloc_counts.getOrPut(func_ptr) catch continue;
+        const count = func_alloc_counts.getOrPut(alloc_info.func_name) catch continue;
         if (!count.found_existing) {
             count.value_ptr.* = 0;
         }
@@ -814,8 +815,7 @@ pub fn detectLoopLeaks(
     while (count_iter.next()) |entry| {
         // Hard cap: >20 allocations in single function is likely legitimate code
         if (entry.value_ptr.* >= 3 and entry.value_ptr.* <= 20) {
-            const func_name = @as([*]const u8, @ptrFromInt(entry.key_ptr.*))[0..100];
-            leak_candidates.append(alloc_map.allocator, .{ .func = func_name, .count = entry.value_ptr.* }) catch continue;
+            leak_candidates.append(alloc_map.allocator, .{ .func = entry.key_ptr.*, .count = entry.value_ptr.* }) catch continue;
         }
     }
 

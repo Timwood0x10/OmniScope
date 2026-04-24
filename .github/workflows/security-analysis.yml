@@ -56,7 +56,7 @@ jobs:
             find examples -name "*.bc" -o -name "*.ll" > /tmp/ir_files.txt || true
             
             if [ -s /tmp/ir_files.txt ]; then
-              ./zig-out/bin/omniscope \
+              ./zig-out/bin/OmniScope \
                 --output-format sarif \
                 --output-file analysis-output/results.sarif \
                 $(cat /tmp/ir_files.txt) || echo "Analysis completed with warnings"

@@ -66,7 +66,7 @@ pub const AnalysisContext = struct {
     }
 
     /// Start profiling an operation
-    pub fn startProfile(self: *AnalysisContext, name: []const u8) ?@import("../perf/profiler.zig").ScopedTimer {
+    pub fn startProfile(self: *AnalysisContext, name: []const u8) !?@import("../perf/profiler.zig").ScopedTimer {
         if (!self.profiling_enabled) return null;
         return @import("../perf/profiler.zig").ScopedTimer.start(&self.profiler, name);
     }
@@ -175,7 +175,7 @@ test "AnalysisContext - profiling" {
     defer ctx.deinit();
 
     {
-        var timer = ctx.startProfile("test_op").?;
+        var timer = (try ctx.startProfile("test_op")).?;
         std.time.sleep(100_000);
         try timer.stop();
     }

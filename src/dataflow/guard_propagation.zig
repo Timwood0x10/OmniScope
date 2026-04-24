@@ -27,6 +27,7 @@ pub const GuardPropagation = struct {
     constraint_maps: std.AutoHashMap(usize, std.ArrayList(PtrConstraint)),
     bb_null_ptrs: std.AutoHashMap(usize, std.AutoHashMap(u32, void)),
     bb_non_null_ptrs: std.AutoHashMap(usize, std.AutoHashMap(u32, void)),
+    value_id_map: ValueIdMap,
 
     pub fn init(allocator: Allocator) GuardPropagation {
         return .{
@@ -34,6 +35,7 @@ pub const GuardPropagation = struct {
             .constraint_maps = std.AutoHashMap(usize, std.ArrayList(PtrConstraint)).init(allocator),
             .bb_null_ptrs = std.AutoHashMap(usize, std.AutoHashMap(u32, void)).init(allocator),
             .bb_non_null_ptrs = std.AutoHashMap(usize, std.AutoHashMap(u32, void)).init(allocator),
+            .value_id_map = ValueIdMap.init(allocator),
         };
     }
 
@@ -55,6 +57,8 @@ pub const GuardPropagation = struct {
             entry.value_ptr.*.deinit();
         }
         self.bb_non_null_ptrs.deinit();
+
+        self.value_id_map.deinit();
     }
 
     pub fn propagate(self: *GuardPropagation, func: c.LLVMValueRef, recognizer: *NullCheckRecognizer) !void {
@@ -111,7 +115,8 @@ pub const GuardPropagation = struct {
                 const pred_bb_id = @intFromPtr(pred_bb);
 
                 const value = c.LLVMGetIncomingValue(inst, pred_idx);
-                const value_id: u32 = @truncate(@intFromPtr(value));
+                const value_ptr = @intFromPtr(value);
+                const value_id = if (value_ptr == 0) continue else self.value_id_map.getOrPutId(value_ptr) catch continue;
 
                 if (self.isPtrNullAtBlock(pred_bb_id, value_id)) {
                     has_null = true;
@@ -121,7 +126,8 @@ pub const GuardPropagation = struct {
                 }
             }
 
-            const result_id: u32 = @truncate(@intFromPtr(inst));
+            const inst_ptr = @intFromPtr(inst);
+            const result_id = if (inst_ptr == 0) continue else self.value_id_map.getOrPutId(inst_ptr) catch continue;
             if (has_null and has_non_null) {
                 try self.mergeConstraint(bb_id, result_id, .unknown);
             } else if (has_null) {

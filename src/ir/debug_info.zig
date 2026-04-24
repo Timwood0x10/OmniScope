@@ -244,7 +244,10 @@ pub const DILocation = struct {
             return &[_]InlineFrame{};
 
         var loc = self;
-        while (true) {
+        var depth: usize = 0;
+        const max_depth: usize = 256;
+
+        while (depth < max_depth) : (depth += 1) {
             const scope = loc.getScope();
             const file = scope.getFile();
 

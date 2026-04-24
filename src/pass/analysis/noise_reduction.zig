@@ -378,20 +378,15 @@ fn indexOfPath(haystack: []const u8, needle: []const u8) bool {
     if (std.mem.indexOf(u8, haystack, needle) != null) return true;
 
     // Case-insensitive fallback for Windows paths
-    // Only perform if haystack contains uppercase or lowercase letters
+    // Compare char by char, converting both to lowercase
     var i: usize = 0;
     const max_start = haystack.len - needle.len;
     while (i <= max_start) : (i += 1) {
         var match = true;
         for (needle, 0..) |needle_char, j| {
             const h_char = haystack[i + j];
-            if (h_char == needle_char) continue;
-
-            // Case-insensitive compare (ASCII only)
-            // Convert both to lowercase for comparison
-            const h_lower = if (h_char >= 'A' and h_char <= 'Z') h_char + 32 else h_char;
-            const n_lower = if (needle_char >= 'A' and needle_char <= 'Z') needle_char + 32 else needle_char;
-
+            const h_lower = std.ascii.toLower(h_char);
+            const n_lower = std.ascii.toLower(needle_char);
             if (h_lower != n_lower) {
                 match = false;
                 break;
@@ -535,19 +530,19 @@ const CategoryEntry = struct {
 /// Tracks issues by origin (user/stdlib/compiler/third-party) and kind (UAF/leak/etc.).
 /// Produces output in format: "191 issues → 21 user code (8 FFI HIGH)"
 pub const AttributionSummary = struct {
-    total_issues: u32 = 0,
-    user_code: u32 = 0,
-    stdlib_suppressed: u32 = 0,
-    compiler_ignored: u32 = 0,
-    third_party: u32 = 0,
+    total_issues: usize = 0,
+    user_code: usize = 0,
+    stdlib_suppressed: usize = 0,
+    compiler_ignored: usize = 0,
+    third_party: usize = 0,
 
     /// Category breakdown for detailed reporting
     categories: [max_categories]CategoryEntry = [_]CategoryEntry{.{ .kind = "", .count = 0, .origin = .unknown }} ** max_categories,
     category_count: usize = 0,
 
     /// Track high-severity FFI issues separately for summary line
-    ffi_high_count: u32 = 0,
-    ffi_medium_count: u32 = 0,
+    ffi_high_count: usize = 0,
+    ffi_medium_count: usize = 0,
 
     /// Add an issue to the summary, classified by origin and kind.
     pub fn addIssue(self: *AttributionSummary, origin: FunctionOrigin, kind: []const u8) void {

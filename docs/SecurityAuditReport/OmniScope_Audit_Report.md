@@ -1,6 +1,6 @@
-# OmniScope Security Audit Report
+# OmniScope Security Audit Report (Round 2)
 
-> **Audit Date**: 2026-04-23 · **Scope**: All Zig source files in `src/` + CI/CD workflows + Build system · **Version**: 0.1.5 · **Method**: Manual code audit
+> **Audit Date**: 2026-04-24 · **Scope**: All 79 Zig source files in `src/` + CI/CD workflows + Build system · **Version**: 0.1.5 · **Method**: Manual code audit with regression verification
 
 ---
 
@@ -12,517 +12,524 @@
 | **Description** | LLVM IR-based cross-language FFI static security analysis framework |
 | **Primary Language** | Zig (0.15.2+) |
 | **External Dependency** | LLVM 21/22 (LLVM-C API) |
-| **Files Audited** | 73+ Zig source files + 3 CI/CD workflows + build.zig |
-| **Issues Found** | 52 (1 Critical / 18 High / 21 Medium / 12 Low) |
-| **Overall Score** | 6.5 / 10 |
+| **Files Audited** | 79 Zig source files + 3 CI/CD workflows + build.zig |
+| **Issues Found** | 38 new (1 Critical / 8 High / 19 Medium / 10 Low) + 11 unfixed from Round 1 |
+| **Overall Score** | 7.5 / 10 (up from 6.5) |
 
 ---
 
-## 2. Issue Summary
+## 2. Comparison with Round 1
+
+### Fix Status Overview
+
+| Status | Count | Percentage |
+|--------|-------|------------|
+| ✅ Fixed | 24 | 46% |
+| ⚠️ Partially Fixed | 4 | 8% |
+| ❌ Unfixed | 10 | 19% |
+| 🆕 New | 38 | — |
+
+### Key Issues Fixed
+
+| Bug ID | Description | File |
+|--------|-------------|------|
+| BUG-001 | Type error disabling three detectors | `ffi_detector.zig` |
+| BUG-002 | memory_pool dangling pointer | `memory_pool.zig` |
+| BUG-003 | memory_pool double-free | `memory_pool.zig` |
+| BUG-004 | ArenaAllocator integer overflow | `memory_pool.zig` |
+| BUG-005 | BFS queue fixed size | `pointer_ownership.zig` |
+| BUG-007 | Indirect call integer underflow | `call_graph.zig` |
+| BUG-008 | Pointer equality type comparison | `call_graph.zig` |
+| BUG-009 | getIssuesBySeverity ownership | `graph.zig` |
+| BUG-010 | clear() dangling pointers | `graph.zig` |
+| BUG-011 | TOCTOU race condition | `taint_state.zig` |
+| BUG-012 | demangleRustName input validation | `ffi_boundary.zig` |
+| BUG-015 | SARIF rule description unescaped | `output/sarif.zig` |
+| BUG-017 | reason field unescaped | `report/sarif.zig` |
+| BUG-020 | catch unreachable | `fact/store.zig` |
+| BUG-021 | count()/get() not holding lock | `fact/store.zig` |
+| BUG-022 | Empty stubs (partial) | `pointer_ownership.zig` |
+| BUG-024 | GEP depth factor truncation | `taint_propagation.zig` |
+| BUG-025 | Ownership API | `taint_state.zig` |
+| BUG-026 | profiler OOM key pointer | `profiler.zig` |
+| BUG-028 | addEdge() memory leak | `graph.zig` |
+| BUG-029 | deinit() trace cleanup | `graph.zig` |
+| BUG-031 | identifyLanguage misclassification | `ffi_boundary.zig` |
+| BUG-032 | Null check constraint inversion | `guard_propagation.zig` |
+| BUG-034 | Indirect constraint handling | `steensgaard.zig` |
+| BUG-035 | Virtual object ID collision | `steensgaard.zig` |
+| BUG-038 | UAF detection logic error | `cpp_fp_reduction.zig` |
+| BUG-040 | generate() swallowed OOM | `report/mod.zig` |
+
+### Unfixed Issues
+
+| Bug ID | Description | File | Severity |
+|--------|-------------|------|----------|
+| BUG-006 | getTypeId pointer truncation | `alias.zig` | High→Medium |
+| BUG-016 | formatter.zig partial fields unescaped | `output/formatter.zig` | Medium |
+| BUG-018 | Release no binary signing | `release.yml` | High |
+| BUG-019 | Security analysis workflow broken | `security-analysis.yml` | High |
+| BUG-027 | profiler catch unreachable | `profiler.zig` | Low |
+| BUG-030 | Cartesian product false positives | `ffi_analysis.zig` | Medium |
+| BUG-033 | guard_propagation pointer truncation | `guard_propagation.zig` | High |
+| BUG-039 | formatTimestamp OOM | `report/mod.zig` | Medium |
+| BUG-051 | resize shrink stats | `tracking/allocator.zig` | Low |
+| BUG-052 | FileMap.add leak | `output/lsp.zig` | Medium |
+
+---
+
+## 3. New Issues
+
+### 3.1 Critical — 1
+
+#### BUG-NEW-001 [Critical] ffi_body_check.zig — LLVMGetNamedFunction receives non-null-terminated string
+
+- **File**: `src/pass/analysis/issue/ffi_body_check.zig` line 515
+- **Category**: Memory Safety / Out-of-Bounds Read
+
+**Description**: `c.LLVMGetNamedFunction(module, boundary.function_name.ptr)` passes a Zig `[]const u8` slice's `.ptr` to the LLVM C API, which expects a null-terminated C string. Zig slices are typically not null-terminated, causing LLVM to read out-of-bounds memory until it finds a `\0`.
+
+**Impact**: Out-of-bounds memory read, potentially causing crashes or reading garbage data.
+
+**Fix**: Ensure a null-terminated string is passed, or use a temporary buffer.
+
+---
+
+### 3.2 High — 7
+
+#### BUG-NEW-002 [High] cpp_fp_reduction.zig — detectLoopLeaks arbitrary pointer dereference
+
+- **File**: `src/pass/analysis/cpp_fp_reduction.zig` line 817
+- **Category**: Memory Safety / Segfault
+
+**Description**: `const func_name = @as([*]const u8, @ptrFromInt(entry.key_ptr.*))[0..100]` casts an arbitrary `usize` value to a pointer and reads 100 bytes. If the pointer is invalid, this causes a segmentation fault.
+
+**Fix**: Use `alloc_info.func_name` directly to obtain the function name.
+
+---
+
+#### BUG-NEW-003 [High] guard_propagation.zig — Value pointer truncated to u32 (still unfixed)
+
+- **File**: `src/dataflow/guard_propagation.zig` lines 114, 124
+- **Category**: Type Safety / Pointer Truncation
+
+**Description**: `@truncate(@intFromPtr(value))` truncates 64-bit LLVM pointers to u32. Different LLVM values may map to the same ID, causing null check protections to be incorrectly applied.
+
+**Fix**: Use `ValueIdMap.getOrPutId()` instead of `@truncate`.
+
+---
+
+#### BUG-NEW-004 [High] lock.zig — detectDeadlocks O(N³) complexity
+
+- **File**: `src/pass/analysis/lock.zig` lines 288-302
+- **Category**: Performance / DoS
+
+**Description**: Triple-nested loop for deadlock detection with O(N³) complexity. In modules with many lock operations, this may cause analysis timeouts.
+
+**Fix**: Use interval trees or sorted + binary search optimization.
+
+---
+
+#### BUG-NEW-005 [High] debug_info.zig — buildInlineStack no depth limit (still unfixed)
+
+- **File**: `src/ir/debug_info.zig` lines 242-277
+- **Category**: DoS
+
+**Description**: `while (true)` loop following `getInlinedAt()` chain with no depth limit. Malicious IR with circular references causes infinite loops.
+
+**Fix**: Add maximum depth limit (e.g., 256).
+
+---
+
+#### BUG-NEW-006 [High] CI/CD — curl | bash supply chain risk (still unfixed)
+
+- **File**: `.github/workflows/ci.yml` lines 29-35, etc.
+- **Category**: CI/CD Security
+
+**Description**: `curl -sSL https://www.zvm.app/install.sh | bash` repeated across all CI jobs without checksum or signature verification.
+
+**Fix**: Use `mlugg/setup-zig@v2` action or pin version with checksum verification.
+
+---
+
+#### BUG-NEW-007 [High] CI/CD — Release no binary signing (still unfixed)
+
+- **File**: `.github/workflows/release.yml` lines 189-201
+- **Category**: CI/CD Security
+
+**Description**: Compiled binaries uploaded directly without SHA256 checksums, GPG/cosign signatures, or SBOM.
+
+**Fix**: Add SHA256 checksum generation and cosign signing steps.
+
+---
+
+#### BUG-NEW-008 [High] CI/CD — Security analysis workflow binary name case mismatch
+
+- **File**: `.github/workflows/security-analysis.yml` line 59
+- **Category**: CI/CD Functionality
+
+**Description**: Workflow uses `./zig-out/bin/omniscope` (all lowercase), but build.zig names the binary `OmniScope` (CamelCase). On Linux (case-sensitive), the security analysis step always fails, silently masked by `|| echo`.
+
+**Fix**: Correct binary path to `./zig-out/bin/OmniScope`.
+
+---
+
+### 3.3 Medium — 19
+
+| ID | File | Lines | Description |
+|----|------|-------|-------------|
+| BUG-NEW-009 | `buffer_overflow.zig` | 150, 203 | page_allocator allocation never freed (memory leak) |
+| BUG-NEW-010 | `buffer_overflow.zig` | 142 | GEP index vs byte size comparison semantic error, massive false negatives |
+| BUG-NEW-011 | `buffer_overflow.zig` | 163-170 | Array type check logic error, most detections don't trigger |
+| BUG-NEW-012 | `flow_path.zig` | 170-198 | VulnerabilityReportBuilder.build causes FlowPath double ownership |
+| BUG-NEW-013 | `ffi_body_check.zig` | 160-224 | isMallocUnchecked only checks same basic block, massive false positives |
+| BUG-NEW-014 | `ffi_body_check.zig` | 209 | Treats any constant as null, misses comparisons with non-zero constants |
+| BUG-NEW-015 | `integer_overflow.zig` | 129-131 | Any subtraction flagged as unsafe, extremely high false positive rate |
+| BUG-NEW-016 | `integer_overflow.zig` | 143 | Final `return true` causes all arithmetic to be reported |
+| BUG-NEW-017 | `memory_safety.zig` | 81 | Only pointer value comparison for double-free detection, misses indirect pointers |
+| BUG-NEW-018 | `return_check.zig` | 82 | `\01_` prefix detection uses backslash instead of byte value 1 |
+| BUG-NEW-019 | `vulnerability_rules.zig` | 166-168 | Integer Overflow rule substring matching too broad |
+| BUG-NEW-020 | `ffi_analysis.zig` | 310-343 | detectOwnershipMismatch still has cartesian product false positives |
+| BUG-NEW-021 | `ffi_detector.zig` | 407-433 | analyzeFFIMatch vulnerabilities slice not freed |
+| BUG-NEW-022 | `pointer_ownership.zig` | 940-963 | findFreePath/canReachFree still empty stubs |
+| BUG-NEW-023 | `alias.zig` | 268 | getTypeId pointer truncation to u32 (BUG-006 residual) |
+| BUG-NEW-024 | `call_graph.zig` | 126 | Indirect call parameter index calculation may be inverted vs LLVM operand layout |
+| BUG-NEW-025 | `rust_ffi_auditor.zig` | 116-117 | LLVMGetValueName pointer value used as set key, unreliable |
+| BUG-NEW-026 | `rust_ffi_auditor.zig` | 373-378 | isExternCCall treats all non-Rust functions as unsafe FFI |
+| BUG-NEW-027 | `output/formatter.zig` | 171-172 | vuln_type/severity fields still unescaped (BUG-016 residual) |
+
+### 3.4 Low — 10
+
+| ID | File | Description |
+|----|------|-------------|
+| BUG-NEW-028 | `flow_path.zig:75` | ArrayList.deinit uses deprecated API |
+| BUG-NEW-029 | `ffi_semantics.zig:338` | Test code compilation error (expect parameter mismatch) |
+| BUG-NEW-030 | `noise_reduction.zig:554` | total_issues u32 overflow risk |
+| BUG-NEW-031 | `noise_reduction.zig:392` | indexOfPath case conversion incomplete |
+| BUG-NEW-032 | `memory_pool.zig:113` | stats() in_use potential underflow |
+| BUG-NEW-033 | `steensgaard.zig:239` | Indirect constraint doesn't merge points-to set |
+| BUG-NEW-034 | `value_id_map.zig:51` | getOrPutId no overflow check |
+| BUG-NEW-035 | `profiler.zig:16,21` | Timer catch unreachable (BUG-027 residual) |
+| BUG-NEW-036 | `report/mod.zig:300` | formatTimestamp panics on OOM (BUG-039 changed but worse) |
+| BUG-NEW-037 | `output/cli.zig:194-198` | Terminal output doesn't filter ANSI control sequences |
+
+---
+
+## 4. Issue Summary
 
 ### Severity Distribution
 
-| Severity | Count | Percentage |
-|----------|-------|------------|
-| 🔴 Critical | 1 | 1.9% |
-| 🔴 High | 18 | 34.6% |
-| 🟠 Medium | 21 | 40.4% |
-| 🟡 Low | 12 | 23.1% |
-| **Total** | **52** | 100% |
+| Severity | New | Unfixed Old | Total |
+|----------|-----|-------------|-------|
+| 🔴 Critical | 1 | 0 | 1 |
+| 🔴 High | 7 | 3 | 10 |
+| 🟠 Medium | 19 | 5 | 24 |
+| 🟡 Low | 10 | 3 | 13 |
+| **Total** | **37** | **11** | **48** |
 
 ### Distribution by Category
 
 | Category | Count |
 |----------|-------|
-| Memory Safety (buffer overflow, UAF, double-free) | 12 |
+| Memory Safety (OOB, UAF, leaks) | 11 |
 | Logic Errors (analysis correctness) | 14 |
-| Output Injection (unescaped JSON/SARIF) | 6 |
-| Resource Management (memory leaks, dangling pointers) | 8 |
-| CI/CD Security | 6 |
-| Error Handling (catch unreachable, swallowed errors) | 4 |
-| Type Safety (pointer truncation, integer overflow) | 2 |
+| CI/CD Security | 4 |
+| Output Injection (unescaped JSON) | 3 |
+| Type Safety (pointer truncation) | 3 |
+| Performance / DoS | 3 |
+| Error Handling | 4 |
+| Other | 6 |
 
 ---
 
-## 3. Critical Issues
-
-### BUG-001 [Critical] ffi_detector.zig — Type error causes three vulnerability detectors to be completely non-functional
-
-- **File**: `src/pass/analysis/ffi_detector.zig` line 437
-- **Category**: Type Safety / Compilation Error
-
-**Description**: `callsDangerousFunction` passes a `FunctionInfo` (Zig struct) directly to `c.LLVMGetFirstBasicBlock(func)`, which expects `c.LLVMValueRef` (`*const opaque{}`). Zig does not allow implicit conversion from a struct to a pointer type. In contrast, line 476 in the same file (`hasUseAfterFreePattern`) correctly uses `func.func.raw`.
-
-```zig
-// Buggy code (line 437)
-const bb = c.LLVMGetFirstBasicBlock(func);  // func is FunctionInfo, not LLVMValueRef
-
-// Correct code (line 476)
-const bb = c.LLVMGetFirstBasicBlock(func.func.raw);  // correctly unwrapped
-```
-
-**Impact**: `detectCommandInjection`, `detectBufferOverflow`, and `detectFormatString` all call `callsDangerousFunction`. Therefore, **command injection, buffer overflow, and format string vulnerability detection are completely non-functional**.
-
-**Fix**: Change `func` to `func.func.raw`.
-
----
-
-## 4. High Issues
-
-### BUG-002 [High] memory_pool.zig — free_node_pool resize causes dangling pointers in free_list
-
-- **File**: `src/perf/memory_pool.zig` lines 62-98
-- **Category**: Memory Safety / Dangling Pointer
-
-**Description**: After `alloc()` removes a node from the free list, `free()` appends the node to `free_node_pool` (an ArrayList) and stores a pointer to that node in the `free_list` linked list. When `free_node_pool`'s internal buffer is reallocated due to `append`, all previously stored pointers in `free_list` become dangling. Subsequent `alloc()` calls that traverse `free_list` will dereference dangling pointers.
-
-**Impact**: Undefined behavior — potential crashes or data corruption. This is the most severe memory safety bug in the project.
-
-**Fix**: Use indices instead of pointers for the free list linkage, or rebuild the free_list chain when ArrayList reallocates.
-
----
-
-### BUG-003 [High] memory_pool.zig — Double-free pollutes free list
-
-- **File**: `src/perf/memory_pool.zig` lines 92-98
-- **Category**: Memory Safety / Double-Free
-
-**Description**: `free()` does not verify whether `item` already exists in the free list or whether the pointer belongs to this memory pool. Double-freeing the same pointer causes: cycles/duplicates in the free list; `total_freed` exceeding `total_allocated` causing `in_use` statistic underflow; subsequent `alloc()` returning memory that is still in use.
-
-**Impact**: Data races and memory corruption.
-
-**Fix**: Add duplicate-free checks and pointer ownership validation in `free()`.
-
----
-
-### BUG-004 [High] memory_pool.zig — ArenaAllocator integer overflow
-
-- **File**: `src/perf/memory_pool.zig` line 164
-- **Category**: Integer Overflow
-
-**Description**: `alloc_size = @max(len + alignment, block_size)` — `len + alignment` can overflow when `len` approaches `usize` max, resulting in an undersized buffer allocation.
-
-**Fix**: Use `@addWithOverflow` or `std.math.add` for overflow-checked arithmetic.
-
----
-
-### BUG-005 [High] pointer_ownership.zig — Fixed-size BFS queue causes incomplete analysis
-
-- **File**: `src/pass/analysis/pointer_ownership.zig` lines 533-561
-- **Category**: Logic Error / Analysis Completeness
-
-**Description**: `markAllocSitesReachingValue()` uses a fixed-size BFS queue `bfs_queue: [64]u32`. When the path depth in the reverse dataflow graph exceeds 64 nodes, the queue overflows and BFS terminates prematurely, silently dropping nodes beyond capacity.
-
-**Impact**: For large LLVM IR modules with deep pointer propagation chains, ownership transfer analysis will be incomplete. Allocation sites that should be marked `transferred = true` will be missed, causing memory leak false positives.
-
-**Fix**: Use a dynamically allocated queue.
-
----
-
-### BUG-006 [High] alias.zig — getTypeId pointer truncation corrupts TBAA grouping
-
-- **File**: `src/pass/analysis/alias.zig` lines 268-270
-- **Category**: Type Safety / Pointer Truncation
-
-**Description**: `getTypeId` uses `@intFromPtr(type_ref)` to truncate a 64-bit `c.LLVMTypeRef` to `u32`. On 64-bit systems, the upper 32 bits are discarded, so different LLVM types may receive the same type_id.
-
-**Impact**: Unrelated pointers may be grouped into the same TBAA group, producing incorrect alias relationships — unrelated pointers reported as may-alias.
-
-**Fix**: Use `AutoHashMap` directly with `LLVMTypeRef` as key, or use `u64` as type_id.
-
----
-
-### BUG-007 [High] call_graph.zig — Unsigned integer underflow in indirect call resolution
-
-- **File**: `src/pass/analysis/call_graph.zig` line 115
-- **Category**: Integer Underflow / Out-of-Bounds Access
-
-**Description**: Operand index calculation in `resolveIndirectCall`: `num_operands - param_count + i`. If `num_operands < param_count` (e.g., default arguments), the unsigned `c_uint` subtraction underflows to a huge value, causing out-of-bounds access via `LLVMGetOperand`.
-
-**Impact**: Out-of-bounds memory access or panic for certain LLVM IR inputs.
-
-**Fix**: Add a `num_operands > param_count` precondition check.
-
----
-
-### BUG-008 [High] call_graph.zig — Pointer equality comparison for LLVM types
-
-- **File**: `src/pass/analysis/call_graph.zig` lines 107-108
-- **Category**: Logic Error
-
-**Description**: `resolveIndirectCall` uses `==` to compare two `c.LLVMTypeRef` (pointer values) instead of comparing the type structures themselves. Two LLVM types with identical structure but different addresses will be incorrectly considered unequal.
-
-**Impact**: Indirect call resolution produces incorrect candidate sets, resulting in inaccurate call graphs.
-
-**Fix**: Use `LLVMGetTypeKind` or structural type comparison.
-
----
-
-### BUG-009 [High] graph.zig — getIssuesBySeverity ownership inconsistency causes memory leak
-
-- **File**: `src/dataflow/graph.zig` lines 384-418
-- **Category**: Resource Leak
-
-**Description**: `getIssuesBySeverity()` allocates new message strings via `dupe` but sets `owned = false`. Callers invoking `Issue.deinit()` will not free the message, causing memory leaks. Additionally, partial data is returned on OOM.
-
-**Fix**: Set `owned = true` or use a different ownership model.
-
----
-
-### BUG-010 [High] graph.zig — Dangling pointers in HashMap after clear()
-
-- **File**: `src/dataflow/graph.zig` lines 492-517
-- **Category**: Memory Safety
-
-**Description**: `clear()` frees edge index memory, but `clearRetainingCapacity()` may leave dangling value pointers in the HashMap. Accessing the HashMap between `clear()` and repopulation will dereference freed memory.
-
-**Fix**: Ensure correct clear semantics, or use `clearAndFree`-style operations after clear.
-
----
-
-### BUG-011 [High] taint_state.zig — TOCTOU race condition
-
-- **File**: `src/pass/analysis/taint_state.zig` lines 90-125
-- **Category**: Thread Safety
-
-**Description**: `setValueTaint()` and `getValueTaint()` each independently acquire and release the mutex. `handleInstruction()` functions call `getValueTaint()` then `setValueTaint()` for the same instruction, with the lock released between the two calls — a classic TOCTOU race condition.
-
-**Impact**: Taint state may be lost or overwritten under multi-threaded scenarios. Current single-threaded usage is unaffected, but this will become a serious issue when parallel analysis is introduced.
-
-**Fix**: Provide compound operation interfaces that complete read-modify-write within a single lock acquisition.
-
----
-
-### BUG-012 [High] ffi_boundary.zig — demangleRustName parser lacks malformed input protection
-
-- **File**: `src/pass/analysis/ffi_boundary.zig` lines 459-523
-- **Category**: Input Validation
-
-**Description**: `demangleRustName` manually parses `_ZN...E` symbol names. Length parsing `len = len * 10 + ...` has no overflow check, and `pos + len` bounds are not validated. Malformed LLVM IR modules may cause out-of-bounds reads or infinite loops.
-
-**Impact**: Out-of-bounds reads or DoS when processing maliciously crafted LLVM IR.
-
-**Fix**: Add comprehensive bounds checking and maximum length limits.
-
----
-
-### BUG-013 [High] cpp_fp_reduction.zig — Fixed-size BFS queues cause incomplete detection (two instances)
-
-- **File**: `src/pass/analysis/cpp_fp_reduction.zig` lines 438-441, 754-756
-- **Category**: Logic Error
-
-**Description**: Both `isFunctionLevelNullGuarded` and `findFreePath` use fixed-size `bfs_queue: [64]u32`. For large dataflow graphs, the 64-node limit causes incomplete search.
-
-**Impact**: Null check protection assessment and free path search are incomplete, producing false positives.
-
-**Fix**: Use dynamically allocated queues.
-
----
-
-### BUG-014 [High] ffi_detector.zig — LLVMGetValueName return value not null-checked
-
-- **File**: `src/pass/analysis/ffi_detector.zig` lines 486-487
-- **Category**: Null Pointer Dereference
-
-**Description**: In `hasUseAfterFreePattern`, the return value of `c.LLVMGetValueName(called_func)` is passed directly to `std.mem.span` without null checking.
-
-**Impact**: Runtime panic for certain LLVM IR inputs.
-
-**Fix**: Add null check before `std.mem.span`.
-
----
-
-### BUG-015 [High] output/sarif.zig — Rule description not escaped (JSON injection)
-
-- **File**: `src/output/sarif.zig` lines 105-107
-- **Category**: Output Injection / JSON Injection
-
-**Description**: In `generate()`, the string returned by `rule.toDescription()` is inserted directly into JSON via `{s}` without calling `writeEscapedString`.
-
-**Impact**: Generates invalid SARIF JSON, potentially causing downstream tools like GitHub Code Scanning to fail parsing or produce security bypasses.
-
-**Fix**: Use `writeEscapedString` for all dynamic strings.
-
----
-
-### BUG-016 [High] output/formatter.zig — Multiple unescaped fields in SARIF/JSON output
-
-- **File**: `src/output/formatter.zig` lines 171-172, 224-228, 236
-- **Category**: Output Injection / JSON Injection
-
-**Description**: In `formatSarif()`, fields like `vuln.description`, `vuln.vuln_type`, and `vuln.source_location` are inserted directly into JSON via `{s}` without escaping. Notably, `formatJson()` in the same file correctly uses `writeEscapedString` for `description`, indicating this is an oversight.
-
-**Impact**: Vulnerability descriptions containing JSON special characters will generate invalid output.
-
-**Fix**: Consistently use `writeEscapedString`.
-
----
-
-### BUG-017 [High] report/sarif.zig — reason field not escaped
-
-- **File**: `src/report/sarif.zig` line 387
-- **Category**: Output Injection / JSON Injection
-
-**Description**: In `writeProperties()`, `issue.reason` (a free-text field) is inserted directly into JSON via `{s}` without escaping.
-
-**Impact**: If `issue.reason` contains double quotes or backslashes, it will corrupt the SARIF JSON structure.
-
-**Fix**: Use `std.json.stringEncode` for escaping.
-
----
-
-### BUG-018 [High] CI/CD — Release workflow lacks binary signing and checksums
-
-- **File**: `.github/workflows/release.yml` lines 189-200
-- **Category**: CI/CD Security / Supply Chain
-
-**Description**: The release workflow uploads compiled binaries directly to GitHub Release without SHA256 checksums, code signatures (GPG/cosign), or SBOM (Software Bill of Materials).
-
-**Impact**: Users cannot verify the integrity or provenance of released binaries, creating supply chain attack risk.
-
-**Fix**: Add `sha256sum` generation, GPG signing, and SBOM generation steps.
-
----
-
-### BUG-019 [High] CI/CD — Security analysis workflow errors silently ignored
-
-- **File**: `.github/workflows/security-analysis.yml` line 62
-- **Category**: CI/CD Security
-
-**Description**: The security analysis command uses `2>/dev/null || echo "Analysis completed with warnings"` to discard all error output. Additionally, line 59 contains a typo in the executable name (`OmniSope` instead of `OmniScope`), causing the security analysis step to never actually run.
-
-**Impact**: Security analysis failures go undetected, potentially marking insecure projects as safe. The security analysis workflow is effectively non-functional.
-
-**Fix**: Correct the typo, remove `2>/dev/null`, and use `set -euo pipefail`.
-
----
-
-## 5. Medium Issues
-
-### BUG-020 [Medium] fact/store.zig — init/queryByKind use catch unreachable
-
-- **File**: `src/fact/store.zig` lines 31-34, 99
-- **Description**: 5 `initCapacity` calls use `catch unreachable`, causing immediate process termination on OOM.
-- **Fix**: Use graceful error propagation for query paths.
-
-### BUG-021 [Medium] fact/store.zig — count()/get() not holding lock
-
-- **File**: `src/fact/store.zig` lines 78-91
-- **Description**: Read methods don't hold the mutex, potentially reading inconsistent state under concurrency.
-- **Fix**: Add locking in `count()` and `get()`.
-
-### BUG-022 [Medium] pointer_ownership.zig — Multiple critical methods are empty stubs
-
-- **File**: `src/pass/analysis/pointer_ownership.zig` lines 910-933
-- **Description**: `findFreePath()`, `canReachFree()`, `isMemoryAccess()` always return `false`.
-- **Fix**: Implement full logic or remove dead code paths.
-
-### BUG-023 [Medium] pointer_ownership.zig — ScopedTimer double stop
-
-- **File**: `src/pass/analysis/pointer_ownership.zig` lines 139-211
-- **Description**: `init_timer` and `analysis_timer` have both `defer stop()` and manual `stop()` calls, recording the same timer twice.
-- **Fix**: Remove duplicate `stop()` calls.
-
-### BUG-024 [Medium] taint_propagation.zig — GEP depth factor premature truncation
-
-- **File**: `src/pass/analysis/taint_propagation.zig` line 512
-- **Description**: When `num_indices >= 6`, `depth_factor` goes negative, truncating all deep GEP confidences to the same minimum.
-- **Fix**: Adjust `GEP_DEPTH_CONFIDENCE_FACTOR` or use logarithmic decay.
-
-### BUG-025 [Medium] taint_state.zig — getTaintedValues ownership API error-prone
-
-- **File**: `src/pass/analysis/taint_state.zig` lines 138-153
-- **Description**: Accepts an external allocator but documentation doesn't clarify that callers must use the same allocator to free the return value.
-- **Fix**: Add documentation or switch to internal allocator.
-
-### BUG-026 [Medium] profiler.zig — record() OOM leaves key pointing to non-heap memory
-
-- **File**: `src/perf/profiler.zig` lines 91-108
-- **Description**: If `getOrPut` succeeds but `dupe` fails (OOM), the HashMap entry is inserted but the key points to a temporary string. `deinit()` will attempt to free non-heap memory.
-- **Fix**: Use errdefer to clean up inserted entries.
-
-### BUG-027 [Medium] profiler.zig — Timer.start()/elapsedNs() use catch unreachable
-
-- **File**: `src/perf/profiler.zig` lines 16-17, 22-23
-- **Description**: High-precision timer unavailability triggers panic.
-- **Fix**: Return errors or use fallback timing mechanisms.
-
-### BUG-028 [Medium] graph.zig — addEdge() memory leak on OOM
-
-- **File**: `src/dataflow/graph.zig` lines 165-179
-- **Description**: When `put` fails, newly allocated lists are not freed.
-- **Fix**: Add errdefer to free newly allocated lists.
-
-### BUG-029 [Medium] graph.zig — deinit() doesn't free Issue trace entries
-
-- **File**: `src/dataflow/graph.zig` lines 83-107
-- **Description**: `deinit()` only frees `message`, doesn't call `Issue.deinit()`, potentially leaking owned trace entries.
-- **Fix**: Call `Issue.deinit()` or iterate to free all owned fields.
-
-### BUG-030 [Medium] ffi_analysis.zig — detectOwnershipMismatch cartesian product false positives
-
-- **File**: `src/pass/analysis/ffi_analysis.zig` lines 323-326
-- **Description**: Performs cartesian product comparison on all alloc-free pairs without checking dataflow connectivity.
-- **Fix**: Add dataflow connectivity checks.
-
-### BUG-031 [Medium] ffi_boundary.zig — identifyLanguage substring matching misclassification
-
-- **File**: `src/pass/analysis/ffi_boundary.zig` lines 396-422
-- **Description**: `indexOf` matching is too broad; `"extern"` matches both Rust and Zig patterns.
-- **Fix**: Use more precise regex or word boundary matching.
-
-### BUG-032 [Medium] guard_propagation.zig — Null check constraint may be inverted
-
-- **File**: `src/dataflow/guard_propagation.zig` lines 76-87
-- **Description**: Assumes `true_bb_id` corresponds to null condition, but the condition form (`p == NULL` vs `p != NULL`) may be reversed.
-- **Fix**: Determine semantic direction based on ICmp predicate.
-
-### BUG-033 [Medium] guard_propagation.zig — Value pointer truncated to u32
-
-- **File**: `src/dataflow/guard_propagation.zig` lines 114, 124
-- **Description**: `@intFromPtr(value)` truncated to `u32`, losing upper 32 bits on 64-bit systems.
-- **Fix**: Use `u64` or `usize` as value_id.
-
-### BUG-034 [Medium] steensgaard.zig — Indirect constraint handling incomplete
-
-- **File**: `src/pass/analysis/steensgaard.zig` lines 244-256
-- **Description**: For indirect constraints `*p = q`, only `unite(p, q)` is performed without processing p's points-to set.
-- **Fix**: Iterate over p's points-to set and merge each element.
-
-### BUG-035 [Medium] steensgaard.zig — handleAlloca virtual object ID collision risk
-
-- **File**: `src/pass/analysis/steensgaard.zig` lines 103-105
-- **Description**: Uses `@intFromPtr(inst) + 1` as virtual object ID, with theoretical collision risk.
-- **Fix**: Use a separate incrementing ID counter.
-
-### BUG-036 [Medium] call_graph.zig — propagateTaint iteration limit too low
-
-- **File**: `src/pass/analysis/call_graph.zig` lines 315-345
-- **Description**: Fixed iteration limit of 8; taint propagation incomplete for deep call chains.
-- **Fix**: Use a worklist algorithm instead of fixed iterations.
-
-### BUG-037 [Medium] call_graph.zig — classifyRisk/isSink substring over-matching
-
-- **File**: `src/pass/analysis/call_graph.zig` lines 400-406
-- **Description**: Safe functions like `system_call`, `mysystem` are incorrectly flagged as dangerous sinks.
-- **Fix**: Use exact matching or whitelist mechanisms.
-
-### BUG-038 [Medium] cpp_fp_reduction.zig — detectUseAfterFree logic direction error
-
-- **File**: `src/pass/analysis/cpp_fp_reduction.zig` lines 527-558
-- **Description**: Checks "whether freed pointer flows to another free point" instead of "whether freed pointer is used after free".
-- **Fix**: Check for load/store/call operations after free.
-
-### BUG-039 [Medium] report/mod.zig — formatTimestamp returns static string on OOM
-
-- **File**: `src/report/mod.zig` lines 300-301
-- **Description**: `allocator.dupe()` failure returns a compile-time constant string; caller's `free()` causes UB.
-- **Fix**: Return error instead of static string on OOM.
-
-### BUG-040 [Medium] report/mod.zig — generate() swallows OOM error
-
-- **File**: `src/report/mod.zig` line 99
-- **Description**: `initCapacity` failure returns empty string `""`; caller cannot distinguish error from empty report.
-- **Fix**: Propagate the error.
-
----
-
-## 6. Low Issues
-
-| ID | File | Description |
-|----|------|-------------|
-| BUG-041 | `fact/store.zig` | `count()`/`get()` not holding lock, data race (no impact in current single-threaded usage) |
-| BUG-042 | `pointer_ownership.zig` | `param_value_ids` array size 32 but only 16 used |
-| BUG-043 | `pointer_ownership.zig` | `summary_registry.initBuiltins()` error swallowed |
-| BUG-044 | `taint_propagation.zig` | `source_count`/`inst_count` are u32, may overflow on large IR |
-| BUG-045 | `profiler.zig` | `ScopedTimer.start()` borrows caller string, API error-prone |
-| BUG-046 | `graph.zig` | FFI boundary ID `usize + 1` truncated to `u32` |
-| BUG-047 | `ffi_analysis.zig` | `@intCast(i)` usize to u32 may truncate |
-| BUG-048 | `ffi_boundary.zig` | `isCppAbiInternalFunction` exact match loop is redundant |
-| BUG-049 | `alias.zig` | `mayAliasByType` function declared but never called (dead code) |
-| BUG-050 | `cpp_fp_reduction.zig` | `isLikelyIntentionalPattern` can be bypassed via naming conventions |
-| BUG-051 | `tracking/allocator.zig` | `resize` shrink doesn't update `free_count`, leak detection inaccurate |
-| BUG-052 | `output/lsp.zig` | `FileMap.add` doesn't free old URI on duplicate loc_id |
-
----
-
-## 7. CI/CD Security Assessment
-
-### 7.1 curl | bash Supply Chain Risk
-
-- **Files**: `.github/workflows/ci.yml` line 29, `release.yml` line 39
-- **Issue**: `curl -sSL https://www.zvm.app/install.sh | bash` without checksum or PGP signature verification
-- **Recommendation**: Pin install script version, add integrity verification
-
-### 7.2 Deprecated apt-key and HTTP Repository
-
-- **Files**: `.github/workflows/ci.yml` lines 39-41, `release.yml` lines 49-51
-- **Issue**: Uses deprecated `apt-key add`, and LLVM repository URL uses HTTP
-- **Recommendation**: Migrate to `/etc/apt/keyrings/` approach, use HTTPS URLs
-
-### 7.3 Release Workflow Overly Permissive
-
-- **File**: `.github/workflows/release.yml` lines 9-10
-- **Issue**: `contents: write` without scope restriction
-- **Recommendation**: Follow least-privilege principle, restrict to release operations
-
-### 7.4 Inconsistent Zig Versions Across Workflows
-
-- **Files**: Three CI workflows
-- **Issue**: `security-analysis.yml` uses `0.15.0`, others use `0.15.2`
-- **Recommendation**: Unify Zig version across all workflows
-
-### 7.5 Security Scorecard is a No-Op
-
-- **File**: `.github/workflows/security-analysis.yml` lines 139-163
-- **Issue**: Only prints static text, doesn't execute any actual security scoring
-- **Recommendation**: Integrate real tools like OpenSSF Scorecard
-
----
-
-## 8. Fix Priority
+## 5. Fix Priority
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0 Immediate** | 4 | Compilation error(1) + dangling pointer(1) + double-free(1) + integer overflow(1) |
-| **P1 Soon** | 14 | Analysis logic errors(8) + JSON injection(3) + CI/CD security(3) |
-| **P2 Planned** | 21 | False positives/negatives, resource management, error handling |
-| **P3 Later** | 13 | Performance, code quality, dead code |
+| **P0 Immediate** | 3 | OOB read(1) + arbitrary pointer deref(1) + CI workflow broken(1) |
+| **P1 Soon** | 7 | Analysis logic errors(4) + pointer truncation(1) + CI/CD security(2) |
+| **P2 Planned** | 24 | False positives/negatives, resource management, output escaping |
+| **P3 Later** | 14 | Performance, code quality, dead code |
 
 ---
 
-## 9. Code Quality Assessment
+## 6. Code Quality Assessment
 
-### Strengths
+### Improvements This Round
 
-1. **Excellent Architecture**: Pass-based analysis framework with topological sort dependency management and well-decoupled modules
-2. **comptime Type Safety**: Pass interfaces validated at compile time, zero runtime overhead
-3. **SoA Data Layout**: FactStore uses Structure of Arrays for cache-friendly access patterns
-4. **Data-Driven Design**: SemanticMapper uses rule tables, easily extensible
-5. **Comprehensive Testing**: Unit tests, integration tests, stability tests, stress tests, E2E tests
-6. **Safe LLVM-C Wrapping**: Raw LLVM-C API safely wrapped via llvm_safe.zig
-7. **Multi-Format Output**: Text/JSON/SARIF formats, SARIF compliant with v2.1.0
-8. **Extensible Registry**: SemanticRegistry with 4-layer lookup mechanism
+1. **memory_pool.zig full rewrite**: Dangling pointer, double-free, and integer overflow — all three Critical/High issues fixed
+2. **graph.zig ownership model unified**: getIssuesBySeverity, clear(), addEdge(), deinit() — all four issues fixed
+3. **taint_state.zig thread safety**: TOCTOU race condition fixed via mutex protection
+4. **ffi_boundary.zig input validation**: demangleRustName now has complete bounds checking and overflow protection
+5. **fact/store.zig error handling**: catch unreachable replaced with try, read/write methods now locked
+6. **output/sarif.zig output safety**: All fields consistently use writeEscapedString
+7. **call_graph.zig safety fixes**: Integer underflow and pointer comparison issues both fixed
 
-### Weaknesses
+### Areas Still Needing Improvement
 
-1. **Concentrated Memory Safety Issues**: memory_pool.zig has dangling pointer and double-free bugs — the highest priority module to fix
-2. **Inconsistent JSON/SARIF Output Escaping**: Multiple missing string escapes affecting downstream security tools
-3. **Fixed-Size Buffers**: BFS queues hardcoded to 64-element limits, causing incomplete analysis on large IR
-4. **Widespread Pointer Truncation**: Multiple locations truncate 64-bit pointers to u32, creating ID collision risk on large modules
-5. **Weak CI/CD Security**: Missing binary signatures, curl|bash usage, non-functional security analysis workflow
-6. **Inconsistent Error Handling**: Mix of catch unreachable and swallowed errors
+1. **New module quality varies**: buffer_overflow.zig, integer_overflow.zig and other new passes have significant logic errors
+2. **Pointer truncation not fully eliminated**: alias.zig and guard_propagation.zig still use @truncate
+3. **CI/CD security unchanged**: curl|bash, no signing, broken workflow — all unfixed
+4. **Some empty stubs remain**: pointer_ownership.zig's findFreePath/canReachFree still return false
 
 ---
 
-## 10. Conclusion
+## 7. Conclusion
 
-OmniScope has excellent overall architecture design and above-average code quality for its category. This audit identified 52 issues: 1 Critical (compilation error rendering three vulnerability detectors non-functional), 18 High (concentrated in memory safety, analysis logic correctness, and output injection).
+OmniScope has shown significant improvement in this audit round. Of the 52 issues reported in Round 1, **24 have been fully fixed (46%)**, including the most severe memory_pool dangling pointer and ffi_detector type error. The overall score has improved from 6.5 to **7.5/10**.
+
+This round identified 37 new issues, primarily from newly added analysis passes (buffer_overflow, integer_overflow, ffi_body_check, etc.) and CI/CD configuration. The most critical issues are the out-of-bounds read in `ffi_body_check.zig` and the arbitrary pointer dereference in `cpp_fp_reduction.zig`.
 
 **Top Priority Fixes**:
-1. Dangling pointer and double-free in `memory_pool.zig` (BUG-002, BUG-003)
-2. Type error in `ffi_detector.zig` (BUG-001)
-3. JSON/SARIF output injection issues (BUG-015, BUG-016, BUG-017)
-4. Non-functional security analysis CI workflow (BUG-019)
+1. `ffi_body_check.zig:515` — LLVMGetNamedFunction out-of-bounds read (Critical)
+2. `cpp_fp_reduction.zig:817` — Arbitrary pointer dereference (High)
+3. `guard_propagation.zig:114,124` — Pointer truncation (High)
+4. CI/CD workflow fixes (binary name, signing, curl|bash)
 
-The project performs well in memory safety, type safety, and error handling overall. The main issues are concentrated in specific modules' boundary condition handling and CI/CD security configuration. We recommend fixing P0 and P1 issues first, following the priority order outlined in Section 8.
+---
+
+## 8. Design Defect Analysis
+
+> The following examines fundamental architectural trade-offs rather than line-by-line code bugs. Each design defect analyzes the underlying rationale, systemic risk, and improvement direction.
+
+### 8.1 [DESIGN-01] ID Consistency Crisis — Three Mapping Strategies Coexist
+
+**Modules**: `value_id_map.zig`, `guard_propagation.zig`, `alias.zig`, `pass_context`
+
+**Current Design**: Three LLVM-value-to-ID mapping strategies coexist:
+
+| Strategy | Used By | Method |
+|----------|---------|--------|
+| `ValueIdMap` | `TaintContext`, `Steensgaard`, `NullCheckRecognizer` | HashMap mapping, avoids truncation |
+| `PassContext.getNextId()` | `AliasPass`, `TaintPass`, `LockPass` | Global incrementing counter |
+| `@truncate(@intFromPtr(...))` | `GuardPropagation`, `AliasPass.getTypeId` | Direct 64→32 bit truncation |
+
+**Root Problem**: When different passes exchange IDs via `FactStore`, **the same LLVM value may map to different IDs in different passes**. For example, a pointer with value_id=0x3A2F in `GuardPropagation` may have a completely different ID in `TaintContext`. This makes cross-pass fact association fundamentally unreliable.
+
+**Trade-off**: `ValueIdMap` has extra HashMap lookup overhead, `@truncate` is zero-cost but may collide, `getNextId()` is in between. The current mix optimizes performance per-scenario.
+
+**Systemic Risk**: All analyses depending on cross-pass fact association (alias→taint→ownership) may produce incorrect results due to ID inconsistency. This is the foundation of the entire analysis framework's correctness.
+
+**Improvement**: Unify on a shared `ValueIdMap` instance in `PassContext`, eliminate all `@truncate` usage.
+
+---
+
+### 8.2 [DESIGN-02] Two Taint Analysis Implementations — Semantic Inconsistency
+
+**Modules**: `taint.zig` (TaintPass), `taint_propagation.zig` (TaintPropagationPass)
+
+**Current Design**:
+
+| Dimension | TaintPass | TaintPropagationPass |
+|-----------|-----------|---------------------|
+| Taint model | Boolean (tainted/not-tainted) | Four-state enum + f32 confidence |
+| Propagation | TaintGraph fixed-point (max 1000 iterations) | Per-instruction flow-sensitive |
+| Path-sensitive | No | Partial (PathManager, degradable) |
+| Context-sensitive | No | No |
+| Dependencies | cfg, dfg, alias | call-graph |
+| Fact storage | TaintGraph internal | TaintContext → FactStore |
+
+**Root Problem**: The two systems define "what is tainted" differently with no coordination. `TaintPass`'s boolean model cannot express partial taint, while `TaintPropagationPass`'s four-state model cannot be understood by `TaintPass` consumers.
+
+**Trade-off**: `TaintPass` is designed as a lightweight fast scan; `TaintPropagationPass` as precise analysis for different scenarios.
+
+**Systemic Risk**: Downstream passes may use only one set of results, ignoring the other. The two systems may produce contradictory taint verdicts for the same pointer.
+
+**Improvement**: Unify into a single implementation, or clearly define responsibilities and ensure non-conflicting results.
+
+---
+
+### 8.3 [DESIGN-03] Noise Reduction System — May Hide Real Vulnerabilities
+
+**Modules**: `noise_reduction.zig`
+
+**Current Design**: Three-layer filtering reduces wasmtime's 297 issues to 10-20 (**93% filter rate**):
+
+- **Layer 1**: Function name substring matching (`indexOf`) — matches `std::`, `core::`, `alloc::` patterns → skip
+- **Layer 2**: File path matching — matches `/rustc/`, `zig/lib/std/` → mark as stdlib
+- **Layer 3**: Behavioral pattern matching (skeleton only, not fully implemented)
+
+**Root Problems**:
+
+1. **Standard library vulnerabilities systematically ignored**: `FunctionOrigin.stdlib` defaults to `shouldReportByDefault = false`. But historically, many critical vulnerabilities exist in standard libraries (glibc malloc, Rust Vec OOB, etc.).
+2. **Over-suppression via name matching**: `indexOf` substring matching means user functions like `get_next_token` (contains "next") get caught.
+3. **No suppression audit trail**: No logging of which findings were suppressed and why. Users cannot know what the tool hides.
+4. **Attackers can evade via naming**: Malicious code named similarly to standard library patterns is automatically filtered.
+
+**Trade-off**: High filter rate trades off against false positive rate for better UX. For CI/CD integration, too many false positives cause "cry wolf" effect.
+
+**Systemic Risk**: A security analysis tool's **primary responsibility is to not miss real vulnerabilities**. A tool that misses real bugs but produces clean reports is more dangerous than one with many false positives but complete coverage — because the former creates **false sense of security**.
+
+**Improvement**: Suppressed findings should output to a separate channel (`--verbose` or separate SARIF file) for user review.
+
+---
+
+### 8.4 [DESIGN-04] FFI Matching Model — No Signature Verification
+
+**Modules**: `ffi/ffi_matcher.zig`
+
+**Current Design**: `FFIMatcher` pairs `declare` with `define` via exact function name matching, completely ignoring parameter types, return types, and calling conventions.
+
+**Root Problems**:
+
+1. **Type-unsafe FFI calls undetected**: Rust `extern "C" fn foo(x: i32)` and C `void foo(double x)` are treated as matched FFI — a type-unsafe cross-language call.
+2. **Single-module assumption**: Only detects declare/define pairs within the same compilation unit. Externally linked library functions are completely out of scope.
+3. **Name mangling blind spots**: Rust's `#[no_mangle]` or `#[export_name]` breaks matching.
+
+**Trade-off**: Pure name matching is simple and fast. Signature verification requires understanding LLVM's type system.
+
+**Systemic Risk**: This is the system's foundation — if matching is wrong, all downstream analysis (ownership violations, boundary detection, lifetime analysis) builds on incorrect premises.
+
+**Improvement**: At minimum, compare parameter count and basic type categories.
+
+---
+
+### 8.5 [DESIGN-05] Confidence Scoring — Illusion of Precision
+
+**Modules**: `diag/issue.zig`, `rust_ffi_auditor.zig`, `taint_propagation.zig`
+
+**Current Design**: Each Issue has `confidence: f32` (0.0-1.0) and `confidence_level` (HIGH/MEDIUM/HEURISTIC/EXPERIMENTAL). Thresholds hardcoded at 0.9/0.7/0.5.
+
+**Root Problems**:
+
+1. **No calibration basis**: Confidence values are hardcoded magic numbers (0.75, 0.85) with no statistical basis — no benchmarks, no ground truth datasets, no calibration experiments.
+2. **Upstream errors don't propagate**: If language identification is wrong (C function misidentified as Rust), downstream analysis still reports 0.85 confidence.
+3. **Orthogonal to noise suppression**: High-confidence findings may be filtered, low-confidence findings may be reported. Confidence doesn't participate in filtering decisions.
+
+**Systemic Risk**: Users seeing "confidence: 0.95, level: HIGH" tend to trust it, but actual false positive rate is unknown. In security audit tools, **illusion of precision is itself a security risk**.
+
+**Improvement**: Calibrate thresholds against measurable benchmark datasets, or clearly document "confidence is a heuristic estimate, not a statistical confidence interval."
+
+---
+
+### 8.6 [DESIGN-06] No Pass Isolation — Shared Mutable State
+
+**Modules**: `pipeline/pipeline.zig`, `pass/manager.zig`
+
+**Current Design**: All passes share the same `PassContext` with identical read/write access to `FactStore` and `DataFlowGraph`.
+
+**Root Problems**:
+
+1. **No permission tiers**: Any pass can delete or overwrite another pass's Facts, modify another pass's DataNodes.
+2. **Implicit data contracts unverified**: Dependency system only guarantees execution order, not data readiness. Pass B depending on Pass A doesn't verify A actually wrote the FactKind B needs.
+3. **Single point of failure**: Any pass error terminates the entire pipeline. No "best-effort" mode.
+
+**Systemic Risk**: A buggy pass can pollute all downstream analysis results with no mechanism to detect contamination.
+
+**Improvement**: Provide read-only FactStore views; implement "best-effort" execution that skips failed passes but continues.
+
+---
+
+### 8.7 [DESIGN-07] Lifetime Engine — Under-Expressive State Machine
+
+**Modules**: `lifetime/engine.zig`, `lifetime/boundary.zig`
+
+**Current Design**: 6 operations (alloc/free/borrow/transfer/reclaim/escape) drive 7 states (unknown/live/moved/borrowed/freed/escaped/invalid).
+
+**Root Problems**:
+
+1. **No path sensitivity**: Control flow merge uses lattice meet. `meet(live, moved) = invalid` produces false positives.
+2. **Single resource assumption**: Cannot represent pointer aliases.
+3. **Missing critical operations**: `realloc` (pointer value change), `clone` (reference counting), `lock/unlock` not modeled.
+4. **Only 2 contract rules**: Only Rust→C and C→Rust defined. Missing Zig→C, Go→C, etc.
+
+**Systemic Risk**: `realloc`-caused pointer invalidation is one of the most common FFI vulnerability types — the current model cannot detect it at all.
+
+**Improvement**: Add `realloc` operation support; introduce path-sensitive state branching.
+
+---
+
+### 8.8 [DESIGN-08] Steensgaard Indirect Constraint Handling Incorrect
+
+**Modules**: `steensgaard.zig`
+
+**Current Design**: `indirect` constraints (`*p = q`) only execute `unite(p, q)`, treated identically to `assign` constraints (`p = q`).
+
+**Root Problem**: Classical Steensgaard requires lambda nodes for indirect constraints. Current implementation simplifies indirect assignment to direct assignment, causing all indirectly-referenced values to be merged into the same equivalence class.
+
+**Systemic Risk**: Taint analysis propagates along spurious alias relationships — if `p` points to `q` and `q` is tainted, all values in `p`'s equivalence class get tainted, producing massive false positives.
+
+**Improvement**: Introduce lambda nodes for correct indirect constraint handling, or switch to a more precise alias analysis algorithm.
+
+---
+
+### 8.9 [DESIGN-09] Language Identification — Deceivable Heuristics
+
+**Modules**: `ffi_analysis.zig`, `ffi_info.zig`
+
+**Current Design**: Two-tier strategy — DWARF first, fallback to function name heuristics. Default to C when unrecognized.
+
+**Root Problems**:
+
+1. **Default-to-C assumption**: Kotlin/Native, D, Nim FFI all treated as C.
+2. **Name mangling can be mimicked**: Attackers can name C functions starting with `_ZN...` to be misidentified as Rust.
+3. **DWARF dependency fragile**: Production builds typically `strip` debug info, degrading to pure heuristics.
+4. **Dual system inconsistency**: `ffi_info.zig` and `ffi_analysis.zig` use different classification rules.
+
+**Improvement**: Unify language detection; mark as `unknown` instead of defaulting to C.
+
+---
+
+### 8.10 [DESIGN-10] FactStore Append-Only — Cannot Correct Erroneous Facts
+
+**Modules**: `fact/store.zig`
+
+**Current Design**: FactStore is append-only — supports insert and query only, no update or delete.
+
+**Root Problem**: If an upstream pass produces incorrect facts, downstream passes cannot correct them. Analysis precision can only monotonically decrease.
+
+**Systemic Risk**: In multi-pass pipelines, early pass misjudgments get "locked" into FactStore, affecting all subsequent analysis.
+
+**Improvement**: Introduce fact versioning or retraction mechanisms.
+
+---
+
+### Design Defect Risk Matrix
+
+| ID | Design Defect | Severity | Root Cause | Impact Scope |
+|----|--------------|----------|------------|-------------|
+| DESIGN-01 | ID consistency crisis | **Critical** | Three mapping strategies mixed | All cross-pass analysis |
+| DESIGN-02 | Two taint analyses coexist | **Critical** | Architecture evolution legacy | Taint analysis globally |
+| DESIGN-03 | Noise reduction over-filtering | **High** | SNR prioritized over recall | Systematic false negatives |
+| DESIGN-04 | FFI matching no signature check | **High** | Simplicity prioritized | All FFI analysis |
+| DESIGN-05 | Confidence illusion of precision | **Medium** | No calibration | User trust |
+| DESIGN-06 | No pass isolation | **Medium** | Shared mutable state | Data pollution |
+| DESIGN-07 | Lifetime engine under-expressive | **Medium** | Simple state machine | FFI vulnerability coverage |
+| DESIGN-08 | Steensgaard indirect constraint error | **Medium** | Algorithm simplification | Alias/taint precision |
+| DESIGN-09 | Language identification deceivable | **Low** | Heuristic limitation | FFI boundary misjudgment |
+| DESIGN-10 | FactStore cannot correct | **Low** | Append-only design | Analysis refinement |
+
+---
+
+## 9. Architecturally Undetectable Vulnerability Classes
+
+Based on the design analysis, the following vulnerability categories are **fundamentally undetectable** by the current architecture:
+
+| Vulnerability Type | Reason |
+|--------------------|--------|
+| FFI via indirect calls | Function pointers, vtables, dlsym outside matching scope |
+| Data races | No concurrency model |
+| Integer overflow → buffer overflow | No numerical analysis capability |
+| TOCTOU | No path-sensitive filesystem state modeling |
+| Type confusion | Matcher doesn't verify signatures |
+| Resource release in callbacks | State machine has no temporal dimension |
+| realloc pointer invalidation | Lifetime engine lacks realloc operation |
+| Double-free via aliased pointers | No cross-pass consistent alias analysis |
+
+---
+
+## 10. Conclusion (Including Design Perspective)
+
+OmniScope has shown significant improvement at the code level (46% of old issues fixed), but **deeper systemic risks exist at the architectural design level**.
+
+**The core design problem is lack of defense-in-depth**: Multiple critical components (noise reduction, pass dependencies, ID mapping) all use "single-point decision" patterns — one component's misjudgment is never caught and corrected by subsequent components. In security analysis tools, this lack of redundancy and cross-validation means a single component failure directly leads to missed vulnerabilities.
+
+**Improvement Priority**:
+1. **[P0]** Unify ID allocation strategy, eliminate `@truncate` usage
+2. **[P0]** Unify taint analysis into single implementation
+3. **[P0]** Fix Steensgaard indirect constraint handling
+4. **[P1]** Add audit logging to noise reduction
+5. **[P1]** Add signature verification to FFI matching
+6. **[P1]** Add realloc support to lifetime engine
+7. **[P2]** Confidence calibration
+8. **[P2]** Pass isolation mechanism

@@ -144,16 +144,20 @@ pub const PointerOwnershipPass = struct {
             diag.info("PointerOwnership: {s}", .{profiler.summary(&buffer) catch "N/A"});
             profiler.deinit();
         }
-        var _timer = ScopedTimer.start(&profiler, "total");
-        defer _timer.stop() catch {};
+        var _timer: ?ScopedTimer = ScopedTimer.start(&profiler, "total") catch null;
+        defer {
+            if (_timer) |*t| t.stop() catch {};
+        }
 
         if (ctx.module == null) {
             diag.warn("PointerOwnership: No module loaded, skipping", .{});
             return;
         }
 
-        var init_timer = ScopedTimer.start(&profiler, "init");
-        defer init_timer.stop() catch {};
+        var init_timer: ?ScopedTimer = ScopedTimer.start(&profiler, "init") catch null;
+        defer {
+            if (init_timer) |*t| t.stop() catch {};
+        }
 
         var id_map = ValueIdMap.init(ctx.allocator);
         defer id_map.deinit();
@@ -197,8 +201,6 @@ pub const PointerOwnershipPass = struct {
         var null_check_recognizer = NullCheckRecognizer.init(ctx.allocator);
         defer null_check_recognizer.deinit();
 
-        init_timer.stop() catch {};
-
         const mod = ctx.module.?.raw;
 
         const has_debug_info = checkDebugMetadataAvailable(mod);
@@ -208,7 +210,10 @@ pub const PointerOwnershipPass = struct {
 
         var func = c.LLVMGetFirstFunction(mod);
 
-        var analysis_timer = ScopedTimer.start(&profiler, "analysis");
+        var analysis_timer = ScopedTimer.start(&profiler, "analysis") catch |err| {
+            diag.debug("PointerOwnership: Failed to start analysis timer: {}", .{err});
+            return;
+        };
         defer analysis_timer.stop() catch {};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
@@ -344,9 +349,10 @@ pub const PointerOwnershipPass = struct {
             }
         }
 
-        analysis_timer.stop() catch {};
-
-        var detect_timer = ScopedTimer.start(&profiler, "detect");
+        var detect_timer = ScopedTimer.start(&profiler, "detect") catch |err| {
+            diag.debug("PointerOwnership: Failed to start detect timer: {}", .{err});
+            return;
+        };
         defer detect_timer.stop() catch {};
 
         try detectViolations(ctx, &alloc_map, &free_map, &flow_graph, &stats, diag, &boundary_analyzer, &lifetime_engine);
@@ -429,7 +435,7 @@ pub const PointerOwnershipPass = struct {
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
 
-        try null_check_recognizer.recognizeInFunction(func, id_map);
+        null_check_recognizer.recognizeInFunction(func, id_map) catch {};
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -602,9 +608,9 @@ pub const PointerOwnershipPass = struct {
         alloc_pool: *MemoryPool(AllocSite),
         free_pool: *MemoryPool(FreeSite),
     ) OwnershipError!void {
-        _ = has_debug_info;
         const opcode = c.LLVMGetInstructionOpcode(inst);
-        const inst_id = try id_map.getOrPutId(@intFromPtr(inst));
+        const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
+        _ = has_debug_info;
 
         try buildFlowGraph(allocator, inst, opcode, flow_graph, id_map);
 
@@ -619,7 +625,7 @@ pub const PointerOwnershipPass = struct {
                 .lang = callee_lang,
                 .alloc_type = alloc_type,
                 .ptr_value_id = inst_id,
-                .bb_id = if (@intFromPtr(parent_bb) != 0) @intFromPtr(parent_bb) else 0,
+                .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
                 .debug_file = null,
                 .debug_line = null,
                 .debug_column = null,
@@ -635,7 +641,7 @@ pub const PointerOwnershipPass = struct {
             const callee_lang = identifyLanguageFromCallee(inst, opcode);
             const ptr_arg = c.LLVMGetOperand(inst, 0);
             const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
-                try id_map.getOrPutId(@intFromPtr(ptr_arg))
+                id_map.getOrPutId(@intFromPtr(ptr_arg)) catch return
             else
                 inst_id;
 
@@ -647,7 +653,7 @@ pub const PointerOwnershipPass = struct {
                 .lang = callee_lang,
                 .free_type = free_type,
                 .ptr_value_id = ptr_value_id,
-                .bb_id = if (@intFromPtr(parent_bb) != 0) @intFromPtr(parent_bb) else 0,
+                .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
                 .debug_file = null,
                 .debug_line = null,
                 .debug_column = null,
@@ -666,101 +672,83 @@ pub const PointerOwnershipPass = struct {
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         id_map: *ValueIdMap,
     ) OwnershipError!void {
-        const inst_id = try id_map.getOrPutId(@intFromPtr(inst));
+        const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
 
         switch (opcode) {
             c.LLVMStore => {
-                // Store: value -> pointer
                 const value = c.LLVMGetOperand(inst, 0);
                 const ptr = c.LLVMGetOperand(inst, 1);
                 if (@intFromPtr(value) != 0 and @intFromPtr(ptr) != 0) {
-                    const value_id = try id_map.getOrPutId(@intFromPtr(value));
-                    const ptr_id = try id_map.getOrPutId(@intFromPtr(ptr));
+                    const value_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
+                    const ptr_id = id_map.getOrPutId(@intFromPtr(ptr)) catch return;
                     try addFlowEdge(allocator, value_id, ptr_id, flow_graph);
                 }
             },
-            c.LLVMLoad => {
-                // Load: pointer -> result
-                const ptr = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(ptr) != 0) {
-                    const ptr_id = try id_map.getOrPutId(@intFromPtr(ptr));
-                    try addFlowEdge(allocator, ptr_id, inst_id, flow_graph);
-                }
-            },
+            c.LLVMLoad => {},
             c.LLVMBitCast, c.LLVMPtrToInt, c.LLVMIntToPtr => {
-                // Cast: operand -> result
                 const operand = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(operand) != 0) {
-                    const operand_id = try id_map.getOrPutId(@intFromPtr(operand));
+                    const operand_id = id_map.getOrPutId(@intFromPtr(operand)) catch return;
                     try addFlowEdge(allocator, operand_id, inst_id, flow_graph);
                 }
             },
             c.LLVMCall => {
-                // Call: arguments flow to result (for allocation functions)
-                // and arguments flow to function (for free functions)
                 const num_ops = c.LLVMGetNumOperands(inst);
                 var i: u32 = 0;
                 while (i < num_ops) : (i += 1) {
                     const op = c.LLVMGetOperand(inst, i);
                     if (@intFromPtr(op) != 0) {
-                        const op_id = try id_map.getOrPutId(@intFromPtr(op));
-                        // Arguments flow to call result
+                        const op_id = id_map.getOrPutId(@intFromPtr(op)) catch continue;
                         try addFlowEdge(allocator, op_id, inst_id, flow_graph);
                     }
                 }
             },
             c.LLVMPHI => {
-                // PHI: incoming values -> result
                 const num_incoming = c.LLVMCountIncoming(inst);
                 var i: u32 = 0;
                 while (i < num_incoming) : (i += 1) {
                     const incoming = c.LLVMGetIncomingValue(inst, i);
                     if (@intFromPtr(incoming) != 0) {
-                        const incoming_id = try id_map.getOrPutId(@intFromPtr(incoming));
+                        const incoming_id = id_map.getOrPutId(@intFromPtr(incoming)) catch continue;
                         try addFlowEdge(allocator, incoming_id, inst_id, flow_graph);
                     }
                 }
             },
             c.LLVMSelect => {
-                // Select: true_val/false_val -> result
                 const true_val = c.LLVMGetOperand(inst, 1);
                 const false_val = c.LLVMGetOperand(inst, 2);
                 if (@intFromPtr(true_val) != 0) {
-                    const true_id = try id_map.getOrPutId(@intFromPtr(true_val));
+                    const true_id = id_map.getOrPutId(@intFromPtr(true_val)) catch return;
                     try addFlowEdge(allocator, true_id, inst_id, flow_graph);
                 }
                 if (@intFromPtr(false_val) != 0) {
-                    const false_id = try id_map.getOrPutId(@intFromPtr(false_val));
+                    const false_id = id_map.getOrPutId(@intFromPtr(false_val)) catch return;
                     try addFlowEdge(allocator, false_id, inst_id, flow_graph);
                 }
             },
             c.LLVMGetElementPtr => {
-                // GEP: base pointer -> result (field/element access)
-                // The first operand is the base pointer, subsequent are indices
                 const base_ptr = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(base_ptr) != 0) {
-                    const base_id = try id_map.getOrPutId(@intFromPtr(base_ptr));
+                    const base_id = id_map.getOrPutId(@intFromPtr(base_ptr)) catch return;
                     try addFlowEdge(allocator, base_id, inst_id, flow_graph);
                 }
             },
             c.LLVMExtractValue => {
-                // ExtractValue: aggregate -> result (extract field)
                 const aggregate = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(aggregate) != 0) {
-                    const agg_id = try id_map.getOrPutId(@intFromPtr(aggregate));
+                    const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
                     try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
                 }
             },
             c.LLVMInsertValue => {
-                // InsertValue: aggregate + value -> result
                 const aggregate = c.LLVMGetOperand(inst, 0);
                 const value = c.LLVMGetOperand(inst, 1);
                 if (@intFromPtr(aggregate) != 0) {
-                    const agg_id = try id_map.getOrPutId(@intFromPtr(aggregate));
+                    const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
                     try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
                 }
                 if (@intFromPtr(value) != 0) {
-                    const val_id = try id_map.getOrPutId(@intFromPtr(value));
+                    const val_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
                     try addFlowEdge(allocator, val_id, inst_id, flow_graph);
                 }
             },

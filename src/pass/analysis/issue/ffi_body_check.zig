@@ -511,8 +511,13 @@ pub const FFIBodyCheckPass = struct {
 
         var issue_count: usize = 0;
         for (ffi_boundaries) |boundary| {
+            // Create null-terminated string for C API
+            // LLVMGetNamedFunction expects a null-terminated C string
+            const null_terminated_name = try ctx.allocator.dupeZ(u8, boundary.function_name);
+            defer ctx.allocator.free(null_terminated_name);
+
             // Get the function from the module
-            const func = c.LLVMGetNamedFunction(module, boundary.function_name.ptr);
+            const func = c.LLVMGetNamedFunction(module, null_terminated_name.ptr);
             if (func == null) continue;
 
             // Check if this function contains dangerous calls
