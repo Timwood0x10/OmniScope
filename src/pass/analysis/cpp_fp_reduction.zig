@@ -69,6 +69,38 @@ pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
     return false;
 }
 
+/// Check if a function is Rust's drop_in_place (destructor glue).
+/// These are guaranteed safe by Rust's ownership system —
+/// UAF patterns here are normal destructor chaining, NOT bugs.
+pub fn isRustDropGlue(func_name: []const u8) bool {
+    const drop_patterns = [_][]const u8{
+        "drop_in_place", // core::ptr::drop_in_place
+        "_ZN4core3ptr13drop_in_place", // mangled form
+        "<T as core::ops::drop::Drop>::drop",
+        "::drop", // generic Drop impl
+    };
+    for (drop_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    // Also skip if function name contains common Rust drop glue patterns
+    // like <type as Drop>::drop or __rust_dealloc
+    const rust_drop_markers = [_][]const u8{
+        "__rust_dealloc",
+        "__rust_alloc",
+        "real_drop_in_place",
+    };
+    for (rust_drop_markers) |marker| {
+        if (std.mem.indexOf(u8, func_name, marker) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// Detect as_ptr borrow escape patterns (Task 9.3c).
 /// Identifies when a local String/Vec's .as_ptr() result is passed
 /// to an extern "C" function — the pointer may dangle if the Rust
@@ -601,6 +633,15 @@ pub fn detectUseAfterFree(
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
         const ptr_id = free_info.ptr_value_id;
+
+        // P1 Enhancement: Skip UAF in Rust's guaranteed-safe drop glue.
+        // `core::ptr::drop_in_place` is Rust's destructor mechanism.
+        // UAF patterns here are normal (destructor chain calling sub-drops),
+        // NOT real use-after-free bugs. Rust's ownership system guarantees safety.
+        if (isRustDropGlue(free_info.func_name)) {
+            diag.debug("UAF-SKIP: {s} is Rust drop_in_place — guaranteed safe by ownership system", .{free_info.func_name});
+            continue;
+        }
 
         var flow_iter = flow_graph.iterator();
         while (flow_iter.next()) |flow_entry| {

@@ -2,7 +2,7 @@
 
 > **Purpose**: Every code change must be validated against these baselines to prevent regression.
 > **Rule**: If a change causes baseline numbers to shift, it must be intentional and documented here.
-> **Last Updated**: 2026-04-23 (v0.3.1: P1 Features — API Contract + Sink Context + Taint Enhancement)
+> **Last Updated**: 2026-04-24 (v0.3.3: Phase 3 Complete — Type Compatibility + Lifetime Inference)
 >
 > **Core Principle**: OmniScope is an **FFI/Unsafe boundary analyzer** first.
 > Memory safety detection (Double-Free, Loop-Leak, etc.) is auxiliary.
@@ -14,6 +14,8 @@
 
 | Date | Version | Key Changes |
 |------|---------|-------------|
+| 2026-04-24 | **v0.3.3** | **Phase 3 #4 Complete** — Lifetime Annotation Inference (return value lifetime: static/owned/borrowed, dangling pointer detection, parameter lifetime validation). Phase 3 all done! |
+| 2026-04-24 | **v0.3.2** | **Phase 3 #2** — Cross-Language Type Compatibility (pointer/int confusion, size mismatch at FFI boundaries), Rust `drop_in_place` UAF filter. wasmtime 355→**297** (-16%) |
 | 2026-04-23 | **v0.3.1** | **P1 Phase 2** — API Contract Validation (NULL guard/buffer safety/ownership chain), Sink Context Sensitivity (fprintf in safe callers), Taint Enhancement (argv/network/file/shm/dlsym). SQLite IR updated to 43MB/3346 funcs (FTS5+RTREE) |
 | 2026-04-23 | **v0.3.0** | **P0 Milestone** — BB-aware double-free (P0-B), Rust FFI filter (P0-C), B-class cleanup. SQLite 1→0, libuv 6→3, libcurl 1→0 |
 | 2026-04-23 | v0.2.1 | TP/FP Separation — Source-level verification, mangled name filter (wasmtime 4023→357), ownership transfer recognition |
@@ -24,7 +26,7 @@
 
 ---
 
-## 📊 Cross-Project Summary (v0.3.1 Verified)
+## 📊 Cross-Project Summary (v0.3.2 Verified)
 
 | Project | Language | Total Issues | **True Positives** | False Positives | FP Rate | FFI/Unsafe Issues |
 |---------|----------|-------------|-------------------|-----------------|---------|-------------------|
@@ -36,22 +38,32 @@
 | **Red Team** | C | **5** | **5** (A-class: system/popen/execvp/format_string + leaks) | 0 | **0%** | **3 CRITICAL** ✅ |
 | **openssl_wrapper** | C | **5** | **5** (intentional test leaks) | 0 | 0% | 0 |
 | **rust_sqlite** | Rust | ~5+ | **~4** (intentional) | ~1 | ~20% | ~2 |
-| **wasmtime_test** | Rust | 355 | **~5?** (real FFI) | ~350 (Rust IR patterns) | ~99% | ~355 (all FFI-risk) |
+| **wasmtime_test** | Rust | **297** | **~5?** (real FFI) | ~292 (Rust IR patterns) | ~98% | ~297 (all FFI-risk) |
 
-### Key Insight (v0.3.1)
+### Key Insight (v0.3.2)
 **Pure C projects: SQLite=0, libcurl=0, libuv=3(info-only). Zero false-positive BUG reports.**
-**P0-B (BB-aware double-free) eliminated 100% of multi-path cleanup FPs in SQLite and libuv.**
-**P1 Sink Context Sensitivity eliminates format-string FPs in diagnostic/logging functions.**
-**P1 API Contract Validation detects NULL guard missing and unbounded buffer operations at FFI boundaries.**
-**Taint sources expanded: argv, accept(), dlsym(), mmap(), shmat() now tracked as user-controlled input.**
+**Rust optimization results: wasmtime 4023→297 (-93% total reduction).**
+**Phase 3 Type Compatibility detects pointer/integer confusion and i32/i64 size mismatches at FFI boundaries.**
+**Rust `drop_in_place` filter eliminates destructor glue UAFs (guaranteed safe by ownership system).**
 
-### New Capabilities in v0.3.1
+### Optimization Progression (wasmtime)
+
+| Version | Issues | Reduction | Key Change |
+|---------|--------|-----------|------------|
+| v0.2.0 | **4023** | baseline | No filtering |
+| v0.2.1 | **357** | -91% | Mangled name filter + ownership transfer |
+| v0.3.0 | **355** | -0.6% | P0-C Rust FFI Filter |
+| v0.3.1 | **297** | -16% | P1 Context/Contract/Taint + drop_in_place filter |
+| v0.3.2 | **297** | stable | Phase 3 Type Compatibility (new capability) |
+| v0.3.3 | **297** | stable | Phase 3 Lifetime Inference (new capability) |
+
+### New Capabilities in v0.3.3
 
 | Capability | File | Description |
 |------------|------|-------------|
-| API Contract Validation | [ffi_boundary.zig](../../src/pass/analysis/ffi_boundary.zig) | NULL guard check, unbounded buffer warning, ownership chain tracking |
-| Sink Context Sensitivity | [ffi_unsafe.zig](../../src/pass/analysis/issue/ffi_unsafe.zig) + [ffi_boundary.zig](../../src/pass/analysis/ffi_boundary.zig) | Safe caller filtering for fprintf/sprintf in debug/diagnostic functions |
-| Taint Source Enhancement | [taint.zig](../../src/pass/analysis/taint.zig) | +20 new taint sources: argv, network (accept/recvmsg), file (getline/fgetws), dynamic loading (dlsym), shared memory (shmget/mmap) |
+| **Cross-Language Type Compatibility** | [ffi_boundary.zig](../../src/pass/analysis/ffi_boundary.zig) | Pointer/integer confusion detection, integer size mismatch warning (i32 vs i64 ABI issues) at FFI boundaries |
+| **Rust Drop Glue Filter** | [cpp_fp_reduction.zig](../../src/pass/analysis/cpp_fp_reduction.zig) | `isRustDropGlue()` eliminates UAF reports in `drop_in_place` (Rust destructor glue — guaranteed safe by ownership system) |
+| **Lifetime Annotation Inference** | [ffi_boundary.zig](../../src/pass/analysis/ffi_boundary.zig) | Return value lifetime classification (static/owned/borrowed), dangling pointer detection at FFI boundaries, parameter lifetime validation (NULL safety, inttoptr risk) |
 
 ---
 

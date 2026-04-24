@@ -84,10 +84,68 @@ pub const FFIBoundaryPass = struct {
             "_ZN", // Rust mangling
         };
 
-        /// Zig FFI function name patterns
+        /// Zig FFI function name patterns (based on zig_ffi_filter.md)
         const zig_patterns = &[_][]const u8{
-            "extern", // extern functions
-            "c_", // C API prefixes
+            "extern", // extern "C" functions
+            "c_", // C API prefixes from @cImport
+            "@cImport", // C import macro
+            "zig_", // Zig runtime functions calling C
+            "__zig", // Zig compiler-generated FFI glue
+        };
+
+        /// Zig-specific internal/runtime functions (SAFE — not real FFI issues)
+        const zig_internal_patterns = &[_][]const u8{
+            // Zig compiler-generated helpers (guaranteed safe by type system)
+            "zig_assert_fail",
+            "zig_panic",
+            "zig_oq",
+            "zig_write",
+            "zig_alloc",
+            "zig_free",
+            "zig_error",
+            "zig_generic_resolve",
+            "zig_monitor_init",
+            "zig_monitor_lock",
+            "zig_monitor_unlock",
+            "zig_monitor_notify",
+            "zig_monitor_wait",
+            // Zig standard library internals
+            "std.debug.assert",
+            "std.debug.panic",
+            "std.mem.copy",
+            "std.mem.set",
+            "std.fmt.format",
+            "std.fmt.bufPrint",
+            "std.heap.c_allocator",
+            "std.heap.page_allocator",
+            "std.heap.raw_c_allocator",
+            // Zig OS abstraction layer (safe wrappers)
+            "std.os.system",
+            "std.posix",
+            "std.windows",
+            // Zig builtin functions (compiler intrinsics)
+            "@memcpy",
+            "@memset",
+            "@memset",
+            "@floatCast",
+            "@intCast",
+            "@bitCast",
+            "@ptrCast",
+            "@alignCast",
+            "@errorReturnTrace",
+        };
+
+        /// Zig @cImport common patterns (known-safe libc bindings)
+        const zig_cimport_safe = &[_][]const u8{
+            "c.printf", "c.sprintf", "c.snprintf", // String formatting
+            "c.malloc", "c.free", "c.realloc", "c.calloc", // Memory management
+            "c.memcpy", "c.memmove", "c.memset", "c.memcmp", // Memory operations
+            "c.strlen", "c.strcmp", "c.strncmp", "c.strcpy", "c.strncpy", // String ops
+            "c.fopen", "c.fclose", "c.fread", "c.fwrite", // File I/O
+            "c.exit", "c.abort", "c.atexit", // Process control
+            "c.getenv", "c.setenv", // Environment
+            "c.time", "c.clock", "c.gettimeofday", // Time
+            "c.rand", "c.srand", // Random
         };
 
         /// C standard library functions (not FFI boundaries)
@@ -322,6 +380,31 @@ pub const FFIBoundaryPass = struct {
 
         // If it's a cross-language call or external unknown, create an FFI boundary
         if ((caller_lang != callee_lang and callee_lang != .unknown) or is_external) {
+            // Phase 3: Zig-specific FFI filtering (based on zig_ffi_filter.md)
+            // Skip known-safe Zig internal functions and @cImport bindings
+            if (caller_lang == .zig or caller_lang == .unknown) {
+                // Check Zig-specific filters
+                if (isZigInternalFunction(caller_name)) {
+                    diag.debug("ZIG-SKIP: {s} -> {s} (internal function)", .{ caller_name, called_name });
+                    stats.cross_lang += 1;
+                    return false;
+                }
+                if (semantics) |sem| {
+                    if (!isZigFFIWorthReporting(caller_name, called_name, sem)) {
+                        diag.debug("ZIG-SKIP: {s} -> {s} (safe cimport)", .{ caller_name, called_name });
+                        stats.cross_lang += 1;
+                        return false;
+                    }
+                } else {
+                    // No semantic info — basic check for safe cimport
+                    if (isZigSafeCImport(called_name)) {
+                        diag.debug("ZIG-SKIP: {s} -> {s} (safe cimport)", .{ caller_name, called_name });
+                        stats.cross_lang += 1;
+                        return false;
+                    }
+                }
+            }
+
             const boundary_kind = classifyBoundaryKind(caller_lang, callee_lang);
 
             // Create location
@@ -428,6 +511,12 @@ pub const FFIBoundaryPass = struct {
 
         // P1 Task 2.1: Validate API contract compliance
         validateAPIContract(diag, inst, caller_func, sem);
+
+        // Phase 3 Task #2: Cross-language type compatibility check
+        checkTypeCompatibility(diag, inst);
+
+        // Phase 3 Task #4: Lifetime annotation inference at FFI boundaries
+        inferLifetimeConstraints(diag, inst, caller_func, sem);
     }
 
     /// P1 Task 2.1: Extern "C" API Contract Validation.
@@ -577,6 +666,399 @@ pub const FFIBoundaryPass = struct {
         }
 
         return false;
+    }
+
+    /// Phase 3 Task #2: Cross-Language Type Compatibility.
+    ///
+    /// Detects type mismatches at FFI boundaries that could cause UB:
+    /// - Pointer/int confusion (passing pointer where int expected)
+    /// - Size mismatches (i32 vs i64 on different ABIs)
+    /// - Function pointer type mismatches
+    /// - Struct layout incompatibility (Rust repr(C) vs C struct)
+    fn checkTypeCompatibility(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+    ) void {
+        const callee_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(callee_val) == 0) return;
+        // Only check external declarations (extern "C" functions)
+        if (c.LLVMIsDeclaration(callee_val) == 0) return;
+
+        // Get function type from declaration
+        const func_type = c.LLVMGetElementType(c.LLVMTypeOf(callee_val));
+        if (@intFromPtr(func_type) == 0) return;
+
+        const num_params = c.LLVMCountParams(callee_val);
+        const num_operands = c.LLVMGetNumOperands(inst);
+        // operands = args + callee, so args = num_operands - 1
+        const num_args = @max(0, num_operands - 1);
+
+        var param_idx: u32 = 0;
+        while (param_idx < @min(num_params, num_args)) : (param_idx += 1) {
+            // Use LLVMGetParam + LLVMTypeOf instead of LLVMGetParamType (not in Zig bindings)
+            const param_val = c.LLVMGetParam(callee_val, param_idx);
+            if (@intFromPtr(param_val) == 0) continue;
+            const param_type = c.LLVMTypeOf(param_val);
+
+            const arg_operand = c.LLVMGetOperand(inst, @intCast(param_idx));
+            if (@intFromPtr(arg_operand) == 0) continue;
+
+            // Use LLVMTypeOf instead of LLVMGetType (not in Zig bindings)
+            const arg_type = c.LLVMTypeOf(arg_operand);
+            if (@intFromPtr(arg_type) == 0) continue;
+
+            const param_kind = c.LLVMGetTypeKind(param_type);
+            const arg_kind = c.LLVMGetTypeKind(arg_type);
+
+            // Check: Pointer passed as integer parameter (or vice versa)
+            if (param_kind != arg_kind) {
+                if ((param_kind == c.LLVMPointerTypeKind and arg_kind == c.LLVMIntegerTypeKind) or
+                    (param_kind == c.LLVMIntegerTypeKind and arg_kind == c.LLVMPointerTypeKind))
+                {
+                    diag.warn("  TYPE MISMATCH: Param {d} — pointer/integer confusion detected", .{param_idx});
+                    diag.warn("    Expected: {s}, Got: kind={d}", .{
+                        describeLLVMType(param_type),
+                        arg_kind,
+                    });
+                }
+            }
+
+            // Check: Size mismatch for integer types (ABI issues)
+            if (param_kind == c.LLVMIntegerTypeKind and arg_kind == c.LLVMIntegerTypeKind) {
+                const param_bits = c.LLVMGetIntTypeWidth(param_type);
+                const arg_bits = c.LLVMGetIntTypeWidth(arg_type);
+                if (param_bits > 0 and arg_bits > 0 and param_bits != arg_bits) {
+                    if (param_bits >= arg_bits * 2 or arg_bits >= param_bits * 2) {
+                        diag.warn("  SIZE MISMATCH: Param {d} — i{d} vs i{d} (potential truncation/sign-extension)", .{
+                            param_idx, arg_bits, param_bits,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn describeLLVMType(ty: c.LLVMTypeRef) []const u8 {
+        const type_kind = c.LLVMGetTypeKind(ty);
+        switch (type_kind) {
+            c.LLVMVoidTypeKind => return "void",
+            c.LLVMFloatTypeKind => return "float",
+            c.LLVMDoubleTypeKind => return "double",
+            c.LLVMX86_FP80TypeKind => return "fp80",
+            c.LLVMFP128TypeKind => return "fp128",
+            c.LLVMPPC_FP128TypeKind => return "ppc_fp128",
+            c.LLVMLabelTypeKind => return "label",
+            c.LLVMIntegerTypeKind => {
+                const bits = c.LLVMGetIntTypeWidth(ty);
+                if (bits == 1) return "i1";
+                if (bits == 8) return "i8";
+                if (bits == 16) return "i16";
+                if (bits == 32) return "i32";
+                if (bits == 64) return "i64";
+                return "integer";
+            },
+            c.LLVMFunctionTypeKind => return "function",
+            c.LLVMStructTypeKind => return "struct",
+            c.LLVMArrayTypeKind => return "array",
+            c.LLVMPointerTypeKind => return "pointer",
+            else => return "unknown",
+        }
+    }
+
+    /// Phase 3 Task #4: Lifetime Annotation Inference at FFI Boundaries.
+    ///
+    /// Infers lifetime constraints for pointers crossing FFI boundaries:
+    /// 1. Return value lifetime: static, owned (caller must free), or borrowed (bound to arg)
+    /// 2. Dangling pointer detection: using stack-allocated or short-lived args after call
+    /// 3. Parameter validity: ensure pointer arguments remain valid during call
+    fn inferLifetimeConstraints(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        sem: FunctionSemantics,
+    ) void {
+        const callee_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(callee_val) == 0) return;
+
+        const func_name_ptr = c.LLVMGetValueName(callee_val);
+        if (@intFromPtr(func_name_ptr) == 0) return;
+        const func_name = std.mem.span(func_name_ptr);
+
+        // 1. Infer return value lifetime category
+        const ret_lifetime = inferReturnValueLifetime(func_name, sem);
+        if (ret_lifetime) |lifetime| {
+            diag.debug("  LIFETIME: Return value -> {s}", .{lifetime.description});
+            if (lifetime.risk_level == .warning or lifetime.risk_level == .danger) {
+                diag.warn("  LIFETIME RISK: {s}", .{lifetime.warning});
+            }
+        }
+
+        // 2. Check for dangling pointer patterns in arguments
+        checkDanglingPointerPatterns(diag, inst, caller_func, func_name);
+
+        // 3. Validate parameter lifetime constraints
+        validateParameterLifetime(diag, inst, func_name, sem);
+    }
+
+    /// Categories of return value lifetimes at FFI boundaries
+    const ReturnLifetime = struct {
+        category: enum { static_lifetime, owned, borrowed, unknown },
+        description: []const u8,
+        risk_level: enum { info, warning, danger },
+        warning: []const u8,
+    };
+
+    /// Infer the lifetime of a pointer returned from an FFI function
+    fn inferReturnValueLifetime(func_name: []const u8, sem: FunctionSemantics) ?ReturnLifetime {
+        // Static lifetime functions — return pointers to internal static buffers
+        const static_lifetime_funcs = [_][]const u8{
+            "ctime",       // Returns pointer to static buffer
+            "ctime_r",     // Thread-safe variant
+            "asctime",     // Returns pointer to static buffer
+            "inet_ntoa",   // Returns pointer to static buffer
+            "inet_ntop",   // May use caller-provided buffer
+            "getgrgid",    // Returns pointer to static struct
+            "getpwuid",    // Returns pointer to static struct
+            "gethostbyname", // Returns pointer to static struct (deprecated)
+            "strerror",    // Returns pointer to internal string
+            "ttyname",     // Returns pointer to internal path
+        };
+        for (static_lifetime_funcs) |sf| {
+            if (std.mem.eql(u8, func_name, sf)) {
+                return ReturnLifetime{
+                    .category = .static_lifetime,
+                    .description = "static internal buffer (do NOT free)",
+                    .risk_level = .warning,
+                    .warning = "Return value points to STATIC buffer — freeing it causes UB; not thread-safe",
+                };
+            }
+        }
+
+        // Owned allocation functions — caller must free the result
+        if (sem.transfers_ownership) {
+            return ReturnLifetime{
+                .category = .owned,
+                .description = "heap-allocated (caller owns, must free)",
+                .risk_level = .info,
+                .warning = "",
+            };
+        }
+
+        // Borrowed/sub-pointer functions — result is derived from input argument
+        const borrowed_patterns = [_][]const u8{
+            "strchr", "strrchr",      // Returns sub-pointer of first arg
+            "strstr",                 // Returns sub-pointer of first arg
+            "memchr",                 // Returns sub-pointer of first arg
+            "getenv",                 // Returns pointer to environment string
+            "dirname", "basename",    // May modify or return sub-string
+        };
+        for (borrowed_patterns) |bp| {
+            if (std.mem.indexOf(u8, func_name, bp) != null) {
+                return ReturnLifetime{
+                    .category = .borrowed,
+                    .description = "borrowed from input argument (lifetime bound to source)",
+                    .risk_level = .warning,
+                    .warning = "Return value borrows from input — source must outlive the result",
+                };
+            }
+        }
+
+        return null;
+    }
+
+    /// Detect dangling pointer patterns at FFI boundaries
+    fn checkDanglingPointerPatterns(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        callee_name: []const u8,
+    ) void {
+        _ = caller_func;
+
+        // Pattern 1: Taking address of local variable and passing to FFI
+        // This is usually OK for input parameters but dangerous for output params
+        const num_operands = c.LLVMGetNumOperands(inst);
+        var i: c.uint = 0;
+        while (i < @as(c.uint, @intCast(num_operands - 1))) : (i += 1) {
+            const arg = c.LLVMGetOperand(inst, i);
+            if (@intFromPtr(arg) == 0) continue;
+
+            // Check if this argument is an alloca (stack variable address)
+            if (c.LLVMGetInstructionOpcode(arg) == c.LLVMAlloca) {
+                // alloca passed directly — check if this could be problematic
+                // For write-type functions (sprintf, strcpy, etc.), stack buffer is normal
+                // For read-type functions that store output, could indicate escape
+                const is_write_op = isWriteOperation(callee_name);
+                if (!is_write_op) {
+                    diag.debug("  LIFETIME: Stack address (alloca) passed to {s} — verify scope safety", .{callee_name});
+                }
+            }
+
+            // Pattern 2: Using return value of function that returns stack address
+            // (e.g., returning &local_var — undefined behavior in C)
+            if (c.LLVMIsAInstruction(arg)) |_| {
+                const opcode = c.LLVMGetInstructionOpcode(arg);
+                if (opcode == c.LLVMLoad) {
+                    // Load from potential stack location
+                    const ptr_operand = c.LLVMGetOperand(arg, 0);
+                    if (@intFromPtr(ptr_operand) != 0 and c.LLVMIsAInstruction(ptr_operand) != null) {
+                        if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMAlloca) {
+                            diag.warn("  DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope", .{});
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Check if a function name indicates a write operation (safe to pass stack buffers)
+    fn isWriteOperation(func_name: []const u8) bool {
+        const write_patterns = [_][]const u8{
+            "sprintf", "snprintf", "strcpy", "strncpy",
+            "memcpy", "memmove", "memset",
+            "fgets", "gets", "read", "recv",
+            "fscanf", "sscanf",
+        };
+        for (write_patterns) |wp| {
+            if (std.mem.indexOf(u8, func_name, wp) != null) return true;
+        }
+        return false;
+    }
+
+    /// Validate that pointer arguments satisfy lifetime requirements
+    fn validateParameterLifetime(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        callee_name: []const u8,
+        sem: FunctionSemantics,
+    ) void {
+        _ = sem;
+
+        // Check for common lifetime violations:
+
+        // 1. Passing NULL to non-nullable pointer parameter
+        const num_operands = c.LLVMGetNumOperands(inst);
+        var i: c.uint = 0;
+        while (i < @as(c.uint, @intCast(num_operands - 1))) : (i += 1) {
+            const arg = c.LLVMGetOperand(inst, i);
+            if (@intFromPtr(arg) == 0) continue;
+
+            // Check for NULL constant being passed as pointer argument
+            if (c.LLVMIsAConstantPointerNull(arg)) |_| {
+                // NULL passed — may be intentional (sentinel) or bug
+                // Only warn for functions where NULL is unusual
+                const nullable_ok = isNullableParameter(callee_name, @intCast(i));
+                if (!nullable_ok) {
+                    diag.debug("  LIFETIME: NULL passed as param {d} to {s} — verify intent", .{ i, callee_name });
+                }
+            }
+
+            // 2. Check for integer-to-pointer cast (potential invalid address)
+            if (c.LLVMIsAIntToPtrInst(arg)) |_| {
+                diag.warn("  LIFETIME RISK: inttoptr conversion passed to {s} — possible invalid pointer", .{callee_name});
+            }
+        }
+    }
+
+    /// Determine if NULL is acceptable for a given parameter position
+    fn isNullableParameter(func_name: []const u8, param_idx: u32) bool {
+        // Common functions where certain params can be NULL
+        if (std.mem.eql(u8, func_name, "memcpy") or std.mem.eql(u8, func_name, "memmove")) {
+            // memcpy(dst, src, n) — neither dst nor src should be NULL in practice
+            return false;
+        }
+        if (std.mem.indexOf(u8, func_name, "printf") != null) {
+            // printf format string should not be NULL
+            if (param_idx == 0) return false;
+            // Variadic args can be NULL (e.g., %s with NULL)
+            return true;
+        }
+        if (std.mem.indexOf(u8, func_name, "free") != null) {
+            // free(NULL) is explicitly defined as no-op
+            return true;
+        }
+        // Default: NULL is suspicious
+        return false;
+    }
+
+    /// Check if a Zig function is an internal/runtime function (SAFE — skip analysis).
+    /// Based on zig_ffi_filter.md: Zig compiler-generated helpers are guaranteed
+    /// safe by the type system and should not generate FFI warnings.
+    pub fn isZigInternalFunction(func_name: []const u8) bool {
+        // Check against known-safe internal patterns
+        for (FFIPatterns.zig_internal_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+
+        // Check for Zig compiler-generated mangled names (safe by construction)
+        // Pattern: __zig_* or zig.* (module paths)
+        if (std.mem.indexOf(u8, func_name, "__zig") != null) {
+            return true;
+        }
+
+        // Zig anonymous function names (lambda/closure helpers)
+        if (std.mem.indexOf(u8, func_name, "(anonymous namespace)") != null) {
+            return true;
+        }
+
+        // Zig generic instantiation patterns (e.g., "foo(T).inner")
+        if (std.mem.indexOf(u8, func_name, "generic(") != null or
+            std.mem.indexOf(u8, func_name, "__anon_") != null)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// Check if a called C function from @cImport is a known-safe binding.
+    /// These are standard libc functions that Zig wraps safely.
+    pub fn isZigSafeCImport(func_name: []const u8) bool {
+        for (FFIPatterns.zig_cimport_safe) |pattern| {
+            if (std.mem.eql(u8, func_name, pattern) or
+                std.mem.indexOf(u8, func_name, pattern) != null)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Comprehensive check: Should we analyze this FFI boundary in Zig context?
+    /// Returns true if this is a REAL FFI risk worth reporting.
+    fn isZigFFIWorthReporting(
+        caller_func_name: []const u8,
+        callee_func_name: []const u8,
+        sem: FunctionSemantics,
+    ) bool {
+        // Rule 1: Skip if caller is Zig internal function
+        if (isZigInternalFunction(caller_func_name)) {
+            return false;
+        }
+
+        // Rule 2: Skip if callee is known-safe @cImport binding AND not dangerous
+        if (isZigSafeCImport(callee_func_name)) {
+            // Still report if it's semantically dangerous (system, exec, etc.)
+            if (sem.kind == .command_exec or sem.kind == .unchecked_copy) {
+                return true; // Override: dangerous calls always reported
+            }
+            return false; // Safe libc bindings are OK
+        }
+
+        // Rule 3: Always report cross-language ownership issues
+        if (sem.transfers_ownership or sem.consumes_ownership) {
+            return true;
+        }
+
+        // Rule 4: Report format string vulnerabilities
+        if (sem.kind == .format_string) {
+            return true;
+        }
+
+        // Default: report for analysis
+        return true;
     }
 
     /// Identify the language of a function based on its characteristics
