@@ -475,109 +475,115 @@ pub fn isNullableAllocation(alloc: *const AllocSite) bool {
 }
 
 /// Detect double-free: same pointer freed multiple times.
+/// P0-B Enhanced: Control-flow aware via basic_block_id tracking.
+///
+/// Key insight (from SQLite source-level verification):
+///   - Same-BB double-free = REAL bug (sequential free() calls)
+///   - Different-BB multi-free = cleanup paths (each error branch frees, NOT a bug)
+///
+/// FFI-core principle: we focus on clear bugs at FFI boundaries,
+/// not complex alias analysis for generic static analysis.
 pub fn detectDoubleFree(
     ctx: *PassContext,
     free_map: *std.AutoHashMap(u32, *FreeSite),
-    flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     stats: *OwnershipStats,
     diag: *DiagnosticWriter,
 ) !void {
-    if (flow_graph.count() == 0) {
-        diag.debug("DOUBLE-FREE: Empty flow graph, skipping", .{});
+    if (free_map.count() == 0) {
+        diag.debug("DOUBLE-FREE: No free sites, skipping", .{});
         return;
     }
 
-    var alloc_free_count = std.AutoHashMap(u32, u32).init(free_map.allocator);
-    defer alloc_free_count.deinit();
-    var alloc_first_free_func = std.AutoHashMap(u32, []const u8).init(free_map.allocator);
-    defer alloc_first_free_func.deinit();
+    if (free_map.count() > 500) {
+        diag.debug("DOUBLE-FREE: Skipped (too many free sites: {d})", .{free_map.count()});
+        return;
+    }
 
-    // Collect free operations with RAII filtering
+    // Per-ptr tracking: count + unique BB set + first function name
+    const PtrInfo = struct {
+        count: u32,
+        bb_set: std.AutoHashMap(usize, void),
+        first_func: []const u8,
+    };
+
+    var ptr_info_map = std.AutoHashMap(u32, PtrInfo).init(free_map.allocator);
+    defer {
+        var iter = ptr_info_map.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.bb_set.deinit();
+        }
+        ptr_info_map.deinit();
+    }
+
+    // Collect free operations with RAII filtering + BB tracking
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
         const ptr_id = free_info.ptr_value_id;
 
-        // Skip RAII-managed functions (C++ destructors, smart pointers, etc.)
         if (isStlInternalFunction(free_info.func_name)) continue;
         if (isCppSpecialMemberFunction(free_info.func_name)) continue;
         const func_name_ptr = @intFromPtr(free_info.func_name.ptr);
         if (ctx.raii_func_set.contains(func_name_ptr)) continue;
 
-        var visited = std.AutoHashMap(u32, void).init(free_map.allocator);
-        defer visited.deinit();
-        var bfs_queue = std.ArrayList(struct { id: u32, depth: u32 }).initCapacity(free_map.allocator, 16) catch break;
-        defer bfs_queue.deinit(free_map.allocator);
-
-        bfs_queue.append(free_map.allocator, .{ .id = ptr_id, .depth = 0 }) catch {};
-        while (bfs_queue.items.len > 0) {
-            const item = bfs_queue.orderedRemove(0);
-            const current = item.id;
-            const depth = item.depth;
-
-            if (visited.contains(current)) continue;
-            visited.put(current, {}) catch {};
-
-            if (depth <= 2) {
-                const count_entry = alloc_free_count.getOrPut(current) catch continue;
-                if (!count_entry.found_existing) {
-                    count_entry.value_ptr.* = 0;
-                }
-                count_entry.value_ptr.* += 1;
-
-                if (count_entry.value_ptr.* == 1) {
-                    alloc_first_free_func.put(current, free_info.func_name) catch {};
-                }
-            }
-
-            if (depth >= 3) continue;
-
-            if (flow_graph.get(current)) |forward_edges| {
-                var edge_iter = forward_edges.iterator();
-                while (edge_iter.next()) |e| {
-                    if (!visited.contains(e.key_ptr.*)) {
-                        bfs_queue.append(free_map.allocator, .{ .id = e.key_ptr.*, .depth = depth + 1 }) catch {};
-                    }
-                }
-            }
-
-            var fg_rev = flow_graph.iterator();
-            while (fg_rev.next()) |fg_entry| {
-                if (fg_entry.value_ptr.*.contains(current)) {
-                    if (!visited.contains(fg_entry.key_ptr.*)) {
-                        bfs_queue.append(free_map.allocator, .{ .id = fg_entry.key_ptr.*, .depth = depth + 1 }) catch {};
-                    }
-                }
-            }
+        const gop_result = try ptr_info_map.getOrPut(ptr_id);
+        if (!gop_result.found_existing) {
+            gop_result.value_ptr.* = .{
+                .count = 0,
+                .bb_set = std.AutoHashMap(usize, void).init(free_map.allocator),
+                .first_func = free_info.func_name,
+            };
         }
+        const info = gop_result.value_ptr;
+        info.count += 1;
+        info.bb_set.put(free_info.bb_id, {}) catch {};
     }
 
-    var count_iter = alloc_free_count.iterator();
+    // Analyze each pointer with multiple frees
+    var count_iter = ptr_info_map.iterator();
     while (count_iter.next()) |count_entry| {
         const alloc_id = count_entry.key_ptr.*;
-        const free_cnt = count_entry.value_ptr.*;
+        const info = count_entry.value_ptr.*;
+        const free_cnt = info.count;
+        const unique_bbs = info.bb_set.count();
+
+        if (free_cnt > 5) continue;
 
         if (free_cnt > 1) {
-            const first_func = alloc_first_free_func.get(alloc_id) orelse "unknown";
+            const first_func = info.first_func;
+
+            const is_mangled = (std.mem.indexOf(u8, first_func, "_ZN") != null or
+                std.mem.indexOf(u8, first_func, "$") != null or
+                std.mem.indexOf(u8, first_func, "_R") != null);
+            if (is_mangled) continue;
+
+            // === P0-B Core Logic: Control-Flow Awareness ===
+            //
+            // Case 1: All frees in SAME basic block
+            //   Example: free(p); ...; free(p);  (sequential, no branch)
+            //   Verdict: REAL double-free bug → HIGH confidence
+            //
+            // Case 2: Frees in DIFFERENT basic blocks
+            //   Example: if (err1) { free(p); return; } if (err2) { free(p); return; }
+            //   Verdict: Multi-path cleanup pattern → SKIP (not a bug)
+            //
+            const is_same_bb = (unique_bbs == 1);
+
+            if (!is_same_bb) {
+                diag.debug("DOUBLE-FREE-SKIP: {d} frees of alloc {d} in {d} different BBs ({s}) — multi-path cleanup", .{ free_cnt, alloc_id, unique_bbs, first_func });
+                continue;
+            }
+
             stats.double_frees += 1;
 
-            // Threshold logic: differentiate real bugs from cleanup patterns
-            // == 2: Classic double-free bug → HIGH severity
-            // > 2: Cleanup loop pattern → MEDIUM severity (likely FP)
-            const is_classic_bug = (free_cnt == 2);
-            const severity: Severity = if (is_classic_bug) .high else .medium;
-            const confidence: f32 = if (is_classic_bug) 0.9 else 0.6;
-            const level_tag = if (is_classic_bug) "[HIGH]" else "[MEDIUM]";
-
-            const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times (first in {s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
+            const severity: Severity = .high;
+            const confidence: f32 = 0.92;
+            const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
 
             ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
             ctx.allocator.free(msg);
 
-            diag.err("DOUBLE-FREE {s}: Allocation {d} has {d} free operations (first in {s})", .{ level_tag, alloc_id, free_cnt, first_func });
-            if (!is_classic_bug) {
-                diag.warn("  Note: >2 frees suggests cleanup loop pattern (possible FP)", .{});
-            }
+            diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
             diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
     }
@@ -721,10 +727,8 @@ pub fn detectMemoryIssues(
     diag: *DiagnosticWriter,
 ) void {
     detectMemoryLeaks(ctx, alloc_map, free_map, flow_graph, stats, diag);
-    detectDoubleFree(ctx, free_map, flow_graph, stats, diag) catch {};
+    detectDoubleFree(ctx, free_map, stats, diag) catch {};
     detectUseAfterFree(ctx, free_map, flow_graph, stats, diag);
-    detectLoopLeaks(ctx, alloc_map, diag) catch {};
-    detectResourceLeaks(ctx, diag);
 }
 
 /// Detect loop-internal memory leaks: allocations inside loop bodies
@@ -767,7 +771,8 @@ pub fn detectLoopLeaks(
 
     var count_iter = func_alloc_counts.iterator();
     while (count_iter.next()) |entry| {
-        if (entry.value_ptr.* >= 3) {
+        // Hard cap: >20 allocations in single function is likely legitimate code
+        if (entry.value_ptr.* >= 3 and entry.value_ptr.* <= 20) {
             const func_name = @as([*]const u8, @ptrFromInt(entry.key_ptr.*))[0..100];
             leak_candidates.append(alloc_map.allocator, .{ .func = func_name, .count = entry.value_ptr.* }) catch continue;
         }

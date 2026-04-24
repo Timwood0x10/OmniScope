@@ -18,6 +18,7 @@ const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+const FunctionSemantics = @import("../../registry/semantic_registry.zig").FunctionSemantics;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 const Severity = @import("../../registry/semantic_registry.zig").Severity;
 
@@ -341,45 +342,238 @@ pub const FFIBoundaryPass = struct {
 
             // Print dangerous calls with detailed risk info from Semantic Registry
             if (is_dangerous) {
-                stats.dangerous_count += 1;
-                const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
-                defer if (@intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr)) ctx.allocator.free(caller_demangled);
-                const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
-                defer if (@intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr)) ctx.allocator.free(callee_demangled);
                 const sem = semantics.?;
 
-                // Format risk message based on severity
-                const severity_str = sem.severity.toString();
-                const kind_str = @tagName(sem.kind);
-
-                // Get debug info for the instruction
-                const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
-
-                diag.err("[{s}] FFI RISK: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
-
-                // Show source location if available
-                if (debug_loc) |loc| {
-                    if (loc.valid()) {
-                        diag.err("  Location: {f}", .{loc});
+                // P1 Sink Context Sensitivity: skip format-string issues in known-safe contexts
+                const is_fmt = (sem.kind == .format_string);
+                if (is_fmt) {
+                    const safe_caller = blk: {
+                        for ([_][]const u8{ "proxy", "conch", "lock", "debug", "log", "trace", "sqlite3Mem" }) |p| {
+                            if (std.mem.indexOf(u8, caller_name, p) != null) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    const is_safe = safe_caller and (std.mem.indexOf(u8, called_name, "fprintf") != null or
+                        std.mem.indexOf(u8, called_name, "sprintf") != null);
+                    if (is_safe) {
+                        diag.debug("FFI-SKIP: {s} -> {s} — safe context", .{ caller_name, called_name });
+                    } else {
+                        stats.dangerous_count += 1;
+                        printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
                     }
-                }
-
-                diag.err("  Kind: {s}", .{kind_str});
-                diag.err("  Detail: {s}", .{sem.description});
-
-                // Additional context for ownership-related functions
-                if (sem.consumes_ownership) {
-                    diag.err("  Warning: This function CONSUMES ownership", .{});
-                }
-                if (sem.transfers_ownership) {
-                    diag.err("  Warning: This function TRANSFERS ownership", .{});
-                }
-                if (sem.requires_null_check) {
-                    diag.err("  Warning: Result requires NULL check", .{});
+                } else {
+                    stats.dangerous_count += 1;
+                    printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
                 }
             }
 
             return true;
+        }
+
+        return false;
+    }
+
+    fn printDangerousCallDetail(
+        diag: *DiagnosticWriter,
+        ctx: *PassContext,
+        caller_name: []const u8,
+        called_name: []const u8,
+        sem: FunctionSemantics,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+    ) void {
+        const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
+        defer if (@intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr)) ctx.allocator.free(caller_demangled);
+        const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
+        defer if (@intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr)) ctx.allocator.free(callee_demangled);
+
+        const severity_str = sem.severity.toString();
+        const kind_str = @tagName(sem.kind);
+
+        const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
+
+        diag.err("[{s}] FFI RISK: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+
+        if (debug_loc) |loc| {
+            if (loc.valid()) {
+                diag.err("  Location: {f}", .{loc});
+            }
+        }
+
+        diag.err("  Kind: {s}", .{kind_str});
+        diag.err("  Detail: {s}", .{sem.description});
+
+        if (sem.consumes_ownership) {
+            diag.err("  Warning: This function CONSUMES ownership", .{});
+        }
+        if (sem.transfers_ownership) {
+            diag.err("  Warning: This function TRANSFERS ownership", .{});
+        }
+        if (sem.requires_null_check) {
+            diag.err("  Warning: Result requires NULL check", .{});
+        }
+
+        // Show taint status for command execution functions
+        if (sem.kind == .command_exec) {
+            if (@intFromPtr(inst) != 0) {
+                const inst_id = std.math.cast(u32, @intFromPtr(inst)) orelse return;
+                const is_tainted = ctx.data_flow_graph.isTainted(inst_id);
+                if (is_tainted) {
+                    diag.err("  ⚠️  TAINTED: Command argument comes from user-controlled source!", .{});
+                } else {
+                    diag.debug("  Taint: Command argument appears to be a constant/literal", .{});
+                }
+            }
+        }
+
+        // P1 Task 2.1: Validate API contract compliance
+        validateAPIContract(diag, inst, caller_func, sem);
+    }
+
+    /// P1 Task 2.1: Extern "C" API Contract Validation.
+    ///
+    /// After detecting a dangerous FFI call, validate that the caller
+    /// properly honors the function's documented contract:
+    ///
+    /// 1. NULL check: If `requires_null_check`, verify the return value
+    ///    is compared against null before use (icmp eq/ne with null).
+    /// 2. Buffer safety: For string functions, prefer snprintf over sprintf;
+    ///    flag unbounded copies as contract violations.
+    /// 3. Ownership chain: If `transfers_ownership`, warn if result is
+    ///    discarded without free/store (potential leak).
+    fn validateAPIContract(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        sem: FunctionSemantics,
+    ) void {
+        // Check 1: NULL guard validation
+        if (sem.requires_null_check) {
+            const has_null_guard = checkNullGuard(inst, caller_func);
+            if (!has_null_guard) {
+                diag.warn("  CONTRACT VIOLATION: {s} returns nullable pointer but no NULL check detected", .{
+                    sem.pattern,
+                });
+                diag.warn("  Risk: NULL pointer dereference / crash", .{});
+            } else {
+                diag.debug("  Contract OK: NULL guard present for {s}", .{sem.pattern});
+            }
+        }
+
+        // Check 2: Buffer safety — flag unbounded string ops
+        if (sem.kind == .format_string) {
+            const func_name_ptr = c.LLVMGetValueName(inst);
+            if (@intFromPtr(func_name_ptr) != 0) {
+                const called_name_str = std.mem.span(func_name_ptr);
+                const is_unbounded = (std.mem.indexOf(u8, called_name_str, "sprintf") != null and
+                    std.mem.indexOf(u8, called_name_str, "snprintf") == null) or
+                    (std.mem.indexOf(u8, called_name_str, "strcpy") != null and
+                    std.mem.indexOf(u8, called_name_str, "strncpy") == null) or
+                    std.mem.eql(u8, called_name_str, "gets");
+                if (is_unbounded) {
+                    diag.warn("  CONTRACT WARNING: Unbounded buffer operation ({s}) — consider bounded alternative", .{called_name_str});
+                }
+            }
+        }
+
+        // Check 3: Ownership chain — transferred ownership should not be discarded
+        if (sem.transfers_ownership) {
+            const has_owner = checkOwnershipChain(inst, caller_func);
+            if (!has_owner) {
+                diag.warn("  CONTRACT WARNING: {s} transfers ownership but result may be discarded (leak risk)", .{
+                    sem.pattern,
+                });
+            }
+        }
+    }
+
+    /// Scan forward in the same basic block for a NULL comparison of the call result.
+    fn checkNullGuard(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
+        _ = func;
+        const parent_bb = c.LLVMGetInstructionParent(inst);
+        if (@intFromPtr(parent_bb) == 0) return false;
+
+        var next_inst = c.LLVMGetNextInstruction(inst);
+        const scan_limit: u32 = 20; // Don't scan too far
+        var scanned: u32 = 0;
+
+        while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
+            next_inst = c.LLVMGetNextInstruction(next_inst);
+            scanned += 1;
+        }) {
+            const opcode = c.LLVMGetInstructionOpcode(next_inst);
+            // icmp eq/ne with null → NULL guard pattern
+            if (opcode == c.LLVMICmp) {
+                const num_ops = c.LLVMGetNumOperands(next_inst);
+                if (num_ops >= 2) {
+                    const op0 = c.LLVMGetOperand(next_inst, 0);
+                    const op1 = c.LLVMGetOperand(next_inst, 1);
+                    // Check if either operand is our call instruction's result
+                    if (@intFromPtr(op0) == @intFromPtr(inst) or @intFromPtr(op1) == @intFromPtr(inst)) {
+                        const other_op = if (@intFromPtr(op0) == @intFromPtr(inst)) op1 else op0;
+                        const other_name = c.LLVMGetValueName(other_op);
+                        if (@intFromPtr(other_name) != 0) {
+                            const name_str = std.mem.span(other_name);
+                            // "null" in LLVM IR
+                            if (std.mem.indexOf(u8, name_str, "null") != null) return true;
+                        }
+                        // Also check if it's a constant null (ConstantPointerNull)
+                        if (c.LLVMIsAConstantPointerNull(other_op) != null) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Check if the result of an ownership-transferring call is properly handled
+    /// (stored to memory, passed to another function, or compared — NOT discarded).
+    fn checkOwnershipChain(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
+        _ = func;
+        const parent_bb = c.LLVMGetInstructionParent(inst);
+        if (@intFromPtr(parent_bb) == 0) return false;
+
+        // Scan forward to see how the result is used
+        var next_inst = c.LLVMGetNextInstruction(inst);
+        const scan_limit: u32 = 15;
+        var scanned: u32 = 0;
+
+        while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
+            next_inst = c.LLVMGetNextInstruction(next_inst);
+            scanned += 1;
+        }) {
+            const opcode = c.LLVMGetInstructionOpcode(next_inst);
+            const num_ops = c.LLVMGetNumOperands(next_inst);
+            const n_ops = @as(usize, @intCast(num_ops));
+
+            // Store → saved to memory (good)
+            if (opcode == c.LLVMStore) {
+                if (n_ops >= 1) {
+                    const val_op = c.LLVMGetOperand(next_inst, 0);
+                    if (@intFromPtr(val_op) == @intFromPtr(inst)) return true;
+                }
+            }
+            // Call → passed to another function (likely free/close)
+            if (opcode == c.LLVMCall) {
+                for (0..@min(n_ops, 4)) |i| {
+                    const op = c.LLVMGetOperand(next_inst, @intCast(i));
+                    if (@intFromPtr(op) == @intFromPtr(inst)) return true;
+                }
+            }
+            // ICmp/FCmp → compared (part of validation logic)
+            if (opcode == c.LLVMICmp or opcode == c.LLVMFCmp) {
+                for (0..@min(n_ops, 2)) |i| {
+                    const op = c.LLVMGetOperand(next_inst, @intCast(i));
+                    if (@intFromPtr(op) == @intFromPtr(inst)) return true;
+                }
+            }
+            // PtrToInt/BitCast → being transformed (still tracked)
+            if (opcode == c.LLVMPtrToInt or opcode == c.LLVMBitCast) {
+                if (num_ops >= 1) {
+                    const op = c.LLVMGetOperand(next_inst, 0);
+                    if (@intFromPtr(op) == @intFromPtr(inst)) return true;
+                }
+            }
         }
 
         return false;

@@ -97,6 +97,16 @@ pub const TaintPass = struct {
         ctx: *PassContext,
         func: FunctionRef,
     ) !void {
+        // P1 Task 2.3: Track argv as taint source in main()
+        const func_name_ptr = c.LLVMGetValueName(func.raw);
+        if (@intFromPtr(func_name_ptr) != 0) {
+            const func_name = std.mem.span(func_name_ptr);
+            if (std.mem.indexOf(u8, func_name, "main") != null) {
+                // Mark main's parameters (argc, argv, envp) as taint sources
+                try trackMainArgsAsTaintSources(self, ctx, func.raw);
+            }
+        }
+
         // Get first basic block
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
@@ -177,23 +187,40 @@ pub const TaintPass = struct {
 
     /// Check if a function name is a known taint source (standalone function)
     fn isKnownTaintSourceByName(func_name_slice: []const u8) bool {
-        // Common taint source functions
+        // Common taint source functions — P1 Enhanced
         const taint_sources = [_][]const u8{
-            "read",
-            "recv",
-            "recvfrom",
-            "getenv",
-            "fgets",
-            "fread",
-            "scanf",
-            "gets",
-            "getchar",
-            "getwd",
-            "getcwd",
-            "getlogin",
-            "getpwnam",
-            "getpwuid",
-            "sysinfo",
+            // File I/O (existing)
+            "read",       "recv",      "recvfrom",
+            "fgets",      "fread",     "scanf",
+            "gets",       "getchar",   "getwd",
+            "getcwd",     "getlogin",  "getpwnam",
+            "getpwuid",   "sysinfo",
+
+            // Environment (existing + enhanced)
+            "getenv",     "__environ", "environ",
+
+            // Command-line arguments (P1 NEW)
+            // These are tracked via __argv/__argc globals in LLVM IR
+
+            // Network input (P1 NEW)
+            "accept",     "recvmsg",   "recvmmsg",
+            "readv",      "pread",     "preadv",
+
+            // File content (P1 NEW)
+            "fgetc",      "ungetc",    "getline",
+            "fgetln",     "fgetws",    "readlink",
+
+            // Dynamic loading (P1 NEW) — dlsym returns user-controlled symbols
+            "dlsym",      "dlvsym",
+
+            // Shared memory (P1 NEW)
+            "shmat",      "shmget",    "mmap",
+
+            // Time/state (can be used as side-channel or oracle)
+            "time",       "gettimeofday", "clock_gettime",
+
+            // Process info
+            "gethostname", "getdomainname",
         };
 
         for (taint_sources) |source| {
@@ -203,6 +230,24 @@ pub const TaintPass = struct {
         }
 
         return false;
+    }
+
+    /// P1 Task 2.3: Mark main()'s arguments as taint sources.
+    /// argv[i] and envp values come from the OS and are user-controlled.
+    fn trackMainArgsAsTaintSources(self: *TaintPass, ctx: *PassContext, func: c.LLVMValueRef) !void {
+        const num_params = c.LLVMCountParams(func);
+        var i: u32 = 0;
+        while (i < num_params) : (i += 1) {
+            const param = c.LLVMGetParam(func, i);
+            if (@intFromPtr(param) == 0) continue;
+            const param_id = ctx.getNextId();
+            // argc is usually safe (integer count), but argv[argc] and envp are tainted
+            if (i >= 1) { // Skip argc (index 0), mark argv (index 1+) as tainted
+                try self.sources.append(param_id);
+                try self.taint_graph.markTaintedFromSource(param_id, param_id);
+                try self.store.insert(.taint, param_id, param_id, self.func_id);
+            }
+        }
     }
 
     /// Check if a call instruction is a taint sink

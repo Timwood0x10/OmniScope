@@ -26,12 +26,25 @@ pub const BufferOverflowPass = struct {
     pub const kind = .analysis;
 
     /// Run buffer overflow detection on the loaded module.
-    /// Iterates through all functions and checks GEP instructions
-    /// for out-of-bounds access patterns.
+    /// This is an AUXILIARY pass (not core FFI/unsafe detection).
+    /// For performance, it skips modules with >500 functions (large codebases).
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
         const mod = ctx.module.?.raw;
+
+        // Performance guard: skip large modules (auxiliary feature, not core FFI)
+        var func_count: u32 = 0;
+        var count_func = c.LLVMGetFirstFunction(mod);
+        while (@intFromPtr(count_func) != 0) : (count_func = c.LLVMGetNextFunction(count_func)) {
+            if (c.LLVMIsDeclaration(count_func) != 0) continue;
+            func_count += 1;
+        }
+        if (func_count > 500) {
+            diag.info("BufferOverflow: Skipped (module has {d} functions, >500 threshold)", .{func_count});
+            return;
+        }
+
         var overflow_count: u32 = 0;
         var oob_count: u32 = 0;
 
