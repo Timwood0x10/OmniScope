@@ -121,7 +121,7 @@ pub const TaintPass = struct {
 
                 // Check if this is a call instruction
                 if (opcode_enum == .Call) {
-                    const inst_id = ctx.getNextId();
+                    const inst_id = ctx.getValueId(@intFromPtr(inst)) catch continue;
 
                     // Check if this is a taint source
                     if (isTaintSource(inst)) {
@@ -246,7 +246,7 @@ pub const TaintPass = struct {
         while (i < num_params) : (i += 1) {
             const param = c.LLVMGetParam(func, i);
             if (@intFromPtr(param) == 0) continue;
-            const param_id = ctx.getNextId();
+            const param_id = ctx.getValueId(@intFromPtr(param)) catch continue;
             // argc is usually safe (integer count), but argv[argc] and envp are tainted
             if (i >= 1) { // Skip argc (index 0), mark argv (index 1+) as tainted
                 try self.sources.append(param_id);

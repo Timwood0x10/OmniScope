@@ -10,6 +10,7 @@ const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
+const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -35,6 +36,7 @@ pub const PassContext = struct {
     data_flow_graph: *DataFlowGraph,
     next_id: std.atomic.Value(u32),
     vuln_id: std.atomic.Value(u32),
+    value_id_map: ValueIdMap,
     raii_func_set: std.AutoHashMap(usize, void),
     meyers_singleton_set: std.AutoHashMap(usize, void),
     rc_container_func_set: std.AutoHashMap(usize, void),
@@ -57,6 +59,7 @@ pub const PassContext = struct {
             .data_flow_graph = data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
             .vuln_id = std.atomic.Value(u32).init(0),
+            .value_id_map = ValueIdMap.init(allocator),
             .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
@@ -65,12 +68,30 @@ pub const PassContext = struct {
         };
     }
 
-    /// Get a unique ID
+    /// Get a unique ID for non-pointer entities (functions, basic blocks, etc.)
     ///
     /// Returns:
-    ///   - u32: A unique ID (thread-safe)
+    ///   - u32: A unique sequential ID (thread-safe)
+    ///
+    /// Note: For LLVM Value pointers, use getValueId() instead
     pub fn getNextId(self: *PassContext) u32 {
         return self.next_id.fetchAdd(1, .seq_cst);
+    }
+
+    /// Get a unique ID for an LLVM value pointer.
+    /// Uses ValueIdMap to ensure the same pointer always gets the same ID,
+    /// avoiding collision issues from pointer truncation on 64-bit systems.
+    ///
+    /// Parameters:
+    ///   - ptr: LLVM value pointer (must be non-null)
+    ///
+    /// Returns:
+    ///   - u32: Unique ID for this pointer (consistent across calls)
+    ///
+    /// Errors:
+    ///   - error.NullPointer: If ptr is 0
+    pub fn getValueId(self: *PassContext, ptr: usize) !u32 {
+        return self.value_id_map.getOrPutId(ptr);
     }
 
     /// Get a unique vulnerability ID (shared across all detection passes)
@@ -80,6 +101,7 @@ pub const PassContext = struct {
 
     /// Release all resources held by this context
     pub fn deinit(self: *PassContext) void {
+        self.value_id_map.deinit();
         self.raii_func_set.deinit();
         self.meyers_singleton_set.deinit();
         self.rc_container_func_set.deinit();

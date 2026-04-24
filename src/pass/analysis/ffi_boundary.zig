@@ -490,9 +490,9 @@ pub const FFIBoundaryPass = struct {
             // Create location
             const location = Location.init(caller_name);
 
-            // Create FFI boundary
+            // Create FFI boundary (use pointer-based ID for boundary entity)
             const boundary = FFIBoundary.init(
-                ctx.getNextId(),
+                ctx.getValueId(@intFromPtr(inst)) catch return false,
                 boundary_kind,
                 caller_lang,
                 callee_lang,

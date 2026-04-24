@@ -90,8 +90,11 @@ pub const CFGPass = struct {
         var bb = c.LLVMGetFirstBasicBlock(func.raw);
 
         while (@intFromPtr(bb) != 0) {
-            // Assign ID to basic block
-            const bb_id = self.ctx.getNextId();
+            // Assign ID to basic block (pointer-based for LLVM values)
+            const bb_id = self.ctx.getValueId(@intFromPtr(bb)) catch {
+                bb = c.LLVMGetNextBasicBlock(bb);
+                continue;
+            };
             try self.bb_id_map.put(bb, bb_id);
 
             // Analyze basic block

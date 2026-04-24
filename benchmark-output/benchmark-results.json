@@ -1,6 +1,6 @@
 {
-  "benchmark_id": "omniscope-20260424-114951",
-  "timestamp": "2026-04-24T03:49:51Z",
+  "benchmark_id": "omniscope-20260424-165043",
+  "timestamp": "2026-04-24T08:50:43Z",
   "scope": "FFI/Unsafe Boundary Analysis",
   "environment": {
     "os": "Darwin",
@@ -10,17 +10,17 @@
   },
   "ffi_summary": {
     "ffi_critical": 2,
-    "ffi_high": 105
+    "ffi_high": 81
   },
   "results": {
-    "total_tp": 53,
-    "total_fp": 67,
-    "total_fn": 20,
-    "total_detected": 120,
+    "total_tp": 58,
+    "total_fp": 74,
+    "total_fn": 15,
+    "total_detected": 132,
     "total_expected": 73,
-    "precision": 0.4417,
-    "recall": 0.7260,
-    "f1_score": 0.5492,
+    "precision": 0.4394,
+    "recall": 0.7945,
+    "f1_score": 0.5659,
     "false_positive_rate": 0
   },
   "targets": {
@@ -32,11 +32,11 @@
   },
   "per_file": [
 
-    {"file": "cpp_ffi_simple.ll", "detected": 9, "expected": 3, "ffi_critical": 0, "ffi_high": 8},
-    {"file": "boundary_test.ll", "detected": 10, "expected": 14, "ffi_critical": 0, "ffi_high": 7},
-    {"file": "stress_patterns.ll", "detected": 28, "expected": 44, "ffi_critical": 0, "ffi_high": 27},
-    {"file": "openssl_wrapper.ll", "detected": 22, "expected": 4, "ffi_critical": 0, "ffi_high": 17},
+    {"file": "cpp_ffi_simple.ll", "detected": 12, "expected": 3, "ffi_critical": 0, "ffi_high": 6},
+    {"file": "boundary_test.ll", "detected": 14, "expected": 14, "ffi_critical": 0, "ffi_high": 7},
+    {"file": "stress_patterns.ll", "detected": 29, "expected": 44, "ffi_critical": 0, "ffi_high": 5},
+    {"file": "openssl_wrapper.ll", "detected": 24, "expected": 4, "ffi_critical": 0, "ffi_high": 17},
     {"file": "sqlite_binding.ll", "detected": 19, "expected": 4, "ffi_critical": 0, "ffi_high": 15},
-    {"file": "zlib_binding.ll", "detected": 32, "expected": 4, "ffi_critical": 0, "ffi_high": 19}
+    {"file": "zlib_binding.ll", "detected": 34, "expected": 4, "ffi_critical": 0, "ffi_high": 19}
   ]
 }

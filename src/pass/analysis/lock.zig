@@ -122,7 +122,7 @@ pub const LockPass = struct {
                     const is_acquire = self.isLockAcquire(inst);
                     const lock_id = try self.getLockId(inst);
 
-                    const inst_id = self.ctx.getNextId();
+                    const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch continue;
 
                     const lock_op = LockOperation{
                         .lock_id = lock_id,

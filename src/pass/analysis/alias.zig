@@ -169,8 +169,8 @@ pub const AliasPass = struct {
         // Get or create type ID
         const type_id = try self.getTypeId(inst_type);
 
-        // Get instruction ID
-        const inst_id = self.ctx.getNextId();
+        // Get instruction ID (pointer-based for LLVM values)
+        const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch return;
 
         // Store pointer info
         const ptr_info = PointerInfo{

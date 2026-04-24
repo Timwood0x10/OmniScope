@@ -10,6 +10,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
+const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
@@ -70,6 +71,7 @@ pub const Pipeline = struct {
             .data_flow_graph = &self.data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
             .vuln_id = std.atomic.Value(u32).init(0),
+            .value_id_map = ValueIdMap.init(self.allocator),
             .raii_func_set = std.AutoHashMap(usize, void).init(self.allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(self.allocator),
