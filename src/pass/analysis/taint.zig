@@ -1,7 +1,20 @@
-//! Taint Analysis Pass
+//! ⚠️  DEPRECATED - Legacy Taint Analysis Pass
 //!
-//! This pass tracks data flow from tainted sources to sensitive sinks
-//! to detect potential security vulnerabilities.
+//! **This module is deprecated since v0.1.5.**
+//! Please use `taint_propagation.zig` (PointerFlowPass) instead.
+//!
+//! ## Migration Guide
+//! - Old: `TaintPass` (name: "taint") → Boolean taint tracking
+//! - New: `TaintPropagationPass` (name: "pointer-flow") → 4-state + confidence
+//!
+//! ## Why Deprecated?
+//! 1. Only tracks boolean tainted/clean (no confidence levels)
+//! 2. No sanitizer function awareness
+//! 3. No path-sensitive analysis
+//! 4. Higher false positive rate on FFI boundaries
+//!
+//! **Status**: Kept for backward compatibility. Will be removed in v0.2.0.
+//! **All dependencies have been migrated to `pointer-flow` pass.**
 
 const std = @import("std");
 const Pass = @import("../pass.zig").Pass;

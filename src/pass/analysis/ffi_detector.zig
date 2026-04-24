@@ -142,7 +142,7 @@ pub const FFIVulnerability = struct {
 pub const FFIDetector = struct {
     pub const name = "ffi-detector";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "taint" };
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
 
     allocator: Allocator,
     store: *FactStore,

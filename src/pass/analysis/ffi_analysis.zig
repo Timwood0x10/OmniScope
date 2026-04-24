@@ -81,7 +81,7 @@ pub const FFIAnalysisResult = struct {
 pub const FFIAnalysisPass = struct {
     pub const name = "ownership-violation";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "taint" };
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
 
     allocator: Allocator,
     store: *FactStore,

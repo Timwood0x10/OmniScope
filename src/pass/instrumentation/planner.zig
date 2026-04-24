@@ -53,7 +53,7 @@ pub const Priority = enum(u8) {
 pub const InstrumentationPlanner = struct {
     pub const name = "instrumentation-planner";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "alias", "lock", "taint" };
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "alias", "lock", "pointer-flow" };
 
     store: *FactStore,
     query: QueryEngine,
@@ -550,7 +550,7 @@ test "InstrumentationPlanner - validate as Pass" {
     const ValidPass = Pass(struct {
         pub const name = "test-planner-pass";
         pub const kind = PassKind.analysis;
-        pub const deps = &[_][]const u8{ "cfg", "dfg", "alias", "lock", "taint" };
+        pub const deps = &[_][]const u8{ "cfg", "dfg", "alias", "lock", "pointer-flow" };
         pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
             _ = ctx;
             _ = diag;
