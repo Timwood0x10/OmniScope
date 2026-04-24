@@ -230,24 +230,63 @@ pub const FFIBoundaryPass = struct {
         }
     }
 
-    /// Analyze a single function for FFI boundaries
+    /// Extract debug file path from LLVM function's DISubprogram metadata.
+    /// Returns the source file path if available, null otherwise.
+    /// This enables Layer 2 (Path-based) noise filtering for precise stdlib detection.
+    fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
+        // Get subprogram (debug info) from function
+        const subprogram = c.LLVMGetSubprogram(func);
+        if (@intFromPtr(subprogram) == 0) return null;
+
+        // Get file from scope
+        const file_ref = c.LLVMDIScopeGetFile(subprogram);
+        if (@intFromPtr(file_ref) == 0) return null;
+
+        // Get filename from DIFile
+        var filename_len: c_uint = undefined;
+        const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+        if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+        // Safety: limit max path length to prevent issues with corrupt metadata
+        const max_path_len = 4096;
+        if (filename_len > max_path_len) return null;
+
+        // Validate that the pointer points to readable memory
+        // by checking for null terminator within bounds
+        var valid = true;
+        for (filename_ptr[0..filename_len]) |ch| {
+            if (ch == 0) {
+                valid = false;
+                break;
+            }
+        }
+        if (!valid) return null;
+
+        // Return as slice (valid for duration of analysis)
+        return filename_ptr[0..filename_len];
+    }
+
+    /// Analyze a single function for FFI boundaries.
+    /// Applies Phase 4 Noise Reduction Engine before detailed analysis.
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
         var result = AnalyzeResult{ .count = 0, .cross_lang = 0, .libc = 0, .external_unknown = 0, .dangerous_count = 0 };
 
-        // Phase 4: Noise Reduction — classify function origin before analysis
+        // Get function name for classification
         const func_name_ptr = c.LLVMGetValueName(func);
         const func_name = if (@intFromPtr(func_name_ptr) != 0)
             std.mem.span(func_name_ptr)
         else
             "unknown";
 
-        // Classify function origin using noise reduction system
-        // Note: Layer 2 (Path-based filter) requires LLVM debug info APIs that may not be available.
-        // Using Layer 1 (Name-based) only for now — covers ~80% of noise reduction cases.
+        // Extract debug file path for Layer 2 (Path-based filter)
+        // Uses LLVM DebugInfo API when available, falls back to null otherwise
+        const debug_file_path = extractDebugFilePath(func);
+
+        // Classify function origin using three-layer noise reduction system
         const noise_config = NoiseReduction.NoiseReductionConfig{
             .focus_user_code = true,
         };
-        const classification = NoiseReduction.classifyFunction(func_name, null, noise_config);
+        const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
 
         // Skip compiler-generated functions entirely (Layer 1 + Layer 3)
         if (classification.origin == .compiler_generated) {

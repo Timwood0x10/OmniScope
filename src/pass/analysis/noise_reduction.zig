@@ -176,8 +176,9 @@ const rust_stdlib_patterns = [_][]const u8{
 };
 
 /// Zig standard library patterns to skip.
+/// Covers: std packages, allocator wrappers, compiler helpers, debug/DWARF, OS abstraction.
 const zig_stdlib_patterns = [_][]const u8{
-    // Standard library packages
+    // Standard library packages (core modules)
     "std.",
     "std.debug",
     "std.mem",
@@ -197,7 +198,7 @@ const zig_stdlib_patterns = [_][]const u8{
     "std.compress",
     "std.random",
 
-    // Allocator wrappers (safe abstraction layer)
+    // Allocator wrappers (safe abstraction layer — normal alloc/free pattern)
     "mem.Allocator",
     "GeneralPurposeAllocator",
     "ArenaAllocator",
@@ -206,29 +207,49 @@ const zig_stdlib_patterns = [_][]const u8{
     "raw_c_allocator",
     "FixedBufferAllocator",
 
-    // Compiler helpers
+    // Compiler helpers (guaranteed safe by type system)
     "zig_assert_fail",
     "zig_panic",
     "zig_oq",
     "zig_write",
     "zig_generic_resolve",
 
-    // Debug/DWARF support (internal only)
+    // Debug/DWARF support (internal only — optional unwraps are not bugs)
     "debug.Dwarf",
     "debug.Info",
     "debug.Segment",
+    "debug.LineInfo",
 
-    // Start/panic runtime
+    // OS abstraction layer (safe wrappers around syscalls)
+    "posix.",
+    "posix_getenv",
+    "posix_environ",
+    "fs.File",
+    "fs.Dir",
+    "fs.Path",
+    "fs.cwd",
+    "fs.openFile",
+    "fs.access",
+    "fs.realpath",
+    "fs.makeAbsolute",
+    "fs.canonicalize",
+
+    // Start/panic runtime (compiler-generated entry points)
     "start.zig",
     "panic.zig",
     "builtin.zig",
 
-    // Zig-specific mangled/generated
+    // Zig-specific mangled/generated names
     "__zig_",
     "__anon_",
     "(anonymous namespace)",
     "@typeInfo",
     "is_named_enum_value",
+
+    // Common Zig internal function suffixes/patterns
+    "__zig_switch_target",
+    "__zig_error_name",
+    "__zig_resolve_enum_name",
 };
 
 /// C++ STL patterns to skip.
@@ -347,22 +368,34 @@ pub fn layer2_PathBasedFilter(file_path: []const u8) ?FunctionOrigin {
 }
 
 /// Case-insensitive path contains check.
+/// Returns true if needle is found in haystack (case-insensitive for Windows paths).
 fn indexOfPath(haystack: []const u8, needle: []const u8) bool {
-    // Simple case-sensitive check first (most common)
+    // Edge case: empty inputs
+    if (haystack.len == 0 or needle.len == 0) return false;
+    if (needle.len > haystack.len) return false;
+
+    // Simple case-sensitive check first (most common case)
     if (std.mem.indexOf(u8, haystack, needle) != null) return true;
 
     // Case-insensitive fallback for Windows paths
+    // Only perform if haystack contains uppercase or lowercase letters
     var i: usize = 0;
-    while (i <= haystack.len - needle.len) : (i += 1) {
+    const max_start = haystack.len - needle.len;
+    while (i <= max_start) : (i += 1) {
         var match = true;
         for (needle, 0..) |needle_char, j| {
             const h_char = haystack[i + j];
             if (h_char == needle_char) continue;
-            // Case-insensitive compare
-            if (h_char >= 'a' and h_char <= 'z' and h_char - 'a' + 'A' == needle_char) continue;
-            if (h_char >= 'A' and h_char <= 'Z' and h_char - 'A' + 'a' == needle_char) continue;
-            match = false;
-            break;
+
+            // Case-insensitive compare (ASCII only)
+            // Convert both to lowercase for comparison
+            const h_lower = if (h_char >= 'A' and h_char <= 'Z') h_char + 32 else h_char;
+            const n_lower = if (needle_char >= 'A' and needle_char <= 'Z') needle_char + 32 else needle_char;
+
+            if (h_lower != n_lower) {
+                match = false;
+                break;
+            }
         }
         if (match) return true;
     }
@@ -480,7 +513,27 @@ pub fn isSTLVectorGrowBehavior(
 // Output Attribution Grouping
 // ═══════════════════════════════════════════════════════════════
 
+/// Maximum number of issue categories to track.
+const max_categories = 32;
+
+/// Single category entry for attribution tracking.
+const CategoryEntry = struct {
+    kind: []const u8,
+    count: u32,
+    origin: FunctionOrigin,
+
+    pub fn init(kind: []const u8, origin: FunctionOrigin) CategoryEntry {
+        return .{
+            .kind = kind,
+            .count = 0,
+            .origin = origin,
+        };
+    }
+};
+
 /// Summary statistics for attribution grouping.
+/// Tracks issues by origin (user/stdlib/compiler/third-party) and kind (UAF/leak/etc.).
+/// Produces output in format: "191 issues → 21 user code (8 FFI HIGH)"
 pub const AttributionSummary = struct {
     total_issues: u32 = 0,
     user_code: u32 = 0,
@@ -488,9 +541,19 @@ pub const AttributionSummary = struct {
     compiler_ignored: u32 = 0,
     third_party: u32 = 0,
 
+    /// Category breakdown for detailed reporting
+    categories: [max_categories]CategoryEntry = [_]CategoryEntry{.{ .kind = "", .count = 0, .origin = .unknown }} ** max_categories,
+    category_count: usize = 0,
+
+    /// Track high-severity FFI issues separately for summary line
+    ffi_high_count: u32 = 0,
+    ffi_medium_count: u32 = 0,
+
+    /// Add an issue to the summary, classified by origin and kind.
     pub fn addIssue(self: *AttributionSummary, origin: FunctionOrigin, kind: []const u8) void {
-        _ = kind; // Category tracking can be added later
         self.total_issues += 1;
+
+        // Update origin-level counters
         switch (origin) {
             .user => self.user_code += 1,
             .stdlib => self.stdlib_suppressed += 1,
@@ -498,21 +561,53 @@ pub const AttributionSummary = struct {
             .third_party => self.third_party += 1,
             .unknown => self.user_code += 1, // Treat unknown as user code
         }
+
+        // Track FFI severity for summary
+        if (std.mem.indexOf(u8, kind, "FFI") != null) {
+            if (std.mem.indexOf(u8, kind, "CRITICAL") != null or
+                std.mem.indexOf(u8, kind, "HIGH") != null)
+            {
+                self.ffi_high_count += 1;
+            } else {
+                self.ffi_medium_count += 1;
+            }
+        }
+
+        // Find or create category entry
+        var found = false;
+        for (&self.categories[0..self.category_count]) |*cat| {
+            if (std.mem.eql(u8, cat.kind, kind)) {
+                cat.count += 1;
+                found = true;
+                break;
+            }
+        }
+
+        // Create new category entry if not found and space available
+        if (!found and self.category_count < max_categories) {
+            self.categories[self.category_count] = CategoryEntry.init(kind, origin);
+            self.categories[self.category_count].count = 1;
+            self.category_count += 1;
+        }
     }
 
+    /// Print the noise-reduced analysis report.
+    /// Format: "191 issues → 21 user code (8 FFI HIGH)"
     pub fn printReport(self: *const AttributionSummary) void {
         const stdout = std.io.getStdOut().writer();
+
+        // Main summary banner
         stdout.print(
-            \\╔══════════════════════════════════════════════════╗
-            \\║     OmniScope Analysis Report (Noise-Reduced)     ║
-            \\╠══════════════════════════════════════════════════╣
-            \\║ Total Issues Detected: {d:>6}                  ║
-            \\╠──────────────────────────────────────────────────╣
-            \\║ ✅ User Code:           {d:>6} (ACTION NEEDED)    ║
-            \\║ 📦 Third-Party:         {d:>6}                   ║
-            \\║ 📚 Stdlib (Suppressed): {d:>6} (--include-stdlib)║
-            \\║ 🔧 Compiler (Ignored):  {d:>6} (noise)          ║
-            \\╚══════════════════════════════════════════════════╝
+            \\╔══════════════════════════════════════════════════════╗
+            \\║     OmniScope Analysis Report (Noise-Reduced)         ║
+            \\╠══════════════════════════════════════════════════════╣
+            \\║ Total Issues Detected: {d:>6}                       ║
+            \\╠──────────────────────────────────────────────────────╣
+            \\║ ✅ User Code:           {d:>6} (ACTION NEEDED)       ║
+            \\║ 📦 Third-Party:         {d:>6}                       ║
+            \\║ 📚 Stdlib (Suppressed): {d:>6} (--include-stdlib)   ║
+            \\║ 🔧 Compiler (Ignored):  {d:>6} (noise)              ║
+            \\╚══════════════════════════════════════════════════════╝
         , .{
             self.total_issues,
             self.user_code,
@@ -520,5 +615,61 @@ pub const AttributionSummary = struct {
             self.stdlib_suppressed,
             self.compiler_ignored,
         }) catch return;
+
+        // One-line attribution summary (the key deliverable)
+        stdout.print("\n{s} {d} issues → {d} user code", .{
+            if (self.user_code > 0) "✅" else "⚠️",
+            self.total_issues,
+            self.user_code,
+        }) catch return;
+
+        // Show FFI breakdown if any FFI issues found
+        if (self.ffi_high_count > 0 or self.ffi_medium_count > 0) {
+            stdout.print(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
+                self.ffi_high_count,
+                self.ffi_medium_count,
+            }) catch return;
+        }
+
+        stdout.writeAll("\n") catch return;
+
+        // Detailed category breakdown (only non-zero categories)
+        if (self.category_count > 0) {
+            stdout.writeAll("\n┌─ Issue Categories ────────────────────────────────\n") catch return;
+
+            for (self.categories[0..self.category_count]) |cat| {
+                if (cat.count == 0) continue;
+
+                // Origin icon
+                const icon = switch (cat.origin) {
+                    .user => "✅",
+                    .third_party => "📦",
+                    .stdlib => "📚",
+                    .compiler_generated => "🔧",
+                    .unknown => "❓",
+                };
+
+                stdout.print("│ {s} [{s}] {d:>4} issues\n", .{
+                    icon,
+                    cat.kind,
+                    cat.count,
+                }) catch return;
+            }
+
+            stdout.writeAll("└────────────────────────────────────────────────\n") catch return;
+        }
+    }
+
+    /// Reset all counters (for reuse across multiple modules).
+    pub fn reset(self: *AttributionSummary) void {
+        self.total_issues = 0;
+        self.user_code = 0;
+        self.stdlib_suppressed = 0;
+        self.compiler_ignored = 0;
+        self.third_party = 0;
+        self.category_count = 0;
+        self.ffi_high_count = 0;
+        self.ffi_medium_count = 0;
+        @memset(&self.categories, CategoryEntry.init("", .unknown));
     }
 };

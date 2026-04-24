@@ -12,4 +12,6 @@ pub const c = @cImport({
     @cInclude("llvm-c/BitReader.h");
     @cInclude("llvm-c/Analysis.h");
     @cInclude("llvm-c/Target.h");
+    // Phase 4: Enable debug info APIs for Layer 2 Path-based filter
+    @cInclude("llvm-c/DebugInfo.h");
 });

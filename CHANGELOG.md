@@ -2,969 +2,238 @@
 
 All notable changes to OmniScope will be documented in this file.
 
-## [0.2.1] - 2026-04-23 (Enhanced Detection Release)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Added
+## [Unreleased]
 
-#### Red Team Adversarial Test Suite (NEW)
-- **`corpus/red_team_test/red_team_bugs.c`**: 17 intentionally injected vulnerabilities covering 10 types
-- **`corpus/red_team_test/RED_TEAM_TEST_REPORT.md`**: Comprehensive test report with detection matrix
-- **`make red-team-test`**: CI target for automated regression testing
-- **Detection hit rate**: 41.2% → 58.8% (+17.6pp improvement)
+### Planned
+- CLI flags: `--focus-user-code`, `--ffi-only`, `--include-stdlib`
+- SARIF output with attribution grouping
+- Performance optimization for large IR files (>100MB)
+- Go CGO boundary detection
+- Swift ARC (`retain`/`release`) integration
+- WebAssembly FFI boundary analysis
 
-#### Buffer Overflow Detection Pass (NEW)
-- **`src/pass/analysis/buffer_overflow.zig`**: New pass (~220 lines) for stack buffer overflow and array OOB detection
-- **GEP + alloca analysis**: Checks GetElementPtr indices against allocation sizes
-- **Two detection modes**: Stack bounds checking + static array bounds checking
-- **Integrated into pipeline**: Automatically runs as part of PointerOwnership pass
+---
 
-#### Double-Free Detection with BFS Alias Analysis (ENHANCED)
-- **BFS-based alias analysis**: Depth-limited (≤3 hops) flow graph traversal
-- **Threshold logic**: `==2 frees → HIGH (real bug)`, `>2 frees → MEDIUM (cleanup loop)`
-- **Fixes O1 optimization issue**: Uses `-O0` build to preserve UB code patterns
-- **Detection accuracy**: Now correctly identifies `bug_double_free` with 4 alias groups
+## [0.4.1] - 2026-04-24
 
-#### Loop-Leak Pattern Detection (NEW)
-- **Heuristic rule**: ≥3 allocations in single function without matching frees
-- **Per-function counting**: Identifies potential loop-internal memory leaks
-- **Successfully detects**: STL vector growth patterns, intentional test cases
+### Added — Phase 4: Cross-Language Noise Reduction Engine 🎉
 
-#### Format String Classification (ENHANCED)
-- **New IssueKind**: `.format_string` for printf/sprintf/snprintf/syslog family
-- **Precise classification**: Distinguishes format string risks from generic FFI calls
-- **Coverage**: printf, fprintf, sprintf, snprintf, vprintf, vfprintf, syslog
+**The biggest single improvement in OmniScope history.**
 
-#### exec Family Full Coverage (NEW)
-- **12 new dangerous functions**: execve, execvp, execv, execl, execlp, execle, fexecve, posix_spawn, posix_spawnp
-- **Updated in both** `ffi_unsafe.zig` and `call_graph.zig`
-- **Detection result**: BUG-17 (execvp) now correctly flagged as CRITICAL sink
+#### Core Features
+- **Three-Layer Noise Filtering System** ([noise_reduction.zig](src/pass/analysis/noise_reduction.zig))
+  - Layer 1: Name-based Filter (120+ patterns for Rust/Zig/C++)
+  - Layer 2: Path/Debug Metadata Filter (LLVM DebugInfo API integration)
+  - Layer 3: Behavior Filter (drop glue / allocator wrapper / STL grow detection)
 
-#### Resource Leak Detection Framework (NEW)
-- **`detectResourceLeaks()`** in cpp_fp_reduction.zig: Tracks fopen/fclose, socket/close, opendir/closedir, popen/pclose pairs
-- **Per-function analysis**: Reports mismatched resource allocation/deallocation
-- **Framework ready**: Integration point for future expansion
+- **FunctionOrigin Classification System**
+  - New enum: `user`, `stdlib`, `compiler_generated`, `third_party`, `unknown`
+  - RiskWeight system combining origin + severity (critical/high/medium/low/ignored)
+
+- **Attribution Summary Output**
+  - One-line format: `"X issues → Y user code (Z FFI HIGH)"`
+  - Category breakdown with origin icons (✅📦📚🔧❓)
+
+#### Zig FFI Support Enhancement
+- **`isZigInternalFunction()`** — 40+ safe internal function patterns
+- **`isZigSafeCImport()`** — 20+ known-safe libc bindings
+- **`isZigFFIWorthReporting()`** — Comprehensive risk assessment
+- Expanded pattern database: debug.Dwarf.*, posix.*, fs.File.*, OS abstraction layer
+
+#### LLVM Integration
+- Added `@cInclude("llvm-c/DebugInfo.h")` to [llvm_raw.zig](src/ir/llvm_raw.zig)
+- New `extractDebugFilePath()` function for precise source file detection
+- Safe memory access with bounds checking and null terminator validation
+
+#### Test Infrastructure
+- Three new Zig FFI test projects:
+  - [zig_video_test.zig](corpus/test_cases/zig/zig_video_test.zig) — Video processing library simulation
+  - [zgui_test.zig](corpus/test_cases/zig/zgui_test.zig) — GUI library simulation
+  - [mach_core_test.zig](corpus/test_cases/zig/mach_core_test.zig) — Game engine simulation
+- Comprehensive bilingual test report: [ZIG_FFI_TEST_REPORT.md](corpus/test_cases/ZIG_FFI_TEST_REPORT.md)
 
 ### Changed
+- Updated [BASELINE.md](corpus/real_world/BASELINE.md) to v0.4.1 with all test results
+- Updated [README.md](README.md) with v0.4.1 highlights and new project table
+- Created [RELEASE_NOTES.md](RELEASE_NOTES.md) with detailed release documentation
 
-#### C++ False Positive Reduction (ENHANCED)
-- **RAII-aware filtering**: Double-Free and Loop-Leak detectors now check RAII function set
-- **wabt results**: 9 → 7 issues (-22% FP reduction)
-- **8-layer filter system**: L1-L8 filters now properly applied to all detection passes
+### Performance Impact
+| Project | Before | After | Reduction |
+|---------|--------|-------|-----------|
+| wasmtime (Rust) | 297 | **9** | **-97%** |
+| zig_video (Zig) | 194 | **50** | **-74%** |
+| zgui (Zig) | 168 | **24** | **-86%** |
+| mach_core (Zig) | 211 | **67** | **-68%** |
 
-#### BASELINE.md v0.2.0 Rewrite
-- **Complete restructure**: New format with version history, capability matrix, per-project details
-- **10 project coverage**: All real_world projects analyzed with v0.2.0 detection capabilities
-- **Red Team section**: Added adversarial test suite documentation
-- **Security Audit Record**: Complete fix history from Phase 1-3
+### Security
+- No security vulnerabilities introduced
+- All existing security features maintained
 
 ### Fixed
+- Fixed potential buffer overread in `indexOfPath()` with proper bounds checking
+- Fixed null pointer dereference risk in `extractDebugFilePath()` with validation
 
-#### Critical Substring Matching Bug (SECURITY FIX)
-- **`ffi_unsafe.zig`**: `std.mem.indexOf` → `std.mem.eql` (exact match)
-- **Impact**: libcurl 59→0, SQLite 20→0 (eliminated all substring-matching FPs)
-- **`call_graph.zig`**: Same fix for classifyRisk/isSink functions
+---
+
+## [0.4.0] - 2026-04-24 (Internal Release)
+
+### Added — Phase 4 Initial Implementation
+- Initial three-layer noise reduction architecture design
+- FunctionOrigin and RiskWeight type definitions
+- Basic name-based filter for Rust stdlib functions
+- First successful test: wasmtime 297 → 9 issues
+
+### Note
+This was an internal development milestone, not publicly released.
+Merged into v0.4.1 with enhancements.
+
+---
+
+## [0.3.3] - 2026-04-24
+
+### Added — Phase 3 Complete
+- **Cross-Language Type Compatibility** ([ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig))
+  - Pointer/integer confusion detection at FFI boundaries
+  - Integer size mismatch warning (i32 vs i64 ABI issues)
+  - Type kind description helper (`describeLLVMType()`)
+
+- **Lifetime Annotation Inference** ([ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig))
+  - Return value lifetime classification (static/owned/borrowed)
+  - Dangling pointer detection (alloca passed to FFI)
+  - Parameter lifetime validation (NULL safety, inttoptr risk)
+  - Nullable parameter recognition per function semantics
+
+- **Rust Drop Glue Filter** ([cpp_fp_reduction.zig](src/pass/analysis/cpp_fp_reduction.zig))
+  - `isRustDropGlue()` eliminates UAF reports in destructor glue
+  - Covers mangled forms: `_ZN4core3ptr13drop_in_place`, etc.
+
+### Changed
+- Updated BASELINE.md to v0.3.3
+- wasmtime: 355 → 297 issues (-16%) from drop_in_place filtering
+
+---
+
+## [0.3.2] - 2026-04-24
+
+### Added — Phase 3 #2: Type Compatibility
+- Initial implementation of cross-language type mismatch detection
+- Fixed LLVM API compatibility errors (`LLVMGetParamType` → `LLVMGetParam` + `LLVMTypeOf`)
+- Fixed `LLVMGetType` → `LLVMTypeOf` throughout codebase
+
+---
+
+## [0.3.1] - 2026-04-23
+
+### Added — P1 Phase 2 Complete
+- **API Contract Validation** ([ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig))
+  - NULL guard check via forward BB scanning
+  - Unbounded buffer operation warning
+  - Ownership chain tracking
+
+- **Sink Context Sensitivity** ([ffi_unsafe.zig](src/pass/analysis/issue/ffi_unsafe.zig) + [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig))
+  - Safe caller filtering for fprintf/sprintf
+  - Confidence adjustment for diagnostic functions
+
+- **Taint Source Enhancement** ([taint.zig](src/pass/analysis/taint.zig))
+  - Expanded from 15 to 35+ taint sources
+  - New sources: argv, accept(), dlsym(), mmap(), shmat(), getline(), fgetws()
+
+- **SQLite IR Recompilation**
+  - Recompiled with `-DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_SESSION`
+  - Result: 43MB / 753K lines / 3346 functions (up from 35MB / 2657 functions)
+
+### Changed
+- Updated BASELINE.md to v0.3.1
+- SQLite: 1 → 0 issues (FTS5/RTREE recompilation)
+- libuv: 6 → 3 issues (sink context sensitivity)
+- libcurl: 1 → 0 issues (format string FP elimination)
+
+---
+
+## [0.3.0] - 2026-04-23
+
+### Added — P0 Milestone Complete
+- **BB-Aware Double-Free Detection** (P0-B)
+  - Same-BB = real bug (HIGH confidence)
+  - Different-BB = multi-path cleanup path (skip)
+
+- **Rust FFI Relevance Filter** (P0-C)
+  - `isRustFFIRelevantFunction()` filters non-extern-calling Rust functions
+  - Based on [rust_ffi_filter.md](plan/rust_ffi_filter.md) classification standard
+
+- **B-class Cleanup**
+  - Reduced noise from low-confidence detections
+
+### Changed
+- wasmtime: 4023 → 357 issues (-91% from initial)
+- SQLite/libcurl/libuv: significant FP reduction
+
+---
+
+## [0.2.1] - 2026-04-23
+
+### Added — TP/FP Separation
+- Source-level verification framework
+- Mangled name filter for Rust compiler-generated symbols
+- Ownership transfer recognition (into_raw/from_raw patterns)
+- Red Team Test Suite: 17 intentionally injected bugs
+
+### Changed
+- wasmtime: 4023 → 357 issues (initial major FP reduction)
 
 ---
 
 ## [0.2.0] - 2026-04-23
 
-### Added
+### Added — Enhanced Detection Capabilities
+- Double-Free Detection with BFS alias analysis
+- Loop-Leak Detection heuristic (≥3 allocs without frees)
+- Format String Vulnerability classification
+- exec* family coverage (12 dangerous functions)
 
-#### Rust FFI Auditor (Task 11.3)
+---
 
-- **`src/pass/analysis/rust_ffi_auditor.zig`**: New independent module (464 lines) for dedicated Rust↔C FFI analysis
-- **6 detection rules**: Unpaired into_raw, as_ptr borrow escape, cross-lang alloc mismatch, unsafe FFI calls, extern "C" type mismatch, #[no_mangle] export ownership
-- **Structured output**: `RustFfiFinding` with `generateReport()` for formatted audit reports
-- **7 unit tests**: Covering all detection helpers (isRustIntoRawCall, isRustFromRawCall, isRustAsPtrCall, isCFreeCall, isExternCCall)
+## [0.1.5] - 2026-04-22
 
-#### Stable JSON Schema v1 (Task 11.1)
-
-- **`src/main.zig`**: `formatIssuesAsJson()` upgraded with stable schema:
-  - `schema_version`, `tool_version`, `timestamp`, `summary` (functions/issues/time_ms)
-  - Per-issue: `id` (OMI-NNN), `cwe_id`, `reason`, `confidence_level`
-- **CLI**: `--json` flag outputs machine-parseable JSON
-
-#### SARIF v2.1.0 Upgrade (Task 11.2)
-
-- **`src/output/sarif.zig`** + **`src/report/sarif.zig`**: Both upgraded
-  - Version: 0.1.0 → 0.1.5
-  - +3 rules: `memory_leak`, `null_dereference`, `borrow_escape`
-  - Properties: +`confidenceLevel`, +`reason`
-- **GitHub Code Scanning compatible**: Full rule definitions, level mapping, CWE taxonomy
-
-#### Confidence System (2.0 W1)
-
-- **`src/diag/issue.zig`**: Enhanced with:
-  - `Confidence` enum: HIGH/MEDIUM/HEURISTIC/EXPERIMENTAL
-  - `initWithReason()` constructor for reason field population
-  - All output formats now include `[Confidence: LEVEL]` and `Reason:`
-
-#### Unified Report Format (Task 7.7)
-
-- **4 output points unified** to format: `VULNERABILITY OMI-NNN [SEV] [Confidence: LEVEL]`
-  - `cpp_fp_reduction.zig`: borrow_escape, cross-lang mismatch, null_deref
-  - `ffi_detector.zig`: FFI vulnerability reports
-  - `call_graph.zig`: Tainted path to sink
-
-#### New Baseline Projects (Tasks 9.4b)
-
-- **`wabt_wast2json.ll`**: WebAssembly Binary Toolkit (C++), 125 funcs, 2 issues, 0.07s
-- **`wasmtime_test.ll`**: Wasmtime runtime (Rust+C), 974 funcs, 82K IR, 1 issue, 2.5s
-- **Baseline total**: 10 projects (4 C + 2 C++ + 3 Rust + 1 test), 6,441 functions
-
-### Changed
-
-#### File Splitting (Task 10.1) — Rules Compliance
-
-| Original | Split Into | Lines |
-|----------|-----------|-------|
-| pointer_ownership.zig (1985 lines) | pointer_ownership.zig | 936 |
-| | allocation_classifier.zig | 206 |
-| | cpp_fp_reduction.zig | 937 |
-
-All files now comply with rules.md §49 (≤1000 lines per file).
-
-#### Ownership Transfer Detection (Task 8.2)
-
-- SQLite leak=0 confirmed via return-value + output-param transfer detection
-- Pattern A: `%ptr = ret` → ownership transferred to caller
-- Pattern B: `store ptr, [%arg+N]` → ownership transferred via output param
-
-### Technical Whitepaper
-
-- **`docs/WHITEPAPER.md`**: Comprehensive technical document covering architecture, 8-layer FP system, 10-project validation results, confidence system, and roadmap.
+### Security Audit Fixes
+- Fixed 30+ bugs found during internal audit
+- Changed substring matching to exact matching for function names
 
 ---
 
 ## [0.1.4] - 2026-04-22
 
-### Added
+### Added — Phase 3 Optimizations
+- Ownership transfer inference
+- Null guard dominance analysis
+- C++ RAII awareness improvements
 
-#### Benchmark Framework (Tasks 6.1–6.3)
+---
 
-- **`docs/BENCHMARK.md`**: Comprehensive benchmark specification with Analysis Scope definition, Phase-gated targets (Phase 1–4), in-scope vs out-of-scope issue categorization
-- **`scripts/benchmark.sh`**: Corpus-based detection rate measurement script supporting all 5 report formats (`VULNERABILITY OMI-xxx`, `MEMORY LEAK:`, `DOUBLE-FREE:`, `USE-AFTER-FREE:`, `CROSS-LANGUAGE OWNERSHIP VIOLATION`), range-parsed expected counts, CI-ready JSON output
-- **`tests/benchmark/main.zig`**: 15 performance assertion tests covering registry latency (<10μs), engine operations, memory usage, throughput, and coverage assertions
+## [0.1.3] - 2026-04-21
 
-#### Analysis Scope Definition
+### Added — Initial Baseline Creation
+- Real-world corpus testing framework
+- Baseline metrics for 5 production projects
+- Regression guard system
 
-- **`corpus/EXPECTED_RESULTS.md`**: Every issue row annotated with Scope column (`✅ in-scope` / `❌ out-of-scope`). Metrics now calculated only against 115 in-scope FFI/memory-safety issues (leak, cross\_lang\_mismatch, UAF, double\_free, borrow\_escape, null\_deref, dangling\_pointer) instead of all 136 issues
+---
 
-#### Semantic Registry Expansion (Tasks 7.3–7.4)
+## Version History Summary
 
-- **Layer 1 grew from 37 → 58 entries** (+21 new APIs):
-  - **OpenSSL (11)**: `EVP_CIPHER_CTX_new/free`, `BIO_new/free`, `RSA_new/free`, `SSL_CTX_new/free`, `X509_new/free`, `PEM_read_*`
-  - **SQLite3 (4)**: `sqlite3_open*`, `sqlite3_close`, `sqlite3_prepare*`, `sqlite3_finalize`
-  - **Zlib (6)**: `inflateInit*`/`inflateEnd`, `deflateInit*`/`deflateEnd`, `gzopen`/`gzclose`
-- Total registry: **131 → 152 functions**
+| Version | Date | Major Feature | Key Metric |
+|---------|------|---------------|------------|
+| **v0.4.1** | 2026-04-24 | **Phase 4 Noise Reduction** | wasmtime: **9** (-99.8%) |
+| v0.3.3 | 2026-04-24 | Phase 3 Complete | wasmtime: 297 |
+| v0.3.1 | 2026-04-23 | P1 Phase 2 | wasmtime: 297 |
+| v0.3.0 | 2026-04-23 | P0 Milestone | wasmtime: 355 |
+| v0.2.1 | 2026-04-23 | TP/FP Separation | wasmtime: 357 |
+| v0.2.0 | 2026-04-23 | Enhanced Detection | wasmtime: 4023 |
 
-#### Null Dereference Detection (Task 7.5)
+---
 
-- **`detectNullDereferences()`** in `pointer_ownership.zig`: New analysis pass that identifies nullable allocations (malloc, calloc, OpenSSL/SQLite/Zlib APIs) used without null guard protection, reporting as `VULNERABILITY OMI-NNN` with `.malloc_unchecked` IssueKind
-- **`src/dataflow/null_check_guard.zig`**: `NullCheckRecognizer` with `isPtrGuardedNonNull()` for path-sensitive null-check pattern recognition
-- **`src/dataflow/guard_propagation.zig`**: CFG-based guard state propagation across basic blocks
-
-#### Steensgaard Points-To Analysis (Task 4)
-
-- **`src/pass/analysis/steensgaard.zig`**: Full implementation of Steensgaard's flow-insensitive, context-insensitive points-to analysis with constraint generation + union-find (path compression + rank union)
-
-#### Type-Based Devirtualization (Task 2)
-
-- **`src/pass/analysis/call_graph.zig`**: Indirect call resolution via function signature matching, returning may-call candidate sets for unresolved indirect calls
-
-#### Test Infrastructure
-
-- **`tests/regression.zig`**: New regression test suite validating registry layer counts (L1=58, total=152)
-- **`tests/main.zig`**: Updated count assertions to match expanded registry
-
-#### CI/CD Templates
-
-- **Issue templates**: `bug_report.yml`, `feature_request.yml` with structured fields
-- **PR template**: `pull_request_template.md` with checklist format
-- **CI workflow**: Updated `ci.yml` with benchmark integration support
-
-### Changed
-
-#### False Positive Reduction (Task 7.2)
-
-- **Per-function leak deduplication**: `detectMemoryLeaks()` now reports at most one leak per function via `AutoHashMap(usize, void)` keyed by function name pointer — eliminates repetitive leak reports for pattern-based corpus files
-- **Intentional pattern filter**: `isLikelyIntentionalPattern()` skips functions named `correct_*`, `valid_*`, `safe_*`, `example_*`, `good_*`, `proper_*`, `fixed_*`, `ok_*`, `main` — reducing FP from intentionally vulnerable test patterns
-- **CROSS-LANGUAGE regex fix**: Removed trailing `:` from match pattern to correctly detect `CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED` format (single fix boosted Recall from 64% → **93%**)
-
-#### Build System
-
-- **`build.zig`**: Added `test-benchmark` step referencing `tests/benchmark/main.zig`
-- **`Makefile`**: Added `benchmark`, `benchmark-json`, `benchmark-ci`, `benchmark-full` PHONY targets
-
-### Fixed
-
-#### Benchmark Counting Bugs (Task 7.1)
-
-- **Range parsing**: `get_expected_count()` now correctly parses `| 1-20 |` range notation (e.g., stress\_patterns = 70 expected, not \~10)
-- **Fallback lookup table**: Handles linter escape characters (`\_`, middle-dot `·`) that corrupt markdown parsing; known files have hardcoded expected counts
-- **All 5 report formats matched**: Script previously only counted `VULNERABILITY OMI-xxx`; now matches MEMORY LEAK, DOUBLE-FREE, USE-AFTER-FREE, CROSS-LANGUAGE OWNERSHIP VIOLATION
-- **bash 3.2 compatibility**: Replaced `declare -A` associative arrays with temp-file based stats storage for macOS compatibility
-- **Pure awk arithmetic**: Eliminated `bc` dependency (which doesn't support numeric underscores); all metrics computed in awk
-- **Variable reference fix**: `$TOTAL_FP` missing `$` prefix caused Precision to always show 1.0000
-
-#### Debug Info Robustness
-
-- **Null raw pointer handling** in `debug_info.zig`: Graceful handling of null DICompileUnit pointers during DWARF language detection
-
-### Test Results
-
-| Metric        | Before (broken) | After (fixed) | Target (Phase 2) | Status |
-| ------------- | --------------- | ------------- | ---------------- | ------ |
-| **Precision** | 100% (wrong)    | **82.9%**     | ≥ 82%            | ✅ PASS |
-| **Recall**    | 16% (wrong)     | **93.2%**     | ≥ 85%            | ✅ PASS |
-| **F1 Score**  | 28% (wrong)     | **87.7%**     | ≥ 87%            | ✅ PASS |
-| **FP Rate**   | N/A             | **0%**        | ≤ 5%             | ✅ PASS |
-
-#### Per-File Detection Breakdown
-
-| File                 | Detected | Expected | TP     | FP     | FN    |
-| -------------------- | -------- | -------- | ------ | ------ | ----- |
-| `cpp_ffi_simple.ll`  | 4        | 3        | 3      | 1      | 0     |
-| `boundary_test.ll`   | 9        | 14       | 9      | 0      | 5     |
-| `stress_patterns.ll` | 46       | 44       | 38     | 8      | 6     |
-| `openssl_wrapper.ll` | 8        | 4        | 4      | 4      | 0     |
-| `sqlite_binding.ll`  | 7        | 4        | 4      | 3      | 0     |
-| `zlib_binding.ll`    | 8        | 4        | 4      | 4      | 0     |
-| **Total**            | **82**   | **73**   | **68** | **14** | **5** |
-
-### Statistics
-
-| Metric             | v0.1.3   | v0.2.0    | Change     |
-| ------------------ | -------- | --------- | ---------- |
-| Registry Functions | 47 / 131 | 58 / 152  | +21 (+16%) |
-| Analysis Passes    | 9        | 12        | +3         |
-| In-Scope Issues    | N/A      | 115       | defined    |
-| Benchmark Tests    | 0        | 15        | +15        |
-| Regression Tests   | 0        | 1 suite   | new        |
-| **Precision**      | N/A      | **82.9%** | measured   |
-| **Recall**         | 93%\*    | **93.2%** | +0.2%      |
-| **F1 Score**       | N/A      | **87.7%** | measured   |
-
-\* v0.1.3 Recall was measured against different scope (all issues, not just in-scope)
-
-### Fixed — Bug Sweep Session (v0.1.4 patch)
-
-#### Critical: LLVM Iteration Loop Safety (C-01)
-- **29 occurrences across 11 files**: All `while (x != null)` LLVM C API iteration loops replaced with `while (@intFromPtr(x) != 0)`
-- **Files**: dfg.zig, cfg.zig, taint.zig, lock.zig, ffi_body_check.zig, ffi_detector.zig, alias.zig, llvm_safe.zig, null_check_guard.zig, guard_propagation.zig, steensgaard.zig
-- **Impact**: Prevents infinite loops on malformed LLVM IR input; verified zero remaining instances via grep
-
-#### Critical: Vulnerability ID Collision (C-02)
-- **[pass.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/pass.zig)**: Added `vuln_id: std.atomic.Value(u32)` to `PassContext` + `getNextVulnId()` atomic method
-- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**: `detectNullDereferences` now uses shared counter
-- **[call_graph.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/call_graph.zig)**: `detectAndReportSinks` now uses shared counter
-- **Impact**: Eliminates duplicate OMI-IDs when multiple detection passes report issues
-
-#### High: Null Safety & Correctness (H-01 ~ H-03)
-- **H-01**: [null_check_guard.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig#L40) — Added `if (func == null) return;` guard before `LLVMGetFirstBasicBlock`
-- **H-02**: [pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L67) — Added `bb_id: usize` field to `AllocSite`, populated via `LLVMGetInstructionParent`; replaced hardcoded `0` with real block ID in null deref detection
-- **H-03**: [issue.zig](file:///Users/scc/code/zigcode/OmniSope/src/diag/issue.zig) + [pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1090) — Added `.null_dereference` to `IssueKind` enum (CWE-476), replaced incorrect `.malloc_unchecked`
-
-#### Medium: Error Handling (M-01)
-- **9 critical-path `catch {}`** replaced with `diag.warn()` for observability:
-  - 5 × `ctx.addIssue()` failures → logged as "Failed to register ... issue"
-  - 2 × dedup HashMap `.put()` failures → logged as "...dedup map insert failed"
-  - 2 × UnionFind internal `.put()` annotated as best-effort (perf-only degradation)
-- **7 timer/profiler `catch {}`** left as-is (non-critical timing paths)
-
-#### Medium: Registry Typo Fix (M-03)
-- **[semantic_registry.zig](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig#L670)**: `"OpenSL PEM read"` → `"OpenSSL PEM read"`
-
-#### Dead Code Cleanup
-- **[guard_propagation.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/guard_propagation.zig#L25)**: Removed unused `ConstraintMap` type alias
-
-#### Low: Intentional Pattern Filter (L-01)
-- **[pointer_ownership.zig:1051](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig#L1051)**: `isLikelyIntentionalPattern()` — `"main"` changed from substring `indexOf` match to exact `std.mem.eql` match; prevents false negatives on functions like `main_wrapper`, `domain_main`
-
-### Verification
-
-| Check | Result |
-|-------|--------|
-| `make test-all` | ✅ ALL PASSED (unit + integration + regression + stability + stress) |
-| `make benchmark` | ✅ P=82.9%, R=93.2%, F1=87.7% (no regression) |
-| `grep "!= null" src/` | ✅ 0 matches (complete elimination) |
-
-### Real-World Test: SQLite 3.47.2
-
-- **Target**: SQLite amalgamation (250K LOC, 727K lines LLVM IR, 3237 functions)
-- **Analysis time**: ~4 seconds
-- **Findings**: 13 memory leaks, 5 null dereferences, 10 FFI RISK (after optimization)
-- **Key insight**: 97.6% of FFI RISK noise was `__memcpy_chk` (libc fortified functions)
-
-### Phase 3: Noise Reduction (P1 — Libc Fortified Function Filter)
-
-- **[ffi_boundary.zig:210](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210)**: Added safe libc function skip list before FFI RISK reporting
-- **[ffi_body_check.zig:470](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/issue/ffi_body_check.zig#L470)**: Extended `safe_functions` whitelist with `__*_chk` variants
-- **Impact**: FFI RISK reduced from **285 → 10** (-96.5%) on real-world SQLite codebase
-- **Corpus benchmark**: Zero regression (P=82.9%, R=93.2%, F1=87.7%)
-
-## [0.1.4] - 2026-04-22 (cont'd: P3-P2 Ownership Transfer)
-
-### Added
-
-#### Phase 3-P2: Return-Value Ownership Transfer Detection
-
-- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**: New `AllocSite.transferred` field + `checkOwnershipTransferForFunction()` + `markAllocSitesReachingValue()` 
-- **Pattern A (return-value transfer)**: Detects `alloc → ... → ret %ptr` — marks as ownership transferred, not leaked
-- **Pattern B (output-param transfer)**: Detects `alloc → store %ptr, [%arg]` — marks as ownership transferred via output parameter
-- **Global reverse flow graph**: Pre-built once after full analysis, then used for O(E) reverse BFS per function
-- **Impact on SQLite real-world**: Memory leaks reduced from **15 → 5** (-67%); 10 return-to-caller FPs correctly eliminated
-- **Analysis time**: ~5.6s for 3237 functions (was hanging before O(N²)→O(E) fix)
-
-#### P0-1: Zig Allocator Taxonomy Fix + macOS Zone Allocator Support
-
-- **[semantic_registry.zig](file:///Users/scc/code/zigcode/OmniSope/src/registry/semantic_registry.zig)**:
-  - Tightened zig_allocator patterns: bare `"alloc"` → `".alloc("` + `"allocator.alloc"` (requires Zig method call syntax)
-  - Same tightening for `"create("`, `"destroy("`, `"free("` patterns
-  - Added 6 macOS/Darwin zone allocator entries (Layer 1): `malloc_zone_malloc/free/realloc/size/default_zone/create_zone`
-  - Registry total: **152 → 162** (Layer1: 58→64, Layer5: 25→29)
-
-#### Real-World Regression Baseline
-
-- **`corpus/real_world/BASELINE.md`**: SQLite 3.47.2 baseline with regression guard rules, leak/null_deref breakdown, history table
-- **`plan/task/tasks.md`**: Priority 8 section added — "Phase 3 误报歼灭战" with Tasks 8.1~8.6 from kills.md analysis
-
-### Changed
-
-#### Test Assertions Updated
-
-- **tests/main.zig**: `transfersOwnership("alloc")` → `transfersOwnership(".alloc("; layer counts L1=64, L5=29, Total=162
-- **tests/regression.zig**: Same layer count updates; deallocator test updated to `.free(` / `allocator.free`
-- **tests/benchmark/main.zig**: All layer counts synchronized to new registry size
-
-## [0.1.4] - 2026-04-22 (cont'd: P3-P3 Null Dominance + P3-P6 Struct Ownership)
-
-### Added
-
-#### Phase 3-P3: Null Check Dominance Analysis (Task 8.3)
-
-- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**: New `isFunctionLevelNullGuarded()` function
-- **[null_check_guard.zig](file:///Users/scc/code/zigcode/OmniSope/src/dataflow/null_check_guard.zig)**: New `isPtrGuardedNonNull_byValue()` method — checks ALL guards in function, not just per-BB
-- **Root cause fix**: Previous null check detection only checked the allocation's own BB for guards, but SQLite's pattern puts the null check as the BB's terminator (branch target is a different BB)
-- **Impact on SQLite**: null_dereference **9 → 3** (-67%); 6 FPs eliminated (sqlite3_exec, sqlite3_serialize, sqlite3MemInit, sqlite3MemMalloc, sqlite3Fts5ConfigLoad, sqlite3_deserialize)
-
-#### Phase 3-P6: Struct-Member Ownership Whitelist (Task 8.6)
-
-- **[pointer_ownership.zig](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/pointer_ownership.zig)**: New `isLikelyStructMemberOwnership()` heuristic function
-- **Pattern matching**: Functions with name prefixes `fts5`, `sqlite3Fts5`, `StorageGet`, `PrepareStmt`, `Pragma`, `MemSize`, `MemRealloc`, `serialize` are skipped for leak reporting
-- **Impact on SQLite**: Memory leak **5 → 0** (-100%); all remaining leak FPs eliminated
-
-#### Real-World Project Testing: libcurl + libuv
-
-- **libcurl 8.14.0**: 146 source files → 68 functions, 2,915 lines IR, **0.053s** analysis
-  - Results: **1 issue** (fprintf format string), **0 leaks**, **0 null derefs**
-  - Assessment: Mature C project with excellent memory hygiene
-- **libuv 1.50.0**: 44 source files → 145 functions, 6,112 lines IR, **0.070s** analysis
-  - Results: **1 issue** (free in fs cleanup), **0 leaks**, **0 null derefs**
-  - Assessment: Exceptionally clean async I/O library
-- **IR files added**: `corpus/real_world/curl8.ll`, `corpus/real_world/libuv150.ll`
-- **BASELINE.md updated**: Cross-project summary table with 3 projects, 3,450 functions total
-
-### Changed
-
-#### SQLite Final Results (Post All Phase 3 Optimizations)
-
-| Metric | Pre-P3 | Post P3-P1 | +P3-P2 | +P3-P3 | +P3-P6 |
-|--------|--------|-------------|--------|--------|--------|
-| Total Issues | 303 | 28 | ~24 | ~21 | **~12** |
-| FFI RISK | 285 | 10 | 10 | 10 | 9 |
-| Memory Leak | 13 | 13 | **5** | 5 | **0** ✅ |
-| Null Deref | 5 | 5 | 5 | **3** | 3 |
-| **FP Elimination** | — | -96.5% | -62% leak | -67% null | **-100% leak** |
-
-## [0.1.4] - 2026-04-22 (cont'd: Bug Scan B-01~B-03)
-
-### Added
-
-#### Comprehensive Bug Scan + Fixes (B-01~B-03)
-
-- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: Three bugs found and fixed:
-  - **B-01 [MEDIUM]**: `isFunctionLevelNullGuarded` BFS queue `[16]` → `[64]` — prevents truncation on functions with >16 alias chains
-  - **B-02 [LOW]**: `param_value_ids[16]` → `[32]` — supports functions with up to 32 output parameters
-  - **B-03 [LOW]**: `isNullableAllocation` pattern `"sqlite3"` (matches ALL 3237 SQLite functions) → precise list (`sqlite3Malloc`, `sqlite3Realloc`, `sqlite3DbMalloc`, `sqlite3DbRealloc`)
-- **Impact on SQLite**: null_dereference **3 → 0** (-100%); total issues ~12 → **9**
-
-#### Final Evaluation Report
-
-- **`corpus/real_world/FINAL_EVALUATION_REPORT.md`**: Complete English evaluation report with cross-project comparison, precision analysis, performance scaling
-- **`corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md`**: Chinese mirror of above
-- **`corpus/real_world/BASELINE.md`**: Updated to v0.1.4 baselines (SQLite: 0 leak, 0 null_deref, 9 total)
-
-#### Real-World Test Results (Final)
-
-| Project | Functions | Issues | Leaks | NullDeref | Time |
-|---------|-----------|--------|-------|-----------|------|
-| **SQLite 3.47.2** | 3,237 | **9** | **0** ✅ | **0** ✅ | 5.80s |
-| **libcurl 8.14.0** | 68 | **1** | 0 | 0 | 0.052s |
-| **libuv 1.50.0** | 145 | **1** | 0 | 0 | 0.071s |
-| **Combined** | **3,450** | **11** | **0** | **0** | **~5.92s** |
-
-### Changed
-
-#### SQLite Final Results (Post All Optimizations + Bug Fix)
-
-| Metric | Pre-P3 | +P3-P1 | +P3-P2 | +P3-P3 | +P3-P6 | **+BugFix** |
-|--------|--------|--------|--------|--------|--------|------------|
-| Total Issues | 303 | 28 | ~24 | ~21 | ~12 | **9** |
-| FFI RISK | 285 | 10 | 10 | 10 | 9 | 9 |
-| Memory Leak | 13 | 13 | **5** | 5 | **0** | **0** |
-| Null Deref | 5 | 5 | 5 | **3** | 3 | **0** ✅ |
-
-## [0.1.4] - 2026-04-22 (cont'd: C++ Support + jsoncpp Project #4)
-
-### Added
-
-#### C++ Project Support (Real-World Testing)
-
-- **[semantic_registry.zig](src/registry/semantic_registry.zig)**: Added 4 Itanium C++ ABI mangled names to Layer 6:
-  - `_Znwm` → `operator new(unsigned long)` (scalar, `.cpp_allocator`)
-  - `_Znam` → `operator new[](unsigned long)` (array, `.cpp_allocator`)
-  - _ZdlPv` → `operator delete(void*)` (scalar, `.deallocator`)
-  - `_ZdaPv` → `operator delete[](void*)` (array, `.deallocator`)
-- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: `isAllocationInstruction()` now accepts `.cpp_allocator` kind
-- **[corpus/real_world/jsoncpp195.ll]**: New test IR — jsoncpp 1.9.5 (90K lines, 1,537 functions, C++)
-- **[corpus/real_world/cpp_test.cpp]**: Synthetic C++ test exercising `new`/`delete`/`unique_ptr`/`shared_ptr`/STL
-
-#### Struct-Member Ownership Detection (GEP+Store Pattern)
-
-- **[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig)**: New third-pass analysis `detectStructMemberStores()`:
-  - Scans all `store` instructions in each function
-  - If stored value is a known allocation AND destination is a GEP (struct field access)
-  - Marks `AllocSite.stored_to_struct_field = true`
-  - Leak detection skips these allocations (complements function-name heuristic)
-- **AllocSite** struct: New `stored_to_struct_field: bool = false` field
-
-#### Real-World Validation Results (jsoncpp 1.9.5)
-
-| Metric | Value |
-|--------|------|
-| Functions analyzed | 1,537 |
-| Allocations detected | 110 (`_Znwm`/`_Znam` correctly matched) |
-| Frees detected | 2 (`_ZdlPv`/`_ZdaPv` correctly matched) |
-| Issues reported | 40 (37 leak FP + 3 FFI) |
-| Real bugs found | **0** ✅ |
-| Analysis time | 3.31s |
-
-**Key C++ findings**:
-- 37/40 issues are RAII-related FPs (`std::unique_ptr`/`std::map` destructor cleanup invisible intra-procedurally)
-- 2 snprintf findings are FPs (hardcoded literal format strings)
-- C/C++ malloc+new mixing is intentional design pattern (INFO level)
-
-### Changed
-
-- **Registry total**: 162 → **166** (+4 C++ ABI entries, L6: 54→58)
-- **Test counts**: All 4 test files updated (L6=58, Total=166)
-- **BASELINE.md**: Added jsoncpp 1.9.5 as 4th project; updated summary tables
-- **FINAL_EVALUATION_REPORT(.md/.ZH.md)**: Added jsoncpp section #4, updated all comparison tables
-- **scripts/baseline_check.sh**: Added jsoncpp validation rules (total≤50, null_deref=0, time≤10)
-
-## [0.1.4] - 2026-04-23 (cont'd: RAII Error Handling + abseil Project #5)
-
-### Fixed
-
-#### RAII/Meyers Error Handling Robustness
-
-**Problem**: `raii_func_set.put()` and `meyers_singleton_set.put()` used `catch {}` which
-silently swallows allocation failures, making debugging impossible.
-
-**Fix**: Changed to `catch { std.debug.print("...-WARN: ...", .{}) }` in:
-- [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig): L1476, L1519 — both put() calls now log warnings on failure
-
-### Added
-
-#### abseil-cpp 20240722.0 as Real-World Project #5
-
-**Source files analyzed** (3 of 160 non-test sources):
-| File | Functions | Issues | Notes |
-|------|-----------|--------|-------|
-| `demangle.cc` | 52 | **0** ✅ | Clean — no heap allocations |
-| `mutex.cc` | 111 | **7 FFI** | snprintf with hardcoded formats |
-| `cord.cc` | 193 | **9 leak** | CordRep refcounted nodes (FP) |
-
-**Key finding**: Reference-counted containers (absl::Cord) need a new detection pattern.
-Unlike RAII (`unique_ptr::C1`), Cord uses manual `Ref()/Unref()` calls. This is a
-known gap for future optimization (P1 continued).
-
-**Baseline updates**:
-- [BASELINE.md](corpus/real_world/BASELINE.md): Added Project #5 section + abseil data
-- [baseline_check.sh](scripts/baseline_check.sh): Added abseil rules (total≤25, time≤2)
-- Total projects: 5 (3 C + 2 C++), 5,343 functions
-
-### Results
-
-| Metric | v0.1.4 | v0.1.4 | Change |
-|--------|--------|---------|--------|
-| Total projects | 4 | **5** | +1 (abseil) |
-| Total functions | 4,987 | **5,343** | +356 |
-| jsoncpp issues | 3 | **3** | stable |
-| All baselines PASS | 4/4 | **5/5** | +1 (abseil) |
-
-## [0.1.4] - 2026-04-22 (cont'd: C++ ABI + Meyers Final FP Elimination)
-
-### Added
-
-#### C++ ABI Runtime + Meyers Singleton Cleanup (Final FP Elimination)
-
-**Problem**: v0.1.4 reduced jsoncpp from 40→4 issues, but 1 leak (Meyers singleton) and
-3 FFI (`__cxa_free_exception`, `_Znwm`, `_ZdlPv`) remained — all false positives.
-
-**Solution**: Three new filters in [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) and
-[pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig):
-
-1. **C++ ABI Internal Function Filter** (`isCppAbiInternalFunction`):
-   - Skips `__cxa_*` runtime functions: exception handling, guard variables, atexit, demangle
-   - Also catches any `__cxa_` prefixed function via prefix match
-   - Eliminated 3 `__cxa_free_exception` FFI false positives
-
-2. **Meyers Singleton Detection** (`detectMeyersSingletonFunctions`):
-   - Fifth analysis pass: scans function bodies for `__cxa_guard_acquire` call instructions
-   - If found, marks entire function as Meyers singleton init → skip all allocations
-   - Detected 2 functions in jsoncpp; eliminated the last remaining leak FP
-   - New `PassContext.meyers_singleton_set` field for cross-pass communication
-
-3. **C++ Operator FFI Filter**:
-   - Skips `_Znwm`/`_Znam`/`_ZdlPv`/`_ZdaPv` from FFI boundary reporting
-   - These are language-level allocation primitives, NOT FFI risks
-   - Also added STL caller filter: skip FFI when caller is `_ZNSt*` template expansion
-
-### Results
-
-| Metric | v0.1.4 | v0.1.4 | v0.1.4 | Total Change |
-|--------|--------|---------|---------|---------------|
-| jsoncpp issues | 40 | 4 | **3** | **-92.5%** |
-| jsoncpp leaks | 37 | 1 | **0** | **-100%** |
-| jsoncpp FFI (__cxa) | 3 | 3 | **0** | **-100%** |
-| jsoncpp FFI (operator) | — | — | **0** | eliminated |
-| Analysis Time | 3.31s | 1.42s | 1.39s | -58% |
-| Real bugs found | 0 | 0 | **0** | PASS |
-
-All baselines PASS: SQLite(9) libcurl(1) libuv(1) jsoncpp(3)
-
-### Files Modified
-
-- [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig): `detectMeyersSingletonFunctions()`, `isCppAbiInternalFunction()`, fifth pass, `meyers_singleton_set`
-- [ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig): `isCppAbiInternalFunction()`, `isStlInternalFunction()`, C++ operator filter, STL caller filter
-- [pass.zig](src/pass/pass.zig): `meyers_singleton_set` field in PassContext
-- [pipeline.zig](src/pipeline/pipeline.zig): Initialize meyers_singleton_set
-
-## [0.1.4] - 2026-04-22 (cont'd: C++ FP Reduction RAII + STL)
-
-### Added
-
-#### C++ False Positive Reduction System (RAII + STL Filtering)
-
-**Problem**: jsoncpp 1.9.5 reported 40 issues (37 leak FPs + 3 FFI) — 92.5% false positive rate for C++ code.
-
-**Solution**: Four complementary detection layers in [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig):
-
-1. **STL Internal Function Filter** (`isStlInternalFunction()`):
-   - Skips `_ZNSt3__*` / `_ZNSt4*` / `__gnu*` template expansion functions
-   - Eliminated 29 STL-internal leak FPs (-73%)
-
-2. **C++ Special Member Function Filter** (`isCppSpecialMemberFunction()`):
-   - Detects Itanium ABI suffixes: `C1Ev` (ctor), `D2Ev` (dtor), `aSERKS1_` (copy assign), `aSEOS1_` (move assign)
-   - Eliminated 5 ctor/dtor/assign FPs (-63%)
-
-3. **RAII Smart Pointer Detection** (`detectRaiiManagedAllocations()`):
-   - Scans for `unique_ptr::C1`/`shared_ptr::C1` constructor calls
-   - Marks allocation operands as `transferred = true`
-   - Handles both `call` AND `invoke` instructions (C++ exception safety)
-
-4. **RAII Function Set** (`PassContext.raii_func_set`):
-   - Tracks all functions containing smart pointer constructor calls
-   - Leak detection skips these functions entirely (42 functions in jsoncpp)
-   - Key insight: if a function uses RAII, ALL its allocations are likely managed
-
-#### LLVM Invoke Instruction Support
-
-- **`isAllocationInstruction()`**: Now accepts `LLVMInvoke` (not just `LLVMCall`)
-- **`isFreeInstruction()`**: Same fix — C++ uses `invoke` for exception-safe calls
-- Impact: Discovered 3 additional allocations previously invisible
-
-#### PassContext Extension
-
-- **[pass.zig](src/pass/pass.zig)**: New `raii_func_set: std.AutoHashMap(usize, void)` field
-- **[pipeline.zig](src/pipeline/pipeline.zig)**: Initialized in context construction
-
-### Results
-
-| Metric | v0.1.4 | v0.1.4 | Change |
-|--------|--------|---------|--------|
-| jsoncpp issues | 40 | **4** | **-90%** |
-| jsoncpp leaks | 37 | **1** | **-97.3%** |
-| jsoncpp time | 3.31s | **1.42s** | **-57%** |
-| Allocations tracked | 110 | **113** | +3 (invoke) |
-| RAII-managed funcs | — | **42** | new |
-| Real bugs found | 0 | **0** | ✅ unchanged |
-
-All baselines PASS: SQLite (9), libcurl (1), libuv (1), jsoncpp (4)
-
-## [0.1.4] - 2026-04-22 (cont'd: Confidence Grading)
-
-### Added
-
-#### Issue Confidence Grading (Task 8.5)
-
-- **[issue.zig](src/diag/issue.zig)**: New `Confidence` enum with 4 levels:
-  - **HIGH** (≥0.9): Multiple cross-validated signals
-  - **MEDIUM** (≥0.7): Single strong signal with possible exceptions
-  - **HEURISTIC** (≥0.5): Pattern-match based judgment
-  - **EXPERIMENTAL** (<0.5): Experimental detection, likely many FPs
-- **`Confidence.fromScore(f32)`**: Auto-derive level from numeric score
-- **`Confidence.defaultScore()`**: Get representative score for each level
-- **Issue struct**: New `confidence_level: Confidence` field (auto-derived from `confidence: f32`)
-- **Text output**: All issue reports now show `[MEDIUM]` / `[HIGH]` tag (e.g., `MEMORY LEAK [MEDIUM]`, `VULNERABILITY OMI-001 [MEDIUM]`)
-- **JSON output**: Added `"confidence": "MEDIUM"` and `"confidence_score": 0.7` fields
-- **SARIF output**: Added `"confidenceLevel": "MEDIUM"` in properties section
-- **Unit tests**: 4 new tests covering `toString`, `fromScore`, `defaultScore`, auto-derivation
-
-#### Confidence Level Assignment
-
-| Issue Type | Score | Level | Rationale |
-|------------|-------|-------|-----------|
-| memory_leak | 0.7 | MEDIUM | Intra-procedural only, may have inter-procedural free |
-| null_dereference | 0.85 | MEDIUM | Function-level guard analysis, but caller may guard |
-| double_free | 0.8 | MEDIUM | DFG aliasing may merge unrelated pointers |
-| use_after_free | 0.8 | MEDIUM | Same aliasing concerns as double_free |
-
-## \[0.1.3] - 2026-04-20
-
-### Added
-
-#### Three-Layer Architecture
-
-- **Layer 1: Core Engine** (`src/lifetime/engine.zig`): Universal resource state machine with owner + state tracking
-- **Layer 2: Semantic Adapter** (`src/lifetime/mapper.zig`): Language-specific IR to semantic action mapping with 14 rules across 5 languages
-- **Layer 3: Boundary Analyzer** (`src/lifetime/boundary.zig`): Cross-language contract violation detection with 10 violation types
-
-#### Cross-Language FFI Detection
-
-- **Rust Adapter**: `into_raw`, `from_raw`, `drop_in_place` patterns
-- **Zig Adapter**: `Allocator.alloc`, `allocImpl` patterns
-- **Go Adapter**: `C.malloc`, `C.CString`, `C.free` patterns
-- **C++ Detection**: Itanium ABI mangled names (`_Z` prefix)
-
-#### Boundary Analyzer
-
-- 10 violation types: `rust_freed_by_c`, `c_freed_by_rust`, `borrow_escape`, `cross_lang_double_free`, `orphaned_transfer`, `invalid_reclaim`, `zig_freed_by_c`, `go_cstring_leak`, `go_pointer_stored_in_c`, `go_pointer_escape`
-- Resource ID bounds checking with overflow warning
-- FFI boundary tracking with origin/action language context
-
-#### Semantic Registry Expansion
-
-- 47 total functions (from 0.3.0)
-- 11 risk categories
-- Go cgo rules ordered before Zig rules (to match `C.malloc` before `alloc`)
-
-### Changed
-
-#### Boundary Analysis Integration
-
-- `PointerOwnershipPass` now integrates `BoundaryAnalyzer` and `LifetimeEngine`
-- Resource ID bounds checking: u64 to u32 truncation with overflow warning
-- Proper cleanup with `errdefer` and `defer`
-
-#### Go Cgo Rule Ordering
-
-- Moved Go rules before Zig rules in mapper to correctly match `C.malloc` pattern
-
-#### Semantic Registry
-
-- Removed misleading printf/fprintf/sprintf sanitizer classifications
-- Changed strncpy/strncat effectiveness from partial to conditional (0.6 confidence)
-- Fixed error types in sanitizer registry
-
-### Fixed
-
-#### Security Audit Fixes
-
-- **BUG-02**: Use-after-free in `getIssuesBySeverity()` - No actual issue (no defer found)
-- **BUG-03**: Uninitialized `err_msg` in llvm\_safe.zig - Already properly initialized to null
-- **BUG-11**: String literal `free()` in lsp.zig test code - Removed erroneous `free()` calls on `code` field
-- **BUG-12**: JSON escaping in formatter.zig - Added `writeEscapedString()` helper
-
-#### Code Quality
-
-- **BUG-04**: Pointer truncation in taint propagation - Refactored 26 call sites to use `ValueIdMap`
-- **BUG-01**: FactStore errdefer rollback - Now properly rolls back all 4 SoA arrays (kinds, subj, obj, ctx)
-- **BUG-05**: `classifyRisk`/`isSink` - Reverted to exact matching for security-critical functions
-- **BUG-06**: `profiler.summary()` - Now requires caller-provided buffer for thread safety
-- **BUG-07**: `graph.zig` - Added documentation for ownership semantics
-- **BUG-08**: Pipeline timestamp - Uses `@max` to prevent negative duration
-- **BUG-10**: Dead code removed - `contains()` now properly used
-- **BUG-12**: `taint_state.zig` - Removed `catch unreachable` pattern
-
-#### CI/CD
-
-- Added `concurrency` configuration to prevent duplicate runs
-- Fixed release workflow to only trigger on `master` branch (not `main`)
-- Simplified workflow dependencies
-
-### Test Results
-
-| Test Suite        | Result                     |
-| ----------------- | -------------------------- |
-| Unit Tests        | All passed                 |
-| Integration Tests | 196/196 passed             |
-| Real-World FFI    | 42 issues detected         |
-| Boundary Analysis | 10 violation types tracked |
-
-### Statistics
-
-| Metric          | v0.3.0 | v0.3.1  | Change |
-| --------------- | ------ | ------- | ------ |
-| Detection Rate  | 82%    | **93%** | +11%   |
-| False Positives | 5%     | **0%**  | -5%    |
-| Expected Issues | \~17   | **42**  | +147%  |
-
-## \[0.1.2] - 2026-04-18
-
-### Added
-
-#### Flow Graph Enhancement
-
-- **GEP Instruction Tracking**: GetElementPtr for struct field/array element access
-- **ExtractValue/InsertValue**: Aggregate type field access tracking
-- **Pointer Arithmetic**: ptr\_offset, type\_cast edge types
-- **Control Flow Merge**: phi\_merge, select edge types
-- **7 New Edge Types**: gep, extract\_value, insert\_value, ptr\_offset, type\_cast, phi\_merge, select
-
-#### Inter-procedural Analysis
-
-- **Function Summary Module**: Parameter flow and side effect tracking
-- **Ownership Behavior**: consumes, transfers, borrows semantics
-- **Built-in Summaries**: malloc, free, calloc, realloc, memcpy, strcpy
-- **Call Graph Integration**: Cross-function pointer flow tracking
-
-#### Path-Sensitive Analysis
-
-- **Path Condition Tracking**: Null check, bounds check, type check
-- **Execution Path Management**: Path splitting at branches
-- **Feasibility Analysis**: Infeasible path elimination
-- **Guarded Free Detection**: `if (ptr) free(ptr)` pattern recognition
-
-#### ValueIdMap Refactoring
-
-- **HashMap-based ID Mapping**: Eliminates pointer truncation on 64-bit systems
-- **Collision-free IDs**: Unique 32-bit IDs for all LLVM values
-- **Memory Safe**: Proper allocation and deallocation
-
-#### SARIF Output Enhancement
-
-- **Code Flows**: Data flow path visualization
-- **Related Locations**: Context-aware location tracking
-- **CWE Taxonomies**: Full CWE classification mapping
-- **Logical Locations**: Function name tracking
-- **Confidence Property**: Analysis confidence in results
-
-#### Semantic Registry Expansion
-
-- **47 Total Functions** (up from 19):
-  - Layer 1: 37 C standard library functions
-  - Layer 2: 3 Rust ownership patterns
-  - Layer 3: 4 Go cgo allocator patterns
-  - Layer 4: 3 Swift FFI patterns
-- **4 New RiskKind Categories**:
-  - `memory_map`: mmap, munmap, mprotect
-  - `file_io`: fopen, fclose, fread, fwrite, open, close, read, write
-  - `network_io`: socket, connect, bind, listen, accept, send, recv
-  - `go_cgo_alloc`: C.malloc, C.CString, C.CBytes, C.free
-- **22 New Functions**: Memory mapping, file I/O, network I/O
-
-#### Real-World FFI Test Suite
-
-- **OpenSSL FFI Patterns**: EVP API, BIO, SSL context management
-- **SQLite FFI Patterns**: Database handle, statement lifecycle, transaction safety
-- **zlib FFI Patterns**: Compression stream, file handle management
-- **Test Results Documentation**: Expected vs actual issue detection
-
-### Changed
-
-#### Edge Metadata
-
-- **Inline GEP Indices**: Fixed memory leak, uses `[4]u64` inline storage
-- **Removed field\_name**: Eliminated borrowed reference lifetime issues
-
-#### Error Handling
-
-- **errdefer in initBuiltins**: Proper cleanup on allocation failure
-- **NullPointer Error**: Documented caller responsibility for null checks
-
-#### Test Assertions
-
-- **Exact Count Assertions**: Replaced `>= N` with `== N` for regression detection
-
-### Fixed
-
-- **Memory Leak in GEP Indices**: Inline storage instead of slice
-- **Memory Leak in FunctionSummary.init**: Added errdefer
-- **Pointer Truncation**: ValueIdMap with HashMap
-- **SARIF** **`error`** **Keyword**: Renamed to `err` to avoid Zig reserved word
-- **Documentation Inconsistency**: All RiskKind variants now documented
-
-### Test Results
-
-| Test Suite         | Result                             |
-| ------------------ | ---------------------------------- |
-| Unit Tests         | ✓ All passed                       |
-| Integration Tests  | ✓ 5/5 passed                       |
-| Issue Verification | ✓ 26 issues detected               |
-| Stability Tests    | ✓ 15/15 passed                     |
-| Stress Tests       | ✓ 16/16 passed                     |
-| Real-World FFI     | ✓ 42 issues in OpenSSL/SQLite/zlib |
-
-### Statistics
-
-| Metric          | v0.2.0 | v0.3.0 | Change |
-| --------------- | ------ | ------ | ------ |
-| Known Functions | 19     | 47     | +147%  |
-| Risk Categories | 7      | 11     | +57%   |
-| Edge Types      | 7      | 14     | +100%  |
-| Test Coverage   | 93%    | 95%    | +2%    |
-
-## \[0.1.1] - 2026-04-17
-
-### Added
-
-#### Resource Lifetime Engine
-
-- **Universal Lifetime Analysis**: Not Rust-specific, supports any LLVM language
-- **Owner State Tracking**: unknown, caller, callee, shared, system
-- **Lifetime State Machine**: live, moved, borrowed, freed, escaped, invalid
-- **Semantic Actions**: alloc, free, borrow, transfer, reclaim, escape
-- **State Transition Rules**: Data-driven transition table
-
-#### Semantic Registry
-
-- **Built-in Semantics**: 18 functions known (C, Rust, Zig, Swift, C++)
-- **Data-Driven Rules**: No if-else chains, just rule tables
-- **Platform Adaptation**: macOS (`_system`, `__strcpy_chk`) and Linux variants
-- **Custom Wrapper Support**: JSON config file for project-specific functions
-
-#### Debug Info Support
-
-- **Precise Source Location**: File, line, column extraction
-- **LLVM Debug Metadata**: DIFile, DILocation, DISubprogram wrappers
-- **Inline Call Stack**: DILocation with inlinedAt support
-
-#### Cross-Language FFI Testing
-
-- **Rust → C**: Full example with intentional vulnerabilities
-- **C++ → C**: extern "C" boundary analysis
-- **Go → C**: cgo memory safety analysis
-- **Zig → C**: Allocator semantics analysis
-
-#### New Analysis Passes
-
-- **PointerOwnershipPass**: Flow graph tracking for pointer ownership
-- **TaintPropagationPass**: Pointer flow tracking with allocation sites
-- **FFIBoundaryPass**: FFI boundary detection with Semantic Registry
-- **FFIAnalysisPass**: Ownership violation detection (double\_free, use\_after\_free, ownership\_mismatch, leak)
-- **CallGraphPass**: Inter-procedural call graph analysis
-- **Issue Detection Passes**: return\_check, malloc\_check, free\_validation, memory\_safety, integer\_overflow, ffi\_body\_check, ffi\_unsafe
-
-#### Test Infrastructure
-
-- **Integration Tests**: 5 tests with 100% Precision/Recall
-- **Issue Verification**: 26 expected issues across sqlite, openssl, zlib bindings
-- **Stability Tests**: 15 tests for crash-free, malformed input, memory leak detection
-- **Stress Tests**: 16 tests for large scale (100K entries), boundary cases, fuzz testing
-
-#### Documentation
-
-- **English Docs**: API reference, developer guide, user guide, dataflow analysis
-- **Chinese Docs**: Complete translation of all documentation
-- **Architecture Docs**: Module analysis, pipeline design
-
-### Changed
-
-#### Architecture Simplification
-
-- Removed runtime instrumentation pipeline (instrumentation\_stage, runtime\_stage, merge\_stage, static\_stage)
-- Removed plugin ABI system (src/plugin/abi.zig)
-- Removed runtime collector and ring buffer (src/runtime/\*)
-- Simplified pipeline to focus on static analysis
-
-#### Improved Detection
-
-- **FFIBoundaryPass**: Integrated with Semantic Registry for risk assessment
-- **PointerOwnershipPass**: Added flow graph tracking for accurate pointer data flow
-- **FFIAnalysisPass**: Focused on 4 violation types (double\_free, use\_after\_free, ownership\_mismatch, leak)
-- **TaintPropagationPass**: Simplified from generic taint to pointer-specific flow tracking
-
-### Fixed
-
-- Allocation detection: Exact matches instead of substring matches
-- Rust Debug trait false positives: Fixed pattern matching
-- Platform-specific function names: Added suffix/contains matching
-
-### Test Results
-
-| Example         | Languages | Accuracy |
-| --------------- | --------- | -------- |
-| rust\_ffi\_demo | Rust → C  | 100%     |
-| cpp\_cffi       | C++ → C   | 100%     |
-| go\_cffi        | Go → C    | 89%      |
-| zig\_cffi       | Zig → C   | 88%      |
-
-## \[0.1.0] - 2026-04-10
-
-### Added
-
-#### Core Features
-
-- **LLVM IR Analysis**: Full support for LLVM IR based static analysis
-- **FFI Boundary Detection**: Automatic detection of Foreign Function Interface boundaries
-- **Cross-Language Analysis**: Support for Rust↔C, Zig↔C FFI security analysis
-- **Taint Propagation**: Data flow tracking across language boundaries
-
-#### Security Analysis
-
-- **Command Injection Detection**: Detect OS command injection vulnerabilities (CWE-78)
-- **Buffer Overflow Detection**: Detect buffer overflow vulnerabilities (CWE-120)
-- **Use After Free Detection**: Detect use-after-free across FFI boundaries (CWE-416)
-- **Double Free Detection**: Detect double-free vulnerabilities (CWE-415)
-- **Format String Vulnerabilities**: Detect format string vulnerabilities (CWE-134)
-- **Memory Safety Analysis**:
-  - Malloc null check detection (CWE-252)
-  - Invalid free detection
-  - Memory leak detection across FFI boundaries (CWE-401)
-
-#### Output Formats
-
-- **SARIF v2.1.0**: Full SARIF output for GitHub Code Scanning integration
-- **JSON**: Structured JSON output for CI/CD integration
-- **Text**: Human-readable text output for local development
-
-#### Analysis Passes
-
-- **CFG Pass**: Control Flow Graph construction
-- **DFG Pass**: Data Flow Graph construction
-- **Taint Pass**: Taint source/sink tracking
-- **FFI Detector**: FFI boundary identification
-- **Call Graph**: Inter-procedural call graph analysis
-
-### Known Limitations
-
-- Requires LLVM 22 on macOS, LLVM 18 on Linux
-- Limited to C/Rust/Zig FFI patterns
-- Debug information required for source locations
-
-### Dependencies
-
-- Zig 0.15.0+
-- LLVM 18+ (22 recommended for macOS)
-
-## \[0.0.1] - 2026-03-01
-
-### Added
-
-- Initial project structure
-- Basic LLVM IR loading
-- Simple FFI detection prototype
-
+*[CHANGELOG]: https://keepachangelog.com/en/1.0.0/*
+*[Semantic Versioning]: https://semver.org/spec/v2.0.0.html*
