@@ -4,7 +4,7 @@
 
 OmniScope 通过多层分析检测 14 种安全和内存问题。每个问题都包含**置信度等级**和**原因**字段，便于分类处理。
 
-## IssueKind 分类 (v0.2.0)
+## IssueKind 分类 (v0.1.5)
 
 | IssueKind | 严重程度 | CWE | 置信度 | 描述 |
 |-----------|----------|-----|--------|------|
@@ -129,4 +129,4 @@ Reason: as_ptr() on local String/Vec passed to extern C - may dangle after drop
 ---
 
 **最后更新**: 2026-04-23
-**版本**: v0.2.0
+**版本**: v0.1.5

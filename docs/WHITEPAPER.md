@@ -2,7 +2,7 @@
 
 ## Cross-Language FFI Static Analysis for LLVM IR
 
-**Version**: v0.2.0 | **Date**: 2026-04-23 | **Language**: Zig (LLVM 22)
+**Version**: v0.1.5 | **Date**: 2026-04-23 | **Language**: Zig (LLVM 22)
 
 ---
 

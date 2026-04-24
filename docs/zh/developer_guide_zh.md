@@ -111,7 +111,7 @@ src/
 │   │   ├── pointer_ownership.zig    # 核心内存泄漏/UAF (936 行)
 │   │   ├── allocation_classifier.zig  # AllocType/FreeType (206 行)
 │   │   ├── cpp_fp_reduction.zig       # C++ 8 层 FP 过滤 (937 行)
-│   │   ├── rust_ffi_auditor.zig       # Rust FFI 审计器 (464 行) ← v0.2.0
+│   │   ├── rust_ffi_auditor.zig       # Rust FFI 审计器 (464 行) ← v0.1.5
 │   │   ├── ffi_detector.zig          # FFI 边界检测
 │   │   ├── ffi_analysis.zig          # FFI 分析
 │   │   ├── ffi_boundary.zig          # FFI 边界分析器

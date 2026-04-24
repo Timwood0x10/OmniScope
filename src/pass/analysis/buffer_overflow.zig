@@ -143,19 +143,11 @@ pub const BufferOverflowPass = struct {
             const func_name = c.LLVMGetValueName(func);
 
             diag.warn("STACK-OVERFLOW [HIGH]: GEP index {d} exceeds allocation size {d} in {s}", .{
-                last_index_value, type_size,
+                last_index_value,                                  type_size,
                 if (func_name) |n| std.mem.span(n) else "unknown",
             });
 
-            return Issue.init(.buffer_overflow,
-                std.fmt.allocPrint(std.heap.page_allocator,
-                    "Stack buffer overflow: access at offset {d} exceeds allocation of {d} bytes",
-                    .{ last_index_value, type_size }
-                ) catch "Stack buffer overflow detected",
-                Location.init(if (func_name) |n| std.mem.span(n) else "unknown"),
-                .high,
-                0.85
-            );
+            return Issue.init(.buffer_overflow, std.fmt.allocPrint(std.heap.page_allocator, "Stack buffer overflow: access at offset {d} exceeds allocation of {d} bytes", .{ last_index_value, type_size }) catch "Stack buffer overflow detected", Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.85);
         }
 
         return null;
@@ -208,15 +200,7 @@ pub const BufferOverflowPass = struct {
                 last_index_value, array_size,
             });
 
-            return Issue.init(.buffer_overflow,
-                std.fmt.allocPrint(std.heap.page_allocator,
-                    "Array out-of-bounds: index {d} exceeds array length {d}",
-                    .{ last_index_value, array_size }
-                ) catch "Array out-of-bounds detected",
-                Location.init(if (func_name) |n| std.mem.span(n) else "unknown"),
-                .high,
-                0.8
-            );
+            return Issue.init(.buffer_overflow, std.fmt.allocPrint(std.heap.page_allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected", Location.init(if (func_name) |n| std.mem.span(n) else "unknown"), .high, 0.8);
         }
 
         return null;
@@ -225,8 +209,6 @@ pub const BufferOverflowPass = struct {
     /// Helper function to register a detected issue with the context.
     fn reportIssue(ctx: *PassContext, issue: Issue, diag: *DiagnosticWriter) !void {
         try ctx.addIssue(issue);
-        diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{
-            @tagName(issue.kind), issue.message
-        });
+        diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), issue.message });
     }
 };

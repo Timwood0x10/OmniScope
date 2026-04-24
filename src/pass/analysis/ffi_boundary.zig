@@ -637,7 +637,7 @@ pub const FFIBoundaryPass = struct {
                 const is_unbounded = (std.mem.indexOf(u8, called_name_str, "sprintf") != null and
                     std.mem.indexOf(u8, called_name_str, "snprintf") == null) or
                     (std.mem.indexOf(u8, called_name_str, "strcpy") != null and
-                    std.mem.indexOf(u8, called_name_str, "strncpy") == null) or
+                        std.mem.indexOf(u8, called_name_str, "strncpy") == null) or
                     std.mem.eql(u8, called_name_str, "gets");
                 if (is_unbounded) {
                     diag.warn("  CONTRACT WARNING: Unbounded buffer operation ({s}) — consider bounded alternative", .{called_name_str});
@@ -892,16 +892,16 @@ pub const FFIBoundaryPass = struct {
     fn inferReturnValueLifetime(func_name: []const u8, sem: FunctionSemantics) ?ReturnLifetime {
         // Static lifetime functions — return pointers to internal static buffers
         const static_lifetime_funcs = [_][]const u8{
-            "ctime",       // Returns pointer to static buffer
-            "ctime_r",     // Thread-safe variant
-            "asctime",     // Returns pointer to static buffer
-            "inet_ntoa",   // Returns pointer to static buffer
-            "inet_ntop",   // May use caller-provided buffer
-            "getgrgid",    // Returns pointer to static struct
-            "getpwuid",    // Returns pointer to static struct
+            "ctime", // Returns pointer to static buffer
+            "ctime_r", // Thread-safe variant
+            "asctime", // Returns pointer to static buffer
+            "inet_ntoa", // Returns pointer to static buffer
+            "inet_ntop", // May use caller-provided buffer
+            "getgrgid", // Returns pointer to static struct
+            "getpwuid", // Returns pointer to static struct
             "gethostbyname", // Returns pointer to static struct (deprecated)
-            "strerror",    // Returns pointer to internal string
-            "ttyname",     // Returns pointer to internal path
+            "strerror", // Returns pointer to internal string
+            "ttyname", // Returns pointer to internal path
         };
         for (static_lifetime_funcs) |sf| {
             if (std.mem.eql(u8, func_name, sf)) {
@@ -926,11 +926,11 @@ pub const FFIBoundaryPass = struct {
 
         // Borrowed/sub-pointer functions — result is derived from input argument
         const borrowed_patterns = [_][]const u8{
-            "strchr", "strrchr",      // Returns sub-pointer of first arg
-            "strstr",                 // Returns sub-pointer of first arg
-            "memchr",                 // Returns sub-pointer of first arg
-            "getenv",                 // Returns pointer to environment string
-            "dirname", "basename",    // May modify or return sub-string
+            "strchr", "strrchr", // Returns sub-pointer of first arg
+            "strstr", // Returns sub-pointer of first arg
+            "memchr", // Returns sub-pointer of first arg
+            "getenv", // Returns pointer to environment string
+            "dirname", "basename", // May modify or return sub-string
         };
         for (borrowed_patterns) |bp| {
             if (std.mem.indexOf(u8, func_name, bp) != null) {
@@ -995,9 +995,9 @@ pub const FFIBoundaryPass = struct {
     fn isWriteOperation(func_name: []const u8) bool {
         const write_patterns = [_][]const u8{
             "sprintf", "snprintf", "strcpy", "strncpy",
-            "memcpy", "memmove", "memset",
-            "fgets", "gets", "read", "recv",
-            "fscanf", "sscanf",
+            "memcpy",  "memmove",  "memset", "fgets",
+            "gets",    "read",     "recv",   "fscanf",
+            "sscanf",
         };
         for (write_patterns) |wp| {
             if (std.mem.indexOf(u8, func_name, wp) != null) return true;

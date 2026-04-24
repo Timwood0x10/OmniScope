@@ -1,4 +1,4 @@
-# OmniScope v0.4.1 Release Notes
+# OmniScope v0.1.5 Release Notes
 
 **Release Date**: 2026-04-24
 **Version**: 0.4.1 (Phase 4 Complete)
@@ -18,7 +18,7 @@ The **biggest single improvement in OmniScope history**.
 
 ### Quantified Impact
 
-| Project | Before (v0.3.3) | After (**v0.4.1**) | Reduction |
+| Project | Before (v0.1.5) | After (**v0.1.5**) | Reduction |
 |--------|------------------|-------------------|-----------|
 | **wasmtime (Rust)** | 297 issues | **9 issues** | **-97%** |
 | **zig_video (Zig)** | 194 issues | **50 issues** | **-74%** |
@@ -159,7 +159,7 @@ Full test report: [`ZIG_FFI_TEST_REPORT.md`](corpus/test_cases/ZIG_FFI_TEST_REPO
 
 ## 🔧 Improvements
 
-### Phase 3 Enhancements (Carried Forward from v0.3.3)
+### Phase 3 Enhancements (Carried Forward from v0.1.5)
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -167,7 +167,7 @@ Full test report: [`ZIG_FFI_TEST_REPORT.md`](corpus/test_cases/ZIG_FFI_TEST_REPO
 | **Lifetime Annotation Inference** | ✅ Working | Return value lifetime (static/owned/borrowed) |
 | **Rust Drop Glue Filter** | ✅ Working | `isRustDropGlue()` eliminates destructor UAFs |
 
-### P1 Enhancements (Carried Forward from v0.3.1)
+### P1 Enhancements (Carried Forward from v0.1.5)
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -223,8 +223,8 @@ Full test report: [`ZIG_FFI_TEST_REPORT.md`](corpus/test_cases/ZIG_FFI_TEST_REPO
 |------|---------|
 | [src/ir/llvm_raw.zig](src/ir/llvm_raw.zig) | Added `@cInclude("llvm-c/DebugInfo.h")` |
 | [src/pass/analysis/ffi_boundary.zig](src/pass/analysis/ffi_boundary.zig) | Integrated noise reduction engine + `extractDebugFilePath()` |
-| [corpus/real_world/BASELINE.md](corpus/real_world/BASELINE.md) | Updated to v0.4.1 with all results |
-| [README.md](README.md) | Updated with v0.4.1 highlights |
+| [corpus/real_world/BASELINE.md](corpus/real_world/BASELINE.md) | Updated to v0.1.5 with all results |
+| [README.md](README.md) | Updated with v0.1.5 highlights |
 
 ---
 
@@ -282,4 +282,4 @@ See [TODOLIST.md](plan/TODOLIST.md) for full roadmap.
 ---
 
 *Built with ❤️ using Zig 0.15.2*
-*OmniScope v0.4.1 — "Silence the Noise, Find the Bugs"*
+*OmniScope v0.1.5 — "Silence the Noise, Find the Bugs"*

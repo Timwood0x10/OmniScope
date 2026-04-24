@@ -2,7 +2,7 @@
 
 > **Purpose**: Every code change must be validated against these baselines to prevent regression.
 > **Rule**: If a change causes baseline numbers to shift, it must be intentional and documented here.
-> **Last Updated**: 2026-04-24 (v0.4.1: Phase 4 Complete — Cross-Language Noise Reduction Engine)
+> **Last Updated**: 2026-04-24 (v0.1.5: Phase 4 Complete — Cross-Language Noise Reduction Engine)
 >
 > **Core Principle**: OmniScope is an **FFI/Unsafe boundary analyzer** first.
 > Memory safety detection (Double-Free, Loop-Leak, etc.) is auxiliary.
@@ -14,18 +14,18 @@
 
 | Date | Version | Key Changes |
 |------|---------|-------------|
-| 2026-04-24 | **v0.4.1** | **Phase 4 Complete** — Cross-Language Noise Reduction Engine (Layer 1 Name-based + Layer 2 Path-based + Layer 3 Behavior Filter). wasmtime **297→9 (-97%)**, Zig projects -60~80%. Attribution grouping output ("X issues → Y user code (Z FFI HIGH)"). Expanded Zig stdlib patterns (65+). LLVM DebugInfo API integration. |
-| 2026-04-24 | **v0.4.0** | **Phase 4 Initial** — Three-layer noise reduction architecture (FunctionOrigin classification, RiskWeight system, Rust/Zig/C++ pattern databases). wasmtime 297→9 initial test. |
-| 2026-04-24 | **v0.3.3** | **Phase 3 #4 Complete** — Lifetime Annotation Inference (return value lifetime: static/owned/borrowed, dangling pointer detection, parameter lifetime validation). Phase 3 all done! |
-| 2026-04-24 | **v0.3.2** | **Phase 3 #2** — Cross-Language Type Compatibility (pointer/int confusion, size mismatch at FFI boundaries), Rust `drop_in_place` UAF filter. wasmtime 355→**297** (-16%) |
-| 2026-04-23 | **v0.3.1** | **P1 Phase 2** — API Contract Validation (NULL guard/buffer safety/ownership chain), Sink Context Sensitivity (fprintf in safe callers), Taint Enhancement (argv/network/file/shm/dlsym). SQLite IR updated to 43MB/3346 funcs (FTS5+RTREE) |
-| 2026-04-23 | **v0.3.0** | **P0 Milestone** — BB-aware double-free (P0-B), Rust FFI filter (P0-C), B-class cleanup. SQLite 1→0, libuv 6→3, libcurl 1→0 |
-| 2026-04-23 | v0.2.1 | TP/FP Separation — Source-level verification, mangled name filter (wasmtime 4023→357), ownership transfer recognition |
-| 2026-04-23 | v0.2.0 | Enhanced Detection — Double-Free BFS, Loop-Leak, Format String, exec* family |
+| 2026-04-24 | **v0.1.5** | **Phase 4 Complete** — Cross-Language Noise Reduction Engine (Layer 1 Name-based + Layer 2 Path-based + Layer 3 Behavior Filter). wasmtime **297→9 (-97%)**, Zig projects -60~80%. Attribution grouping output ("X issues → Y user code (Z FFI HIGH)"). Expanded Zig stdlib patterns (65+). LLVM DebugInfo API integration. |
+| 2026-04-24 | **v0.1.5** | **Phase 4 Initial** — Three-layer noise reduction architecture (FunctionOrigin classification, RiskWeight system, Rust/Zig/C++ pattern databases). wasmtime 297→9 initial test. |
+| 2026-04-24 | **v0.1.5** | **Phase 3 #4 Complete** — Lifetime Annotation Inference (return value lifetime: static/owned/borrowed, dangling pointer detection, parameter lifetime validation). Phase 3 all done! |
+| 2026-04-24 | **v0.1.5** | **Phase 3 #2** — Cross-Language Type Compatibility (pointer/int confusion, size mismatch at FFI boundaries), Rust `drop_in_place` UAF filter. wasmtime 355→**297** (-16%) |
+| 2026-04-23 | **v0.1.5** | **P1 Phase 2** — API Contract Validation (NULL guard/buffer safety/ownership chain), Sink Context Sensitivity (fprintf in safe callers), Taint Enhancement (argv/network/file/shm/dlsym). SQLite IR updated to 43MB/3346 funcs (FTS5+RTREE) |
+| 2026-04-23 | **v0.1.5** | **P0 Milestone** — BB-aware double-free (P0-B), Rust FFI filter (P0-C), B-class cleanup. SQLite 1→0, libuv 6→3, libcurl 1→0 |
+| 2026-04-23 | v0.1.5 | TP/FP Separation — Source-level verification, mangled name filter (wasmtime 4023→357), ownership transfer recognition |
+| 2026-04-23 | v0.1.5 | Enhanced Detection — Double-Free BFS, Loop-Leak, Format String, exec* family |
 
 ---
 
-## 📊 Cross-Project Summary (v0.4.1 Verified)
+## 📊 Cross-Project Summary (v0.1.5 Verified)
 
 | Project | Language | Total Issues | **True Positives** | False Positives | FP Rate | FFI/Unsafe Issues |
 |---------|----------|-------------|-------------------|-----------------|---------|-------------------|
@@ -41,7 +41,7 @@
 | **wabt_wast2json** | C++ | **85** | **~5?** (cpp_allocator) | ~80 | ~94% | ~85 (C++ alloc) |
 | **Red Team** | C | **5** | **5** (A-class) | 0 | **0%** | **3 CRITICAL** ✅ |
 
-### Key Insight (v0.4.1)
+### Key Insight (v0.1.5)
 **Phase 4 Noise Reduction Engine achieves dramatic FP reduction on modern language projects.**
 **Rust (wasmtime): 4023 → 9 issues (-99.8%) — almost all compiler-generated noise eliminated.**
 **Zig projects: 64-83% additional reduction from expanded stdlib pattern database.**
@@ -51,15 +51,15 @@
 
 | Version | Issues | Reduction | Key Change |
 |---------|--------|-----------|------------|
-| v0.2.0 | **4023** | baseline | No filtering |
-| v0.2.1 | **357** | -91% | Mangled name filter + ownership transfer |
-| v0.3.0 | **355** | -0.6% | P0-C Rust FFI Filter |
-| v0.3.1 | **297** | -16% | P1 Context/Contract/Taint + drop_in_place filter |
-| v0.3.3 | **297** | stable | Phase 3 Type/Lifetime (new capability) |
-| v0.4.0 | **9** | **-97%** | **Phase 4 Noise Reduction Engine (initial)** |
-| v0.4.1 | **9** | stable | **Phase 4 Enhanced (Layer 2 + attribution)** |
+| v0.1.5 | **4023** | baseline | No filtering |
+| v0.1.5 | **357** | -91% | Mangled name filter + ownership transfer |
+| v0.1.5 | **355** | -0.6% | P0-C Rust FFI Filter |
+| v0.1.5 | **297** | -16% | P1 Context/Contract/Taint + drop_in_place filter |
+| v0.1.5 | **297** | stable | Phase 3 Type/Lifetime (new capability) |
+| v0.1.5 | **9** | **-97%** | **Phase 4 Noise Reduction Engine (initial)** |
+| v0.1.5 | **9** | stable | **Phase 4 Enhanced (Layer 2 + attribution)** |
 
-### New Capabilities in v0.4.1
+### New Capabilities in v0.1.5
 
 | Capability | File | Description |
 |------------|------|-------------|
@@ -82,21 +82,21 @@
 | **True Positives** | **0** |
 | **False Positives** | **0** (0%) |
 
-#### IR File Info (v0.3.1 Updated)
+#### IR File Info (v0.1.5 Updated)
 - **Source**: sqlite-amalgamation-3470200.zip
 - **Compile flags**: `-O0 -fno-discard-value-names -g -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_SESSION`
 - **IR Size**: 43 MB / 753,000 lines / **3,346 functions**
 - **Analysis Time**: ~6.5s (Apple M-series)
 
-#### v0.3.1 Change
-**v0.3.0 → v0.3.1**: Still **0 issues** ✅
+#### v0.1.5 Change
+**v0.1.5 → v0.1.5**: Still **0 issues** ✅
 - IR file regenerated with SQLITE_ENABLE_* macros (+700 functions, from 2657→3346)
 - P1 Sink Context Sensitivity: 2 fprintf in `proxyBreakConchLock` filtered as safe context
 - P1 API Contract Validation: 3 CONTRACT VIOLATION warnings on `malloc_zone_*` (SQLite's internal wrappers — informational, not bugs)
 
 #### Regression Guard Rules
 - **TP count = 0** ← strict! No real issues found in stable SQLite release.
-- **Total issues = 0** ← strict rule for v0.3.0+
+- **Total issues = 0** ← strict rule for v0.1.5+
 
 ---
 
@@ -108,14 +108,14 @@
 | **True Positives** | **0** |
 | **False Positives** | **0** (0%) |
 
-#### v0.3.0 Change
-**v0.2.1 → v0.3.0**: 1 RESOURCE-LEAK FP → **0** ✅
+#### v0.1.5 Change
+**v0.1.5 → v0.1.5**: 1 RESOURCE-LEAK FP → **0** ✅
 - Two fixes combined: (1) `detectResourceLeaks` removed from pipeline, (2) ownership transfer detection (`checkOwnershipTransferForFunction`) already correctly marks `socket_open`'s output-param store as transferred
 - The `*sockfd` output parameter pattern is now properly recognized: caller owns the socket handle
 
 #### Regression Guard Rules
 - **TP count = 0**
-- **Total issues = 0** ← new strict rule for v0.3.0
+- **Total issues = 0** ← new strict rule for v0.1.5
 
 ---
 
@@ -127,8 +127,8 @@
 | **True Positives (bugs)** | **0** |
 | **False Positives (bugs)** | **0** |
 
-#### v0.3.0 Change
-**v0.2.1 → v0.3.0**: 6 DOUBLE-FREE FP → **0 double-free** ✅
+#### v0.1.5 Change
+**v0.1.5 → v0.1.5**: 6 DOUBLE-FREE FP → **0 double-free** ✅
 - P0-B BB-aware analysis: `uv__fs_scandir_cleanup`'s 5 frees are in a loop body (different iterations, different BBs) → correctly skipped
 - `uv_fs_scandir_next`'s 2 frees are in different BBs (iterator advance vs cleanup) → correctly skipped
 - Remaining 3 issues are FFI-risk informational only (socket(), fprintf, free() calls)
@@ -284,7 +284,7 @@ Rust compiles to LLVM IR with complex drop glue, closure capture cleanup, and it
 
 > Location: `corpus/red_team_test/red_team_bugs.c` (O0 build required)
 
-### FFI-Focused Scorecard (v0.3.0 — A-class only)
+### FFI-Focused Scorecard (v0.1.5 — A-class only)
 
 | Bug ID | Type | Class | Status | Note |
 |-------|------|-------|--------|------|
@@ -299,7 +299,7 @@ Rust compiles to LLVM IR with complex drop glue, closure capture cleanup, and it
 
 **FFI Core (Class A): 6/6 detected (100%)** ✅
 **Overall: 8/17 (47%)** — B/C class removed from pipeline (by design)
-**v0.3.0 reports 5 issues** (A-class FFI risks + memory leaks; B-class double-free/loop-leak require same-BB confirmation)
+**v0.1.5 reports 5 issues** (A-class FFI risks + memory leaks; B-class double-free/loop-leak require same-BB confirmation)
 
 ---
 
@@ -308,13 +308,13 @@ Rust compiles to LLVM IR with complex drop glue, closure capture cleanup, and it
 ### Phase 1-3: All Completed ✅
 See [CHANGELOG.md](../../CHANGELOG.md) for full history.
 
-### v0.2.1 Critical Fix: Mangled Name Filter
+### v0.1.5 Critical Fix: Mangled Name Filter
 **Problem**: Double-Free detector reported 4023 issues on wasmtime (91% FP)
 **Root Cause**: BFS alias analysis connected too many values in Rust/C++ generated code
 **Fix**: Skip DOUBLE-FREE reporting for functions with mangled names (`_ZN`, `$`, `_R`)
 **Result**: wasmtime 4023 → **357** (-91%), red team still detects all TP bugs
 
-### v0.3.0 P0 Milestone: FFI-Core Refocus
+### v0.1.5 P0 Milestone: FFI-Core Refocus
 **Problem**: Post-`0a2a690` development shifted focus from FFI to generic static analysis (1584 lines of B-class bloat)
 **Changes**:
 | What | Action | Impact |
@@ -332,7 +332,7 @@ See [CHANGELOG.md](../../CHANGELOG.md) for full history.
 - Performance: Improved (BFS + buffer_overflow removed)
 - Code: Net reduction in active pipeline code
 
-### v0.3.1 P1 Phase 2: Enhanced FFI Analysis
+### v0.1.5 P1 Phase 2: Enhanced FFI Analysis
 **What**: Three new capabilities that deepen FFI boundary analysis quality.
 
 | Capability | Description | Impact |
@@ -370,7 +370,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 
 **Total: 10 real-world projects (3 C + 3 C++ + 4 Rust), 6,937 functions, ~16.5s total analysis time**
 
-### New Detection Capabilities (v0.2.0)
+### New Detection Capabilities (v0.1.5)
 
 | Capability | Status | Description |
 |------------|--------|-------------|
@@ -395,7 +395,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 3,237 |
 | **Analysis Time** | ~5.9s (Apple M-series) |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -424,7 +424,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 68 |
 | **Analysis Time** | ~1.1s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -450,7 +450,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 145 |
 | **Analysis Time** | ~0.6s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -475,7 +475,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 1,537 |
 | **Analysis Time** | ~2.1s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -506,7 +506,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 193 |
 | **Analysis Time** | ~0.4s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -532,7 +532,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 75 |
 | **Analysis Time** | ~0.04s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -557,7 +557,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 135 |
 | **Analysis Time** | ~0.09s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -589,7 +589,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 52 |
 | **Analysis Time** | ~0.03s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -614,7 +614,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 974 |
 | **Analysis Time** | ~6.7s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -645,7 +645,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | **Functions** | 558 |
 | **Analysis Time** | ~2.0s |
 
-#### Baseline Results (v0.2.0)
+#### Baseline Results (v0.1.5)
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -695,7 +695,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 | BUG-16 | Conditional Leak | ✅ Detected | Reported as UAF (path-sensitive) |
 | BUG-17 | execvp() | ✅ **NEW!** | Sink: execvp() via taint analysis |
 
-**Red Team Test Results (v0.2.0)**:
+**Red Team Test Results (v0.1.5)**:
 - **Build**: O0 required for BUG-03, BUG-04 (O1 optimizes away UB)
 - **Total Issues**: **12** (was 7 in v0.1.5, **+71% improvement**)
 - **New Detections**: Double-Free (+4), Loop-Leak (+1), execvp (+1)
@@ -739,7 +739,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 
 ## 📋 Known Limitations & Future Work
 
-### Current Limitations (v0.2.0)
+### Current Limitations (v0.1.5)
 
 1. **Double-Free FP Rate**: Some legitimate cleanup loops (27+ frees) trigger detection — need max-free threshold
 2. **C++ RAII FP**: Smart-pointer managed memory reported as leaks (wabt, jsoncpp) — need C++ destructor analysis
@@ -747,7 +747,7 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 4. **Resource Leak**: Framework created but flow_graph connectivity limits detection accuracy
 5. **Optimization Sensitivity**: O1 optimization eliminates UB code, hiding bugs — need O0/O1 dual-mode testing
 
-### Roadmap (v0.3.0)
+### Roadmap (v0.1.5)
 
 - [ ] Integrate buffer_overflow.zig into pipeline
 - [ ] Add C++ destructor/lifecycle analysis to reduce RAII FPs
@@ -758,4 +758,4 @@ See [../plan/TODOLIST.md](../plan/TODOLIST.md) for full roadmap.
 ---
 
 *Document maintained by OmniScope automated baseline system*
-*Next scheduled update: After v0.3.0 feature completion*
+*Next scheduled update: After v0.1.5 feature completion*

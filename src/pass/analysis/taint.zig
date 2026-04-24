@@ -190,34 +190,40 @@ pub const TaintPass = struct {
         // Common taint source functions — P1 Enhanced
         const taint_sources = [_][]const u8{
             // File I/O (existing)
-            "read",       "recv",      "recvfrom",
-            "fgets",      "fread",     "scanf",
-            "gets",       "getchar",   "getwd",
-            "getcwd",     "getlogin",  "getpwnam",
-            "getpwuid",   "sysinfo",
+            "read",          "recv",        "recvfrom",
+            "fgets",         "fread",       "scanf",
+            "gets",          "getchar",     "getwd",
+            "getcwd",        "getlogin",    "getpwnam",
+            "getpwuid",      "sysinfo",
 
             // Environment (existing + enhanced)
-            "getenv",     "__environ", "environ",
+                "getenv",
+            "__environ",     "environ",
 
             // Command-line arguments (P1 NEW)
             // These are tracked via __argv/__argc globals in LLVM IR
 
             // Network input (P1 NEW)
-            "accept",     "recvmsg",   "recvmmsg",
-            "readv",      "pread",     "preadv",
+                "accept",
+            "recvmsg",       "recvmmsg",    "readv",
+            "pread",         "preadv",
 
             // File content (P1 NEW)
-            "fgetc",      "ungetc",    "getline",
-            "fgetln",     "fgetws",    "readlink",
+                 "fgetc",
+            "ungetc",        "getline",     "fgetln",
+            "fgetws",        "readlink",
 
             // Dynamic loading (P1 NEW) — dlsym returns user-controlled symbols
-            "dlsym",      "dlvsym",
+               "dlsym",
+            "dlvsym",
 
             // Shared memory (P1 NEW)
-            "shmat",      "shmget",    "mmap",
+                   "shmat",       "shmget",
+            "mmap",
 
             // Time/state (can be used as side-channel or oracle)
-            "time",       "gettimeofday", "clock_gettime",
+                     "time",        "gettimeofday",
+            "clock_gettime",
 
             // Process info
             "gethostname", "getdomainname",

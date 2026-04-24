@@ -4,7 +4,7 @@
 
 OmniScope detects 14 types of security and memory safety issues through multi-layer analysis. Every issue includes a **Confidence Level** and **Reason** field for triage.
 
-## IssueKind Taxonomy (v0.2.0)
+## IssueKind Taxonomy (v0.1.5)
 
 | IssueKind | Severity | CWE | Confidence | Description |
 |-----------|----------|-----|------------|-------------|
@@ -138,16 +138,22 @@ Reason: as_ptr() on local String/Vec passed to extern C - may dangle after drop
 }
 ```
 
-## Baseline Results
+## Baseline Results (v0.1.5)
 
-| Project | Issues | Leaks | FFI Risks | Confidence |
-|---------|--------|-------|-----------|------------|
-| SQLite 3.47.2 | 8 | 0 | 2 | MEDIUM |
-| ripgrep 14.1.1 | **0** | 0 | 0 | — |
-| rust_sqlite | 6 | 4 | 2 | MEDIUM |
-| jsoncpp 1.9.5 | 3 | 0 | 0 | HIGH |
+| Project | Issues | TP | FP Rate | Notes |
+|---------|--------|-----|---------|-------|
+| SQLite 3.47.2 | **0** | 0 | 0% | ✅ Clean |
+| libcurl 8.14.0 | **0** | 0 | 0% | ✅ Clean |
+| libuv 1.50.0 | **3** | 0 | 0% | ✅ INFO only |
+| abseil-cpp | **0** | 0 | 0% | ✅ Clean |
+| ripgrep 14.1.1 | **0** | 0 | 0% | ✅ Clean |
+| wasmtime (Rust) | **9** | ~7 | ~22% | ✅ Real FFI only |
+| rust_sqlite | **88** | ~8 | ~91% | Mixed |
+| Red Team | **5** | 5 | 0% | ✅ 29% hit rate |
+
+**Note**: Phase 4 Noise Reduction Engine reduced Rust FP rate from 98% to ~22%.
 
 ---
 
-**Last Updated**: 2026-04-23
-**Version**: v0.2.0
+**Last Updated**: 2026-04-24
+**Version**: v0.1.5

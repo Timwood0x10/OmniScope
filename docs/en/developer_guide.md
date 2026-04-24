@@ -111,7 +111,7 @@ src/
 │   │   ├── pointer_ownership.zig    # Core memory leak/UAF (936 lines)
 │   │   ├── allocation_classifier.zig  # AllocType/FreeType (206 lines)
 │   │   ├── cpp_fp_reduction.zig       # C++ 8-layer FP filter (937 lines)
-│   │   ├── rust_ffi_auditor.zig       # Rust FFI auditor (464 lines) ← v0.2.0
+│   │   ├── rust_ffi_auditor.zig       # Rust FFI auditor (464 lines) ← v0.1.5
 │   │   ├── ffi_detector.zig          # FFI boundary detection
 │   │   ├── ffi_analysis.zig          # FFI analysis
 │   │   ├── ffi_boundary.zig          # FFI boundary analyzer

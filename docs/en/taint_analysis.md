@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tracks data flow from tainted sources to sensitive sinks to detect security vulnerabilities. The v0.3.0 release includes significant improvements for accuracy and precision.
+Tracks data flow from tainted sources to sensitive sinks to detect security vulnerabilities. The v0.1.5 release includes significant improvements for accuracy and precision.
 
 ## Location
 
@@ -12,7 +12,7 @@ src/pass/analysis/taint_propagation.zig
 src/registry/sanitizer_registry.zig
 ```
 
-## Accuracy Improvements (v0.3.0)
+## Accuracy Improvements (v0.1.5)
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
@@ -82,7 +82,7 @@ Check if function is a taint source.
 
 Check if function is a taint sink.
 
-## SanitizerRegistry (New in v0.3.0)
+## SanitizerRegistry (New in v0.1.5)
 
 Recognizes functions that can sanitize tainted data, reducing false positives.
 
@@ -117,7 +117,7 @@ if (registry.isSanitizer("snprintf")) {
 }
 ```
 
-## PathManager Integration (New in v0.3.0)
+## PathManager Integration (New in v0.1.5)
 
 Path-sensitive analysis for improved accuracy.
 
@@ -133,7 +133,7 @@ Path-sensitive analysis for improved accuracy.
 - Reduces false negatives by ~10%
 - Eliminates false positives for guarded operations
 
-## GEP Handling (New in v0.3.0)
+## GEP Handling (New in v0.1.5)
 
 Field-sensitive taint propagation via GetElementPtr instruction tracking.
 
@@ -148,7 +148,7 @@ Field-sensitive taint propagation via GetElementPtr instruction tracking.
 - Improves accuracy for complex struct analysis
 - Reduces false positives for field-level taint
 
-## Semantic-aware Confidence Decay (New in v0.3.0)
+## Semantic-aware Confidence Decay (New in v0.1.5)
 
 Severity-based confidence scoring for more accurate results.
 

@@ -175,7 +175,7 @@ sequenceDiagram
 - **pass/analysis/allocation_classifier.zig**: AllocType/FreeType classification (206 lines)
   - `AllocType`: malloc/ocaml_alloc/c_alloc/virtual_alloc/rust_alloc/unknown
   - `FreeType`: free/ocaml_free/c_free/virtual_free/rust_alloc/free_unknown
-- **pass/analysis/rust_ffi_auditor.zig**: Rust FFI boundary auditor (464 lines) ← **v0.2.0 NEW**
+- **pass/analysis/rust_ffi_auditor.zig**: Rust FFI boundary auditor (464 lines) ← **v0.1.5 NEW**
   - R1: Unpaired `Box::into_raw()` / `CString::into_raw()`
   - R2: `as_ptr` borrow escape detection
   - R3: Cross-lang alloc mismatch (_Znwm → C free)

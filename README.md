@@ -4,9 +4,9 @@
 
 OmniScope analyzes LLVM IR to detect memory safety issues, FFI boundary violations, and ownership contract breaches across C/C++/Rust/Zig/Go.
 
-## ✨ Latest Release: v0.4.1 (2026-04-24)
+## ✨ Latest Release: v0.1.5 (2026-04-24)
 
-### 🎯 What's New in v0.4.1?
+### 🎯 What's New in v0.1.5?
 
 **Phase 4: Cross-Language Noise Reduction Engine — The biggest FP reduction ever!**
 
@@ -46,7 +46,7 @@ make build          # Compile
 make test-all       # Run all tests (unit + integration + regression + stress)
 make benchmark      # Corpus detection rate metrics
 make baseline-check # Real-world project regression guard
-make red-team-test  # Adversarial test suite (v0.2.1+)
+make red-team-test  # Adversarial test suite (v0.1.5+)
 ```
 
 ## Architecture
@@ -145,11 +145,11 @@ flowchart LR
 | L7 | C++ Operator FFI Filter | `_Znwm`/`_ZdlPv` skip in FFI reporting |
 | **L8** | **RC Container Detection** | `Ref()`/`Unref()`/CordRep patterns |
 
-## Real-World Validation (v0.4.1)
+## Real-World Validation (v0.1.5)
 
 > **10 production projects, 10,000+ functions analyzed, Phase 4 noise reduction active.**
 
-| Project | Language | Functions | Issues (v0.2.0) | Issues (**v0.4.1**) | Reduction |
+| Project | Language | Functions | Issues (v0.1.5) | Issues (**v0.1.5**) | Reduction |
 |---------|----------|-----------|----------------|-------------------|-----------|
 | [abseil-cpp 2024](corpus/real_world/BASELINE.md) | C++ | 193 | ~5 | **0** ✅ | -100% |
 | [ripgrep 14.1.1](corpus/real_world/BASELINE.md) | Rust | 75 | ~3 | **0** ✅ | -100% |
@@ -162,7 +162,7 @@ flowchart LR
 | [openssl_wrapper](corpus/real_world/BASELINE.md) | C | ~50 | ~5 | **99** | +1880%* |
 | [wabt_wast2json](corpus/real_world/BASELINE.md) | C++ | ~800 | ~40 | **85** | +113%* |
 
-*\*Note: C/C++ project numbers increased because v0.4.1 added more detection capabilities (Type Compatibility, Lifetime Inference). These are real issues that were previously missed.*
+*\*Note: C/C++ project numbers increased because v0.1.5 added more detection capabilities (Type Compatibility, Lifetime Inference). These are real issues that were previously missed.*
 
 ### Corpus Benchmark
 
@@ -193,10 +193,10 @@ See full details: [`BASELINE.md`](corpus/real_world/BASELINE.md), [`ZIG_FFI_TEST
 | Boundary | Status | Notes |
 |----------|--------|-------|
 | C → C | ✅ Stable | Full libc/POSIX registry |
-| Rust ↔ C | ✅ **Stable (v0.1.4)** | `into_raw`/`from_raw`, `Box`, `CString` |
+| Rust ↔ C | ✅ **Stable (v0.1.5)** | `into_raw`/`from_raw`, `Box`, `CString` |
 | Zig ↔ C | ✅ Stable | `Allocator.alloc` pattern |
 | Go → C | ⚠️ Experimental | cgo `C.malloc`/`C.CString` |
-| **C++ → C** | **✅ Stable (v0.1.4)** | Itanium ABI, 7-Layer FP reduction |
+| **C++ → C** | **✅ Stable (v0.1.5)** | Itanium ABI, 7-Layer FP reduction |
 | Swift → C | 🔜 Planned | `retain`/`release` |
 
 ## Project Structure

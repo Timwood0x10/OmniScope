@@ -575,7 +575,7 @@ pub const AttributionSummary = struct {
 
         // Find or create category entry
         var found = false;
-        for (&self.categories[0..self.category_count]) |*cat| {
+        for (self.categories[0..self.category_count]) |*cat| {
             if (std.mem.eql(u8, cat.kind, kind)) {
                 cat.count += 1;
                 found = true;
@@ -594,10 +594,7 @@ pub const AttributionSummary = struct {
     /// Print the noise-reduced analysis report.
     /// Format: "191 issues → 21 user code (8 FFI HIGH)"
     pub fn printReport(self: *const AttributionSummary) void {
-        const stdout = std.io.getStdOut().writer();
-
-        // Main summary banner
-        stdout.print(
+        std.debug.print(
             \\╔══════════════════════════════════════════════════════╗
             \\║     OmniScope Analysis Report (Noise-Reduced)         ║
             \\╠══════════════════════════════════════════════════════╣
@@ -614,33 +611,29 @@ pub const AttributionSummary = struct {
             self.third_party,
             self.stdlib_suppressed,
             self.compiler_ignored,
-        }) catch return;
+        });
 
-        // One-line attribution summary (the key deliverable)
-        stdout.print("\n{s} {d} issues → {d} user code", .{
+        std.debug.print("\n{s} {d} issues → {d} user code", .{
             if (self.user_code > 0) "✅" else "⚠️",
             self.total_issues,
             self.user_code,
-        }) catch return;
+        });
 
-        // Show FFI breakdown if any FFI issues found
         if (self.ffi_high_count > 0 or self.ffi_medium_count > 0) {
-            stdout.print(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
+            std.debug.print(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
                 self.ffi_high_count,
                 self.ffi_medium_count,
-            }) catch return;
+            });
         }
 
-        stdout.writeAll("\n") catch return;
+        std.debug.print("\n", .{});
 
-        // Detailed category breakdown (only non-zero categories)
         if (self.category_count > 0) {
-            stdout.writeAll("\n┌─ Issue Categories ────────────────────────────────\n") catch return;
+            std.debug.print("\n┌─ Issue Categories ────────────────────────────────\n", .{});
 
             for (self.categories[0..self.category_count]) |cat| {
                 if (cat.count == 0) continue;
 
-                // Origin icon
                 const icon = switch (cat.origin) {
                     .user => "✅",
                     .third_party => "📦",
@@ -649,14 +642,14 @@ pub const AttributionSummary = struct {
                     .unknown => "❓",
                 };
 
-                stdout.print("│ {s} [{s}] {d:>4} issues\n", .{
+                std.debug.print("│ {s} [{s}] {d:>4} issues\n", .{
                     icon,
                     cat.kind,
                     cat.count,
-                }) catch return;
+                });
             }
 
-            stdout.writeAll("└────────────────────────────────────────────────\n") catch return;
+            std.debug.print("└────────────────────────────────────────────────\n", .{});
         }
     }
 

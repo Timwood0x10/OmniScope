@@ -112,6 +112,20 @@ pub const cross_lang = struct {
     pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
 };
 
+// Export noise reduction system (Phase 4)
+pub const noise_reduction = struct {
+    pub const FunctionOrigin = @import("pass/analysis/noise_reduction.zig").FunctionOrigin;
+    pub const RiskWeight = @import("pass/analysis/noise_reduction.zig").RiskWeight;
+    pub const NoiseReductionConfig = @import("pass/analysis/noise_reduction.zig").NoiseReductionConfig;
+    pub const AttributionSummary = @import("pass/analysis/noise_reduction.zig").AttributionSummary;
+    pub const layer1_NameBasedFilter = @import("pass/analysis/noise_reduction.zig").layer1_NameBasedFilter;
+    pub const layer2_PathBasedFilter = @import("pass/analysis/noise_reduction.zig").layer2_PathBasedFilter;
+    pub const classifyFunction = @import("pass/analysis/noise_reduction.zig").classifyFunction;
+    pub const isRustDropGlueBehavior = @import("pass/analysis/noise_reduction.zig").isRustDropGlueBehavior;
+    pub const isZigAllocatorWrapperBehavior = @import("pass/analysis/noise_reduction.zig").isZigAllocatorWrapperBehavior;
+    pub const isSTLVectorGrowBehavior = @import("pass/analysis/noise_reduction.zig").isSTLVectorGrowBehavior;
+};
+
 // Export registry system
 pub const registry = struct {
     pub const SemanticRegistry = @import("registry/semantic_registry.zig").SemanticRegistry;

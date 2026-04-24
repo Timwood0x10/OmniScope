@@ -56,8 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive bilingual test report: [ZIG_FFI_TEST_REPORT.md](corpus/test_cases/ZIG_FFI_TEST_REPORT.md)
 
 ### Changed
-- Updated [BASELINE.md](corpus/real_world/BASELINE.md) to v0.4.1 with all test results
-- Updated [README.md](README.md) with v0.4.1 highlights and new project table
+- Updated [BASELINE.md](corpus/real_world/BASELINE.md) to v0.1.5 with all test results
+- Updated [README.md](README.md) with v0.1.5 highlights and new project table
 - Created [RELEASE_NOTES.md](RELEASE_NOTES.md) with detailed release documentation
 
 ### Performance Impact
@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Note
 This was an internal development milestone, not publicly released.
-Merged into v0.4.1 with enhancements.
+Merged into v0.1.5 with enhancements.
 
 ---
 
@@ -111,7 +111,7 @@ Merged into v0.4.1 with enhancements.
   - Covers mangled forms: `_ZN4core3ptr13drop_in_place`, etc.
 
 ### Changed
-- Updated BASELINE.md to v0.3.3
+- Updated BASELINE.md to v0.1.5
 - wasmtime: 355 → 297 issues (-16%) from drop_in_place filtering
 
 ---
@@ -146,7 +146,7 @@ Merged into v0.4.1 with enhancements.
   - Result: 43MB / 753K lines / 3346 functions (up from 35MB / 2657 functions)
 
 ### Changed
-- Updated BASELINE.md to v0.3.1
+- Updated BASELINE.md to v0.1.5
 - SQLite: 1 → 0 issues (FTS5/RTREE recompilation)
 - libuv: 6 → 3 issues (sink context sensitivity)
 - libcurl: 1 → 0 issues (format string FP elimination)
@@ -226,12 +226,12 @@ Merged into v0.4.1 with enhancements.
 
 | Version | Date | Major Feature | Key Metric |
 |---------|------|---------------|------------|
-| **v0.4.1** | 2026-04-24 | **Phase 4 Noise Reduction** | wasmtime: **9** (-99.8%) |
-| v0.3.3 | 2026-04-24 | Phase 3 Complete | wasmtime: 297 |
-| v0.3.1 | 2026-04-23 | P1 Phase 2 | wasmtime: 297 |
-| v0.3.0 | 2026-04-23 | P0 Milestone | wasmtime: 355 |
-| v0.2.1 | 2026-04-23 | TP/FP Separation | wasmtime: 357 |
-| v0.2.0 | 2026-04-23 | Enhanced Detection | wasmtime: 4023 |
+| **v0.1.5** | 2026-04-24 | **Phase 4 Noise Reduction** | wasmtime: **9** (-99.8%) |
+| v0.1.5 | 2026-04-24 | Phase 3 Complete | wasmtime: 297 |
+| v0.1.5 | 2026-04-23 | P1 Phase 2 | wasmtime: 297 |
+| v0.1.5 | 2026-04-23 | P0 Milestone | wasmtime: 355 |
+| v0.1.5 | 2026-04-23 | TP/FP Separation | wasmtime: 357 |
+| v0.1.5 | 2026-04-23 | Enhanced Detection | wasmtime: 4023 |
 
 ---
 

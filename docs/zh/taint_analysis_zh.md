@@ -2,7 +2,7 @@
 
 ## 概述
 
-污点分析 Pass 跟踪数据从污染源到敏感汇的流动，以检测安全漏洞。v0.3.0 版本在准确性和精度方面有显著改进。
+污点分析 Pass 跟踪数据从污染源到敏感汇的流动，以检测安全漏洞。v0.1.5 版本在准确性和精度方面有显著改进。
 
 ## 模块位置
 
@@ -12,7 +12,7 @@ src/pass/analysis/taint_propagation.zig
 src/registry/sanitizer_registry.zig
 ```
 
-## 准确性提升 (v0.3.0)
+## 准确性提升 (v0.1.5)
 
 | 指标 | 改进前 | 改进后 | 提升 |
 |------|--------|--------|------|
@@ -82,7 +82,7 @@ pub const TaintGraph = struct {
 
 检查函数是否是污点汇。
 
-## SanitizerRegistry (v0.3.0 新增)
+## SanitizerRegistry (v0.1.5 新增)
 
 识别可以净化污染数据的函数，减少误报。
 
@@ -117,7 +117,7 @@ if (registry.isSanitizer("snprintf")) {
 }
 ```
 
-## PathManager 集成 (v0.3.0 新增)
+## PathManager 集成 (v0.1.5 新增)
 
 路径敏感分析以提高准确性。
 
@@ -133,7 +133,7 @@ if (registry.isSanitizer("snprintf")) {
 - 减少约 10% 的漏报
 - 消除保护操作中的误报
 
-## GEP 处理 (v0.3.0 新增)
+## GEP 处理 (v0.1.5 新增)
 
 通过 GetElementPtr 指令跟踪实现字段敏感的污点传播。
 
@@ -148,7 +148,7 @@ if (registry.isSanitizer("snprintf")) {
 - 提高复杂结构体分析的准确性
 - 减少字段级别污点的误报
 
-## 语义感知置信度衰减 (v0.3.0 新增)
+## 语义感知置信度衰减 (v0.1.5 新增)
 
 基于严重程度的置信度评分，获得更准确的结果。
 
