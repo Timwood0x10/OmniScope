@@ -166,15 +166,19 @@ pub const ArenaAllocator = struct {
         const block = try self.allocator.create(Block);
         errdefer self.allocator.destroy(block);
 
+        const data = try self.allocator.alloc(u8, alloc_size);
+        const data_addr = @intFromPtr(data.ptr);
+        const aligned_addr = std.mem.alignForward(usize, data_addr, alignment);
+        const offset = aligned_addr - data_addr;
         block.* = .{
-            .data = try self.allocator.alloc(u8, alloc_size),
-            .used = len,
+            .data = data,
+            .used = offset + len,
             .next = self.current_block,
         };
         self.current_block = block;
         self.total_size += alloc_size;
 
-        return block.data[0..len];
+        return block.data[offset .. offset + len];
     }
 
     /// Create a typed value in the arena

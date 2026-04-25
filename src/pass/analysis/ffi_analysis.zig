@@ -256,7 +256,7 @@ pub const FFIAnalysisPass = struct {
 
                     if (SemanticRegistry.lookup(called_name)) |sem| {
                         if (sem.kind == .deallocator) {
-                            const ptr_arg = c.LLVMGetOperand(inst, 1);
+                            const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (ptr_arg == null) {
                                 diag.warn("Free operation missing pointer argument at {s}", .{func_name});
                                 continue;

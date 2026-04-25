@@ -17,7 +17,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.4.1] - 2026-04-24
+## [0.1.5] - 2026-04-24
+
+### Security — Critical Bug Fixes 🔒
+
+**12 bugs fixed** from security audit and code review:
+
+#### High Severity (6 bugs)
+
+| Bug ID | File | Issue | Fix |
+|--------|------|-------|-----|
+| R4-001 | `ffi_analysis.zig:259` | Wrong operand index in deallocator detection | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
+| R4-002 | `call_graph.zig:126` | Off-by-one error in indirect call resolution | Complex formula → `@as(c_uint, @intCast(i))` |
+| R4-003 | `memory_pool.zig:169-181` | Missing alignment in arena allocator | Added `alignForward` + offset calculation |
+| NEW-001 | `taint.zig:190,275` | Wrong callee detection | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
+| NEW-002 | `lock.zig:161` | Wrong callee detection | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
+| NEW-003 | `lock.zig:234` | Wrong lock object argument | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
+
+#### Medium Severity (4 bugs)
+
+| Bug ID | File | Issue | Fix |
+|--------|------|-------|-----|
+| R4-004 | `formatter.zig:228,230` | SARIF output not escaped | Added `writeEscapedString()` |
+| R4-005 | `main.zig:272-287` | JSON output not escaped | Added `writeJsonEscaped()` function |
+| R4-006 | `ci_integration.zig:315` | Typo in binary name | `OmniSope` → `OmniScope` |
+| R4-009 | `fact/query.zig:29-109` | Data race in query methods | Added mutex locking |
+
+#### Low Severity (2 bugs)
+
+| Bug ID | File | Issue | Fix |
+|--------|------|-------|-----|
+| R4-007 | `main.zig:175` | Negative timestamp cast | Added `@max(0, elapsed)` |
+| R4-008 | `security-analysis.yml:62` | Command injection risk | `find -print0 \| xargs -0` |
+
+### Impact Analysis
+
+- **taint.zig / lock.zig fixes**: Taint source/sink detection and lock analysis were completely broken before this fix
+- **ffi_analysis.zig fix**: Double-free detection and ownership mismatch detection now work correctly
+- **call_graph.zig fix**: Indirect call resolution now correctly maps parameters
 
 ### Added — Phase 4: Cross-Language Noise Reduction Engine 🎉
 

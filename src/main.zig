@@ -45,6 +45,25 @@ const OutputFormat = enum {
     sarif,
 };
 
+fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (c < 0x20) {
+                    try writer.print("\\u{X:0>4}", .{c});
+                } else {
+                    try writer.writeByte(c);
+                }
+            },
+        }
+    }
+}
+
 /// Parse command line arguments
 fn parseArgs(allocator: std.mem.Allocator) !Config {
     var args = try std.process.argsWithAllocator(allocator);
@@ -172,7 +191,8 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     // Run static analysis through Pipeline
     const analysis_start = std.time.milliTimestamp();
     const result = try pipeline.runStaticAnalysis();
-    const analysis_time_ms: u64 = @intCast(std.time.milliTimestamp() - analysis_start);
+    const elapsed = std.time.milliTimestamp() - analysis_start;
+    const analysis_time_ms: u64 = @intCast(@max(0, elapsed));
 
     std.log.info("Analysis complete\n", .{});
     std.log.info("Functions processed: {d}\n", .{func_count});
@@ -270,21 +290,21 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
 
         if (issue.reason.len > 0) {
             try writer.writeAll(",\"reason\":\"");
-            try writer.writeAll(issue.reason);
+            try writeJsonEscaped(writer, issue.reason);
             try writer.writeAll("\"");
         }
 
         try writer.writeAll(",\"message\":\"");
-        try writer.writeAll(issue.message);
+        try writeJsonEscaped(writer, issue.message);
         try writer.writeAll("\",\"location\":{");
 
         try writer.writeAll("\"function\":\"");
-        try writer.writeAll(issue.location.function);
+        try writeJsonEscaped(writer, issue.location.function);
         try writer.writeAll("\"");
 
         if (file_str) |f| {
             try writer.writeAll(",\"file\":\"");
-            try writer.writeAll(f);
+            try writeJsonEscaped(writer, f);
             try writer.writeAll("\"");
         }
         if (line_num) |l| {

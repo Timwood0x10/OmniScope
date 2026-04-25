@@ -2,13 +2,25 @@
 
 ## Cross-Language FFI Static Analysis for LLVM IR
 
-**Version**: v0.1.5 | **Date**: 2026-04-23 | **Language**: Zig (LLVM 22)
+**Version**: v0.1.5 | **Date**: 2026-04-24 | **Language**: Zig (LLVM 22)
 
 ---
 
 ## Executive Summary
 
 OmniScope is a **cross-language FFI boundary safety analyzer** built on LLVM IR. Unlike CodeQL (which excels at single-language analysis) or Clippy (which only sees the Rust side), OmniScope analyzes **both sides of every FFI boundary** by operating at the LLVM IR level — where C, C++, and Rust all compile to the same representation.
+
+### v0.1.5 Security Fixes
+
+**12 bugs fixed** from security audit:
+
+| Severity | Count | Key Fixes |
+|----------|-------|-----------|
+| High | 6 | LLVM operand indexing, memory alignment, callee detection |
+| Medium | 4 | JSON/SARIF escaping, data race, typo |
+| Low | 2 | Timestamp handling, command injection |
+
+**Critical impact**: Taint analysis, lock analysis, and double-free detection were completely broken before these fixes.
 
 ### Key Differentiators
 
@@ -27,44 +39,47 @@ OmniScope is a **cross-language FFI boundary safety analyzer** built on LLVM IR.
 
 ### Three-Layer Design
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  Layer 3: Boundary Analyzer          │
-│         (Ownership Transfer / Lifetime Tracking)     │
-│              BoundaryAnalyzer + LifetimeEngine        │
-├─────────────────────────────────────────────────────┤
-│                Layer 2: Semantic Adapter             │
-│      (Language Detection / FP Reduction / Rules)     │
-│   SemanticRegistry + 8-Layer C++ Filter + Confidence │
-├─────────────────────────────────────────────────────┤
-│                  Layer 1: Core Engine                 │
-│            (IR Loading / Pass Pipeline / Fact Store) │
-│       IRLoader → PassManager → Pipeline → FactStore │
-└─────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph L3["Layer 3: Boundary Analyzer"]
+        BA["BoundaryAnalyzer + LifetimeEngine"]
+        BA_desc["Ownership Transfer / Lifetime Tracking"]
+    end
+    
+    subgraph L2["Layer 2: Semantic Adapter"]
+        SA["SemanticRegistry + 8-Layer C++ Filter + Confidence"]
+        SA_desc["Language Detection / FP Reduction / Rules"]
+    end
+    
+    subgraph L1["Layer 1: Core Engine"]
+        CE["IRLoader → PassManager → Pipeline → FactStore"]
+        CE_desc["IR Loading / Pass Pipeline / Fact Store"]
+    end
+    
+    L1 --> L2 --> L3
 ```
 
 ### Data Flow
 
-```
-Source Code (.c/.cpp/.rs)
-       ↓
-   [clang++ / rustc]
-       ↓
-LLVM IR (.ll) ──→ IRLoader ──→ ModuleRef
-                              ↓
-                    ┌─────────┴──────────┐
-                    │  Pass Pipeline    │
-                    │                  │
-                    ├─ PointerOwner    │
-                    ├─ FFIDetector     │
-                    ├─ TaintPropagation│
-                    ├─ CallGraph       │
-                    └─ LockAnalysis    │
-                              ↓
-                    ┌─────────┴──────────┐
-                    │   Issue Report    │
-                    │  Text/JSON/SARIF  │
-                    └──────────────────┘
+```mermaid
+flowchart TB
+    Source["Source Code (.c/.cpp/.rs)"]
+    Compile["clang++ / rustc"]
+    IR["LLVM IR (.ll)"]
+    Loader["IRLoader"]
+    Module["ModuleRef"]
+    
+    subgraph Pipeline["Pass Pipeline"]
+        PO["PointerOwner"]
+        FD["FFIDetector"]
+        TP["TaintPropagation"]
+        CG["CallGraph"]
+        LA["LockAnalysis"]
+    end
+    
+    Report["Issue Report (Text/JSON/SARIF)"]
+    
+    Source --> Compile --> IR --> Loader --> Module --> Pipeline --> Report
 ```
 
 ---
@@ -75,12 +90,15 @@ LLVM IR (.ll) ──→ IRLoader ──→ ModuleRef
 
 OmniScope tracks allocation-free pairs through intra-procedural data flow:
 
-```
-Allocation Site (malloc/_Znwm/operator new)
-        ↓ [data flow via SSA]
-Free Site (free/operator delete/_ZdlPv)
-        ↓ [ownership check]
-Leak if no path from alloc → free AND not transferred
+```mermaid
+flowchart TB
+    Alloc["Allocation Site<br/>malloc/_Znwm/operator new"]
+    Flow["Data Flow via SSA"]
+    Free["Free Site<br/>free/operator delete/_ZdlPv"]
+    Check["Ownership Check"]
+    Leak["Leak if no path<br/>alloc → free AND not transferred"]
+    
+    Alloc --> Flow --> Free --> Check --> Leak
 ```
 
 **Ownership Transfer Detection** (Task 8.2):

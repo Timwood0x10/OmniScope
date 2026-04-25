@@ -625,5 +625,5 @@ For questions, issues, or contributions:
 
 ---
 
-**Last Updated**: 2026-04-14  
-**Version**: 1.0.0
+**Last Updated**: 2026-04-24  
+**Version**: v0.1.5

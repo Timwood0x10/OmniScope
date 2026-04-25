@@ -868,5 +868,5 @@ fn funcCallback(func: OmniScope.ir.FunctionRef) !void {
 
 ---
 
-**最后更新**: 2026-04-14  
-**版本**: 1.0.0
+**最后更新**: 2026-04-24  
+**版本**: v0.1.5

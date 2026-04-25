@@ -158,7 +158,7 @@ pub const LockPass = struct {
         if (opcode_enum != .Call) return false;
 
         // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name
@@ -231,7 +231,7 @@ pub const LockPass = struct {
     /// Get or create lock ID for a lock object
     fn getLockId(self: *LockPass, inst: c.LLVMValueRef) !u32 {
         // Get the lock object (first argument)
-        const lock_obj = c.LLVMGetOperand(inst, 1); // Call instruction: func + args
+        const lock_obj = c.LLVMGetOperand(inst, 0);
         if (lock_obj == null) return error.InvalidLockOperation;
 
         // Check if we already have an ID for this lock

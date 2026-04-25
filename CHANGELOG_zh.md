@@ -6,7 +6,46 @@ OmniScope 的所有重要变更都将记录在此文件中。/ All notable chang
 
 ---
 
-## \[0.4.1] - 2026-04-24
+## \[0.1.5] - 2026-04-24
+
+### 🔒 安全 — 关键 Bug 修复 / Security — Critical Bug Fixes
+
+**安全审计和代码审查发现并修复了 12 个 Bug。**
+
+#### 高严重度 (6 个)
+
+| Bug ID | 文件 | 问题 | 修复 |
+|--------|------|------|------|
+| R4-001 | `ffi_analysis.zig:259` | deallocator 检测中 operand 索引错误 | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
+| R4-002 | `call_graph.zig:126` | 间接调用解析中的 off-by-one 错误 | 复杂公式 → `@as(c_uint, @intCast(i))` |
+| R4-003 | `memory_pool.zig:169-181` | arena 分配器缺少对齐 | 添加 `alignForward` + offset 计算 |
+| NEW-001 | `taint.zig:190,275` | callee 检测错误 | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
+| NEW-002 | `lock.zig:161` | callee 检测错误 | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
+| NEW-003 | `lock.zig:234` | lock 对象参数错误 | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
+
+#### 中严重度 (4 个)
+
+| Bug ID | 文件 | 问题 | 修复 |
+|--------|------|------|------|
+| R4-004 | `formatter.zig:228,230` | SARIF 输出未转义 | 添加 `writeEscapedString()` |
+| R4-005 | `main.zig:272-287` | JSON 输出未转义 | 添加 `writeJsonEscaped()` 函数 |
+| R4-006 | `ci_integration.zig:315` | 二进制名称拼写错误 | `OmniSope` → `OmniScope` |
+| R4-009 | `fact/query.zig:29-109` | 查询方法中的数据竞争 | 添加 mutex 锁 |
+
+#### 低严重度 (2 个)
+
+| Bug ID | 文件 | 问题 | 修复 |
+|--------|------|------|------|
+| R4-007 | `main.zig:175` | 时间戳可能为负值 | 添加 `@max(0, elapsed)` |
+| R4-008 | `security-analysis.yml:62` | 命令注入风险 | `find -print0 \| xargs -0` |
+
+### 影响分析 / Impact Analysis
+
+- **taint.zig / lock.zig 修复**: 污点源/汇检测和锁分析在此修复前完全失效
+- **ffi_analysis.zig 修复**: 双重释放检测和所有权不匹配检测现在正常工作
+- **call_graph.zig 修复**: 间接调用解析现在正确映射参数
+
+---
 
 ### 🎉 新增 — Phase 4: 跨语言噪音过滤引擎 / Phase 4: Cross-Language Noise Reduction Engine
 

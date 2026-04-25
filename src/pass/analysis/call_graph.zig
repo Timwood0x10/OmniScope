@@ -123,7 +123,7 @@ pub fn resolveIndirectCall(
             if (num_operands < param_count) continue;
             for (0..param_count) |i| {
                 const func_param = c.LLVMGetParam(func, @intCast(i));
-                const call_arg = c.LLVMGetOperand(call_inst, @as(c_uint, @intCast(num_operands)) - @as(c_uint, @intCast(param_count)) + @as(c_uint, @intCast(i)));
+                const call_arg = c.LLVMGetOperand(call_inst, @as(c_uint, @intCast(i)));
                 if (c.LLVMTypeOf(func_param) != c.LLVMTypeOf(call_arg)) {
                     param_match = false;
                     break;

@@ -128,5 +128,5 @@ Reason: as_ptr() on local String/Vec passed to extern C - may dangle after drop
 
 ---
 
-**最后更新**: 2026-04-23
+**最后更新**: 2026-04-24
 **版本**: v0.1.5

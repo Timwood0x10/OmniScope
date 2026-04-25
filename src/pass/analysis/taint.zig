@@ -187,7 +187,7 @@ pub const TaintPass = struct {
     /// Check if a call instruction is a taint source
     fn isTaintSource(inst: c.LLVMValueRef) bool {
         // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name
@@ -272,7 +272,7 @@ pub const TaintPass = struct {
     /// Check if a call instruction is a taint sink
     fn isTaintSink(inst: c.LLVMValueRef) bool {
         // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name

@@ -225,9 +225,13 @@ pub const Formatter = struct {
         for (result.vulnerabilities, 0..) |vuln, i| {
             if (i > 0) try buffer.appendSlice(self.allocator, ",\n");
             try buffer.appendSlice(self.allocator, "        {\n");
-            try buffer.writer(self.allocator).print("          \"ruleId\": \"{s}\",\n", .{vuln.vuln_type});
+            try buffer.appendSlice(self.allocator, "          \"ruleId\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("          \"ruleIndex\": {d},\n", .{i});
-            try buffer.writer(self.allocator).print("          \"level\": \"{s}\",\n", .{self.sarifSeverity(vuln.severity)});
+            try buffer.appendSlice(self.allocator, "          \"level\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), self.sarifSeverity(vuln.severity));
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.appendSlice(self.allocator, "          \"message\": {\n");
             try buffer.writer(self.allocator).print("            \"text\": \"", .{});
             try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);

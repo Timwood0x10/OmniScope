@@ -81,6 +81,11 @@ pub const FactStore = struct {
         return self.kinds.items.len;
     }
 
+    /// Get the number of facts in the store (caller must hold mutex)
+    pub fn countLocked(self: *FactStore) usize {
+        return self.kinds.items.len;
+    }
+
     /// Get a fact by index
     pub fn get(self: *FactStore, index: usize) ?Fact {
         self.mutex.lock();

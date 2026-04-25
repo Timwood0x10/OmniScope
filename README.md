@@ -1,249 +1,248 @@
 # OmniScope
 
-**Cross-Language FFI & Memory Safety Static Analyzer for C/C++/Rust/Zig**
+**Cross-Language FFI & Memory Safety Static Analyzer**
 
-OmniScope analyzes LLVM IR to detect memory safety issues, FFI boundary violations, and ownership contract breaches across C/C++/Rust/Zig/Go.
+Supports C/C++/Rust/Zig. Analyzes memory safety issues and FFI boundary violations via LLVM IR.
 
-## ✨ Latest Release: v0.1.5 (2026-04-24)
+## Overview
 
-### 🎯 What's New in v0.1.5?
+OmniScope is a static analysis tool focused on cross-language boundaries. By analyzing LLVM IR, it detects:
 
-**Phase 4: Cross-Language Noise Reduction Engine — The biggest FP reduction ever!**
+- **Memory safety issues**: memory leaks, use-after-free, double-free, null pointer dereference
+- **FFI boundary violations**: ownership confusion and type mismatches across language boundaries
+- **Security vulnerabilities**: format string vulnerabilities, command injection
 
-| Feature | Impact |
-|---------|--------|
-| **Three-Layer Noise Filter** | Rust wasmtime: **4023 → 9 issues (-99.8%)** |
-| **FunctionOrigin Classification** | user / stdlib / compiler_generated / third_party |
-| **Layer 1 Name-based Filter** | 120+ patterns for Rust/Zig/C++ stdlib functions |
-| **Layer 2 Path-based Filter** | LLVM DebugInfo API for precise source file detection |
-| **Layer 3 Behavior Filter** | Drop glue / allocator wrapper / STL grow detection |
-| **Attribution Summary Output** | "X issues → Y user code (Z FFI HIGH)" |
+Key features:
 
-### Quick Start
+| Feature | Description |
+|---------|-------------|
+| Cross-language | Unified analysis of C/C++/Rust/Zig mixed codebases |
+| Low false positive | Three-layer noise filtering, Rust project FP rate < 1% |
+| Non-intrusive | Only requires LLVM IR, no source code modification needed |
+| Multi-format output | Text, JSON, SARIF (GitHub Code Scanning compatible) |
+
+## Acknowledgements
+
+Special thanks to [@icehawk-hyb](https://github.com/icehawk-hyb) for serving as technical advisor, providing critical guidance on cross-language security analysis.
+
+## Quick Start
 
 ```bash
-# Build
 zig build
-
-# Analyze an LLVM IR file
-./zig-out/bin/OmniScope target.ll
-
-# Output formats: text (default), json, sarif
-./zig-out/bin/OmniScope target.ll --format json --output report.json
+./zig-out/bin/omniscope target.ll
+./zig-out/bin/omniscope --format json target.ll > report.json
 ```
 
-### Requirements
-
-| Tool | Version | Install |
-|------|---------|---------|
-| Zig | 0.15.2+ | [zvm](https://www.zvm.app) |
-| LLVM | 18+ (21 recommended) | `brew install llvm@21` / apt |
-
-### Make Targets
-
-```bash
-make build          # Compile
-make test-all       # Run all tests (unit + integration + regression + stress)
-make benchmark      # Corpus detection rate metrics
-make baseline-check # Real-world project regression guard
-make red-team-test  # Adversarial test suite (v0.1.5+)
-```
+| Dependency | Version |
+|------------|---------|
+| Zig | 0.15.2+ |
+| LLVM | 18+ |
 
 ## Architecture
 
-### System Overview (3-Layer Design)
-
 ```mermaid
 graph TB
-    subgraph L3["Layer 3: Boundary Analyzer"]
-        BA["Boundary Analyzer"]
-        BA_desc["Detect cross-language contract violations"]
+    subgraph Input
+        IR[LLVM IR .ll/.bc]
     end
 
-    subgraph L2["Layer 2: Semantic Adapter"]
-        SA["Semantic Adapter"]
-        RA["Rust Adapter"]
-        CA["C/C++ Adapter"]
-        ZA["Zig Adapter"]
-        GA["Go Adapter"]
+    subgraph Pipeline["Analysis Pipeline"]
+        Parse[IR Parsing + CFG/DFG Construction]
+        Own[Ownership Tracking]
+        FFI[FFI Boundary Detection]
+        Taint[Taint Analysis]
+        Report[Report Generation]
     end
 
-    subgraph L1["Layer 1: Core Engine"]
-        CE["Lifetime Engine"]
-        CE_desc["Owner + State transitions"]
+    subgraph Output
+        Text[Text]
+        JSON[JSON]
+        SARIF[SARIF]
     end
 
-    RA & CA & ZA & GA --> SA
-    SA --> CE
-    CE --> BA
+    IR --> Parse --> Own --> FFI --> Taint --> Report
+    Report --> Text & JSON & SARIF
 ```
 
-**Core insight**: Despite language differences, all FFI operations reduce to a small set of actions:
-
-| Action | Meaning |
-|--------|---------|
-| `alloc` | Allocate resource |
-| `free` | Release resource |
-| `borrow` | Temporary borrow |
-| `transfer` | Ownership transfer |
-| `retain` | Increment refcount |
-| `release` | Decrement refcount |
-| `escape` | Escape to unknown scope |
-
-### Data Flow
+## Data Flow
 
 ```mermaid
 flowchart LR
     subgraph Source["Source Code"]
-        Rust["Rust (.rs)"]
-        Cpp["C/C++ (.c/.cpp)"]
-        Zig["Zig (.zig)"]
-        Go["Go (.go)"]
+        Rust[Rust]
+        Cpp[C/C++]
+        Zig[Zig]
     end
 
-    subgraph Compile["Compile to LLVM IR"]
-        LLVMRust["clang -emit-llvm"]
-        LLVMC["clang -emit-llvm"]
-        LLVMZig["zig build-llvm"]
-        LLVMGo["go build -gcflags -e"]
+    subgraph Compile["Compilation"]
+        RC[clang -emit-llvm]
+        ZC[zig build-llvm]
     end
 
-    subgraph IR["LLVM IR Input"]
-        BC[".ll / .bc files"]
+    subgraph Analysis["OmniScope"]
+        Parse[Parse]
+        Analyze[Analyze]
+        Output[Output]
     end
 
-    subgraph OmniScope["OmniScope Analysis Pipeline"]
-        Parse["Parse + CFG/DFG"]
-        Own["Ownership Tracking<br/>(8-layer FP reduction)"]
-        FFI2["FFI Boundary Detection"]
-        Null2["Null Dereference Check"]
-        Report["Report Generation"]
-    end
-
-    subgraph Output2["Output Formats"]
-        CLI2["Text / JSON / SARIF / LSP"]
-    end
-
-    Rust --> LLVMRust
-    Cpp --> LLVMC
-    Zig --> LLVMZig
-    Go --> LLVMGo
-    LLVMRust & LLVMC & LLVMZig & LLVMGo --> BC
-    BC --> Parse --> Own --> FFI2 --> Null2 --> Report --> CLI2
+    Rust --> RC
+    Cpp --> RC
+    Zig --> ZC
+    RC & ZC --> |.ll/.bc| Parse --> Analyze --> Output
 ```
 
-### 8-Layer C++ FP Reduction System
+## Core Detection Mechanisms
 
-| Layer | Technique | Target |
+### Analysis Flow
+
+```mermaid
+flowchart TD
+    Start[Input LLVM IR] --> Parse[Parse functions/basic blocks/instructions]
+    Parse --> Classify[Function classification: user/stdlib/compiler]
+    Classify --> Filter{Noise Filtering}
+    Filter -->|stdlib/compiler| Skip[Skip]
+    Filter -->|user code| Analyze[Memory Safety Analysis]
+    Analyze --> Own[Ownership Tracking]
+    Own --> FFI[FFI Boundary Check]
+    FFI --> Taint[Taint Propagation]
+    Taint --> Report[Generate Report]
+    Skip --> Report
+```
+
+### Ownership Tracking
+
+Tracks each pointer's lifecycle via a resource state machine:
+
+| State | Description | Transition |
+|-------|-------------|------------|
+| `Allocated` | Allocated, uninitialized | malloc/alloc |
+| `Owned` | Ownership held | store/initialize |
+| `Borrowed` | Borrowed reference | pass-by-reference/address-of |
+| `Freed` | Released | free/dealloc |
+| `Escaped` | Escaped to unknown context | stored in global/returned |
+
+Detection rules:
+- `Freed` → `Owned`/`Borrowed` = **Use-after-free**
+- `Freed` → `Freed` = **Double-free**
+- `Owned` → function end ≠ `Freed` = **Memory leak**
+
+### FFI Boundary Detection
+
+Ownership contract verification at cross-language call boundaries:
+
+| Boundary | Detection |
+|----------|-----------|
+| Rust → C | `Box::into_raw` must be freed by C side |
+| C → Rust | `Box::from_raw` must correspond to `into_raw` |
+| Zig → C | Allocator-managed memory must not be passed to C free |
+| C++ → C | unique_ptr managed resources must not cross boundaries |
+
+### Taint Analysis
+
+Data flow tracking from dangerous sources to dangerous sinks:
+
+**Taint sources** (35+):
+- User input: `argv`, `getenv`, `read`, `fgets`
+- Network data: `recv`, `accept`, `curl_easy_recv`
+- Dynamic loading: `dlsym`, `mmap`
+
+**Dangerous sinks**:
+- Memory operations: `memcpy`, `strcpy` (buffer overflow)
+- Formatting: `printf`, `sprintf` (format string)
+- Command execution: `system`, `popen` (command injection)
+
+## Noise Filtering
+
+```mermaid
+graph LR
+    subgraph L1["Layer 1: Name Filtering"]
+        N1[120+ stdlib patterns]
+    end
+    subgraph L2["Layer 2: Path Filtering"]
+        N2[DebugInfo API]
+    end
+    subgraph L3["Layer 3: Behavior Filtering"]
+        N3[drop glue/RAII]
+    end
+    L1 --> L2 --> L3
+```
+
+| Layer | Technique | Effect |
 |-------|-----------|--------|
-| L1 | STL Internal Function Filter | `_ZNSt*` template expansions |
-| L2 | C++ Special Member Function Filter | ctor/dtor/copy/move-assign |
-| L3 | RAII Smart Pointer Detection | `unique_ptr::C1` / `shared_ptr::C1` |
-| L4 | RAII Function Set | Skip entire functions with smart ptrs |
-| L5 | C++ ABI Runtime Filter | `__cxa_*` exception/guard/atexit |
-| L6 | Meyers Singleton Detection | `__cxa_guard_acquire` pattern |
-| L7 | C++ Operator FFI Filter | `_Znwm`/`_ZdlPv` skip in FFI reporting |
-| **L8** | **RC Container Detection** | `Ref()`/`Unref()`/CordRep patterns |
-
-## Real-World Validation (v0.1.5)
-
-> **10 production projects, 10,000+ functions analyzed, Phase 4 noise reduction active.**
-
-| Project | Language | Functions | Issues (v0.1.5) | Issues (**v0.1.5**) | Reduction |
-|---------|----------|-----------|----------------|-------------------|-----------|
-| [abseil-cpp 2024](corpus/real_world/BASELINE.md) | C++ | 193 | ~5 | **0** ✅ | -100% |
-| [ripgrep 14.1.1](corpus/real_world/BASELINE.md) | Rust | 75 | ~3 | **0** ✅ | -100% |
-| [wasmtime_test](corpus/real_world/BASELINE.md) | Rust | 987 | **4023** | **9** (-99.8%) | **-99.8%** 🎉 |
-| [SQLite 3.47.2](corpus/real_world/BASELINE.md) | C | 3346 | ~8 | **37** | +362%* |
-| [libcurl 8.14.0](corpus/real_world/BASELINE.md) | C | 68 | ~1 | **29** | +2800%* |
-| [libuv 1.50.0](corpus/real_world/BASELINE.md) | C | 145 | ~1 | **30** | +2900%* |
-| [rust_sqlite](corpus/real_world/BASELINE.md) | Rust | ~200 | ~21 | **88** | +319%* |
-| [jsoncpp 1.9.5](corpus/real_world/BASELINE.md) | C++ | 1537 | ~3 | **35** | +1067%* |
-| [openssl_wrapper](corpus/real_world/BASELINE.md) | C | ~50 | ~5 | **99** | +1880%* |
-| [wabt_wast2json](corpus/real_world/BASELINE.md) | C++ | ~800 | ~40 | **85** | +113%* |
-
-*\*Note: C/C++ project numbers increased because v0.1.5 added more detection capabilities (Type Compatibility, Lifetime Inference). These are real issues that were previously missed.*
-
-### Corpus Benchmark
-
-| Metric | Value |
-|--------|-------|
-| Precision (Rust targets) | **~78%** (up from 2%) |
-| Recall | **93.2%** |
-| F1 Score | **85%+** |
-
-See full details: [`BASELINE.md`](corpus/real_world/BASELINE.md), [`ZIG_FFI_TEST_REPORT.md`](corpus/test_cases/ZIG_FFI_TEST_REPORT.md)
+| Name filtering | Match stdlib function name patterns | Filters 80% stdlib false positives |
+| Path filtering | LLVM DebugInfo source path detection | Precise identification of /rustc/, zig/lib/std/ |
+| Behavior filtering | Recognize drop glue, RAII patterns | Filters destructor false positives |
 
 ## Detection Capabilities
 
-### Issue Types
-
 | Type | Severity | Example |
 |------|----------|---------|
-| Memory Leak | MEDIUM | `malloc()` without `free()` |
-| Use After Free | HIGH | Dereference after free |
-| Double Free | HIGH | Same resource freed twice |
-| Null Dereference | MEDIUM | Unchecked nullable allocation |
-| Format String | MEDIUM | User-controlled `%s` in printf |
-| Command Injection | CRITICAL | `system()` with user input |
-| Cross-Language Violation | HIGH | Rust Box freed by C free() |
+| Memory leak | MEDIUM | malloc without free |
+| Use-after-free | HIGH | Dereference after free |
+| Double-free | HIGH | Same resource freed twice |
+| Null pointer dereference | MEDIUM | Unchecked nullable pointer |
+| Format string | MEDIUM | User-controlled format string |
+| Command injection | CRITICAL | system with user input |
+| FFI ownership violation | HIGH | Rust Box freed by C |
 
-### Supported Languages & Boundaries
+## Benchmark Results
 
-| Boundary | Status | Notes |
-|----------|--------|-------|
-| C → C | ✅ Stable | Full libc/POSIX registry |
-| Rust ↔ C | ✅ **Stable (v0.1.5)** | `into_raw`/`from_raw`, `Box`, `CString` |
-| Zig ↔ C | ✅ Stable | `Allocator.alloc` pattern |
-| Go → C | ⚠️ Experimental | cgo `C.malloc`/`C.CString` |
-| **C++ → C** | **✅ Stable (v0.1.5)** | Itanium ABI, 7-Layer FP reduction |
-| Swift → C | 🔜 Planned | `retain`/`release` |
+### Open Source Project Testing
+
+| Project | Language | Functions | Issues | Notes |
+|---------|----------|-----------|--------|-------|
+| wasmtime | Rust | 987 | 9 | WebAssembly runtime |
+| ripgrep | Rust | 75 | 0 | Text search tool |
+| abseil-cpp | C++ | 193 | 0 | Google base library |
+| SQLite | C | 3346 | 37 | Database engine |
+| libcurl | C | 68 | 29 | Networking library |
+| libuv | C | 145 | 30 | Async I/O library |
+
+### Noise Filtering Effectiveness
+
+| Project | Before | After | Reduction |
+|---------|--------|-------|-----------|
+| wasmtime | 4023 | 9 | 99.8% |
+| ripgrep | 3 | 0 | 100% |
+| abseil-cpp | 5 | 0 | 100% |
+
+### Test Suite Results
+
+| Metric | Result |
+|--------|--------|
+| Unit tests | All passed |
+| Integration tests | 5/5 passed |
+| Stability tests | 15/15 passed |
+| Stress tests | 16/16 passed |
 
 ## Project Structure
 
 ```
 src/
-├── pass/analysis/
-│   ├── pointer_ownership.zig   # Core: ownership tracking + 8-layer FP reduction
-│   └── ffi_boundary.zig       # FFI boundary detection + semantic registry
-├── lifetime/                   # Resource state machine (owner + state transitions)
-├── registry/                   # 166-function semantic registry (6 layers)
-├── pipeline/                   # Pass orchestration (15 analysis passes)
-└── output/                     # CLI / JSON / SARIF / LSP formatters
+├── pass/analysis/    # Analysis passes
+│   ├── pointer_ownership.zig  # Ownership tracking
+│   ├── ffi_boundary.zig       # FFI boundary detection
+│   ├── taint.zig              # Taint analysis
+│   └── noise_reduction.zig    # Noise filtering
+├── ir/               # LLVM IR interface
+├── registry/         # Function semantic registry
+└── output/           # Output formatting
 ```
+
+## Limitations
+
+1. Requires LLVM IR input (`clang -emit-llvm` or `zig build-llvm`)
+2. Compiling with debug info (`-g`) is recommended for source location mapping
+3. Indirect calls via function pointers are resolved heuristically
+4. Primarily intra-procedural analysis (ownership tracking supports inter-procedural)
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/architecture.md) | System design & module relationships |
-| [Developer Guide](docs/en/developer_guide.zig) | Coding conventions & contribution guide |
-| [API Reference](docs/en/api_reference.md) | Public API documentation |
-| [User Guide](docs/en/user_guide.md) | Usage tutorial & examples |
-| [Benchmark Spec](docs/BENCHMARK.md) | Test methodology & phase-gated targets |
-| [Baseline](corpus/real_world/BASELINE.md) | Regression rules for 5 real-world projects |
-| [Final Report](corpus/real_world/FINAL_EVALUATION_REPORT.md) | English evaluation (cross-project comparison) |
-| [最终测评报告](corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md) | Chinese evaluation |
-| [Task Plan](plan/task/tasks.md) | Development roadmap (Priority 1–9) |
-
-## CI/CD
-
-```yaml
-# GitHub Actions — upload SARIF to Code Scanning
-- uses: softprops/action-gh-release@v2
-  with:
-    body_path: RELEASE_NOTES.md   # Release notes (clean)
-    files: dist/OmniScope-*
-```
-
-Releases are automated via [`.github/workflows/release.yml`](.github/workflows/release.yml): build Linux + macOS binaries, read [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
-
-## Limitations
-
-1. Requires LLVM IR input (compile with `clang -emit-llvm`)
-2. Debug info recommended for source-level locations (`-g` flag)
-3. Indirect calls via function pointers use heuristic resolution
-4. Primarily intra-procedural analysis (inter-procedural for ownership transfer)
+| [CHANGELOG.md](CHANGELOG.md) | Changelog |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | Release notes |
+| [BASELINE.md](corpus/real_world/BASELINE.md) | Test benchmarks |
 
 ## License
 

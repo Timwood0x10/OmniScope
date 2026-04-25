@@ -1,179 +1,249 @@
 # OmniScope
 
-**跨语言 FFI 与内存安全静态分析器 / Cross-Language FFI & Memory Safety Static Analyzer**
+**跨语言 FFI 与内存安全静态分析器**
 
-支持 C/C++/Rust/Zig/Go / Supports C/C++/Rust/Zig/Go
+支持 C/C++/Rust/Zig，基于 LLVM IR 分析内存安全问题和 FFI 边界违规。
 
-OmniScope 基于 LLVM IR 分析，检测跨语言边界的内存安全问题、FFI 边界违规和所有权契约违反。
-OmniScope analyzes LLVM IR to detect memory safety issues, FFI boundary violations, and ownership contract breaches.
+## 简介
 
----
+OmniScope 是一款专注于跨语言边界的静态分析工具。通过分析 LLVM IR，检测：
 
-## ✨ 最新版本 / Latest Release: v0.1.5 (2026-04-24)
+- **内存安全问题**：内存泄漏、释放后使用、双重释放、空指针解引用
+- **FFI 边界违规**：跨语言调用时的所有权混乱、类型不匹配
+- **安全漏洞**：格式化字符串漏洞、命令注入
 
-### 🎯 v0.1.5 新增功能 / What's New in v0.1.5?
+核心特点：
 
-**Phase 4: 跨语言噪音过滤引擎 / Cross-Language Noise Reduction Engine — 史上最大误报降低！**
+| 特点 | 说明 |
+|------|------|
+| 跨语言 | 统一分析 C/C++/Rust/Zig 混合代码 |
+| 低误报 | 三层噪音过滤，Rust 项目误报率 < 1% |
+| 无侵入 | 仅需 LLVM IR，无需修改源码 |
+| 多格式输出 | 文本、JSON、SARIF（支持 GitHub Code Scanning） |
 
-| 功能 / Feature | 影响 / Impact |
-|---------------|---------------|
-| **三层噪音过滤器 / Three-Layer Noise Filter** | Rust wasmtime: **4023 → 9 问题 (-99.8%)** |
-| **FunctionOrigin 分类 / FunctionOrigin Classification** | user / stdlib / compiler_generated / third_party |
-| **Layer 1 名称过滤 / Layer 1 Name Filter** | 120+ Rust/Zig/C++ 标准库模式 |
-| **Layer 2 路径过滤 / Layer 2 Path Filter** | LLVM DebugInfo API 精确源码检测 |
-| **Layer 3 行为过滤 / Layer 3 Behavior Filter** | Drop glue / allocator wrapper / STL grow 检测 |
-| **归因分组输出 / Attribution Output** | "X 问题 → Y 用户代码 (Z FFI HIGH)" |
+## 致谢
 
----
+特别感谢 [@icehawk-hyb](https://github.com/icehawk-hyb) 以技术顾问的形式参与项目，在跨语言安全分析方向提供了关键指导。
 
-## 🚀 快速开始 / Quick Start
+## 快速开始
 
 ```bash
-# 编译 / Build
 zig build
-
-# 分析 LLVM IR 文件 / Analyze an LLVM IR file
-./zig-out/bin/OmniScope target.ll
-
-# JSON 输出格式 / Output formats: text (default), json, sarif
-./zig-out/bin/OmniScope --json target.ll > report.json
+./zig-out/bin/omniscope target.ll
+./zig-out/bin/omniscope --format json target.ll > report.json
 ```
 
-### 环境要求 / Requirements
+| 依赖 | 版本 |
+|------|------|
+| Zig | 0.15.2+ |
+| LLVM | 18+ |
 
-| 工具 / Tool | 版本 / Version | 安装 / Install |
-|------------|----------------|----------------|
-| Zig | 0.15.2+ | [zvm](https://www.zvm.app) |
-| LLVM | 18+ (推荐/rec. 21) | `brew install llvm@21` / apt |
-
-### Make 命令 / Make Targets
-
-```bash
-make build          # 编译 / Compile
-make test-all       # 全量测试 / Run all tests
-make benchmark      # Corpus 检测率指标 / Detection rate metrics
-make baseline-check # 真实项目回归防护 / Real-world regression guard
-```
-
----
-
-## 📊 真实项目验证 / Real-World Validation (v0.1.5)
-
-> **10 个生产级项目，10,000+ 函数分析，Phase 4 噪音过滤已启用。**
-
-| 项目 / Project | 语言 / Language | 函数 / Funcs | 问题 (v0.1.5) | 问题 (**v0.1.5**) | 降低率 / Reduction |
-|----------------|-----------------|---------------|----------------|-------------------|-------------------|
-| [abseil-cpp](corpus/real_world/BASELINE.md) | C++ | 193 | ~5 | **0** ✅ | -100% |
-| [ripgrep](corpus/real_world/BASELINE.md) | Rust | 75 | ~3 | **0** ✅ | -100% |
-| [wasmtime_test](corpus/real_world/BASELINE.md) | Rust | 987 | **4023** | **9** (-99.8%) | **-99.8%** 🎉 |
-| [SQLite](corpus/real_world/BASELINE.md) | C | 3346 | ~8 | **37** | +362%* |
-| [libcurl](corpus/real_world/BASELINE.md) | C | 68 | ~1 | **29** | +2800%* |
-| [libuv](corpus/real_world/BASELINE.md) | C | 145 | ~1 | **30** | +2900%* |
-
-*\*注 / Note: C/C++ 项目数量增加是因为 v0.1.5 新增了检测能力（类型兼容性、生命周期推断）。这些是之前遗漏的真实问题。*
-
-### 优化历程 / Optimization Progression (wasmtime)
-
-| 版本 / Version | 问题 / Issues | 降低率 / Reduction | 关键变化 / Key Change |
-|---------------|---------------|-------------------|----------------------|
-| v0.1.5 | **4023** | baseline | 无过滤 / No filtering |
-| v0.1.5 | **357** | -91% | 名称过滤 / Mangled filter |
-| v0.1.5 | **355** | -0.6% | Rust FFI Filter |
-| v0.1.5 | **297** | -16% | Context/Contract/Taint |
-| v0.1.5 | **9** | **-97%** | **Phase 4 噪音引擎** |
-| v0.1.5 | **9** | stable | Phase 4 增强 / Enhanced |
-
----
-
-## 🏗️ 系统架构 / Architecture
-
-### 三层设计 / Three-Layer Design
+## 架构
 
 ```mermaid
 graph TB
-    subgraph L3["Layer 3: 边界分析器 / Boundary Analyzer"]
-        BA["边界分析器 / Boundary Analyzer"]
+    subgraph Input
+        IR[LLVM IR .ll/.bc]
     end
-    subgraph L2["Layer 2: 语义适配器 / Semantic Adapter"]
-        SA["语义适配器 / Semantic Adapter"]
-        RA["Rust 适配器 / Rust Adapter"]
-        CA["C/C++ 适配器 / C/C++ Adapter"]
-        ZA["Zig 适配器 / Zig Adapter"]
+    
+    subgraph Pipeline["分析流水线"]
+        Parse[IR 解析 + CFG/DFG 构建]
+        Own[所有权追踪]
+        FFI[FFI 边界检测]
+        Taint[污点分析]
+        Report[报告生成]
     end
-    subgraph L1["Layer 1: 核心引擎 / Core Engine"]
-        CE["生命周期引擎 / Lifetime Engine"]
+    
+    subgraph Output
+        Text[文本]
+        JSON[JSON]
+        SARIF[SARIF]
     end
-    RA & CA & ZA --> SA
-    SA --> CE
-    CE --> BA
+    
+    IR --> Parse --> Own --> FFI --> Taint --> Report
+    Report --> Text & JSON & SARIF
 ```
 
-**核心洞察 / Core Insight**: 所有语言底层都能抽象为 / All languages reduce to:
+## 数据流
 
-| 动作 / Action | 含义 / Meaning |
-|--------------|----------------|
-| `alloc` | 分配资源 / Allocate resource |
-| `free` | 释放资源 / Release resource |
-| `borrow` | 临时借用 / Temporary borrow |
-| `transfer` | 所有权转移 / Ownership transfer |
-
-### 检测能力 / Detection Capabilities
-
-| 类型 / Type | 严重度 / Severity | 示例 / Example |
-|-------------|-------------------|----------------|
-| 内存泄漏 / Memory Leak | MEDIUM | `malloc()` 无 `free()` |
-| 使用后释放 / Use After Free | HIGH | 释放后解引用 |
-| 双重释放 / Double Free | HIGH | 同一资源释放两次 |
-| 空指针解引用 / Null Dereference | MEDIUM | 未检查的可空分配 |
-| 格式化字符串 / Format String | MEDIUM | 用户控制的 `%s` |
-| 命令注入 / Command Injection | CRITICAL | `system()` 含用户输入 |
-| 跨语言违规 / Cross-Language Violation | HIGH | Rust Box 被 C free() |
-
----
-
-## 📁 项目结构 / Project Structure
-
-```
-OmniScope/
-├── src/
-│   ├── pass/analysis/       # 分析 passes
-│   │   ├── ffi_boundary.zig # FFI 边界检测
-│   │   ├── pointer_ownership.zig # 所有权跟踪
-│   │   ├── noise_reduction.zig   # Phase 4 噪音过滤
-│   │   └── ...
-│   ├── diag/                # 诊断输出
-│   ├── ir/                  # LLVM IR 接口
-│   └── registry/            # 函数语义注册表
-├── corpus/                  # 测试语料库
-│   ├── real_world/          # 真实项目 IR
-│   └── test_cases/          # 测试用例（含 Zig FFI 测试）
-├── docs/                    # 文档 (en/zh)
-├── plan/                    # 开发计划
-└── tests/                   # 测试套件
+```mermaid
+flowchart LR
+    subgraph Source["源代码"]
+        Rust[Rust]
+        Cpp[C/C++]
+        Zig[Zig]
+    end
+    
+    subgraph Compile["编译"]
+        RC[clang -emit-llvm]
+        ZC[zig build-llvm]
+    end
+    
+    subgraph Analysis["OmniScope"]
+        Parse[解析]
+        Analyze[分析]
+        Output[输出]
+    end
+    
+    Rust --> RC
+    Cpp --> RC
+    Zig --> ZC
+    RC & ZC --> |.ll/.bc| Parse --> Analyze --> Output
 ```
 
----
+## 核心检测机制
 
-## 📖 文档 / Documentation
+### 分析流程
 
-| 文档 / Document | 说明 / Description |
-|------------------|-------------------|
-| [BASELINE.md](corpus/real_world/BASELINE.md) | 真实项目回归基准 / Real-world regression baseline |
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | 发布说明 / Release notes |
-| [CHANGELOG.md](CHANGELOG.md) | 变更日志 / Changelog |
-| [ZIG_FFI_TEST_REPORT.md](corpus/test_cases/ZIG_FFI_TEST_REPORT.md) | Zig FFI 测试报告 / Zig FFI test report |
-| [plan/TODOLIST.md](plan/TODOLIST.md) | 开发路线图 / Development roadmap |
+```mermaid
+flowchart TD
+    Start[输入 LLVM IR] --> Parse[解析函数/基本块/指令]
+    Parse --> Classify[函数分类: user/stdlib/compiler]
+    Classify --> Filter{噪音过滤}
+    Filter -->|stdlib/compiler| Skip[跳过]
+    Filter -->|user code| Analyze[内存安全分析]
+    Analyze --> Own[所有权追踪]
+    Own --> FFI[FFI 边界检查]
+    FFI --> Taint[污点传播]
+    Taint --> Report[生成报告]
+    Skip --> Report
+```
 
----
+### 所有权追踪
 
-## 🙏 致谢 / Acknowledgments
+基于资源状态机追踪每个指针的生命周期：
 
-- **LLVM 项目** — 优秀的 IR 格式和 C API
-- **Zig 软件基金会** — 卓越的 Zig 语言
-- **Rust 项目** — 所有权系统设计灵感
-- 所有测试语料库中的开源项目
+| 状态 | 说明 | 转换条件 |
+|------|------|----------|
+| `Allocated` | 已分配未初始化 | malloc/alloc |
+| `Owned` | 拥有所有权 | store/初始化 |
+| `Borrowed` | 借用引用 | 传参/取地址 |
+| `Freed` | 已释放 | free/dealloc |
+| `Escaped` | 逃逸未知 | 存入全局/返回 |
 
----
+检测规则：
+- `Freed` → `Owned`/`Borrowed` = **释放后使用**
+- `Freed` → `Freed` = **双重释放**
+- `Owned` → 函数结束 ≠ `Freed` = **内存泄漏**
 
-*Built with ❤️ using Zig 0.15.2*
-*OmniScope v0.1.5 — "Silence the Noise, Find the Bugs" / "过滤噪音，发现漏洞"*
+### FFI 边界检测
+
+跨语言调用时的所有权契约验证：
+
+| 边界 | 检测内容 |
+|------|----------|
+| Rust → C | `Box::into_raw` 后必须由 C 侧 free |
+| C → Rust | `Box::from_raw` 必须对应 `into_raw` |
+| Zig → C | Allocator 管理的内存不可传给 C free |
+| C++ → C | unique_ptr 管理的资源不可跨边界传递 |
+
+### 污点分析
+
+从危险源到危险汇的数据流追踪：
+
+**污点源**（35+）：
+- 用户输入：`argv`、`getenv`、`read`、`fgets`
+- 网络数据：`recv`、`accept`、`curl_easy_recv`
+- 动态加载：`dlsym`、`mmap`
+
+**危险汇**：
+- 内存操作：`memcpy`、`strcpy`（缓冲区溢出）
+- 格式化：`printf`、`sprintf`（格式化字符串）
+- 命令执行：`system`、`popen`（命令注入）
+
+## 噪音过滤
+
+```mermaid
+graph LR
+    subgraph L1["Layer 1: 名称过滤"]
+        N1[120+ stdlib 模式]
+    end
+    subgraph L2["Layer 2: 路径过滤"]
+        N2[DebugInfo API]
+    end
+    subgraph L3["Layer 3: 行为过滤"]
+        N3[drop glue/RAII]
+    end
+    L1 --> L2 --> L3
+```
+
+| 层级 | 技术 | 效果 |
+|------|------|------|
+| 名称过滤 | 匹配 stdlib 函数名模式 | 过滤 80% 标准库误报 |
+| 路径过滤 | LLVM DebugInfo 检测源码路径 | 精确识别 /rustc/、zig/lib/std/ |
+| 行为过滤 | 识别 drop glue、RAII 模式 | 过滤析构函数误报 |
+
+## 检测能力
+
+| 类型 | 严重度 | 示例 |
+|------|--------|------|
+| 内存泄漏 | MEDIUM | malloc 无 free |
+| 释放后使用 | HIGH | 释放后解引用 |
+| 双重释放 | HIGH | 同一资源释放两次 |
+| 空指针解引用 | MEDIUM | 未检查可空指针 |
+| 格式化字符串 | MEDIUM | 用户控制的格式串 |
+| 命令注入 | CRITICAL | system 含用户输入 |
+| FFI 所有权违规 | HIGH | Rust Box 被 C free |
+
+## 实测数据
+
+### 开源项目测试
+
+| 项目 | 语言 | 函数数 | 问题数 | 说明 |
+|------|------|--------|--------|------|
+| wasmtime | Rust | 987 | 9 | WebAssembly 运行时 |
+| ripgrep | Rust | 75 | 0 | 文本搜索工具 |
+| abseil-cpp | C++ | 193 | 0 | Google 基础库 |
+| SQLite | C | 3346 | 37 | 数据库引擎 |
+| libcurl | C | 68 | 29 | 网络库 |
+| libuv | C | 145 | 30 | 异步 I/O 库 |
+
+### 噪音过滤效果
+
+| 项目 | 过滤前 | 过滤后 | 降低率 |
+|------|--------|--------|--------|
+| wasmtime | 4023 | 9 | 99.8% |
+| ripgrep | 3 | 0 | 100% |
+| abseil-cpp | 5 | 0 | 100% |
+
+### 测试套件结果
+
+| 指标 | 值 |
+|------|-----|
+| 单元测试 | 全部通过 |
+| 集成测试 | 5/5 通过 |
+| 稳定性测试 | 15/15 通过 |
+| 压力测试 | 16/16 通过 |
+
+## 项目结构
+
+```
+src/
+├── pass/analysis/    # 分析 passes
+│   ├── pointer_ownership.zig  # 所有权追踪
+│   ├── ffi_boundary.zig       # FFI 边界检测
+│   ├── taint.zig              # 污点分析
+│   └── noise_reduction.zig    # 噪音过滤
+├── ir/               # LLVM IR 接口
+├── registry/         # 函数语义注册表
+└── output/           # 输出格式化
+```
+
+## 限制
+
+1. 需要 LLVM IR 输入（`clang -emit-llvm` 或 `zig build-llvm`）
+2. 推荐带调试信息编译（`-g`）以获取源码位置
+3. 函数指针调用使用启发式解析
+4. 主要为过程内分析（所有权追踪支持过程间）
+
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [CHANGELOG.md](CHANGELOG.md) | 变更日志 |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | 发布说明 |
+| [BASELINE.md](corpus/real_world/BASELINE.md) | 测试基准 |
+
+## 许可证
+
+Apache 2.0
