@@ -175,6 +175,69 @@ const rust_stdlib_patterns = [_][]const u8{
     "reserve_total",
 };
 
+/// Rust channel patterns that transfer ownership safely.
+/// These look like UAF in IR but are actually safe ownership transfers.
+const rust_channel_patterns = [_][]const u8{
+    // std::sync::mpmc (multi-producer multi-consumer)
+    "std::sync::mpmc::",
+    "mpmc::Receiver",
+    "mpmc::Sender",
+    "mpmc::channel",
+
+    // std::sync::mpsc (multi-producer single-consumer)
+    "std::sync::mpsc::",
+    "mpsc::Receiver",
+    "mpsc::Sender",
+    "mpsc::channel",
+    "sync_channel",
+
+    // Crossbeam channels
+    "crossbeam::channel::",
+    "crossbeam_channel::",
+    "bounded(",
+    "unbounded(",
+
+    // Tokio channels
+    "tokio::sync::mpsc::",
+    "tokio::sync::broadcast::",
+    "tokio::sync::watch::",
+
+    // Channel operations that transfer ownership
+    "::send(",
+    "::recv(",
+    "::try_recv(",
+    "::recv_timeout(",
+};
+
+/// Rust Arc/Mutex patterns that provide thread-safe shared ownership.
+/// Reference counting prevents UAF in these patterns.
+const rust_arc_patterns = [_][]const u8{
+    // Arc (Atomic Reference Counted)
+    "std::sync::Arc<",
+    "Arc::clone",
+    "Arc::into_raw",
+    "Arc::from_raw",
+    "Arc::try_unwrap",
+    "Arc::get_mut",
+
+    // Weak (weak reference to Arc)
+    "std::sync::Weak<",
+    "Weak::upgrade",
+    "Weak::clone",
+
+    // Mutex (interior mutability)
+    "std::sync::Mutex<",
+    "Mutex::lock",
+    "Mutex::try_lock",
+    "MutexGuard",
+
+    // RwLock (reader-writer lock)
+    "std::sync::RwLock<",
+    "RwLock::read",
+    "RwLock::write",
+    "RwLockGuard",
+};
+
 /// Zig standard library patterns to skip.
 /// Covers: std packages, allocator wrappers, compiler helpers, debug/DWARF, OS abstraction.
 const zig_stdlib_patterns = [_][]const u8{
@@ -499,6 +562,46 @@ pub fn isSTLVectorGrowBehavior(
         for (vec_patterns) |pattern| {
             if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
         }
+    }
+
+    return false;
+}
+
+/// Detect Rust channel ownership transfer pattern.
+/// Channel send/recv operations transfer ownership safely.
+/// In IR, this looks like UAF but is actually safe.
+pub fn isRustChannelOwnershipTransfer(func_name: []const u8) bool {
+    for (rust_channel_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Detect Rust Arc/Mutex protected access pattern.
+/// Arc provides reference counting, preventing UAF.
+/// Mutex provides interior mutability, ensuring thread safety.
+pub fn isRustArcProtectedAccess(func_name: []const u8) bool {
+    for (rust_arc_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Check if a potential UAF is actually a safe Rust ownership pattern.
+/// Returns true if the issue should be suppressed.
+pub fn isSafeRustOwnershipPattern(func_name: []const u8) bool {
+    // Channel operations transfer ownership safely
+    if (isRustChannelOwnershipTransfer(func_name)) {
+        return true;
+    }
+
+    // Arc/Mutex provides reference counting protection
+    if (isRustArcProtectedAccess(func_name)) {
+        return true;
     }
 
     return false;

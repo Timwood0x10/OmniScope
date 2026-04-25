@@ -34,6 +34,7 @@ const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullCheckRecognizer;
 const PathManager = @import("../../dataflow/path_condition.zig").PathManager;
 const lifetime = @import("../../lifetime/root.zig");
+const noise_reduction = @import("noise_reduction.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
@@ -640,6 +641,14 @@ pub fn detectUseAfterFree(
         // NOT real use-after-free bugs. Rust's ownership system guarantees safety.
         if (isRustDropGlue(free_info.func_name)) {
             diag.debug("UAF-SKIP: {s} is Rust drop_in_place — guaranteed safe by ownership system", .{free_info.func_name});
+            continue;
+        }
+
+        // P2 Enhancement: Skip UAF in Rust's safe ownership patterns.
+        // Channel operations (send/recv) transfer ownership safely.
+        // Arc/Mutex provides reference counting protection.
+        if (noise_reduction.isSafeRustOwnershipPattern(free_info.func_name)) {
+            diag.debug("UAF-SKIP: {s} is safe Rust ownership pattern (channel/Arc)", .{free_info.func_name});
             continue;
         }
 
