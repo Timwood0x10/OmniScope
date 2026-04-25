@@ -1,26 +1,80 @@
 # OmniScope 密码学库调查报告索引
 
 **测试日期**: 2026-04-25
-**测试版本**: v0.1.5
+**测试版本**: v0.1.5 → v0.1.6
 **测试范围**: ZKP 领域典型项目 + 主流密码学库
+
+---
+
+## 0. 优化效果对比
+
+### 0.1 本次优化内容
+
+| 优化项 | 文件 | 描述 |
+|--------|------|------|
+| Rust 通道模式识别 | noise_reduction.zig | 识别 mpmc/mpsc 通道的安全所有权转移 |
+| Rust Arc/Mutex 模式识别 | noise_reduction.zig | 识别 Arc 引用计数保护 |
+| 栈/堆区分逻辑 | allocation_classifier.zig | 区分 alloca 和 malloc |
+| 安全内存模式检测 | access_order.zig | 识别 cleanup/realloc/error-handling 模式 |
+| 控制流敏感分析 | control_flow_sensitive.zig | 识别互斥分支、早返回、错误处理模式 |
+| 敏感数据流检测 | sensitive_data_flow.zig | 检测密钥残留问题 |
+| transmute 生命周期检测 | transmute_detection.zig | 检测生命周期绕过 |
+| UAF 检测增强 | cpp_fp_reduction.zig | 集成所有新的安全模式检测 |
+
+### 0.2 测试结果对比
+
+| 项目 | 优化前 UAF | 优化后 UAF | 减少 | 减少比例 |
+|------|-----------|-----------|------|----------|
+| **blst** | 185 | 181 | **4** | **2.2%** |
+| **ring** | 10 | 10 | 0 | 0% |
+| **zkcrypto/bls12_381** | 1 | 1 | 0 | 0% |
+| **ark-ff** | 0 | 0 | - | - |
+| **libsodium** | 0 | 0 | - | - |
+| **gnark-crypto** | 2 | 1 | **1** | **50%** |
+| **总计** | **198** | **193** | **5** | **2.5%** |
+
+### 0.3 新增检测能力
+
+| 检测类型 | 模块 | 描述 |
+|----------|------|------|
+| 敏感数据流 | sensitive_data_flow.zig | 检测密钥等敏感数据释放前未清零 |
+| transmute 生命周期绕过 | transmute_detection.zig | 检测 Rust transmute 延长生命周期 |
+| 控制流敏感分析 | control_flow_sensitive.zig | 识别互斥分支、早返回模式 |
+
+### 0.4 优化效果分析
+
+**改进有限的原因**:
+
+1. **大部分 UAF 来自 drop_in_place**: blst 的 185 个 UAF 中，约 120 个来自 `drop_in_place`，这些已经被正确过滤
+2. **通道模式已过滤**: `sync_channel` 等函数已被识别为安全模式
+3. **剩余问题需要更深层改进**: 跨函数分析、精确的数据流追踪等
+
+**新增模块**:
+
+| 模块 | 文件 | 功能 |
+|------|------|------|
+| access_order | src/pass/analysis/access_order.zig | 释放前/后访问追踪 |
+| control_flow_sensitive | src/pass/analysis/control_flow_sensitive.zig | 控制流敏感分析 |
+| sensitive_data_flow | src/pass/analysis/sensitive_data_flow.zig | 敏感数据流检测 |
+| transmute_detection | src/pass/analysis/transmute_detection.zig | transmute 生命周期检测 |
 
 ---
 
 ## 1. 测试项目汇总
 
-| # | 项目 | 语言 | 报告 | UAF | 误报率 |
-|---|------|------|------|-----|--------|
-| 1 | **blst** | Rust + C | [blst.md](blst.md) | 185 | ~65% |
+| # | 项目 | 语言 | 报告 | UAF (优化后) | 误报率 |
+|---|------|------|------|-------------|--------|
+| 1 | **blst** | Rust + C | [blst.md](blst.md) | 181 | ~65% |
 | 2 | **zkcrypto/bls12_381** | Rust | [zkcrypto_bls12_381.md](zkcrypto_bls12_381.md) | 1 | 100% |
 | 3 | **ark-ff** | Rust | [ark_ff.md](ark_ff.md) | 0 | - |
 | 4 | **libsodium** | C | [libsodium.md](libsodium.md) | 0 | - |
-| 5 | **gnark-crypto** | Go (tinygo) | [gnark_crypto.md](gnark_crypto.md) | 2 | 100% |
+| 5 | **gnark-crypto** | Go (tinygo) | [gnark_crypto.md](gnark_crypto.md) | 1 | 100% |
 | 6 | **ring** | Rust + C/asm | [ring.md](ring.md) | 10 | 100% |
 | 7 | **botan** | C++ | [botan.md](botan.md) | 0 | - |
-| 8 | **mbedtls** | C | [mbedtls.md](mbedtls.md) | 7 | 100% |
-| 9 | **boringssl** | C++ | [boringssl.md](boringssl.md) | 7 | 100% |
+| 8 | **mbedtls** | C | [mbedtls.md](mbedtls.md) | - | - |
+| 9 | **boringssl** | C++ | [boringssl.md](boringssl.md) | - | - |
 
-**总计**: 9 个项目，212 个 UAF 报告，约 75% 误报率
+**总计**: 6 个项目可测试，193 个 UAF 报告（优化后），约 75% 误报率
 
 ---
 

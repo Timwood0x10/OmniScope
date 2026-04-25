@@ -35,6 +35,7 @@ const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullC
 const PathManager = @import("../../dataflow/path_condition.zig").PathManager;
 const lifetime = @import("../../lifetime/root.zig");
 const noise_reduction = @import("noise_reduction.zig");
+const access_order = @import("access_order.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
@@ -649,6 +650,13 @@ pub fn detectUseAfterFree(
         // Arc/Mutex provides reference counting protection.
         if (noise_reduction.isSafeRustOwnershipPattern(free_info.func_name)) {
             diag.debug("UAF-SKIP: {s} is safe Rust ownership pattern (channel/Arc)", .{free_info.func_name});
+            continue;
+        }
+
+        // P3 Enhancement: Skip UAF in safe memory access patterns.
+        // Check for cleanup-before-free, realloc, and error-handling patterns.
+        if (access_order.isSafeMemoryPattern(free_info.func_name, null, null)) {
+            diag.debug("UAF-SKIP: {s} is safe memory pattern (cleanup/realloc/error-handling)", .{free_info.func_name});
             continue;
         }
 
