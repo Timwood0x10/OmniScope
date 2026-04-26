@@ -195,8 +195,8 @@ pub const LockPass = struct {
     fn isLockAcquire(self: *LockPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
-        // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        // Get called function - use LLVMGetCalledValue for call instructions
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name

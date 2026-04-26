@@ -127,8 +127,11 @@ pub const DataFlowGraph = struct {
         }
 
         // Initialize edge indices for this node
-        try self.outgoing_edges.put(node.id, &[_]u32{});
-        try self.incoming_edges.put(node.id, &[_]u32{});
+        // Use allocator to create empty slices to avoid freeing comptime data
+        const empty_outgoing = try self.allocator.alloc(u32, 0);
+        const empty_incoming = try self.allocator.alloc(u32, 0);
+        try self.outgoing_edges.put(node.id, empty_outgoing);
+        try self.incoming_edges.put(node.id, empty_incoming);
     }
 
     /// Get a node by ID

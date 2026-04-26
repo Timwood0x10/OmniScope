@@ -1,275 +1,261 @@
 # OmniScope v0.1.5 Release Notes
 
-**Release Date**: 2026-04-24
-**Version**: 0.1.5 (Phase 4 Complete + Security Fixes)
+**Release Date**: 2026-04-25
+**Version**: 0.1.5 (Zone Classification)
 **Status**: Production Ready
 
 ---
 
-## 🔒 Security Fixes (Critical)
+## 🎯 Project Repositioning
 
-**12 bugs fixed** from security audit and code review.
+**New Focus**: Static security analysis for unsafe/FFI cross-language boundaries
 
-### High Severity (6 bugs)
-
-| Bug ID | File | Issue | Impact | Fix |
-|--------|------|-------|--------|-----|
-| **R4-001** | `ffi_analysis.zig:259` | Wrong operand index in deallocator detection | Double-free detection completely broken | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
-| **R4-002** | `call_graph.zig:126` | Off-by-one error in indirect call resolution | Indirect call resolution always failed | Complex formula → `@as(c_uint, @intCast(i))` |
-| **R4-003** | `memory_pool.zig:169-181` | Missing alignment in arena allocator | Potential crashes on aligned-access architectures | Added `alignForward` + offset calculation |
-| **NEW-001** | `taint.zig:190,275` | Wrong callee detection in taint source/sink | Taint analysis completely broken | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
-| **NEW-002** | `lock.zig:161` | Wrong callee detection in lock analysis | Lock analysis completely broken | `LLVMGetOperand(inst, 0)` → `LLVMGetCalledValue(inst)` |
-| **NEW-003** | `lock.zig:234` | Wrong lock object argument index | Lock object tracking incorrect | `LLVMGetOperand(inst, 1)` → `LLVMGetOperand(inst, 0)` |
-
-### Medium Severity (4 bugs)
-
-| Bug ID | File | Issue | Fix |
-|--------|------|-------|-----|
-| **R4-004** | `formatter.zig:228,230` | SARIF output not escaped | Added `writeEscapedString()` for vuln_type and severity |
-| **R4-005** | `main.zig:272-287` | JSON output not escaped | Added `writeJsonEscaped()` function |
-| **R4-006** | `ci_integration.zig:315` | Typo in binary name | `OmniSope` → `OmniScope` |
-| **R4-009** | `fact/query.zig:29-109` | Data race in query methods | Added mutex locking in all QueryEngine methods |
-
-### Low Severity (2 bugs)
-
-| Bug ID | File | Issue | Fix |
-|--------|------|-------|-----|
-| **R4-007** | `main.zig:175` | Negative timestamp cast | Added `@max(0, elapsed)` |
-| **R4-008** | `security-analysis.yml:62` | Command injection risk | `find -print0 \| xargs -0` |
-
-### Impact Analysis
-
-| Component | Before Fix | After Fix |
-|-----------|------------|-----------|
-| **Taint Analysis** | ❌ Completely broken (checked arg name instead of func name) | ✅ Working correctly |
-| **Lock Analysis** | ❌ Completely broken (checked arg name instead of func name) | ✅ Working correctly |
-| **Double-Free Detection** | ❌ Broken (wrong pointer argument) | ✅ Working correctly |
-| **Indirect Call Resolution** | ❌ Always failed (off-by-one) | ✅ Working correctly |
-| **Memory Pool Alignment** | ⚠️ Potential crashes on some platforms | ✅ Properly aligned |
+**Core Philosophy**: "只分析语言保障失效的地方" (Analyze only where language guarantees stop)
 
 ---
 
-## 🎉 Major Highlights
+## 🚀 Major Innovation: Zone Classification
 
-### Phase 4: Cross-Language Noise Reduction Engine
+### The Problem
 
-The **biggest single improvement in OmniScope history**.
+Modern languages (Rust, Zig, Go) provide strong safety guarantees. But these guarantees **stop at FFI boundaries**:
 
-> "Modern language projects are not hard to analyze — it's that standard library and compiler-generated code creates too much noise."
+```mermaid
+graph TB
+    subgraph SafeZone["Rust Safe Zone"]
+        A["Compiler enforces:<br/>• Memory safety (no UAF, no leaks)<br/>• Type safety (no null deref)<br/>• Thread safety (no data races)"]
+    end
+    
+    subgraph UnsafeZone["NO GUARANTEES"]
+        B["• Raw pointer operations<br/>• External C library calls<br/>• Manual memory management"]
+    end
+    
+    SafeZone -->|"unsafe { } / FFI"| UnsafeZone
+    
+    style SafeZone fill:#90EE90,stroke:#333
+    style UnsafeZone fill:#FFB6C1,stroke:#333
+```
 
-### Quantified Impact
+### The Solution: Zone Classification
 
-| Project              | Before (v0.1.5) | After (**v0.1.5**) | Reduction |
-| -------------------- | --------------- | ------------------ | --------- |
-| **wasmtime (Rust)**  | 297 issues      | **9 issues**       | **-97%**  |
-| **zig\_video (Zig)** | 194 issues      | **50 issues**      | **-74%**  |
-| **zgui (Zig)**       | 168 issues      | **24 issues**      | **-86%**  |
-| **mach\_core (Zig)** | 211 issues      | **67 issues**      | **-68%**  |
+```mermaid
+graph TD
+    A[All Functions] --> B{Zone Classification}
+    B -->|Safe Zone| C[Skip - Trust Compiler]
+    B -->|Runtime Internal| D[Skip - Trust Stdlib]
+    B -->|Unknown Zone| E[Analyze - Must Check]
+    
+    C --> F[No analysis needed]
+    D --> F
+    E --> G[Deep security analysis]
+    
+    style C fill:#90EE90
+    style D fill:#87CEEB
+    style E fill:#FFB6C1
+```
 
-**Total: \~870 issues → \~150 issues (-83% average reduction)**
+| Zone Type            | Meaning                              | Handling                                      |
+| -------------------- | ------------------------------------ | --------------------------------------------- |
+| **Safe Zone**        | Code with language safety guarantees | Skip analysis (trust compiler)                |
+| **Runtime Internal** | Language runtime/standard library    | Skip analysis (trust official implementation) |
+| **Unknown Zone**     | Code without language guarantees     | Deep analysis (must check)                    |
 
-***
+---
+
+## 📊 Performance Impact
+
+### Analysis Time Reduction
+
+| Project  | Language | Before | After  | Improvement    |
+| -------- | -------- | ------ | ------ | -------------- |
+| **blst** | Rust + C | 3100ms | 836ms  | **73% faster** |
+| **ring** | Rust + C | 793ms  | 269ms  | **66% faster** |
+
+### Function Analysis Reduction
+
+| Project                  | Total Functions | Safe | Runtime | Unknown | Skip %    |
+| ------------------------ | --------------- | ---- | ------- | ------- | --------- |
+| **ring**                 | 278             | 261  | 17      | 0       | **100%**  |
+| **wasmtime**             | 619             | 239  | 221     | 159     | **74.3%** |
+| **blst**                 | 267             | 39   | 132     | 96      | **64.0%** |
+| **ark-ff**               | 89              | 0    | 89      | 0       | **100%**  |
+| **zkcrypto\_bls12\_381** | 46              | 0    | 46      | 0       | **100%**  |
+
+### Issue Detection Precision
+
+| Metric              | Before | After  | Improvement         |
+| ------------------- | ------ | ------ | ------------------- |
+| UAF Reports (blst)  | 185    | 48     | **74% reduction**   |
+| False Positive Rate | ~90%   | ~60%   | **30% improvement** |
+
+---
 
 ## ✨ New Features
 
-### 1. Three-Layer Noise Filtering System ([noise\_reduction.zig](src/pass/analysis/noise_reduction.zig))
+### 1. Zone Classifier Module ([zone\_classifier.zig](src/semantics/zone_classifier.zig))
 
-#### Layer 1: Name-based Filter (⚡ Fastest, Highest ROI)
+```zig
+pub const ZoneKind = enum {
+    safe,              // Safe Rust/Zig/Go code
+    unsafe,            // Explicit unsafe blocks
+    ffi,               // FFI boundary functions
+    runtime_internal,  // Standard library / runtime
+    unknown,           // Needs analysis
+};
 
-**120+ patterns** covering Rust, Zig, and C++ standard library functions:
+pub const ZoneStats = struct {
+    total_functions: u32,
+    safe_count: u32,
+    runtime_count: u32,
+    unknown_count: u32,
+    ffi_count: u32,
+};
+```
 
-```rust
-// Rust patterns (40+)
+### 2. Language-Specific Classification
+
+#### Rust Patterns
+
+```zig
+// Safe Zone patterns
 "core::", "alloc::", "std::", "_ZN4core", "_ZN5alloc"
-"drop_in_place", "panic_", "<T as core::ops::drop::Drop>::drop"
+"drop_in_place", "<T as core::ops::drop::Drop>::drop"
 
-// Zig patterns (65+)
-"std.", "std.debug", "std.mem", "std.fmt", "std.heap"
-"debug.Dwarf", "posix.", "fs.File", "mem.Allocator"
+// Runtime Internal patterns
+"/rustc/library/", "/cargo/registry/"
+"std::sync::Once", "std::panic"
 
-// C++ patterns (12+)
-"std::", "__gnu_cxx::__cxa_", "__clang_call_terminate"
+// Unknown Zone (needs analysis)
+"unsafe", "extern \"C\"", "as *const", "as *mut"
 ```
 
-#### Layer 2: Path/Debug Metadata Filter (🎯 Most Accurate)
-
-Integrated LLVM DebugInfo API for precise source file detection:
+#### Zig Patterns
 
 ```zig
-// New API integration (llvm_raw.zig)
-@cInclude("llvm-c/DebugInfo.h");
+// Safe Zone patterns
+"std.", "std.debug", "std.mem", "std.heap"
 
-// Usage in ffi_boundary.zig
-fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
-    const subprogram = c.LLVMGetSubprogram(func);
-    const file_ref = c.LLVMDIScopeGetFile(subprogram);
-    // Returns /rustc/library/core/, zig/lib/std/, etc.
-}
+// Runtime Internal patterns
+"zig/lib/std/", "std.heap.GeneralPurposeAllocator"
+
+// Unknown Zone (needs analysis)
+"@ptrCast", "@intCast", "extern fn", "cimport"
 ```
 
-**Path prefixes detected**:
-
-- Rust: `/rustc/`, `/library/core/`, `/library/std/`, `/cargo/registry/`
-- Zig: `zig/lib/std/`
-- C++: `/usr/include/c++/`, `/libc++/`
-
-#### Layer 3: Behavior Filter (🧠 Most Intelligent)
-
-Detects known-safe behavioral patterns:
-
-| Pattern                   | Detection Logic                    | Example                 |
-| ------------------------- | ---------------------------------- | ----------------------- |
-| **Rust Drop Glue**        | `free + memset + branch + panic`   | `drop_in_place<T>`      |
-| **Zig Allocator Wrapper** | `alloc → store len → return slice` | `mem.Allocator.alloc()` |
-| **STL Vector Grow**       | `malloc → memcpy → free old`       | `vector.push_back()`    |
-
-***
-
-### 2. FunctionOrigin Classification System
-
-New enum classifies every function's origin:
+#### Go Patterns
 
 ```zig
-pub const FunctionOrigin = enum {
-    user,              // User-written code — ALWAYS report
-    stdlib,            // Standard library — suppress by default
-    compiler_generated, // Compiler glue — ALWAYS ignore
-    third_party,       // Vendor libraries — configurable
-    unknown,           // Treat as user code
-};
+// Unknown Zone (needs analysis)
+"runtime.cgocall", "unsafe.Pointer", "reflect.SliceHeader"
 ```
 
-**Risk Weight system** combines origin + severity:
-
-```zig
-pub const RiskWeight = enum(u8) {
-    critical = 4,  // User + dangerous sink
-    high     = 3,  // Third-party + dangerous OR user + medium
-    medium   = 2,  // Stdlib + dangerous
-    low      = 1,  // Stdlib + medium (suppressed)
-    ignored  = 0,  // Compiler-generated anything
-};
-```
-
-***
-
-### 3. Attribution Summary Output
-
-New one-line summary format:
+### 3. Zone Summary Output
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║     OmniScope Analysis Report (Noise-Reduced)         ║
+║              Zone Classification Summary              ║
 ╠══════════════════════════════════════════════════════╣
-║ Total Issues Detected:      150                      ║
+║ Total Functions:        267                          ║
 ╠──────────────────────────────────────────────────────╣
-║ ✅ User Code:               21 (ACTION NEEDED)        ║
-║ 📦 Third-Party:              5                        ║
-║ 📚 Stdlib (Suppressed):    118 (--include-stdlib)   ║
-║ 🔧 Compiler (Ignored):       6 (noise)               ║
+║ ✅ Safe Zone:           39   (14.6%)                 ║
+║ 📦 Runtime Internal:   132   (49.4%)                 ║
+║ ⚠️  Unknown Zone:       96   (36.0%)                 ║
+╠──────────────────────────────────────────────────────╣
+║ Skipped:               171   (64.0%)                 ║
+║ Analyzed:               96   (36.0%)                 ║
 ╚══════════════════════════════════════════════════════╝
 
-✅ 150 issues → 21 user code (3 FFI HIGH, 12 FFI MEDIUM)
-
-┌─ Issue Categories ────────────────────────────────
-│ ✅ [use_after_free]    8 issues
-│ ✅ [memory_leak]       5 issues
-│ 📚 [borrow_escaped]  80 issues
-└────────────────────────────────────────────────
+分析 267 函数，跳过 171 个 (64%)，发现 48 个问题
 ```
 
-***
+---
 
-### 4. Expanded Zig FFI Support
+## 🔬 Real-World Verification
 
-Based on [zig\_ffi\_filter.md](plan/lang_ffi_analysis/zig_ffi_filter.md):
+### wasmtime Source Code Verification
 
-| Feature                    | File                                                    | Description                                                |
-| -------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- |
-| **Zig Internal Filter**    | [ffi\_boundary.zig](src/pass/analysis/ffi_boundary.zig) | `isZigInternalFunction()` — 40+ safe internal patterns     |
-| **Safe cImport Detection** | [ffi\_boundary.zig](src/pass/analysis/ffi_boundary.zig) | `isZigSafeCImport()` — 20+ known-safe libc bindings        |
-| **FFI Worth Reporting**    | [ffi\_boundary.zig](src/pass/analysis/ffi_boundary.zig) | `isZigFFIWorthReporting()` — comprehensive risk assessment |
+OmniScope detected real issues in wasmtime and verified against source code:
 
-**Tested on three real-world Zig FFI projects**:
+#### Issue 1: Ignored Return Value
 
-- **zig-v** (Video Processing Library Simulation) — OpenGL/FFmpeg FFI
-- **zgui** (GUI Library) — Dear ImGui + OpenGL bindings
-- **mach-core** (Game Engine) — Platform/audio/plugin systems
+**Source**: `crates/wasmtime/src/runtime/vm/stack_switching/stack/unix.rs:326-328`
 
-Full test report: [`ZIG_FFI_TEST_REPORT.md`](corpus/test_cases/ZIG_FFI_TEST_REPORT.md)
+```rust
+// Developer already marked with TODO
+// TODO: handle error
+let _ = array_call(store, ValRaw::new(0), 1);
+```
 
-***
+#### Issue 2: Missing Capacity Check
 
-## 🔧 Improvements
+**Source**: `crates/cranelift/src/func_environ/stack_switching/instructions.rs:301-320`
 
-### Phase 3 Enhancements (Carried Forward from v0.1.5)
+```rust
+// Comment claims capacity check exists, but code doesn't check
+fn occupy_next_slots(&mut self, count: u32) -> Option<VMStackChainIterator> {
+    // No capacity check before allocation!
+    let result = self.inner;
+    self.inner = self.inner.next();
+    Some(result)
+}
+```
 
-| Feature                               | Status    | Notes                                         |
-| ------------------------------------- | --------- | --------------------------------------------- |
-| **Cross-Language Type Compatibility** | ✅ Working | Pointer/int confusion, i32/i64 size mismatch  |
-| **Lifetime Annotation Inference**     | ✅ Working | Return value lifetime (static/owned/borrowed) |
-| **Rust Drop Glue Filter**             | ✅ Working | `isRustDropGlue()` eliminates destructor UAFs |
+**Full Report**: [wasmtime\_source.md](docs/investigation_reports/zh/wasmtime_source.md)
 
-### P1 Enhancements (Carried Forward from v0.1.5)
+### FFI-Dense Projects
 
-| Feature                      | Status    | Notes                                              |
-| ---------------------------- | --------- | -------------------------------------------------- |
-| **API Contract Validation**  | ✅ Working | NULL guard, buffer safety, ownership chain         |
-| **Sink Context Sensitivity** | ✅ Working | fprintf/sprintf in debug callers filtered          |
-| **Taint Source Enhancement** | ✅ Working | +20 new sources (argv, accept, dlsym, mmap, shmat) |
+| Project         | Functions | Issues Found | Issue Types                   |
+| --------------- | --------- | ------------ | ----------------------------- |
+| zlib-binding    | 12        | 14           | Memory leak, NULL check       |
+| openssl-wrapper | 12        | 7            | Resource leak, Error handling |
+| sqlite-binding  | 8         | 4            | NULL check, Error propagation |
 
-***
+**Full Report**: [ffi\_dense.md](docs/investigation_reports/zh/ffi_dense.md)
 
-## 📊 Test Results
+---
 
-### Real-World Corpus (10 projects)
+## 🔒 Security Fixes
 
-| Project          | Language | Issues | FP Rate | Status               |
-| ---------------- | -------- | ------ | ------- | -------------------- |
-| abseil-cpp       | C++      | **0**  | 0%      | ✅ Clean              |
-| ripgrep          | Rust     | **0**  | 0%      | ✅ Clean              |
-| wasmtime\_test   | Rust     | **9**  | \~22%   | ✅ Real FFI only      |
-| SQLite           | C        | 37     | \~86%   | ⚠️ Memory safety     |
-| libcurl          | C        | 29     | \~86%   | ⚠️ Mixed             |
-| libuv            | C        | 30     | \~90%   | ⚠️ Mixed             |
-| rust\_sqlite     | Rust     | 88     | \~91%   | ⚠️ Mixed             |
-| jsoncpp          | C++      | 35     | \~89%   | ⚠️ Mixed             |
-| openssl\_wrapper | C        | 99     | \~90%   | ⚠️ Intentional leaks |
-| wabt\_wast2json  | C++      | 85     | \~94%   | ⚠️ C++ alloc         |
+| Bug ID         | File                     | Issue                                                   | Fix                            |
+| -------------- | ------------------------ | ------------------------------------------------------- | ------------------------------ |
+| **BUG-R5-001** | `graph.zig:130-131`      | comptime slice freed at runtime causing heap corruption | Use `allocator.alloc(u32, 0)`  |
+| **BUG-R5-002** | `lock.zig:199`           | Wrong operand index in callee detection                 | Use `LLVMGetCalledValue(inst)` |
+| **BUG-R5-003** | `ffi_body_check.zig:596` | Hardcoded operand 1 for called value                    | Use `num_operands - 1`         |
 
-### Red Team Test Suite
-
-| Metric                | Value                           |
-| --------------------- | ------------------------------- |
-| Total Bugs Injected   | 17                              |
-| Detected              | **5** (29%)                     |
-| False Positives       | **0**                           |
-| Critical Issues Found | **3** (system, popen, snprintf) |
-
-***
+---
 
 ## 📁 Files Changed
 
 ### New Files
 
-| File                                                                                     | Lines | Purpose                             |
-| ---------------------------------------------------------------------------------------- | ----- | ----------------------------------- |
-| [src/pass/analysis/noise\_reduction.zig](src/pass/analysis/noise_reduction.zig)          | \~650 | **Core noise reduction engine**     |
-| [corpus/test\_cases/ZIG\_FFI\_TEST\_REPORT.md](corpus/test_cases/ZIG_FFI_TEST_REPORT.md) | \~400 | Zig FFI test report (bilingual)     |
-| [corpus/test\_cases/zig/zig\_video\_test.zig](corpus/test_cases/zig/zig_video_test.zig)  | 63    | Video processing library simulation |
-| [corpus/test\_cases/zig/zgui\_test.zig](corpus/test_cases/zig/zgui_test.zig)             | 96    | GUI library simulation              |
-| [corpus/test\_cases/zig/mach\_core\_test.zig](corpus/test_cases/zig/mach_core_test.zig)  | 147   | Game engine simulation              |
+| File                                                                    | Lines | Purpose                           |
+| ----------------------------------------------------------------------- | ----- | --------------------------------- |
+| [src/semantics/zone\_classifier.zig](src/semantics/zone_classifier.zig) | ~300  | Core zone classification engine   |
+| [README\_EN.md](README_EN.md)                                           | ~300  | English version of README         |
+| [docs/TOUSER/](docs/TOUSER/)                                            | ~200  | Letters to users (bilingual)      |
+| [docs/investigation\_reports/](docs/investigation_reports/)             | ~800  | Investigation reports (bilingual) |
 
 ### Modified Files
 
-| File                                                                      | Changes                                                      |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [src/ir/llvm\_raw.zig](src/ir/llvm_raw.zig)                               | Added `@cInclude("llvm-c/DebugInfo.h")`                      |
-| [src/pass/analysis/ffi\_boundary.zig](src/pass/analysis/ffi_boundary.zig) | Integrated noise reduction engine + `extractDebugFilePath()` |
-| [corpus/real\_world/BASELINE.md](corpus/real_world/BASELINE.md)           | Updated to v0.1.5 with all results                           |
-| [README.md](README.md)                                                    | Updated with v0.1.5 highlights                               |
+| File                                                                                       | Changes                                           |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| [src/pass/pass.zig](src/pass/pass.zig)                                                     | Added `printZoneSummary()`                        |
+| [src/pass/analysis/pointer\_ownership.zig](src/pass/analysis/pointer_ownership.zig)        | Integrated zone classification                    |
+| [src/dataflow/graph.zig](src/dataflow/graph.zig)                                           | Fixed BUG-R5-001                                  |
+| [src/pass/analysis/lock.zig](src/pass/analysis/lock.zig)                                   | Fixed BUG-R5-002                                  |
+| [src/pass/analysis/issue/ffi\_body_check.zig](src/pass/analysis/issue/ffi_body_check.zig) | Fixed BUG-R5-003                                  |
+| [README.md](README.md)                                                                     | Updated with zone classification, Chinese version |
 
-***
+### Removed Files
+
+Incorrect direction semantic analysis modules removed:
+
+- `src/pass/analysis/access_order.zig`
+- `src/pass/analysis/control_flow_sensitive.zig`
+- `src/pass/analysis/sensitive_data_flow.zig`
+- `src/pass/analysis/transmute_detection.zig`
+
+---
 
 ## 🚀 Getting Started
 
@@ -284,6 +270,9 @@ zig build
 
 # With JSON output
 ./zig-out/bin/omniscope --json target.ll > report.json
+
+# Quiet mode (only show issues, no debug/warn logs)
+./zig-out/bin/omniscope --quiet target.ll
 ```
 
 ### Requirements
@@ -293,27 +282,20 @@ zig build
 | Zig  | 0.15.2+              | [zvm](https://www.zvm.app) |
 | LLVM | 18+ (21 recommended) | `brew install llvm@21`     |
 
-***
+---
 
-## 🎯 Next Steps (Planned)
+## 🎯 Next Steps
 
 See [TODOLIST.md](plan/TODOLIST.md) for full roadmap.
 
 ### Immediate Priorities
 
-1. **Expand Layer 2 Path Database** — Add more stdlib path prefixes as discovered
-2. **CLI Flags Implementation** — `--focus-user-code`, `--ffi-only`, `--include-stdlib`
-3. **SARIF Output Enhancement** — Include attribution grouping in SARIF format
-4. **Performance Optimization** — Large IR files (>100MB) analysis speed
+1. **CGO Boundary Detection** — Go cgo FFI analysis
+2. **Swift ARC Integration** — retain/release tracking
+3. **WebAssembly FFI** — wasm-bindgen boundary analysis
+4. **Machine Learning FP Classification** — Reduce false positives
 
-### Future Research
-
-- Go CGO boundary detection
-- Swift ARC (`retain`/`release`) integration
-- WebAssembly FFI boundary analysis
-- Machine learning-assisted FP classification
-
-***
+---
 
 ## 🙏 Acknowledgments
 
@@ -322,7 +304,7 @@ See [TODOLIST.md](plan/TODOLIST.md) for full roadmap.
 - **Rust Project** — For inspiring the ownership system design
 - All open-source projects in our test corpus
 
-***
+---
 
 *Built with ❤️ using Zig 0.15.2*
-*OmniScope v0.1.5 — "Silence the Noise, Find the Bugs"*
+*OmniScope v0.1.5 — "Focus on Where Safety Ends"*

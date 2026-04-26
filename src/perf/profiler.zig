@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const time = std.time;
+const log = @import("../common/log.zig");
 
 /// Timer for measuring elapsed time
 pub const Timer = struct {
@@ -157,6 +158,8 @@ pub const Profiler = struct {
 
     /// Print report to stderr
     pub fn report(self: *const Profiler) void {
+        if (log.current_log_level == .quiet) return;
+
         std.debug.print("\n=== Performance Profile Report ===\n\n", .{});
         std.debug.print("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
             "Operation",

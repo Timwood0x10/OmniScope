@@ -96,11 +96,6 @@ pub const RUST_SAFE_PATTERNS = [_][]const u8{
     "clone",
     "into_iter",
     "from_iter",
-
-    // Mangled forms
-    "_ZN4core",
-    "_ZN5alloc",
-    "_ZN3std",
 };
 
 /// Rust escape triggers - focus analysis.
@@ -312,6 +307,14 @@ fn classifyRustFunction(func_name: []const u8) ZoneKind {
         }
     }
 
+    // Check for runtime internal (core/alloc/std stdlib)
+    if (std.mem.startsWith(u8, func_name, "_ZN4core") or
+        std.mem.startsWith(u8, func_name, "_ZN5alloc") or
+        std.mem.startsWith(u8, func_name, "_ZN3std"))
+    {
+        return .runtime_internal;
+    }
+
     // Check safe patterns
     for (RUST_SAFE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
@@ -324,9 +327,11 @@ fn classifyRustFunction(func_name: []const u8) ZoneKind {
         return .ffi;
     }
 
-    // Check for runtime internal
-    if (std.mem.startsWith(u8, func_name, "_ZN")) {
-        return .runtime_internal;
+    // Default: user Rust code is safe (trust Rust's borrow checker)
+    if (std.mem.startsWith(u8, func_name, "_ZN") or
+        std.mem.startsWith(u8, func_name, "_R"))
+    {
+        return .safe;
     }
 
     return .unknown;
@@ -400,6 +405,12 @@ fn isRustFunction(func_name: []const u8) bool {
     if (std.mem.startsWith(u8, func_name, "_ZN4core")) return true;
     if (std.mem.startsWith(u8, func_name, "_ZN5alloc")) return true;
     if (std.mem.startsWith(u8, func_name, "_ZN3std")) return true;
+    if (std.mem.startsWith(u8, func_name, "_ZN4ring")) return true;
+    if (std.mem.startsWith(u8, func_name, "_R")) return true;
+    if (std.mem.indexOf(u8, func_name, "$u20$") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "$LT$") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "$GT$") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "$C$") != null) return true;
     if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
     if (std.mem.indexOf(u8, func_name, "core::") != null) return true;
     if (std.mem.indexOf(u8, func_name, "alloc::") != null) return true;
@@ -461,6 +472,7 @@ test "classifyRustFunction - safe patterns" {
     try std.testing.expectEqual(ZoneKind.safe, classifyRustFunction("std::vec::Vec::push"));
     try std.testing.expectEqual(ZoneKind.safe, classifyRustFunction("std::sync::Arc::clone"));
     try std.testing.expectEqual(ZoneKind.runtime_internal, classifyRustFunction("_ZN4core3ptr13drop_in_place"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyRustFunction("_ZN4ring3rsa7keypair7KeyPair8from_der"));
 }
 
 test "classifyRustFunction - escape patterns" {

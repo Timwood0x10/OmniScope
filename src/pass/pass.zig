@@ -5,12 +5,14 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const log = @import("../common/log.zig");
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
+const zone_classifier = @import("../semantics/zone_classifier.zig");
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -28,6 +30,7 @@ pub const PassKind = enum {
 /// - Access to query engine for querying facts
 /// - Access to data flow graph for high-level data flow operations
 /// - ID allocation for unique identifiers
+/// - Zone statistics for Safe/Escape zone classification
 pub const PassContext = struct {
     allocator: Allocator,
     module: ?ModuleRef,
@@ -42,6 +45,9 @@ pub const PassContext = struct {
     rc_container_func_set: std.AutoHashMap(usize, void),
     rust_into_raw_set: std.AutoHashMap(usize, void),
     rust_from_raw_set: std.AutoHashMap(usize, void),
+
+    /// Zone statistics for function classification
+    zone_stats: zone_classifier.ZoneStats,
 
     /// Create a new pass context
     pub fn init(
@@ -65,6 +71,7 @@ pub const PassContext = struct {
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .zone_stats = zone_classifier.ZoneStats{},
         };
     }
 
@@ -220,6 +227,9 @@ pub const DiagnosticWriter = struct {
     use_color: bool = true,
 
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
+        if (log.current_log_level == .quiet) return;
+        if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
+        
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {
             std.debug.print(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
@@ -248,6 +258,38 @@ pub const DiagnosticWriter = struct {
         self.write("DEBUG", format, args);
     }
 };
+
+/// Print zone classification summary
+/// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
+pub fn printZoneSummary(stats: zone_classifier.ZoneStats, issue_count: u32) void {
+    if (log.current_log_level == .quiet) return;
+    
+    const total = stats.total();
+    const escape_count = stats.unsafe_count + stats.ffi_count;
+    const skip_ratio = stats.skipRatio();
+
+    std.debug.print("\n" ++ Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n", .{});
+    std.debug.print(Colors.bold ++ "Zone Classification Summary" ++ Colors.reset ++ "\n", .{});
+    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+
+    std.debug.print("  Total functions analyzed:    {d}\n", .{total});
+    std.debug.print("  Safe zone (skipped):         {d} ({d:.1}%)\n", .{ stats.safe_count, skip_ratio * 100 });
+    std.debug.print("  Runtime internal (skipped):  {d}\n", .{stats.runtime_count});
+    std.debug.print("  Unsafe zone (analyzed):      {d}\n", .{stats.unsafe_count});
+    std.debug.print("  FFI zone (analyzed):         {d}\n", .{stats.ffi_count});
+    std.debug.print("  Unknown zone:                {d}\n", .{stats.unknown_count});
+    std.debug.print("\n", .{});
+
+    std.debug.print(Colors.green ++ "  Escape zone functions:       {d} ({d:.1}% of total)" ++ Colors.reset ++ "\n", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
+
+    if (issue_count > 0) {
+        std.debug.print(Colors.yellow ++ "  Issues found:                {d}" ++ Colors.reset ++ "\n\n", .{issue_count});
+    } else {
+        std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
+    }
+
+    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+}
 
 fn getSeverityColor(comptime severity: []const u8) []const u8 {
     if (comptime std.mem.eql(u8, severity, "CRITICAL")) {

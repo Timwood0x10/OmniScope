@@ -2,6 +2,8 @@
 //!
 //! This is the public API entry point for the OmniScope library.
 
+pub const log = @import("common/log.zig");
+
 // Export IR layer
 pub const ir = struct {
     pub const llvm_raw = @import("ir/llvm_raw.zig");

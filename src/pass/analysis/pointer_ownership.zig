@@ -41,6 +41,7 @@ const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullC
 
 const alloc_classifier = @import("allocation_classifier.zig");
 const cpp_fp = @import("cpp_fp_reduction.zig");
+const zone_classifier = @import("../../semantics/zone_classifier.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -218,6 +219,21 @@ pub const PointerOwnershipPass = struct {
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) continue;
+
+            const func_name_raw = c.LLVMGetValueName(func);
+            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+
+            const zone = zone_classifier.classifyFunction(func_name, null);
+            ctx.zone_stats.record(zone);
+
+            switch (zone) {
+                .safe, .runtime_internal => {
+                    diag.debug("ZONE-SKIP: {s} is {s} zone — language guarantees apply", .{ func_name, @tagName(zone) });
+                    continue;
+                },
+                .unsafe, .ffi, .unknown => {},
+            }
+
             if (!isRustFFIRelevantFunction(func)) continue;
             try analyzeFunctionForOwnership(
                 ctx.allocator,
@@ -398,6 +414,9 @@ pub const PointerOwnershipPass = struct {
             pool_stats.reused,
             pool_stats.in_use,
         });
+
+        const issue_count = stats.cross_ffi_transfers + stats.violations + stats.memory_leaks + stats.double_frees + stats.use_after_frees;
+        @import("../pass.zig").printZoneSummary(ctx.zone_stats, issue_count);
     }
 
     /// Check if debug metadata is available in the module.

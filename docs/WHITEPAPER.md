@@ -196,7 +196,7 @@ Each issue includes a machine-readable `reason` field explaining the confidence 
 {
   "schema_version": "1.0.0",
   "tool": "omniscope",
-  "tool_version": "0.2.0",
+  "tool_version": "0.1.5",
   "summary": {"functions": 135, "issues": 6, "time_ms": 91},
   "issues": [{
     "id": "OMI-001",

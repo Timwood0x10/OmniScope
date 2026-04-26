@@ -77,6 +77,7 @@ pub const Pipeline = struct {
             .rc_container_func_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
+            .zone_stats = .{},
         };
         defer ctx.deinit();
 
