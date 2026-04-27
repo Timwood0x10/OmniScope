@@ -511,8 +511,13 @@ pub const FFIBodyCheckPass = struct {
 
         var issue_count: usize = 0;
         for (ffi_boundaries) |boundary| {
+            // Create null-terminated string for C API
+            // LLVMGetNamedFunction expects a null-terminated C string
+            const null_terminated_name = try ctx.allocator.dupeZ(u8, boundary.function_name);
+            defer ctx.allocator.free(null_terminated_name);
+
             // Get the function from the module
-            const func = c.LLVMGetNamedFunction(module, boundary.function_name.ptr);
+            const func = c.LLVMGetNamedFunction(module, null_terminated_name.ptr);
             if (func == null) continue;
 
             // Check if this function contains dangerous calls
@@ -585,10 +590,10 @@ pub const FFIBodyCheckPass = struct {
 
                 // Check if this is a call instruction
                 if (opcode == c.LLVMCall) {
-                    // Get the called function (operand 1 in LLVM call instructions)
+                    // Get the called function - callee is at num_operands - 1
                     const num_operands = c.LLVMGetNumOperands(inst);
-                    if (num_operands > 1) {
-                        const called_value = c.LLVMGetOperand(inst, 1);
+                    if (num_operands >= 1) {
+                        const called_value = c.LLVMGetOperand(inst, num_operands - 1);
                         if (called_value != null) {
                             const func_name = c.LLVMGetValueName(called_value);
                             if (func_name != null) {
@@ -603,11 +608,12 @@ pub const FFIBodyCheckPass = struct {
                                 }
 
                                 // Collect arguments for semantic analysis
-                                var args = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, @as(usize, @intCast(num_operands)) - 2) catch return error.OutOfMemory;
+                                // Arguments are at operands 0 to num_operands - 2
+                                var args = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, @as(usize, @intCast(num_operands)) - 1) catch return error.OutOfMemory;
                                 defer args.deinit(ctx.allocator);
 
-                                var arg_idx: u32 = 2;
-                                while (arg_idx < num_operands) : (arg_idx += 1) {
+                                var arg_idx: u32 = 0;
+                                while (arg_idx < num_operands - 1) : (arg_idx += 1) {
                                     const arg = c.LLVMGetOperand(inst, arg_idx);
                                     if (arg != null) {
                                         try args.append(ctx.allocator, arg);

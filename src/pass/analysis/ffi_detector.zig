@@ -142,7 +142,7 @@ pub const FFIVulnerability = struct {
 pub const FFIDetector = struct {
     pub const name = "ffi-detector";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "taint" };
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
 
     allocator: Allocator,
     store: *FactStore,
@@ -191,10 +191,10 @@ pub const FFIDetector = struct {
             if (!match.isValid()) continue;
 
             const vulnerabilities = try self.analyzeFFIMatch(ctx, match);
+            defer self.allocator.free(vulnerabilities);
             for (vulnerabilities) |vuln| {
                 try self.vulnerabilities.append(vuln);
                 try self.reportVulnerability(&vuln, diag);
-                self.vulnerability_count += 1;
             }
         }
 
@@ -435,7 +435,7 @@ pub const FFIDetector = struct {
 
     /// Check if function calls any dangerous function
     fn callsDangerousFunction(self: *FFIDetector, func: FunctionInfo, dangerous_funcs: []const []const u8) !?[]const u8 {
-        var bb = c.LLVMGetFirstBasicBlock(func);
+        var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
@@ -485,6 +485,7 @@ pub const FFIDetector = struct {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);
+                        if (func_name == null) continue;
                         const func_name_slice = std.mem.span(func_name);
 
                         // Check if this is a memory deallocation function
@@ -607,9 +608,9 @@ pub const FFIDetector = struct {
     fn reportVulnerability(self: *FFIDetector, vuln: *const FFIVulnerability, diag: *DiagnosticWriter) !void {
         _ = self;
 
-        diag.err("VULNERABILITY #{}: {s}", .{ vuln.id, @tagName(vuln.vuln_type) });
-        diag.err("  Severity: {s}", .{@tagName(vuln.severity)});
-        diag.err("  Description: {s}", .{vuln.description});
+        diag.err("VULNERABILITY {d} [{s}]", .{ vuln.id, @tagName(vuln.severity) });
+        diag.err("Type: {s}", .{@tagName(vuln.vuln_type)});
+        diag.err("Reason: {s}", .{vuln.description});
         diag.err("  Source: {s}", .{vuln.source_location orelse "unknown"});
         diag.err("  Sink: {s}", .{vuln.sink_location orelse "unknown"});
         if (vuln.dangerous_function) |func| {

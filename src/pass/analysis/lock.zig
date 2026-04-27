@@ -122,7 +122,7 @@ pub const LockPass = struct {
                     const is_acquire = self.isLockAcquire(inst);
                     const lock_id = try self.getLockId(inst);
 
-                    const inst_id = self.ctx.getNextId();
+                    const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch continue;
 
                     const lock_op = LockOperation{
                         .lock_id = lock_id,
@@ -158,7 +158,7 @@ pub const LockPass = struct {
         if (opcode_enum != .Call) return false;
 
         // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name
@@ -195,8 +195,8 @@ pub const LockPass = struct {
     fn isLockAcquire(self: *LockPass, inst: c.LLVMValueRef) bool {
         _ = self;
 
-        // Get called function
-        const called_func = c.LLVMGetOperand(inst, 0);
+        // Get called function - use LLVMGetCalledValue for call instructions
+        const called_func = c.LLVMGetCalledValue(inst);
         if (called_func == null) return false;
 
         // Get function name
@@ -231,7 +231,7 @@ pub const LockPass = struct {
     /// Get or create lock ID for a lock object
     fn getLockId(self: *LockPass, inst: c.LLVMValueRef) !u32 {
         // Get the lock object (first argument)
-        const lock_obj = c.LLVMGetOperand(inst, 1); // Call instruction: func + args
+        const lock_obj = c.LLVMGetOperand(inst, 0);
         if (lock_obj == null) return error.InvalidLockOperation;
 
         // Check if we already have an ID for this lock
@@ -289,8 +289,8 @@ pub const LockPass = struct {
                     if (other_op.inst_id < lock_a_op.inst_id and other_op.is_acquire) {
                         // Check if this lock has been released before lock_a_op
                         var released = false;
-                        for (lock_a_ops) |a_op| {
-                            if (a_op.inst_id > other_op.inst_id and a_op.inst_id < lock_a_op.inst_id and !a_op.is_acquire) {
+                        for (self.lock_ops.items) |a_op| {
+                            if (a_op.inst_id > other_op.inst_id and a_op.inst_id < lock_a_op.inst_id and !a_op.is_acquire and a_op.lock_id == other_op.lock_id) {
                                 released = true;
                                 break;
                             }

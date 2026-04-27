@@ -24,14 +24,14 @@ pub const FactStore = struct {
     /// allocation failure here is considered fatal (process cannot continue without
     /// its fact store). This is a design decision - we panic rather than handle
     /// OOM during initialization since the fact store is core infrastructure.
-    pub fn init(allocator: std.mem.Allocator) FactStore {
+    pub fn init(allocator: std.mem.Allocator) !FactStore {
         return .{
             .allocator = allocator,
             .mutex = std.Thread.Mutex{},
-            .kinds = std.ArrayList(FactKind).initCapacity(allocator, 1024) catch unreachable,
-            .subj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
-            .obj = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
-            .ctx = std.ArrayList(u32).initCapacity(allocator, 1024) catch unreachable,
+            .kinds = try std.ArrayList(FactKind).initCapacity(allocator, 1024),
+            .subj = try std.ArrayList(u32).initCapacity(allocator, 1024),
+            .obj = try std.ArrayList(u32).initCapacity(allocator, 1024),
+            .ctx = try std.ArrayList(u32).initCapacity(allocator, 1024),
         };
     }
 
@@ -75,12 +75,21 @@ pub const FactStore = struct {
     }
 
     /// Get the number of facts in the store
-    pub fn count(self: *const FactStore) usize {
+    pub fn count(self: *FactStore) usize {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.kinds.items.len;
+    }
+
+    /// Get the number of facts in the store (caller must hold mutex)
+    pub fn countLocked(self: *FactStore) usize {
         return self.kinds.items.len;
     }
 
     /// Get a fact by index
-    pub fn get(self: *const FactStore, index: usize) ?Fact {
+    pub fn get(self: *FactStore, index: usize) ?Fact {
+        self.mutex.lock();
+        defer self.mutex.unlock();
         if (index >= self.kinds.items.len) return null;
         return Fact.init(
             self.kinds.items[index],
@@ -96,7 +105,7 @@ pub const FactStore = struct {
     pub fn queryByKind(self: *FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
         self.mutex.lock();
         defer self.mutex.unlock();
-        var indices = std.ArrayList(usize).initCapacity(allocator, 128) catch unreachable;
+        var indices = try std.ArrayList(usize).initCapacity(allocator, 128);
         for (self.kinds.items, 0..) |k, i| {
             if (k == kind) {
                 try indices.append(allocator, i);

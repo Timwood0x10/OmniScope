@@ -96,15 +96,19 @@ pub const SarifOutput = struct {
         );
 
         const rules = [_]IssueKind{
-            .ffi_unsafe_call, .unchecked_return, .type_mismatch,     .cross_language_leak,
-            .memory_leak,     .use_after_free,   .command_injection, .buffer_overflow,
-            .double_free,     .format_string,    .malloc_unchecked,  .invalid_free,
+            .memory_leak,      .ffi_unsafe_call,   .unchecked_return, .type_mismatch, .cross_language_leak,
+            .use_after_free,   .command_injection, .buffer_overflow,  .double_free,   .format_string,
+            .malloc_unchecked, .invalid_free,      .null_dereference, .borrow_escape,
         };
         for (rules, 0..) |rule, i| {
             if (i > 0) try buf.writer().writeAll(",");
             try buf.writer().print(
-                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"{s}"}}}}
-            , .{ @tagName(rule), @tagName(rule), rule.toDescription() });
+                \\{{"id":"{s}","name":"{s}","shortDescription":{{"text":"}}
+            , .{ @tagName(rule), @tagName(rule) });
+            try writeEscapedString(buf.writer(), rule.toDescription());
+            try buf.writer().writeAll(
+                \\"}}}
+            );
         }
 
         try buf.writer().writeAll("]},\"results\":[");
@@ -160,11 +164,11 @@ pub const SarifOutput = struct {
 
         // Write rule definitions
         const rules = [_]IssueKind{
+            .memory_leak,
             .ffi_unsafe_call,
             .unchecked_return,
             .type_mismatch,
             .cross_language_leak,
-            .memory_leak,
             .use_after_free,
             .command_injection,
             .buffer_overflow,
@@ -172,6 +176,8 @@ pub const SarifOutput = struct {
             .format_string,
             .malloc_unchecked,
             .invalid_free,
+            .null_dereference,
+            .borrow_escape,
         };
 
         for (rules, 0..) |kind, i| {
@@ -222,9 +228,18 @@ pub const SarifOutput = struct {
         }
 
         // Write properties
-        try writer.writeAll(",\"properties\":{\"confidence\":");
+        try writer.writeAll(",\"properties\":{");
+        try writer.writeAll("\"confidence\":");
         try std.fmt.formatFloatDecimal(issue.confidence, .{ .precision = 2 }, writer);
-        try writer.writeAll("}}");
+        try writer.writeAll(",\"confidenceLevel\":\"");
+        try writeEscapedString(writer, issue.confidence_level.toString());
+        try writer.writeAll("\"");
+        if (issue.reason.len > 0) {
+            try writer.writeAll(",\"reason\":\"");
+            try writeEscapedString(writer, issue.reason);
+            try writer.writeAll("\"");
+        }
+        try writer.writeAll("}");
     }
 
     /// Write a location object

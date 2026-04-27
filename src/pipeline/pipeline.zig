@@ -10,6 +10,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
+const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
@@ -27,7 +28,7 @@ pub const Pipeline = struct {
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
         const fact_store = try allocator.create(FactStore);
-        fact_store.* = FactStore.init(allocator);
+        fact_store.* = try FactStore.init(allocator);
 
         const query_engine = try allocator.create(QueryEngine);
         query_engine.* = QueryEngine.init(fact_store);
@@ -70,10 +71,15 @@ pub const Pipeline = struct {
             .data_flow_graph = &self.data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
             .vuln_id = std.atomic.Value(u32).init(0),
+            .value_id_map = ValueIdMap.init(self.allocator),
             .raii_func_set = std.AutoHashMap(usize, void).init(self.allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(self.allocator),
+            .rust_into_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
+            .rust_from_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
+            .zone_stats = .{},
         };
+        defer ctx.deinit();
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
 

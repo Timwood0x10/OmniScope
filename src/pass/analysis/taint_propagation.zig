@@ -154,15 +154,16 @@ pub const TaintPropagationPass = struct {
         switch (op_class) {
             .control_flow => {
                 if (path_manager) |pm| {
-                    try handleControlFlow(taint_ctx, pm, inst, opcode, ctx.getNextId());
+                    const inst_id = ctx.getValueId(@intFromPtr(inst)) catch return;
+                    try handleControlFlow(taint_ctx, pm, inst, opcode, inst_id);
                 }
             },
             .noop => {},
-            .cast => try handleCast(taint_ctx, inst, ctx.getNextId()),
-            .arithmetic => try handleArithmetic(taint_ctx, inst, ctx.getNextId()),
-            .memory => try handleMemoryOp(taint_ctx, inst, opcode, ctx.getNextId()),
-            .call => try handleCall(taint_ctx, sanitizer_registry, path_manager, inst, ctx.getNextId()),
-            .aggregate => try handleAggregate(taint_ctx, inst, opcode, ctx.getNextId()),
+            .cast => try handleCast(taint_ctx, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
+            .arithmetic => try handleArithmetic(taint_ctx, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
+            .memory => try handleMemoryOp(taint_ctx, inst, opcode, ctx.getValueId(@intFromPtr(inst)) catch return),
+            .call => try handleCall(taint_ctx, sanitizer_registry, path_manager, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
+            .aggregate => try handleAggregate(taint_ctx, inst, opcode, ctx.getValueId(@intFromPtr(inst)) catch return),
         }
     }
 
@@ -509,7 +510,7 @@ pub const TaintPropagationPass = struct {
                     if (taint_ctx.getValueTaint(base_id)) |info| {
                         if (info.state == .source or info.state == .tainted) {
                             const num_indices = c.LLVMGetNumIndices(inst);
-                            const depth_factor: f32 = 1.0 - (@as(f32, @floatFromInt(num_indices)) * GEP_DEPTH_CONFIDENCE_FACTOR);
+                            const depth_factor: f32 = @max(0.0, 1.0 - (@as(f32, @floatFromInt(num_indices)) * GEP_DEPTH_CONFIDENCE_FACTOR));
                             const new_confidence = info.confidence * @max(depth_factor, MIN_GEP_DEPTH_CONFIDENCE);
 
                             const new_info = TaintInfo{
@@ -578,8 +579,9 @@ pub const TaintPropagationPass = struct {
 
         while (@intFromPtr(arg) != 0) : (arg = c.LLVMGetNextParam(arg)) {
             const func_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(func));
+            const param_id = ctx.getValueId(@intFromPtr(arg)) catch continue;
             const info = TaintInfo{
-                .id = ctx.getNextId(),
+                .id = param_id,
                 .state = .source,
                 .source_id = func_id,
                 .confidence = 1.0,
@@ -661,6 +663,7 @@ test "TaintPropagationPass - handles null module gracefully" {
     defer data_flow_graph.deinit();
 
     var context = PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    defer context.deinit();
 
     var diagnostics = DiagnosticWriter{ .allocator = allocator };
 

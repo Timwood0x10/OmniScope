@@ -13,7 +13,7 @@
 | Frees | 18 |
 | Tracked Pointers | 18 |
 
-## Accuracy Improvement (v0.3.0)
+## Accuracy Improvement (v0.1.5)
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|

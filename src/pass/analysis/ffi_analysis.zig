@@ -81,7 +81,7 @@ pub const FFIAnalysisResult = struct {
 pub const FFIAnalysisPass = struct {
     pub const name = "ownership-violation";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "taint" };
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
 
     allocator: Allocator,
     store: *FactStore,
@@ -115,6 +115,7 @@ pub const FFIAnalysisPass = struct {
         cpp,
         zig,
         swift,
+        go,
     };
 
     pub fn init(allocator: Allocator, store: *FactStore) FFIAnalysisPass {
@@ -255,7 +256,7 @@ pub const FFIAnalysisPass = struct {
 
                     if (SemanticRegistry.lookup(called_name)) |sem| {
                         if (sem.kind == .deallocator) {
-                            const ptr_arg = c.LLVMGetOperand(inst, 1);
+                            const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (ptr_arg == null) {
                                 diag.warn("Free operation missing pointer argument at {s}", .{func_name});
                                 continue;

@@ -5,11 +5,14 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const log = @import("../common/log.zig");
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
+const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
+const zone_classifier = @import("../semantics/zone_classifier.zig");
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -27,6 +30,7 @@ pub const PassKind = enum {
 /// - Access to query engine for querying facts
 /// - Access to data flow graph for high-level data flow operations
 /// - ID allocation for unique identifiers
+/// - Zone statistics for Safe/Escape zone classification
 pub const PassContext = struct {
     allocator: Allocator,
     module: ?ModuleRef,
@@ -35,9 +39,15 @@ pub const PassContext = struct {
     data_flow_graph: *DataFlowGraph,
     next_id: std.atomic.Value(u32),
     vuln_id: std.atomic.Value(u32),
+    value_id_map: ValueIdMap,
     raii_func_set: std.AutoHashMap(usize, void),
     meyers_singleton_set: std.AutoHashMap(usize, void),
     rc_container_func_set: std.AutoHashMap(usize, void),
+    rust_into_raw_set: std.AutoHashMap(usize, void),
+    rust_from_raw_set: std.AutoHashMap(usize, void),
+
+    /// Zone statistics for function classification
+    zone_stats: zone_classifier.ZoneStats,
 
     /// Create a new pass context
     pub fn init(
@@ -55,23 +65,55 @@ pub const PassContext = struct {
             .data_flow_graph = data_flow_graph,
             .next_id = std.atomic.Value(u32).init(1),
             .vuln_id = std.atomic.Value(u32).init(0),
+            .value_id_map = ValueIdMap.init(allocator),
             .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
+            .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .zone_stats = zone_classifier.ZoneStats{},
         };
     }
 
-    /// Get a unique ID
+    /// Get a unique ID for non-pointer entities (functions, basic blocks, etc.)
     ///
     /// Returns:
-    ///   - u32: A unique ID (thread-safe)
+    ///   - u32: A unique sequential ID (thread-safe)
+    ///
+    /// Note: For LLVM Value pointers, use getValueId() instead
     pub fn getNextId(self: *PassContext) u32 {
         return self.next_id.fetchAdd(1, .seq_cst);
+    }
+
+    /// Get a unique ID for an LLVM value pointer.
+    /// Uses ValueIdMap to ensure the same pointer always gets the same ID,
+    /// avoiding collision issues from pointer truncation on 64-bit systems.
+    ///
+    /// Parameters:
+    ///   - ptr: LLVM value pointer (must be non-null)
+    ///
+    /// Returns:
+    ///   - u32: Unique ID for this pointer (consistent across calls)
+    ///
+    /// Errors:
+    ///   - error.NullPointer: If ptr is 0
+    pub fn getValueId(self: *PassContext, ptr: usize) !u32 {
+        return self.value_id_map.getOrPutId(ptr);
     }
 
     /// Get a unique vulnerability ID (shared across all detection passes)
     pub fn getNextVulnId(self: *PassContext) u32 {
         return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
+    }
+
+    /// Release all resources held by this context
+    pub fn deinit(self: *PassContext) void {
+        self.value_id_map.deinit();
+        self.raii_func_set.deinit();
+        self.meyers_singleton_set.deinit();
+        self.rc_container_func_set.deinit();
+        self.rust_into_raw_set.deinit();
+        self.rust_from_raw_set.deinit();
     }
 
     /// Set the IR module
@@ -185,6 +227,9 @@ pub const DiagnosticWriter = struct {
     use_color: bool = true,
 
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
+        if (log.current_log_level == .quiet) return;
+        if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
+
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {
             std.debug.print(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
@@ -213,6 +258,38 @@ pub const DiagnosticWriter = struct {
         self.write("DEBUG", format, args);
     }
 };
+
+/// Print zone classification summary
+/// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
+pub fn printZoneSummary(stats: zone_classifier.ZoneStats, issue_count: u32) void {
+    if (log.current_log_level == .quiet) return;
+
+    const total = stats.total();
+    const escape_count = stats.unsafe_count + stats.ffi_count;
+    const skip_ratio = stats.skipRatio();
+
+    std.debug.print("\n" ++ Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n", .{});
+    std.debug.print(Colors.bold ++ "Zone Classification Summary" ++ Colors.reset ++ "\n", .{});
+    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+
+    std.debug.print("  Total functions analyzed:    {d}\n", .{total});
+    std.debug.print("  Safe zone (skipped):         {d} ({d:.1}%)\n", .{ stats.safe_count, skip_ratio * 100 });
+    std.debug.print("  Runtime internal (skipped):  {d}\n", .{stats.runtime_count});
+    std.debug.print("  Unsafe zone (analyzed):      {d}\n", .{stats.unsafe_count});
+    std.debug.print("  FFI zone (analyzed):         {d}\n", .{stats.ffi_count});
+    std.debug.print("  Unknown zone:                {d}\n", .{stats.unknown_count});
+    std.debug.print("\n", .{});
+
+    std.debug.print(Colors.green ++ "  Escape zone functions:       {d} ({d:.1}% of total)" ++ Colors.reset ++ "\n", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
+
+    if (issue_count > 0) {
+        std.debug.print(Colors.yellow ++ "  Issues found:                {d}" ++ Colors.reset ++ "\n\n", .{issue_count});
+    } else {
+        std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
+    }
+
+    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+}
 
 fn getSeverityColor(comptime severity: []const u8) []const u8 {
     if (comptime std.mem.eql(u8, severity, "CRITICAL")) {
@@ -280,6 +357,7 @@ test "PassContext - init and deinit" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     try std.testing.expect(!ctx.hasModule());
 }
@@ -299,6 +377,7 @@ test "PassContext - getNextId" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     const id1 = ctx.getNextId();
     const id2 = ctx.getNextId();
@@ -324,6 +403,7 @@ test "PassContext - setModule and hasModule" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     try std.testing.expect(!ctx.hasModule());
 
@@ -348,6 +428,7 @@ test "PassContext - access to components" {
         &query_engine,
         &data_flow_graph,
     );
+    defer ctx.deinit();
 
     // Verify access to components
     _ = ctx.fact_store;

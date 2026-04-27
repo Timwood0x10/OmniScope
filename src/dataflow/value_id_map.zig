@@ -38,6 +38,7 @@ pub const ValueIdMap = struct {
     ///
     /// Errors:
     ///   - error.NullPointer: If ptr is 0
+    ///   - error.Overflow: If ID counter would overflow
     ///
     /// Note: Callers should check ptr != 0 before calling to avoid errors.
     pub fn getOrPutId(self: *ValueIdMap, ptr: usize) !u32 {
@@ -46,6 +47,11 @@ pub const ValueIdMap = struct {
         const entry = try self.ptr_to_id.getOrPut(ptr);
         if (entry.found_existing) {
             return entry.value_ptr.*;
+        }
+
+        // Check for overflow before incrementing
+        if (self.next_id == std.math.maxInt(u32)) {
+            return error.Overflow;
         }
 
         const id = self.next_id;

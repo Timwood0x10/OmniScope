@@ -5,32 +5,39 @@
 
 const std = @import("std");
 const time = std.time;
+const log = @import("../common/log.zig");
 
 /// Timer for measuring elapsed time
 pub const Timer = struct {
     start_time: time.Instant,
 
     /// Start a new timer
-    pub fn start() Timer {
+    /// Returns error if system time is unavailable
+    pub fn start() !Timer {
         return .{
-            .start_time = time.Instant.now() catch unreachable,
+            .start_time = try time.Instant.now(),
         };
     }
 
     /// Get elapsed time in nanoseconds
-    pub fn elapsedNs(self: *const Timer) u64 {
-        const end = time.Instant.now() catch unreachable;
+    /// Returns error if system time is unavailable
+    pub fn elapsedNs(self: *const Timer) !u64 {
+        const end = try time.Instant.now();
         return end.since(self.start_time);
     }
 
     /// Get elapsed time in microseconds
-    pub fn elapsedUs(self: *const Timer) f64 {
-        return @as(f64, @floatFromInt(self.elapsedNs())) / 1000.0;
+    /// Returns error if system time is unavailable
+    pub fn elapsedUs(self: *const Timer) !f64 {
+        const ns = try self.elapsedNs();
+        return @as(f64, @floatFromInt(ns)) / 1000.0;
     }
 
     /// Get elapsed time in milliseconds
-    pub fn elapsedMs(self: *const Timer) f64 {
-        return self.elapsedUs() / 1000.0;
+    /// Returns error if system time is unavailable
+    pub fn elapsedMs(self: *const Timer) !f64 {
+        const us = try self.elapsedUs();
+        return us / 1000.0;
     }
 };
 
@@ -97,6 +104,7 @@ pub const Profiler = struct {
             entry.value_ptr.max_ns = @max(entry.value_ptr.max_ns, ns);
         } else {
             const name_copy = try self.allocator.dupe(u8, name);
+            errdefer self.allocator.free(name_copy);
             entry.key_ptr.* = name_copy;
             entry.value_ptr.* = .{
                 .name = name_copy,
@@ -150,6 +158,8 @@ pub const Profiler = struct {
 
     /// Print report to stderr
     pub fn report(self: *const Profiler) void {
+        if (log.current_log_level == .quiet) return;
+
         std.debug.print("\n=== Performance Profile Report ===\n\n", .{});
         std.debug.print("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
             "Operation",
@@ -190,17 +200,18 @@ pub const ScopedTimer = struct {
     timer: Timer,
 
     /// Start a scoped timer
-    pub fn start(profiler: *Profiler, name: []const u8) ScopedTimer {
+    /// Returns error if system time is unavailable
+    pub fn start(profiler: *Profiler, name: []const u8) !ScopedTimer {
         return .{
             .profiler = profiler,
             .name = name,
-            .timer = Timer.start(),
+            .timer = try Timer.start(),
         };
     }
 
     /// Stop and record the timing
     pub fn stop(self: *ScopedTimer) !void {
-        const ns = self.timer.elapsedNs();
+        const ns = try self.timer.elapsedNs();
         try self.profiler.record(self.name, ns);
     }
 };
@@ -208,9 +219,9 @@ pub const ScopedTimer = struct {
 // Unit tests
 
 test "Timer - elapsed time" {
-    const timer = Timer.start();
+    const timer = try Timer.start();
     std.time.sleep(1_000_000); // 1ms
-    const elapsed = timer.elapsedNs();
+    const elapsed = try timer.elapsedNs();
     try std.testing.expect(elapsed >= 1_000_000);
 }
 
@@ -246,7 +257,7 @@ test "ScopedTimer - automatic recording" {
     defer profiler.deinit();
 
     {
-        var scoped = ScopedTimer.start(&profiler, "scoped_test");
+        var scoped = try ScopedTimer.start(&profiler, "scoped_test");
         std.time.sleep(100_000); // 100us
         try scoped.stop();
     }

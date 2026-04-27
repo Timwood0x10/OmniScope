@@ -19,6 +19,18 @@ const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 
 const Allocator = std.mem.Allocator;
 
+pub const SteensgaardError = error{
+    TooManyLambdaNodes,
+    OutOfMemory,
+};
+
+/// Maximum ID for regular pointer nodes (lower 31 bits)
+/// Lambda nodes use IDs from MAX_POINTER_ID + 1 to avoid collision
+pub const MAX_POINTER_ID: u32 = 0x7FFFFFFF;
+
+/// Lambda ID offset (upper bit set to distinguish from regular nodes)
+pub const LAMBDA_ID_OFFSET: u32 = 0x80000000;
+
 pub const Constraint = struct {
     lhs: u32,
     rhs: u32,
@@ -101,7 +113,8 @@ pub const ConstraintGen = struct {
 
     fn handleAlloca(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
         const result_id = try id_map.getOrPutId(@intFromPtr(inst));
-        try self.constraints.append(.{ .lhs = result_id, .rhs = result_id, .kind = .address_of });
+        const alloca_id = try id_map.getOrPutId(@intFromPtr(inst) + 1);
+        try self.constraints.append(.{ .lhs = result_id, .rhs = alloca_id, .kind = .address_of });
     }
 
     fn handleGEP(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
@@ -131,10 +144,24 @@ pub const ConstraintGen = struct {
     }
 
     fn handleCall(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
-        // TODO: Implement call handling for points-to analysis
-        _ = self;
-        _ = inst;
-        _ = id_map;
+        const called_func = c.LLVMGetCalledFunction(inst);
+        if (called_func == null) return;
+
+        const num_args = c.LLVMGetNumOperands(inst);
+        const result_id = try id_map.getOrPutId(@intFromPtr(inst));
+
+        const callee = c.LLVMGetOperand(inst, num_args - 1);
+        if (callee == null) return;
+        const callee_id = try id_map.getOrPutId(@intFromPtr(callee));
+
+        for (0..num_args - 1) |i| {
+            const arg = c.LLVMGetOperand(inst, @intCast(i));
+            if (arg == null) continue;
+            const arg_id = try id_map.getOrPutId(@intFromPtr(arg));
+            try self.constraints.append(.{ .lhs = callee_id, .rhs = arg_id, .kind = .indirect });
+        }
+
+        try self.constraints.append(.{ .lhs = result_id, .rhs = callee_id, .kind = .assign });
     }
 };
 
@@ -199,6 +226,8 @@ pub const PointsToAnalysis = struct {
     union_find: UnionFind,
     points_to: std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     address_taken: std.AutoHashMap(u32, void),
+    lambda_counter: u32,
+    lambda_map: std.AutoHashMap(u32, u32), // ptr -> lambda node for *ptr
 
     pub fn init(allocator: Allocator) PointsToAnalysis {
         return .{
@@ -206,6 +235,8 @@ pub const PointsToAnalysis = struct {
             .union_find = UnionFind.init(allocator),
             .points_to = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator),
             .address_taken = std.AutoHashMap(u32, void).init(allocator),
+            .lambda_counter = 0,
+            .lambda_map = std.AutoHashMap(u32, u32).init(allocator),
         };
     }
 
@@ -219,6 +250,7 @@ pub const PointsToAnalysis = struct {
         self.points_to.deinit();
 
         self.address_taken.deinit();
+        self.lambda_map.deinit();
     }
 
     pub fn analyze(self: *PointsToAnalysis, constraints: []const Constraint) !void {
@@ -234,8 +266,44 @@ pub const PointsToAnalysis = struct {
                 .assign => {
                     try self.union_find.unite(constraint.lhs, constraint.rhs);
                 },
+                .indirect => {
+                    // Full Steensgaard with lambda nodes:
+                    // For *p = q, create/reuse λ(p) node
+                    // Then add constraint: λ(p) = q (assign)
+                    const lambda_id = try self.getOrCreateLambda(constraint.lhs);
+                    try self.union_find.makeSet(lambda_id);
+                    try self.union_find.unite(lambda_id, constraint.rhs);
+
+                    // Also propagate: if p points to {x1, x2, ...}
+                    // then *p = q means xi = q for all i
+                    const p_targets = self.getPointsTo(constraint.lhs);
+                    for (p_targets) |target| {
+                        try self.union_find.unite(target, constraint.rhs);
+                    }
+                },
             }
         }
+    }
+
+    fn getOrCreateLambda(self: *PointsToAnalysis, ptr: u32) SteensgaardError!u32 {
+        const root_ptr = self.union_find.find(ptr);
+        if (self.lambda_map.get(root_ptr)) |lambda| {
+            return lambda;
+        }
+
+        // Create new lambda node with unique ID
+        self.lambda_counter = std.math.add(u32, self.lambda_counter, 1) catch
+            return error.TooManyLambdaNodes;
+
+        // Ensure counter stays within pointer ID range to avoid collision
+        if (self.lambda_counter > MAX_POINTER_ID) {
+            return error.TooManyLambdaNodes;
+        }
+
+        // Use OR with offset to create lambda ID in upper namespace
+        const lambda_id = LAMBDA_ID_OFFSET | self.lambda_counter;
+        try self.lambda_map.put(root_ptr, lambda_id);
+        return lambda_id;
     }
 
     fn addPointsTo(self: *PointsToAnalysis, pointer: u32, target: u32) !void {
@@ -258,6 +326,19 @@ pub const PointsToAnalysis = struct {
         const root_p = self.union_find.find(p);
         const root_q = self.union_find.find(q);
         return root_p == root_q;
+    }
+
+    pub fn getLambdaNode(self: *const PointsToAnalysis, ptr: u32) ?u32 {
+        const root_ptr = self.union_find.find(ptr);
+        return self.lambda_map.get(root_ptr);
+    }
+
+    pub fn getIndirectTargets(self: *const PointsToAnalysis, ptr: u32) []const u32 {
+        // Get what *ptr can point to (via lambda node)
+        if (self.getLambdaNode(ptr)) |lambda_id| {
+            return self.getPointsTo(lambda_id);
+        }
+        return &[_]u32{};
     }
 };
 

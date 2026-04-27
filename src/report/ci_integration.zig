@@ -312,7 +312,7 @@ pub fn generateGitHubWorkflow(allocator: std.mem.Allocator) ![]const u8 {
         \\
         \\      - name: Run OmniScope analysis
         \\        run: |
-        \\          ./omniscope/zig-out/bin/OmniSope \
+        \\          ./omniscope/zig-out/bin/OmniScope \
         \\            --output-format sarif \
         \\            --output-file results.sarif \
         \\            build/*.bc 2>/dev/null || true

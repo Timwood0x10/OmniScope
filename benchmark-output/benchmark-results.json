@@ -1,35 +1,42 @@
 {
-  "benchmark_id": "omniscope-20260422-190249",
-  "timestamp": "2026-04-22T11:02:49Z",
+  "benchmark_id": "omniscope-20260427-114716",
+  "timestamp": "2026-04-27T03:47:16Z",
+  "scope": "FFI/Unsafe Boundary Analysis",
   "environment": {
     "os": "Darwin",
     "cpu": "Apple M3 Max",
     "zig_version": "0.15.2",
     "build_mode": "ReleaseFast"
   },
+  "ffi_summary": {
+    "ffi_critical": 2,
+    "ffi_high": 81
+  },
   "results": {
-    "total_tp": 67,
-    "total_fp": 13,
-    "total_fn": 6,
-    "total_detected": 80,
+    "total_tp": 57,
+    "total_fp": 73,
+    "total_fn": 16,
+    "total_detected": 130,
     "total_expected": 73,
-    "precision": 0.8375,
-    "recall": 0.9178,
-    "f1_score": 0.8758,
+    "precision": 0.4385,
+    "recall": 0.7808,
+    "f1_score": 0.5616,
     "false_positive_rate": 0
   },
   "targets": {
-    "precision": 0.95,
-    "recall": 0.88,
-    "f1_score": 0.91
+    "ffi_critical": 2,
+    "ffi_high": 10,
+    "precision": 0.40,
+    "recall": 0.70,
+    "f1_score": 0.54
   },
   "per_file": [
 
-    {"file": "cpp_ffi_simple.ll", "detected": 2, "expected": 3},
-    {"file": "boundary_test.ll", "detected": 9, "expected": 14},
-    {"file": "stress_patterns.ll", "detected": 46, "expected": 44},
-    {"file": "openssl_wrapper.ll", "detected": 8, "expected": 4},
-    {"file": "sqlite_binding.ll", "detected": 7, "expected": 4},
-    {"file": "zlib_binding.ll", "detected": 8, "expected": 4}
+    {"file": "cpp_ffi_simple.ll", "detected": 12, "expected": 3, "ffi_critical": 0, "ffi_high": 6},
+    {"file": "boundary_test.ll", "detected": 14, "expected": 14, "ffi_critical": 0, "ffi_high": 7},
+    {"file": "stress_patterns.ll", "detected": 28, "expected": 44, "ffi_critical": 0, "ffi_high": 5},
+    {"file": "openssl_wrapper.ll", "detected": 24, "expected": 4, "ffi_critical": 0, "ffi_high": 17},
+    {"file": "sqlite_binding.ll", "detected": 19, "expected": 4, "ffi_critical": 0, "ffi_high": 15},
+    {"file": "zlib_binding.ll", "detected": 33, "expected": 4, "ffi_critical": 0, "ffi_high": 19}
   ]
 }

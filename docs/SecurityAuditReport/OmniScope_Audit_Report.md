@@ -1,6 +1,6 @@
-# OmniScope Security Audit Report
+# OmniScope Security Audit Report (Round 5 · Full Scan)
 
-> Audit Date: 2026-04-20 · Scope: All 47 Zig source files in src/ · Version: Latest
+> **Audit Date**: 2026-04-25 · **Scope**: All 82 Zig source files in `src/` + 3 CI/CD workflows · **Version**: v0.1.5 → v0.1.6 · **Method**: Three-way parallel full line-by-line audit
 
 ---
 
@@ -8,232 +8,152 @@
 
 | Item | Detail |
 |------|--------|
-| Project | OmniScope |
-| Description | LLVM IR-based cross-language FFI static security analysis framework |
-| Language | Zig |
-| External Dependency | LLVM 21 (LLVM-C API) |
-| Files Audited | 47 .zig source files |
-| Bugs Found | 12 (1 Critical / 3 High / 4 Medium / 4 Low) |
-| Overall Score | 7.5 / 10 |
+| **Project** | OmniScope |
+| **Description** | LLVM IR-based cross-language FFI static security analysis framework |
+| **Primary Language** | Zig (0.15.2+) |
+| **External Dependency** | LLVM 21/22 (LLVM-C API) |
+| **Files Audited** | 82 Zig source files + 3 CI/CD workflows (+3 from Round 4) |
+| **Overall Score** | 8.5 / 10 (stable, new code quality is good, no regressions) |
+
+### Changes Since Round 4
+
+The project underwent a significant architectural pivot:
+- **New `semantics/zone_classifier.zig`**: Safe Zone vs Escape Zone classifier
+- **New `transmute_detection.zig`**: Rust transmute lifetime detection
+- **New `root.zig`**: Root module
+- **Modified `noise_reduction.zig`**: Rust channel/Arc/Mutex pattern recognition
+- **Modified `cpp_fp_reduction.zig`**: Enhanced UAF detection with safe pattern recognition
+- **Modified `allocation_classifier.zig`**: Stack/heap distinction logic
+- **Removed**: access_order, control_flow_sensitive, sensitive_data_flow modules
 
 ---
 
-## 2. Bug List
+## 2. Round 4 Known Issue Fix Verification
 
-### BUG-01 [Critical] FactStore::insert() errdefer causes SoA data misalignment
+| # | Issue | Status |
+|---|-------|--------|
+| BUG-R4-001 | `ffi_analysis.zig:259` wrong operand index | ✅ Fixed (operand 0) |
+| BUG-R4-002 | `call_graph.zig:126` off-by-one | ✅ Fixed (direct `i`) |
+| BUG-R4-003 | `memory_pool.zig:165-177` alignment | ✅ Fixed (alignForward) |
+| BUG-R4-004 | `formatter.zig:228,230` SARIF unescaped | ✅ Fixed (writeEscapedString) |
+| BUG-R4-005 | `main.zig:272-287` JSON unescaped | ✅ Fixed (writeJsonEscaped) |
+| BUG-R4-006 | `ci_integration.zig:315` typo | ✅ Fixed (OmniScope) |
+| BUG-R4-007 | `main.zig:175` negative time delta panic | ✅ Fixed (@max(0, elapsed)) |
+| BUG-R4-008 | `security-analysis.yml:62` command injection | ✅ Fixed (hardcoded SARIF) |
+| BUG-R4-009 | `fact/query.zig:29-109` data race | ✅ Fixed (mutex locking) |
 
-- **File**: `src/fact/store.zig` lines 58-64
-- **Category**: Data corruption / Logic error
+**Conclusion: All 9 Round 4 issues fixed with no regressions.**
 
-**Issue**: `insert()` appends elements to four SoA arrays sequentially, registering an `errdefer` after each to rollback on failure. Zig's `errdefer` is stack-based (last registered executes first). When an intermediate step fails, already-succeeded arrays are correctly popped, but the **failed array is also popped** (removing its last valid element), causing the four SoA columns to have inconsistent lengths.
+---
 
+## 3. New Issues
+
+### 3.1 High — 3
+
+#### BUG-R5-001 [High] dataflow/graph.zig:130-131 — allocator.free() on comptime empty slice
+
+- **File**: `src/dataflow/graph.zig` lines 130-131, 171, 96, 510
+- **Description**: `addNode` inserts comptime empty slice `&[_]u32{}` into HashMap. Subsequent `addEdge`, `deinit`, `clear` call `allocator.free()` on it, attempting to free memory never allocated by the allocator, causing **heap corruption or crash**.
+- **Fix**: Use allocator-allocated empty slice in `addNode`:
 ```zig
-try self.kinds.append(self.allocator, kind);    // succeeds
-errdefer _ = self.kinds.pop();                   // errdefer #3
-try self.subj.append(self.allocator, subject);   // if this fails...
-errdefer _ = self.subj.pop();                    // subj has no new element, pops previous one!
+const empty = try self.allocator.alloc(u32, 0);
+try self.outgoing_edges.put(node.id, empty);
+try self.incoming_edges.put(node.id, empty);
 ```
 
-**Impact**: All subsequent `get(index)` calls return misaligned data. Analysis results become completely unreliable.
+#### BUG-R5-002 [High] lock.zig:199 — isLockAcquire uses wrong operand to get callee
 
-**Fix**: Save original lengths at function entry, truncate on failure:
+- **File**: `src/pass/analysis/lock.zig` line 199
+- **Description**: `isLockAcquire` uses `LLVMGetOperand(inst, 0)` to get the callee function, but operand 0 is the first argument (mutex pointer), not the callee. `isLockOperation` (line 161) correctly uses `LLVMGetCalledValue(inst)`, but `isLockAcquire` doesn't. This causes **all lock operations to be misclassified as release, reversing all deadlock detection graph edges**.
+- **Fix**: Change line 199 to `const called_func = c.LLVMGetCalledValue(inst);`
+
+#### BUG-R5-003 [High] ffi_body_check.zig:596 — Hardcoded operand 1 to get callee
+
+- **File**: `src/pass/analysis/issue/ffi_body_check.zig` lines 596, 614
+- **Description**: Uses `LLVMGetOperand(inst, 1)` to get callee, but LLVM call instruction callee is at `num_operands - 1`. Hardcoded 1 only works with exactly 1 argument. With 0 arguments it's out of bounds; with 2+ arguments it gets the second argument instead of callee. Line 614 `var arg_idx: u32 = 2` also skips the first two actual arguments.
+- **Fix**:
 ```zig
-const orig_len = self.kinds.items.len;
-try self.kinds.append(self.allocator, kind);
-try self.subj.append(self.allocator, subject);
-try self.obj.append(self.allocator, object);
-try self.ctx.append(self.allocator, context);
-// On failure: truncate all arrays to orig_len
+const called_value = c.LLVMGetOperand(inst, num_operands - 1);
+var arg_idx: u32 = 0;
+while (arg_idx < num_operands - 1) { ... }
 ```
 
----
+### 3.2 Low — 1
 
-### BUG-02 [High] taint_propagation.zig GEP branch unreachable
+#### BUG-R5-004 [Low] perf/bench_compare.zig:37,63,89,115,141 — Benchmark timing logic error
 
-- **File**: `src/pass/analysis/taint_propagation.zig` lines 479-508
-- **Category**: Logic error
+- **File**: `src/perf/bench_compare.zig` (5 locations)
+- **Description**: All benchmark functions assign `const start = timer.start_time` once outside the loop, measuring cumulative time instead of per-iteration time. Output is meaningless.
+- **Fix**: Get fresh timestamp at each iteration start.
 
-**Issue**: The `c.LLVMGetElementPtr` branch is placed **after** the `else => {}` branch. In Zig, `else` captures all unmatched cases, so GEP instructions always fall into the else branch. The specialized GEP depth decay logic never executes.
+### 3.3 Audit False Positive Correction
 
-**Impact**: Taint propagation through GEP instructions lacks depth decay calculation, overestimating taint confidence through multi-level pointer dereferences.
-
-**Fix**: Move `c.LLVMGetElementPtr` branch before the `else` branch.
-
----
-
-### BUG-03 [High] pointer_ownership.zig boundary_id=0 causes array out-of-bounds
-
-- **File**: `src/pass/analysis/pointer_ownership.zig` lines 626-651
-- **Category**: Memory safety (out-of-bounds access)
-
-**Issue**: `registerBoundary()` returns `0` on OOM (boundary.zig line 169). The caller uses `boundary_id - 1` as an array index. When `boundary_id=0`, `0 - 1` underflows to `usize::MAX`, causing an out-of-bounds array access.
-
-```zig
-const boundary_id = boundary_analyzer.registerBoundary(...);  // may return 0
-boundary_analyzer.boundaries.items[boundary_id - 1]           // underflow!
-```
-
-**Impact**: Program crash or undefined behavior.
-
-**Fix**: Check `boundary_id == 0` before array access, or change `registerBoundary` to return an error code.
+> **The initial Round 5 audit reported 4 "build errors" (report/mod.zig, report/sarif.zig, report/ci_integration.zig, ffi_boundary.zig). All were verified as false positives:**
+> - 3 files in `report/` are not imported by any file — dead code, not compiled
+> - `ffi_boundary.zig`'s `c.uint` is a legitimate `@cImport` type (C's `unsigned int`), code is correct
+>
+> **This was an audit process failure — conclusions were drawn without verifying whether code participates in compilation. Corrected in this version.**
 
 ---
 
-### BUG-04 [High] taint_propagation.zig pointer truncation causes Value ID collision
+## 4. Issue Summary
 
-- **File**: `src/pass/analysis/taint_propagation.zig` lines 444, 458, 476, 483, 485, 492, 504
-- **Category**: Type safety / Logic error
+### Severity Distribution
 
-**Issue**: Uses `@truncate(@intFromPtr(inst))` to truncate 64-bit LLVM pointers to `u32` as taint keys. The project has `ValueIdMap` specifically designed for this mapping, but this file doesn't use it.
+| Severity | Count | Notes |
+|----------|-------|-------|
+| 🔴 High | 3 | Heap corruption / analysis logic errors |
+| 🟡 Low | 1 | Benchmark output error |
+| **Total** | **4** | |
 
-**Impact**: On large LLVM IR modules, two different values with the same low 32 bits will collide, causing false positives or missed detections.
+### Cross-Round Comparison
 
-**Fix**: Use `ValueIdMap` consistently across all files.
+| Round | Files | New Bugs | Critical | High | Medium | Low | Build Errors | Score |
+|-------|-------|----------|----------|------|--------|-----|-------------|-------|
+| R1 | 79 | 52 | 1 | 18 | 21 | 12 | 0 | 6.5 |
+| R2 | 79 | 37 | 1 | 8 | 19 | 10 | 0 | 7.5 |
+| R3 | 79 | 0 | 0 | 0 | 0 | 0 | 0 | 8.5 |
+| R4 | 79 | 9 | 0 | 3 | 4 | 2 | 0 | 8.5 |
+| R5 | 82 | 4 | 0 | 3 | 0 | 1 | 0 | 8.5 |
 
----
-
-### BUG-05 [Medium] call_graph.zig classifyRisk/isSink mismatch with tests
-
-- **File**: `src/pass/analysis/call_graph.zig` lines 330-355
-- **Category**: Logic error
-
-**Issues**:
-1. `classifyRisk` uses exact match, but tests expect substring match (`"__libc_system"` should return critical)
-2. `isSink` uses exact match, but tests expect `"__strcpy_chk"` to match
-3. `contains()` helper function is defined but never used
-
-**Impact**: Related tests will fail. Sink detection coverage is insufficient.
-
-**Fix**: Unify matching strategy (recommend using `contains()` for substring matching), update tests.
+> From 52 → 37 → 0 → 9 → 4, bug count continues to decrease. Round 5 found only 4 issues (0 Critical / 3 High / 0 Medium / 1 Low), zero build errors, zero crash-level bugs.
 
 ---
 
-### BUG-06 [Medium] profiler.zig summary() not thread-safe
+## 5. Fix Priority
 
-- **File**: `src/perf/profiler.zig` lines 177-195
-- **Category**: Concurrency safety
+### Must Fix (3 High — runtime crash / analysis errors)
 
-**Issue**: `summary()` uses a `struct`-level `var` static buffer. Concurrent calls will cause data races. Code comment notes "not thread-safe".
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `graph.zig:130-131` comptime slice free | → `allocator.alloc(u32, 0)` |
+| 2 | `lock.zig:199` operand index | → `LLVMGetCalledValue(inst)` |
+| 3 | `ffi_body_check.zig:596` hardcoded operand | → `num_operands - 1` |
 
-**Impact**: No impact in current single-threaded usage. Will be a problem in multi-threaded scenarios.
+### Can Leave (1 Low)
 
-**Fix**: Accept a caller-provided buffer, or protect with a mutex.
-
----
-
-### BUG-07 [Medium] graph.zig getIssuesBySeverity ownership inconsistency
-
-- **File**: `src/dataflow/graph.zig` lines 379-402
-- **Category**: API design flaw
-
-**Issue**: `getIssuesBySeverity()` allocates new memory via `allocator.alloc()` and returns it to the caller, while other getters return borrowed slices. Callers may forget to free the returned memory. Cannot distinguish "no matches" from "OOM".
-
-**Fix**: Unify API conventions, or return an iterator/slice view.
+| # | Issue | Reason |
+|---|-------|--------|
+| 4 | `bench_compare.zig` timing logic | Only affects benchmark output |
 
 ---
 
-### BUG-08 [Low] pipeline.zig nanosecond timestamp truncation
+## 6. New Code Audit
 
-- **File**: `src/pipeline/pipeline.zig` line 91
-- **Category**: Type safety
+| File | Verdict |
+|------|---------|
+| `semantics/zone_classifier.zig` | ✅ Clean. Pure string matching, no memory safety issues |
+| `transmute_detection.zig` | ✅ Clean. Complete LLVM null checks, correct memory management |
+| `root.zig` | ✅ Clean. Pure module re-export |
 
-**Issue**: `@intCast` truncates `i128` nanosecond timestamp to `u64`. Would overflow after ~584 years. No practical impact.
-
----
-
-### BUG-09 [Low] main.zig vulnerability ID silent truncation
-
-- **File**: `src/main.zig` line 262
-- **Category**: Type safety
-
-**Issue**: `@intCast` truncates `usize` to vulnerability ID type. Would overflow after ~4.2 billion vulnerabilities. No practical impact.
+**New code quality is good** — all 3 new files have zero bugs. Issues are concentrated in modified/refactored old code.
 
 ---
 
-### BUG-10 [Low] call_graph.zig contains() dead code
+## 7. Conclusion
 
-- **File**: `src/pass/analysis/call_graph.zig` lines 358-360
-- **Category**: Dead code
+Round 5 found **4 issues** (3 High + 1 Low), **zero build errors**.
 
-**Issue**: `contains()` function is defined but never called. Likely a refactoring leftover.
+**Critical finding**: `graph.zig`'s comptime slice free causes heap corruption, while `lock.zig` and `ffi_body_check.zig` operand index errors cause completely incorrect analysis results.
 
-**Fix**: Remove or use to replace exact matching in `classifyRisk`/`isSink`.
-
----
-
-### BUG-11 [Medium] ffi_analysis.zig pointer truncation
-
-- **File**: `src/pass/analysis/ffi_analysis.zig` lines 207, 251
-- **Category**: Type safety
-
-**Issue**: Same pattern as BUG-04. `@truncate(@intFromPtr(inst))` truncates to u64. No impact on 64-bit systems, potential collision on 32-bit.
-
-**Fix**: Use `ValueIdMap` consistently.
-
----
-
-### BUG-12 [Low] taint_state.zig initCapacity(0) catch unreachable
-
-- **File**: `src/pass/analysis/taint_state.zig` line 121
-- **Category**: Error handling
-
-**Issue**: `initCapacity(allocator, 0) catch unreachable` — `initCapacity(0)` almost never fails, but `catch unreachable` is not best practice.
-
-**Fix**: Use `init(allocator)` or handle the error gracefully.
-
----
-
-## 3. Severity Distribution
-
-| Severity | Count | Bug IDs |
-|----------|-------|---------|
-| Critical | 1 | BUG-01 |
-| High | 3 | BUG-02, BUG-03, BUG-04 |
-| Medium | 4 | BUG-05, BUG-06, BUG-07, BUG-11 |
-| Low | 4 | BUG-08, BUG-09, BUG-10, BUG-12 |
-
----
-
-## 4. Fix Priority
-
-| Priority | Bug | Reason |
-|----------|-----|--------|
-| P0 Immediate | BUG-01 | FactStore data corruption, all analysis results unreliable |
-| P1 Soon | BUG-03 | Array out-of-bounds, program crash |
-| P1 Soon | BUG-02 | GEP branch unreachable, taint analysis precision degraded |
-| P2 Planned | BUG-04, BUG-11 | Pointer truncation, collisions on large IR |
-| P2 Planned | BUG-05 | Tests don't match implementation |
-| P3 Later | BUG-06 ~ BUG-12 | API design, dead code, defensive programming |
-
----
-
-## 5. Code Quality Assessment
-
-### Strengths
-
-1. **Excellent architecture**: Pass-based analysis with topological sort dependency management, well-decoupled modules
-2. **SoA data layout**: FactStore uses Structure of Arrays for cache-friendliness
-3. **comptime type safety**: Pass interface validated at compile time, zero runtime overhead
-4. **Data-driven design**: SemanticMapper uses rule tables, easily extensible
-5. **Comprehensive testing**: Nearly every module has unit tests
-6. **Proper resource management**: Most modules correctly implement init/deinit with defer/errdefer
-7. **Safe LLVM-C wrapping**: Raw LLVM-C API safely wrapped via llvm_safe.zig
-8. **Multi-format output**: Text/JSON/SARIF formats, SARIF compliant with v2.1.0
-9. **Extensible registry**: SemanticRegistry with 4-layer lookup mechanism
-10. **Path-sensitive analysis**: path_condition.zig implements null check tracking
-
-### Weaknesses
-
-1. **errdefer stack behavior misunderstanding**: BUG-01 is the most severe issue
-2. **switch branch ordering error**: BUG-02 is a typical refactoring leftover
-3. **Tests out of sync with implementation**: BUG-05 has multiple mismatched test cases
-4. **Systematic pointer truncation**: Multiple files repeat the same issue; ValueIdMap exists but isn't used consistently
-5. **Inconsistent API ownership conventions**: Some methods return owned memory, others return borrowed slices
-
----
-
-## 6. Conclusion
-
-OmniScope has excellent overall architecture design and above-average code quality for its category. Of the 12 bugs found, BUG-01 (FactStore data corruption) is the only Critical issue requiring immediate fix. BUG-02 and BUG-03 are High severity and should be addressed soon. The remaining Medium/Low issues can be fixed in subsequent iterations.
-
-The project performs well in memory safety, type safety, and error handling. The main issues are concentrated on Zig language feature usage details (errdefer stack behavior, switch branch ordering) and API design consistency.
+**Score: 8.5/10** — Stable from Round 4. All 9 Round 4 issues fixed, 3 new files have zero bugs. Issues are concentrated in LLVM operand index usage — a recurring pattern suggesting a project-wide `LLVMGetOperand` audit would be beneficial.

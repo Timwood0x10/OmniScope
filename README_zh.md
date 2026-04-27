@@ -1,228 +1,300 @@
 # OmniScope
 
-**跨语言 FFI 与内存安全静态分析器（C/C++ 生产级）**
+**跨语言 FFI & 内存安全静态分析器**
 
-OmniScope 基于 LLVM IR 分析，检测跨语言边界（C/C++/Rust/Zig/Go）的内存安全问题、FFI 边界违规和所有权契约违反。
+**项目定位**: 专注于 unsafe/FFI 跨语言边界的静态安全分析
+
+支持 C/C++/Rust/Zig/Go。通过 LLVM IR 检测内存安全问题和 FFI 边界违规。
+
+[English](./README.md) | 简体中文
+
+---
+
+## 核心理念
+
+### 为什么专注 unsafe/FFI？
+
+**语言边界是所有编译器的盲区。**
+
+```mermaid
+graph LR
+    subgraph Rust["Rust 编译器"]
+        R1["所有权检查"]
+        R2["借用检查"]
+    end
+    
+    subgraph C["C 编译器"]
+        C1["无内存安全检查"]
+    end
+    
+    subgraph Blind["盲区"]
+        B1["FFI 边界"]
+        B2["unsafe 块"]
+    end
+    
+    R1 --> B1
+    R2 --> B1
+    C1 --> B1
+    B1 --> B2
+```
+
+- Rust 编译器只检查 Rust 侧的所有权
+- C 编译器只看 C 侧的 malloc/free
+- **跨语言边界 = 编译器不管的地方**
+
+### Zone Classification（核心创新）
+
+v0.1.5 引入 Zone Classification，只分析语言保障失效的地方：
+
+| Zone 类型 | 含义 | 处理方式 |
+|-----------|------|----------|
+| **Safe Zone** | 有语言安全保障的代码 | 跳过分析（信任编译器） |
+| **Runtime Internal** | 语言运行时/标准库 | 跳过分析（信任官方实现） |
+| **Unknown Zone** | 无语言保障的代码 | 深度分析（必须检查） |
+
+**效果**:
+```
+之前: "发现 185 个 UAF"  ❌ 大量误报
+现在: "分析 267 函数，跳过 171 个 (64%)，发现 48 个问题"  ✅ 清晰可信
+```
+
+---
+
+## 架构
+
+```mermaid
+graph TB
+    subgraph Input["输入"]
+        IR[LLVM IR .ll/.bc]
+    end
+    
+    subgraph Zone["Zone Classification"]
+        Z1[Safe Zone - 跳过]
+        Z2[Runtime Internal - 跳过]
+        Z3[Unknown Zone - 分析]
+    end
+    
+    subgraph Pipeline["分析流水线"]
+        P1[IR 解析 + CFG/DFG 构建]
+        P2[所有权追踪]
+        P3[FFI 边界检测]
+        P4[污点分析]
+        P5[噪音过滤]
+    end
+    
+    subgraph Output["输出"]
+        O1[Text]
+        O2[JSON]
+        O3[SARIF]
+    end
+    
+    IR --> P1 --> Zone
+    Z3 --> P2 --> P3 --> P4 --> P5
+    P5 --> O1 & O2 & O3
+```
+
+## 数据流
+
+```mermaid
+flowchart LR
+    subgraph Source["源代码"]
+        Rust[Rust]
+        Cpp[C/C++]
+        Zig[Zig]
+        Go[Go]
+    end
+    
+    subgraph Compile["编译"]
+        C1[clang -emit-llvm]
+        C2[rustc --emit=llvm-ir]
+        C3[zig build-llvm]
+    end
+    
+    subgraph Analysis["OmniScope"]
+        A1[Zone Classification]
+        A2[内存安全分析]
+        A3[FFI 边界检测]
+    end
+    
+    Rust --> C2
+    Cpp --> C1
+    Zig --> C3
+    Go --> C1
+    C1 & C2 & C3 --> |.ll/.bc| A1 --> A2 --> A3
+```
+
+## 分析流程
+
+```mermaid
+flowchart TD
+    Start[输入 LLVM IR] --> Parse[解析函数/基本块/指令]
+    Parse --> Zone{Zone Classification}
+    Zone -->|Safe Zone| Skip1[跳过 - 信任编译器]
+    Zone -->|Runtime Internal| Skip2[跳过 - 信任官方实现]
+    Zone -->|Unknown Zone| Analyze[深度分析]
+    Analyze --> Own[所有权追踪]
+    Own --> FFI[FFI 边界检测]
+    FFI --> Taint[污点传播]
+    Taint --> Filter[噪音过滤]
+    Filter --> Report[生成报告]
+    Skip1 --> Report
+    Skip2 --> Report
+```
+
+---
+
+## 检测能力
+
+| 类型 | 严重性 | 示例 |
+|------|--------|------|
+| 内存泄漏 | MEDIUM | malloc 无 free |
+| Use-After-Free | HIGH | 释放后解引用 |
+| Double-Free | HIGH | 同一资源释放两次 |
+| 空指针解引用 | MEDIUM | 未检查可空指针 |
+| 格式字符串 | MEDIUM | 用户控制的格式字符串 |
+| 命令注入 | CRITICAL | system 使用用户输入 |
+| FFI 所有权违规 | HIGH | Rust Box 被 C 释放 |
+
+---
 
 ## 快速开始
 
 ```bash
-# 编译
+# 构建
 zig build
 
-# 分析 LLVM IR 文件
-./zig-out/bin/OmniSope target.ll
+# 分析单个文件
+./zig-out/bin/omniscope target.ll
 
-# 多种输出格式：text（默认）、json、sarif、lsp
-./zig-out/bin/OmniSope target.ll --format json --output report.json
+# JSON 输出
+./zig-out/bin/omniscope --format json target.ll > report.json
+
+# SARIF 输出（GitHub Code Scanning）
+./zig-out/bin/omniscope --format sarif target.ll > results.sarif
 ```
 
-### 环境要求
-
-| 工具 | 版本 | 安装方式 |
-|------|------|----------|
-| Zig | 0.15.2+ | [zvm](https://www.zvm.app) |
-| LLVM | 18+（推荐 21）| `brew install llvm@21` / apt |
-
-### Make 命令
-
-```bash
-make build          # 编译
-make test-all       # 全量测试（单元 + 集成 + 回归 + 压力）
-make benchmark      # Corpus 检测率指标
-make baseline-check # 真实项目回归防护
-```
-
-## 架构
-
-### 系统总览（三层设计）
-
-```mermaid
-graph TB
-    subgraph L3["Layer 3: 边界分析器"]
-        BA["边界分析器"]
-        BA_desc["检测跨语言契约违规"]
-    end
-
-    subgraph L2["Layer 2: 语义适配器"]
-        SA["语义适配器"]
-        RA["Rust 适配器"]
-        CA["C/C++ 适配器"]
-        ZA["Zig 适配器"]
-        GA["Go 适配器"]
-    end
-
-    subgraph L1["Layer 1: 核心引擎"]
-        CE["生命周期引擎"]
-        CE_desc["Owner + State 状态转换"]
-    end
-
-    RA & CA & ZA & GA --> SA
-    SA --> CE
-    CE --> BA
-```
-
-**核心洞察**：虽然语言不同，但底层都能抽象成几类动作：
-
-| 动作 | 含义 |
+| 依赖 | 版本 |
 |------|------|
-| `alloc` | 分配资源 |
-| `free` | 释放资源 |
-| `borrow` | 临时借用 |
-| `transfer` | 所有权转移 |
-| `retain` | 增加引用计数 |
-| `release` | 减少引用计数 |
-| `escape` | 逃逸到未知作用域 |
+| Zig | 0.15.2+ |
+| LLVM | 18+ |
 
-### 数据流图
+---
 
-```mermaid
-flowchart LR
-    subgraph Source["源码"]
-        Rust["Rust (.rs)"]
-        Cpp["C/C++ (.c/.cpp)"]
-        Zig["Zig (.zig)"]
-        Go["Go (.go)"]
-    end
+## 真实项目测试
 
-    subgraph Compile["编译为 LLVM IR"]
-        LLVMRust["clang -emit-llvm"]
-        LLVMC["clang -emit-llvm"]
-        LLVMZig["zig build-llvm"]
-        LLVMGo["go build -gcflags -e"]
-    end
+### Zone Classification 效果
 
-    subgraph IR["LLVM IR 输入"]
-        BC[".ll / .bc 文件"]
-    end
+| 项目 | 语言 | 函数数 | Safe | Runtime | Unknown | Skip % | Issues |
+|------|------|--------|------|---------|---------|--------|--------|
+| ring | Rust + C | 278 | 261 | 17 | 0 | **100%** | 0 |
+| wasmtime | Rust | 619 | 239 | 221 | 159 | **74.3%** | 96 |
+| blst | Rust + C | 267 | 39 | 132 | 96 | **64.0%** | 48 |
+| zlib-binding | C | 12 | 0 | 0 | 12 | 0% | 14 |
+| openssl-wrapper | C | 12 | 0 | 0 | 12 | 0% | 7 |
+| sqlite-binding | C | 8 | 0 | 0 | 8 | 0% | 4 |
 
-    subgraph OmniScope["OmniScope 分析流水线"]
-        Parse["解析 + CFG/DFG 构建"]
-        Own["所有权追踪<br/>(8 层 FP 过滤)"]
-        FFI2["FFI 边界检测"]
-        Null2["空指针解引用检查"]
-        Report["报告生成"]
-    end
+### wasmtime 源码验证
 
-    subgraph Output2["输出格式"]
-        CLI2["Text / JSON / SARIF / LSP"]
-    end
+OmniScope 检测到 wasmtime 的真实问题，并进行了源码验证：
 
-    Rust --> LLVMRust
-    Cpp --> LLVMC
-    Zig --> LLVMZig
-    Go --> LLVMGo
-    LLVMRust & LLVMC & LLVMZig & LLVMGo --> BC
-    BC --> Parse --> Own --> FFI2 --> Null2 --> Report --> CLI2
+**已验证的源码事实**：
+
+1. **fiber_start 忽略 array_call 返回值**
+   - 源码位置: `crates/wasmtime/src/runtime/vm/stack_switching/stack/unix.rs:326-328`
+   - 开发者已用 TODO 注释标记此问题
+
+2. **occupy_next_slots 缺少容量检查**
+   - 源码位置: `crates/cranelift/src/func_environ/stack_switching/instructions.rs:301-320`
+   - 注释声称会检查容量，实际代码中没有检查
+
+详见: [wasmtime 源码验证报告](./docs/investigation_reports/zh/wasmtime_source.md)
+
+---
+
+## 性能提升
+
+| 指标 | 优化前 | 优化后 | 改进 |
+|------|--------|--------|------|
+| 分析时间 (blst) | 3100ms | 836ms | **73%** |
+| 分析时间 (ring) | 793ms | 269ms | **66%** |
+| 函数分析量减少 | - | - | **最高 100%** |
+| 问题检测精准度 | 185 UAF | 48 issues | **提升 74%** |
+
+---
+
+## 给用户的信
+
+> 这不是一篇技术文档。这是一个被跨语言内存 bug 折磨了两年的人，写给同行的几句话。
+
+**凌晨两点的 crash log**：
+
+```
+double free detected in thread 0
+  pointer 0x7f3a4c002010
+  previously freed at: rust::ffi::Box::into_raw -> c_wrapper::process -> free
+  second free at: rust::drop::Drop::drop -> Box::from_raw -> free
 ```
 
-### C++ 8 层误报消减系统
+这个 bug 我在测试环境跑过一百遍。一百遍。没复现。上线第一天，炸了。
 
-| 层级 | 技术 | 目标 |
-|------|------|------|
-| L1 | STL 内部函数过滤 | `_ZNSt*` 模板展开 |
-| L2 | C++ 特殊成员函数过滤 | ctor/dtor/copy/move-assign |
-| L3 | RAII 智能指针检测 | `unique_ptr::C1` / `shared_ptr::C1` |
-| L4 | RAII 函数集合 | 跳过含智能指针的整个函数 |
-| L5 | C++ ABI 运行时过滤 | `__cxa_*` 异常/守卫/atexit |
-| L6 | Meyers 单例检测 | `__cxa_guard_acquire` 模式 |
-| L7 | C++ 操作符 FFI 过滤 | `_Znwm`/`_ZdlPv` 在 FFI 报告中跳过 |
-| **L8** | **引用计数容器检测** | `Ref()`/`Unref()`/CordRep 模式 |
+原因：Rust 把内存通过 `Box::into_raw()` 交给 C，C 侧调了 `free()`，但 Rust 侧的 `Drop` trait 不知道这件事，函数结束时又 `free()` 了一次。
 
-## 真实项目验证 (v0.1.4)
+**编译器不管这事。跨语言边界是所有编译器的盲区。**
 
-> **5 个生产项目，5,180 个函数，零退化。**
+完整内容: [写给每一个被 FFI 坑过的人](./docs/TOUSER/zh.md)
 
-| 项目 | 语言 | 函数数 | Issues | Leaks | 耗时 |
-|------|------|--------|--------|-------|------|
-| [SQLite 3.47.2](corpus/real_world/BASELINE.md#project-sqlite-3472-amalgamation) | C | 3,237 | **8** | **0** | 5.8s |
-| [libcurl 8.14.0](corpus/real_world/BASELINE.md#project-libcurl-8140) | C | 68 | **1** | **0** | 0.05s |
-| [libuv 1.50.0](corpus/real_world/BASELINE.md#project-libuv-1500) | C | 145 | **1** | **0** | 0.07s |
-| [jsoncpp 1.9.5](corpus/real_world/BASELINE.md#project-jsoncpp-195) | C++ | 1,537 | **3** | **0** | 1.4s |
-| [abseil-cpp 2024](corpus/real_world/BASELINE.md#project--5-abseil-cpp-202407220) | C++ | 193 | **0** | **0** | 0.37s |
-
-**关键成果**: jsoncpp 40→3 issues (-92.5%), leaks 37→0 (-100%)。abseil-cpp Cord 引用计数泄漏 9→0 (-100%)。
-
-### Corpus 基准指标
-
-| 指标 | 数值 |
-|------|------|
-| 精确率 (Precision) | **82.9%** |
-| 召回率 (Recall) | **93.2%** |
-| F1 分数 | **87.7%** |
-
-详见: [`docs/BENCHMARK.md`](docs/BENCHMARK.md)、[`FINAL_EVALUATION_REPORT_ZH.md`](corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md)
-
-## 检测能力
-
-### Issue 类型
-
-| 类型 | 严重性 | 示例 |
-|------|--------|------|
-| 内存泄漏 | MEDIUM | `malloc()` 无配对 `free()` |
-| Use After Free | HIGH | 释放后解引用 |
-| Double Free | HIGH | 同一资源释放两次 |
-| 空指针解引用 | MEDIUM | 未检查的可空分配结果 |
-| 格式化字符串 | MEDIUM | 用户控制的 `%s` 传入 printf |
-| 命令注入 | CRITICAL | `system()` 含用户输入 |
-| 跨语言违规 | HIGH | Rust Box 被 C free() 释放 |
-
-### 支持的语言与边界
-
-| 边界 | 状态 | 说明 |
-|------|------|------|
-| C → C | ✅ 稳定 | 完整 libc/POSIX 注册表 |
-| Rust ↔ C | ✅ 稳定 | `into_raw`/`from_raw`, `Box` |
-| Zig ↔ C | ✅ 稳定 | `Allocator.alloc` 模式 |
-| Go → C | ⚠️ 实验 | cgo `C.malloc`/`C.CString` |
-| **C++ → C** | **✅ 稳定 (v0.1.4)** | Itanium ABI, 8 层 FP 过滤 |
-| Swift → C | 🔜 规划 | `retain`/`release` |
+---
 
 ## 项目结构
 
 ```
 src/
-├── pass/analysis/
-│   ├── pointer_ownership.zig   # 核心：所有权追踪 + 8 层 FP 过滤
-│   └── ffi_boundary.zig       # FFI 边界检测 + 语义注册表
-├── lifetime/                   # 资源状态机 (owner + state 转换)
-├── registry/                   # 166 函数语义注册表 (6 层)
-├── pipeline/                   # Pass 编排 (15 个分析 pass)
-└── output/                     # CLI / JSON / SARIF / LSP 格式化
+├── pass/analysis/           # 分析 Pass
+│   ├── pointer_ownership.zig    # 所有权追踪
+│   ├── ffi_boundary.zig         # FFI 边界检测
+│   ├── taint.zig                # 污点分析
+│   └── noise_reduction.zig      # 噪音过滤
+├── semantics/               # 语义分析
+│   └── zone_classifier.zig      # Zone Classification
+├── ir/                      # LLVM IR 接口
+├── registry/                # 函数语义注册表
+└── output/                  # 输出格式化
+
+docs/
+├── TOUSER/                  # 给用户的信
+├── investigation_reports/   # 详细调查报告
+└── project_exports/         # 综合测试报告
 ```
 
-## 文档索引
+---
 
-| 文档 | 说明 |
+## 文档
+
+| 文档 | 描述 |
 |------|------|
-| [架构设计](docs/architecture.md) | 系统设计与模块关系 |
-| [开发指南](docs/en/developer_guide.zig) | 编码规范与贡献指南 |
-| [API 参考](docs/en/api_reference.md) | 公开 API 文档 |
-| [用户指南](docs/en/user_guide.md) | 使用教程与示例 |
-| [基准测试规格](docs/BENCHMARK.md) | 测试方法与阶段目标 |
-| [基线规则](corpus/real_world/BASELINE.md) | 5 个真实项目的回归防护 |
-| [最终测评报告](corpus/real_world/FINAL_EVALUATION_REPORT_ZH.md) | 中文版综合评估 |
-| [任务规划](plan/task/tasks.md) | 开发路线图 (Priority 1–9) |
+| [写给用户的信](./docs/TOUSER/zh.md) | 为什么做这个项目 |
+| [综合测试报告](./docs/project_exports/zh/COMPREHENSIVE_REPORT.md) | 12 个项目测试结果 |
+| [性能提升报告](./docs/project_exports/zh/PERFORMANCE_IMPROVEMENT.md) | v0.1.5 性能数据 |
+| [wasmtime 源码验证](./docs/investigation_reports/zh/wasmtime_source.md) | 真实漏洞验证 |
+| [FFI 密集型项目报告](./docs/investigation_reports/zh/ffi_dense.md) | 25 个真实问题 |
 
-## CI/CD
-
-```yaml
-# GitHub Actions — 发布 Release 并上传二进制文件
-- uses: softprops/action-gh-release@v2
-  with:
-    body_path: RELEASE_NOTES.md   # 发布说明（精简版）
-    files: dist/OmniScope-*
-```
-
-自动化发布流程见 [`.github/workflows/release.yml`](.github/workflows/release.yml)：编译 Linux + macOS 二进制，读取 [`RELEASE_NOTES.md`](RELEASE_NOTES.md)。
+---
 
 ## 局限性
 
-1. 需要 LLVM IR 输入（使用 `clang -emit-llvm` 编译）
-2. 推荐开启调试信息以获取源码级位置信息（`-g` 标志）
-3. 通过函数指针的间接调用采用启发式解析
-4. 主要为过程内分析（所有权转移支持过程间）
+1. 需要 LLVM IR 输入（`clang -emit-llvm` 或 `rustc --emit=llvm-ir`）
+2. 建议使用调试信息编译（`-g`）以获取源码位置映射
+3. 函数指针的间接调用通过启发式方法解析
+4. 主要是过程内分析（所有权追踪支持过程间分析）
 
-## 许可证
+---
+
+## 致谢
+
+特别感谢 [@icehawk-hyb](https://github.com/icehawk-hyb) 担任技术顾问，为跨语言安全分析提供关键指导。
+
+---
+
+## License
 
 Apache 2.0

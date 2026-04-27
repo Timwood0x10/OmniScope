@@ -76,10 +76,11 @@ pub const MemorySafetyPass = struct {
                 // Check if this is a free call
                 if (isFreeFunction(called_name)) {
                     const ptr_arg = c.LLVMGetOperand(inst, 0);
+                    const ptr_as_int = @intFromPtr(ptr_arg);
 
                     // Check if this pointer was already freed
                     for (freed_pointers.items) |freed_ptr| {
-                        if (freed_ptr == ptr_arg) {
+                        if (@intFromPtr(freed_ptr) == ptr_as_int) {
                             // Double free detected!
                             try reportDoubleFree(ctx, caller_func, called_name, diag);
                             return true;

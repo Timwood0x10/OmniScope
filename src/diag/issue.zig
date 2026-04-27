@@ -33,6 +33,8 @@ pub const IssueKind = enum {
     malloc_unchecked,
     /// Null pointer dereference (nullable allocation used without guard)
     null_dereference,
+    /// Rust borrow escape: as_ptr result passed to FFI may dangle
+    borrow_escape,
     /// Free called on non-malloc pointer
     invalid_free,
     /// Unknown issue type
@@ -75,6 +77,7 @@ pub const IssueKind = enum {
             .format_string => 134, // CWE-134: Format String Vulnerability
             .malloc_unchecked => 252, // CWE-252: Unchecked Return Value
             .null_dereference => 476, // CWE-476: NULL Pointer Dereference
+            .borrow_escape => 704, // CWE-704: Incorrect Type Conversion or Cast
             .invalid_free => 590, // CWE-590: Free of Memory Not on Heap
             .unknown => 0,
         };
@@ -95,6 +98,7 @@ pub const IssueKind = enum {
             .format_string => "Format string vulnerability",
             .malloc_unchecked => "Malloc result used without null check",
             .null_dereference => "Null pointer dereference - nullable allocation used without guard",
+            .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
             .invalid_free => "Free called on non-malloc pointer",
             .unknown => "Unknown issue type",
         };
@@ -238,6 +242,8 @@ pub const Issue = struct {
     confidence: f32,
     /// Confidence level (HIGH / MEDIUM / HEURISTIC / EXPERIMENTAL)
     confidence_level: Confidence,
+    /// Reason explaining why this confidence level was assigned
+    reason: []const u8,
     /// Related FFI boundary if applicable
     ffi_boundary: ?FFIBoundary,
     /// Trace entries showing reasoning path
@@ -270,6 +276,30 @@ pub const Issue = struct {
             .severity = severity,
             .confidence = confidence,
             .confidence_level = Confidence.fromScore(confidence),
+            .reason = "",
+            .ffi_boundary = null,
+            .trace = null,
+            .owned = false,
+        };
+    }
+
+    /// Create a new issue with reason
+    pub fn initWithReason(
+        kind: IssueKind,
+        message: []const u8,
+        location: Location,
+        severity: Severity,
+        confidence: f32,
+        reason: []const u8,
+    ) Issue {
+        return .{
+            .kind = kind,
+            .message = message,
+            .location = location,
+            .severity = severity,
+            .confidence = confidence,
+            .confidence_level = Confidence.fromScore(confidence),
+            .reason = reason,
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
@@ -303,6 +333,7 @@ pub const Issue = struct {
             .severity = severity,
             .confidence = confidence,
             .confidence_level = Confidence.fromScore(confidence),
+            .reason = "",
             .ffi_boundary = null,
             .trace = trace,
             .owned = true,

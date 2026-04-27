@@ -90,11 +90,12 @@ pub fn MemoryPool(comptime T: type) type {
 
         /// Return an item to the pool
         pub fn free(self: *Self, item: *T) !void {
-            try self.free_node_pool.append(self.allocator, .{
+            const node = try self.free_node_pool.addOne();
+            node.* = .{
                 .next = self.free_list,
                 .item = item,
-            });
-            self.free_list = &self.free_node_pool.items[self.free_node_pool.items.len - 1];
+            };
+            self.free_list = node;
             self.total_freed += 1;
         }
 
@@ -161,19 +162,23 @@ pub const ArenaAllocator = struct {
             }
         }
 
-        const alloc_size = @max(len + alignment, block_size);
+        const alloc_size = @max(std.math.add(usize, len, alignment) catch return error.OutOfMemory, block_size);
         const block = try self.allocator.create(Block);
         errdefer self.allocator.destroy(block);
 
+        const data = try self.allocator.alloc(u8, alloc_size);
+        const data_addr = @intFromPtr(data.ptr);
+        const aligned_addr = std.mem.alignForward(usize, data_addr, alignment);
+        const offset = aligned_addr - data_addr;
         block.* = .{
-            .data = try self.allocator.alloc(u8, alloc_size),
-            .used = len,
+            .data = data,
+            .used = offset + len,
             .next = self.current_block,
         };
         self.current_block = block;
         self.total_size += alloc_size;
 
-        return block.data[0..len];
+        return block.data[offset .. offset + len];
     }
 
     /// Create a typed value in the arena

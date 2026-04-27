@@ -168,8 +168,12 @@ pub const Formatter = struct {
             if (i > 0) try buffer.appendSlice(self.allocator, ",\n");
             try buffer.appendSlice(self.allocator, "    {\n");
             try buffer.writer(self.allocator).print("      \"id\": \"VULN-{d}\",\n", .{vuln.id});
-            try buffer.writer(self.allocator).print("      \"type\": \"{s}\",\n", .{vuln.vuln_type});
-            try buffer.writer(self.allocator).print("      \"severity\": \"{s}\",\n", .{vuln.severity});
+            try buffer.appendSlice(self.allocator, "      \"type\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try buffer.appendSlice(self.allocator, "\",\n");
+            try buffer.appendSlice(self.allocator, "      \"severity\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.severity);
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("      \"cwe_id\": {d},\n", .{vuln.cwe_id});
             try buffer.appendSlice(self.allocator, "      \"description\": \"");
             try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
@@ -221,11 +225,17 @@ pub const Formatter = struct {
         for (result.vulnerabilities, 0..) |vuln, i| {
             if (i > 0) try buffer.appendSlice(self.allocator, ",\n");
             try buffer.appendSlice(self.allocator, "        {\n");
-            try buffer.writer(self.allocator).print("          \"ruleId\": \"{s}\",\n", .{vuln.vuln_type});
+            try buffer.appendSlice(self.allocator, "          \"ruleId\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("          \"ruleIndex\": {d},\n", .{i});
-            try buffer.writer(self.allocator).print("          \"level\": \"{s}\",\n", .{self.sarifSeverity(vuln.severity)});
+            try buffer.appendSlice(self.allocator, "          \"level\": \"");
+            try self.writeEscapedString(buffer.writer(self.allocator), self.sarifSeverity(vuln.severity));
+            try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.appendSlice(self.allocator, "          \"message\": {\n");
-            try buffer.writer(self.allocator).print("            \"text\": \"{s}\"\n", .{vuln.description});
+            try buffer.writer(self.allocator).print("            \"text\": \"", .{});
+            try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
+            try buffer.appendSlice(self.allocator, "\"\n");
             try buffer.appendSlice(self.allocator, "          }");
             if (vuln.source_location != null or vuln.line != null) {
                 try buffer.appendSlice(self.allocator, ",\n          \"locations\": [\n");
@@ -233,7 +243,9 @@ pub const Formatter = struct {
                 try buffer.appendSlice(self.allocator, "              \"physicalLocation\": {\n");
                 try buffer.appendSlice(self.allocator, "                \"artifactLocation\": {\n");
                 if (vuln.source_location) |loc| {
-                    try buffer.writer(self.allocator).print("                  \"uri\": \"{s}\"\n", .{loc});
+                    try buffer.appendSlice(self.allocator, "                  \"uri\": \"");
+                    try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                    try buffer.appendSlice(self.allocator, "\"\n");
                 } else {
                     try buffer.appendSlice(self.allocator, "                  \"uri\": \"unknown\"\n");
                 }

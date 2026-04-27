@@ -15,7 +15,7 @@ const llvm_safe = @import("../ir/llvm_safe.zig");
 const ContextRef = @import("../ir/view.zig").ContextRef;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FunctionRef = @import("../ir/view.zig").FunctionRef;
-const log = std.log;
+const log = @import("../common/log.zig");
 
 /// IR Loader error set
 pub const LoaderError = error{

@@ -72,7 +72,7 @@ pub const FlowPath = struct {
 
     /// Deinitialize the flow path
     pub fn deinit(self: *FlowPath) void {
-        self.steps.deinit(self.allocator);
+        self.steps.deinit();
     }
 
     /// Add a step to the path
@@ -185,7 +185,8 @@ pub const VulnerabilityReportBuilder = struct {
     }
 
     /// Build the report
-    pub fn build(self: *const VulnerabilityReportBuilder) VulnerabilityReport {
+    /// Consumes the builder to avoid double ownership of FlowPath
+    pub fn build(self: VulnerabilityReportBuilder) VulnerabilityReport {
         return .{
             .id = self.id,
             .risk_level = self.risk_level,

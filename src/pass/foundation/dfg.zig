@@ -94,8 +94,8 @@ pub const DFGPass = struct {
             var inst = c.LLVMGetFirstInstruction(bb);
 
             while (@intFromPtr(inst) != 0) {
-                // Assign ID to instruction
-                const inst_id = self.ctx.getNextId();
+                // Assign ID to instruction (pointer-based for LLVM values)
+                const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch continue;
                 try self.inst_id_map.put(inst, inst_id);
 
                 // Analyze instruction

@@ -1,10 +1,10 @@
 # Real-World Project Test: SQLite 3.47.2 Amalgamation
 
-> Test Date: 2026-04-22 | OmniScope v0.1.4+Phase3 | Platform: macOS ARM64
+> Test Date: 2026-04-22 | OmniScope v0.1.5+Phase3 | Platform: macOS ARM64
 
 ## Phase 3 Optimization Results
 
-| Metric | Before (v0.1.4) | After (P1 Fix) | Change |
+| Metric | Before (v0.1.5) | After (P1 Fix) | Change |
 |--------|-----------------|---------------|--------|
 | **FFI RISK** | **285** | **10** | **-96.5%** ✅ |
 | MEMORY LEAK | 13 | 13 | unchanged |

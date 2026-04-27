@@ -126,8 +126,21 @@ pub const IntegerOverflowPass = struct {
             }
         }
 
+        // For subtraction, check if it could underflow
         if (opcode == c.LLVMSub) {
-            return true;
+            // Only flag if we can't determine safety (both operands non-constant)
+            if (!lhs_is_const and !rhs_is_const) {
+                // Check type width - small types are more risky
+                const lhs_type = c.LLVMTypeOf(lhs);
+                const type_kind = c.LLVMGetTypeKind(lhs_type);
+                if (type_kind == c.LLVMIntegerTypeKind) {
+                    const bit_width = c.LLVMGetIntTypeWidth(lhs_type);
+                    if (bit_width <= 8) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         const lhs_type = c.LLVMTypeOf(lhs);
@@ -140,7 +153,7 @@ pub const IntegerOverflowPass = struct {
             }
         }
 
-        return true;
+        return false;
     }
 };
 

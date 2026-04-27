@@ -1,7 +1,7 @@
-# OmniScope v0.1.4 — Final Evaluation Report
+# OmniScope v0.1.5 — Final Evaluation Report
 
 > **Date**: 2026-04-23
-> **Version**: v0.1.4 (C++ Support + jsoncpp/abseil Real-World Test + Confidence Grading + 7-Layer FP Reduction + Baseline Automation)
+> **Version**: v0.1.5 (C++ Support + jsoncpp/abseil Real-World Test + Confidence Grading + 7-Layer FP Reduction + Baseline Automation)
 > **Compiler**: Zig 0.15.2 (Apple M-series macOS)
 > **Corpus Benchmark**: P=82.9%, R=93.2%, F1=87.7% (unchanged — zero regression)
 
@@ -11,7 +11,7 @@
 
 OmniScope was tested against **4 real-world projects (3 C + 1 C++)** totaling **4,987 functions** and **826K lines of LLVM IR**:
 
-| Metric | v0.1.4 (3 projects) | v0.1.4 (4 projects) | Change |
+| Metric | v0.1.5 (3 projects) | v0.1.5 (4 projects) | Change |
 |--------|--------------------:|--------------------:|--------|
 | **Projects** | 3 (C only) | **4 (3C + 1C++)** | **+1 C++** |
 | **Total Functions** | 3,450 | **4,987** | **+44%** |
@@ -255,7 +255,7 @@ OmniScope's design philosophy is **"catch everything suspicious, let the human d
 
 ## Conclusion
 
-OmniScope v0.1.4 demonstrates that **static analysis precision on real-world C/C++ code can reach near-zero false positive rates on critical bug classes (memory leaks, null dereferences)** through a combination of:
+OmniScope v0.1.5 demonstrates that **static analysis precision on real-world C/C++ code can reach near-zero false positive rates on critical bug classes (memory leaks, null dereferences)** through a combination of:
 
 1. **Ownership-transfer-aware leak detection** (not just intra-procedural) — including return-value/output-param transfer + GEP+store struct-field detection
 2. **Function-level null guard dominance** (not just basic-block local)

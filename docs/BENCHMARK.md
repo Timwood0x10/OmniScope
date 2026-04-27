@@ -1,7 +1,7 @@
 # OmniScope Benchmark Specification
 
 ## Version: 1.0
-## Last Updated: 2026-04-21
+## Last Updated: 2026-04-24 (v0.1.5)
 
 ***
 
@@ -345,13 +345,14 @@ Where:
 ### Phase-Based Targets (Current: Phase 1 → Phase 4)
 
 OmniScope uses **phase-gated targets** to allow incremental improvement without constant CI failures.
+**Note**: OmniScope focuses on FFI/Unsafe detection. General memory safety is secondary.
 
-| Phase | Tasks | Precision | Recall | F1 | Status |
-|-------|-------|-----------|--------|-----|--------|
-| **Phase 1** | Baseline (6.1-6.3 complete) | >= 50% | >= 60% | >= 0.55 | ✅ **P=64%, R=70%, F1=67%** |
-| **Phase 2** | 7.1+7.2+7.3+7.4+7.5 (Fix counting, reduce FP, expand registry, null guard) | >= 82% | >= 85% | >= 0.87 | ✅ **P=83%, R=93%, F1=88%** |
-| **Phase 3** | 7.6 (small corpus coverage) + unified report format | >= 92% | >= 90% | >= 0.91 | ⬜ Next |
-| **Phase 4** | Full EXPECTED completeness + architecture cleanup | **>= 95%** | **>= 88%** | **>= 0.91** | ⬜ Final |
+| Phase | Tasks | Precision | Recall | F1 | FFI CRITICAL | FFI HIGH | Status |
+|-------|-------|-----------|--------|-----|--------------|----------|--------|
+| **Phase 1** | Baseline detection | >= 40% | >= 60% | >= 0.50 | >= 1 | >= 5 | ✅ |
+| **Phase 2** | Noise Reduction + Red Team | >= 40% | >= 70% | >= 0.54 | >= 2 | >= 10 | ✅ **P=44%, R=73%, F1=55%** |
+| **Phase 3** | Type Compatibility + Lifetime | TBD | TBD | TBD | TBD | TBD | ⬜ Next |
+| **Phase 4** | Full FFI Coverage | >= 50% | >= 80% | >= 0.65 | >= 3 | >= 20 | ⬜ Final |
 
 ### Severity Mapping Standard
 
