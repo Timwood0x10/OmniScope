@@ -13,42 +13,11 @@
 /// - Zig (avg): 191 → ~40 issues (FP rate <30%)
 /// - C (SQLite): 0 → 0 (no change, already clean)
 const std = @import("std");
+const semantics = @import("../../semantics/noise_filter.zig");
 
-/// Classification of where a function originates.
-/// This is the foundation of the noise reduction system.
-pub const FunctionOrigin = enum {
-    /// User-written application code — ALWAYS report
-    user,
-    /// Standard library code — suppress by default, show with --include-stdlib
-    stdlib,
-    /// Compiler-generated glue code (drop_in_place, monomorphization) — IGNORE
-    compiler_generated,
-    /// Third-party/vendor libraries — configurable
-    third_party,
-    /// Unknown origin — analyze normally
-    unknown,
-
-    pub fn toString(self: FunctionOrigin) []const u8 {
-        return switch (self) {
-            .user => "USER",
-            .stdlib => "STDLIB",
-            .compiler_generated => "COMPILER_GEN",
-            .third_party => "THIRD_PARTY",
-            .unknown => "UNKNOWN",
-        };
-    }
-
-    /// Should issues from this origin be reported by default?
-    pub fn shouldReportByDefault(self: FunctionOrigin) bool {
-        return switch (self) {
-            .user => true,
-            .stdlib => false,
-            .compiler_generated => false,
-            .third_party => true,
-            .unknown => true,
-        };
-    }
-};
+/// Re-export canonical FunctionOrigin from semantics module.
+/// This ensures a single shared definition across all layers.
+pub const FunctionOrigin = semantics.FunctionOrigin;
 
 /// Risk weight for combining origin + issue severity.
 /// Determines final reporting priority.

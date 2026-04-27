@@ -115,6 +115,7 @@ pub const cross_lang = struct {
 };
 
 // Export noise reduction system (Phase 4)
+// NOTE: FunctionOrigin here is a re-export of semantics/noise_filter.FunctionOrigin (canonical definition)
 pub const noise_reduction = struct {
     pub const FunctionOrigin = @import("pass/analysis/noise_reduction.zig").FunctionOrigin;
     pub const RiskWeight = @import("pass/analysis/noise_reduction.zig").RiskWeight;
@@ -126,6 +127,44 @@ pub const noise_reduction = struct {
     pub const isRustDropGlueBehavior = @import("pass/analysis/noise_reduction.zig").isRustDropGlueBehavior;
     pub const isZigAllocatorWrapperBehavior = @import("pass/analysis/noise_reduction.zig").isZigAllocatorWrapperBehavior;
     pub const isSTLVectorGrowBehavior = @import("pass/analysis/noise_reduction.zig").isSTLVectorGrowBehavior;
+};
+
+// Export semantics analysis (Zone Classification + Noise Reduction)
+// Canonical definitions: FunctionOrigin, RiskLevel live in semantics/noise_filter.zig
+pub const semantics = struct {
+    pub const ZoneKind = @import("semantics/zone_classifier.zig").ZoneKind;
+    pub const ZoneStats = @import("semantics/zone_classifier.zig").ZoneStats;
+    pub const classifyZone = @import("semantics/zone_classifier.zig").classifyZone;
+    pub const classifyRust = @import("semantics/zone_classifier.zig").classifyRust;
+    pub const classifyZig = @import("semantics/zone_classifier.zig").classifyZig;
+    pub const classifyGo = @import("semantics/zone_classifier.zig").classifyGo;
+    pub const classifyCpp = @import("semantics/zone_classifier.zig").classifyCpp;
+
+    pub const NoiseFunctionOrigin = @import("semantics/noise_filter.zig").FunctionOrigin;
+    pub const NoiseRiskLevel = @import("semantics/noise_filter.zig").RiskLevel;
+    pub const ClassificationResult = @import("semantics/noise_filter.zig").ClassificationResult;
+    pub const FilterStats = @import("semantics/noise_filter.zig").FilterStats;
+    pub const classifyFunction = @import("semantics/noise_filter.zig").classifyFunction;
+    pub const getRiskLevel = @import("semantics/noise_filter.zig").getRiskLevel;
+
+    pub const PathClassificationResult = @import("semantics/path_filter.zig").PathClassificationResult;
+    pub const PathFilterStats = @import("semantics/path_filter.zig").PathFilterStats;
+    pub const classifyByPath = @import("semantics/path_filter.zig").classifyByPath;
+    pub const classifyByFilename = @import("semantics/path_filter.zig").classifyByFilename;
+    pub const combinedClassify = @import("semantics/path_filter.zig").combinedClassify;
+
+    pub const BehaviorPattern = @import("semantics/behavior_filter.zig").BehaviorPattern;
+    pub const BehaviorResult = @import("semantics/behavior_filter.zig").BehaviorResult;
+    pub const BehaviorStats = @import("semantics/behavior_filter.zig").BehaviorStats;
+    pub const analyzeBehavior = @import("semantics/behavior_filter.zig").analyzeBehavior;
+    pub const looksLikeDropGlue = @import("semantics/behavior_filter.zig").looksLikeDropGlue;
+    pub const looksLikeAllocatorWrapper = @import("semantics/behavior_filter.zig").looksLikeAllocatorWrapper;
+
+    pub const AttributionConfig = @import("semantics/attribution.zig").AttributionConfig;
+    pub const AttributionSummary = @import("semantics/attribution.zig").AttributionSummary;
+    pub const AttributedIssue = @import("semantics/attribution.zig").AttributedIssue;
+    pub const OriginGroup = @import("semantics/attribution.zig").OriginGroup;
+    pub const CombinedStats = @import("semantics/attribution.zig").CombinedStats;
 };
 
 // Export registry system
