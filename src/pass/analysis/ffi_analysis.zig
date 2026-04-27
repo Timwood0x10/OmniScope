@@ -94,6 +94,10 @@ pub const FFIAnalysisPass = struct {
     /// Track free sites: ptr_value_id -> list of free info (allows tracking multiple frees per pointer)
     free_sites: std.AutoHashMap(u64, std.ArrayList(FreeInfo)),
 
+    /// v0.1.6: Track which basic block each allocation/free is in (for path analysis)
+    alloc_bb_map: std.AutoHashMap(u64, c.LLVMBasicBlockRef),
+    free_bb_map: std.AutoHashMap(u64, std.ArrayList(c.LLVMBasicBlockRef)),
+
     const AllocationInfo = struct {
         func_name: []const u8,
         language: Language,
@@ -126,6 +130,8 @@ pub const FFIAnalysisPass = struct {
             .violations = std.ArrayList(OwnershipViolation).init(allocator),
             .allocation_sites = std.AutoHashMap(u64, AllocationInfo).init(allocator),
             .free_sites = std.AutoHashMap(u64, std.ArrayList(FreeInfo)).init(allocator),
+            .alloc_bb_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(allocator),
+            .free_bb_map = std.AutoHashMap(u64, std.ArrayList(c.LLVMBasicBlockRef)).init(allocator),
         };
     }
 
@@ -144,6 +150,14 @@ pub const FFIAnalysisPass = struct {
                 entry.value_ptr.*.deinit();
             }
             self.free_sites.deinit();
+        }
+        self.alloc_bb_map.deinit();
+        {
+            var iter = self.free_bb_map.iterator();
+            while (iter.next()) |entry| {
+                entry.value_ptr.*.deinit();
+            }
+            self.free_bb_map.deinit();
         }
     }
 
@@ -175,6 +189,10 @@ pub const FFIAnalysisPass = struct {
         // Step 4: Detect ownership violations
         try self.detectDoubleFree(diag);
         try self.detectOwnershipMismatch(diag);
+
+        // v0.1.6: Enhanced detection
+        try self.detectErrorPathLeaks(diag);
+        try self.detectCrossPathDoubleFree(diag);
 
         // Step 5: Store results
         try self.storeResults(ctx);
@@ -221,6 +239,8 @@ pub const FFIAnalysisPass = struct {
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
                             });
+                            // v0.1.6: Track which BB this alloc is in
+                            try self.alloc_bb_map.put(ptr_value_id, bb);
                         }
                     }
                 }
@@ -275,6 +295,15 @@ pub const FFIAnalysisPass = struct {
                                 errdefer list.deinit();
                                 try list.append(free_info);
                                 try self.free_sites.put(ptr_value_id, list);
+                            }
+                            // v0.1.6: Track which BB this free is in
+                            if (self.free_bb_map.get(ptr_value_id)) |bb_list| {
+                                try bb_list.append(bb);
+                            } else {
+                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).init(self.allocator);
+                                errdefer bb_list.deinit();
+                                try bb_list.append(bb);
+                                try self.free_bb_map.put(ptr_value_id, bb_list);
                             }
                         }
                     }
@@ -337,6 +366,149 @@ pub const FFIAnalysisPass = struct {
                             .owns_description = true,
                         });
                     }
+                }
+            }
+        }
+    }
+
+    /// v0.1.6: Detect error path leaks — allocations that can reach a function
+    /// return without passing through a matching free.
+    ///
+    /// This is a lightweight path-sensitive check using basic block tracking:
+    /// - If an allocation's BB has no successor BB containing a free of the same pointer
+    ///   AND the function has a ret instruction → potential error path leak
+    /// - This catches patterns like:
+    ///   ```
+    ///   ptr = malloc(size);
+    ///   if (error_condition) return;  // ← leak! (error path)
+    ///   free(ptr);
+    ///   ```
+    fn detectErrorPathLeaks(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
+        var alloc_iter = self.allocation_sites.iterator();
+        while (alloc_iter.next()) |entry| {
+            const alloc_info = entry.value_ptr.*;
+            const ptr_id = alloc_info.value_id;
+
+            const has_any_free = self.free_sites.contains(ptr_id);
+
+            if (!has_any_free) {
+                try self.violations.append(.{
+                    .violation_type = .leak,
+                    .severity = .high,
+                    .function_name = alloc_info.func_name,
+                    .description = try std.fmt.allocPrint(
+                        self.allocator,
+                        "Potential memory leak: allocated pointer ({d}) never freed in {s}",
+                        .{ ptr_id, alloc_info.func_name },
+                    ),
+                    .confidence = 0.72,
+                    .owns_description = true,
+                });
+                continue;
+            }
+
+            if (self.alloc_bb_map.get(ptr_id)) |alloc_bb| {
+                const terminator = c.LLVMGetBasicBlockTerminator(alloc_bb);
+                if (terminator != null) {
+                    const opcode = c.LLVMGetInstructionOpcode(terminator);
+                    if (opcode == c.LLVMBr) {
+                        const num_successors = c.LLVMGetNumSuccessors(terminator);
+                        var succ_idx: c_uint = 0;
+                        while (succ_idx < num_successors) : (succ_idx += 1) {
+                            const succ_bb = c.LLVMGetSuccessor(terminator, succ_idx);
+                            if (self.bbHasReturnWithoutFree(succ_bb, ptr_id)) {
+                                try self.violations.append(.{
+                                    .violation_type = .leak,
+                                    .severity = .medium,
+                                    .function_name = alloc_info.func_name,
+                                    .description = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "Error path leak: pointer ({d}) may leak on error path in {s}",
+                                        .{ ptr_id, alloc_info.func_name },
+                                    ),
+                                    .confidence = 0.65,
+                                    .owns_description = true,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn bbHasReturnWithoutFree(self: *FFIAnalysisPass, bb: c.LLVMBasicBlockRef, ptr_id: u64) bool {
+        const terminator = c.LLVMGetBasicBlockTerminator(bb);
+        if (terminator == null) return false;
+
+        const opcode = c.LLVMGetInstructionOpcode(terminator);
+        const has_return = (opcode == c.LLVMRet);
+
+        if (!has_return) return false;
+
+        if (self.free_bb_map.get(ptr_id)) |free_bb_list| {
+            for (free_bb_list.items) |free_bb| {
+                if (@intFromPtr(free_bb) == @intFromPtr(bb)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// v0.1.6: Detect cross-path double free — when frees of the same pointer
+    /// occur in different basic blocks (different control flow paths).
+    ///
+    /// Current detectDoubleFree only checks value identity. This enhancement adds
+    /// BB-level analysis to catch:
+    ///   ```
+    ///   if (condition_a) {
+    ///       free(ptr);  // BB_1
+    ///   } else {
+    ///       free(ptr);  // BB_2 — same pointer, different control flow!
+    ///   }
+    ///   ```
+    fn detectCrossPathDoubleFree(self: *FFIAnalysisPass, diag: *DiagnosticWriter) !void {
+        var iter = self.free_bb_map.iterator();
+        while (iter.next()) |entry| {
+            const bb_list = entry.value_ptr.*;
+
+            // If frees happen in multiple distinct basic blocks → cross-path double free
+            if (bb_list.items.len > 1) {
+                // Deduplicate: check if all frees are in the SAME BB
+                // (that would be normal sequential code like free(x); free(y);)
+                var unique_bbs = std.AutoHashMap(c.LLVMBasicBlockRef, void).init(self.allocator);
+                defer unique_bbs.deinit();
+
+                for (bb_list.items) |bb_ref| {
+                    _ = try unique_bbs.put(bb_ref, {});
+                }
+
+                // Only report if frees are in 2+ DIFFERENT basic blocks
+                if (unique_bbs.count() > 1) {
+                    // Get first free info for reporting
+                    const ptr_id = entry.key_ptr.*;
+                    if (self.free_sites.get(ptr_id)) |free_list| {
+                        if (free_list.items.len > 0) {
+                            const first_free = free_list.items[0];
+                            try self.violations.append(.{
+                                .violation_type = .double_free,
+                                .severity = .critical,
+                                .function_name = first_free.func_name,
+                                .description = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "Cross-path double free detected: pointer freed in {} different basic blocks (potential conditional double-free)",
+                                    .{unique_bbs.count()},
+                                ),
+                                .confidence = 0.82,
+                                .owns_description = true,
+                            });
+                        }
+                    }
+
+                    diag.warn("[CROSS-PATH-DOUBLE-FREE] pointer freed in {} different BBs", .{unique_bbs.count()});
                 }
             }
         }

@@ -107,11 +107,41 @@ pub const cross_lang = struct {
     pub const classifyRiskLevel = @import("pass/analysis/flow_path.zig").classifyRiskLevel;
     pub const isDangerousSink = @import("registry/semantic_registry.zig").SemanticRegistry.isDangerousSink;
 
+    pub const PtrLifetimePass = @import("pass/analysis/ptr_lifetime.zig").PtrLifetimePass;
+    pub const PtrAllocSite = @import("pass/analysis/ptr_lifetime.zig").PtrAllocSite;
+    pub const LifetimeViolation = @import("pass/analysis/ptr_lifetime.zig").LifetimeViolation;
+    pub const LifetimeStats = @import("pass/analysis/ptr_lifetime.zig").LifetimeStats;
+    pub const isExternFunction = @import("pass/analysis/ptr_lifetime.zig").isExternFunction;
+    pub const mayRetainPointer = @import("pass/analysis/ptr_lifetime.zig").mayRetainPointer;
+
+    pub const CallbackEscapePass = @import("pass/analysis/callback_escape.zig").CallbackEscapePass;
+    pub const EscapeViolation = @import("pass/analysis/callback_escape.zig").EscapeViolation;
+    pub const EscapePattern = @import("pass/analysis/callback_escape.zig").EscapePattern;
+    pub const EscapeStats = @import("pass/analysis/callback_escape.zig").EscapeStats;
+    pub const isCgoBoundary = @import("pass/analysis/callback_escape.zig").isCgoBoundary;
+
+    pub const ABIMismatchPass = @import("pass/analysis/abi_mismatch.zig").ABIMismatchPass;
+    pub const ABIViolation = @import("pass/analysis/abi_mismatch.zig").ABIViolation;
+    pub const ABIIssue = @import("pass/analysis/abi_mismatch.zig").ABIIssue;
+    pub const ABIStats = @import("pass/analysis/abi_mismatch.zig").ABIStats;
+    pub const isPackedStructType = @import("pass/analysis/abi_mismatch.zig").isPackedStructType;
+
+    pub const ThreadCrossingPass = @import("pass/analysis/thread_crossing.zig").ThreadCrossingPass;
+    pub const ThreadViolation = @import("pass/analysis/thread_crossing.zig").ThreadViolation;
+    pub const ThreadStats = @import("pass/analysis/thread_crossing.zig").ThreadStats;
+    pub const isExceptionRelated = @import("pass/analysis/thread_crossing.zig").isExceptionRelated;
+
     pub const FFIUnsafePass = @import("pass/analysis/issue/ffi_unsafe.zig").FFIUnsafePass;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;
     pub const FFIAnalysisResult = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisResult;
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
     pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
+
+    pub const IntrinsicRisk = @import("pass/analysis/ffi_enhancement.zig").IntrinsicRisk;
+    pub const FnOrigin = @import("pass/analysis/ffi_enhancement.zig").FnOrigin;
+    pub const classifyRustIntrinsic = @import("pass/analysis/ffi_enhancement.zig").classifyRustIntrinsic;
+    pub const classifyFunctionOrigin = @import("pass/analysis/ffi_enhancement.zig").classifyFunctionOrigin;
+    pub const EnhancementStats = @import("pass/analysis/ffi_enhancement.zig").EnhancementStats;
 };
 
 // Export noise reduction system (Phase 4)

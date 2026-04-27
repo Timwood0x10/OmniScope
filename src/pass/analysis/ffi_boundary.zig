@@ -61,6 +61,7 @@ const AnalyzeResult = struct {
     libc: u32 = 0,
     external_unknown: u32 = 0,
     dangerous_count: u32 = 0,
+    suppressed_intentional: u32 = 0,
 };
 
 /// FFI boundary detection pass.
@@ -269,7 +270,7 @@ pub const FFIBoundaryPass = struct {
     /// Analyze a single function for FFI boundaries.
     /// Applies Phase 4 Noise Reduction Engine before detailed analysis.
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
-        var result = AnalyzeResult{ .count = 0, .cross_lang = 0, .libc = 0, .external_unknown = 0, .dangerous_count = 0 };
+        var result = AnalyzeResult{ .count = 0, .cross_lang = 0, .libc = 0, .external_unknown = 0, .dangerous_count = 0, .suppressed_intentional = 0 };
 
         // Get function name for classification
         const func_name_ptr = c.LLVMGetValueName(func);
@@ -417,27 +418,35 @@ pub const FFIBoundaryPass = struct {
                 // Get debug info for the instruction
                 const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
 
-                diag.err("[{s}] RISKY LIBC CALL: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+                // FP suppression: intentional/safe/test patterns
+                // Functions named safe_*, correct_*, test_*, demo_* etc.
+                // are reference implementations, not production code
+                if (isLikelyIntentionalPattern(caller_demangled)) {
+                    diag.debug("[SUPPRESSED] RISKY LIBC CALL in intentional function: {s} -> {s}", .{ caller_demangled, callee_demangled });
+                    stats.suppressed_intentional += 1;
+                } else {
+                    diag.err("[{s}] RISKY LIBC CALL: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
 
-                // Show source location if available
-                if (debug_loc) |loc| {
-                    if (loc.valid()) {
-                        diag.err("  Location: {f}", .{loc});
+                    // Show source location if available
+                    if (debug_loc) |loc| {
+                        if (loc.valid()) {
+                            diag.err("  Location: {f}", .{loc});
+                        }
                     }
-                }
 
-                diag.err("  Kind: {s}", .{kind_str});
-                diag.err("  Detail: {s}", .{sem.description});
+                    diag.err("  Kind: {s}", .{kind_str});
+                    diag.err("  Detail: {s}", .{sem.description});
 
-                if (sem.consumes_ownership) {
-                    diag.err("  Warning: This function CONSUMES ownership", .{});
-                }
-                if (sem.transfers_ownership) {
-                    diag.err("  Warning: This function TRANSFERS ownership", .{});
-                }
-                if (sem.requires_null_check) {
-                    diag.err("  Warning: Result requires NULL check", .{});
-                }
+                    if (sem.consumes_ownership) {
+                        diag.err("  Warning: This function CONSUMES ownership", .{});
+                    }
+                    if (sem.transfers_ownership) {
+                        diag.err("  Warning: This function TRANSFERS ownership", .{});
+                    }
+                    if (sem.requires_null_check) {
+                        diag.err("  Warning: Result requires NULL check", .{});
+                    }
+                } // end else (intentional pattern check)
             }
             return false;
         }
@@ -1368,6 +1377,51 @@ pub const FFIBoundaryPass = struct {
     pub fn isDangerousPattern(func_name: []const u8) bool {
         return SemanticRegistry.isKnown(func_name);
     }
+
+    /// Check if a caller function name suggests intentional/safe/test code.
+    ///
+    /// Functions with these naming patterns are likely:
+    /// - Reference implementations ("safe_*", "correct_*", "example_*")
+    /// - Test fixtures ("test_*", "*_test")
+    /// - Demo code ("demo_*", "sample_*")
+    /// - Benchmarking ("bench_*", "*_bench")
+    ///
+    /// These functions should have their FFI warnings suppressed or
+    /// downgraded to INFO level, as they are not production code
+    /// where real vulnerabilities would matter.
+    pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+        const intentional_prefixes = [_][]const u8{
+            "safe_", // safe_example, safe_usage
+            "correct_", // correct_usage, correct_pattern
+            "example_", // example_basic, example_advanced
+            "test_", // test_malloc, test_free
+            "_test", // malloc_test, free_test
+            "demo_", // demo_ffi, demo_binding
+            "sample_", // sample_code, sample_api
+            "bench_", // benchmark_alloc
+            "fixture_", // fixture_data
+            "mock_", // mock_database
+            "stub_", // stub_network
+            "reference_", // reference_impl
+        };
+
+        for (intentional_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) return true;
+        }
+
+        const intentional_contains = [_][]const u8{
+            "intentional",
+            "known_safe",
+            "expected",
+            "deliberate",
+        };
+
+        for (intentional_contains) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
+        }
+
+        return false;
+    }
 };
 
 // Unit tests
@@ -1400,4 +1454,36 @@ test "FFIBoundaryPass - isDangerousPattern" {
     try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("safe_func"));
     try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("print_message"));
     try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("exec_cmd"));
+}
+
+test "FFIBoundaryPass - isLikelyIntentionalPattern" {
+    // Prefix-based intentional patterns
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("safe_example"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("correct_usage"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("test_malloc"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("demo_ffi"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("sample_code"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("bench_alloc"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("fixture_data"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("mock_database"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("stub_network"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("reference_impl"));
+
+    // Suffix-based intentional patterns
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("malloc_test"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("free_test"));
+
+    // Contains-based intentional patterns
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("intentional_leak_example"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("known_safe_function"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("expected_behavior"));
+    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("deliberate_mismatch"));
+
+    // Production code should NOT be suppressed
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("process_data"));
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("handle_connection"));
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("encrypt_data"));
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("leak_example"));
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("use_after_free_example"));
+    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("format_string_example"));
 }

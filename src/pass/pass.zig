@@ -46,6 +46,12 @@ pub const PassContext = struct {
     rust_into_raw_set: std.AutoHashMap(usize, void),
     rust_from_raw_set: std.AutoHashMap(usize, void),
 
+    /// Cross-pass deduplication: tracks (func_name, issue_kind) pairs
+    /// that have already been reported by a previous pass.
+    /// Prevents FFI Analysis + PointerOwnership from double-reporting
+    /// the same underlying instruction/issue.
+    reported_keys: std.AutoHashMap(u64, void),
+
     /// Zone statistics for function classification
     zone_stats: zone_classifier.ZoneStats,
 
@@ -71,6 +77,7 @@ pub const PassContext = struct {
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .reported_keys = std.AutoHashMap(u64, void).init(allocator),
             .zone_stats = zone_classifier.ZoneStats{},
         };
     }
@@ -114,6 +121,7 @@ pub const PassContext = struct {
         self.rc_container_func_set.deinit();
         self.rust_into_raw_set.deinit();
         self.rust_from_raw_set.deinit();
+        self.reported_keys.deinit();
     }
 
     /// Set the IR module
@@ -178,10 +186,28 @@ pub const PassContext = struct {
     /// Parameters:
     ///   - issue: The issue to add
     ///
-    /// Returns:
-    ///   - error if operation fails
+    /// Features cross-pass deduplication: if another pass has already
+    /// reported an issue with the same (function, kind) signature,
+    /// this call is silently skipped to avoid duplicate alerts.
     pub fn addIssue(self: *PassContext, issue: anytype) !void {
+        const dedup_key = self.dedupKey(issue);
+        const gop = try self.reported_keys.getOrPut(dedup_key);
+        if (gop.found_existing) return;
         try self.data_flow_graph.addIssue(issue);
+    }
+
+    /// Compute a dedup key from an issue's (func_name, kind) pair.
+    /// Uses FNV-1a hash for fast lookup.
+    fn dedupKey(self: *PassContext, issue: anytype) u64 {
+        _ = self;
+        const func_name = @field(issue, "location").function;
+        const kind_tag = @tagName(@field(issue, "kind"));
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(func_name);
+        hasher.update(kind_tag);
+        if (@field(issue, "location").file) |file| hasher.update(file);
+        if (@field(issue, "location").line) |line| hasher.update(&std.mem.toBytes(line));
+        return hasher.final();
     }
 
     /// Mark a node as tainted

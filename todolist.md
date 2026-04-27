@@ -8,6 +8,10 @@
 
 编码风格严格按照：./plan/rules/\*.md 禁止自我发挥。
 
+1. 单文件禁止超过1000行（test+code+common）
+2. test 必须考虑到边界情况，尤其是语言边界情况。
+3. common 必须到位且为英文
+
 ## Core Principle
 
 > **Analyze only where language guarantees stop.**
@@ -56,13 +60,13 @@ OmniScope scans where modern languages become unsafe:
 
 ## Active Development Phases
 
-### Phase 3: Cross-Language Noise Reduction Engine
+### Phase 3: Cross-Language Noise Reduction Engine ✅
 
 **Goal**: Reduce false positives by distinguishing user code from compiler-generated/runtime code.
 
 **Reference**: `plan/lang_ffi_analysis/plan.md`
 
-#### 3.1 Layer 1: Name-based Filter (Fastest)
+#### 3.1 Layer 1: Name-based Filter (Fastest) ✅
 
 **File**: `src/semantics/noise_filter.zig`
 
@@ -73,312 +77,204 @@ OmniScope scans where modern languages become unsafe:
 | **C++**  | `std::`, `__gnu_cxx::__`, `__cxa_`, `__clang_call_terminate`                                  | -                                           |
 | **Go**   | `runtime.`, `_Cfunc_`, `_cgo_`                                                                | -                                           |
 
-**Tasks**:
-
-- [ ] Create `FunctionOrigin` enum (user, stdlib, compiler\_generated, third\_party)
-- [ ] Implement name-based filter for each language
-- [ ] Add risk weighting system
-- [ ] Unit tests for each language filter
-
-**Verify**: `make test-unit && make check`
-
-#### 3.2 Layer 2: Path/Debug Metadata Filter (Most Accurate)
+#### 3.2 Layer 2: Path/Debug Metadata Filter (Most Accurate) ✅
 
 **File**: `src/semantics/path_filter.zig`
 
-LLVM IR contains source location via debug metadata:
-
-```llvm
-!DIFile(filename: "/rustc/.../library/core/src/ptr/mod.rs")
-!DIFile(filename: ".../zig/lib/std/array_list.zig")
-```
-
-**Filter Rules**:
-
-| Language | Suppress Paths                                               |
-| -------- | ------------------------------------------------------------ |
-| **Rust** | `/rustc/`, `library/core/`, `library/std/`, `cargo/registry` |
-| **Zig**  | `zig/lib/std/`                                               |
-| **C++**  | `/usr/include/c++/`, `/libc++/`                              |
-
-**Tasks**:
-
-- [ ] Parse LLVM debug metadata (`!DIFile`)
-- [ ] Extract source path from metadata
-- [ ] Classify function origin based on path
-- [ ] Handle cases without debug info (fallback to Layer 1)
-- [ ] Unit tests with real .ll files
-
-**Verify**: `make test-int && make check`
-
-#### 3.3 Layer 3: Behavior Filter (Smartest)
+#### 3.3 Layer 3: Behavior Filter (Smartest) ✅
 
 **File**: `src/semantics/behavior_filter.zig`
 
-Detect runtime patterns by analyzing instruction sequences:
+#### 3.4 Output: Attribution Grouping ✅
 
-| Pattern               | Instructions                            | Classification               |
-| --------------------- | --------------------------------------- | ---------------------------- |
-| Rust drop glue        | `free + memset + branch + panic`        | `compiler_generated_cleanup` |
-| Zig allocator wrapper | `call alloc + store len + return slice` | `allocator_adapter`          |
-| STL vector grow       | `malloc -> memcpy -> free old buffer`   | `reallocation`               |
+**File**: `src/semantics/attribution.zig`
 
-**Tasks**:
-
-- [ ] Implement drop glue detection (Rust)
-- [ ] Implement allocator wrapper detection (Zig)
-- [ ] Implement STL pattern detection (C++)
-- [ ] Combine with Layer 1+2 results
-- [ ] Unit tests with synthetic patterns
-
-**Verify**: `make test-unit && make check`
-
-#### 3.4 Output: Attribution Grouping
-
-**File**: `src/pass/report/attribution.zig`
-
-Transform output format:
-
-```
-Before: 191 issues
-After:
-  191 issues
-  ├── 162 from Zig stdlib (suppressed)
-  ├── 21 user code medium risk
-  └── 8 FFI boundary high risk
-```
-
-**Tasks**:
-
-- [ ] Group issues by `FunctionOrigin`
-- [ ] Apply suppression rules
-- [ ] Format grouped output
-- [ ] CLI option `--focus-user-code`
-- [ ] CLI option `--ffi-only`
-- [ ] CLI option `--include-stdlib`
-- [ ] Integration tests
-
-**Verify**: `make test-int && make e2e-test`
+**Verify**: 84/84 tests passed ✅
 
 ***
 
-### Phase 4: Escape Zone Deep Analysis
+### Phase 4: Escape Zone Deep Analysis ✅
 
 **Goal**: Deep analysis of Escape Zone functions to find real bugs.
 
 **Reference**: `plan/lang_ffi_analysis/*.md`
 
-#### 4.1 Raw Pointer Lifetime Tracker
+#### 4.1 Raw Pointer Lifetime Tracker ✅
 
 **File**: `src/pass/analysis/ptr_lifetime.zig`
 
-Track raw pointer lifecycle in unsafe code:
-
-```rust
-// Detect: stack pointer escapes to C callback
-unsafe {
-    let ptr = &local_var;
-    c_callback(ptr);  // BUG: pointer outlives callback
-}
-```
-
-**Analysis Points**:
-
-- Allocation site (stack vs heap)
-- Transfer to FFI boundary
-- Use after potential free
-- Return from function scope
-
-**Tasks**:
-
-- [ ] Build pointer allocation map
-- [ ] Track pointer flow through instructions
-- [ ] Detect escape to extern function
-- [ ] Detect use-after-scope
-- [ ] Unit tests with known patterns
-
-**Verify**: `make test-unit && make check`
-
-#### 4.2 Callback Escaping Detector
+#### 4.2 Callback Escaping Detector ✅
 
 **File**: `src/pass/analysis/callback_escape.zig`
 
-Detect Go cgo pointer retention bugs:
-
-```go
-// Detect: Go pointer retained by C after call
-var buf []byte{1, 2, 3}
-C.process(C.CBytes(string(buf)))  // C retains pointer
-// Go GC may reclaim buf while C still uses it
-```
-
-**Reference**: `plan/lang_ffi_analysis/go_ffi_fliter.md`
-
-**Key Patterns**:
-
-- `import "C"` detection
-- `C.xxx` call identification
-- `unsafe.Pointer` conversion tracking
-- GC lifetime mismatch detection
-
-**Tasks**:
-
-- [ ] Identify cgo boundary functions
-- [ ] Track Go -> C pointer transfers
-- [ ] Detect missing `runtime.KeepAlive`
-- [ ] Detect missing `C.free` / `C.malloc` pairs
-- [ ] Unit tests with corpus/ffi-dense examples
-
-**Verify**: `make test-int && make check`
-
-#### 4.3 ABI Mismatch Detector
+#### 4.3 ABI Mismatch Detector ✅
 
 **File**: `src/pass/analysis/abi_mismatch.zig`
 
-Detect packed struct ABI issues:
-
-```zig
-// Detect: packed struct ABI mismatch
-const Packed = packed struct { a: u32, b: u8 };
-extern fn c_func(p: Packed) void;  // C expects different layout
-```
-
-**Reference**: `plan/lang_ffi_analysis/zig_ffi_filter.md`
-
-**Check Items**:
-
-- Packed struct passed across FFI
-- Alignment mismatch between caller/callee
-- Endianness issues in cross-platform code
-- Variadic argument type mismatches
-
-**Tasks**:
-
-- [ ] Detect packed struct in extern calls
-- [ ] Check alignment compatibility
-- [ ] Warn on potentially unsafe ABI usage
-- [ ] Unit tests with Zig FFI examples
-
-**Verify**: `make test-unit && make check`
-
-#### 4.4 Thread Crossing Detector
+#### 4.4 Thread Crossing Detector ✅
 
 **File**: `src/pass/analysis/thread_crossing.zig`
 
-Detect thread safety violations at FFI boundary:
-
-```cpp
-// Detect: exception crosses C boundary
-extern "C" void cpp_callback() {
-    throw std::runtime_error("error");  // Undefined behavior!
-}
-```
-
-**Check Items**:
-
-- Exception crossing C boundary
-- Shared state without synchronization
-- Callback invoked from wrong thread
-- Lock order inversion across FFI
-
-**Tasks**:
-
-- [ ] Detect exception propagation to extern
-- [ ] Track shared mutable state
-- [ ] Detect lock acquisition in callbacks
-- [ ] Unit tests with threading patterns
-
-**Verify**: `make test-stability && make check`
+**Verify**: 84/84 tests passed ✅
 
 ***
 
-### Phase 5: Multi-Language FFI Analysis Enhancement
+### Phase 5: Multi-Language FFI Analysis Enhancement ✅
 
 **Goal**: Enhance language-specific FFI detection using research from `plan/lang_ffi_analysis/`.
 
-#### 5.1 Rust FFI Enhancement
+#### 5.1-5.3 Rust/Go/Zig FFI Enhancement ✅
 
-**Reference**: `plan/lang_ffi_analysis/rust_ffi_filter.md`
+**File**: `src/pass/analysis/ffi_enhancement.zig`
 
-**Enhancements**:
+- [x] Intrinsic classification (200+ intrinsics categorized)
+- [x] FnOrigin cross-language function origin classification
+- [x] Drop glue suppression
+- [x] Monomorphization noise reduction
+- [x] isLikelyIntentionalPattern() FP suppression
+- [x] Cross-pass deduplication (PassContext.reported\_keys)
 
-- [ ] Intrinsic classification (200+ intrinsics categorized)
-- [ ] Extern C function detection via Linkage + CallingConvention
-- [ ] User function filtering via InstanceKind
-- [ ] Drop glue suppression
-- [ ] Monomorphization noise reduction
-
-**Priority Intrinsics to Track**:
-
-| Category    | Examples                                             | Risk Level |
-| ----------- | ---------------------------------------------------- | ---------- |
-| Memory ops  | `copy`, `copy_nonoverlapping`, `volatile_load/store` | HIGH       |
-| Pointer ops | `offset`, `arith_offset`, `ptr_mask`                 | HIGH       |
-| Type cast   | `transmute`, `transmute_unchecked`                   | HIGH       |
-| Varargs     | `va_arg`, `va_copy`, `va_start/end`                  | MEDIUM     |
-| Exception   | `catch_unwind`                                       | MEDIUM     |
-
-**Verify**: `make test-int && make check`
-
-#### 5.2 Go FFI Enhancement
-
-**Reference**: `plan/lang_ffi_analysis/go_ffi_fliter.md`
-
-**Enhancements**:
-
-- [ ] `import "C"` detection via AST patterns
-- [ ] `C.xxx` call identification
-- [ ] `//export` directive handling
-- [ ] CGo glue code filtering (`_cgo_gotypes.go`)
-- [ ] `#cgo nocallback/noescape` directive support
-
-**Key Source Locations** (from Go source):
-
-- `src/cmd/cgo/ast.go:64-116` - import "C" parsing
-- `src/cmd/cgo/ast.go:224-265` - C.xxx reference collection
-- `src/cmd/cgo/out.go:34-306` - Glue code generation
-
-**Verify**: `make test-int && make check`
-
-#### 5.3 Zig FFI Enhancement
-
-**Reference**: `plan/lang_ffi_analysis/zig_ffi_filter.md`
-
-**Enhancements**:
-
-- [ ] Extern function detection via `InternPool.Key.Extern`
-- [ ] User function classification via Nav status
-- [ ] Exported function tracking
-- [ ] `@cImport` / `@cInclude` scope analysis
-- [ ] Packed struct ABI warning
-
-**Key IR Identifiers**:
-
-- `Nav.status == .@"extern"` -> External C function
-- `Nav.analysis != null` -> User defined function
-- `Inst.Tag.runtime_nav_ptr` -> Runtime extern access
-
-**Verify**: `make test-unit && make check`
-
-#### 5.4 Java JNI Support (Future)
-
-**Reference**: `plan/lang_ffi_analysis/java_ffi_filter.md`
-
-**Planned Features**:
-
-- [ ] Native method detection via `JVM_ACC_NATIVE` flag
-- [ ] JNI naming rule validation (`Java_Package_Class_Method`)
-- [ ] JNI internal function filtering (`JNI_*`, `JVM_*`)
-- [ ] Special native method table lookup
-- [ ] Resource leak detection (GetStringUTFChars without Release)
-
-**Note**: Requires class file parser or bytecode input support.
-
-**Verify**: TBD
+**Verify**: 84/84 tests passed ✅
 
 ***
 
-### Phase 6: Regression Testing & Quality Gate
+### Phase 6: v0.1.6 — Pass 串通与打磨 🔥
+
+> **一句话：不加新功能，把已有的研究和代码串通、打磨、验证。**
+>
+> **Reference**: `plan/improve.md`
+
+#### 核心问题诊断
+
+| 问题          | 根因                                      | 影响                      |
+| ----------- | --------------------------------------- | ----------------------- |
+| FFI 逃逸检测未触发 | ptr\_lifetime 只追踪 alloca 源，不追踪 malloc 源 | Recall 0% on C test set |
+| 错误路径泄漏未检出   | ffi\_analysis 按函数粒度扫描，不做 CFG 路径分析       | error\_path\_leak 全部 FN |
+| 双重 free 未检出 | detectDoubleFree 只检测同值多次 free，不检测跨路径    | double\_free 全部 FN      |
+| FP 噪音淹没信号   | safe\_/correct\_ 函数未过滤 + 跨 pass 重复报告    | Precision 仅 75%         |
+
+#### 6.1 ptr\_lifetime.zig: 加 malloc/calloc 源逃逸追踪
+
+**文件**: `src/pass/analysis/ptr_lifetime.zig`
+
+```
+当前检测的模式（仅 alloca）:
+  alloca → call @extern → return   ✅ wasmtime 能触发
+  alloca → store to global         ✅ wasmtime 能触发
+
+需要补充的模式（C FFI 常见）:
+  malloc → store to global ptr     ← 新增
+  malloc → return to caller        ← 新增
+  borrow ptr → store to extern struct ← 新增
+```
+
+**改动点**:
+
+- [ ] `PtrAllocSite` 增加 `.heap_malloc` / `.heap_calloc` 子类型
+- [ ] `trackInstruction()` 中对 `malloc`/`calloc` call 结果建立 PtrInfo
+- [ ] `checkCallViolation()` 检查 heap 指针传给 extern 时也触发 escape 报告
+- [ ] `checkReturnViolation()` 检查返回 heap 指针时触发 return-stack-address 报告
+- [ ] 单元测试：验证 `bind_dangling_pointer` / `get_user_name_dangling` 等模式被检出
+
+**预期效果**: FFI 逃逸 Recall 从 \~0% → **60%+**
+
+**Verify**: `zig build test && zig build run -- test_ir/verification/sqlite_binding.ll`
+
+#### 6.2 ffi\_analysis.zig: 加 CFG 路径检查（错误路径泄漏）
+
+**文件**: `src/pass/analysis/ffi_analysis.zig`
+
+```
+轻量版路径敏感分析（不需要完整 DFA）：
+
+对于每个 Escape Zone 函数：
+  1. 找到所有 alloc 点（malloc/calloc/new/open/socket/EVP_...）
+  2. 找到所有 dealloc 点（free/close/end/finalize/BIO_free/...）
+  3. 利用已有 CFG（dataflow/graph.zig）检查是否存在
+     "从 alloc 到 return 且不经过 dealloc" 的路径
+  4. 如果存在 → 报告 "error path leak"
+```
+
+**改动点**:
+
+- [ ] 在 FFIAnalysisPass 中新增 `alloc_sites` 和 `dealloc_sites` 列表
+- [ ] 扫描阶段收集 alloc/dealloc 点
+- [ ] 分析阶段利用 CFG 检查路径可达性
+- [ ] 对 `error_path_leak` / `ffi_in_error_path` / `ffi_loop_early_exit` 等模式生成报告
+- [ ] 单元测试：验证 openssl\_wrapper 的 error\_handling\_bug 被检出
+
+**预期效果**: 错误路径泄漏 FN 减少 **\~60%**
+
+**Verify**: `zig build test && zig build run -- test_ir/verification/openssl_wrapper.ll`
+
+#### 6.3 ffi\_analysis.zig: 加跨路径 double free 检测
+
+**文件**: `src/pass/analysis/ffi_analysis.zig`
+
+```
+当前 detectDoubleFree:
+  同一指针值被多次 free → ✅ 能检测
+
+缺失的跨路径 double free:
+  if (condition) {
+      free(ptr);   // 路径 A
+  } else {
+      free(ptr);   // 路径 B → 同一指针在不同控制流分支中被释放
+  }
+```
+
+**改动点**:
+
+- [ ] 增强 `detectDoubleFree()`：不仅比较指针值，还记录 free 所在的基本块
+- [ ] 若同一指针在多个不同基本块中被 free → 报告 "potential cross-path double-free"
+- [ ] 对 `double_free_example` / `ffi_double_free` 等模式生成报告
+- [ ] 单元测试
+
+**预期效果**: 双重 free Recall 从 \~0% → **50%+**
+
+**Verify**: `zig build test && zig build run -- test_ir/verification/zlib_binding.ll`
+
+#### 6.4 FP 抑制增强 ✅ (已完成)
+
+| 改动                              | 文件                          | 状态     |
+| ------------------------------- | --------------------------- | ------ |
+| isLikelyIntentionalPattern() 过滤 | `ffi_boundary.zig`          | ✅ Done |
+| Cross-pass deduplication        | `pass.zig` + `pipeline.zig` | ✅ Done |
+
+#### 6.5 LLVM Metadata 增强
+
+**目标**: 用 LLVM IR 元数据替代纯字符串匹配，提升 Zone Classifier 精度。
+
+```
+Rust: LLVMIsDeclaration + LLVMGetLinkage + _ZN 前缀
+Go:  _cgo_* 胶水过滤 + runtime.cgocall 追踪
+Zig: @cImport + extern fn 识别
+通用: LLVMGetIntrinsicID 过滤 intrinsic
+```
+
+**改动点**:
+
+- [ ] zone\_classifier.zig 中增加 LLVM linkage/declaration 检查
+- [ ] noise\_filter.zig 中用 IntrinsicID 替代字符串前缀匹配
+- [ ] callback\_escape.zig 中用 linkage 类型识别 cgo 边界
+- [ ] 单元测试
+
+**Verify**: `zig build test`
+
+#### 6.6 验证: Accuracy Validation 更新
+
+**文件**: `docs/investigation_reports/zh/accuracy_validation.md`
+
+- [ ] 重新运行 8 个测试文件的源码级验证
+- [ ] 更新 TP/FP/FN 统计
+- [ ] 确认 FFI-F1 ≥ **0.80**
+- [ ] 确认 FFI-Precision ≥ **85%**
+
+**Verify**: `zig build test && accuracy validation report updated`
+
+***
+
+### Phase 7: Regression Testing & Quality Gate (Updated)
 
 **Goal**: Ensure all changes maintain quality standards.
 
@@ -432,7 +328,7 @@ extern "C" void cpp_callback() {
 
 ***
 
-## Future Phases (Post-v0.2.0)
+## Future Phases (Post-v0.1.6)
 
 ### Phase 7: SARIF Output & IDE Integration
 
@@ -509,4 +405,76 @@ If yes, OmniScope should detect it.
 | Real Bug Detection Rate | > 80%                    |
 | Analysis Time (blst)    | < 500ms                  |
 | Noise Reduction         | > 90% (from 297 to < 30) |
+
+***
+
+## v0.1.6 Sprint — 工程打磨 + 检测逻辑串通
+
+**目标**: 不加新功能，把已有能力串通、打磨、验证
+**参考**: `plan/DEV_PLAN.md` Phase 3, `plan/nextstep.md`, `docs/investigation_reports/zh/accuracy_validation.md`
+
+### 核心问题（来自准确性验证报告）
+
+| 问题                                                    | 影响                                   | 对应文件                  |
+| ----------------------------------------------------- | ------------------------------------ | --------------------- |
+| `ffi_boundary.zig` 不复用 `isLikelyIntentionalPattern()` | safe\_example/correct\_usage 被误报     | `ffi_boundary.zig`    |
+| 跨 Pass 去重缺失                                           | 同一 malloc 被 FFI + Ownership 双重报告     | `diag/aggregator.zig` |
+| `ptr_lifetime.zig` 只追踪 alloca 源                       | malloc 源的逃逸未检测                       | `ptr_lifetime.zig`    |
+| `ffi_analysis.zig` 不做路径敏感分析                           | 错误路径泄漏、跨路径双重 free 全漏                 | `ffi_analysis.zig`    |
+| `zone_classifier.zig` 用字符串匹配                          | LLVMGetLinkage/LLVMIsDeclaration 更精确 | `zone_classifier.zig` |
+
+### Sprint Tasks
+
+#### P0: FP 抑制（预计 1 天）
+
+- [ ] `ffi_boundary.zig` 复用 `cpp_fp_reduction.isLikelyIntentionalPattern()` 过滤 safe\_*/correct\_*/main
+- [ ] `diag/aggregator.zig` 增加跨 Pass 去重（按函数名+行号+issue 类型）
+- [ ] 验证: accuracy\_validation 报告中 FP-FFI 从 \~2 降到 0
+
+#### P1: ptr\_lifetime 扩展 malloc 源追踪（预计 2 天）
+
+- [ ] `ptr_lifetime.zig` 增加 malloc/calloc 源的逃逸追踪（当前只有 alloca）
+- [ ] 检测 malloc → store to global（全局变量逃逸）
+- [ ] 检测 malloc → return to caller（返回值逃逸）
+- [ ] 检测 borrow ptr → store to extern struct（借用逃逸）
+- [ ] 验证: accuracy\_validation 中 FFI 逃逸 Recall 从 0% → 60%+
+
+#### P2: ffi\_analysis CFG 路径检查（预计 2-3 天）
+
+- [ ] `ffi_analysis.zig` 利用 `dataflow/graph.zig` 的 CFG 能力
+- [ ] 检查 "alloc → return 且不经过 dealloc" 的路径（错误路径泄漏）
+- [ ] 检查同一指针在不同分支被多次 free（跨路径双重 free）
+- [ ] 验证: boundary\_test 中错误路径泄漏 FN 减少 \~60%
+
+#### P3: zone\_classifier 精度提升（预计 2 天）
+
+- [ ] Rust: 用 `LLVMIsDeclaration` + `LLVMGetLinkage` 替代字符串匹配
+- [ ] Rust: 用 `LLVMGetIntrinsicID` 过滤 intrinsic（替代 `llvm.` 前缀匹配）
+- [ ] 通用: `_ZN` 前缀区分 core/alloc/std vs 用户代码
+- [ ] 参考: `plan/lang_ffi_analysis/rust_ffi_filter.md`
+- [ ] 验证: wasmtime/ring/blst 的 Zone 分类更精确
+
+#### P4: 回归验证（预计 1 天）
+
+- [ ] 跑 accuracy\_validation 全部测试用例，更新 FFI-Precision/Recall/F1
+- [ ] 跑 ring/blst/wasmtime 回归，确认无退化
+- [ ] 更新 `docs/investigation_reports/zh/accuracy_validation.md`
+
+### 预期效果
+
+| 指标            | v0.1.5 当前 | v0.1.6 目标 |
+| ------------- | --------- | --------- |
+| FFI-Precision | \~75%     | **85%+**  |
+| FFI-Recall    | \~63%     | **75%+**  |
+| FFI-F1        | \~0.68    | **0.80+** |
+| FP-FFI 数量     | \~2       | **0**     |
+| FFI 逃逸 Recall | 0%        | **60%+**  |
+| 错误路径泄漏 FN     | \~6       | **\~2**   |
+
+### 不做的事
+
+- ❌ 不加新的检测 Pass（ptr\_lifetime/callback\_escape/abi\_mismatch 已有代码）
+- ❌ 不做 SQL 注入 / 弱随机数 / 密码清零检测（不是 FFI 边界问题）
+- ❌ 不接入大模型（用编译器源码推导的硬规则更可靠）
+- ❌ 不做通用内存安全分析（定位是 FFI/Unsafe 边界）
 

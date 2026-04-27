@@ -55,6 +55,7 @@ pub const IssueKind = enum {
             .format_string => "format_string",
             .malloc_unchecked => "malloc_unchecked",
             .null_dereference => "null_dereference",
+            .borrow_escape => "borrow_escape",
             .invalid_free => "invalid_free",
             .unknown => "unknown",
         };
@@ -760,6 +761,7 @@ test "Issue - hasTrace" {
         .severity = .high,
         .confidence = 0.9,
         .confidence_level = .high,
+        .reason = "",
         .ffi_boundary = null,
         .trace = &[_]TraceEntry{},
         .owned = false,
@@ -821,10 +823,16 @@ test "Confidence - fromScore" {
 }
 
 test "Confidence - defaultScore" {
-    try std.testing.approxEqAbs(@as(f32, 0.95), Confidence.high.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.75), Confidence.medium.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.55), Confidence.heuristic.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.35), Confidence.experimental.defaultScore(), 0.01);
+    const testApproxEq = struct {
+        fn run(expected: f32, actual: f32, tolerance: f32) !void {
+            try std.testing.expect(@abs(actual - expected) < tolerance);
+        }
+    }.run;
+
+    try testApproxEq(@as(f32, 0.95), Confidence.high.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.75), Confidence.medium.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.55), Confidence.heuristic.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.35), Confidence.experimental.defaultScore(), 0.01);
 }
 
 test "Issue - confidence_level auto-derived from score" {
