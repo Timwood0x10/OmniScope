@@ -158,7 +158,7 @@ pub const ZIG_SAFE_PATTERNS = [_][]const u8{
 
 /// Zig escape triggers - focus analysis.
 pub const ZIG_ESCAPE_PATTERNS = [_][]const u8{
-    // Pointer casts
+    // Pointer casts (Zig builtins)
     "@ptrCast",
     "@alignCast",
     "@intToPtr",
@@ -168,10 +168,9 @@ pub const ZIG_ESCAPE_PATTERNS = [_][]const u8{
     "@cImport",
     "@cInclude",
     "@cDefine",
-    "extern ",
 
-    // Volatile
-    "volatile",
+    // Volatile (only with pointer, not standalone)
+    "volatile ",
 
     // Packed ABI
     "packed struct",
@@ -199,7 +198,6 @@ pub const GO_SAFE_PATTERNS = [_][]const u8{
 pub const GO_ESCAPE_PATTERNS = [_][]const u8{
     // Cgo
     "package C",
-    "C.",
     "C.",
     "import \"C\"",
 
@@ -420,7 +418,14 @@ fn isRustFunction(func_name: []const u8) bool {
 /// Detect if function is Zig.
 fn isZigFunction(func_name: []const u8) bool {
     if (std.mem.startsWith(u8, func_name, "std.")) return true;
-    if (std.mem.indexOf(u8, func_name, "@") != null) return true;
+    // Only match Zig builtins (@ptrCast, @intToPtr, etc.), not LLVM globals
+    if (std.mem.indexOf(u8, func_name, "@ptrCast") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@alignCast") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@intToPtr") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@ptrToInt") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@cImport") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@cInclude") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "@bitCast") != null) return true;
     return false;
 }
 

@@ -269,7 +269,7 @@ test "extractLifetimes" {
 
 test "isLifetimeExtension" {
     const source = [_][]const u8{ "'a", "'b" };
-    const target_static = [_][]const u8{ "'static" };
+    const target_static = [_][]const u8{"'static"};
     const target_same = [_][]const u8{ "'a", "'b" };
 
     try std.testing.expect(isLifetimeExtension(&source, &target_static));

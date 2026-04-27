@@ -229,7 +229,7 @@ pub const DiagnosticWriter = struct {
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
         if (log.current_log_level == .quiet) return;
         if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
-        
+
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {
             std.debug.print(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
@@ -263,7 +263,7 @@ pub const DiagnosticWriter = struct {
 /// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
 pub fn printZoneSummary(stats: zone_classifier.ZoneStats, issue_count: u32) void {
     if (log.current_log_level == .quiet) return;
-    
+
     const total = stats.total();
     const escape_count = stats.unsafe_count + stats.ffi_count;
     const skip_ratio = stats.skipRatio();

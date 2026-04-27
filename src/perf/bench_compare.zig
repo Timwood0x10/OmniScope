@@ -29,12 +29,11 @@ const BenchResult = struct {
 
 /// Run standard allocation benchmark
 fn benchStandardAlloc(allocator: Allocator, iterations: usize) !BenchResult {
-    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.start_time;
+        const start = std.time.Instant.now() catch break;
         const ptr = try allocator.create(u64);
         ptr.* = @intCast(i);
         allocator.destroy(ptr);
@@ -55,12 +54,11 @@ fn benchMemoryPool(allocator: Allocator, iterations: usize) !BenchResult {
     var pool = try MemoryPool(u64).init(allocator);
     defer pool.deinit();
 
-    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.start_time;
+        const start = std.time.Instant.now() catch break;
         const ptr = try pool.alloc();
         ptr.* = @intCast(i);
         pool.free(ptr);
@@ -81,12 +79,11 @@ fn benchArenaAlloc(allocator: Allocator, iterations: usize) !BenchResult {
     var ctx = try AnalysisContext.init(allocator);
     defer ctx.deinit();
 
-    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.start_time;
+        const start = std.time.Instant.now() catch break;
         const ptr = try ctx.create(u64);
         ptr.* = @intCast(i);
         const end = std.time.Instant.now() catch break;
@@ -106,12 +103,11 @@ fn benchHashMapStandard(allocator: Allocator, iterations: usize) !BenchResult {
     var map = std.AutoHashMap(u32, u64).init(allocator);
     defer map.deinit();
 
-    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.start_time;
+        const start = std.time.Instant.now() catch break;
         try map.put(@intCast(i), @intCast(i * 2));
         const end = std.time.Instant.now() catch break;
         total_ns += end.since(start);
@@ -134,12 +130,11 @@ fn benchHashMapArena(allocator: Allocator, iterations: usize) !BenchResult {
     var map = std.AutoHashMap(u32, u64).init(arena_alloc);
     defer map.deinit();
 
-    const timer = try Timer.start();
     var total_ns: u64 = 0;
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const start = timer.start_time;
+        const start = std.time.Instant.now() catch break;
         try map.put(@intCast(i), @intCast(i * 2));
         const end = std.time.Instant.now() catch break;
         total_ns += end.since(start);
