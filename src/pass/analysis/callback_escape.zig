@@ -34,6 +34,7 @@ const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
+const zone_classifier = @import("../../semantics/zone_classifier.zig");
 
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
@@ -105,13 +106,11 @@ const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
 
 /// C standard library functions that commonly retain pointers.
 const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    "register_callback",
-    "set_handler",
-    "pthread_create",
-    "signal",
-    "atexit",
-    "SDL_SetEventCallback",
-    "glfwSetCallback",
+    "register_callback", "set_handler",     "set_callback",   "add_observer",
+    "subscribe",         "listen_on",        "pthread_create", "pthread_join",
+    "signal",            "sigaction",        "atexit",         "on_exit",
+    "RegisterNatives",                        "PyCapsule_SetDestructor",
+    "SDL_SetEventCallback",                  "glfwSetCallback", "curl_easy_setopt",
 };
 
 /// Check if a function name indicates cgo boundary code.
@@ -216,6 +215,25 @@ pub const CallbackEscapePass = struct {
         var stats = EscapeStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (c.LLVMIsDeclaration(func) != 0) {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                ctx.zone_stats.record(zone);
+                continue;
+            }
+
+            const func_name_raw = c.LLVMGetValueName(func);
+            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+
+            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+            ctx.zone_stats.record(zone);
+
+            switch (zone) {
+                .safe, .runtime_internal => continue,
+                .unsafe, .ffi, .unknown => {},
+            }
+
             try analyzeFunction(ctx, func, diag, &stats);
         }
 
@@ -676,4 +694,14 @@ test "EscapeStats - tracking" {
     try std.testing.expectEqual(@as(u32, 5), stats.go_cgo_boundaries_found);
     try std.testing.expectEqual(@as(u32, 11), stats.keepalive_missing + stats.cbytes_escapes +
         stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans);
+}
+
+test "mayRetainInC - extended C callback patterns" {
+    try std.testing.expect(mayRetainInC("pthread_create"));
+    try std.testing.expect(mayRetainInC("RegisterNatives"));
+    try std.testing.expect(mayRetainInC("PyCapsule_SetDestructor"));
+    try std.testing.expect(mayRetainInC("signal"));
+    try std.testing.expect(mayRetainInC("SDL_SetEventCallback"));
+    try std.testing.expect(!mayRetainInC("malloc"));
+    try std.testing.expect(!mayRetainInC("free"));
 }

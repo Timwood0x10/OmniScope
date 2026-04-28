@@ -37,6 +37,7 @@ const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
+const zone_classifier = @import("../../semantics/zone_classifier.zig");
 
 /// Allocation site classification for pointers.
 pub const PtrAllocSite = enum(u8) {
@@ -64,6 +65,18 @@ pub const LifetimeViolation = enum(u8) {
     use_after_free_risk,
     /// Heap pointer passed to extern without documented transfer
     heap_ownership_ambiguous,
+    /// Resource handle (dlopen) closed while derived pointers may still be in use
+    dlhandle_closed_while_active,
+    /// Memory mapping (mmap) unmapped while pointers to it may still be used
+    mmap_unmapped_while_active,
+    /// File handle (fopen) closed while FILE* may still be used
+    file_handle_closed_while_active,
+    /// Socket closed while socket fd may still be used
+    socket_closed_while_active,
+    /// JNI local reference deleted while still in use
+    jni_local_ref_deleted_while_active,
+    /// Python object reference released while still in use
+    python_obj_released_while_active,
 };
 
 /// Information about a tracked pointer's origin and state.
@@ -184,9 +197,13 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
 
 /// Heap allocation functions.
 const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",         "calloc",   "realloc",   "aligned_alloc",
-    "valloc",         "pvalloc",  "memalign",  "operator new",
-    "operator new[]", "into_raw", "allocImpl",
+    "malloc",         "calloc",        "realloc",        "aligned_alloc",
+    "valloc",         "pvalloc",       "memalign",       "operator new",
+    "operator new[]", "into_raw",      "allocImpl",
+    "mmap",           "dlopen",        "fopen",          "socket",
+    "JNI_OnLoad",     "Py_Initialize",
+    "Py_BuildValue",  "PyTuple_New",   "PyList_New",     "PyDict_New",
+    "NewStringUTF",   "NewByteArray",  "NewGlobalRef",
 };
 
 /// Classify the allocation site of a pointer value.
@@ -258,6 +275,25 @@ pub const PtrLifetimePass = struct {
         var stats = LifetimeStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (c.LLVMIsDeclaration(func) != 0) {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                ctx.zone_stats.record(zone);
+                continue;
+            }
+
+            const func_name_raw = c.LLVMGetValueName(func);
+            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+
+            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+            ctx.zone_stats.record(zone);
+
+            switch (zone) {
+                .safe, .runtime_internal => continue,
+                .unsafe, .ffi, .unknown => {},
+            }
+
             try analyzeFunction(ctx, func, diag, &stats);
         }
 
@@ -580,6 +616,28 @@ pub const PtrLifetimePass = struct {
             if (std.mem.indexOf(u8, fn_name, free_fn) != null) return true;
         }
         return false;
+    }
+
+    fn isResourceCloseFunction(fn_name: []const u8) bool {
+        const close_fns = [_][]const u8{
+            "dlclose", "munmap", "fclose", "close",
+            "DeleteGlobalRef", "DeleteLocalRef",
+            "Py_DECREF", "Py_XDECREF",
+        };
+        for (close_fns) |close_fn| {
+            if (std.mem.indexOf(u8, fn_name, close_fn) != null) return true;
+        }
+        return false;
+    }
+
+    fn getResourceType(fn_name: []const u8) ?[]const u8 {
+        if (std.mem.indexOf(u8, fn_name, "dlopen") != null or std.mem.indexOf(u8, fn_name, "dlsym") != null) return "dlhandle";
+        if (std.mem.indexOf(u8, fn_name, "mmap") != null) return "mmap";
+        if (std.mem.indexOf(u8, fn_name, "fopen") != null or std.mem.indexOf(u8, fn_name, "FILE") != null) return "file";
+        if (std.mem.indexOf(u8, fn_name, "socket") != null) return "socket";
+        if (std.mem.indexOf(u8, fn_name, "JNI") != null) return "jni";
+        if (std.mem.indexOf(u8, fn_name, "Py_") != null) return "python";
+        return null;
     }
 };
 
@@ -967,4 +1025,28 @@ test "isFreeFunction - detection" {
     try std.testing.expect(PtrLifetimePass.isFreeFunction("operator delete"));
     try std.testing.expect(!PtrLifetimePass.isFreeFunction("malloc"));
     try std.testing.expect(!PtrLifetimePass.isFreeFunction("printf"));
+}
+
+test "isResourceCloseFunction - detection" {
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("dlclose"));
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("munmap"));
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("fclose"));
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("close"));
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("DeleteGlobalRef"));
+    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("Py_DECREF"));
+    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("dlopen"));
+    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("malloc"));
+    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("printf"));
+}
+
+test "getResourceType - classification" {
+    try std.testing.expectEqualStrings("dlhandle", PtrLifetimePass.getResourceType("dlopen"));
+    try std.testing.expectEqualStrings("dlhandle", PtrLifetimePass.getResourceType("dlsym"));
+    try std.testing.expectEqualStrings("mmap", PtrLifetimePass.getResourceType("mmap"));
+    try std.testing.expectEqualStrings("file", PtrLifetimePass.getResourceType("fopen"));
+    try std.testing.expectEqualStrings("socket", PtrLifetimePass.getResourceType("socket"));
+    try std.testing.expectEqualStrings("jni", PtrLifetimePass.getResourceType("JNI_OnLoad"));
+    try std.testing.expectEqualStrings("python", PtrLifetimePass.getResourceType("Py_BuildValue"));
+    try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("malloc"));
+    try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("printf"));
 }
