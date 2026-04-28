@@ -229,7 +229,7 @@ pub const FFIAnalysisPass = struct {
 
                     // Check if this is an allocation function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .allocator) {
+                        if (sem.transfers_ownership) {
                             // Get the return value (the allocated pointer)
                             const ptr_value: c.LLVMValueRef = inst;
                             const ptr_value_id: u64 = @intFromPtr(ptr_value);
@@ -275,7 +275,7 @@ pub const FFIAnalysisPass = struct {
                     const called_name = std.mem.span(called_name_ptr);
 
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .deallocator) {
+                        if (sem.consumes_ownership) {
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (ptr_arg == null) {
                                 diag.warn("Free operation missing pointer argument at {s}", .{func_name});

@@ -223,7 +223,7 @@ pub const PointerOwnershipPass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-            const zone = zone_classifier.classifyFunction(func_name, null);
+            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
             ctx.zone_stats.record(zone);
 
             switch (zone) {

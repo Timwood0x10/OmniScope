@@ -254,6 +254,80 @@ pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
     "pthread_create",
     "std::thread",
     "CreateThread",
+
+    // Dynamic loading
+    "dlopen",
+    "dlsym",
+    "dlclose",
+    "dlerror",
+
+    // Memory mapping
+    "mmap",
+    "munmap",
+    "mprotect",
+
+    // Python C API
+    "Py_INCREF",
+    "Py_DECREF",
+    "Py_XINCREF",
+    "Py_XDECREF",
+    "Py_BuildValue",
+    "PyArg_ParseTuple",
+
+    // JNI
+    "JNI_OnLoad",
+    "JNI_",
+    "Java_",
+
+    // Signal handling
+    "signal(",
+    "sigaction(",
+
+    // Process management
+    "fork(",
+    "execvp(",
+    "execve(",
+
+    // Network I/O
+    "getaddrinfo",
+    "gethostbyname",
+    "setsockopt",
+    "getsockopt",
+};
+
+/// C escape triggers - focus analysis (C-specific, more precise than C++).
+pub const C_ESCAPE_PATTERNS = [_][]const u8{
+    // Dynamic loading
+    "dlopen",
+    "dlsym",
+    "dlclose",
+
+    // Memory mapping
+    "mmap",
+    "munmap",
+    "mprotect",
+
+    // Python C API prefix
+    "Py_",
+
+    // JNI prefix
+    "JNI_",
+
+    // Thread management
+    "pthread_create",
+    "pthread_join",
+
+    // Signal handling
+    "signal(",
+    "sigaction(",
+
+    // Process management
+    "fork(",
+    "exec",
+
+    // Network I/O
+    "getaddrinfo",
+    "gethostbyname",
 };
 
 /// Classify a function name into zone kind.
@@ -462,6 +536,12 @@ fn classifyCppFunction(func_name: []const u8) ZoneKind {
     for (CPP_ESCAPE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .unsafe;
+        }
+    }
+
+    for (C_ESCAPE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .ffi;
         }
     }
 
