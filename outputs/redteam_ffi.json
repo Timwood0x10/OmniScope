@@ -1,0 +1,8 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777345312,"summary":{"functions":37,"issues":6,"time_ms":11},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_08_callback_to_freed"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_04_c_alloc_go_free"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_05_ownership_leak"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_22_cgo_pointer_leak"}},
+  {"id":"OMI-005","kind":"command_injection","severity":"critical","confidence":"HIGH","confidence_score":0.95,"cwe_id":78,"message":"Unsafe FFI call to 'execvp' - Command injection vulnerability (confidence: 95.00%)","location":{"function":"FFI_16_fork_fd_leak"}},
+  {"id":"OMI-006","kind":"command_injection","severity":"critical","confidence":"HIGH","confidence_score":0.95,"cwe_id":78,"message":"Unsafe FFI call to 'execvp' - Command injection vulnerability (confidence: 95.00%)","location":{"function":"FFI_18_execvp_injection"}}
+]}

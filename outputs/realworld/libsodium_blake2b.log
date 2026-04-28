@@ -1,0 +1,68 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
+[INFO] Loaded: 21 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_init_param
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_init
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_init_salt_personal
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_init_key
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_update
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_init_key_salt_personal
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_final
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_salt_personal
+[2m[DEBUG][0m ANALYZE [USER]: _sodium_blake2b_pick_best_implementation
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 21
+[32m[INFO][0m   FFI Boundaries: 59
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 59
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    10
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                10
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         9.17      9169.42      9169.42
+detect                                  2         0.09        42.50        75.96
+total                                   1         9.18      9175.21      9175.21
+analysis                                1         8.24      8236.67      8236.67
+[32m[INFO][0m PointerOwnership: 4 ops, 26.67ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 59 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 21
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/libsodium_blake2b.json
+

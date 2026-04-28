@@ -1,0 +1,554 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/blst.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/blst.ll
+[INFO] Loaded: 416 functions
+
+
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMNtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB2_5Waker6notify
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10disconnect
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10unregister
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker8register
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXNvNtNtCsg55jX0GwzBC_3std3sys12thread_local20abort_on_dtor_unwindNtB2_15DtorUnwindGuardNtNtNtCsl8K0bEFm1U0_4core3ops4drop4Drop4drop
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsJ_NtNtCsg55jX0GwzBC_3std4sync4mpscNtB5_9RecvErrorNtNtCsl8K0bEFm1U0_4core3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$$RF$blst..min_sig..SecretKey$u20$as$u20$core..convert..TryFrom$LT$$RF$blst..blst_scalar$GT$$GT$8try_from17heeb9d4e9accf5422E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[31m[ERROR][0m [LOW] FFI RISK: threadpool::ThreadPool -> llvm.threadlocal.address.p0
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig threadlocal - thread-local memory allocation
+[31m[ERROR][0m [LOW] FFI RISK: threadpool::ThreadPool -> llvm.threadlocal.address.p0
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig threadlocal - thread-local memory allocation
+[31m[ERROR][0m [LOW] FFI RISK: threadpool::ThreadPool -> llvm.threadlocal.address.p0
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig threadlocal - thread-local memory allocation
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h0571c2f733a01461E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h1366ead25a86b21eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h2c2a846cd0715032E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17hba82f895fc2e2f47E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std2io5Write9write_all17h9c8f40294c1c1e2cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std2io5Write9write_fmt17h9b482f7d123d64cfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std3sys12thread_local6native4lazy20Storage$LT$T$C$D$GT$16get_or_init_slow17h3d207cbfdb4280b6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std3sys12thread_local6native4lazy7destroy17h99980a8094cf3453E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std3sys4sync8once_box16OnceBox$LT$T$GT$10initialize17hf0a62a2f7ccaf022E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc12sync_channel17h33eda500524d6a22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc12sync_channel17ha3fcf4f27810ea35E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc12sync_channel17hd6ad591227bd7b8dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc12sync_channel17hddff314e94adccd6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h527177a72105cf0fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17hbae878054d2222d4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17hd10dab9b5fcc6fbeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h0c6ffbb98e892664E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h83aa1a54f9917937E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h939fd6f66fd73061E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17ha837b0506c492e91E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17he74b53f1f666e14cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4list16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h334e996ffaf54ae5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$10disconnect17h5be4dffd999409bcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h49518d3459ad3757E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h4e04a6f02eee6267E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h72833e2129e0f688E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h74bdddac4df0791aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17hd394bbf645cf3dbdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h2e989d17f4f4acceE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h3594ea8c3593db6fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h845d556b075170efE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h93ee46704c12a5b6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h9597a064942c74abE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17he9b5de87778d68d0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc5array16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h48a2552fd0bd662dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc5array16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h05253ed283a9dbdcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h18f98772a8f87adaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h1d58d12223fa306eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h26cc409672206631E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h29e7883377a51ec8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h2e00b575db87e908E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h3a22bc23b93a541aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h411017055da38157E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h5c632a3fcc6907cbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h61cc6eba560d90f1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h695fa7fa626bbf0fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h76130bcca013aefeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h89c572bb38122e22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17hbb92b602d5856e63E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17hf0404e72e04c5aaaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std4sync4once4Once9call_once28_$u7b$$u7b$closure$u7d$$u7d$17hb8999cc14dbd237bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h5ce236c3a25abae1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN45_$LT$$RF$T$u20$as$u20$core..fmt..LowerHex$GT$3fmt17hfc3306615e1ceef8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst10p1_affines4from17h89aae95a031b1e76E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst10p2_affines4from17h55819899d3bb3a79E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst11blst_scalar7hash_to17h459b8e84fe59c21eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst11print_bytes17h80137b253f2e33f6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst2mt7da_pool17hba21e31741757303E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst4uniq17h94f07cbdc27eb274E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey13add_aggregate17h64ea8c918ff28638E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey13sub_aggregate17he4136a47a1ea9373E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey13to_public_key17h1676f2fc394676e9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey14add_public_key17hcbd2af96e39e8f67E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey15from_public_key17hd412ee5829b4deefE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey20aggregate_serialized17h63fd2ef81d8feb38E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey25aggregate_with_randomness17hf033246e1869bad3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregatePublicKey9aggregate17h10d7939eb7b6d9ddE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature12to_signature17h42a7c51ef7ff4ec0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature13add_aggregate17h6eec7aba995d03b5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature13add_signature17h19d8ff4847861530E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature14from_signature17h4026e0e08dfcb363E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature14subgroup_check17hd303a08c7d1194b9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature20aggregate_serialized17h2ad74575c3678800E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature25aggregate_with_randomness17h0c59e3e8142a9eecE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature8validate17he14490d04e34930aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk18AggregateSignature9aggregate17h6711f8a59889668aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey10from_bytes17h96edf3baa3972a58E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey10uncompress17he684c1c5f08d475eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey11deserialize17h7820dd5a84893db5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey12key_validate17h430ef00f6460dc72E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey8compress17h5b64b913c91b930bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey8to_bytes17h39a26653d81e7314E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey8validate17h4282ff4c6c544644E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9PublicKey9serialize17hab50eada8326a628E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey10from_bytes17hf31aaafcda9a342fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey10key_gen_v317h1b461bed50288799E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey10key_gen_v517h254e9a8d954cde90E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey11deserialize17h2a4beaa513737ab8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey12key_gen_v4_517h6517c5c65b6c565bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey20derive_child_eip233317haa3f795e7e2c6ebcE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey21derive_master_eip233317h72ac8293e5cb4df3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey4sign17h7cce2cfbdbde77b8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey7key_gen17h85f9eff1b41acfccE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey8sk_to_pk17hef3f6178d69fdcaaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey8to_bytes17h5b356c2b7f6ece41E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9SecretKey9serialize17h93cc0f24aac70501E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature10from_bytes17hdb078d14e1df0bffE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature10uncompress17h2c3495043b619927E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature11deserialize17hb41e1fb562953330E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature12sig_validate17h9adb6a7cdb6656d3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature14subgroup_check17hc7d6fa2dfb0c4e56E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature21fast_aggregate_verify17hd25c932ccd87dcadE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature36fast_aggregate_verify_pre_aggregated17h8ba306ee6fd47d05E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature6verify17h6470afe656f5bb23E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature8compress17h2cf9b9c6c68c40c4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature8to_bytes17h2afad36107ffe4b2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature8validate17h57a34f138fdc1177E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst6min_pk9Signature9serialize17h7b47a5c784ebfa0aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing10aggregated17h5d1e890fc4a6bdedE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing11finalverify17hf0caa9b9df09ceb2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing13raw_aggregate17hfc6fb6fc019cae2dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing15mul_n_aggregate17hf44962b1fdf82a23E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing3new17h60d16035da34edb1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing4init17hb63ef8e72e6353c5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing5merge17hc44c227346706a1eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing6commit17hb1cdc139ed834acbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing7as_fp1217hb5a310775501bd2fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7Pairing9aggregate17h393504ce9010a463E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregatePublicKey13sub_aggregate17h91e358efa182cb2aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregatePublicKey14add_public_key17h53be55a7b323e8f5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregatePublicKey20aggregate_serialized17h52d0cb8cda46b883E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregatePublicKey9aggregate17he8158d00566f3e7eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregateSignature13add_signature17h2eeeb01d66fa443dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregateSignature14subgroup_check17h29760537f5d350afE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregateSignature20aggregate_serialized17hc65c5065e3af78cbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregateSignature8validate17h436dd10dc9ad924cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig18AggregateSignature9aggregate17hfd86ad0569ba6223E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9PublicKey12key_validate17h85cb09da5536e7d9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9PublicKey8validate17h0b28800173cff924E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9SecretKey4sign17h8666c2f10cc17d98E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9SecretKey8sk_to_pk17hf9b3c4ad40c029e3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature12sig_validate17hd6644c0fd8547482E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature14subgroup_check17h07ea81381c2f1fcdE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature21fast_aggregate_verify17h43a8d704343fa87fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature36fast_aggregate_verify_pre_aggregated17h8800d37ecbb1daa9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature6verify17hfbbf024c5ae3b0f2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst7min_sig9Signature8validate17h55442ce1f659628dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp1210to_bendian17h2df8586eabf529ceE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp1211finalverify17h14bec77413124ff2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp1211miller_loop17h172877b99c8e4901E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp128in_group17hb90e09b7c0581e1eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9blst_fp129final_exp17h53e50bff8e9fe3b9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4blst9breakdown17hed802a03b0dc6d71E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h04cb053296aa6021E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h1d29d0a0f3bfdd59E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2127e0bca02ce81aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h28684503d9af2b4dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2944263bfb076a46E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h294b54b2b0c01b52E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2c3d2208c6369d49E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3539883d560b64b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3898f9189521cb5cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3e72c9e4116319f6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h8b6ad28279acb78bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h9640dbfcc7702a04E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h98043bb31d599f82E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hc9c4fc65d61f12daE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17he9549558c8af5ed1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17he9db8885a405fab2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17h371e249e69b22043E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr106drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$17h3836b298d4cf2fa6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17h19b1b631180b05ecE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$blst..min_pk..Signature..verify_multiple_aggregate_signatures..$u7b$$u7b$closure$u7d$$u7d$$GT$17h824b8c8f33a0aaedE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$17h402bce7b9c869c58E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$17ha89e78bea3bcd973E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$17hbeaef2e9339e5f7aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr116drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$17h773e3ebc57fd47d9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr121drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..add..$u7b$$u7b$closure$u7d$$u7d$$GT$17h99566e95033ee53cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr121drop_in_place$LT$$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..add..$u7b$$u7b$closure$u7d$$u7d$$GT$17he153638910978a47E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17h3ee6727be6652c8fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17h7df5fc05ef4335b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc5153088a823e28cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr125drop_in_place$LT$std..sync..poison..PoisonError$LT$std..sync..poison..mutex..MutexGuard$LT$threadpool..ThreadPool$GT$$GT$$GT$17h52eeb6d0b74e9ecaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr126drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..validate..$u7b$$u7b$closure$u7d$$u7d$$GT$17h35aba08b68b6ca1fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr127drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$usize$GT$..recv..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h118d2c5d1136ed14E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr128drop_in_place$LT$std..sync..mpsc..SendError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hdfc41eeae02a57f4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr130drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$usize$GT$$GT$$GT$$GT$17h96312bad8d6f8cc9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr131drop_in_place$LT$std..sync..mpmc..zero..Packet$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd99a20a89f723c2bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr135drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$blst..Pairing$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h1e20771aa5a412ffE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h9c2ec2bdbd58d7c7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17h124112c291fd99d5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h886c3bac3f893e59E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr140drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17hf51b29c0109dc69aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr142drop_in_place$LT$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd33732664d871bdcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr154drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$core..ops..function..FnOnce$LT$$LP$$RP$$GT$$u2b$Output$u20$$u3d$$u20$$LP$$RP$$u2b$core..marker..Send$GT$$GT$17h4c842965cd7f675eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr176drop_in_place$LT$$LT$alloc..vec..drain..Drain$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$std..sync..mpmc..waker..Entry$C$alloc..alloc..Global$GT$$GT$17h99e3a427c885a767E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr181drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h6b271170dbde34e8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr195drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h4b92d29ad704ffb8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr50drop_in_place$LT$std..sync..mpmc..waker..Waker$GT$17h5ff9428018a3cb7fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr59drop_in_place$LT$std..sync..mpsc..Receiver$LT$usize$GT$$GT$17hca8fe4beb661e570E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr59drop_in_place$LT$std..sync..nonpoison..condvar..Condvar$GT$17h6875e1a49382d776E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr61drop_in_place$LT$std..sync..mpsc..SyncSender$LT$usize$GT$$GT$17hc0354ead80fc993fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p1$GT$$GT$17hb3f75d702d295541E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p2$GT$$GT$17h6feb034272074cb1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr68drop_in_place$LT$std..sync..mpsc..SendError$LT$blst..Pairing$GT$$GT$17hce097124bc444877E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_fp12$GT$$GT$17hb49c5acded7f7961E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..Pairing$GT$$GT$17h047a02e81f097061E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p1$GT$$GT$17hd1cc764502569170E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p2$GT$$GT$17h6802bd0e71c06b98E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr71drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_fp12$GT$$GT$17h6effcf7be82938d2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr72drop_in_place$LT$blst..p1_affines..from..$u7b$$u7b$closure$u7d$$u7d$$GT$17h621950a6169c416dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h3bcd61dcf0040b4aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h8db054d81b418b59E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr80drop_in_place$LT$blst..blst_fp12..miller_loop_n..$u7b$$u7b$closure$u7d$$u7d$$GT$17hfadee55d6b62d2b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr80drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h88bf523b206b4d20E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr81drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..io..error..Error$GT$$GT$17hfeb2b0bca891da6dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr82drop_in_place$LT$alloc..vec..drain..Drain$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h50c22c8b57d88af5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr82drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$threadpool..ThreadPool$GT$$GT$17h8526ae658e888546E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr87drop_in_place$LT$std..sync..poison..mutex..MutexGuard$LT$threadpool..ThreadPool$GT$$GT$17h97a48f7e8fff805bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr88drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h1ce4726b0fe1778aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17hdad6439edde60a78E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr91drop_in_place$LT$blst..min_pk..Signature..aggregate_verify..$u7b$$u7b$closure$u7d$$u7d$$GT$17h5f9cbb192c2c89c4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr94drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$17h5a143906fd98d491E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN54_$LT$blst..blst_p1$u20$as$u20$core..cmp..PartialEq$GT$2eq17he9c43b72eaee430eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN54_$LT$blst..blst_p2$u20$as$u20$core..cmp..PartialEq$GT$2eq17heda9f7ff3e264c82E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN54_$LT$blst..blst_scalar$u20$as$u20$zeroize..Zeroize$GT$7zeroize17ha1c4a217c5e2448bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$blst..blst_fp12$u20$as$u20$core..cmp..PartialEq$GT$2eq17hc4a4d117bc05d3bdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN57_$LT$blst..blst_fp12$u20$as$u20$core..ops..arith..Mul$GT$3mul17h182b6b46b543c9d2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN58_$LT$blst..blst_fp12$u20$as$u20$core..default..Default$GT$7default17h13ce3f679bb6f473E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h43bb7c9f79b1515dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h6e2227d8b07284c2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h90bf7f71190cb708E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h2d77905e3cb65eedE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h4a6a36584b7e0c0dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$$u5b$V$u5d$$u20$as$u20$alloc..slice..Concat$LT$T$GT$$GT$6concat17h7953c6acf1315d34E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$blst..blst_p1_affine$u20$as$u20$core..cmp..PartialEq$GT$2eq17h1bbe51c1bde08b86E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$blst..blst_p2_affine$u20$as$u20$core..cmp..PartialEq$GT$2eq17hdfcc391da03f0865E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN63_$LT$blst..blst_fp12$u20$as$u20$core..ops..arith..MulAssign$GT$10mul_assign17hd49d1a7245bb0298E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h3bc04dea56b561a6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h0eb1f9c065a6d8dbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h6bbaadaac16058e4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h90828dfef00f7b79E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h226c9fd344576445E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h5b5975aea0c24833E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17hf190803a806df78fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h1331898961540b6eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h518b3b757b5a5961E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h8bd94b2b635b936dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17hd5399c251f008b31E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17hb98707a29eb5b584E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$std..sync..mpsc..SendError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ae5891846041a6cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$std..sync..poison..PoisonError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h5655e409d4b65d2fE
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 416
+[32m[INFO][0m   FFI Boundaries: 1366
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 1286
+[32m[INFO][0m     - LibC calls: 0
+[31m[ERROR][0m   Dangerous calls: 3
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m ZONE-SKIP: _RNvMNtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB2_5Waker6notify is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10disconnect is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10unregister is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker8register is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXNvNtNtCsg55jX0GwzBC_3std3sys12thread_local20abort_on_dtor_unwindNtB2_15DtorUnwindGuardNtNtNtCsl8K0bEFm1U0_4core3ops4drop4Drop4drop is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsJ_NtNtCsg55jX0GwzBC_3std4sync4mpscNtB5_9RecvErrorNtNtCsl8K0bEFm1U0_4core3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$$RF$blst..min_sig..SecretKey$u20$as$u20$core..convert..TryFrom$LT$$RF$blst..blst_scalar$GT$$GT$8try_from17heeb9d4e9accf5422E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h0571c2f733a01461E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h1366ead25a86b21eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h2c2a846cd0715032E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17hba82f895fc2e2f47E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std2io5Write9write_all17h9c8f40294c1c1e2cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std2io5Write9write_fmt17h9b482f7d123d64cfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std3sys12thread_local6native4lazy20Storage$LT$T$C$D$GT$16get_or_init_slow17h3d207cbfdb4280b6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std3sys12thread_local6native4lazy7destroy17h99980a8094cf3453E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std3sys4sync8once_box16OnceBox$LT$T$GT$10initialize17hf0a62a2f7ccaf022E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc12sync_channel17h33eda500524d6a22E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc12sync_channel17ha3fcf4f27810ea35E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc12sync_channel17hd6ad591227bd7b8dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc12sync_channel17hddff314e94adccd6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h527177a72105cf0fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17hbae878054d2222d4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17hd10dab9b5fcc6fbeE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h0c6ffbb98e892664E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h83aa1a54f9917937E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h939fd6f66fd73061E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17ha837b0506c492e91E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17he74b53f1f666e14cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4list16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h334e996ffaf54ae5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$10disconnect17h5be4dffd999409bcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h49518d3459ad3757E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h4e04a6f02eee6267E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h72833e2129e0f688E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h74bdddac4df0791aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17hd394bbf645cf3dbdE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h2e989d17f4f4acceE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h3594ea8c3593db6fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h845d556b075170efE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h93ee46704c12a5b6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h9597a064942c74abE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17he9b5de87778d68d0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc5array16Channel$LT$T$GT$4recv28_$u7b$$u7b$closure$u7d$$u7d$17h48a2552fd0bd662dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc5array16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h05253ed283a9dbdcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h18f98772a8f87adaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h1d58d12223fa306eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h26cc409672206631E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h29e7883377a51ec8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h2e00b575db87e908E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h3a22bc23b93a541aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h411017055da38157E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h5c632a3fcc6907cbE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h61cc6eba560d90f1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h695fa7fa626bbf0fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h76130bcca013aefeE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17h89c572bb38122e22E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17hbb92b602d5856e63E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4mpmc7context7Context4with28_$u7b$$u7b$closure$u7d$$u7d$17hf0404e72e04c5aaaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std4sync4once4Once9call_once28_$u7b$$u7b$closure$u7d$$u7d$17hb8999cc14dbd237bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h5ce236c3a25abae1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN45_$LT$$RF$T$u20$as$u20$core..fmt..LowerHex$GT$3fmt17hfc3306615e1ceef8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h04cb053296aa6021E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h1d29d0a0f3bfdd59E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2127e0bca02ce81aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h28684503d9af2b4dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2944263bfb076a46E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h294b54b2b0c01b52E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h2c3d2208c6369d49E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3539883d560b64b9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3898f9189521cb5cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h3e72c9e4116319f6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h8b6ad28279acb78bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h9640dbfcc7702a04E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h98043bb31d599f82E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hc9c4fc65d61f12daE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17he9549558c8af5ed1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17he9db8885a405fab2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17h371e249e69b22043E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr106drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$17h3836b298d4cf2fa6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17h19b1b631180b05ecE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$blst..min_pk..Signature..verify_multiple_aggregate_signatures..$u7b$$u7b$closure$u7d$$u7d$$GT$17h824b8c8f33a0aaedE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$17h402bce7b9c869c58E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$17ha89e78bea3bcd973E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$17hbeaef2e9339e5f7aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr116drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$17h773e3ebc57fd47d9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr121drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..add..$u7b$$u7b$closure$u7d$$u7d$$GT$17h99566e95033ee53cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr121drop_in_place$LT$$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..add..$u7b$$u7b$closure$u7d$$u7d$$GT$17he153638910978a47E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17h3ee6727be6652c8fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17h7df5fc05ef4335b9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr122drop_in_place$LT$$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..mult..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc5153088a823e28cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr125drop_in_place$LT$std..sync..poison..PoisonError$LT$std..sync..poison..mutex..MutexGuard$LT$threadpool..ThreadPool$GT$$GT$$GT$17h52eeb6d0b74e9ecaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr126drop_in_place$LT$$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$..validate..$u7b$$u7b$closure$u7d$$u7d$$GT$17h35aba08b68b6ca1fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr127drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$usize$GT$..recv..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h118d2c5d1136ed14E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr128drop_in_place$LT$std..sync..mpsc..SendError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hdfc41eeae02a57f4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr130drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$usize$GT$$GT$$GT$$GT$17h96312bad8d6f8cc9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr131drop_in_place$LT$std..sync..mpmc..zero..Packet$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd99a20a89f723c2bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr135drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$blst..Pairing$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h1e20771aa5a412ffE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h9c2ec2bdbd58d7c7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17h124112c291fd99d5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h886c3bac3f893e59E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr140drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17hf51b29c0109dc69aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr142drop_in_place$LT$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd33732664d871bdcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr154drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$core..ops..function..FnOnce$LT$$LP$$RP$$GT$$u2b$Output$u20$$u3d$$u20$$LP$$RP$$u2b$core..marker..Send$GT$$GT$17h4c842965cd7f675eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr176drop_in_place$LT$$LT$alloc..vec..drain..Drain$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$std..sync..mpmc..waker..Entry$C$alloc..alloc..Global$GT$$GT$17h99e3a427c885a767E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr181drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h6b271170dbde34e8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr195drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h4b92d29ad704ffb8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr50drop_in_place$LT$std..sync..mpmc..waker..Waker$GT$17h5ff9428018a3cb7fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr59drop_in_place$LT$std..sync..mpsc..Receiver$LT$usize$GT$$GT$17hca8fe4beb661e570E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr59drop_in_place$LT$std..sync..nonpoison..condvar..Condvar$GT$17h6875e1a49382d776E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr61drop_in_place$LT$std..sync..mpsc..SyncSender$LT$usize$GT$$GT$17hc0354ead80fc993fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p1$GT$$GT$17hb3f75d702d295541E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p2$GT$$GT$17h6feb034272074cb1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr68drop_in_place$LT$std..sync..mpsc..SendError$LT$blst..Pairing$GT$$GT$17hce097124bc444877E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_fp12$GT$$GT$17hb49c5acded7f7961E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..Pairing$GT$$GT$17h047a02e81f097061E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p1$GT$$GT$17hd1cc764502569170E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p2$GT$$GT$17h6802bd0e71c06b98E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr71drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_fp12$GT$$GT$17h6effcf7be82938d2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr72drop_in_place$LT$blst..p1_affines..from..$u7b$$u7b$closure$u7d$$u7d$$GT$17h621950a6169c416dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h3bcd61dcf0040b4aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h8db054d81b418b59E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr80drop_in_place$LT$blst..blst_fp12..miller_loop_n..$u7b$$u7b$closure$u7d$$u7d$$GT$17hfadee55d6b62d2b9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr80drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h88bf523b206b4d20E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr81drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..io..error..Error$GT$$GT$17hfeb2b0bca891da6dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr82drop_in_place$LT$alloc..vec..drain..Drain$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h50c22c8b57d88af5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr82drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$threadpool..ThreadPool$GT$$GT$17h8526ae658e888546E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr87drop_in_place$LT$std..sync..poison..mutex..MutexGuard$LT$threadpool..ThreadPool$GT$$GT$17h97a48f7e8fff805bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr88drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h1ce4726b0fe1778aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17hdad6439edde60a78E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr91drop_in_place$LT$blst..min_pk..Signature..aggregate_verify..$u7b$$u7b$closure$u7d$$u7d$$GT$17h5f9cbb192c2c89c4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr94drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$17h5a143906fd98d491E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN54_$LT$blst..blst_p1$u20$as$u20$core..cmp..PartialEq$GT$2eq17he9c43b72eaee430eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN54_$LT$blst..blst_p2$u20$as$u20$core..cmp..PartialEq$GT$2eq17heda9f7ff3e264c82E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN54_$LT$blst..blst_scalar$u20$as$u20$zeroize..Zeroize$GT$7zeroize17ha1c4a217c5e2448bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$blst..blst_fp12$u20$as$u20$core..cmp..PartialEq$GT$2eq17hc4a4d117bc05d3bdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN57_$LT$blst..blst_fp12$u20$as$u20$core..ops..arith..Mul$GT$3mul17h182b6b46b543c9d2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN58_$LT$blst..blst_fp12$u20$as$u20$core..default..Default$GT$7default17h13ce3f679bb6f473E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h43bb7c9f79b1515dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h6e2227d8b07284c2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h90bf7f71190cb708E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h2d77905e3cb65eedE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h4a6a36584b7e0c0dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$$u5b$V$u5d$$u20$as$u20$alloc..slice..Concat$LT$T$GT$$GT$6concat17h7953c6acf1315d34E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$blst..blst_p1_affine$u20$as$u20$core..cmp..PartialEq$GT$2eq17h1bbe51c1bde08b86E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$blst..blst_p2_affine$u20$as$u20$core..cmp..PartialEq$GT$2eq17hdfcc391da03f0865E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN63_$LT$blst..blst_fp12$u20$as$u20$core..ops..arith..MulAssign$GT$10mul_assign17hd49d1a7245bb0298E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h3bc04dea56b561a6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h0eb1f9c065a6d8dbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h6bbaadaac16058e4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h90828dfef00f7b79E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h226c9fd344576445E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h5b5975aea0c24833E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17hf190803a806df78fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h1331898961540b6eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..PublicKey$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17h518b3b757b5a5961E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$3add17h8bd94b2b635b936dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17hd5399c251f008b31E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$$u5b$blst..min_pk..Signature$u5d$$u20$as$u20$blst..MultiPoint$GT$8validate17hb98707a29eb5b584E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$std..sync..mpsc..SendError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ae5891846041a6cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$std..sync..poison..PoisonError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h5655e409d4b65d2fE is safe zone — language guarantees apply
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 0 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1429 used after free in _ZN4blst2mt7da_pool17hba21e31741757303E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 0 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3425 used after free in _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 909 used after free in _ZN4blst10p1_affines4from17h89aae95a031b1e76E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3425 used after free in _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3087 used after free in _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 909 used after free in _ZN4blst10p1_affines4from17h89aae95a031b1e76E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 950 used after free in _ZN4blst10p1_affines4from17h89aae95a031b1e76E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4988 used after free in _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 342 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5266 used after free in _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3142 used after free in _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5266 used after free in _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5323 used after free in _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4935 used after free in _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1122 used after free in _ZN4blst10p2_affines4from17h55819899d3bb3a79E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 67 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 76 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1084 used after free in _ZN4blst10p2_affines4from17h55819899d3bb3a79E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 532 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 71 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3482 used after free in _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 78 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3142 used after free in _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5323 used after free in _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5586 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 90 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5581 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 91 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 76 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1084 used after free in _ZN4blst10p2_affines4from17h55819899d3bb3a79E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3087 used after free in _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3422 used after free in _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 342 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5590 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3482 used after free in _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5263 used after free in _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4935 used after free in _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5590 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4988 used after free in _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1415 used after free in _ZN4blst2mt7da_pool17hba21e31741757303E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 0 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3084 used after free in _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 0 used after free in _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 342 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4932 used after free in _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 342 used after free in _ZN4blst9blst_fp1213miller_loop_n17hc934c283107919cbE
+[32m[INFO][0m PointerOwnership: Found 48 use-after-free issues (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 56 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    267
+  Safe zone (skipped):         39 (64.0%)
+  Runtime internal (skipped):  132
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                96
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                48[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       280.27    280266.75    280266.75
+detect                                  2         7.78      3890.40      3912.42
+total                                   1       280.27    280273.83    280273.83
+analysis                                1       274.69    274686.71    274686.71
+[32m[INFO][0m PointerOwnership: 4 ops, 843.01ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 1366 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 416
+
+[INFO] Facts generated: 56
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/blst.json
+

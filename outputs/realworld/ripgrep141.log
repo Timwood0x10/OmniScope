@@ -1,0 +1,101 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/ripgrep141.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/ripgrep141.ll
+[INFO] Loaded: 75 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer10LineBuffer11free_buffer17h5d78ca5221d1abf7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer10LineBuffer15ensure_capacity17h67ace1699c41f381E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer10LineBuffer4roll17h6e76b34b7606bafcE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer10LineBuffer6buffer17h8a9d620d58aaee1dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer10LineBuffer7consume17hab7f10864ed7849dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer11alloc_error17h5213d6f9315362a1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher11line_buffer13replace_bytes17h9fdad6c707ecf82dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher5lines5count17h21bbc9952d6b97ddE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN13grep_searcher5lines8LineStep4next17hce9b976e81098b91E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher5lines9preceding17h30f0271277c8bd36E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher15SearcherBuilder5build17h2b0b201923db861dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher6Config11max_context17h0c14d0cc1f001a59E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher8Encoding3new17hfc31225f8824cd7dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher8Searcher20set_binary_detection17h5e54a8c4a95663d8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher8Searcher23slice_needs_transcoding17hb16c3919e8eccf31E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN13grep_searcher8searcher8Searcher3new17h2cdd8cd60037ff32E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std2io5error5Error3new17h22dcb2f70f966c09E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb39bb31ffe2a63b3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17heeade63ea7ed52b6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr238drop_in_place$LT$alloc..boxed..convert..$LT$impl$u20$core..convert..From$LT$alloc..string..String$GT$$u20$for$u20$alloc..boxed..Box$LT$dyn$u20$core..error..Error$u2b$core..marker..Sync$u2b$core..marker..Send$GT$$GT$..from..StringError$GT$17h7b48e86fa678e9c6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error11description17h47cb12058b02fd4aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17hdcc7b17cbe78765cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7provide17h26b628842b654268E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hf1c37c47dd4c7b65E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h175a3ba0918c95d8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h2d9412eecfcac34bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN65_$LT$grep_matcher..LineTerminator$u20$as$u20$core..fmt..Debug$GT$3fmt17h5b7d3a28a23037e5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$alloc..borrow..Cow$LT$B$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h83d2a3328a163825E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$grep_searcher..searcher..ConfigError$u20$as$u20$core..fmt..Display$GT$3fmt17h9eb04e087fd32b80E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN89_$LT$grep_searcher..lines..LineIter$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h70070ea3e365732bE
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 75
+[32m[INFO][0m   FFI Boundaries: 98
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 90
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std2io5error5Error3new17h22dcb2f70f966c09E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb39bb31ffe2a63b3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17heeade63ea7ed52b6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr238drop_in_place$LT$alloc..boxed..convert..$LT$impl$u20$core..convert..From$LT$alloc..string..String$GT$$u20$for$u20$alloc..boxed..Box$LT$dyn$u20$core..error..Error$u2b$core..marker..Sync$u2b$core..marker..Send$GT$$GT$..from..StringError$GT$17h7b48e86fa678e9c6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error11description17h47cb12058b02fd4aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17hdcc7b17cbe78765cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7provide17h26b628842b654268E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hf1c37c47dd4c7b65E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h175a3ba0918c95d8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h2d9412eecfcac34bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN65_$LT$grep_matcher..LineTerminator$u20$as$u20$core..fmt..Debug$GT$3fmt17h5b7d3a28a23037e5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$alloc..borrow..Cow$LT$B$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h83d2a3328a163825E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$grep_searcher..searcher..ConfigError$u20$as$u20$core..fmt..Display$GT$3fmt17h9eb04e087fd32b80E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN89_$LT$grep_searcher..lines..LineIter$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h70070ea3e365732bE is safe zone — language guarantees apply
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    30
+  Safe zone (skipped):         6 (46.7%)
+  Runtime internal (skipped):  8
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                16
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1        23.72     23722.04     23722.04
+detect                                  2         0.07        36.19        62.58
+total                                   1        23.74     23735.46     23735.46
+analysis                                1        21.62     21620.75     21620.75
+[32m[INFO][0m PointerOwnership: 4 ops, 69.15ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 98 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 75
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/ripgrep141.json
+

@@ -1,0 +1,4 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777343279,"summary":{"functions":1124,"issues":2,"time_ms":918},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4absl13cord_internal11CordRepFlat7NewImplILm4096EJEEEPS1_mDpT0_"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4absl13cord_internal11CordRepFlat7NewImplILm262144EJEEEPS1_mDpT0_"}}
+]}

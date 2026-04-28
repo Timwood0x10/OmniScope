@@ -1,0 +1,4 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777343279,"summary":{"functions":877,"issues":2,"time_ms":374},"issues":[
+  {"id":"OMI-001","kind":"command_injection","severity":"critical","confidence":"HIGH","confidence_score":0.95,"cwe_id":78,"message":"Unsafe FFI call to 'execvp' - Command injection vulnerability (confidence: 95.00%)","location":{"function":"uv__process_child_init"}},
+  {"id":"OMI-002","kind":"ffi_unsafe_call","severity":"high","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":668,"message":"Unsafe FFI call to 'posix_spawn' - General FFI safety issue (confidence: 85.00%)","location":{"function":"uv__spawn_resolve_and_spawn"}}
+]}

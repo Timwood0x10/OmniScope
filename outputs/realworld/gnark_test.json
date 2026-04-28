@@ -1,0 +1,4 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777343290,"summary":{"functions":916,"issues":2,"time_ms":1102},"issues":[
+  {"id":"OMI-001","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"realloc"}},
+  {"id":"OMI-002","kind":"null_dereference","severity":"critical","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":476,"message":"Potential null dereference: pointer used without null check","location":{"function":"calloc"}}
+]}

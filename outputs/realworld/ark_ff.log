@@ -1,0 +1,77 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/ark_ff.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/ark_ff.ll
+[INFO] Loaded: 36 functions
+
+
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hfa9f949b2c7017f8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h855eb00d3b28eec9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff10biginteger10arithmetic16find_relaxed_naf17h84ddcc088a1711edE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff10biginteger10arithmetic8find_naf17hb5df30b7e88862beE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields13field_hashers8expander3DST10copy_bytes17h2aa6e6e874a78b33E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields13field_hashers8expander3DST5slice17hfe198f086ae7fd2eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields4sqrt14LegendreSymbol5is_qr17h5fe9e0c2d6610697E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields4sqrt14LegendreSymbol6is_qnr17h58a2e000841edb22E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields4sqrt14LegendreSymbol7is_zero17h5484778ce4720405E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields5utils17k_adicity_big_int17h6a0086abe5b008abE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields5utils9k_adicity17h328c89b837868a54E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields6models16fp12_2over3over234characteristic_square_mod_6_is_one17hdb2819c10acc2405E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields6models8small_fp16small_fp_backend15const_to_bigint17hb024cf6604231c29E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields6models8small_fp16small_fp_backend19const_num_bits_u12817h8c1792a24c968431E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6ark_ff6fields6models8small_fp16small_fp_backend23primitive_type_bit_size17h859fb51e2bddbe22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$ark_ff..fields..sqrt..LegendreSymbol$u20$as$u20$core..cmp..Eq$GT$20assert_fields_are_eq17h2dcee772bc23442aE
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 36
+[32m[INFO][0m   FFI Boundaries: 56
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 41
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hfa9f949b2c7017f8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h855eb00d3b28eec9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$ark_ff..fields..sqrt..LegendreSymbol$u20$as$u20$core..cmp..Eq$GT$20assert_fields_are_eq17h2dcee772bc23442aE is safe zone — language guarantees apply
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    16
+  Safe zone (skipped):         1 (18.8%)
+  Runtime internal (skipped):  2
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                13
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1        10.62     10616.79     10616.79
+detect                                  2         0.09        43.17        78.04
+total                                   1        10.63     10626.08     10626.08
+analysis                                1         9.81      9809.83      9809.83
+[32m[INFO][0m PointerOwnership: 4 ops, 31.14ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 56 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 36
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/ark_ff.json
+

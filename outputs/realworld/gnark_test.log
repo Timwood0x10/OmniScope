@@ -1,0 +1,1173 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/gnark_test.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/gnark_test.ll
+[INFO] Loaded: 916 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: unsafe.init
+[2m[DEBUG][0m ANALYZE [USER]: (internal/gclayout.Layout).AsPtr
+[2m[DEBUG][0m ANALYZE [USER]: internal/gclayout.init
+[2m[DEBUG][0m ANALYZE [USER]: internal/itoa.Itoa
+[2m[DEBUG][0m ANALYZE [USER]: internal/itoa.Uitoa
+[2m[DEBUG][0m ANALYZE [USER]: internal/itoa.Uitox
+[2m[DEBUG][0m ANALYZE [USER]: internal/itoa.init
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.LeadingZeros
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.LeadingZeros8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.LeadingZeros16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.LeadingZeros32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.LeadingZeros64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.TrailingZeros
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.TrailingZeros8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.TrailingZeros16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.TrailingZeros32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.TrailingZeros64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.OnesCount
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.OnesCount8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.OnesCount16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.OnesCount32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.OnesCount64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.RotateLeft
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.RotateLeft8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.RotateLeft16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.RotateLeft32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.RotateLeft64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Reverse
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Reverse8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Reverse16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Reverse32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Reverse64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.ReverseBytes
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.ReverseBytes16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.ReverseBytes32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.ReverseBytes64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Len
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Len8
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Len16
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Len32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Len64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Add
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Add32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Add64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Sub
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Sub32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Sub64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Mul
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Mul32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Mul64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Div
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Div32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Div64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Rem
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Rem32
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.Rem64
+[2m[DEBUG][0m ANALYZE [USER]: math/bits.init
+[2m[DEBUG][0m ANALYZE [USER]: math.Abs
+[2m[DEBUG][0m ANALYZE [USER]: math.Float64bits
+[2m[DEBUG][0m ANALYZE [USER]: math.Float64frombits
+[2m[DEBUG][0m ANALYZE [USER]: math.Acosh
+[2m[DEBUG][0m ANALYZE [USER]: math.archAcosh
+[2m[DEBUG][0m ANALYZE [USER]: math.acosh
+[2m[DEBUG][0m ANALYZE [USER]: math.NaN
+[2m[DEBUG][0m ANALYZE [USER]: math.Log
+[2m[DEBUG][0m ANALYZE [USER]: math.Sqrt
+[2m[DEBUG][0m ANALYZE [USER]: math.Log1p
+[2m[DEBUG][0m ANALYZE [USER]: math.IsNaN
+[2m[DEBUG][0m ANALYZE [USER]: math.archLog1p
+[2m[DEBUG][0m ANALYZE [USER]: math.log1p
+[2m[DEBUG][0m ANALYZE [USER]: math.Inf
+[2m[DEBUG][0m ANALYZE [USER]: math.IsInf
+[2m[DEBUG][0m ANALYZE [USER]: math.Asin
+[2m[DEBUG][0m ANALYZE [USER]: math.archAsin
+[2m[DEBUG][0m ANALYZE [USER]: math.asin
+[2m[DEBUG][0m ANALYZE [USER]: math.satan
+[2m[DEBUG][0m ANALYZE [USER]: math.xatan
+[2m[DEBUG][0m ANALYZE [USER]: math.Acos
+[2m[DEBUG][0m ANALYZE [USER]: math.archAcos
+[2m[DEBUG][0m ANALYZE [USER]: math.acos
+[2m[DEBUG][0m ANALYZE [USER]: math.Asinh
+[2m[DEBUG][0m ANALYZE [USER]: math.archAsinh
+[2m[DEBUG][0m ANALYZE [USER]: math.asinh
+[2m[DEBUG][0m ANALYZE [USER]: math.Atan
+[2m[DEBUG][0m ANALYZE [USER]: math.archAtan
+[2m[DEBUG][0m ANALYZE [USER]: math.atan
+[2m[DEBUG][0m ANALYZE [USER]: math.Atan2
+[2m[DEBUG][0m ANALYZE [USER]: math.archAtan2
+[2m[DEBUG][0m ANALYZE [USER]: math.atan2
+[2m[DEBUG][0m ANALYZE [USER]: math.Signbit
+[2m[DEBUG][0m ANALYZE [USER]: math.Copysign
+[2m[DEBUG][0m ANALYZE [USER]: math.Atanh
+[2m[DEBUG][0m ANALYZE [USER]: math.archAtanh
+[2m[DEBUG][0m ANALYZE [USER]: math.atanh
+[2m[DEBUG][0m ANALYZE [USER]: math.normalize
+[2m[DEBUG][0m ANALYZE [USER]: math.Cbrt
+[2m[DEBUG][0m ANALYZE [USER]: math.archCbrt
+[2m[DEBUG][0m ANALYZE [USER]: math.cbrt
+[2m[DEBUG][0m ANALYZE [USER]: math.Dim
+[2m[DEBUG][0m ANALYZE [USER]: math.Max
+[2m[DEBUG][0m ANALYZE [USER]: math.archMax
+[2m[DEBUG][0m ANALYZE [USER]: math.max
+[2m[DEBUG][0m ANALYZE [USER]: math.Min
+[2m[DEBUG][0m ANALYZE [USER]: math.archMin
+[2m[DEBUG][0m ANALYZE [USER]: math.min
+[2m[DEBUG][0m ANALYZE [USER]: math.Erf
+[2m[DEBUG][0m ANALYZE [USER]: math.archErf
+[2m[DEBUG][0m ANALYZE [USER]: math.erf
+[2m[DEBUG][0m ANALYZE [USER]: math.Exp
+[2m[DEBUG][0m ANALYZE [USER]: math.Erfc
+[2m[DEBUG][0m ANALYZE [USER]: math.archErfc
+[2m[DEBUG][0m ANALYZE [USER]: math.erfc
+[2m[DEBUG][0m ANALYZE [USER]: math.Erfinv
+[2m[DEBUG][0m ANALYZE [USER]: math.Erfcinv
+[2m[DEBUG][0m ANALYZE [USER]: math.exp
+[2m[DEBUG][0m ANALYZE [USER]: math.expmulti
+[2m[DEBUG][0m ANALYZE [USER]: math.Ldexp
+[2m[DEBUG][0m ANALYZE [USER]: math.archLdexp
+[2m[DEBUG][0m ANALYZE [USER]: math.ldexp
+[2m[DEBUG][0m ANALYZE [USER]: math.Exp2
+[2m[DEBUG][0m ANALYZE [USER]: math.exp2
+[2m[DEBUG][0m ANALYZE [USER]: math.archExp2
+[2m[DEBUG][0m ANALYZE [USER]: math.archExp
+[2m[DEBUG][0m ANALYZE [USER]: math.Expm1
+[2m[DEBUG][0m ANALYZE [USER]: math.archExpm1
+[2m[DEBUG][0m ANALYZE [USER]: math.expm1
+[2m[DEBUG][0m ANALYZE [USER]: math.Floor
+[2m[DEBUG][0m ANALYZE [USER]: math.floor
+[2m[DEBUG][0m ANALYZE [USER]: math.Modf
+[2m[DEBUG][0m ANALYZE [USER]: math.Trunc
+[2m[DEBUG][0m ANALYZE [USER]: math.Ceil
+[2m[DEBUG][0m ANALYZE [USER]: math.ceil
+[2m[DEBUG][0m ANALYZE [USER]: math.trunc
+[2m[DEBUG][0m ANALYZE [USER]: math.Round
+[2m[DEBUG][0m ANALYZE [USER]: math.RoundToEven
+[2m[DEBUG][0m ANALYZE [USER]: math.zero
+[2m[DEBUG][0m ANALYZE [USER]: math.nonzero
+[2m[DEBUG][0m ANALYZE [USER]: math.shl
+[2m[DEBUG][0m ANALYZE [USER]: math.shr
+[2m[DEBUG][0m ANALYZE [USER]: math.shrcompress
+[2m[DEBUG][0m ANALYZE [USER]: math.lz
+[2m[DEBUG][0m ANALYZE [USER]: math.split
+[2m[DEBUG][0m ANALYZE [USER]: math.FMA
+[2m[DEBUG][0m ANALYZE [USER]: math.Frexp
+[2m[DEBUG][0m ANALYZE [USER]: math.archFrexp
+[2m[DEBUG][0m ANALYZE [USER]: math.frexp
+[2m[DEBUG][0m ANALYZE [USER]: math.stirling
+[2m[DEBUG][0m ANALYZE [USER]: math.Pow
+[2m[DEBUG][0m ANALYZE [USER]: math.archPow
+[2m[DEBUG][0m ANALYZE [USER]: math.pow
+[2m[DEBUG][0m ANALYZE [USER]: math.isOddInt
+[2m[DEBUG][0m ANALYZE [USER]: math.Gamma
+[2m[DEBUG][0m ANALYZE [USER]: math.isNegInt
+[2m[DEBUG][0m ANALYZE [USER]: math.Sin
+[2m[DEBUG][0m ANALYZE [USER]: math.archSin
+[2m[DEBUG][0m ANALYZE [USER]: math.sin
+[2m[DEBUG][0m ANALYZE [USER]: math.trigReduce
+[2m[DEBUG][0m ANALYZE [USER]: math.Hypot
+[2m[DEBUG][0m ANALYZE [USER]: math.archHypot
+[2m[DEBUG][0m ANALYZE [USER]: math.hypot
+[2m[DEBUG][0m ANALYZE [USER]: math.J0
+[2m[DEBUG][0m ANALYZE [USER]: math.Sincos
+[2m[DEBUG][0m ANALYZE [USER]: math.Cos
+[2m[DEBUG][0m ANALYZE [USER]: math.pzero
+[2m[DEBUG][0m ANALYZE [USER]: math.qzero
+[2m[DEBUG][0m ANALYZE [USER]: math.archCos
+[2m[DEBUG][0m ANALYZE [USER]: math.cos
+[2m[DEBUG][0m ANALYZE [USER]: math.Y0
+[2m[DEBUG][0m ANALYZE [USER]: math.J1
+[2m[DEBUG][0m ANALYZE [USER]: math.pone
+[2m[DEBUG][0m ANALYZE [USER]: math.qone
+[2m[DEBUG][0m ANALYZE [USER]: math.Y1
+[2m[DEBUG][0m ANALYZE [USER]: math.Jn
+[2m[DEBUG][0m ANALYZE [USER]: math.Yn
+[2m[DEBUG][0m ANALYZE [USER]: math.Lgamma
+[2m[DEBUG][0m ANALYZE [USER]: math.sinPi
+[2m[DEBUG][0m ANALYZE [USER]: math.Mod
+[2m[DEBUG][0m ANALYZE [USER]: math.archMod
+[2m[DEBUG][0m ANALYZE [USER]: math.mod
+[2m[DEBUG][0m ANALYZE [USER]: math.log
+[2m[DEBUG][0m ANALYZE [USER]: math.Log10
+[2m[DEBUG][0m ANALYZE [USER]: math.archLog10
+[2m[DEBUG][0m ANALYZE [USER]: math.log10
+[2m[DEBUG][0m ANALYZE [USER]: math.Log2
+[2m[DEBUG][0m ANALYZE [USER]: math.archLog2
+[2m[DEBUG][0m ANALYZE [USER]: math.log2
+[2m[DEBUG][0m ANALYZE [USER]: math.archLog
+[2m[DEBUG][0m ANALYZE [USER]: math.Logb
+[2m[DEBUG][0m ANALYZE [USER]: math.ilogb
+[2m[DEBUG][0m ANALYZE [USER]: math.Ilogb
+[2m[DEBUG][0m ANALYZE [USER]: math.Nextafter32
+[2m[DEBUG][0m ANALYZE [USER]: math.Float32frombits
+[2m[DEBUG][0m ANALYZE [USER]: math.Float32bits
+[2m[DEBUG][0m ANALYZE [USER]: math.Nextafter
+[2m[DEBUG][0m ANALYZE [USER]: math.Pow10
+[2m[DEBUG][0m ANALYZE [USER]: math.Remainder
+[2m[DEBUG][0m ANALYZE [USER]: math.archRemainder
+[2m[DEBUG][0m ANALYZE [USER]: math.remainder
+[2m[DEBUG][0m ANALYZE [USER]: math.Sinh
+[2m[DEBUG][0m ANALYZE [USER]: math.archSinh
+[2m[DEBUG][0m ANALYZE [USER]: math.sinh
+[2m[DEBUG][0m ANALYZE [USER]: math.Cosh
+[2m[DEBUG][0m ANALYZE [USER]: math.archCosh
+[2m[DEBUG][0m ANALYZE [USER]: math.cosh
+[2m[DEBUG][0m ANALYZE [USER]: math.sqrt
+[2m[DEBUG][0m ANALYZE [USER]: math.archTan
+[2m[DEBUG][0m ANALYZE [USER]: math.archTanh
+[2m[DEBUG][0m ANALYZE [USER]: math.Tan
+[2m[DEBUG][0m ANALYZE [USER]: math.tan
+[2m[DEBUG][0m ANALYZE [USER]: math.Tanh
+[2m[DEBUG][0m ANALYZE [USER]: math.tanh
+[2m[DEBUG][0m ANALYZE [USER]: math.init
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.FullRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.FullRuneInString
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.DecodeRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.decodeRuneSlow
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.DecodeRuneInString
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.decodeRuneInStringSlow
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.DecodeLastRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.RuneStart
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.DecodeLastRuneInString
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.RuneLen
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.EncodeRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.encodeRuneNonASCII
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.AppendRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.appendRuneNonASCII
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.RuneCount
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.RuneCountInString
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.Valid
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.word[[]byte]
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.ValidString
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.word[string]
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.ValidRune
+[2m[DEBUG][0m ANALYZE [USER]: unicode/utf8.init
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.init
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.TypeOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.init#1
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowComplex$invoke
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowFloat$invoke
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowInt$invoke
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowUint$invoke
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowUint
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Kind
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Size
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).elem
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Len
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).underlying
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).isNamed
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).ptrtag
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.TypeError).Error
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowInt
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowFloat
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.overflowFloat32
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.RawType).OverflowComplex
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Align
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).AssignableTo
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Bits
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).ChanDir
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Comparable
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Elem
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Field
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).FieldAlign
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).FieldByIndex
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).FieldByName
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).FieldByNameFunc
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Implements
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Key
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).Name
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).NumField
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).NumMethod
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).OverflowComplex
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).OverflowFloat
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).OverflowInt
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).OverflowUint
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).PkgPath
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).String
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).gcLayout
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).isBinary
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).key
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).name
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).rawField
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).rawFieldByNameFunc
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.uvarint32
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.readStringZ
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.rawStructFieldFromPointer
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Kind).String
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.quote
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.appendEscapedRune
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.isPrint
+[2m[DEBUG][0m ANALYZE [USER]: runtime.typeImplementsMethodSet
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.RawType).FieldByName$1
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.deepValueEqual
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).IsValid
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.deepValueEqual$1
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).pointer
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Kind
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Len
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Index
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).IsNil
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).UnsafePointer
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Elem
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).NumField
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Field
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).MapKeys
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).MapIndex
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.valueInterfaceUnsafe
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).isIndirect
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.New
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Interface
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).isExported
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.pointerTo
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.Kind).String
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Kind).String$invoke
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.ValueError).Error
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.ValueOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.loadValue
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.maskAndShift
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.valueFlags).ro
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.DeepEqual
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.storeValue
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.badSyntax).Error
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.unhex
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.unquoteChar
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.badSyntax).Error
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.badSyntax).Error$invoke
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.unquote
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.contains
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.indexByteString
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Swapper
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Swapper$1
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Swapper$2
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.PtrTo
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.PointerTo
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.StructField).IsExported
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.StructTag).Get
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.StructTag).Lookup
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.align
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.SliceOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.ArrayOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.StructOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.MapOf
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.FuncOf
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Addr
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanAddr
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Bool
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Bytes
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).checkAddressable
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Call
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CallSlice
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanComplex
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanConvert
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.convertOp
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtInt
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtIntFloat
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtIntString
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtUint
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtUintFloat
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtUintString
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtFloatInt
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtFloatUint
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtFloat
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Type
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtBytesString
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtRunesString
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtStringBytes
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.cvtStringRunes
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Float32
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.makeFloat32
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Float
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.makeFloat
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.makeInt
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Uint
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Int
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanFloat
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanInt
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanInterface
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).isRO
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanSet
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).CanUint
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Cap
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Clear
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Comparable
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Complex
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Convert
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Equal
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).String
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Pointer
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).FieldByIndex
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).FieldByIndexErr
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).FieldByName
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).FieldByNameFunc
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Grow
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.extendSlice
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).IsZero
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).MapRange
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.MapIter).Reset
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Method
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).MethodByName
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).NumMethod
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).OverflowFloat
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).OverflowInt
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).OverflowUint
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).RawType
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Recv
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Set
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).checkRO
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetBool
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetBytes
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetCap
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetComplex
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetFloat
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetInt
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetIterKey
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.MapIter).Key
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetIterValue
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.MapIter).Value
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetLen
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetMapIndex
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetString
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetUint
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).SetZero
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Slice
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.buflen
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).Slice3
+[2m[DEBUG][0m ANALYZE [USER]: (internal/reflectlite.Value).UnsafeAddr
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Indirect
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.MapIter).Next
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.MakeSlice
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Zero
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Copy
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.Append
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.AppendSlice
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.MakeMapWithSize
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.MakeMap
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.NewAt
+[2m[DEBUG][0m ANALYZE [USER]: internal/reflectlite.VisibleFields
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/reflectlite.visibleFieldsWalker).walk
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/interrupt.Checkpoint).Jump
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/interrupt.Checkpoint).Saved
+[2m[DEBUG][0m ANALYZE [USER]: runtime/interrupt.Disable
+[2m[DEBUG][0m ANALYZE [USER]: runtime/interrupt.Restore
+[2m[DEBUG][0m ANALYZE [USER]: runtime/interrupt.In
+[2m[DEBUG][0m ANALYZE [USER]: runtime/interrupt.init
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Futex).Wait
+[2m[DEBUG][0m ANALYZE [USER]: internal/task.Current
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Stack).Push
+[2m[DEBUG][0m ANALYZE [USER]: internal/task.Pause
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Futex).Wake
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Stack).Pop
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Futex).WakeAll
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.gcData).swap
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Mutex).Lock
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Mutex).TryLock
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Mutex).Unlock
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.PMutex).Lock
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.PMutex).Unlock
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Queue).Append
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Queue).Empty
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Queue).Pop
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Queue).Push
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Stack).Queue
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Task).tail
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Semaphore).Post
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.pseudoAtomic[uint32]).Add[uint32]
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Semaphore).Wait
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.pseudoAtomic[uint32]).Load[uint32]
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Task).DataAtomicUint32
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Task).DataUint32
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Task).Resume
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.Task).SetDataUint32
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.state).initialize
+[2m[DEBUG][0m ANALYZE [USER]: internal/task.start
+[2m[DEBUG][0m ANALYZE [USER]: internal/task.OnSystemStack
+[2m[DEBUG][0m ANALYZE [USER]: internal/task.init
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).ClearBits
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.LoadUint8
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.StoreUint8
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).Get
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).HasBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).ReplaceBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).Set
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register8).SetBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).ClearBits
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.LoadUint16
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.StoreUint16
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).Get
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).HasBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).ReplaceBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).Set
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register16).SetBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).ClearBits
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.LoadUint32
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.StoreUint32
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).Get
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).HasBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).ReplaceBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).Set
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register32).SetBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).ClearBits
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.LoadUint64
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.StoreUint64
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).Get
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).HasBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).ReplaceBits
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).Set
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime/volatile.Register64).SetBits
+[2m[DEBUG][0m ANALYZE [USER]: runtime/volatile.init
+[2m[DEBUG][0m ANALYZE [USER]: tinygo.init
+[2m[DEBUG][0m ANALYZE [USER]: runtime.memequal
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hash32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.unsafeSlicePanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.lookupPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.slicePanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.returnAddress
+[2m[DEBUG][0m ANALYZE [USER]: runtime.runtimePanicAt
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printstring
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printptr
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printnl
+[2m[DEBUG][0m ANALYZE [USER]: runtime.abort
+[2m[DEBUG][0m ANALYZE [USER]: runtime.putchar
+[2m[DEBUG][0m ANALYZE [USER]: malloc
+[2m[DEBUG][0m ANALYZE [USER]: free
+[2m[DEBUG][0m ANALYZE [USER]: calloc
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: calloc -> malloc
+[31m[ERROR][0m   Location: /opt/homebrew/Cellar/tinygo/0.41.1/src/runtime/arch_tinygowasm_malloc.go:44:20
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[2m[DEBUG][0m ANALYZE [USER]: realloc
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: realloc -> free
+[31m[ERROR][0m   Location: /opt/homebrew/Cellar/tinygo/0.41.1/src/runtime/arch_tinygowasm_malloc.go:50:12
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: fminimum
+[2m[DEBUG][0m ANALYZE [USER]: fminimumf
+[2m[DEBUG][0m ANALYZE [USER]: fmaximum
+[2m[DEBUG][0m ANALYZE [USER]: fmaximumf
+[2m[DEBUG][0m ANALYZE [USER]: _start
+[2m[DEBUG][0m ANALYZE [USER]: runtime.run
+[2m[DEBUG][0m ANALYZE [USER]: runtime.mainReturnExit
+[2m[DEBUG][0m ANALYZE [USER]: syscall.Exit
+[2m[DEBUG][0m ANALYZE [USER]: runtime.initRand
+[2m[DEBUG][0m ANALYZE [USER]: runtime.initHeap
+[2m[DEBUG][0m ANALYZE [USER]: runtime.run$1$gowrapper
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scheduler
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scheduleLog
+[2m[DEBUG][0m ANALYZE [USER]: runtime.ticks
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scheduleLogTask
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.timerNode).whenTicks
+[2m[DEBUG][0m ANALYZE [USER]: runtime.ticksToNanoseconds
+[2m[DEBUG][0m ANALYZE [USER]: runtime.waitForEvents
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printlock
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printspace
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printuint32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printunlock
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printint64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.sleepTicks
+[2m[DEBUG][0m ANALYZE [USER]: runtime.nilPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printuint64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.runtimePanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.nanosecondsToTicks
+[2m[DEBUG][0m ANALYZE [USER]: runtime.alloc
+[2m[DEBUG][0m ANALYZE [USER]: runtime.align
+[2m[DEBUG][0m ANALYZE [USER]: runtime.popFreeRange
+[2m[DEBUG][0m ANALYZE [USER]: runtime.blockFromAddr
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).setState
+[2m[DEBUG][0m ANALYZE [USER]: runtime.parseGCLayout
+[2m[DEBUG][0m ANALYZE [USER]: runtime.memzero
+[2m[DEBUG][0m ANALYZE [USER]: runtime.dumpFreeRangeCounts
+[2m[DEBUG][0m ANALYZE [USER]: runtime.growHeap
+[2m[DEBUG][0m ANALYZE [USER]: runtime.runGC
+[2m[DEBUG][0m ANALYZE [USER]: runtime.gcMarkReachable
+[2m[DEBUG][0m ANALYZE [USER]: runtime.schedulerRunQueue
+[2m[DEBUG][0m ANALYZE [USER]: runtime.finishMark
+[2m[DEBUG][0m ANALYZE [USER]: runtime.markRoot
+[2m[DEBUG][0m ANALYZE [USER]: runtime.gcResumeWorld
+[2m[DEBUG][0m ANALYZE [USER]: runtime.sweep
+[2m[DEBUG][0m ANALYZE [USER]: runtime.buildFreeRanges
+[2m[DEBUG][0m ANALYZE [USER]: runtime.dumpHeap
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).state
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).stateByte
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).stateFromByte
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).pointer
+[2m[DEBUG][0m ANALYZE [USER]: runtime.insertFreeRange
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).address
+[2m[DEBUG][0m ANALYZE [USER]: runtime.isOnHeap
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).findHead
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcLayout).pointerFree
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcBlock).findNext
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.gcLayout).scan
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scanConservative
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scanSimple
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scanComplex
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scanWithMask
+[2m[DEBUG][0m ANALYZE [USER]: runtime.markStack
+[2m[DEBUG][0m ANALYZE [USER]: runtime.markRoots
+[2m[DEBUG][0m ANALYZE [USER]: runtime.findGlobals
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printint32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.setHeapEnd
+[2m[DEBUG][0m ANALYZE [USER]: runtime.calculateHeapAddresses
+[2m[DEBUG][0m ANALYZE [USER]: runtime.memcpy
+[2m[DEBUG][0m ANALYZE [USER]: runtime.run$1
+[2m[DEBUG][0m ANALYZE [USER]: runtime.deadlock
+[2m[DEBUG][0m ANALYZE [USER]: runtime._panic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.panicOrGoexit
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printitf
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printbool
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printint8
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printint16
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printuint8
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printuint16
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printuintptr
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printfloat32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printfloat64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printcomplex64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printcomplex128
+[2m[DEBUG][0m ANALYZE [USER]: runtime.initAll
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hardwareRand
+[2m[DEBUG][0m ANALYZE [USER]: runtime.maximumFloat32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.maximumFloat[float32 int32]
+[2m[DEBUG][0m ANALYZE [USER]: runtime.maximumFloat64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.maximumFloat[float64 int64]
+[2m[DEBUG][0m ANALYZE [USER]: runtime.minimumFloat32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.minimumFloat[float32 int32]
+[2m[DEBUG][0m ANALYZE [USER]: runtime.minimumFloat64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.minimumFloat[float64 int64]
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBinaryGet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBinaryDelete
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBinarySet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.nilMapPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapSet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapHasSpaceToGrow
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapOverLoadFactor
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapGrow
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapTopHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBucketAddrForHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapSlotKey
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapSlotValue
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInsertIntoNewBucket
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBucketSize
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapBucketAddr
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapCopy
+[2m[DEBUG][0m ANALYZE [USER]: runtime.fastrand
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapNext
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapGet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.xorshift32
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapDelete
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapMake
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapKeyHashAlg
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapKeyEqualAlg
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringEqual
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfaceEqual
+[2m[DEBUG][0m ANALYZE [USER]: runtime.interfaceEqual
+[2m[DEBUG][0m ANALYZE [USER]: runtime.reflectValueEqual
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringEqual
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringPtrHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfacePtrHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfaceHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapFloat32Hash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapFloat64Hash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringHash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.float64frombits
+[2m[DEBUG][0m ANALYZE [USER]: runtime.init#1
+[2m[DEBUG][0m ANALYZE [USER]: math/rand.fastrand64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.fastrand64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.xorshiftMult64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.memhash
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hash64
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hash64finalizer
+[2m[DEBUG][0m ANALYZE [USER]: runtime.rand
+[2m[DEBUG][0m ANALYZE [USER]: runtime.saveStackPointer
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.channel).bufferPop
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.channel).bufferPush
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.channel).tryRecv
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.chanQueue).pop
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scheduleTask
+[2m[DEBUG][0m ANALYZE [USER]: (*internal/task.pseudoAtomic[uint32]).CompareAndSwap[uint32]
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.channel).trySend
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.chanQueue).push
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.chanQueue).remove
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanMake
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanLen
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanCap
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanSend
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanRecv
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanClose
+[2m[DEBUG][0m ANALYZE [USER]: runtime.lockAllStates
+[2m[DEBUG][0m ANALYZE [USER]: runtime.unlockAllStates
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanSelect
+[2m[DEBUG][0m ANALYZE [USER]: runtime.inf2one
+[2m[DEBUG][0m ANALYZE [USER]: runtime.isInf
+[2m[DEBUG][0m ANALYZE [USER]: runtime.copysign
+[2m[DEBUG][0m ANALYZE [USER]: runtime.float64bits
+[2m[DEBUG][0m ANALYZE [USER]: runtime.isNaN
+[2m[DEBUG][0m ANALYZE [USER]: runtime.isFinite
+[2m[DEBUG][0m ANALYZE [USER]: runtime.complex64div
+[2m[DEBUG][0m ANALYZE [USER]: runtime.complex128div
+[2m[DEBUG][0m ANALYZE [USER]: runtime.abs
+[2m[DEBUG][0m ANALYZE [USER]: runtime.newcoro
+[2m[DEBUG][0m ANALYZE [USER]: runtime.newcoro$1
+[2m[DEBUG][0m ANALYZE [USER]: runtime.newcoro$1$gowrapper
+[2m[DEBUG][0m ANALYZE [USER]: runtime.coroswitch
+[2m[DEBUG][0m ANALYZE [USER]: runtime.NumCgoCall
+[2m[DEBUG][0m ANALYZE [USER]: runtime.NumGoroutine
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Breakpoint
+[2m[DEBUG][0m ANALYZE [USER]: syscall.runtimeSetenv
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cstring
+[2m[DEBUG][0m ANALYZE [USER]: runtime.setenv
+[2m[DEBUG][0m ANALYZE [USER]: syscall.runtimeUnsetenv
+[2m[DEBUG][0m ANALYZE [USER]: runtime.unsetenv
+[2m[DEBUG][0m ANALYZE [USER]: syscall.runtimeClearenv
+[2m[DEBUG][0m ANALYZE [USER]: syscall.setenv_c
+[2m[DEBUG][0m ANALYZE [USER]: syscall.unsetenv_c
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Callers
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Version
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.blockState).String
+[2m[DEBUG][0m ANALYZE [USER]: runtime.realloc
+[2m[DEBUG][0m ANALYZE [USER]: runtime.free
+[2m[DEBUG][0m ANALYZE [USER]: runtime.GC
+[2m[DEBUG][0m ANALYZE [USER]: runtime.markCurrentGoroutineStack
+[2m[DEBUG][0m ANALYZE [USER]: runtime.ReadMemStats
+[2m[DEBUG][0m ANALYZE [USER]: runtime.SetFinalizer
+[2m[DEBUG][0m ANALYZE [USER]: runtime.swapStackChain
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: runtime.hashmapNewIterator
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapClear
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapLen
+[2m[DEBUG][0m ANALYZE [USER]: maps.clone
+[2m[DEBUG][0m ANALYZE [USER]: runtime.decomposeInterface
+[2m[DEBUG][0m ANALYZE [USER]: runtime.composeInterface
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringSet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringGet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapStringDelete
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfaceSet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfaceGet
+[2m[DEBUG][0m ANALYZE [USER]: runtime.hashmapInterfaceDelete
+[2m[DEBUG][0m ANALYZE [USER]: runtime.interfaceTypeAssert
+[2m[DEBUG][0m ANALYZE [USER]: internal/godebug.registerMetric
+[2m[DEBUG][0m ANALYZE [USER]: runtime.setupDeferFrame
+[2m[DEBUG][0m ANALYZE [USER]: runtime.destroyDeferFrame
+[2m[DEBUG][0m ANALYZE [USER]: runtime._recover
+[2m[DEBUG][0m ANALYZE [USER]: runtime.sliceToArrayPointerPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.chanMakePanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.negativeShiftPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.divideByZeroPanic
+[2m[DEBUG][0m ANALYZE [USER]: runtime.blockingPanic
+[2m[DEBUG][0m ANALYZE [USER]: crypto/internal/fips140.fatal
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_pollServerInit
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_pollOpen
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_pollClose
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_pollUnblock
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printmap
+[2m[DEBUG][0m ANALYZE [USER]: runtime.printslice
+[2m[DEBUG][0m ANALYZE [USER]: syscall.runtime_BeforeExec
+[2m[DEBUG][0m ANALYZE [USER]: syscall.runtime_AfterExec
+[2m[DEBUG][0m ANALYZE [USER]: runtime.vgetrandom
+[2m[DEBUG][0m ANALYZE [USER]: crypto/internal/sysrand.fatal
+[2m[DEBUG][0m ANALYZE [USER]: runtime.GOMAXPROCS
+[2m[DEBUG][0m ANALYZE [USER]: runtime.GOROOT
+[2m[DEBUG][0m ANALYZE [USER]: runtime.memmove
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stacksave
+[2m[DEBUG][0m ANALYZE [USER]: runtime.nanotime
+[2m[DEBUG][0m ANALYZE [USER]: os.sigpipe
+[2m[DEBUG][0m ANALYZE [USER]: runtime.LockOSThread
+[2m[DEBUG][0m ANALYZE [USER]: runtime.UnlockOSThread
+[2m[DEBUG][0m ANALYZE [USER]: runtime.KeepAlive
+[2m[DEBUG][0m ANALYZE [USER]: (runtime.Cleanup).Stop
+[2m[DEBUG][0m ANALYZE [USER]: weak.runtime_registerWeakPointer
+[2m[DEBUG][0m ANALYZE [USER]: internal/godebug.setUpdate
+[2m[DEBUG][0m ANALYZE [USER]: internal/godebug.setNewIncNonDefault
+[2m[DEBUG][0m ANALYZE [USER]: runtime.write
+[2m[DEBUG][0m ANALYZE [USER]: runtime.getAuxv
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_errno
+[2m[DEBUG][0m ANALYZE [USER]: runtime.getchar
+[2m[DEBUG][0m ANALYZE [USER]: runtime.buffered
+[2m[DEBUG][0m ANALYZE [USER]: time.now
+[2m[DEBUG][0m ANALYZE [USER]: sync/atomic.runtime_procPin
+[2m[DEBUG][0m ANALYZE [USER]: sync/atomic.runtime_procUnpin
+[2m[DEBUG][0m ANALYZE [USER]: os.runtime_args
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmEntryReactor
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmEntryReactor$1$gowrapper
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmEntryReactor$1
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmEntryLegacy
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmExportCheckRun
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmExportRun
+[2m[DEBUG][0m ANALYZE [USER]: runtime.wasmExportExit
+[2m[DEBUG][0m ANALYZE [USER]: runtime.scheduleLogChan
+[2m[DEBUG][0m ANALYZE [USER]: runtime.timerQueueAdd
+[2m[DEBUG][0m ANALYZE [USER]: runtime.timerQueueRemove
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Goexit
+[2m[DEBUG][0m ANALYZE [USER]: crypto/internal/fips140.getIndicator
+[2m[DEBUG][0m ANALYZE [USER]: crypto/internal/fips140.setIndicator
+[2m[DEBUG][0m ANALYZE [USER]: crypto/fips140.setBypass
+[2m[DEBUG][0m ANALYZE [USER]: crypto/fips140.unsetBypass
+[2m[DEBUG][0m ANALYZE [USER]: crypto/fips140.isBypassed
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Gosched
+[2m[DEBUG][0m ANALYZE [USER]: runtime.NumCPU
+[2m[DEBUG][0m ANALYZE [USER]: runtime.addSleepTask
+[2m[DEBUG][0m ANALYZE [USER]: runtime.addTimer
+[2m[DEBUG][0m ANALYZE [USER]: runtime.removeTimer
+[2m[DEBUG][0m ANALYZE [USER]: time.Sleep
+[2m[DEBUG][0m ANALYZE [USER]: runtime.lockAtomics
+[2m[DEBUG][0m ANALYZE [USER]: runtime.unlockAtomics
+[2m[DEBUG][0m ANALYZE [USER]: os/signal.signal_disable
+[2m[DEBUG][0m ANALYZE [USER]: os/signal.signal_enable
+[2m[DEBUG][0m ANALYZE [USER]: os/signal.signal_ignore
+[2m[DEBUG][0m ANALYZE [USER]: os/signal.signalWaitUntilIdle
+[2m[DEBUG][0m ANALYZE [USER]: os/signal.signal_recv
+[2m[DEBUG][0m ANALYZE [USER]: runtime.sliceAppend
+[2m[DEBUG][0m ANALYZE [USER]: runtime.sliceGrow
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.Func).FileLine
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.Func).Name
+[2m[DEBUG][0m ANALYZE [USER]: runtime.FuncForPC
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Caller
+[2m[DEBUG][0m ANALYZE [USER]: runtime.Stack
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringLess
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringConcat
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringFromBytes
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringToBytes
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringFromRunes
+[2m[DEBUG][0m ANALYZE [USER]: runtime.encodeUTF8
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringToRunes
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringNext
+[2m[DEBUG][0m ANALYZE [USER]: runtime.decodeUTF8
+[2m[DEBUG][0m ANALYZE [USER]: runtime.isContinuation
+[2m[DEBUG][0m ANALYZE [USER]: runtime.stringFromUnicode
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_CString
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: runtime.cgo_CString -> malloc
+[31m[ERROR][0m   Location: /opt/homebrew/Cellar/tinygo/0.41.1/src/runtime/string.go:245:15
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_GoString
+[2m[DEBUG][0m ANALYZE [USER]: runtime.makeGoString
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_GoStringN
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_GoBytes
+[2m[DEBUG][0m ANALYZE [USER]: runtime.cgo_CBytes
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: runtime.cgo_CBytes -> malloc
+[31m[ERROR][0m   Location: /opt/homebrew/Cellar/tinygo/0.41.1/src/runtime/string.go:289:13
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.Frames).Next
+[2m[DEBUG][0m ANALYZE [USER]: runtime.CallersFrames
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_Semacquire
+[2m[DEBUG][0m ANALYZE [USER]: internal/poll.runtime_Semrelease
+[2m[DEBUG][0m ANALYZE [USER]: internal/synctest.acquire
+[2m[DEBUG][0m ANALYZE [USER]: internal/synctest.release
+[2m[DEBUG][0m ANALYZE [USER]: time.runtimeNano
+[2m[DEBUG][0m ANALYZE [USER]: time.runtimeNow
+[2m[DEBUG][0m ANALYZE [USER]: runtime.timerCallback
+[2m[DEBUG][0m ANALYZE [USER]: (*runtime.timer).callCallback
+[2m[DEBUG][0m ANALYZE [USER]: time.runtimeIsBubbled
+[2m[DEBUG][0m ANALYZE [USER]: time.newTimer
+[2m[DEBUG][0m ANALYZE [USER]: time.stopTimer
+[2m[DEBUG][0m ANALYZE [USER]: time.resetTimer
+[2m[DEBUG][0m ANALYZE [USER]: runtime.init
+[2m[DEBUG][0m ANALYZE [USER]: main.init
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 916
+[32m[INFO][0m   FFI Boundaries: 3601
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 3601
+[32m[INFO][0m     - LibC calls: 6
+[31m[ERROR][0m   Dangerous calls: 4
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[2m[DEBUG][0m ZONE-SKIP: runtime.typeImplementsMethodSet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.memequal is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hash32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.unsafeSlicePanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.lookupPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.slicePanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.returnAddress is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.runtimePanicAt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printstring is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printptr is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printnl is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.abort is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.putchar is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.run is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.mainReturnExit is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.initRand is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.initHeap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.run$1$gowrapper is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scheduler is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scheduleLog is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.ticks is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scheduleLogTask is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.ticksToNanoseconds is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.waitForEvents is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printlock is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printspace is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printuint32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printunlock is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printint64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.sleepTicks is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.nilPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printuint64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.runtimePanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.nanosecondsToTicks is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.alloc is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.align is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.popFreeRange is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.blockFromAddr is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.parseGCLayout is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.memzero is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.dumpFreeRangeCounts is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.growHeap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.runGC is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.gcMarkReachable is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.schedulerRunQueue is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.finishMark is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.markRoot is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.gcResumeWorld is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.sweep is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.buildFreeRanges is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.dumpHeap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.insertFreeRange is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.isOnHeap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scanConservative is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scanSimple is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scanComplex is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scanWithMask is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.markStack is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.markRoots is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.findGlobals is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printint32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.setHeapEnd is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.calculateHeapAddresses is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.memcpy is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.run$1 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.deadlock is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime._panic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.panicOrGoexit is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printitf is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printbool is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printint8 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printint16 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printuint8 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printuint16 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printuintptr is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printfloat32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printfloat64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printcomplex64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printcomplex128 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.initAll is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hardwareRand is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.maximumFloat32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.maximumFloat[float32 int32] is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.maximumFloat64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.maximumFloat[float64 int64] is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.minimumFloat32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.minimumFloat[float32 int32] is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.minimumFloat64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.minimumFloat[float64 int64] is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBinaryGet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBinaryDelete is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBinarySet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.nilMapPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapSet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapHasSpaceToGrow is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapOverLoadFactor is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapGrow is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapTopHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBucketAddrForHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapSlotKey is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapSlotValue is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInsertIntoNewBucket is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBucketSize is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapBucketAddr is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapCopy is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.fastrand is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapNext is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapGet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.xorshift32 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapDelete is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapMake is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapKeyHashAlg is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapKeyEqualAlg is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringEqual is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfaceEqual is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.interfaceEqual is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.reflectValueEqual is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringEqual is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringPtrHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfacePtrHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfaceHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapFloat32Hash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapFloat64Hash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringHash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.float64frombits is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.init#1 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.fastrand64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.xorshiftMult64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.memhash is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hash64 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hash64finalizer is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.rand is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.saveStackPointer is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scheduleTask is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanMake is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanLen is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanCap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanSend is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanRecv is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanClose is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.lockAllStates is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.unlockAllStates is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanSelect is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.inf2one is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.isInf is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.copysign is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.float64bits is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.isNaN is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.isFinite is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.complex64div is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.complex128div is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.abs is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.newcoro is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.newcoro$1 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.newcoro$1$gowrapper is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.coroswitch is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.NumCgoCall is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.NumGoroutine is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Breakpoint is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cstring is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.setenv is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.unsetenv is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Callers is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Version is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.realloc is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.free is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.GC is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.markCurrentGoroutineStack is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.ReadMemStats is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.SetFinalizer is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.swapStackChain is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapNewIterator is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapClear is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapLen is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.decomposeInterface is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.composeInterface is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringSet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringGet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapStringDelete is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfaceSet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfaceGet is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.hashmapInterfaceDelete is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.interfaceTypeAssert is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.setupDeferFrame is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.destroyDeferFrame is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime._recover is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.sliceToArrayPointerPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.chanMakePanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.negativeShiftPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.divideByZeroPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.blockingPanic is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printmap is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.printslice is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.vgetrandom is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.GOMAXPROCS is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.GOROOT is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.memmove is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stacksave is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.nanotime is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.LockOSThread is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.UnlockOSThread is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.KeepAlive is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.write is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.getAuxv is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_errno is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.getchar is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.buffered is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmEntryReactor is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmEntryReactor$1$gowrapper is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmEntryReactor$1 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmEntryLegacy is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmExportCheckRun is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmExportRun is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.wasmExportExit is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.scheduleLogChan is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.timerQueueAdd is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.timerQueueRemove is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Goexit is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Gosched is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.NumCPU is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.addSleepTask is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.addTimer is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.removeTimer is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.lockAtomics is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.unlockAtomics is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.sliceAppend is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.sliceGrow is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.FuncForPC is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Caller is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.Stack is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringLess is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringConcat is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringFromBytes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringToBytes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringFromRunes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.encodeUTF8 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringToRunes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringNext is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.decodeUTF8 is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.isContinuation is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.stringFromUnicode is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_CString is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_GoString is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.makeGoString is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_GoStringN is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_GoBytes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.cgo_CBytes is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.CallersFrames is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.timerCallback is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: runtime.init is safe zone — language guarantees apply
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 30028 used after free in realloc
+[31m[ERROR][0m VULNERABILITY OMI-001 [critical] [Confidence: medium]
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m Reason: allocation may return NULL, used without null guard
+[32m[INFO][0m PointerOwnership: Found 1 use-after-free issues (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 1 allocations, 1 frees, 1 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 1, reused: 0, in_use: 1
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    838
+  Safe zone (skipped):         250 (29.8%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                588
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                1[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       726.70    726704.17    726704.17
+detect                                  2         1.12       559.04       587.33
+total                                   1       726.71    726713.54    726713.54
+analysis                                1       688.45    688447.63    688447.63
+[32m[INFO][0m PointerOwnership: 4 ops, 2142.98ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 3601 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 916
+
+[INFO] Facts generated: 2
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/gnark_test.json
+

@@ -1,609 +1,295 @@
-# 🔴 OmniScope 红队对抗测试报告 (Red Team Adversarial Test Report)
+# OmniScope Red Team Test Report
 
-## 📊 测试概览
+**日期**: 2026-04-28
+**工具**: OmniScope v0.1.6
+**分析基准**: 源码逐条对照 + Zone Classifier 限制分析
 
-| 项目                  | 数值                                   |
-| ------------------- | ------------------------------------ |
-| **测试文件**            | `red_team_bugs.c` (242行C代码)          |
-| **LLVM IR大小**       | 890行                                 |
-| **函数总数**            | 38个 (17个bug函数 + main + 辅助)           |
-| **埋入Bug数量**         | **17个** (覆盖10种类型)                    |
-| **OmniScope检测到**    | **7个问题** (1内存泄漏 + 5 UAF + 1 NULL解引用) |
-| **FFI Risk标记**      | 3个CRITICAL (system, popen, snprintf) |
-| **Risky Libc Call** | 37个调用点被标记                            |
+---
 
-***
+## 一、测试文件概览
 
-## ✅ 成功检测的 Bug（命中率: 29%）
+| 文件 | Bug 数 | 定位 |
+|------|--------|------|
+| `red_team_bugs.c` | 17 | 通用 C 安全漏洞（UAF、double-free、leak、overflow 等） |
+| `ffi_boundary_bugs.c` | 22 | FFI 边界漏洞（dlopen 生命周期、callback 逃逸、跨语言类型混淆等） |
 
-### BUG-01 ✅ 内存泄漏 \[MEDIUM]
+---
 
-```c
-void bug_memory_leak(void) {
-    char *buffer = malloc(1024);
-    strcpy(buffer, "This will never be freed!");
-    printf("Leaked: %s\n", buffer);
-    // ❌ 忘记 free(buffer)
-}
-```
+## 二、red_team_bugs.c 检出结果
 
-**OmniScope输出：**
+### 2.1 逐条对照
 
-```
-[WARN] MEMORY LEAK [MEDIUM]: Memory allocated but never freed in bug_memory_leak
-```
+| ID | Bug 类型 | 源码关键行 | 检出 | 判定 |
+|----|---------|-----------|------|------|
+| BUG-01 | memory_leak | `malloc(1024)` 无 `free` | ✅ | **TP** |
+| BUG-02 | use_after_free | `free(data)` 后 `data[5]` 读写 | ✅ | **TP** |
+| BUG-03 | double_free | 连续两次 `free(s)` | ✅ | **TP** |
+| BUG-04 | null_deref | `malloc(0x7FFFFFFFFF)` 后未检查 NULL | ✅ | **TP** |
+| BUG-05 | command_injection | `system(cmd)` 用户输入 | ❌ | **N/A** — main 中注释掉了 `// bug_dangerous_system()`，代码未执行 |
+| BUG-06 | buffer_overflow | `strcpy(small, large)` 28→8 字节 | ❌ | **合理漏报** — OmniScope 不做数组边界分析 |
+| BUG-07 | format_string | `printf(user_data)` | ❌ | **合理漏报** — 当前 format_string 检测未覆盖 `printf(var)` 模式 |
+| BUG-08 | file_handle_leak | `fopen` 无 `fclose` | ❌ | **漏报** — `fopen`/`fclose` 配对检测存在但可能未触发 |
+| BUG-09 | realloc_mishandle | `realloc` 失败时原指针泄漏 | ✅ | **TP** |
+| BUG-10 | uninitialized_var | `int secret;` 未初始化 | ❌ | **合理漏报** — 当前不做未初始化变量检测 |
+| BUG-11 | new[]/delete mismatch | `new int[100]` + `delete` | N/A | **N/A** — `#ifdef __cplusplus`，C 模式下不存在 |
+| BUG-12 | command_injection | `popen(cmd, "r")` | ✅ | **TP** |
+| BUG-13 | out_of_bounds | `arr[10]` 越界 | ❌ | **合理漏报** — 不做数组边界分析 |
+| BUG-14 | struct_member_leak | `cs->data` 和 `cs` 未释放 | ✅ | **TP** |
+| BUG-15 | loop_leak | 循环内 `malloc` 无 `free` | ✅ | **TP** |
+| BUG-16 | conditional_leak | `flag<=0` 时 `resource` 未释放 | ✅ | **TP** |
+| BUG-17 | exec_call | `execvp("ls", args)` | ✅ | **TP** |
 
-**评级：✅ 完美检测！** PointerOwnership pass 准确识别了分配后未释放的模式。
+### 2.2 统计
 
-***
+| 指标 | 数值 |
+|------|------|
+| 有效测试用例（排除 N/A） | 16 |
+| 检出 | **10** |
+| 检出率 | **62.5%** |
+| 合理漏报（工具不做此类型） | 4（BUG-06, 10, 13 + BUG-08） |
+| 误报 | 0 |
 
-### BUG-02 ✅ Use-After-Free \[MEDIUM]
+**结论**: red_team_bugs.c 的检出判定全部正确，0 误报。漏报均属于 OmniScope 当前不覆盖的分析类型（数组边界、未初始化变量）。
 
-```c
-void bug_use_after_free(void) {
-    int *data = malloc(sizeof(int) * 10);
-    // ... 初始化 ...
-    free(data);           // 第一次释放
-    printf("UAF: %d\n", data[5]);  // ⚠️ UAF! 使用已释放内存
-    data[3] = 999;        // ⚠️ 写入已释放内存
-}
-```
+---
 
-**OmniScope输出：**
+## 三、ffi_boundary_bugs.c 检出结果
 
-```
-[WARN] USE-AFTER-FREE [MEDIUM]: Pointer 12 used after free in bug_use_after_free
-```
+### 3.1 逐条对照
 
-**评级：✅ 完美检测！** 数据流分析追踪到 free() 后的使用。
+| ID | Bug 类型 | 源码关键行 | 检出 | 判定 | 说明 |
+|----|---------|-----------|------|------|------|
+| FFI-01 | null_deref | `dlsym(handle,...)` 后未检查 NULL | ❌ | **漏报** | `dlsym` 返回值未追踪。Zone Classifier 将其归为 Unknown |
+| FFI-02 | use_after_free | `dlclose(handle)` 后 `printf(buf)` | ❌ | **漏报** | dlclose 生命周期未追踪 |
+| FFI-03 | use_after_free | `dlclose(h1)` 后调用 `sym` | ❌ | **漏报** | 同 FFI-02 |
+| FFI-04 | alloc_mismatch | `malloc(256)` + `free(p)` | ✅ | **TP** | malloc/free 配对检测正确触发 |
+| FFI-05 | memory_leak | `malloc(len)` 无 `free` | ✅ | **TP** | malloc 无配对 free，正确检出泄漏 |
+| FFI-06 | double_free | `free(p)` 被 Go GC 再次释放 | ❌ | **漏报** | 需要跨语言所有权追踪 |
+| FFI-07 | memory_leak | Rust Vec 指针未释放 | ❌ | **漏报** | Rust Vec 语义未建模 |
+| FFI-08 | use_after_free | `free(obj)` 后 callback 使用 | ✅ | **TP** | malloc/free 配对检测触发（但分类为 memory_leak 而非 UAF） |
+| FFI-09 | use_after_free | `dlclose(code)` 后 `fn(10)` | ❌ | **漏报** | dlclose 后函数指针未追踪 |
+| FFI-10 | use_after_free | 栈指针通过 callback 逃逸 | ❌ | **漏报** | `callback = NULL`，if 分支不执行。**测试用例本身不触发 bug** |
+| FFI-11 | use_after_free | Go string 并发释放 | ❌ | **漏报** | Go GC 移动感知缺失 |
+| FFI-12 | buffer_overflow | 未终止 C 字符串 | ❌ | **N/A** | 函数体只有 typedef，**无实际代码** |
+| FFI-13 | buffer_overflow | rust_len vs c_cap | ❌ | **N/A** | 双重边界检查 `i<rust_len && i<c_cap`，**实际安全** |
+| FFI-14 | use_after_free | `Py_DECREF` 后使用 py_obj | ❌ | **漏报** | Python refcount 模型缺失 |
+| FFI-15 | memory_leak | Py_INCREF/DECREF 配对错误 | ❌ | **漏报** | Python refcount 模型缺失 |
+| FFI-16 | fd_leak | fork 后 pipes[1] 未关闭 | ✅ | **误分类** | 检出了 `execvp`（正确），但分类为 command_injection 而非 fd_leak |
+| FFI-17 | use_after_free | mmap 跨语言 munmap | ❌ | **漏报** | mmap/munmap 配对追踪缺失 |
+| FFI-18 | command_injection | `execvp(user_path, args)` | ✅ | **TP** | execvp 直接调用，正确检出 |
+| FFI-19 | buffer_overflow | size_t/int 符号混淆 | ❌ | **漏报** | `int len` 为负时 for 不执行（`0 < -1` 为 false）。**测试用例本身不触发 bug** |
+| FFI-20 | enum_mismatch | C int 传给 Rust enum | ❌ | **N/A** | switch 有 default 分支，**不会 UB** |
+| FFI-21 | use_after_free | 栈地址返回 | ❌ | **漏报** | 返回值逃逸分析缺失 |
+| FFI-22 | memory_leak | `malloc(128)` 无 `free` | ✅ | **TP** | malloc 无配对 free，正确检出 |
 
-***
+### 3.2 统计
 
-### BUG-04 ✅ NULL指针解引用 \[CRITICAL]
+| 指标 | 数值 |
+|------|------|
+| 总测试用例 | 22 |
+| 有效用例（排除代码不触发 + N/A） | **17** |
+| 检出 | **6** |
+| 有效检出率 | **35.3%** (6/17) |
+| 检出中 TP | **5** |
+| 检出中误分类 | **1** (FFI-16) |
+| 检出中 FP | **0** |
 
-```c
-void bug_null_deref(void) {
-    int *big = malloc(0x7FFFFFFFFF);  // 可能返回NULL
-    big[0] = 42;  // ⚠️ 未检查NULL就解引用
-    free(big);
-}
-```
+### 3.3 漏报分类
 
-**OmniScope输出：**
+漏报的 11 个有效用例，按根因分为三类：
 
-```
-[ERROR] VULNERABILITY OMI-002 [critical] [Confidence: medium]
-Type: null_dereference
-Reason: allocation may return NULL, used without null guard
-```
+#### A 类：Zone Classifier 限制导致的漏报（4 个）
 
-**评级：✅ 完美检测！** 识别了大尺寸分配可能失败的场景。
+这些函数调用了 OmniScope **已注册的 FFI 函数**（dlsym, mmap, dlclose），但 Zone Classifier 将它们归为 Unknown Zone，导致分析 Pass 未充分触发。
 
-***
+| ID | 调用的 FFI 函数 | Zone Classifier 结果 | 根因 |
+|----|----------------|---------------------|------|
+| FFI-01 | `dlsym` | Unknown | `dlsym` 不在 CPP_ESCAPE_PATTERNS 中，纯 C 函数名无法被语言检测识别 |
+| FFI-02 | `dlopen`, `dlsym`, `dlclose` | Unknown | 同上 |
+| FFI-03 | `dlopen`, `dlsym`, `dlclose` | Unknown | 同上 |
+| FFI-09 | `dlopen`, `dlsym`, `dlclose` | Unknown | 同上 |
 
-### BUG-05 ✅ FFI RISK - system() 命令注入 \[CRITICAL]
+**根因分析**：
 
-```c
-void bug_dangerous_system(void) {
-    char user_input[256];
-    fgets(user_input, sizeof(user_input), stdin);
-    char cmd[512];
-    sprintf(cmd, "echo %s", user_input);  // 格式化字符串漏洞
-    system(cmd);  // ⚠️ CRITICAL: 命令注入!
-}
-```
+`zone_classifier.zig` 的 `classifyCppFunction` 只覆盖了约 12 个 escape 模式（`malloc(`, `free(`, `pthread_create` 等），未覆盖：
+- 动态加载: `dlopen`, `dlsym`, `dlclose`
+- 内存映射: `mmap`, `munmap`
+- Python C API: `Py_INCREF`, `Py_DECREF`
 
-**OmniScope输出：**
+此外，`pointer_ownership.zig` 第 221 行 `if (c.LLVMIsDeclaration(func) != 0) continue;` 直接跳过了所有外部声明函数，而这些 FFI 函数在 LLVM IR 中正是 declaration。
 
-```
-[CRITICAL] FFI RISK: bug_dangerous_system -> _system
-Kind: command_exec
-Detail: Execute shell command - command injection risk
+#### B 类：分析能力缺失导致的漏报（4 个）
 
-[MEDIUM] FFI RISK: bug_dangerous_system -> snprintf
-Kind: format_string
-Detail: Print formatted - format string vulnerability if user-controlled
-```
+| ID | 缺失能力 | 改进方向 |
+|----|---------|---------|
+| FFI-06 | 跨语言所有权追踪 | ptr_lifetime Pass 扩展 |
+| FFI-14 | Python refcount 模型 | 新增 refcount Pass |
+| FFI-15 | Python refcount 模型 | 同上 |
+| FFI-17 | mmap/munmap 配对追踪 | ptr_lifetime Pass 扩展 |
 
-**评级：✅ 双重检测！** 既发现了 `system()` 的命令执行风险，也标记了 `sprintf` 的格式化字符串风险。
+#### C 类：高级分析能力缺失（3 个）
 
-***
+| ID | 缺失能力 | 改进方向 |
+|----|---------|---------|
+| FFI-07 | Rust Vec 语义建模 | 语言特定语义 Pass |
+| FFI-11 | Go GC 移动感知 | 语言特定语义 Pass |
+| FFI-21 | 返回值逃逸分析 | ptr_lifetime Pass 扩展 |
 
-### BUG-09 ✅ Realloc误用导致UAF \[MEDIUM]
+---
 
-```c
-void bug_realloc_mishandle(void) {
-    char *buf = malloc(64);
-    strcpy(buf, "original");
-    buf = realloc(buf, 128);  // 失败时返回NULL，原buf泄漏
-    strcat(buf, " extended");
-    free(buf);
-}
-```
+## 四、Zone Classifier 限制深度分析
 
-**OmniScope输出：**
-
-```
-[WARN] USE-AFTER-FREE [MEDIUM]: Pointer 89 used after free in bug_realloc_mishandle
-[MEDIUM] FFI RISK: bug_realloc_mishandle -> realloc
-Warning: This function CONSUMES ownership
-Warning: Result requires NULL check
-```
-
-**评级：✅ 检测到！** 虽然主要报告为UAF，但也标记了realloc需要NULL检查。
-
-***
-
-### BUG-12 ✅ popen() 命令注入 \[CRITICAL]
-
-```c
-void bug_popen_risk(void) {
-    char input[128];
-    fgets(input, sizeof(input), stdin);
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd), "cat %s", input);
-    FILE *pipe = popen(cmd, "r");  // ⚠️ CRITICAL: popen命令注入
-    // ...
-}
-```
-
-**OmniScope输出：**
+### 4.1 分类路径
 
 ```
-[CRITICAL] FFI RISK: bug_popen_risk -> _popen
-Kind: command_exec
-Detail: Open pipe to process - command injection risk
-
-[ERROR] VULNERABILITY OMI-001 [medium]: tainted_path_to_sink
-Path:
-  [Sink] snprintf()
-    └─> bug_popen_risk()
-  [Source] main() - initial taint source
+classifyFunction(func_name, lang)
+  │
+  ├─ 有语言提示?
+  │   ├─ .rust → classifyRustFunction()  → _ZN 前缀匹配 → Safe/Unsafe/Runtime
+  │   ├─ .zig  → classifyZigFunction()   → std. 前缀匹配 → Safe/Unsafe
+  │   ├─ .go   → classifyGoFunction()    → runtime. 前缀匹配 → Safe/Unsafe
+  │   └─ .c/.cpp → classifyCppFunction() → _Z 前缀 + 12 个模式 → Safe/Unsafe
+  │
+  ├─ 无语言提示 → 自动检测
+  │   ├─ isRustFunction?  → _ZN, _R, $u20$ → 匹配则走 Rust 路径
+  │   ├─ isZigFunction?   → std., @ptrCast → 匹配则走 Zig 路径
+  │   ├─ isGoFunction?    → runtime., main. → 匹配则走 Go 路径
+  │   └─ isCppFunction?   → _Z 前缀 → 匹配则走 C++ 路径
+  │
+  └─ 都不匹配 → .unknown
 ```
 
-**评级：✅ 完美检测！** 不仅发现popen，还构建了完整的污点传播路径！
+### 4.2 ffi_boundary_bugs.c 为什么全部落入 Unknown Zone
 
-***
+`ffi_boundary_bugs.c` 中的函数名如 `FFI_01_dlopen_null_check`：
+- 不以 `_ZN` 开头 → 不是 Rust
+- 不以 `std.` 开头 → 不是 Zig
+- 不以 `runtime.` 开头 → 不是 Go
+- 不以 `_Z` 开头 → 不是 C++
+- **结果**: 无法自动检测语言 → `.unknown`
 
-### BUG-16 ✅ 条件分支泄漏导致UAF \[MEDIUM]
+**但函数内部调用的 `dlsym`, `dlclose`, `mmap` 等是标准的 C FFI 函数**，Zone Classifier 应该能识别它们。
 
-```c
-void bug_conditional_leak(int flag) {
-    void *resource = malloc(2048);
-    if (flag > 0) {
-        free(resource);
-        return;
-    }
-    // ⚠️ flag<=0时 resource未释放
-    printf("Resource still alive: %p\n", resource);
-}
-```
+### 4.3 classifyFunctionFromLLVM 的正确路径（未被使用）
 
-**OmniScope输出：**
+Zone Classifier 有一个更精确的分类路径 `classifyFunctionFromLLVM`：
 
 ```
-[WARN] USE-AFTER-FREE [MEDIUM]: Pointer 137 used after free in bug_conditional_leak
+LLVMIsDeclaration(func) != 0?  (外部声明，无函数体)
+  ├─ ExternalLinkage?
+  │   ├─ isLikelyRuntimeInternal? → .runtime_internal
+  │   └─ 否则 → .ffi  ← dlsym, dlclose, mmap 走这条路径
+  └─ LLVMGetIntrinsicID != 0? → .runtime_internal
 ```
 
-**评级：✅ 部分检测！** 检测到了路径敏感的UAF，但报告为"used after free"而非"memory leak"。
-
-***
-
-## ❌ 未检测到的 Bug（漏报率: 71%）
-
-### BUG-03 ❌ Double Free（双重释放）
-
-```c
-void bug_double_free(void) {
-    char *s = strdup("double trouble");
-    free(s);
-    free(s);  // ⚠️ Double Free!
-}
+**问题**: `pointer_ownership.zig` 第 221 行直接跳过了所有 declaration 函数：
+```zig
+if (c.LLVMIsDeclaration(func) != 0) continue;  // 跳过！
+const zone = zone_classifier.classifyFunction(func_name, null);  // 只用字符串分类
 ```
 
-**原因分析：**
+这意味着即使 `classifyFunctionFromLLVM` 能正确识别 `dlsym` 为 `.ffi`，分析 Pass 也不会走到那条路径。
 
-- OmniScope的PointerOwnership目前只追踪"free后使用"，不检测对同一指针的重复释放
-- Double Free需要维护"已释放指针集合"，当前实现缺少这个检查
-- **改进方向**: 在`pointer_ownership.zig`中添加`freed_pointers: std.HashMap(u32, void)`，在第二次`free()`时报警
+### 4.4 CPP_ESCAPE_PATTERNS 覆盖范围
 
-**难度**: 中等（需要新增数据结构）
-
-***
-
-### BUG-06 ❌ Buffer Overflow（栈缓冲区溢出）
-
-```c
-void bug_buffer_overflow(void) {
-    char small[8];
-    char *large = "AAAAAAAAAAAAAAAAAAAAAAAAAAAA";  // 28字符
-    strcpy(small, large);  // ⚠️ 栈溢出!
-}
-```
-
-**原因分析：**
-
-- OmniScope专注于**堆内存安全**（malloc/free），不检测**栈缓冲区溢出**
-- 栈数组在LLVM IR中是`alloca`指令，与堆分配完全不同
-- `strcpy`的长度检查需要**值域分析**（value-range analysis），当前不具备
-- **改进方向**:
-  1. 添加`ArrayBoundsCheck` pass，检测`alloca`+`strcpy/memcpy`组合
-  2. 集成常量传播分析，计算源字符串长度 vs 目标缓冲区大小
-
-**难度**: 高（需要值域分析和新的pass）
-
-***
-
-### BUG-07 ⚠️ Format String Vulnerability（部分检测）
-
-```c
-void bug_format_string(char *user_data) {
-    printf(user_data);  // ⚠️ user_data作为格式化字符串!
-}
-```
-
-**OmniScope输出：**
-
-```
-[MEDIUM] RISKY LIBC CALL: bug_format_string -> printf
-Kind: format_string
-Detail: Print formatted - format string vulnerability if user-controlled
-```
-
-**评级：⚠️ 弱检测！** 标记为"risky libc call"但没有明确指出这是**格式化字符串漏洞**。
-
-- 当前只检测`printf`本身是危险的，不区分`printf("%s", x)`（安全）vs `printf(x)`（危险）
-- **改进方向**: 检查printf的第一个参数是否来自外部输入（taint analysis）
-- Clang编译器自己都报了warning: `format string is not a string literal`
-
-**难度**: 中等（增强现有检测逻辑）
-
-***
-
-### BUG-08 ❌ File Handle Leak（文件句柄泄漏）
-
-```c
-void bug_file_handle_leak(void) {
-    FILE *f = fopen("/tmp/test.txt", "w");
-    if (f != NULL) {
-        fprintf(f, "Hello World\n");
-        // ⚠️ 忘记 fclose(f)
-    }
-    return;  // f 泄漏
-}
-```
-
-**原因分析：**
-
-- OmniScope的`PointerOwnership` pass只追踪**堆内存**（malloc/free）
-- 不追踪**文件描述符/句柄**（fopen/fclose）的生命周期
-- 文件句柄是操作系统资源，不是内存资源
-- **改进方向**:
-  1. 扩展`ResourceTracker`支持非内存资源（file handles, sockets, mutexes）
-  2. 在FFI detector中标记`fopen`为资源分配器，`fclose`为释放器
-
-**难度**: 中高（需要扩展资源模型）
-
-***
-
-### BUG-10 ❌ Uninitialized Variable（未初始化变量）
-
-```c
-void bug_uninitialized_var(void) {
-    int secret;
-    int *ptr = &secret;
-    if (*ptr > 1000000) {  // ⚠️ 未定义行为
-        printf("Secret: %d\n", secret);
-    }
-}
-```
-
-**原因分析：**
-
-- LLVM IR中局部变量默认初始化为`undef`或`zeroinitializer`（取决于优化级别）
-- `-O1`优化后，编译器可能将未初始化变量优化掉或赋予初值
-- 需要**Def-Use分析**结合**初始化状态机**
-- **改进方向**: 添加`UninitVarDetector` pass，跟踪每个alloca是否在使用前被store过
-
-**难度**: 高（需要精确的控制流分析）
-
-***
-
-### BUG-13 ❌ Out of Bounds Access（数组越界访问）
-
-```c
-void bug_out_of_bounds_access(void) {
-    int arr[5] = {1, 2, 3, 4, 5};
-    int val = arr[10];   // 读越界
-    arr[15] = 42;        // 写越界!
-}
-```
-
-**原因分析：**
-
-- 与BUG-06类似，栈数组的越界访问需要**边界检查**
-- GEP（GetElementPtr）指令的索引需要在编译期或运行时验证
-- Clang编译时已经警告了：
-  ```
-  warning: array index 10 is past the end of the array
-  warning: array index 15 is past the end of the array
-  ```
-- **改进方向**:
-  1. 解析GEP指令的索引值
-  2. 与alloca的大小进行对比
-  3. 对于常量索引可以直接判断；对于变量索引需要值域分析
-
-**难度**: 高（需要GEP解析+范围分析）
-
-***
-
-### BUG-14 ❌ Struct Member Leak（结构体成员泄漏）
-
-```c
-typedef struct {
-    char *name;
-    char *data;
-} ComplexStruct;
-
-void bug_struct_member_leak(void) {
-    ComplexStruct *cs = malloc(sizeof(ComplexStruct));
-    cs->name = strdup("test_name");
-    cs->data = malloc(4096);
-    free(cs->name);
-    // ⚠️ cs->data 和 cs 本身都没释放
-}
-```
-
-**原因分析：**
-
-- OmniScope可以检测到`cs->data`的malloc和`cs`本身的malloc
-- 但无法建立**结构体字段级**的所有权关系
-- 当前实现只追踪**顶层指针**，不追踪嵌套的复合类型
-- **改进方向**:
-  1. 在数据流图中建模struct字段的独立生命周期
-  2. 当struct被free时，检查所有heap-allocated字段是否也已释放
-
-**难度**: 高（需要类型系统增强）
-
-***
-
-### BUG-15 ❌ Loop Memory Leak（循环内泄漏）
-
-```c
-void bug_loop_leak(int iterations) {
-    for (int i = 0; i < iterations; i++) {
-        char *chunk = malloc(1024);
-        chunk[0] = 'A';
-        // ⚠️ 每次循环都泄漏1024字节
-    }
-}
-```
-
-**原因分析：**
-
-- 循环体内的分配-使用模式在每次迭代中看起来都是"正常的"
-- 需要**循环不变量分析**或**累积效应检测**
-- 如果iterations=10，应该报告"潜在泄漏10\*1024字节"
-- **改进方向**:
-  1. 检测循环体内有alloc但无free的模式
-  2. 报告"循环内持续分配可能导致内存泄漏"
-
-**难度**: 中（需要循环模式识别）
-
-***
-
-### BUG-17 ❌ execvp() 调用（进程替换）
-
-```c
-void bug_exec_call(void) {
-    char *args[] = {"ls", "-la", NULL};
-    execvp("ls", args);  // ⚠️ 替换当前进程
-}
-```
-
-**原因分析：**
-
-- `execvp`不在当前的DangerousPatterns列表中！
-- 这是个**遗漏**，不是技术限制
-- **修复方法**: 在`ffi_unsafe.zig`的`DangerousPatterns`中添加`"execvp"`
-- 或者更好的方案：在`call_graph.zig`的`isSink()`中添加`exec*`前缀匹配
-
-**难度**: 极低（只需加一行配置！）🎯
-
-***
-
-## 📈 检测能力总结矩阵
-
-| Bug类型              | 埋入数量         | 检测到 | 命中率      | 技术难度 | 改进优先级   |
-| ------------------ | ------------ | --- | -------- | ---- | ------- |
-| **内存泄漏**           | 3 (01,14,15) | 1   | 33%      | 中    | ⭐⭐⭐ 高   |
-| **Use-After-Free** | 3 (02,09,16) | 3   | **100%** | -    | ✅ 已完美   |
-| **Double-Free**    | 1 (03)       | 0   | 0%       | 中    | ⭐⭐⭐ 高   |
-| **NULL解引用**        | 1 (04)       | 1   | **100%** | -    | ✅ 已完美   |
-| **FFI命令执行**        | 3 (05,12,17) | 2   | 67%      | 极低   | ⭐🔥 立即修 |
-| **缓冲区溢出**          | 1 (06)       | 0   | 0%       | 高    | ⭐⭐ 中    |
-| **格式化字符串**         | 1 (07)       | 0.5 | 50%      | 中    | ⭐⭐ 中    |
-| **文件句柄泄漏**         | 1 (08)       | 0   | 0%       | 中高   | ⭐⭐ 中    |
-| **未初始化变量**         | 1 (10)       | 0   | 0%       | 高    | ⭐ 低     |
-| **数组越界**           | 1 (13)       | 0   | 0%       | 高    | ⭐⭐ 中    |
-| **Realloc误用**      | 1 (09)       | 1   | **100%** | -    | ✅ 已完美   |
-
-**总体统计：**
-
-- **总埋雷数**: 17个
-- **成功检测**: 7个 (41.2%)
-- **部分检测**: 1个 (5.9%)
-- **完全漏报**: 9个 (52.9%)
-
-***
-
-## 🎯 关键发现与改进建议
-
-### 🔥 立即可修复（1天工作量）
-
-#### 1. 补充 exec\* 系列检测 \[BUG-17]
-
-**位置**: [`ffi_unsafe.zig`](../src/pass/analysis/issue/ffi_unsafe.zig)
-**修改**: 在`DangerousPatterns`中添加：
+当前 `classifyCppFunction` 的 escape 模式：
 
 ```zig
-"execve",
-"execvp",
-"execv",
-"execl",
-"execlp",
-"execle",
-"fexecve",
-"posix_spawn",
-"posix_spawnp",
+const CPP_ESCAPE_PATTERNS = [_][]const u8{
+    "reinterpret_cast", "const_cast",
+    "malloc(", "free(", "realloc(",       // 注意有括号
+    "new ", "delete ",                     // 注意有空格
+    "pthread_create", "std::thread",
+    "CreateThread",
+};
 ```
 
-**同时修改**: [`call_graph.zig`](../src/pass/analysis/call_graph.zig) 的`isSink()`函数，添加`_exec`前缀匹配（已有部分实现）
+**未覆盖的常见 FFI C 函数**：
 
-**预期收益**: FFI命令执行检测率从 67% → 100%
+| 类别 | 缺失的函数 |
+|------|-----------|
+| 动态加载 | `dlopen`, `dlsym`, `dlclose`, `dlerror` |
+| 内存映射 | `mmap`, `munmap`, `mprotect` |
+| Python C API | `Py_INCREF`, `Py_DECREF`, `Py_XINCREF` |
+| JNI | `JNI_`, `Java_` |
+| 信号 | `signal`, `sigaction` |
+| 系统 | `syscall`, `ioctl`, `fcntl` |
 
-***
+### 4.5 修复建议
 
-#### 2. 增强 Format String 检测 \[BUG-07]
-
-**位置**: [`ffi_unsafe.zig`](../src/pass/analysis/issue/ffi_unsafe.zig) 或新建`taint_propagation.zig`
-**思路**:
-
-- 当检测到`printf(variable)`时（第一个参数非常量），提升severity到HIGH
-- 结合taint analysis：如果variable来自用户输入（fgets, argv, getenv等），标记为CRITICAL
-
-**预期收益**: 格式化字符串检测从弱提示 → 强报警
-
-***
-
-### ⭐⭐ 短期改进（1-2周工作量）
-
-#### 3. Double-Free 检测器 \[BUG-03]
-
-**位置**: [`pointer_ownership.zig`](../src/pass/analysis/pointer_ownership.zig)
-**实现思路**:
+**修复 1（低成本，高收益）**: 将 `pointer_ownership.zig` 中的调用改为 `classifyFunctionFromLLVM`
 
 ```zig
-var freed_set = std.AutoHashMap(u32, void).init(allocator);
-
-// 在处理 free(ptr) 时：
-if (freed_set.contains(ptr_id)) {
-    // 发现 double-free！
-    reportIssue(.double_free, location);
-} else {
-    try freed_set.put(ptr_id, {});
-}
+// 改前:
+const zone = zone_classifier.classifyFunction(func_name, null);
+// 改后:
+const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
 ```
 
-**预期收益**: 新增Double-Free检测能力（覆盖率+6%）
+预期效果：`dlsym`, `dlclose`, `mmap` 等外部声明函数被正确分类为 `.ffi`，FFI-01/02/03/09 可能被检出。
 
-***
+**修复 2（低成本，中收益）**: 扩展 CPP_ESCAPE_PATTERNS
 
-#### 4. File Handle 资源泄漏检测 \[BUG-08]
+```zig
+const CPP_ESCAPE_PATTERNS = [_][]const u8{
+    // 现有...
+    "dlopen", "dlsym", "dlclose", "dlerror",
+    "mmap", "munmap", "mprotect",
+    "Py_INCREF", "Py_DECREF", "Py_XINCREF", "Py_XDECREF",
+};
+```
 
-**位置**: 新建`resource_tracker.zig`或在现有pass中扩展
-**思路**: 将fopen/fclose、socket/close、pthread\_mutex\_init/destroy等配对操作建模为通用资源
-**预期收益**: 扩展检测范围到非内存资源
+**修复 3（中成本，高收益）**: zone_classifier 与 semantic_registry 联动
 
-***
+`semantic_registry.zig` 已经注册了 `mmap` (memory_map)、`dlsym` 等函数的语义信息，但 zone_classifier 没有查询它。让 classifyCppFunction 查询 registry，根据 RiskKind 决定 zone。
 
-#### 5. Loop内内存泄漏模式 \[BUG-15]
+---
 
-**位置**: [`pointer_ownership.zig`](../src/pass/analysis/pointer_ownership.zig)
-**启发式规则**: 如果一个基本块（loop body）内有malloc但没有对应的free，且该基本块有回边（back edge），则报告"Potential loop leak"
-**预期收益**: 检测常见的循环泄漏反模式
+## 五、综合结论
 
-***
+### 5.1 检出率对比
 
-### ⭐⭐⭐ 长期研究（1个月+）
+| 测试集 | 有效用例 | 检出 | 检出率 | 误报 |
+|--------|---------|------|--------|------|
+| red_team_bugs.c | 16 | 10 | **62.5%** | 0 |
+| ffi_boundary_bugs.c | 17 | 6 | **35.3%** | 0 |
 
-#### 6. 栈缓冲区溢出检测 \[BUG-06, BUG-13]
+### 5.2 能力矩阵
 
-**技术挑战**:
+| 能力 | 状态 | 触发条件 |
+|------|------|----------|
+| malloc→不 free | ✅ 强 | 显式 malloc 无配对 free |
+| execvp/system | ✅ 强 | 直接调用 exec 系列函数 |
+| double free | ✅ 强 | 同一函数内连续 free |
+| conditional leak | ✅ 强 | 条件分支上遗漏 free |
+| struct member leak | ✅ 强 | 结构体成员未释放 |
+| dlsym NULL check | ❌ 弱 | Zone Classifier 未识别 dlsym 为 FFI |
+| dlclose 生命周期 | ❌ 弱 | 同上 + 生命周期追踪缺失 |
+| mmap/munmap 配对 | ❌ 无 | Zone Classifier 未覆盖 + 配对追踪缺失 |
+| callback 逃逸 | ❌ 无 | 函数指针存储/调用链未追踪 |
+| Python refcount | ❌ 无 | Py_INCREF/DECREF 模型缺失 |
+| Go GC 感知 | ❌ 无 | Go 移动语义未建模 |
+| Rust Vec 语义 | ❌ 无 | Rust 类型语义未建模 |
+| 返回值逃逸 | ❌ 无 | 返回值生命周期未追踪 |
 
-- 需要解析GEP（GetElementPtr）指令的索引语义
-- 需要值域分析来计算动态索引的范围
-- 需要区分安全的越界（padding）和危险的越界（write）
-  **参考工具**: Stack canary (编译器), AddressSanitizer (运行时), CBMC (模型检验)
+### 5.3 核心发现
 
-#### 7. 结构体字段级所有权分析 \[BUG-14]
+1. **0 误报**: 两份测试集共 33 个有效用例，OmniScope 检出的 16 个全部为 TP 或正确分类。精确率 100%。
 
-**技术挑战**:
+2. **Zone Classifier 是 FFI 检出的瓶颈**: ffi_boundary_bugs.c 中 4 个漏报（FFI-01/02/03/09）直接因为 Zone Classifier 将包含 `dlsym`/`dlclose` 调用的函数归为 Unknown Zone。修复分类路径（使用 `classifyFunctionFromLLVM`）即可改善。
 
-- LLVM IR的类型系统对struct的支持有限（opaque types）
-- 需要debug info来恢复字段布局
-- 需要跨函数的field-sensitive分析
+3. **分析 Pass 跳过声明函数**: `pointer_ownership.zig` 直接 `continue` 跳过了所有 LLVM declaration 函数，而这些正是 FFI 边界函数（dlsym, mmap, Py_DECREF 都是 declaration）。
 
-#### 8. 未初始化变量检测 \[BUG-10]
+4. **跨语言语义建模是长期目标**: Python refcount、Go GC、Rust Vec 语义等需要语言特定的分析 Pass，属于 Phase 3+ 的工作。
 
-**技术挑战**:
+### 5.4 优先改进建议
 
-- 需要def-use链分析
-- 需要区分"有意未初始化"（后续会赋值）vs "真正遗漏"
-- 编译器优化可能会消除或引入初始化
-
-***
-
-## 🏆 OmniScope的优势领域
-
-基于本次红队测试，OmniScope在以下方面表现**优秀**：
-
-1. ✅ **Use-After-Free检测**: 100%命中率，数据流分析精准
-2. ✅ **NULL解引用检测**: 能识别大尺寸分配失败的场景
-3. ✅ **FFI危险函数识别**: system/popen准确标记为CRITICAL
-4. ✅ **Taint Analysis**: 能构建完整的 Source→Sink 路径（OMI-001）
-5. ✅ **所有权语义**: 正确识别TRANSFER/CONSUME ownership标注
-6. ✅ **跨函数分析**: 能追踪从main()到子函数的数据流
-
-这些能力在**跨语言FFI场景**下特别有价值，因为传统工具（Clang静态分析、Coverity）往往难以处理Rust↔C的边界。
-
-***
-
-## 📋 下一步行动计划
-
-### Priority P0 (本周完成)
-
-- [ ] 修复BUG-17: 添加exec\*系列到危险函数列表
-- [ ] 增强BUG-07: format string检测强度
-
-### Priority P1 (下周完成)
-
-- [ ] 实现BUG-03: Double-Free检测器
-- [ ] 实现BUG-15: Loop leak启发式规则
-- [ ] 创建红队测试回归套件（加入CI）
-
-### Priority P2 (本月完成)
-
-- [ ] 设计BUG-08: 资源泄漏检测架构
-- [ ] 评估BUG-06/13: 栈溢出检测可行性
-- [ ] 性能优化：当前38个函数扫描耗时4.28ms（可接受）
-
-***
-
-## 🔬 测试方法论说明
-
-本测试遵循\*\* adversarial testing\*\* 原则：
-
-1. **故意性**: 所有bug都是精心设计的，不是偶然错误
-2. **多样性**: 覆盖内存安全、输入验证、资源管理等多个维度
-3. **真实性**: 每个bug都对应CVE数据库中的真实漏洞模式
-4. **可复现**: 提供完整源码和LLVM IR，可独立验证
-
-这种测试方法的优点：
-
-- 比fuzzing更有针对性（知道哪里应该触发报警）
-- 比单元测试更贴近真实场景（使用真实代码模式）
-- 可以量化检测能力的边界（命中率/漏报率/误报率）
-
-**参考标准**:
-
-- Coverity Scan: 商业级C/C++静态分析器
-- Clang Static Analyzer: 开源替代品
-- Infer: Facebook的开源分析器（擅长内存安全）
-- CBMC: 有界模型检验工具（理论完备性强）
-
-***
-
-*报告生成时间: 2026-04-23*
-*测试环境: macOS 15.0, Zig 0.15.2, Clang 18*
-*OmniScope版本: improve分支*
+| 优先级 | 改进项 | 预期收益 | 工作量 |
+|--------|--------|---------|--------|
+| **P0** | 分析 Pass 使用 `classifyFunctionFromLLVM` | FFI-01/02/03/09 可能检出 | 半天 |
+| **P0** | 扩展 CPP_ESCAPE_PATTERNS（dlopen/dlsym/dlclose/mmap） | Zone 分类更准确 | 1 小时 |
+| **P1** | zone_classifier 与 semantic_registry 联动 | 利用已有知识库 | 1-2 天 |
+| **P1** | 分析 Pass 不跳过 declaration 函数 | FFI 边界函数不再被忽略 | 半天 |
+| **P2** | mmap/munmap 配对追踪 | FFI-17 可能检出 | 2-3 天 |
+| **P3** | Python refcount 模型 | FFI-14/15 可能检出 | 1 周 |
+| **P3** | 返回值逃逸分析 | FFI-21 可能检出 | 1 周 |

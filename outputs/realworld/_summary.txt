@@ -1,0 +1,56 @@
+[0;36m────────────────────────────────────────────────────────────────────────[0m
+  \033[1mOmniScope v0.1.6 — Real-World FFI/Unsafe Audit\033[0m
+  2026-04-28 10:28:12
+[0;36m────────────────────────────────────────────────────────────────────────[0m
+
+  Binary: /Users/scc/code/zigcode/OmniScope/zig-out/bin/OmniScope
+  Source: /Users/scc/code/zigcode/OmniScope/corpus/real_world/
+  Output: /Users/scc/code/zigcode/OmniScope/outputs/realworld/
+
+  ╔══════════════════╦══════╦════════╦════════════════════╗
+  ║ Metric           ║ Count║        ║                    ║
+  ╠══════════════════╬══════╬════════╬════════════════════╣
+  ║ Files analyzed   ║   18 ║        ║                    ║
+  ║ Passed           ║   18 ║ ✅     ║                    ║
+  ║ Failed           ║    0 ║ ❌     ║                    ║
+  ║ Total Issues     ║   87 ║ 🔍     ║                    ║
+  ╚══════════════════╩══════╩════════╩════════════════════╝
+
+  ┌──────────────────────┬───────┬────────────────────────────────┐
+  │ Project              │ Issues│ Top Kinds                      │
+  ├──────────────────────┼───────┼────────────────────────────────┤
+  │ wasmtime_test        │ [0;31m   26[0m │ use_after_free(26)             │
+  │ jsoncpp195           │ [0;31m   19[0m │ use_after_free(15) memory_leak │
+  │ sqlite3              │ [0;31m   10[0m │ memory_leak(10)                │
+  │ blst                 │ [1;33m    9[0m │ use_after_free(9)              │
+  │ openssl_wrapper      │ [1;33m    7[0m │ memory_leak(7)                 │
+  │ rust_sqlite          │ [1;33m    6[0m │ memory_leak(5) use_after_free( │
+  │ wabt_wast2json       │ [1;33m    4[0m │ memory_leak(4)                 │
+  │ libuv150             │ [0;32m    2[0m │ command_injection(1) ffi_unsaf │
+  │ gnark_test           │ [0;32m    2[0m │ use_after_free(1) null_derefer │
+  │ abseil2024           │ [0;32m    2[0m │ memory_leak(2)                 │
+  │ zkcrypto_ff          │ [0;32m    0[0m │                                │
+  │ zkcrypto_bls12_381   │ [0;32m    0[0m │                                │
+  │ ripgrep141           │ [0;32m    0[0m │                                │
+  │ ring                 │ [0;32m    0[0m │                                │
+  │ libsodium_sign       │ [0;32m    0[0m │                                │
+  │ libsodium_blake2b    │ [0;32m    0[0m │                                │
+  │ curl8                │ [0;32m    0[0m │                                │
+  │ ark_ff               │ [0;32m    0[0m │                                │
+  └──────────────────────┴───────┴────────────────────────────────┘
+
+  FFI/Unsafe Categories Scanned:
+    • memory_leak          — malloc/calloc not freed
+    • use_after_free      — pointer used after free
+    • double_free         — double free detected
+    • null_dereference    — null pointer dereference
+    • uninitialized_use   — uninitialized memory read
+    • ffi_unsafe          — FFI boundary violations
+    • callback_escape     — C->Go/Rust callback escapes
+    • abi_mismatch        — ABI incompatibility
+
+  Output files:
+    *.json  -> Structured JSON results
+    *.log   -> Full debug logs with zone classification
+
+[0;36m────────────────────────────────────────────────────────────────────────[0m

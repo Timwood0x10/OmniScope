@@ -1,0 +1,8 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777343285,"summary":{"functions":51,"issues":6,"time_ms":55},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN15rust_sqlite_ffi12leak_cstring17h85bb5ff18bf4ee7dE"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN15rust_sqlite_ffi14use_after_free17h6f729f1d2f372575E"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E"}},
+  {"id":"OMI-006","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"_ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE"}}
+]}

@@ -1,0 +1,742 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
+[INFO] Loaded: 877 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: uv_async_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_start
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail
+[2m[DEBUG][0m ANALYZE [USER]: uv__kqueue_runtime_detection
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_io
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_move
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_split
+[2m[DEBUG][0m ANALYZE [USER]: uv_async_send
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_send
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_spin
+[2m[DEBUG][0m ANALYZE [USER]: uv__cpu_relax
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__async_fork
+[2m[DEBUG][0m ANALYZE [USER]: uv_clock_gettime
+[2m[DEBUG][0m ANALYZE [USER]: uv_hrtime
+[2m[DEBUG][0m ANALYZE [USER]: uv_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__make_close_pending
+[2m[DEBUG][0m ANALYZE [USER]: uv__socket_sockopt
+[2m[DEBUG][0m ANALYZE [USER]: uv__getiovmax
+[2m[DEBUG][0m ANALYZE [USER]: uv_is_closing
+[2m[DEBUG][0m ANALYZE [USER]: uv_backend_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv_backend_timeout
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.9
+[2m[DEBUG][0m ANALYZE [USER]: uv__backend_timeout
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_alive
+[2m[DEBUG][0m ANALYZE [USER]: uv__loop_alive
+[2m[DEBUG][0m ANALYZE [USER]: uv_run
+[2m[DEBUG][0m ANALYZE [USER]: uv__update_time
+[2m[DEBUG][0m ANALYZE [USER]: uv__run_pending
+[2m[DEBUG][0m ANALYZE [USER]: uv__run_closing_handles
+[2m[DEBUG][0m ANALYZE [USER]: uv__finish_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.10
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_move.11
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.12
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.13
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_split.14
+[2m[DEBUG][0m ANALYZE [USER]: uv_update_time
+[2m[DEBUG][0m ANALYZE [USER]: uv_is_active
+[2m[DEBUG][0m ANALYZE [USER]: uv__socket
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__socket -> socket
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/core.c:519:12
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Create socket - returns ownership, must close
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: socket returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m ANALYZE [USER]: uv__nonblock_ioctl
+[2m[DEBUG][0m ANALYZE [USER]: uv__cloexec
+[2m[DEBUG][0m ANALYZE [USER]: uv__close
+[2m[DEBUG][0m ANALYZE [USER]: uv__close_nocheckstdio
+[2m[DEBUG][0m ANALYZE [USER]: uv__close_nocancel
+[2m[DEBUG][0m ANALYZE [USER]: uv__open_file
+[2m[DEBUG][0m ANALYZE [USER]: uv__open_cloexec
+[2m[DEBUG][0m ANALYZE [USER]: uv__accept
+[2m[DEBUG][0m ANALYZE [USER]: uv__nonblock_fcntl
+[2m[DEBUG][0m ANALYZE [USER]: uv__recvmsg
+[2m[DEBUG][0m ANALYZE [USER]: uv_cwd
+[2m[DEBUG][0m ANALYZE [USER]: uv_chdir
+[2m[DEBUG][0m ANALYZE [USER]: uv_disable_stdio_inheritance
+[2m[DEBUG][0m ANALYZE [USER]: uv_fileno
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_start
+[2m[DEBUG][0m ANALYZE [USER]: maybe_resize
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.23
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: next_power_of_two
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_feed
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_active
+[2m[DEBUG][0m ANALYZE [USER]: uv__fd_exists
+[2m[DEBUG][0m ANALYZE [USER]: uv_getrusage
+[2m[DEBUG][0m ANALYZE [USER]: uv__getrusage
+[2m[DEBUG][0m ANALYZE [USER]: uv_getrusage_thread
+[2m[DEBUG][0m ANALYZE [USER]: uv__slurp
+[2m[DEBUG][0m ANALYZE [USER]: uv__dup2_cloexec
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_homedir
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_getenv
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_get_passwd
+[2m[DEBUG][0m ANALYZE [USER]: uv__getpwuid_r
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_tmpdir
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_get_group
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_get_passwd2
+[2m[DEBUG][0m ANALYZE [USER]: uv_translate_sys_error
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_environ
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_setenv
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_unsetenv
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_gethostname
+[2m[DEBUG][0m ANALYZE [USER]: uv_get_osfhandle
+[2m[DEBUG][0m ANALYZE [USER]: uv_open_osfhandle
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_getpid
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_getppid
+[2m[DEBUG][0m ANALYZE [USER]: uv_cpumask_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_getpriority
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_setpriority
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_getpriority
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_setpriority
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_uname
+[2m[DEBUG][0m ANALYZE [USER]: uv__getsockpeername
+[2m[DEBUG][0m ANALYZE [USER]: uv_gettimeofday
+[2m[DEBUG][0m ANALYZE [USER]: uv_sleep
+[2m[DEBUG][0m ANALYZE [USER]: uv__search_path
+[2m[DEBUG][0m ANALYZE [USER]: uv_available_parallelism
+[2m[DEBUG][0m ANALYZE [USER]: uv__sock_reuseport
+[2m[DEBUG][0m ANALYZE [USER]: uv__platform_loop_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__platform_loop_delete
+[2m[DEBUG][0m ANALYZE [USER]: uv__hrtime
+[2m[DEBUG][0m ANALYZE [USER]: uv__hrtime_init_once
+[2m[DEBUG][0m ANALYZE [USER]: uv_exepath
+[2m[DEBUG][0m ANALYZE [USER]: uv_get_free_memory
+[2m[DEBUG][0m ANALYZE [USER]: uv_get_total_memory
+[2m[DEBUG][0m ANALYZE [USER]: uv_get_constrained_memory
+[2m[DEBUG][0m ANALYZE [USER]: uv_get_available_memory
+[2m[DEBUG][0m ANALYZE [USER]: uv_loadavg
+[2m[DEBUG][0m ANALYZE [USER]: uv_resident_set_memory
+[2m[DEBUG][0m ANALYZE [USER]: uv_uptime
+[2m[DEBUG][0m ANALYZE [USER]: uv_cpu_info
+[2m[DEBUG][0m ANALYZE [USER]: uv_dlopen
+[2m[DEBUG][0m ANALYZE [USER]: uv__dlerror
+[2m[DEBUG][0m ANALYZE [USER]: uv_dlclose
+[2m[DEBUG][0m ANALYZE [USER]: uv_dlsym
+[2m[DEBUG][0m ANALYZE [USER]: uv_dlerror
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_poll_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.37
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_poll_start
+[2m[DEBUG][0m ANALYZE [USER]: poll_cb
+[2m[DEBUG][0m ANALYZE [USER]: statbuf_eq
+[2m[DEBUG][0m ANALYZE [USER]: timer_close_cb
+[2m[DEBUG][0m ANALYZE [USER]: timer_cb
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_poll_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_poll_getpath
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_poll_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_post
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_work
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_done
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_copyfile
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_fdatasync
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_fstat
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_fsync
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_futime
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_lutime
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_lstat
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_mkdtemp
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_mkstemp
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_open
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_read
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_scandir
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: uv__fs_scandir -> free
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/fs.c:594:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_opendir
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_readdir
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_closedir
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_readlink
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_realpath
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_sendfile
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_stat
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_statfs
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_utime
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_write_all
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_write
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_buf_offset
+[2m[DEBUG][0m ANALYZE [USER]: uv__pwritev
+[2m[DEBUG][0m ANALYZE [USER]: uv__preadv_or_pwritev
+[2m[DEBUG][0m ANALYZE [USER]: uv__preadv_emul
+[2m[DEBUG][0m ANALYZE [USER]: uv__pwritev_emul
+[2m[DEBUG][0m ANALYZE [USER]: uv__preadv_or_pwritev_emul
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_to_timeval
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_statx
+[2m[DEBUG][0m ANALYZE [USER]: uv__stat
+[2m[DEBUG][0m ANALYZE [USER]: uv__to_stat
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_sendfile_emul
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_pathmax_size
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_scandir_filter
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_scandir_sort
+[2m[DEBUG][0m ANALYZE [USER]: uv__preadv
+[2m[DEBUG][0m ANALYZE [USER]: uv__mkostemp_initonce
+[2m[DEBUG][0m ANALYZE [USER]: uv__lstat
+[2m[DEBUG][0m ANALYZE [USER]: uv__fstat
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_open
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_req_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_sendfile
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_unlink
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_access
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_chmod
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_chown
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_fchmod
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_fchown
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_lchown
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_fdatasync
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_fstat
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_fsync
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_ftruncate
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_futime
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_lutime
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_lstat
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_link
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_mkdir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_mkdtemp
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_mkstemp
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_read
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_scandir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_opendir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_readdir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_closedir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_readlink
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_realpath
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_rename
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_rmdir
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_stat
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_symlink
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_utime
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_write
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_copyfile
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_statfs
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_get_system_error
+[2m[DEBUG][0m ANALYZE [USER]: uv__utf8_decode1
+[2m[DEBUG][0m ANALYZE [USER]: uv__utf8_decode1_slow
+[2m[DEBUG][0m ANALYZE [USER]: uv__idna_toascii
+[2m[DEBUG][0m ANALYZE [USER]: uv__idna_toascii_label
+[2m[DEBUG][0m ANALYZE [USER]: uv_wtf8_length_as_utf16
+[2m[DEBUG][0m ANALYZE [USER]: uv__wtf8_decode1
+[2m[DEBUG][0m ANALYZE [USER]: uv_wtf8_to_utf16
+[2m[DEBUG][0m ANALYZE [USER]: uv_utf16_length_as_wtf8
+[2m[DEBUG][0m ANALYZE [USER]: uv__get_surrogate_value
+[2m[DEBUG][0m ANALYZE [USER]: uv_utf16_to_wtf8
+[2m[DEBUG][0m ANALYZE [USER]: uv_inet_ntop
+[2m[DEBUG][0m ANALYZE [USER]: inet_ntop4
+[2m[DEBUG][0m ANALYZE [USER]: inet_ntop6
+[2m[DEBUG][0m ANALYZE [USER]: uv_inet_pton
+[2m[DEBUG][0m ANALYZE [USER]: inet_pton4
+[2m[DEBUG][0m ANALYZE [USER]: inet_pton6
+[2m[DEBUG][0m ANALYZE [USER]: uv__kqueue_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_fork
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_check_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv__fstat.69
+[2m[DEBUG][0m ANALYZE [USER]: uv__io_poll
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.72
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.75
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.76
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.77
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_event
+[2m[DEBUG][0m ANALYZE [USER]: uv__update_time.84
+[2m[DEBUG][0m ANALYZE [USER]: uv__kqueue_delete
+[2m[DEBUG][0m ANALYZE [USER]: uv__basename_r
+[2m[DEBUG][0m ANALYZE [USER]: uv__platform_invalidate_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_event_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.94
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_event_start
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_event_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_event_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_init
+[2m[DEBUG][0m ANALYZE [USER]: heap_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.97
+[2m[DEBUG][0m ANALYZE [USER]: uv__update_time.98
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_fork
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.99
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.100
+[2m[DEBUG][0m ANALYZE [USER]: uv__loop_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__loop_configure
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_bind
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_bind2
+[2m[DEBUG][0m ANALYZE [USER]: includes_nul
+[2m[DEBUG][0m ANALYZE [USER]: uv__pipe_listen
+[2m[DEBUG][0m ANALYZE [USER]: uv__pipe_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_open
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_connect2
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.106
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_getsockname
+[2m[DEBUG][0m ANALYZE [USER]: uv__pipe_getsockpeername
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_getpeername
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_pending_instances
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_pending_count
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_pending_type
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe_chmod
+[2m[DEBUG][0m ANALYZE [USER]: uv__stat.107
+[2m[DEBUG][0m ANALYZE [USER]: uv_pipe
+[2m[DEBUG][0m ANALYZE [USER]: uv__make_pipe
+[2m[DEBUG][0m ANALYZE [USER]: uv_poll_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.110
+[2m[DEBUG][0m ANALYZE [USER]: uv__poll_io
+[2m[DEBUG][0m ANALYZE [USER]: uv_poll_init_socket
+[2m[DEBUG][0m ANALYZE [USER]: uv_poll_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__poll_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv_poll_start
+[2m[DEBUG][0m ANALYZE [USER]: uv__poll_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__wait_children
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.120
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.121
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: uv__queue_next
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.124
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.125
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.126
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_find_path_in_env
+[2m[DEBUG][0m ANALYZE [USER]: uv_spawn
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_init_stdio
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_and_init_child
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_open_stream
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_close_stream
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_posix_spawn
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_and_init_child_posix_spawn
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_and_init_child_fork
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_child_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_errno
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_int
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_set_posix_spawn_attrs
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_set_posix_spawn_file_actions
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_resolve_and_spawn
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_posix_spawn_fncs
+[2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_can_use_setsid
+[2m[DEBUG][0m ANALYZE [USER]: uv_process_kill
+[2m[DEBUG][0m ANALYZE [USER]: uv_kill
+[2m[DEBUG][0m ANALYZE [USER]: uv__process_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_random
+[2m[DEBUG][0m ANALYZE [USER]: uv__random
+[2m[DEBUG][0m ANALYZE [USER]: uv__random_work
+[2m[DEBUG][0m ANALYZE [USER]: uv__random_done
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_global_once_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_global_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_global_reinit
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_unlock
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_loop_fork
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_loop_once_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_event
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_block_and_lock
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_REMOVE
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_first_handle
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_unregister_handler
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_register_handler
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_unlock_and_unblock
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_handler
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_lock
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_NEXT
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_NFIND
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_compare
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_REMOVE_COLOR
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_loop_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: uv_signal_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.153
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_signal_start
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_start
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_INSERT
+[2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_INSERT_COLOR
+[2m[DEBUG][0m ANALYZE [USER]: uv_signal_start_oneshot
+[2m[DEBUG][0m ANALYZE [USER]: uv_signal_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.159
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.160
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_io
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv___stream_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv__read
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_eof
+[2m[DEBUG][0m ANALYZE [USER]: uv__write
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_callbacks
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.169
+[2m[DEBUG][0m ANALYZE [USER]: uv__drain
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_interrupt_select
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_move.173
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.174
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.175
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_req_size
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_split.178
+[2m[DEBUG][0m ANALYZE [USER]: uv__try_write
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_req_update
+[2m[DEBUG][0m ANALYZE [USER]: uv__write_req_finish
+[2m[DEBUG][0m ANALYZE [USER]: uv__handle_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv__writev
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_recv_cmsg
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__stream_recv_cmsg -> fprintf
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/stream.c:992:7
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_queue_fd
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_flush_write_queue
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_try_select
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_select_cb
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_select
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_cb_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_open
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_destroy
+[2m[DEBUG][0m ANALYZE [USER]: uv__server_io
+[2m[DEBUG][0m ANALYZE [USER]: uv__emfile_trick
+[2m[DEBUG][0m ANALYZE [USER]: uv_accept
+[2m[DEBUG][0m ANALYZE [USER]: uv_listen
+[2m[DEBUG][0m ANALYZE [USER]: uv_shutdown
+[2m[DEBUG][0m ANALYZE [USER]: uv_write2
+[2m[DEBUG][0m ANALYZE [USER]: uv__check_before_write
+[2m[DEBUG][0m ANALYZE [USER]: uv_write
+[2m[DEBUG][0m ANALYZE [USER]: uv_try_write
+[2m[DEBUG][0m ANALYZE [USER]: uv_try_write2
+[2m[DEBUG][0m ANALYZE [USER]: uv__read_start
+[2m[DEBUG][0m ANALYZE [USER]: uv_read_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv_is_readable
+[2m[DEBUG][0m ANALYZE [USER]: uv_is_writable
+[2m[DEBUG][0m ANALYZE [USER]: uv__stream_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_stream_set_blocking
+[2m[DEBUG][0m ANALYZE [USER]: uv__strscpy
+[2m[DEBUG][0m ANALYZE [USER]: uv__strtok
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_init_ex
+[2m[DEBUG][0m ANALYZE [USER]: new_socket
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.215
+[2m[DEBUG][0m ANALYZE [USER]: maybe_bind_socket
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_bind
+[2m[DEBUG][0m ANALYZE [USER]: maybe_new_socket
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv__is_ipv6_link_local
+[2m[DEBUG][0m ANALYZE [USER]: uv__ipv6_link_local_scope_id
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.218
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_open
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_getsockname
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_getpeername
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_close_reset
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_listen
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_nodelay
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_keepalive
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_nodelay
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_keepalive
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_simultaneous_accepts
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcp_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_socketpair
+[2m[DEBUG][0m ANALYZE [USER]: uv__thread_stack_size
+[2m[DEBUG][0m ANALYZE [USER]: uv__default_stack_size
+[2m[DEBUG][0m ANALYZE [USER]: uv__min_stack_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_create
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_create_ex
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_detach
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_setaffinity
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_getaffinity
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_getcpu
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_self
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_join
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_equal
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_setname
+[2m[DEBUG][0m ANALYZE [USER]: uv__thread_setname
+[2m[DEBUG][0m ANALYZE [USER]: uv_thread_getname
+[2m[DEBUG][0m ANALYZE [USER]: uv__thread_getname
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_init_recursive
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_destroy
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_lock
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_trylock
+[2m[DEBUG][0m ANALYZE [USER]: uv_mutex_unlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_destroy
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_rdlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_tryrdlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_rdunlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_wrlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_trywrlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_wrunlock
+[2m[DEBUG][0m ANALYZE [USER]: uv_once
+[2m[DEBUG][0m ANALYZE [USER]: uv_sem_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_sem_destroy
+[2m[DEBUG][0m ANALYZE [USER]: uv_sem_post
+[2m[DEBUG][0m ANALYZE [USER]: uv_sem_wait
+[2m[DEBUG][0m ANALYZE [USER]: uv_sem_trywait
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_destroy
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_signal
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_broadcast
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_wait
+[2m[DEBUG][0m ANALYZE [USER]: uv_cond_timedwait
+[2m[DEBUG][0m ANALYZE [USER]: uv_key_create
+[2m[DEBUG][0m ANALYZE [USER]: uv_key_delete
+[2m[DEBUG][0m ANALYZE [USER]: uv_key_get
+[2m[DEBUG][0m ANALYZE [USER]: uv_key_set
+[2m[DEBUG][0m ANALYZE [USER]: uv__threadpool_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: post
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.265
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.266
+[2m[DEBUG][0m ANALYZE [USER]: uv__work_submit
+[2m[DEBUG][0m ANALYZE [USER]: init_once
+[2m[DEBUG][0m ANALYZE [USER]: reset_once
+[2m[DEBUG][0m ANALYZE [USER]: init_threads
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.271
+[2m[DEBUG][0m ANALYZE [USER]: worker
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.273
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: uv__queue_next.274
+[2m[DEBUG][0m ANALYZE [USER]: slow_work_thread_threshold
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.275
+[2m[DEBUG][0m ANALYZE [USER]: uv__work_done
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_move.278
+[2m[DEBUG][0m ANALYZE [USER]: uv__cancelled
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_split.279
+[2m[DEBUG][0m ANALYZE [USER]: uv_queue_work
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_work
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_done
+[2m[DEBUG][0m ANALYZE [USER]: uv_cancel
+[2m[DEBUG][0m ANALYZE [USER]: uv__work_cancel
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_init
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.284
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.285
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_start
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_stop
+[2m[DEBUG][0m ANALYZE [USER]: timer_heap
+[2m[DEBUG][0m ANALYZE [USER]: timer_less_than
+[2m[DEBUG][0m ANALYZE [USER]: heap_insert
+[2m[DEBUG][0m ANALYZE [USER]: heap_node_swap
+[2m[DEBUG][0m ANALYZE [USER]: heap_remove
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.288
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_again
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_set_repeat
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_get_repeat
+[2m[DEBUG][0m ANALYZE [USER]: uv_timer_get_due_in
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: uv__next_timeout
+[2m[DEBUG][0m ANALYZE [USER]: heap_min
+[2m[DEBUG][0m ANALYZE [USER]: uv__run_timers
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.293
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.294
+[2m[DEBUG][0m ANALYZE [USER]: uv__timer_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__tcsetattr
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_guess_handle
+[2m[DEBUG][0m ANALYZE [USER]: uv__tty_is_slave
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.299
+[2m[DEBUG][0m ANALYZE [USER]: uv__fstat.300
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_set_mode
+[2m[DEBUG][0m ANALYZE [USER]: uv__tty_make_raw
+[2m[DEBUG][0m ANALYZE [USER]: uv__tty_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_get_winsize
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_reset_mode
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_set_vterm_state
+[2m[DEBUG][0m ANALYZE [USER]: uv_tty_get_vterm_state
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_finish_close
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.312
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.313
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.314
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.315
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_run_completed
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_bind
+[2m[DEBUG][0m ANALYZE [USER]: uv__set_recverr
+[2m[DEBUG][0m ANALYZE [USER]: uv__sock_reuseaddr
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_maybe_deferred_bind
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_disconnect
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_send
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_sendmsg
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: uv__queue_next.323
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_sendmsgv
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_prep_pkt
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_sendmsg1
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_try_send
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_init_ex
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_io
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.325
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_recvmsg
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_using_recvmmsg
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_recvmmsg
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_open
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_membership
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_membership4
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_membership6
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_source_membership
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_source_membership6
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_source_membership4
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_broadcast
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_ttl
+[2m[DEBUG][0m ANALYZE [USER]: uv__setsockopt_maybe_char
+[2m[DEBUG][0m ANALYZE [USER]: uv__setsockopt
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_ttl
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_loop
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_interface
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_getpeername
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_getsockname
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_recv_start
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_recv_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_try_send2
+[2m[DEBUG][0m ANALYZE [USER]: __GLOBAL_init_65535
+[2m[DEBUG][0m ANALYZE [USER]: uv_library_shutdown
+[2m[DEBUG][0m ANALYZE [USER]: uv__strdup
+[2m[DEBUG][0m ANALYZE [USER]: uv__malloc
+[2m[DEBUG][0m ANALYZE [USER]: uv__strndup
+[2m[DEBUG][0m ANALYZE [USER]: uv__free
+[2m[DEBUG][0m ANALYZE [USER]: uv__calloc
+[2m[DEBUG][0m ANALYZE [USER]: uv__realloc
+[2m[DEBUG][0m ANALYZE [USER]: uv__reallocf
+[2m[DEBUG][0m ANALYZE [USER]: uv_replace_allocator
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_free_passwd
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_free_group
+[2m[DEBUG][0m ANALYZE [USER]: uv_handle_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_req_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_buf_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_err_name_r
+[2m[DEBUG][0m ANALYZE [USER]: uv_err_name
+[2m[DEBUG][0m ANALYZE [USER]: uv__unknown_err_code
+[2m[DEBUG][0m ANALYZE [USER]: uv_strerror_r
+[2m[DEBUG][0m ANALYZE [USER]: uv_strerror
+[2m[DEBUG][0m ANALYZE [USER]: uv_ip4_addr
+[2m[DEBUG][0m ANALYZE [USER]: _OSSwapInt16
+[2m[DEBUG][0m ANALYZE [USER]: uv_ip6_addr
+[2m[DEBUG][0m ANALYZE [USER]: uv_ip4_name
+[2m[DEBUG][0m ANALYZE [USER]: uv_ip6_name
+[2m[DEBUG][0m ANALYZE [USER]: uv_ip_name
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_bind
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_init_ex
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_init
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_bind
+[2m[DEBUG][0m ANALYZE [USER]: uv_tcp_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_connect
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_is_connected
+[2m[DEBUG][0m ANALYZE [USER]: uv__udp_check_before_send
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_send
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_try_send
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_try_send2
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_recv_start
+[2m[DEBUG][0m ANALYZE [USER]: uv_udp_recv_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv_walk
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_move.407
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_empty.408
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_head.409
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.410
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.411
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.412
+[2m[DEBUG][0m ANALYZE [USER]: uv__queue_split.413
+[2m[DEBUG][0m ANALYZE [USER]: uv_print_all_handles
+[2m[DEBUG][0m ANALYZE [USER]: uv__print_handles
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__print_handles -> fprintf
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/uv-common.c:597:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m ANALYZE [USER]: uv_default_loop
+[2m[DEBUG][0m ANALYZE [USER]: uv_print_active_handles
+[2m[DEBUG][0m ANALYZE [USER]: uv_ref
+[2m[DEBUG][0m ANALYZE [USER]: uv_unref
+[2m[DEBUG][0m ANALYZE [USER]: uv_has_ref
+[2m[DEBUG][0m ANALYZE [USER]: uv_stop
+[2m[DEBUG][0m ANALYZE [USER]: uv_now
+[2m[DEBUG][0m ANALYZE [USER]: uv__count_bufs
+[2m[DEBUG][0m ANALYZE [USER]: uv_recv_buffer_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_send_buffer_size
+[2m[DEBUG][0m ANALYZE [USER]: uv_fs_event_getpath
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_scandir_cleanup
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: uv__fs_scandir_cleanup -> free
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/uv-common.c:725:7
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: uv__fs_scandir_cleanup -> free
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/uv-common.c:728:3
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: uv__get_nbufs
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: uv_fs_scandir_next
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_get_dirent_type
+[2m[DEBUG][0m ANALYZE [USER]: uv__fs_readdir_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_configure
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_new
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_close
+[2m[DEBUG][0m ANALYZE [USER]: uv_loop_delete
+[2m[DEBUG][0m ANALYZE [USER]: uv_read_start
+[2m[DEBUG][0m ANALYZE [USER]: uv_os_free_environ
+[2m[DEBUG][0m ANALYZE [USER]: uv_free_cpu_info
+[2m[DEBUG][0m ANALYZE [USER]: uv__metrics_update_idle_time
+[2m[DEBUG][0m ANALYZE [USER]: uv__metrics_set_provider_entry_time
+[2m[DEBUG][0m ANALYZE [USER]: uv_metrics_info
+[2m[DEBUG][0m ANALYZE [USER]: uv_metrics_idle_time
+[2m[DEBUG][0m ANALYZE [USER]: uv_version
+[2m[DEBUG][0m ANALYZE [USER]: uv_version_string
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 877
+[32m[INFO][0m   FFI Boundaries: 999
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 999
+[32m[INFO][0m     - LibC calls: 121
+[31m[ERROR][0m   Dangerous calls: 6
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 5 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    647
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                647
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       299.53    299527.75    299527.75
+detect                                  2         2.95      1476.73      1517.54
+total                                   1       299.54    299539.63    299539.63
+analysis                                1       254.51    254511.00    254511.00
+[32m[INFO][0m PointerOwnership: 4 ops, 856.53ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 999 boundaries, found 3 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 877
+
+[INFO] Facts generated: 5
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/libuv150.json
+

@@ -1,0 +1,614 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/ring.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/ring.ll
+[INFO] Loaded: 410 functions
+
+
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXs5_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_15TryFromIntErrorNtNtB9_3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsc_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_13ParseIntErrorNtNtB9_3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsp_NtCsl8K0bEFm1U0_4core5arrayNtB5_17TryFromSliceErrorNtNtB7_3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsq_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt7Display3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$ring..ec..suite_b..ecdsa..verification..EcdsaVerificationAlgorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h575f0ddf6ebefeccE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN105_$LT$ring..ec..suite_b..ecdsa..signing..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h14a69a7f84200618E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN107_$LT$ring..hkdf..Prk$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$ring..hkdf..Algorithm$GT$$GT$$GT$4from17h3d807531a852c777E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN107_$LT$ring..hmac..Key$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$ring..hmac..Algorithm$GT$$GT$$GT$4from17h03130fcbe1a33abeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN119_$LT$ring..ec..curve25519..ed25519..verification..EdDSAParameters$u20$as$u20$ring..signature..VerificationAlgorithm$GT$7verify_17h8962d145c34aa052E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN125_$LT$ring..ec..suite_b..ecdsa..verification..EcdsaVerificationAlgorithm$u20$as$u20$ring..signature..VerificationAlgorithm$GT$7verify_17h3943e0a4b14ad475E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN139_$LT$ring..aead..quic..HeaderProtectionKey$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$$RF$ring..aead..quic..Algorithm$GT$$GT$$GT$4from17h430a4ae8b2e15617E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN142_$LT$ring..aead..unbound_key..UnboundKey$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$$RF$ring..aead..algorithm..Algorithm$GT$$GT$$GT$4from17h3a891f6d746fa40dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1bdacd258174c949E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1cb2f99ea5801027E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h29b561feb2b3bb4fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h58371867e2281cedE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h78962d7b2c012e0fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9c4517c420dff616E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0acd96274be9e4eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc814eb4c775325eeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc8186682e3463743E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd0972871207dcd6dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd5a2662bb0feaf94E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hc59020924fe7aeb8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN45_$LT$$RF$T$u20$as$u20$core..fmt..LowerHex$GT$3fmt17had02572513e89250E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce9call_once17h178cf781021a635bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce9call_once17hb09c8ab6c2d37836E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce9call_once17hc2df64f9f186c002E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr104drop_in_place$LT$alloc..vec..Vec$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$$GT$17h1c963f24e5181427E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr140drop_in_place$LT$$LP$core..result..Result$LT$u8$C$alloc..string..String$GT$$C$core..result..Result$LT$u8$C$alloc..string..String$GT$$RP$$GT$17h65bf4f459841a4d5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr162drop_in_place$LT$ring..arithmetic..bigint..exp..elem_exp_consttime_inner$LT$ring..rsa..N$C$ring..rsa..keypair..P$C$1024_usize$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb48e6ee4e1db6d04E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr45drop_in_place$LT$ring..io..writer..Writer$GT$17h937aff7e351eeb6bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr53drop_in_place$LT$ring..rsa..public_key..PublicKey$GT$17h966839be798241d3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr81drop_in_place$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$17h8b8cb1b32c110d14E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr85drop_in_place$LT$ring..rsa..keypair..PrivateCrtPrime$LT$ring..rsa..keypair..P$GT$$GT$17h464f3ff3d3fc5101E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3str21_$LT$impl$u20$str$GT$12trim_matches17hb5efc211d8719c02E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3str7pattern14TwoWaySearcher4next17hb0f82994b2b9a3e0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core9panicking13assert_failed17hdd3baf321afacc8aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic10montgomery17limbs_square_mont17h794383c158cbf095E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic10montgomery17limbs_square_mont17heb562e5d73f1cee0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring10arithmetic157_$LT$impl$u20$core..convert..From$LT$ring..error..len_mismatch_error..LenMismatchError$GT$$u20$for$u20$ring..arithmetic..limb_slice_error..LimbSliceError$GT$4from17he0cc7ecd1a20efefE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError12len_mismatch17h666fc2d9d4fb94dfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError8too_long17h3c5db59601358357E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError9too_short17h17e04b0361b6513dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic5limbs7aarch644mont8mul_mont17h7d3f208df5e71954E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic5limbs7aarch644mont8mul_mont17h876172e96310f539E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint34unwrap_impossible_limb_slice_error17ha4c454ceeb62bb4fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint36unwrap_impossible_len_mismatch_error17h18770a8f27dee583E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$11encode_mont17h04d9ac68e27426c3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$3mul17h55b07e1eed516058E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$7is_zero17h4ec56e844275279dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring10arithmetic6bigint4elem72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$16elem_reduce_mont17h257667d03f1fbb72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint7modulus3one46One$LT$M$C$ring..arithmetic..montgomery..R$GT$19write_mont_identity17h5abb0d1579c0916eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint7modulus4mont13Mont$LT$M$GT$12alloc_uninit17h1d5890e2cbf71bfeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring10arithmetic6bigint7modulus4mont74_$LT$impl$u20$ring..arithmetic..bigint..modulus..value..ValidatedInput$GT$15write_into_mont17h7919eace523f0d33E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring10arithmetic6bigint7modulus5value14ValidatedInput17try_from_be_bytes17hf3d5b1cb05d8f931E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring24deprecated_constant_time23verify_slices_are_equal17h4dbb1fd6f701ab8eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255196x2551911x25519_ecdh17h8d2aac7892f75af5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255196x2551926x25519_public_from_private17h7cf270b19f1b09a4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255196x2551927x25519_generate_private_key17ha12459cf2cc15772E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255196x2551930x25519_check_private_key_bytes17h469fca85392d499eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed2551912eddsa_digest17he8bd5e140bda7bb6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair10from_pkcs817hc6642995c566b289E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair10from_seed_17h3089b922eddb62efE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair14generate_pkcs817hf23b2dba097025d5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair19from_seed_unchecked17h1348d1f5b373f5c7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair24from_seed_and_public_key17h50a5bad21cf2bc6cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair26from_pkcs8_maybe_unchecked17h47e1b5e45320979cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair4sign17h0c86b77ad9aa8771E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec4keys4Seed18compute_public_key17he91a81b2e7b5c989E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b10public_key24parse_uncompressed_point17h1994218792625d70E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b11private_key19public_from_private17hac8a5ab8761e57b3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b11private_key20affine_from_jacobian17h2911c05858cb9672E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b11private_key31big_endian_affine_from_jacobian17h35cf2ae2bcc87357E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b19key_pair_from_bytes17h0cfb65066c726494E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops12PublicKeyOps10elem_parse17h0771ceee7e2eb8afE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops16PrivateScalarOps18scalar_inv_to_mont17hf4d87b3d264642d3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops20twin_mul_inefficient17h7c17d34764ae7e11E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p25621p256_elem_inv_squared17h38d7f0c710fbe83cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p25623p256_scalar_inv_to_mont17hac5df16e8c51f76aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p25624p256_point_mul_base_impl17h5f0078789995f8ccE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p2568twin_mul17hfa7c913537cc27dcE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p38418p384_elem_sqr_mont17he359fc432cc026c9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p38421p384_elem_inv_squared17h88331fffaaed68f0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p38423p384_scalar_inv_to_mont17h43429b3092f3cb0dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b3ops4p38424p384_point_mul_base_impl17hedb26f7c94c0ff45E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b42verify_affine_point_is_on_the_curve_scaled17ha31a9dcc4fb0649dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b4ecdh4ecdh17h3bd52f849ad44ac8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b4ecdh9p256_ecdh17hdd3b5c891c43b4f6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b4ecdh9p384_ecdh17h3fd697da4d26e5a3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve24p256_public_from_private17h51a2601a645ea2ecE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve24p384_public_from_private17hfbed5a2fa0717798E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve25p256_generate_private_key17hadc99ab79f1b588aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve25p384_generate_private_key17hb81c72bbd5164207E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve28p256_check_private_key_bytes17h0a62c5d22ed2ada0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5curve28p384_check_private_key_bytes17h4bd56f19434e4ce8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa12verification13split_rs_asn117ha5a23614016bd0c4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa12verification14split_rs_fixed17h67ad3a83c6870efbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa12verification26EcdsaVerificationAlgorithm13verify_digest14sig_r_equals_x17h99ad6921bc8afe0fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair10from_pkcs817h6437e45a1fbe09f2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair14generate_pkcs817h58d92089a6c20619E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair31from_private_key_and_public_key17h27bc5bc6c1a6c513E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair3new17hdd21657c71147002E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair4sign17ha3e02584893e1e17E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn117h1620da03abe9993bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn118format_integer_tlv17he02600ac38745defE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2ec7suite_b5ecdsa7signing15format_rs_fixed17h7a30c617dd7351e6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der16positive_integer17h93bd1b7d8f08a081E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der19nonnegative_integer17haddb56b478152c28E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der22read_tag_and_get_value17he2e52aa6fa9fab08E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der24expect_tag_and_get_value17ha7d6741bda5fe9e6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der37bit_string_tagged_with_no_unused_bits17h4782cc46060e0aabE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring2io3der6nested17h8225ffcd07980901E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3cpu7aarch6412featureflags11get_or_init17hc33e51c6c1454e30E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa10public_key9PublicKey3new28_$u7b$$u7b$closure$u7d$$u7d$17h3cbb35b7fe48ffefE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring3rsa12verification93_$LT$impl$u20$ring..signature..VerificationAlgorithm$u20$for$u20$ring..rsa..RsaParameters$GT$7verify_17h70f9004587a3f037E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa4base10public_key14ValidatedInput17try_from_be_bytes17hfe041c9278078e64E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa4base14public_modulus125PublicModulus$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$8be_bytes17h80fb1099c64fed81E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa4base15public_exponent14PublicExponent8be_bytes17haf61c617171d1ed1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair7KeyPair10from_pkcs817h3267d193c5b9165dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair7KeyPair15from_components17h923509eee5a3a805E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7keypair7KeyPair8from_der17hdeb6baae2f3f1ed7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7padding3pss10pss_digest17hf507ebb0515e2f7eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7padding4mgf117h50bbf71e170feae8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7padding5pkcs112pkcs1_encode17h9b3c5465e11b431dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7padding7Padding10digest_alg17h118f77e45b808d2cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring3rsa7padding7Padding10digest_alg17hf1ffaf4255f77b8aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead13less_safe_key11LessSafeKey4new_17hdf08188514c6a52fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead13less_safe_key11LessSafeKey9fmt_debug17hd225a7daebebb574E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead17chacha20_poly13053Key11open_within17h0e8e52c8190adde1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead17chacha20_poly13053Key4seal17h18a9aee4290d682aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey13open_in_place17ha62432387060240aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey21decrypt_packet_length17h6f67fe513f6cacc2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey3new17h59152cac638afa69E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead25chacha20_poly1305_openssh10SealingKey13seal_in_place17h915fb28a2ccb0de6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead3aes8fallback5Batch10shift_rows17h1f46de50f6d257c7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead3aes8fallback5Batch9sub_bytes17h2b9f31bdc656ecfdE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead3gcm8fallback3w6414gcm_mul64_nohw17h32df1ca2b7beae53E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic12aes_init_12817h227bf127913d9454E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic12aes_init_25617hb2d402625cf45ec4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic12aes_new_mask17hf96791dea1ca776aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic13chacha20_init17hc9bd4ec3fdff18ceE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic17chacha20_new_mask17h96e45e6685e9b7caE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic19HeaderProtectionKey3new17h507c0a6640836917E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead4quic19HeaderProtectionKey8new_mask17heecbf5309c11e6b7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm12open_strided17h4b9808de1a3c7366E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm12open_strided17hd0a2398dfa1354faE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm12seal_strided17h3753eeb92691f9c7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm12seal_strided17hb179fae30b5c6859E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm3Key11open_within17h965c8922da0b77d3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead7aes_gcm3Key4seal17h7ef247621cf4f124E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead8poly13054sign17hbf2ebc05ca75c8f3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm12aes_gcm_open17hc6294b3b3b26ebc2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm12aes_gcm_seal17h5196f6a86af72b7aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm16aes_gcm_init_12817h58dce0228cff8653E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm16aes_gcm_init_25617h1831e299937dded2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm22chacha20_poly1305_init17h1a475655a231bf36E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm22chacha20_poly1305_open17hb6810eabf9a293e2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm22chacha20_poly1305_seal17hd1877a195cf88fd1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4aead9algorithm9Algorithm11open_within17h041168ce15cdb578E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hkdf3Prk13new_less_safe17h71026cd954de5b8bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hkdf4Salt7extract17h5610da78922dc269E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hkdf8fill_okm17h3e46792d52bff51cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac3Key3new17hb03d3c85f2046285E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac3Key7try_new17hcb6235b5ae90df8dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac3Key8generate17he489cb461bd7d9e5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac4sign17h067a541f8940592eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac6verify17hd0fec634e2f5851cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac7Context4sign17he8c0c83c596251a5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac7Context6update17haf4461ff3f6294d9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac7Context8try_sign17hd40972b2280aae83E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4hmac7Context8with_key17h8aabf37b0b096607E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring4limb43parse_big_endian_in_range_and_pad_consttime17h38db6e3edb209322E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error14input_too_long26InputTooLongError$LT$T$GT$3new17h1003935211604f39E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring5error16into_unspecified124_$LT$impl$u20$core..convert..From$LT$untrusted..reader..EndOfInput$GT$$u20$for$u20$ring..error..unspecified..Unspecified$GT$4from17h8ae4cd861d544b7fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4ring5error16into_unspecified133_$LT$impl$u20$core..convert..From$LT$ring..error..key_rejected..KeyRejected$GT$$u20$for$u20$ring..error..unspecified..Unspecified$GT$4from17h1faf687ef0c94ab1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error5erase17h009ad5de24495841E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error5erase17h0158ee6137d955f5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error5erase17h308b2f6871d5995cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error5erase17hacbbaa3610b999d7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5error5erase17hc04d94055db18001E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5pkcs811unwrap_key_17h0961df273afc0cd8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring5pkcs88wrap_key17hb598541ae1ee2541E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest12BlockContext10try_finish17h78739e54f3b7848dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest12finish_error11FinishError27pending_not_a_partial_block17hb89d6ca00cbc890fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest6digest17hd95530dc12f93115E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest7Context6finish17ha93fbc276af76678E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest7Context6update17hd9b517b8dc05ef54E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest8dynstate21sha1_block_data_order17h1cdf69dd7bc9aaf7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest8dynstate23sha256_block_data_order17h54f36af760a5fe8aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6digest8dynstate23sha512_block_data_order17h5ddd3bf2eefb3b9bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6pbkdf212derive_block17hc182eb7084143b4bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6pbkdf26derive17h59f23888b0798716E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring6pbkdf26verify17hbb4d6aab68017536E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8polyfill9once_cell4race23OnceNonZeroU32$LT$O$GT$4init17hd68727c97b03c42bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil15parse_test_case17h1e2dd8d412613f48E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase13consume_bytes17hc95ba65f31375e0aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase14consume_string17hae03cd352a9588c9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase18consume_digest_alg17h16a0c671bc0672bbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase22consume_optional_bytes17ha2a6e1f4b7775532E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8TestCase23consume_optional_string17h859a532e4aa74bebE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring8testutil8from_hex17h78f76dd0c48070d6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4ring9agreement19EphemeralPrivateKey8generate17h64a0d24042af8661E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN52_$LT$ring..ec..Curve$u20$as$u20$core..fmt..Debug$GT$3fmt17hc5a1712570b2d234E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN52_$LT$ring..hmac..Key$u20$as$u20$core..fmt..Debug$GT$3fmt17h59d56d1b733f18a9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$ring..debug..HexStr$u20$as$u20$core..fmt..Debug$GT$3fmt17hbb492679fb9d6a29E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$ring..hmac..Context$u20$as$u20$core..fmt..Debug$GT$3fmt17h1cdfa87b74240657E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN57_$LT$ring..digest..Digest$u20$as$u20$core..fmt..Debug$GT$3fmt17he062eeea738e697fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hde219e2c5344cc81E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17hc29cd0929860f709E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17ha8476a896a734a6bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$ring..digest..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h422a0e63e6f3bc8fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN63_$LT$ring..agreement..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h041b04d2898e2056E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN63_$LT$ring..agreement..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h096f500309bb8e2fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$ring..aead..quic..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ddc9d6de277c7deE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$ring..rsa..keypair..KeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17h23d478ee0db8e2c6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN65_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$core..fmt..Debug$GT$3fmt17ha6d3c13dcdfbcc39E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$ring..aead..algorithm..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h576175eb0488c67eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$core..fmt..Debug$GT$3fmt17h0f31188114321fb3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$ring..rsa..public_key..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h210681fc962372bdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$ring..aead..unbound_key..UnboundKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h8ab3d86532540751E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN73_$LT$ring..agreement..EphemeralPrivateKey$u20$as$u20$core..fmt..Debug$GT$3fmt17he8e572db5361c297E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..aead..aes..hw..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17h40f3a7e288da8014E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..aead..aes..hw..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17h4a59f099f1f26e2fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17hb6c746e93a372f87E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17hcade6ff5d3066904E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptCtr32$GT$20ctr32_encrypt_within17hd6e458c7a61be1f5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..error..unspecified..Unspecified$u20$as$u20$core..fmt..Debug$GT$3fmt17h5516f1d9ecb86696E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..io..writer..Writer$u20$as$u20$ring..io..writer..Accumulator$GT$10write_byte17h17e2426c62615a9cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$ring..io..writer..Writer$u20$as$u20$ring..io..writer..Accumulator$GT$11write_bytes17hdd4e349bf90ec0cdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$ring..aead..gcm..neon..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hb18f40d349028653E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$ring..aead..less_safe_key..LessSafeKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h432f230cb017d810E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$ring..aead..gcm..neon..Key$u20$as$u20$ring..aead..gcm..UpdateBlocks$GT$13update_blocks17hae012f1357e4ac33E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$ring..error..unspecified..Unspecified$u20$as$u20$core..fmt..Display$GT$3fmt17h9a860278624108dcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..Padding$GT$11digest_alg_17h35d0d8ccbdaf83efE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN77_$LT$ring..error..key_rejected..KeyRejected$u20$as$u20$core..fmt..Display$GT$3fmt17hcd0cb42e3c5f5d6aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN79_$LT$ring..aead..gcm..fallback..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hab899679fdff1494E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17h3220e0580345fee6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17haef5045240b2a086E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptCtr32$GT$20ctr32_encrypt_within17he6f4d922a815d449E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..aead..gcm..fallback..Key$u20$as$u20$ring..aead..gcm..UpdateBlocks$GT$13update_blocks17h116a6ac4cc5655f3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..Padding$GT$11digest_alg_17hc8fe3c366b401043E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..RsaEncoding$GT$7encode_17h8b629f341d3c31f9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN81_$LT$ring..ec..suite_b..ecdsa..signing..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h56a8dbde95d82c4cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN81_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..Verification$GT$6verify17ha119d289bceaac19E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN83_$LT$ring..ec..suite_b..ecdsa..signing..NonceRandom$u20$as$u20$core..fmt..Debug$GT$3fmt17h528ff2d333b22352E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN84_$LT$ring..aead..gcm..clmul_aarch64..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hfd268d145e4db6fdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN84_$LT$ring..ec..suite_b..ecdsa..signing..EcdsaKeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17hd81ce8b0a59def9fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN84_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..RsaEncoding$GT$7encode_17h7e1ddf1059a918f7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN85_$LT$ring..io..writer..LengthMeasurement$u20$as$u20$ring..io..writer..Accumulator$GT$10write_byte17hcc49392a6564f7a0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN85_$LT$ring..io..writer..LengthMeasurement$u20$as$u20$ring..io..writer..Accumulator$GT$11write_bytes17h08e46fddbc3176acE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN85_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..Verification$GT$6verify17h8015d5ef831607a3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN86_$LT$ring..ec..curve25519..ed25519..signing..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17hef2d33ae5389cb74E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN86_$LT$ring..ec..keys..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17hec6c0d2ba133a59dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN87_$LT$ring..agreement..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17ha2fc849345b9446bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN87_$LT$ring..signature..Signature$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h7f017659cbcca470E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$ring..testutil..rand..FixedSliceSequenceRandom$u20$as$u20$core..ops..drop..Drop$GT$4drop17h709aeb17250318b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN91_$LT$core..str..iter..SplitN$LT$P$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h984c0483b367f3e5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN91_$LT$ring..ec..curve25519..ed25519..signing..Ed25519KeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17hf83a49272714e7b6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN91_$LT$ring..testutil..rand..FixedSliceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17h17a5f364384429f9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN93_$LT$ring..ec..suite_b..ecdsa..signing..EcdsaSigningAlgorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h8c9915cff3100b8fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN97_$LT$ring..ec..curve25519..ed25519..verification..EdDSAParameters$u20$as$u20$core..fmt..Debug$GT$3fmt17h078150f13d5c998aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN99_$LT$ring..ec..suite_b..ecdsa..signing..NonceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17h829ae31478233520E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN99_$LT$ring..testutil..rand..FixedSliceSequenceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17hc4c38ec2ba6a009fE
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 410
+[32m[INFO][0m   FFI Boundaries: 4307
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 4115
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m ZONE-SKIP: _RNvXs5_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_15TryFromIntErrorNtNtB9_3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsc_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_13ParseIntErrorNtNtB9_3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsp_NtCsl8K0bEFm1U0_4core5arrayNtB5_17TryFromSliceErrorNtNtB7_3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsq_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt7Display3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$ring..ec..suite_b..ecdsa..verification..EcdsaVerificationAlgorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h575f0ddf6ebefeccE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN105_$LT$ring..ec..suite_b..ecdsa..signing..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h14a69a7f84200618E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN107_$LT$ring..hkdf..Prk$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$ring..hkdf..Algorithm$GT$$GT$$GT$4from17h3d807531a852c777E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN107_$LT$ring..hmac..Key$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$ring..hmac..Algorithm$GT$$GT$$GT$4from17h03130fcbe1a33abeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN119_$LT$ring..ec..curve25519..ed25519..verification..EdDSAParameters$u20$as$u20$ring..signature..VerificationAlgorithm$GT$7verify_17h8962d145c34aa052E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN125_$LT$ring..ec..suite_b..ecdsa..verification..EcdsaVerificationAlgorithm$u20$as$u20$ring..signature..VerificationAlgorithm$GT$7verify_17h3943e0a4b14ad475E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN139_$LT$ring..aead..quic..HeaderProtectionKey$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$$RF$ring..aead..quic..Algorithm$GT$$GT$$GT$4from17h430a4ae8b2e15617E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN142_$LT$ring..aead..unbound_key..UnboundKey$u20$as$u20$core..convert..From$LT$ring..hkdf..Okm$LT$$RF$ring..aead..algorithm..Algorithm$GT$$GT$$GT$4from17h3a891f6d746fa40dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1bdacd258174c949E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1cb2f99ea5801027E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h29b561feb2b3bb4fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h58371867e2281cedE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h78962d7b2c012e0fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9c4517c420dff616E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0acd96274be9e4eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc814eb4c775325eeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc8186682e3463743E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd0972871207dcd6dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd5a2662bb0feaf94E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hc59020924fe7aeb8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN45_$LT$$RF$T$u20$as$u20$core..fmt..LowerHex$GT$3fmt17had02572513e89250E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce9call_once17h178cf781021a635bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce9call_once17hb09c8ab6c2d37836E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce9call_once17hc2df64f9f186c002E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr104drop_in_place$LT$alloc..vec..Vec$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$$GT$17h1c963f24e5181427E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr140drop_in_place$LT$$LP$core..result..Result$LT$u8$C$alloc..string..String$GT$$C$core..result..Result$LT$u8$C$alloc..string..String$GT$$RP$$GT$17h65bf4f459841a4d5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr162drop_in_place$LT$ring..arithmetic..bigint..exp..elem_exp_consttime_inner$LT$ring..rsa..N$C$ring..rsa..keypair..P$C$1024_usize$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb48e6ee4e1db6d04E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr45drop_in_place$LT$ring..io..writer..Writer$GT$17h937aff7e351eeb6bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr53drop_in_place$LT$ring..rsa..public_key..PublicKey$GT$17h966839be798241d3E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr81drop_in_place$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$17h8b8cb1b32c110d14E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr85drop_in_place$LT$ring..rsa..keypair..PrivateCrtPrime$LT$ring..rsa..keypair..P$GT$$GT$17h464f3ff3d3fc5101E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3str21_$LT$impl$u20$str$GT$12trim_matches17hb5efc211d8719c02E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3str7pattern14TwoWaySearcher4next17hb0f82994b2b9a3e0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core9panicking13assert_failed17hdd3baf321afacc8aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic10montgomery17limbs_square_mont17h794383c158cbf095E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic10montgomery17limbs_square_mont17heb562e5d73f1cee0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic157_$LT$impl$u20$core..convert..From$LT$ring..error..len_mismatch_error..LenMismatchError$GT$$u20$for$u20$ring..arithmetic..limb_slice_error..LimbSliceError$GT$4from17he0cc7ecd1a20efefE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError12len_mismatch17h666fc2d9d4fb94dfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError8too_long17h3c5db59601358357E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError9too_short17h17e04b0361b6513dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic5limbs7aarch644mont8mul_mont17h7d3f208df5e71954E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic5limbs7aarch644mont8mul_mont17h876172e96310f539E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint34unwrap_impossible_limb_slice_error17ha4c454ceeb62bb4fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint36unwrap_impossible_len_mismatch_error17h18770a8f27dee583E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$11encode_mont17h04d9ac68e27426c3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$3mul17h55b07e1eed516058E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$7is_zero17h4ec56e844275279dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint4elem72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$16elem_reduce_mont17h257667d03f1fbb72E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint7modulus3one46One$LT$M$C$ring..arithmetic..montgomery..R$GT$19write_mont_identity17h5abb0d1579c0916eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint7modulus4mont13Mont$LT$M$GT$12alloc_uninit17h1d5890e2cbf71bfeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint7modulus4mont74_$LT$impl$u20$ring..arithmetic..bigint..modulus..value..ValidatedInput$GT$15write_into_mont17h7919eace523f0d33E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring10arithmetic6bigint7modulus5value14ValidatedInput17try_from_be_bytes17hf3d5b1cb05d8f931E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring24deprecated_constant_time23verify_slices_are_equal17h4dbb1fd6f701ab8eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255196x2551911x25519_ecdh17h8d2aac7892f75af5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255196x2551926x25519_public_from_private17h7cf270b19f1b09a4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255196x2551927x25519_generate_private_key17ha12459cf2cc15772E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255196x2551930x25519_check_private_key_bytes17h469fca85392d499eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed2551912eddsa_digest17he8bd5e140bda7bb6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair10from_pkcs817hc6642995c566b289E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair10from_seed_17h3089b922eddb62efE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair14generate_pkcs817hf23b2dba097025d5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair19from_seed_unchecked17h1348d1f5b373f5c7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair24from_seed_and_public_key17h50a5bad21cf2bc6cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair26from_pkcs8_maybe_unchecked17h47e1b5e45320979cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec10curve255197ed255197signing14Ed25519KeyPair4sign17h0c86b77ad9aa8771E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec4keys4Seed18compute_public_key17he91a81b2e7b5c989E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b10public_key24parse_uncompressed_point17h1994218792625d70E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b11private_key19public_from_private17hac8a5ab8761e57b3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b11private_key20affine_from_jacobian17h2911c05858cb9672E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b11private_key31big_endian_affine_from_jacobian17h35cf2ae2bcc87357E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b19key_pair_from_bytes17h0cfb65066c726494E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops12PublicKeyOps10elem_parse17h0771ceee7e2eb8afE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops16PrivateScalarOps18scalar_inv_to_mont17hf4d87b3d264642d3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops20twin_mul_inefficient17h7c17d34764ae7e11E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p25621p256_elem_inv_squared17h38d7f0c710fbe83cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p25623p256_scalar_inv_to_mont17hac5df16e8c51f76aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p25624p256_point_mul_base_impl17h5f0078789995f8ccE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p2568twin_mul17hfa7c913537cc27dcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p38418p384_elem_sqr_mont17he359fc432cc026c9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p38421p384_elem_inv_squared17h88331fffaaed68f0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p38423p384_scalar_inv_to_mont17h43429b3092f3cb0dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b3ops4p38424p384_point_mul_base_impl17hedb26f7c94c0ff45E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b42verify_affine_point_is_on_the_curve_scaled17ha31a9dcc4fb0649dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b4ecdh4ecdh17h3bd52f849ad44ac8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b4ecdh9p256_ecdh17hdd3b5c891c43b4f6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b4ecdh9p384_ecdh17h3fd697da4d26e5a3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve24p256_public_from_private17h51a2601a645ea2ecE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve24p384_public_from_private17hfbed5a2fa0717798E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve25p256_generate_private_key17hadc99ab79f1b588aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve25p384_generate_private_key17hb81c72bbd5164207E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve28p256_check_private_key_bytes17h0a62c5d22ed2ada0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5curve28p384_check_private_key_bytes17h4bd56f19434e4ce8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa12verification13split_rs_asn117ha5a23614016bd0c4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa12verification14split_rs_fixed17h67ad3a83c6870efbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa12verification26EcdsaVerificationAlgorithm13verify_digest14sig_r_equals_x17h99ad6921bc8afe0fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair10from_pkcs817h6437e45a1fbe09f2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair14generate_pkcs817h58d92089a6c20619E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair31from_private_key_and_public_key17h27bc5bc6c1a6c513E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair3new17hdd21657c71147002E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing12EcdsaKeyPair4sign17ha3e02584893e1e17E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn117h1620da03abe9993bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn118format_integer_tlv17he02600ac38745defE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2ec7suite_b5ecdsa7signing15format_rs_fixed17h7a30c617dd7351e6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der16positive_integer17h93bd1b7d8f08a081E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der19nonnegative_integer17haddb56b478152c28E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der22read_tag_and_get_value17he2e52aa6fa9fab08E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der24expect_tag_and_get_value17ha7d6741bda5fe9e6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der37bit_string_tagged_with_no_unused_bits17h4782cc46060e0aabE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io3der6nested17h8225ffcd07980901E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3cpu7aarch6412featureflags11get_or_init17hc33e51c6c1454e30E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa10public_key9PublicKey3new28_$u7b$$u7b$closure$u7d$$u7d$17h3cbb35b7fe48ffefE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa12verification93_$LT$impl$u20$ring..signature..VerificationAlgorithm$u20$for$u20$ring..rsa..RsaParameters$GT$7verify_17h70f9004587a3f037E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa4base10public_key14ValidatedInput17try_from_be_bytes17hfe041c9278078e64E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa4base14public_modulus125PublicModulus$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$8be_bytes17h80fb1099c64fed81E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa4base15public_exponent14PublicExponent8be_bytes17haf61c617171d1ed1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair7KeyPair10from_pkcs817h3267d193c5b9165dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair7KeyPair15from_components17h923509eee5a3a805E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7keypair7KeyPair8from_der17hdeb6baae2f3f1ed7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7padding3pss10pss_digest17hf507ebb0515e2f7eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7padding4mgf117h50bbf71e170feae8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7padding5pkcs112pkcs1_encode17h9b3c5465e11b431dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7padding7Padding10digest_alg17h118f77e45b808d2cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring3rsa7padding7Padding10digest_alg17hf1ffaf4255f77b8aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead13less_safe_key11LessSafeKey4new_17hdf08188514c6a52fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead13less_safe_key11LessSafeKey9fmt_debug17hd225a7daebebb574E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead17chacha20_poly13053Key11open_within17h0e8e52c8190adde1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead17chacha20_poly13053Key4seal17h18a9aee4290d682aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey13open_in_place17ha62432387060240aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey21decrypt_packet_length17h6f67fe513f6cacc2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey3new17h59152cac638afa69E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead25chacha20_poly1305_openssh10SealingKey13seal_in_place17h915fb28a2ccb0de6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead3aes8fallback5Batch10shift_rows17h1f46de50f6d257c7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead3aes8fallback5Batch9sub_bytes17h2b9f31bdc656ecfdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead3gcm8fallback3w6414gcm_mul64_nohw17h32df1ca2b7beae53E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic12aes_init_12817h227bf127913d9454E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic12aes_init_25617hb2d402625cf45ec4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic12aes_new_mask17hf96791dea1ca776aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic13chacha20_init17hc9bd4ec3fdff18ceE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic17chacha20_new_mask17h96e45e6685e9b7caE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic19HeaderProtectionKey3new17h507c0a6640836917E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead4quic19HeaderProtectionKey8new_mask17heecbf5309c11e6b7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm12open_strided17h4b9808de1a3c7366E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm12open_strided17hd0a2398dfa1354faE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm12seal_strided17h3753eeb92691f9c7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm12seal_strided17hb179fae30b5c6859E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm3Key11open_within17h965c8922da0b77d3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead7aes_gcm3Key4seal17h7ef247621cf4f124E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead8poly13054sign17hbf2ebc05ca75c8f3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm12aes_gcm_open17hc6294b3b3b26ebc2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm12aes_gcm_seal17h5196f6a86af72b7aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm16aes_gcm_init_12817h58dce0228cff8653E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm16aes_gcm_init_25617h1831e299937dded2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm22chacha20_poly1305_init17h1a475655a231bf36E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm22chacha20_poly1305_open17hb6810eabf9a293e2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm22chacha20_poly1305_seal17hd1877a195cf88fd1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4aead9algorithm9Algorithm11open_within17h041168ce15cdb578E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hkdf3Prk13new_less_safe17h71026cd954de5b8bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hkdf4Salt7extract17h5610da78922dc269E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hkdf8fill_okm17h3e46792d52bff51cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac3Key3new17hb03d3c85f2046285E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac3Key7try_new17hcb6235b5ae90df8dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac3Key8generate17he489cb461bd7d9e5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac4sign17h067a541f8940592eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac6verify17hd0fec634e2f5851cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac7Context4sign17he8c0c83c596251a5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac7Context6update17haf4461ff3f6294d9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac7Context8try_sign17hd40972b2280aae83E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4hmac7Context8with_key17h8aabf37b0b096607E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring4limb43parse_big_endian_in_range_and_pad_consttime17h38db6e3edb209322E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error14input_too_long26InputTooLongError$LT$T$GT$3new17h1003935211604f39E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error16into_unspecified124_$LT$impl$u20$core..convert..From$LT$untrusted..reader..EndOfInput$GT$$u20$for$u20$ring..error..unspecified..Unspecified$GT$4from17h8ae4cd861d544b7fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error16into_unspecified133_$LT$impl$u20$core..convert..From$LT$ring..error..key_rejected..KeyRejected$GT$$u20$for$u20$ring..error..unspecified..Unspecified$GT$4from17h1faf687ef0c94ab1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error5erase17h009ad5de24495841E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error5erase17h0158ee6137d955f5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error5erase17h308b2f6871d5995cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error5erase17hacbbaa3610b999d7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5error5erase17hc04d94055db18001E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5pkcs811unwrap_key_17h0961df273afc0cd8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring5pkcs88wrap_key17hb598541ae1ee2541E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest12BlockContext10try_finish17h78739e54f3b7848dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest12finish_error11FinishError27pending_not_a_partial_block17hb89d6ca00cbc890fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest6digest17hd95530dc12f93115E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest7Context6finish17ha93fbc276af76678E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest7Context6update17hd9b517b8dc05ef54E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest8dynstate21sha1_block_data_order17h1cdf69dd7bc9aaf7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest8dynstate23sha256_block_data_order17h54f36af760a5fe8aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6digest8dynstate23sha512_block_data_order17h5ddd3bf2eefb3b9bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6pbkdf212derive_block17hc182eb7084143b4bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6pbkdf26derive17h59f23888b0798716E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring6pbkdf26verify17hbb4d6aab68017536E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8polyfill9once_cell4race23OnceNonZeroU32$LT$O$GT$4init17hd68727c97b03c42bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil15parse_test_case17h1e2dd8d412613f48E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase13consume_bytes17hc95ba65f31375e0aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase14consume_string17hae03cd352a9588c9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase18consume_digest_alg17h16a0c671bc0672bbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase22consume_optional_bytes17ha2a6e1f4b7775532E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8TestCase23consume_optional_string17h859a532e4aa74bebE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring8testutil8from_hex17h78f76dd0c48070d6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4ring9agreement19EphemeralPrivateKey8generate17h64a0d24042af8661E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN52_$LT$ring..ec..Curve$u20$as$u20$core..fmt..Debug$GT$3fmt17hc5a1712570b2d234E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN52_$LT$ring..hmac..Key$u20$as$u20$core..fmt..Debug$GT$3fmt17h59d56d1b733f18a9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$ring..debug..HexStr$u20$as$u20$core..fmt..Debug$GT$3fmt17hbb492679fb9d6a29E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$ring..hmac..Context$u20$as$u20$core..fmt..Debug$GT$3fmt17h1cdfa87b74240657E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN57_$LT$ring..digest..Digest$u20$as$u20$core..fmt..Debug$GT$3fmt17he062eeea738e697fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hde219e2c5344cc81E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17hc29cd0929860f709E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17ha8476a896a734a6bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$ring..digest..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h422a0e63e6f3bc8fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN63_$LT$ring..agreement..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h041b04d2898e2056E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN63_$LT$ring..agreement..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h096f500309bb8e2fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$ring..aead..quic..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ddc9d6de277c7deE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$ring..rsa..keypair..KeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17h23d478ee0db8e2c6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN65_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$core..fmt..Debug$GT$3fmt17ha6d3c13dcdfbcc39E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$ring..aead..algorithm..Algorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h576175eb0488c67eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$core..fmt..Debug$GT$3fmt17h0f31188114321fb3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$ring..rsa..public_key..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h210681fc962372bdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$ring..aead..unbound_key..UnboundKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h8ab3d86532540751E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN73_$LT$ring..agreement..EphemeralPrivateKey$u20$as$u20$core..fmt..Debug$GT$3fmt17he8e572db5361c297E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..aead..aes..hw..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17h40f3a7e288da8014E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..aead..aes..hw..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17h4a59f099f1f26e2fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17hb6c746e93a372f87E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17hcade6ff5d3066904E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..aead..aes..vp..Key$u20$as$u20$ring..aead..aes..EncryptCtr32$GT$20ctr32_encrypt_within17hd6e458c7a61be1f5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..error..unspecified..Unspecified$u20$as$u20$core..fmt..Debug$GT$3fmt17h5516f1d9ecb86696E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..io..writer..Writer$u20$as$u20$ring..io..writer..Accumulator$GT$10write_byte17h17e2426c62615a9cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$ring..io..writer..Writer$u20$as$u20$ring..io..writer..Accumulator$GT$11write_bytes17hdd4e349bf90ec0cdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$ring..aead..gcm..neon..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hb18f40d349028653E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$ring..aead..less_safe_key..LessSafeKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h432f230cb017d810E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$ring..aead..gcm..neon..Key$u20$as$u20$ring..aead..gcm..UpdateBlocks$GT$13update_blocks17hae012f1357e4ac33E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$ring..error..unspecified..Unspecified$u20$as$u20$core..fmt..Display$GT$3fmt17h9a860278624108dcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..Padding$GT$11digest_alg_17h35d0d8ccbdaf83efE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN77_$LT$ring..error..key_rejected..KeyRejected$u20$as$u20$core..fmt..Display$GT$3fmt17hcd0cb42e3c5f5d6aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN79_$LT$ring..aead..gcm..fallback..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hab899679fdff1494E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$13encrypt_block17h3220e0580345fee6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptBlock$GT$20encrypt_iv_xor_block17haef5045240b2a086E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..aead..aes..fallback..Key$u20$as$u20$ring..aead..aes..EncryptCtr32$GT$20ctr32_encrypt_within17he6f4d922a815d449E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..aead..gcm..fallback..Key$u20$as$u20$ring..aead..gcm..UpdateBlocks$GT$13update_blocks17h116a6ac4cc5655f3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..Padding$GT$11digest_alg_17hc8fe3c366b401043E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..RsaEncoding$GT$7encode_17h8b629f341d3c31f9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN81_$LT$ring..ec..suite_b..ecdsa..signing..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17h56a8dbde95d82c4cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN81_$LT$ring..rsa..padding..pss..PSS$u20$as$u20$ring..rsa..padding..Verification$GT$6verify17ha119d289bceaac19E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN83_$LT$ring..ec..suite_b..ecdsa..signing..NonceRandom$u20$as$u20$core..fmt..Debug$GT$3fmt17h528ff2d333b22352E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN84_$LT$ring..aead..gcm..clmul_aarch64..Key$u20$as$u20$ring..aead..gcm..UpdateBlock$GT$12update_block17hfd268d145e4db6fdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN84_$LT$ring..ec..suite_b..ecdsa..signing..EcdsaKeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17hd81ce8b0a59def9fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN84_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..RsaEncoding$GT$7encode_17h7e1ddf1059a918f7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN85_$LT$ring..io..writer..LengthMeasurement$u20$as$u20$ring..io..writer..Accumulator$GT$10write_byte17hcc49392a6564f7a0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN85_$LT$ring..io..writer..LengthMeasurement$u20$as$u20$ring..io..writer..Accumulator$GT$11write_bytes17h08e46fddbc3176acE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN85_$LT$ring..rsa..padding..pkcs1..PKCS1$u20$as$u20$ring..rsa..padding..Verification$GT$6verify17h8015d5ef831607a3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN86_$LT$ring..ec..curve25519..ed25519..signing..PublicKey$u20$as$u20$core..fmt..Debug$GT$3fmt17hef2d33ae5389cb74E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN86_$LT$ring..ec..keys..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17hec6c0d2ba133a59dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN87_$LT$ring..agreement..PublicKey$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17ha2fc849345b9446bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN87_$LT$ring..signature..Signature$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h7f017659cbcca470E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$ring..testutil..rand..FixedSliceSequenceRandom$u20$as$u20$core..ops..drop..Drop$GT$4drop17h709aeb17250318b9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN91_$LT$core..str..iter..SplitN$LT$P$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h984c0483b367f3e5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN91_$LT$ring..ec..curve25519..ed25519..signing..Ed25519KeyPair$u20$as$u20$core..fmt..Debug$GT$3fmt17hf83a49272714e7b6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN91_$LT$ring..testutil..rand..FixedSliceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17h17a5f364384429f9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN93_$LT$ring..ec..suite_b..ecdsa..signing..EcdsaSigningAlgorithm$u20$as$u20$core..fmt..Debug$GT$3fmt17h8c9915cff3100b8fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN97_$LT$ring..ec..curve25519..ed25519..verification..EdDSAParameters$u20$as$u20$core..fmt..Debug$GT$3fmt17h078150f13d5c998aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN99_$LT$ring..ec..suite_b..ecdsa..signing..NonceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17h829ae31478233520E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN99_$LT$ring..testutil..rand..FixedSliceSequenceRandom$u20$as$u20$ring..rand..sealed..SecureRandom$GT$9fill_impl17hc4c38ec2ba6a009fE is safe zone — language guarantees apply
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    278
+  Safe zone (skipped):         261 (100.0%)
+  Runtime internal (skipped):  17
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                0
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1        89.76     89756.63     89756.63
+detect                                  2         0.12        61.02        93.00
+total                                   1        89.77     89769.42     89769.42
+analysis                                1        89.57     89570.17     89570.17
+[32m[INFO][0m PointerOwnership: 4 ops, 269.22ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 4307 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 410
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/ring.json
+

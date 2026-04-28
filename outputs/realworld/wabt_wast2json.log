@@ -1,0 +1,714 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wabt_wast2json.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wabt_wast2json.ll
+[INFO] Loaded: 558 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: __cxx_global_var_init
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1B8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: __cxx_global_var_init.1
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _Z11ProgramMainiPPc
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> fprintf
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:105:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEEC1B8ne210108ILb1EvEEv
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:108:27
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEEC1B8ne210108ILb1EvEEv — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:110:34
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEE3getB8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:114:36
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNKSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE3getB8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:127:57
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNKSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE3getB8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:129:66
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt12MemoryStreamENS_14default_deleteIS2_EEEptB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:137:18
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEEptB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:145:22
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEEptB8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNKSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:146:64
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNKSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEE3getB8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _Z11ProgramMainiPPc -> _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:149:1
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: _ZL12ParseOptionsiPPc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEEC1B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__117basic_string_viewIcNS_11char_traitsIcEEEC1B8ne210108EPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEEC1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE4sizeB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt6FailedENS_6ResultE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEEC1B8ne210108ILb1EvEEv
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt16WastParseOptionsC1ERKNS_8FeaturesE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt9SucceededENS_6ResultE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt15ValidateOptionsC1ERKNS_8FeaturesE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5emptyB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZL16DefaultOuputNameNSt3__117basic_string_viewIcNS_11char_traitsIcEEEE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEaSB8ne210108EOS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEEC1B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEcvNS_17basic_string_viewIcS2_EEB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1B8ne210108INS_17basic_string_viewIcS2_EETnNS_9enable_ifIXaasr33__can_be_converted_to_string_viewIcS2_T_EE5valuentsr7is_sameIu14__remove_cvrefISA_ES5_EE5valueEiE4typeELi0EEERKSA_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4wabt12MemoryStream11WriteToFileENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE5beginB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE3endB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__1neB8ne210108IPN4wabt24FilenameMemoryStreamPairEEEbRKNS_11__wrap_iterIT_EES8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__111__wrap_iterIPN4wabt24FilenameMemoryStreamPairEEdeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt12MemoryStreamENS_14default_deleteIS2_EEEptB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111__wrap_iterIPN4wabt24FilenameMemoryStreamPairEEppB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12MemoryStreamD1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEEptB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt9WastLexer14MakeLineFinderEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEE3getB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZNK4wabt6ResultcvNS0_4EnumEEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEED1B8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: main
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC1IZL12ParseOptionsiPPcE3$_0vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEEC1IZL12ParseOptionsiPPcE3$_1vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC1IZL12ParseOptionsiPPcE3$_2vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC1IZL12ParseOptionsiPPcE3$_3vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC1IZL12ParseOptionsiPPcE3$_4vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC1IZL12ParseOptionsiPPcE3$_5vEET_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1B8ne210108ILi0EEEPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEEC1IZL12ParseOptionsiPPcE3$_6vEET_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParserD1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC2IZL12ParseOptionsiPPcE3$_0vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC1B8ne210108IZL12ParseOptionsiPPcE3$_0TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC2B8ne210108IZL12ParseOptionsiPPcE3$_0TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_0EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvvEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE7__cloneEPNS0_6__baseIS5_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEEclEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_0FvvEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_0EEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_0EEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_0EEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS6_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_0clEv
+[31m[ERROR][0m [MEDIUM] FFI RISK: _ZZL12ParseOptionsiPPcENK3$_0clEv -> _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEEaSB8ne210108EOS5_
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:63:40
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEEaSB8ne210108EOS5_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: _ZZL12ParseOptionsiPPcENK3$_0clEv -> _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEED1B8ne210108Ev
+[31m[ERROR][0m   Location: /tmp/wabt/build/../src/tools/wast2json.cc:63:27
+[31m[ERROR][0m   Kind: cpp_allocator
+[31m[ERROR][0m   Detail: C++ std::unique_ptr - exclusive ownership, auto-release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[33m[WARN][0m   CONTRACT WARNING: unique_ptr transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEED1B8ne210108Ev — verify scope safety
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEEaSB8ne210108EOS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEE7releaseB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEE11get_deleterB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt10FileStreamEEclB8ne210108EPS2_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt9type_infoeqB8ne210108ERKS_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt27__type_info_implementations30__non_unique_arm_rtti_bit_impl21__is_type_name_uniqueB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEEC2IZL12ParseOptionsiPPcE3$_1vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEEC1B8ne210108IZL12ParseOptionsiPPcE3$_1TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES5_EE5valueEiE4typeELi0EEEOSB_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEEC2B8ne210108IZL12ParseOptionsiPPcE3$_1TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES5_EE5valueEiE4typeELi0EEEOSB_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_1EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvPKcEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE7__cloneEPNS0_6__baseIS7_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEEclEOS6_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvPKcEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvPKcEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__baseIFvPKcEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_1FvPKcEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_1PKcEEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_1PKcEEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_1PKcEEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS8_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_1clEPKc
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEaSB8ne210108EPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC2IZL12ParseOptionsiPPcE3$_2vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC1B8ne210108IZL12ParseOptionsiPPcE3$_2TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC2B8ne210108IZL12ParseOptionsiPPcE3$_2TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_2EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE7__cloneEPNS0_6__baseIS5_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEEclEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_2FvvEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_2EEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_2EEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_2EEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS6_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_2clEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC2IZL12ParseOptionsiPPcE3$_3vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC1B8ne210108IZL12ParseOptionsiPPcE3$_3TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC2B8ne210108IZL12ParseOptionsiPPcE3$_3TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_3EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE7__cloneEPNS0_6__baseIS5_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEEclEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_3FvvEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_3EEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_3EEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_3EEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS6_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_3clEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC2IZL12ParseOptionsiPPcE3$_4vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC1B8ne210108IZL12ParseOptionsiPPcE3$_4TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC2B8ne210108IZL12ParseOptionsiPPcE3$_4TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_4EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE7__cloneEPNS0_6__baseIS5_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEEclEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_4FvvEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_4EEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_4EEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_4EEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS6_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_4clEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvvEEC2IZL12ParseOptionsiPPcE3$_5vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC1B8ne210108IZL12ParseOptionsiPPcE3$_5TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvvEEC2B8ne210108IZL12ParseOptionsiPPcE3$_5TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES3_EE5valueEiE4typeELi0EEEOS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_5EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE7__cloneEPNS0_6__baseIS5_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEEclEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_5FvvEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_5EEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_5EEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_5EEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS6_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_5clEv
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC2B8ne210108ILi0EEEPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIcEC1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111char_traitsIcE6lengthB8ne210108EPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIcEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116__non_trivial_ifILb1ENS_9allocatorIcEEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__118__constexpr_strlenB8ne210108IcEEmPKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18functionIFvPKcEEC2IZL12ParseOptionsiPPcE3$_6vEET_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEEC1B8ne210108IZL12ParseOptionsiPPcE3$_6TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES5_EE5valueEiE4typeELi0EEEOSB_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function12__value_funcIFvPKcEEC2B8ne210108IZL12ParseOptionsiPPcE3$_6TnNS_9enable_ifIXntsr7is_sameIu7__decayIT_ES5_EE5valueEiE4typeELi0EEEOSB_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function10__not_nullB8ne210108IZL12ParseOptionsiPPcE3$_6EEbRKT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEEC1B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEEC2B8ne210108EOS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEED1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEED0Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE7__cloneEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE7__cloneEPNS0_6__baseIS7_EE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE7destroyEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE18destroy_deallocateEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEEclEOS6_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE6targetERKSt9type_info
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEE11target_typeEv
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEED2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEEC1B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__function6__funcIZL12ParseOptionsiPPcE3$_6FvPKcEEC2B8ne210108ERKS4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110__invoke_rB8ne210108IvJRZL12ParseOptionsiPPcE3$_6PKcEEET_DpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__invoke_void_return_wrapperIvLb1EE6__callB8ne210108IJRZL12ParseOptionsiPPcE3$_6PKcEEEvDpOT_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__18__invokeB8ne210108IJRZL12ParseOptionsiPPcE3$_6PKcEEENS_20__invoke_result_implIvJDpT_EE4typeEDpOS8_
+[2m[DEBUG][0m ANALYZE [USER]: _ZZL12ParseOptionsiPPcENK3$_6clEPKc
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParserD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE16__destroy_vectorC1B8ne210108ERS6_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: __clang_call_terminate
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE16__destroy_vectorC2B8ne210108ERS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt12OptionParser8ArgumentEEEE10deallocateB8ne210108ERS5_PS4_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE22__base_destruct_at_endB8ne210108EPS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt12OptionParser8ArgumentEEEE7destroyB8ne210108IS4_TnNS_9enable_ifIX15__has_destroy_vIS5_PT_EEiE4typeELi0EEEvRS5_SA_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IN4wabt12OptionParser8ArgumentEEEPT_S5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt12OptionParser8ArgumentEE7destroyB8ne210108EPS3_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParser8ArgumentD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParser8ArgumentD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE31__annotate_contiguous_containerB8ne210108EPKvS8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser8ArgumentENS_9allocatorIS3_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIN4wabt12OptionParser8ArgumentEEEEEvPKvS7_S7_S7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt12OptionParser8ArgumentEE10deallocateB8ne210108EPS3_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IN4wabt12OptionParser8ArgumentEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__124__is_overaligned_for_newB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE16__destroy_vectorC1B8ne210108ERS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE16__destroy_vectorC2B8ne210108ERS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt12OptionParser6OptionEEEE10deallocateB8ne210108ERS5_PS4_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE22__base_destruct_at_endB8ne210108EPS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt12OptionParser6OptionEEEE7destroyB8ne210108IS4_TnNS_9enable_ifIX15__has_destroy_vIS5_PT_EEiE4typeELi0EEEvRS5_SA_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IN4wabt12OptionParser6OptionEEEPT_S5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt12OptionParser6OptionEE7destroyB8ne210108EPS3_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParser6OptionD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OptionParser6OptionD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE31__annotate_contiguous_containerB8ne210108EPKvS8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt12OptionParser6OptionENS_9allocatorIS3_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIN4wabt12OptionParser6OptionEEEEEvPKvS7_S7_S7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt12OptionParser6OptionEE10deallocateB8ne210108EPS3_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IN4wabt12OptionParser6OptionEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__117basic_string_viewIcNS_11char_traitsIcEEEC2B8ne210108EPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__128__char_traits_length_checkedB8ne210108INS_11char_traitsIcEEEEmPKNT_9char_typeE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEEC2B8ne210108ILb1EvEEv
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt16WastParseOptionsC2ERKNS_8FeaturesE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt15ValidateOptionsC2ERKNS_8FeaturesE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEpLB8ne210108EPKc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt12OutputBufferENS_14default_deleteIS2_EEEptB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__1eqB8ne210108IPN4wabt24FilenameMemoryStreamPairEEEbRKNS_11__wrap_iterIT_EES8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__111__wrap_iterIPN4wabt24FilenameMemoryStreamPairEE4baseB8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12MemoryStreamD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12OutputBufferENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt6StreamD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12OutputBufferENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12OutputBufferENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt12OutputBufferEEclB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OutputBufferD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt12OutputBufferD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111make_uniqueB8ne210108IN4wabt21LexerSourceLineFinderEJNS_10unique_ptrINS1_11LexerSourceENS_14default_deleteIS4_EEEEETnNS_9enable_ifIXntsr8is_arrayIT_EE5valueEiE4typeELi0EEENS3_IS9_NS5_IS9_EEEEDpOT0_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEEptB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEEC1B8ne210108EOS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEEC1B8ne210108ILb1EvEEPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEEC2B8ne210108EOS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEE7releaseB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEE11get_deleterB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEEC2B8ne210108ILb1EvEEPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt11LexerSourceENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt11LexerSourceEEclB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE16__destroy_vectorC1B8ne210108ERS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE16__destroy_vectorC2B8ne210108ERS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIhEEE10deallocateB8ne210108ERS2_Phm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEE22__base_destruct_at_endB8ne210108EPh
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIhEEE7destroyB8ne210108IhTnNS_9enable_ifIX15__has_destroy_vIS2_PT_EEiE4typeELi0EEEvRS2_S7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IhEEPT_S2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIhE7destroyB8ne210108EPh
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE31__annotate_contiguous_containerB8ne210108EPKvS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIhNS_9allocatorIhEEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIhEEEEvPKvS4_S4_S4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIhE10deallocateB8ne210108EPhm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IhEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC2B8ne210108INS_17basic_string_viewIcS2_EETnNS_9enable_ifIXaasr33__can_be_converted_to_string_viewIcS2_T_EE5valuentsr7is_sameIu14__remove_cvrefISA_ES5_EE5valueEiE4typeELi0EEERKSA_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__117basic_string_viewIcNS_11char_traitsIcEEE4dataB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__117basic_string_viewIcNS_11char_traitsIcEEE4sizeB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC2B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE14__annotate_newB8ne210108Em
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE31__annotate_contiguous_containerB8ne210108EPKvS7_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE4dataB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IKcEEPT_S3_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE13__get_pointerB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE9__is_longB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE18__get_long_pointerB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE19__get_short_pointerB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__114pointer_traitsIPKcE10pointer_toB8ne210108ERS1_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE14__get_long_capB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIhNS_9allocatorIhEEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIhEC1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIhEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116__non_trivial_ifILb1ENS_9allocatorIhEEEC2B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE4sizeB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__117basic_string_viewIcNS_11char_traitsIcEEEC1B8ne210108ENS3_14__assume_validEPKcm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE15__get_long_sizeB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE16__get_short_sizeB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__117basic_string_viewIcNS_11char_traitsIcEEEC2B8ne210108ENS3_14__assume_validEPKcm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt21LexerSourceLineFinderENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt21LexerSourceLineFinderEEclB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt21LexerSourceLineFinderD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt21LexerSourceLineFinderD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE16__destroy_vectorC1B8ne210108ERS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE16__destroy_vectorC2B8ne210108ERS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt5RangeImEEEEE10deallocateB8ne210108ERS5_PS4_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE22__base_destruct_at_endB8ne210108EPS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt5RangeImEEEEE7destroyB8ne210108IS4_TnNS_9enable_ifIX15__has_destroy_vIS5_PT_EEiE4typeELi0EEEvRS5_SA_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IN4wabt5RangeImEEEEPT_S5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5RangeImEEE7destroyB8ne210108EPS3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE31__annotate_contiguous_containerB8ne210108EPKvS8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5RangeImEENS_9allocatorIS3_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIN4wabt5RangeImEEEEEEvPKvS7_S7_S7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5RangeImEEE10deallocateB8ne210108EPS3_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IN4wabt5RangeImEEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt10FileStreamENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5ErrorEEC1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5ErrorEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116__non_trivial_ifILb1ENS_9allocatorIN4wabt5ErrorEEEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE16__destroy_vectorC1B8ne210108ERS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE16__destroy_vectorC2B8ne210108ERS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt5ErrorEEEE10deallocateB8ne210108ERS4_PS3_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE22__base_destruct_at_endB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt5ErrorEEEE7destroyB8ne210108IS3_TnNS_9enable_ifIX15__has_destroy_vIS4_PT_EEiE4typeELi0EEEvRS4_S9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IN4wabt5ErrorEEEPT_S4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5ErrorEE7destroyB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt5ErrorD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt5ErrorD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE31__annotate_contiguous_containerB8ne210108EPKvS7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt5ErrorENS_9allocatorIS2_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIN4wabt5ErrorEEEEEvPKvS6_S6_S6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt5ErrorEE10deallocateB8ne210108EPS2_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IN4wabt5ErrorEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt9WastLexerENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt9WastLexerEEclB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt9WastLexerD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt9WastLexerD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt6ScriptENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt6ScriptEEclB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt6ScriptD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt6ScriptD2Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt11BindingHashD1Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEED1B8ne210108Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt11BindingHashD2Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__118unordered_multimapINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingENS_4hashIS6_EENS_8equal_toIS6_EENS4_INS_4pairIKS6_S8_EEEEED2B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__hash_tableINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEENS_22__unordered_map_hasherIS7_NS_4pairIKS7_S9_EENS_4hashIS7_EENS_8equal_toIS7_EELb1EEENS_21__unordered_map_equalIS7_SE_SI_SG_Lb1EEENS5_ISE_EEED1Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__hash_tableINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEENS_22__unordered_map_hasherIS7_NS_4pairIKS7_S9_EENS_4hashIS7_EENS_8equal_toIS7_EELb1EEENS_21__unordered_map_equalIS7_SE_SI_SG_Lb1EEENS5_ISE_EEED2Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__hash_tableINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEENS_22__unordered_map_hasherIS7_NS_4pairIKS7_S9_EENS_4hashIS7_EENS_8equal_toIS7_EELb1EEENS_21__unordered_map_equalIS7_SE_SI_SG_Lb1EEENS5_ISE_EEE17__deallocate_nodeEPNS_16__hash_node_baseIPNS_11__hash_nodeISA_PvEEEE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__110unique_ptrIA_PNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEENS_25__bucket_list_deallocatorINS7_ISH_EEEEED1B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__hash_tableINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEENS_22__unordered_map_hasherIS7_NS_4pairIKS7_S9_EENS_4hashIS7_EENS_8equal_toIS7_EELb1EEENS_21__unordered_map_equalIS7_SE_SI_SG_Lb1EEENS5_ISE_EEE12__node_allocB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__116__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEE8__upcastB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__116allocator_traitsINS_9allocatorINS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEE7destroyB8ne210108INS_4pairIKS8_SA_EETnNS_9enable_ifIXnt15__has_destroy_vISE_PT_EEiE4typeELi0EEEvRSE_SM_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__122__hash_key_value_typesINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEE9__get_ptrB8ne210108ERNS_4pairIKS7_S9_EE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__111__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvE11__get_valueB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__destroy_atB8ne210108INS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEETnNS_9enable_ifIXntsr8is_arrayIT_EE5valueEiE4typeELi0EEEvPSF_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__116allocator_traitsINS_9allocatorINS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEE10deallocateB8ne210108ERSE_PSD_m
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__114pointer_traitsIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEEE10pointer_toB8ne210108ERSG_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112__destroy_atB8ne210108INS_4pairIKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEETnNS_9enable_ifIXntsr8is_arrayIT_EE5valueEiE4typeELi0EEEvPSD_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__14pairIKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEED1Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__14pairIKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEED2Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__111__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvED1B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__111__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvED2B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__19allocatorINS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS0_IcEEEEN4wabt7BindingEEEPvEEE10deallocateB8ne210108EPSC_m
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__119__libcpp_deallocateB8ne210108INS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__110unique_ptrIA_PNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEENS_25__bucket_list_deallocatorINS7_ISH_EEEEED2B8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__110unique_ptrIA_PNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEENS_25__bucket_list_deallocatorINS7_ISH_EEEEE5resetB8ne210108EDn
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__125__bucket_list_deallocatorINS_9allocatorIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEEEEclB8ne210108EPSH_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__116allocator_traitsINS_9allocatorIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEEEE10deallocateB8ne210108ERSI_PSH_m
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__125__bucket_list_deallocatorINS_9allocatorIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEEEE7__allocB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__125__bucket_list_deallocatorINS_9allocatorIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS1_IcEEEEN4wabt7BindingEEEPvEEEEEEE4sizeB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__19allocatorIPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS0_IcEEEEN4wabt7BindingEEEPvEEEEE10deallocateB8ne210108EPSG_m
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__119__libcpp_deallocateB8ne210108IPNS_16__hash_node_baseIPNS_11__hash_nodeINS_17__hash_value_typeINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEN4wabt7BindingEEEPvEEEEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE16__destroy_vectorC1B8ne210108ERS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE16__destroy_vectorC2B8ne210108ERS9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS4_EEEEEEE10deallocateB8ne210108ERS8_PS7_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE22__base_destruct_at_endB8ne210108EPS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS4_EEEEEEE7destroyB8ne210108IS7_TnNS_9enable_ifIX15__has_destroy_vIS8_PT_EEiE4typeELi0EEEvRS8_SD_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108INS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEEEEPT_S8_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEEE7destroyB8ne210108EPS6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt7CommandENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt7CommandENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt7CommandENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt7CommandEEclB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE31__annotate_contiguous_containerB8ne210108EPKvSB_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS4_EEEEEEEEvPKvSA_SA_SA_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEEE10deallocateB8ne210108EPS6_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108INS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE13__move_assignB8ne210108ERS5_NS_17integral_constantIbLb1EEE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIcEEE10deallocateB8ne210108ERS2_Pcm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE18__get_long_pointerB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE19__move_assign_allocB8ne210108ERS5_
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE16__set_short_sizeB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111char_traitsIcE6assignB8ne210108ERcRKc
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE19__get_short_pointerB8ne210108Ev
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIcE10deallocateB8ne210108EPcm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IcEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE19__move_assign_allocB8ne210108ERS5_NS_17integral_constantIbLb1EEE
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__114pointer_traitsIPcE10pointer_toB8ne210108ERc
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt24FilenameMemoryStreamPairEEC1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt24FilenameMemoryStreamPairEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116__non_trivial_ifILb1ENS_9allocatorIN4wabt24FilenameMemoryStreamPairEEEEC2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE16__destroy_vectorC1B8ne210108ERS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE16__destroy_vectorclB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE16__destroy_vectorC2B8ne210108ERS5_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE5clearB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE17__annotate_deleteB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt24FilenameMemoryStreamPairEEEE10deallocateB8ne210108ERS4_PS3_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE8capacityB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE4sizeB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE22__base_destruct_at_endB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE17__annotate_shrinkB8ne210108Em
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__116allocator_traitsINS_9allocatorIN4wabt24FilenameMemoryStreamPairEEEE7destroyB8ne210108IS3_TnNS_9enable_ifIX15__has_destroy_vIS4_PT_EEiE4typeELi0EEEvRS4_S9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__112__to_addressB8ne210108IN4wabt24FilenameMemoryStreamPairEEEPT_S4_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt24FilenameMemoryStreamPairEE7destroyB8ne210108EPS2_
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt24FilenameMemoryStreamPairD1Ev
+[2m[DEBUG][0m ANALYZE [USER]: _ZN4wabt24FilenameMemoryStreamPairD2Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12MemoryStreamENS_14default_deleteIS2_EEED1B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12MemoryStreamENS_14default_deleteIS2_EEED2B8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__110unique_ptrIN4wabt12MemoryStreamENS_14default_deleteIS2_EEE5resetB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__114default_deleteIN4wabt12MemoryStreamEEclB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE31__annotate_contiguous_containerB8ne210108EPKvS7_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNKSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE4dataB8ne210108Ev
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__131__annotate_contiguous_containerB8ne210108INS_9allocatorIN4wabt24FilenameMemoryStreamPairEEEEEvPKvS6_S6_S6_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__19allocatorIN4wabt24FilenameMemoryStreamPairEE10deallocateB8ne210108EPS2_m
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__119__libcpp_deallocateB8ne210108IN4wabt24FilenameMemoryStreamPairEEEvPNS_15__type_identityIT_E4typeENS_15__element_countEm
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE11__make_iterB8ne210108EPS2_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__16vectorIN4wabt24FilenameMemoryStreamPairENS_9allocatorIS2_EEE26__add_alignment_assumptionB8ne210108IPS2_TnNS_9enable_ifIXsr10is_pointerIT_EE5valueEiE4typeELi0EEES7_S9_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111__wrap_iterIPN4wabt24FilenameMemoryStreamPairEEC1B8ne210108ES3_
+[2m[DEBUG][0m STDLIB-SKIP: _ZNSt3__111__wrap_iterIPN4wabt24FilenameMemoryStreamPairEEC2B8ne210108ES3_
+[2m[DEBUG][0m ANALYZE [USER]: _GLOBAL__sub_I_wast2json.cc
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 558
+[32m[INFO][0m   FFI Boundaries: 96
+[32m[INFO][0m     - Cross-language: 69
+[32m[INFO][0m     - External unknown: 17
+[32m[INFO][0m     - LibC calls: 0
+[31m[ERROR][0m   Dangerous calls: 17
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[2m[DEBUG][0m ZONE-SKIP: _ZNSt3__111make_uniqueB8ne210108IN4wabt21LexerSourceLineFinderEJNS_10unique_ptrINS1_11LexerSourceENS_14default_deleteIS4_EEEEETnNS_9enable_ifIXntsr8is_arrayIT_EE5valueEiE4typeELi0EEENS3_IS9_NS5_IS9_EEEEDpOT0_ is safe zone — language guarantees apply
+[32m[INFO][0m RAII: 1 allocations marked as smart-pointer-managed
+[32m[INFO][0m RAII: 33 functions identified as RAII-managed (skipped)
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE17__annotate_shrinkB8ne210108Em
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE17__annotate_deleteB8ne210108Ev
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZNKSt3__16vectorINS_10unique_ptrIN4wabt7CommandENS_14default_deleteIS3_EEEENS_9allocatorIS6_EEE31__annotate_contiguous_containerB8ne210108EPKvSB_
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZN4wabt12MemoryStream11WriteToFileENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEE
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 4 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 92 allocations, 0 frees, 92 tracked pointers
+[32m[INFO][0m PointerOwnership: 92 cross-FFI ownership transfers detected
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 92, reused: 0, in_use: 92
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    517
+  Safe zone (skipped):         1 (0.2%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                516
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                96[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       168.34    168340.33    168340.33
+detect                                  2         6.04      3021.17      3042.38
+total                                   1       168.35    168348.63    168348.63
+analysis                                1       160.95    160945.29    160945.29
+[32m[INFO][0m PointerOwnership: 4 ops, 503.68ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 96 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 558
+
+[INFO] Facts generated: 184
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/wabt_wast2json.json
+

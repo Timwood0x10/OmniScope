@@ -1,0 +1,70 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_sign.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_sign.ll
+[INFO] Loaded: 19 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519ph_statebytes
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_bytes
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_seedbytes
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_publickeybytes
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_secretkeybytes
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_messagebytes_max
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_sk_to_seed
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519_sk_to_pk
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519ph_init
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519ph_update
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519ph_final_create
+[2m[DEBUG][0m ANALYZE [USER]: crypto_sign_ed25519ph_final_verify
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 19
+[32m[INFO][0m   FFI Boundaries: 10
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 10
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    12
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                12
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         2.49      2492.88      2492.88
+detect                                  2         0.10        50.96        84.21
+total                                   1         2.50      2499.08      2499.08
+analysis                                1         2.10      2098.54      2098.54
+[32m[INFO][0m PointerOwnership: 4 ops, 7.19ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 10 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 19
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/libsodium_sign.json
+

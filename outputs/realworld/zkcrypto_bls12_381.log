@@ -1,0 +1,489 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/zkcrypto_bls12_381.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/zkcrypto_bls12_381.ll
+[INFO] Loaded: 302 functions
+
+
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h039046147a197613E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1129ef72639f0439E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h13985e599561af72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h328ab3580ffc517fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h3823f53de4ab0bfaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h41b56a922c9a2e9aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h428437bf1bb554b6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4ac84271e3a422bfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9298b2fa0784d88cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hae7da084f2bd0cddE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb68847bcda81c5e7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc8aca2ee0c0092b8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hebabefc5111cb82eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf1f75a77b771e3a0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr119drop_in_place$LT$$RF$alloc..vec..Vec$LT$$LP$bls12_381..fp2..Fp2$C$bls12_381..fp2..Fp2$C$bls12_381..fp2..Fp2$RP$$GT$$GT$17h9455d988ca39ae25E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr135drop_in_place$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$GT$17hf314ab93c552dc17E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core9panicking13assert_failed17h34756ef367b7bbc0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core9panicking13assert_failed17hc7be364f07721a08E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec11finish_grow17h62ecd664b20614c3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$16reserve_for_push17h7ff19dddf6c741d2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6subtle9black_box17hc9b8d8d53213bec5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..fmt..Debug$GT$3fmt17h2d23d8ffd4e28912E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..fmt..Display$GT$3fmt17h7356e1ee70b8eff6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..convert..From$LT$u64$GT$$GT$4from17hc3e7b1c332dc2498E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..scalar..Scalar$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17ha583a9bb4fa20d11E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN77_$LT$bls12_381..scalar..Scalar$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17hd86675905ffe1255E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar10from_bytes17hd1311f7cdafc1bf2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar8to_bytes17hb2ef8bb6d3899dd9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar15from_bytes_wide17h9aaf2f2ad758931bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar8from_raw17h32b1cf2340e50dd4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar6square17hdcd139ba4f137ed4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar3pow17h8f53d5ddcb0d9b96E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar11pow_vartime17h0bfc6f56707c5568E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar6invert17h8844512ed750fdcdE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3816scalar6Scalar3mul17he9ff536ac6ac30fcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN9bls12_3816scalar107_$LT$impl$u20$core..convert..From$LT$bls12_381..scalar..Scalar$GT$$u20$for$u20$$u5b$u8$u3b$$u20$32$u5d$$GT$4from17h439a87efd06e1f32E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6square17h91657ab665c659d3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6double17h28022536e338255fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6invert17h4d401d73d1cd7f0eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$10sqrt_ratio17h009a008839ea4013E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$4sqrt17h8e67415427abd90cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$15is_zero_vartime17hbb1c7b557af1ba5fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$9from_repr17h815c37baac869f09E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$7to_repr17h7ad7e056d49b0858E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$6is_odd17he8aae7144ec438cbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeFieldBits$GT$10to_le_bits17hf2c429f01e6d18b1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeFieldBits$GT$12char_le_bits17h105a7f36fb94a087E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN54_$LT$bls12_381..fp..Fp$u20$as$u20$core..fmt..Debug$GT$3fmt17h5b54040ba548bc80E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..fp..Fp$u20$as$u20$core..default..Default$GT$7default17h15601e96ee087a73E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..fp..Fp$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hc42ce3bc0a1b816fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$bls12_381..fp..Fp$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h78d8235b808022f6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp7is_zero17h89d7d39fa361b386E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp10from_bytes17hd66d6caaea28714aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp8to_bytes17hab7ac4d2192a6fc9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp9from_u76817h66fa6a3fb6795ca8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp25lexicographically_largest17h6c063af7fffb7375E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp18from_raw_unchecked17hca9256e29b8be318E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp11pow_vartime17h5350f87fe3f74aa0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp3sub17h4924226947b326a3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp15sum_of_products17h2654c561ea5ba9f6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp15sum_of_products17h54da5c28f59ebbfeE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp3mul17hef9ebcfbbb11a3a6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812fp2Fp6square17h1345574a7ef3c18bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..fmt..Debug$GT$3fmt17h5145b6d27d4ab949E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..default..Default$GT$7default17h8bf5fc631ff55fc5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN84_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17h8637a0c25f3ecd19E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..fp2..Fp2$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h423bc3f754db2bf3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..fp2..Fp2$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17ha724b74944fe5624E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp27is_zero17ha96710c6de7f0139E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp26square17h21bfea9e98d6844dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp23mul17h847401b15de15262E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp23add17h2ef36ca25a4ecf87E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp23sub17he45f72d421de552fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp23neg17hd1f3b58e68bd8b89E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp24sqrt17he744c53aa8ed4363E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp26invert17h26809f7f33114d9bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp23Fp211pow_vartime17h055efe207ddabd72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..default..Default$GT$7default17h45f1c829903fc57eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..fmt..Display$GT$3fmt17hb1b60ff81a8d2507E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g1..G1Projective$GT$$GT$4from17h99e478eb3f57d231E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN98_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..convert..From$LT$bls12_381..g1..G1Projective$GT$$GT$4from17hc0d66022add3fabcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g1..G1Affine$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h7e0ae325f341aaedE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$bls12_381..g1..G1Affine$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h6d314b2def895ea9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine8identity17hb17cc19dda1f5504E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine9generator17hd09c34473ded6d88E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine13to_compressed17h76310c1882285ef6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine15to_uncompressed17h8dd4eb26663dee41E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine17from_uncompressed17hee9dffa0efc1116fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine27from_uncompressed_unchecked17hc186dacfec0d6464E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine15from_compressed17hcb0adc107c29decaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine25from_compressed_unchecked17h28b630d55a586527E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine15is_torsion_free17h4240e22ec32a9284E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g18G1Affine11is_on_curve17h1daf2b948981ce3fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..fmt..Display$GT$3fmt17he23eb4ff68770698E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g1..G1Affine$GT$$GT$4from17hdc9cfae549adca2aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN98_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..convert..From$LT$bls12_381..g1..G1Affine$GT$$GT$4from17hd13101648e343f93E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g1..G1Projective$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hccc67201cd988b7cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN79_$LT$bls12_381..g1..G1Projective$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h04e2f4e7fdc14361E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$$RF$bls12_381..g1..G1Projective$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17hd77af27dd297fa1aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN106_$LT$$RF$bls12_381..g1..G1Affine$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17hacc5d19c1166058aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective8identity17hfa813f31b37ee3c3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective9generator17he18ee1aa00256e90E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective6double17h917e2f8d586250a2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective3add17hdfe05a333db7f3fbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective9add_mixed17h507af13a4b92cdd8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective8multiply17h2cd7c64128c9e660E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective8mul_by_x17h04c4d9f95921477aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective14clear_cofactor17h80f30f899fba2edfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective15batch_normalize17h51d85f5dbfe2219dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g112G1Projective11is_on_curve17h8e63568647ea9197E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..fmt..Debug$GT$3fmt17h38ee883fc7b7aae1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..default..Default$GT$7default17he1af2810e7f797e5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17hd42e010179a7d400E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17hdf8677f8c61d0fefE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g1..G1Compressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hff3ff0d25cb47efeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$8identity17h847788c877764bd0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$9generator17h03b066ed91fbbdd2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$11is_identity17hbcb77ab0e5a0560eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$6double17h04bde53ff792bfb3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..wnaf..WnafGroup$GT$32recommended_wnaf_for_num_scalars17h9ed90bc10a6375b3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Curve$GT$15batch_normalize17h0f816232c99befdcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Curve$GT$9to_affine17h7b59e718c8311444E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$9generator17h267886751c5c0060E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$11is_identity17h309549f2eb008af3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$8to_curve17h07e8a677021e884fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$10from_bytes17hc5b2e42e1ba53cacE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17h52bd5c6a3e97f69cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$8to_bytes17hed7b0088e4668dc0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h285de57ee2c32530E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17hfb651da327b48cedE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$8to_bytes17h94a465a140fdfe56E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$17from_uncompressed17h8ccf8c1dd65055d7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$27from_uncompressed_unchecked17h5705f1954d182156E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$15to_uncompressed17h8909d272a62a3c79E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..default..Default$GT$7default17ha0752b7c9eb8bf6dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..fmt..Display$GT$3fmt17h2c9ac173a2d34e74E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g2..G2Projective$GT$$GT$4from17hecf348ef1acce791E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN98_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Projective$GT$$GT$4from17ha3a1763960897eccE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g2..G2Affine$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h172c0787d88b02c6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$bls12_381..g2..G2Affine$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h9af3544bc76479d0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine8identity17h6d8a2299e3894490E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine13to_compressed17h541076d0d9c1b364E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine15to_uncompressed17h4f96e745fd85c3fbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine17from_uncompressed17h66a301e089f9b7baE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine27from_uncompressed_unchecked17hcf3308da41c7a8a5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine15from_compressed17he75de831fa64956aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine25from_compressed_unchecked17hc443756ee0977558E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine15is_torsion_free17h20f71e958901adc9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g28G2Affine11is_on_curve17h41c4ffd0704c56c4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..fmt..Display$GT$3fmt17h5c77b2d9aaa3af99E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g2..G2Affine$GT$$GT$4from17ha3d76345e724d286E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN98_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$4from17hbf474db23bd47e94E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g2..G2Projective$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hfefc34b582573d5eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN79_$LT$bls12_381..g2..G2Projective$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17he9da4e59a421fd8aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$$RF$bls12_381..g2..G2Projective$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h3059ef498a445eb3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN106_$LT$$RF$bls12_381..g2..G2Affine$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h15b2dbbc5d005cd5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective8identity17ha9301a97446d5590E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective9generator17h9177261dd816d23eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective6double17h49c7d128ff0397deE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective3add17h0c0f0a1ae646e790E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective9add_mixed17h12eaa493946f76b1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective8multiply17h90aa83b905527eebE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective3psi17ha1f9ea99c060a3e8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective8mul_by_x17ha9ab62add6542067E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective14clear_cofactor17hae1eca288af375a7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective15batch_normalize17h78c2786f5f703c7bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3812g212G2Projective11is_on_curve17h6150cd2901c4a843E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..fmt..Debug$GT$3fmt17hc7f842a9bb0af325E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..default..Default$GT$7default17hca13b2f8970ad375E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h63035952638c7ae1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17h54546f4b7f148061E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g2..G2Compressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h774e7cdefac83882E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..fmt..Debug$GT$3fmt17h790376a24b973878E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..default..Default$GT$7default17h20c0f3bd80058e07E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN90_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17he3337e537e267aa5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN90_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17h12205e5cbcf1ca6cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hc1b51c3ecb846628E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$8identity17h8f090d54013cd5c7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$9generator17hf798188755b556afE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$11is_identity17h5c7584e6aa191843E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$6double17hf745b880c025233dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..wnaf..WnafGroup$GT$32recommended_wnaf_for_num_scalars17h1dff58e11f2421faE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Curve$GT$15batch_normalize17h952fcf9062b1f651E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Curve$GT$9to_affine17h6f37e0366c613095E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$9generator17h3baeeff92272e16bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$11is_identity17h33f662206c136b10E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$8to_curve17h36087cba51ada014E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h2852b0b67de67748E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17h70f6ae23749f2e2cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$8to_bytes17hbbb58bf21c9eb830E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h087350caf44041bfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17hc262d6d3fb36328eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$8to_bytes17h23cc11d20db47876E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$17from_uncompressed17ha359a48a213a14ddE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$27from_uncompressed_unchecked17h013608b891b928d3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$15to_uncompressed17h7b84a3d74a267a15E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN86_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17h6989609305f54494E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp2..Fp2$GT$$GT$4from17h58625463e5af37e0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp6..Fp6$GT$$GT$4from17h57d9180ede770ee4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..cmp..PartialEq$GT$2eq17h141b8e1ac74a859dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..default..Default$GT$7default17h8284fe215b0a6e50E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN58_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..fmt..Debug$GT$3fmt17hc855e39db9837173E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3814fp124Fp1210mul_by_01417h9dc203fe627f4337E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3814fp124Fp126square17hd64f6e7650fe7fc8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3814fp124Fp126invert17hc21ad102476e9a88E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$$RF$bls12_381..fp12..Fp12$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..fp12..Fp12$GT$$GT$3mul17h6d558ab0efcbf2a5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN84_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17he382316d961388faE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN86_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..convert..From$LT$bls12_381..fp2..Fp2$GT$$GT$4from17h7822a69d541065cdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..cmp..PartialEq$GT$2eq17h257565fd2ed44509E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..default..Default$GT$7default17h9dc8eb31880bfd04E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..fmt..Debug$GT$3fmt17he8a8859ed4fb871fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp63Fp68mul_by_117ha2d90e35e8ad9927E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp63Fp69mul_by_0117h215cc5d5f310fb55E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp63Fp617mul_by_nonresidue17h20766f45e926f2e1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3813fp63Fp66square17h21f7960c8c723123E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Neg$GT$3neg17h9b513888bea72f22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN80_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$core..default..Default$GT$7default17h1f2290b81c441488E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings16MillerLoopResult20final_exponentiation17h379f78a711d28968E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings16MillerLoopResult20final_exponentiation10fp4_square17h18d0ab1b4952299aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings16MillerLoopResult20final_exponentiation17cyclotomic_square17h9285dc703d0145aaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings16MillerLoopResult20final_exponentiation28_$u7b$$u7b$closure$u7d$$u7d$17h72a63747f9bbd7edE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..pairings..Gt$u20$as$u20$core..fmt..Display$GT$3fmt17h6713f1209cdc69e3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$bls12_381..pairings..Gt$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hde852177288a036cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$bls12_381..pairings..Gt$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17hdc7bef879ff5cdffE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings2Gt6double17h25f6e6461ae364ebE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN106_$LT$$RF$bls12_381..pairings..Gt$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h5fa68b5c37450686E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$8identity17hd50423da6be31313E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$9generator17h6516bea3260e4670E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$11is_identity17hca8c3cc80a0f7080E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$6double17h47992dcbb272a9d7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$4from17hd6bf78a6c243e3b0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17hfdd58729b103f7e0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h517b4e84a2de4545E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13square_output17hc486884d9faeb106E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings17multi_miller_loop17h9aaae5ed87e6c316E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17h5f44dc59073e85beE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h82f59d1966ef8669E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13square_output17h865b0a23e16cea8dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$9conjugate17hf4206f7c5bfc4c53E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$3one17h607928033cd160b3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings7pairing17hd9a62bab1adc778dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN93_$LT$bls12_381..pairings..pairing..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17h7e87be48032567d8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN93_$LT$bls12_381..pairings..pairing..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h427f818d8ca87b1fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings13doubling_step17h1a08a85fb1bd9e77E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9bls12_3818pairings13addition_step17h8563353c16e4048cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN9bls12_3818pairings81_$LT$impl$u20$pairing..PairingCurveAffine$u20$for$u20$bls12_381..g2..G2Affine$GT$12pairing_with17h49c3e3e2a211e7b8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN62_$LT$bls12_381..pairings..Bls12$u20$as$u20$pairing..Engine$GT$7pairing17h163e66037bfe0a22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN83_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$pairing..MillerLoopResult$GT$20final_exponentiation17hfba2ea1fe61918ccE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$bls12_381..pairings..Bls12$u20$as$u20$pairing..MultiMillerLoop$GT$17multi_miller_loop17h30b8db89a3556462E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..fmt..Debug$GT$3fmt17hf3b09410640af9dfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..fmt..Debug$GT$3fmt17hbad3a4a96d2abe8dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..fmt..Debug$GT$3fmt17h57381e4cf28b1c3bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN64_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..fmt..Debug$GT$3fmt17h56ffc355360188eeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Sub$GT$3sub17h5c6eb6008de7d64aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Mul$GT$3mul17hed3043f155034607E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$core..fmt..Debug$GT$3fmt17h9564c8c531b2e1a1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN60_$LT$bls12_381..pairings..Gt$u20$as$u20$core..fmt..Debug$GT$3fmt17h72d6890cef7995ecE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..fmt..Debug$GT$3fmt17he6c39a86357545ffE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN63_$LT$bls12_381..pairings..Bls12$u20$as$u20$core..fmt..Debug$GT$3fmt17h8bf430c967284005E
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 302
+[32m[INFO][0m   FFI Boundaries: 6787
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 6787
+[32m[INFO][0m     - LibC calls: 0
+[32m[INFO][0m   Dangerous calls: 0
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h039046147a197613E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1129ef72639f0439E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h13985e599561af72E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h328ab3580ffc517fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h3823f53de4ab0bfaE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h41b56a922c9a2e9aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h428437bf1bb554b6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4ac84271e3a422bfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9298b2fa0784d88cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hae7da084f2bd0cddE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb68847bcda81c5e7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc8aca2ee0c0092b8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hebabefc5111cb82eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf1f75a77b771e3a0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr119drop_in_place$LT$$RF$alloc..vec..Vec$LT$$LP$bls12_381..fp2..Fp2$C$bls12_381..fp2..Fp2$C$bls12_381..fp2..Fp2$RP$$GT$$GT$17h9455d988ca39ae25E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr135drop_in_place$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$GT$17hf314ab93c552dc17E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core9panicking13assert_failed17h34756ef367b7bbc0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core9panicking13assert_failed17hc7be364f07721a08E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec11finish_grow17h62ecd664b20614c3E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$16reserve_for_push17h7ff19dddf6c741d2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..fmt..Debug$GT$3fmt17h2d23d8ffd4e28912E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..fmt..Display$GT$3fmt17h7356e1ee70b8eff6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$bls12_381..scalar..Scalar$u20$as$u20$core..convert..From$LT$u64$GT$$GT$4from17hc3e7b1c332dc2498E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..scalar..Scalar$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17ha583a9bb4fa20d11E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN77_$LT$bls12_381..scalar..Scalar$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17hd86675905ffe1255E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN9bls12_3816scalar107_$LT$impl$u20$core..convert..From$LT$bls12_381..scalar..Scalar$GT$$u20$for$u20$$u5b$u8$u3b$$u20$32$u5d$$GT$4from17h439a87efd06e1f32E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6square17h91657ab665c659d3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6double17h28022536e338255fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$6invert17h4d401d73d1cd7f0eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$10sqrt_ratio17h009a008839ea4013E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$4sqrt17h8e67415427abd90cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN55_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..Field$GT$15is_zero_vartime17hbb1c7b557af1ba5fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$9from_repr17h815c37baac869f09E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$7to_repr17h7ad7e056d49b0858E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeField$GT$6is_odd17he8aae7144ec438cbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeFieldBits$GT$10to_le_bits17hf2c429f01e6d18b1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..scalar..Scalar$u20$as$u20$ff..PrimeFieldBits$GT$12char_le_bits17h105a7f36fb94a087E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN54_$LT$bls12_381..fp..Fp$u20$as$u20$core..fmt..Debug$GT$3fmt17h5b54040ba548bc80E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..fp..Fp$u20$as$u20$core..default..Default$GT$7default17h15601e96ee087a73E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..fp..Fp$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hc42ce3bc0a1b816fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$bls12_381..fp..Fp$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h78d8235b808022f6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..fmt..Debug$GT$3fmt17h5145b6d27d4ab949E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..default..Default$GT$7default17h8bf5fc631ff55fc5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN84_$LT$bls12_381..fp2..Fp2$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17h8637a0c25f3ecd19E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..fp2..Fp2$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h423bc3f754db2bf3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..fp2..Fp2$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17ha724b74944fe5624E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..default..Default$GT$7default17h45f1c829903fc57eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..fmt..Display$GT$3fmt17hb1b60ff81a8d2507E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g1..G1Projective$GT$$GT$4from17h99e478eb3f57d231E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN98_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..convert..From$LT$bls12_381..g1..G1Projective$GT$$GT$4from17hc0d66022add3fabcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g1..G1Affine$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h7e0ae325f341aaedE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$bls12_381..g1..G1Affine$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h6d314b2def895ea9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..fmt..Display$GT$3fmt17he23eb4ff68770698E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g1..G1Affine$GT$$GT$4from17hdc9cfae549adca2aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN98_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..convert..From$LT$bls12_381..g1..G1Affine$GT$$GT$4from17hd13101648e343f93E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g1..G1Projective$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hccc67201cd988b7cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN79_$LT$bls12_381..g1..G1Projective$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h04e2f4e7fdc14361E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$$RF$bls12_381..g1..G1Projective$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17hd77af27dd297fa1aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN106_$LT$$RF$bls12_381..g1..G1Affine$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17hacc5d19c1166058aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..fmt..Debug$GT$3fmt17h38ee883fc7b7aae1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..default..Default$GT$7default17he1af2810e7f797e5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17hd42e010179a7d400E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..g1..G1Compressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17hdf8677f8c61d0fefE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g1..G1Compressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hff3ff0d25cb47efeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$8identity17h847788c877764bd0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$9generator17h03b066ed91fbbdd2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$11is_identity17hbcb77ab0e5a0560eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Group$GT$6double17h04bde53ff792bfb3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..wnaf..WnafGroup$GT$32recommended_wnaf_for_num_scalars17h9ed90bc10a6375b3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Curve$GT$15batch_normalize17h0f816232c99befdcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..Curve$GT$9to_affine17h7b59e718c8311444E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$9generator17h267886751c5c0060E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$11is_identity17h309549f2eb008af3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$8to_curve17h07e8a677021e884fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$10from_bytes17hc5b2e42e1ba53cacE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17h52bd5c6a3e97f69cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g1..G1Projective$u20$as$u20$group..GroupEncoding$GT$8to_bytes17hed7b0088e4668dc0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h285de57ee2c32530E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17hfb651da327b48cedE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..GroupEncoding$GT$8to_bytes17h94a465a140fdfe56E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$17from_uncompressed17h8ccf8c1dd65055d7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$27from_uncompressed_unchecked17h5705f1954d182156E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g1..G1Affine$u20$as$u20$group..UncompressedEncoding$GT$15to_uncompressed17h8909d272a62a3c79E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..default..Default$GT$7default17ha0752b7c9eb8bf6dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..fmt..Display$GT$3fmt17h2c9ac173a2d34e74E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g2..G2Projective$GT$$GT$4from17hecf348ef1acce791E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN98_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Projective$GT$$GT$4from17ha3a1763960897eccE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g2..G2Affine$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h172c0787d88b02c6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$bls12_381..g2..G2Affine$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17h9af3544bc76479d0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..fmt..Display$GT$3fmt17h5c77b2d9aaa3af99E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..convert..From$LT$$RF$bls12_381..g2..G2Affine$GT$$GT$4from17ha3d76345e724d286E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN98_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$4from17hbf474db23bd47e94E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g2..G2Projective$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hfefc34b582573d5eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN79_$LT$bls12_381..g2..G2Projective$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17he9da4e59a421fd8aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$$RF$bls12_381..g2..G2Projective$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h3059ef498a445eb3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN106_$LT$$RF$bls12_381..g2..G2Affine$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h15b2dbbc5d005cd5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..fmt..Debug$GT$3fmt17hc7f842a9bb0af325E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..default..Default$GT$7default17hca13b2f8970ad375E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17h63035952638c7ae1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..g2..G2Compressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17h54546f4b7f148061E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g2..G2Compressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17h774e7cdefac83882E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..fmt..Debug$GT$3fmt17h790376a24b973878E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..default..Default$GT$7default17h20c0f3bd80058e07E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN90_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..convert..AsRef$LT$$u5b$u8$u5d$$GT$$GT$6as_ref17he3337e537e267aa5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN90_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$core..convert..AsMut$LT$$u5b$u8$u5d$$GT$$GT$6as_mut17h12205e5cbcf1ca6cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$bls12_381..g2..G2Uncompressed$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hc1b51c3ecb846628E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$8identity17h8f090d54013cd5c7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$9generator17hf798188755b556afE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$11is_identity17h5c7584e6aa191843E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Group$GT$6double17hf745b880c025233dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..wnaf..WnafGroup$GT$32recommended_wnaf_for_num_scalars17h1dff58e11f2421faE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Curve$GT$15batch_normalize17h952fcf9062b1f651E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..Curve$GT$9to_affine17h6f37e0366c613095E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$9generator17h3baeeff92272e16bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$11is_identity17h33f662206c136b10E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..prime..PrimeCurveAffine$GT$8to_curve17h36087cba51ada014E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h2852b0b67de67748E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17h70f6ae23749f2e2cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..g2..G2Projective$u20$as$u20$group..GroupEncoding$GT$8to_bytes17hbbb58bf21c9eb830E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$10from_bytes17h087350caf44041bfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$20from_bytes_unchecked17hc262d6d3fb36328eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..GroupEncoding$GT$8to_bytes17h23cc11d20db47876E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$17from_uncompressed17ha359a48a213a14ddE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$27from_uncompressed_unchecked17h013608b891b928d3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..g2..G2Affine$u20$as$u20$group..UncompressedEncoding$GT$15to_uncompressed17h7b84a3d74a267a15E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN86_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17h6989609305f54494E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp2..Fp2$GT$$GT$4from17h58625463e5af37e0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..convert..From$LT$bls12_381..fp6..Fp6$GT$$GT$4from17h57d9180ede770ee4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..cmp..PartialEq$GT$2eq17h141b8e1ac74a859dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..default..Default$GT$7default17h8284fe215b0a6e50E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN58_$LT$bls12_381..fp12..Fp12$u20$as$u20$core..fmt..Debug$GT$3fmt17hc855e39db9837173E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$$RF$bls12_381..fp12..Fp12$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..fp12..Fp12$GT$$GT$3mul17h6d558ab0efcbf2a5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN84_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..convert..From$LT$bls12_381..fp..Fp$GT$$GT$4from17he382316d961388faE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN86_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..convert..From$LT$bls12_381..fp2..Fp2$GT$$GT$4from17h7822a69d541065cdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..cmp..PartialEq$GT$2eq17h257565fd2ed44509E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..default..Default$GT$7default17h9dc8eb31880bfd04E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..fmt..Debug$GT$3fmt17he8a8859ed4fb871fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Neg$GT$3neg17h9b513888bea72f22E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN80_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$core..default..Default$GT$7default17h1f2290b81c441488E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..pairings..Gt$u20$as$u20$core..fmt..Display$GT$3fmt17h6713f1209cdc69e3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$bls12_381..pairings..Gt$u20$as$u20$subtle..ConstantTimeEq$GT$5ct_eq17hde852177288a036cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$bls12_381..pairings..Gt$u20$as$u20$subtle..ConditionallySelectable$GT$18conditional_select17hdc7bef879ff5cdffE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN106_$LT$$RF$bls12_381..pairings..Gt$u20$as$u20$core..ops..arith..Mul$LT$$RF$bls12_381..scalar..Scalar$GT$$GT$3mul17h5fa68b5c37450686E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$8identity17hd50423da6be31313E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$9generator17h6516bea3260e4670E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$11is_identity17hca8c3cc80a0f7080E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN56_$LT$bls12_381..pairings..Gt$u20$as$u20$group..Group$GT$6double17h47992dcbb272a9d7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$4from17hd6bf78a6c243e3b0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17hfdd58729b103f7e0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h517b4e84a2de4545E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN172_$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13square_output17hc486884d9faeb106E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17h5f44dc59073e85beE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h82f59d1966ef8669E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13square_output17h865b0a23e16cea8dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$9conjugate17hf4206f7c5bfc4c53E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN103_$LT$bls12_381..pairings..multi_miller_loop..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$3one17h607928033cd160b3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN93_$LT$bls12_381..pairings..pairing..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13doubling_step17h7e87be48032567d8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN93_$LT$bls12_381..pairings..pairing..Adder$u20$as$u20$bls12_381..pairings..MillerLoopDriver$GT$13addition_step17h427f818d8ca87b1fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN9bls12_3818pairings81_$LT$impl$u20$pairing..PairingCurveAffine$u20$for$u20$bls12_381..g2..G2Affine$GT$12pairing_with17h49c3e3e2a211e7b8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN62_$LT$bls12_381..pairings..Bls12$u20$as$u20$pairing..Engine$GT$7pairing17h163e66037bfe0a22E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN83_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$pairing..MillerLoopResult$GT$20final_exponentiation17hfba2ea1fe61918ccE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$bls12_381..pairings..Bls12$u20$as$u20$pairing..MultiMillerLoop$GT$17multi_miller_loop17h30b8db89a3556462E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g1..G1Affine$u20$as$u20$core..fmt..Debug$GT$3fmt17hf3b09410640af9dfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g1..G1Projective$u20$as$u20$core..fmt..Debug$GT$3fmt17hbad3a4a96d2abe8dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..g2..G2Affine$u20$as$u20$core..fmt..Debug$GT$3fmt17h57381e4cf28b1c3bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN64_$LT$bls12_381..g2..G2Projective$u20$as$u20$core..fmt..Debug$GT$3fmt17h56ffc355360188eeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Sub$GT$3sub17h5c6eb6008de7d64aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN61_$LT$bls12_381..fp6..Fp6$u20$as$u20$core..ops..arith..Mul$GT$3mul17hed3043f155034607E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$bls12_381..pairings..MillerLoopResult$u20$as$u20$core..fmt..Debug$GT$3fmt17h9564c8c531b2e1a1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN60_$LT$bls12_381..pairings..Gt$u20$as$u20$core..fmt..Debug$GT$3fmt17h72d6890cef7995ecE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..fmt..Debug$GT$3fmt17he6c39a86357545ffE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN63_$LT$bls12_381..pairings..Bls12$u20$as$u20$core..fmt..Debug$GT$3fmt17h8bf430c967284005E is safe zone — language guarantees apply
+[2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    259
+  Safe zone (skipped):         166 (66.4%)
+  Runtime internal (skipped):  6
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                87
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Issues found:                0[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1      1057.35   1057352.13   1057352.13
+detect                                  2         0.16        78.58       117.33
+total                                   1      1057.37   1057366.71   1057366.71
+analysis                                1      1018.46   1018460.58   1018460.58
+[32m[INFO][0m PointerOwnership: 4 ops, 3133.34ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 6787 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 302
+
+[INFO] Facts generated: 0
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/zkcrypto_bls12_381.json
+

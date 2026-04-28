@@ -1,0 +1,1242 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wasmtime_test.ll
+
+
+[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wasmtime_test.ll
+[INFO] Loaded: 987 functions
+
+
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMNtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB2_5Waker10disconnect
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10disconnect
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXs2_NtNtCsg55jX0GwzBC_3std4hash6randomNtB5_13DefaultHasherNtNtCsl8K0bEFm1U0_4core4hash6Hasher5write
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXs5_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_15TryFromIntErrorNtNtB9_3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsW_NtNtCsl8K0bEFm1U0_4core3fmt3nummNtB7_5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsX_NtNtCsl8K0bEFm1U0_4core3fmt3numyNtB7_5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsZ_NtNtCsl8K0bEFm1U0_4core3fmt3numjNtB7_5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsd_NtNtCsl8K0bEFm1U0_4core5alloc6layoutNtB5_11LayoutErrorNtNtB9_3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsf_NtCsl8K0bEFm1U0_4core3fmtbNtB5_5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsq_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt7Display3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _RNvXsr_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Debug3fmt
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..error..Error$GT$6source17h01c74038f903cfe4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..error..Error$GT$6source17hbcdfaae26a5d1f7cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h9ca198136a381a1dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17hcfa5c48be4e94e4eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN101_$LT$wasmtime..runtime..component..resource_table..ResourceTableError$u20$as$u20$core..fmt..Debug$GT$3fmt17hc66bae710771d82cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h426fbb8e8b6eaca0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h7b88c8ca63b5ad5fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hb5c70d165a8b4128E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17he3507e09bc6f2ca1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN106_$LT$core..iter..adapters..GenericShunt$LT$I$C$R$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h20a12566569bff4eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN108_$LT$wasmtime..runtime..component..resources..host_tables..HostResourceIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17hbdbb649c4684139bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$wasmtime..runtime..component..concurrent..futures_and_streams..ReturnCode$u20$as$u20$core..fmt..Debug$GT$3fmt17h5f0d60f069877496E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$20assert_fp_is_aligned17hf4427004d4d1627eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$25get_next_older_pc_from_fp17h1b2932896905b013E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$28next_older_fp_from_fp_offset17hf38f694e576740f2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$28next_older_sp_from_fp_offset17h0c9f38ef86b3fc39E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$10sync_start17hbb92d6c441b123f2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11async_start17h2107a0421e0348e8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11future_read17h219402feda6d25c7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11stream_read17h51958c2198ff9574E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12future_write17h054ac7d0ee16f22aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12prepare_call17h841c94afb4044745E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12stream_write17hed024e20e45ede04E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$16flat_stream_read17hac699aa1303c8a93E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$17flat_stream_write17h1309328ec98011aeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$19thread_new_indirect17h2ff1c9b4b67eab29E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$20future_drop_writable17h4ded1d9cd506d7c1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$20stream_drop_writable17h419a2d69fd16ea03E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$27error_context_debug_message17h72627241a8851930E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN139_$LT$wasmtime..runtime..component..concurrent..future_stream_any..FutureAny$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h00fdbe2ac547e582E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN139_$LT$wasmtime..runtime..component..concurrent..future_stream_any..StreamAny$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h4050254c0b7cf82cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$12purge_module17h648d5ffcd8305defE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$15validate_memory17h32d262935957cb6fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$15validate_module17hee1241b569913a34E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$18validate_component17h4f7cedad21187f0dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$19next_available_pkey17h024cbc6187adccfdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$29increment_core_instance_count17h94051b7ec51da9a9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN16wasmtime_environ11collections11primary_map26TryPrimaryMap$LT$K$C$V$GT$4push17h5eea247650ad2772E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN16wasmtime_environ6module6Module7imports28_$u7b$$u7b$closure$u7d$$u7d$17h1e68882eda1c6340E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN17wasmtime_ffi_test11instantiate17h969076f9696e1d8cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[31m[ERROR][0m [LOW] FFI RISK: wasmtime_ffi_test::create_store -> llvm.threadlocal.address.p0
+[31m[ERROR][0m   Location: /Users/scc/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/sys/thread_local/native/mod.rs:105:25
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig threadlocal - thread-local memory allocation
+[2m[DEBUG][0m ANALYZE [USER]: _ZN17wasmtime_ffi_test13create_engine17ha4c07892c5b063fbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN17wasmtime_ffi_test13create_linker17h7ea318d501c417ddE
+[31m[ERROR][0m [LOW] FFI RISK: wasmtime_ffi_test::create_linker -> llvm.threadlocal.address.p0
+[31m[ERROR][0m   Location: /Users/scc/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/sys/thread_local/native/mod.rs:105:25
+[31m[ERROR][0m   Kind: zig_allocator
+[31m[ERROR][0m   Detail: Zig threadlocal - thread-local memory allocation
+[2m[DEBUG][0m ANALYZE [USER]: _ZN17wasmtime_ffi_test13create_module17h488af5b8a92c1ad9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5alloc3vec15TryVec$LT$T$GT$16into_boxed_slice17h1de2fc0bc9b01319E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error13BoxedDynError3new17h7355531c37b3bfc3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17h0c18d0b134babb65E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17h1ba2c4622be04015E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17h1ecf29ef3712df54E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17h43265a1a3d343146E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17h652af3c796386d67E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error3new17hdc93c08a7ce1f9ebE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error5error5Error8downcast17h27d39bc4c2dcf326E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable10source_mut17h102f989c9bbcc642E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable10source_mut17h14508f14a2520760E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable10source_mut17h15b9a09b82f2fad2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h17759cb5764b019bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h2321a5dca8e1412cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h33c614a3f07f9f67E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h4b01f35cf34340cfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h664db063a5785170E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17h82eb672699d8a5cbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17hb8a9f29a3bb38ae3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17hb960aead0459675bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable11into_anyhow17hf360714a73ea9c6eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17h05c39604937b8158E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17h2f92935abc325f7bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17h3f0a7a3f88e9ef0bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17h422ab7932885e95aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17h48ed49523c266bddE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17ha0abba2dea506cd8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17haf9356767c0bcfa7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17hc6c2545617ad014bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable17as_dyn_core_error17hf1bc7cbad8c3eda5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17h1b162e908547a18eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17h96012c6b024599adE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17hd2276a633fc4a0afE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17hf1a35363d30c6c99E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17hf524308ca6e2799cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable19drop_and_deallocate17hf5aaa52cf5044c12E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h165da3c5bfedcdc4E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h16cced11c946f14aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h234ab267f1aed287E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h3bcc5cee253c580dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h45cbe7e1a83085e2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h4f57ad329f4b0419E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h7d98227a79b36a3fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h9887c9425795154aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17he0dbac95762db906E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h1baaf04deb57094bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h1f96978dca3a69b8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h505ad1124a95242eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h5e6a8a59f596a1aaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h9811bfa476e49d38E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17h98d7cb0afb3f97f7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17ha90f2e018dac747eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17hd1f778f1964a06feE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable2is17hd54d9875afa8e6faE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h00b702e0b44999dbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h2ace69b9371bd0f7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h411caa78eda48c99E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h5787cfa56633f32cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h5d8c0bb7d2853de0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h6db77cc975f41806E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17h78b20f326117f71bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17ha7a3f0c1657023dfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable5debug17hbbff802f5f934a04E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17h0d0e70659acec9feE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17h2030d28caa937f1fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17h376952c4863d86ceE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17h4ea03bbdb6b2cbe0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17h99964bd90db56aacE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17ha1e3b35fbba2a611E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable7display17hc769e54f616a18b7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17h1b5749a793f173e9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17h569f2fa93ef1788fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17h88adf92e36c2023eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17h933ee8f4af665540E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17h95e452ced588dfcdE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17ha3992031884332cfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17hc5827a0ef64d7b0bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN22wasmtime_internal_core5error6vtable9move_into17he3eca83d10513141E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN23wasmtime_internal_fiber4unix11fiber_start17h0399edf2da7850b1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h290fec2618875519E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h522a8c93023dce67E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17heceeba30590bb510E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN3log13__private_api3log17h2f09ab836ee0bff6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN3std3sys4sync8once_box16OnceBox$LT$T$GT$10initialize17h2242860ef9b9649dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h02814422e2c7ddb9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h037e009d91cfacdfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h19d9176de983d799E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1a8a6a8eab1d4785E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1c328630d5366592E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1f3ad422df3a45d3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h24bbdd03f755b579E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2e9e854d83bc039dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ea2606a39a012a1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2fe1a81a3cf6fea7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h30dae8e14e174398E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h31e0eb74c810d5a5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h32ab932b80447165E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h343b431f70ea1446E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h3c3b8f59cc1d8309E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h402f1a73d5a4728eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4138fc7c8b5731faE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h441e5daab5a5b4a6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h463ce697b7bb9cb7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h468adad4bfa000dbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4badfc12c73f3d0dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4cdd961704f76587E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4e3f3d10fa6ed195E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h563b442872d61272E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h584a5a278596bc2fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h59af5f175080f882E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5a2c9f093dd10dd6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5c0d85d890281350E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5e576684d2548347E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h607bd83c0dcdb740E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6a37ea98da5c290bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6c82381ca8677be1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6f75c450f1da05c4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h70c065540624f1cfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h71f1a4b015c3b3efE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h755703bd4445f635E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h761e1b01436c2da8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7627f5ecf7e69fc2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h772019537b671755E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h786316e3ba79986fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7b6f728c7691892eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7bd02672466ddfa8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7d6486059f30e80dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h81dd7a24f138195eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8329690785542d96E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8593a28467526d6cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h86cf9931f7cfea68E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h88a22440dc13032eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h897de506850dcb96E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8ae3170c7bdc2125E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h92140be053d80f06E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h98ef73006ce56f79E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9ada68df86d2660eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9b3611d226f8858fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9e8df6ba493b1b34E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha2d0167b12a22b82E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha64b0ebeff9f25d6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha99ba400c06d82c0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha9b43abdad177e99E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17haa8f84f716c76c0fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17had09afc2e6983f72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb1f913e6d73bb9faE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbc6618c20808850bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbcfcb6dd21635fe4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbe9431bbe4fe1c63E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbfdb471e9f3c559fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0388e4696f3779aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0b0da3b765ec834E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc1ab31c19c27cd75E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc2183995838398bdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc3edafa59a033e38E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc668c8165c367b65E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc7b8a58cac28f163E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc86c20531ecf6e30E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc92c785287dab59cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hca858a520eccef2aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd0f210c1e8a6dd83E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd20a9e2a25becb4aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd3012d9882da0046E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd4abea4d8f96f6adE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hda135690870c4d29E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hdffa5403351813c0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17he21d12d41de2c28cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17he6827bc74b9f8cdaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hea13d58be7189708E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hee9d472063d88efdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf048d546f1457492E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf051a39cafd4dc93E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf1659839ef478b29E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf258e6ad6f48e0adE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf2e733f4389ea3c5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf34c869d212e2f9fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf798fe0f6972f9cbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hfc3b6350bfc5f660E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hfca6411ff2d277c1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h13078e186168d66cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hbcec578fc89a2127E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hc9a11d289a8723a4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3fmt5Write10write_char17h5ebc7591f4a9103cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3fmt5Write9write_fmt17h2c9ad23fc7e4233bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h5058f21fba884725E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h62722ebbce99f2e6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h718d0feb19c8f16aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h779f22a8ff2e8f2cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hbacb6e81011acaaeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hecb1b9b32990092dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce9call_once17h2f7e90b45036201dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ops8function6FnOnce9call_once17h970eb7028d12b1caE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$alloc..vec..into_iter..IntoIter$LT$wasmtime..runtime..component..values..Val$GT$$GT$17h77bdabaacbf4ec5aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..component..concurrent..LiftResult$GT$$GT$17h30a3c75e27dabbaeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..component..concurrent..WorkerItem$GT$$GT$17h9f41ba2cea4cdc5aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17hce08b30505bab20bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr101drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$GT$17h32f490ec285261d4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr102drop_in_place$LT$wasmtime..runtime..vm..gc..gc_runtime..collect_async..$u7b$$u7b$closure$u7d$$u7d$$GT$17h008180e98536eeceE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr102drop_in_place$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$17h008d98192bee8186E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr104drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..ensure_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17habfd6d9b51aea0f7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr104drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..types..ValType$GT$$GT$17h6dc1e3e296d50a1bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr106drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17h587679a72b9d18eaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17hf625d383ed118f61E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr108drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..linker..Definition$GT$$GT$17h54200251e7322d96E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr109drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$$LP$$RP$$GT$$GT$$GT$17h64fa416775156fc8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr109drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..sys..unix..unwind..UnwindRegistration$GT$$GT$17h1daeee42aaac12d4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr109drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..traphandlers..coredump..CoreDumpStack$GT$$GT$17h744dbc1f49c4bfd9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr110drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$wasmtime..runtime..vm..gc..gc_runtime..GarbageCollection$GT$$GT$17hb7a8c5afd2184270E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..error..ContextError$LT$$RF$str$C$anyhow..Error$GT$$GT$$GT$17hee25392a204fe71aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..store..ResourceLimiterInner$LT$$LP$$RP$$GT$$GT$$GT$17hc86dff38808e1e6bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$wasmtime..runtime..vm..instance..Instance..table_init_segment..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc3f9206ef762e815E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_tables..$u7b$$u7b$closure$u7d$$u7d$$GT$17hd56e66f0d865261cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr111drop_in_place$LT$wasmtime_internal_core..slab..Entry$LT$wasmtime..runtime..module..registry..LoadedCode$GT$$GT$17h99d38fee8c1613e5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr112drop_in_place$LT$core..cell..Cell$LT$wasmtime..runtime..vm..traphandlers..call_thread_state..UnwindState$GT$$GT$17hf97e2576facef103E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr112drop_in_place$LT$wasmtime..runtime..store..StoreResourceLimiter..memory_growing..$u7b$$u7b$closure$u7d$$u7d$$GT$17h09316023357b1e45E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr112drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_globals..$u7b$$u7b$closure$u7d$$u7d$$GT$17h04b3ca9d0975ededE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr113drop_in_place$LT$std..collections..hash..set..HashSet$LT$wasmtime..runtime..type_registry..RegisteredType$GT$$GT$17h2e41e4cd103af297E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr113drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstEvalContext..struct_new..$u7b$$u7b$closure$u7d$$u7d$$GT$17h582fa579abf31bdfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr113drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_instance..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf20ddefd3487c9beE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$$LP$wasmtime..runtime..component..values..Val$C$wasmtime..runtime..component..values..Val$RP$$GT$17h43950b81fa54cd00E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$core..option..Option$LT$wasmtime_internal_jit_debug..gdb_jit_int..GdbJitImageRegistration$GT$$GT$17h34f974fb667cca5cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr114drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstExprEvaluator..eval_loop..$u7b$$u7b$closure$u7d$$u7d$$GT$17ha3c84775adeee7baE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr115drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..store..func_refs..Storage$GT$$GT$17h4535a5f0704d1ea0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr116drop_in_place$LT$core..result..Result$LT$anyhow..Error$C$wasmtime_internal_core..error..error..OomOrDynError$GT$$GT$17h7ef082fc764db7f7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr116drop_in_place$LT$wasmtime..runtime..instance..Instance..new_started$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17heed3d94719bbb125E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr116drop_in_place$LT$wasmtime..runtime..vm..instance..OwnedInstance$LT$wasmtime..runtime..vm..instance..Instance$GT$$GT$17h7078a6ffdb34f8e9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr118drop_in_place$LT$alloc..collections..vec_deque..VecDeque$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17h5d370b1d374d59e1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr118drop_in_place$LT$alloc..vec..Vec$LT$alloc..boxed..Box$LT$wasmtime..runtime..vm..stack_switching..VMContRef$GT$$GT$$GT$17he4053aa67500bd62E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr119drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..type_registry..RegisteredType$GT$$GT$17hefe0e82bae64e578E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr121drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstEvalContext..struct_new_default..$u7b$$u7b$closure$u7d$$u7d$$GT$17h7d22ad83b47ffd28E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr124drop_in_place$LT$wasmtime_internal_core..error..error..ForeignError$LT$wasmtime..runtime..linker..UnknownImportError$GT$$GT$17hec4408215a224a5dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr125drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..error..ContextError$LT$alloc..string..String$C$anyhow..Error$GT$$GT$$GT$17h33068772b3cab314E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr125drop_in_place$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$$GT$17hfb41e0cd02104e87E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr129drop_in_place$LT$wasmtime..runtime..vm..store_box..StoreBox$LT$wasmtime..runtime..trampoline..global..VMHostGlobalContext$GT$$GT$17hea4228f1d629d247E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr131drop_in_place$LT$$LP$wasmtime..runtime..vm..instance..allocator..TableAllocationIndex$C$wasmtime..runtime..vm..table..Table$RP$$GT$17hec590df0929aa6fcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr131drop_in_place$LT$std..sync..poison..PoisonError$LT$std..sync..poison..mutex..MutexGuard$LT$std..sync..mpmc..zero..Inner$GT$$GT$$GT$17h24581c2b89c20dd2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr132drop_in_place$LT$wasmtime..runtime..vm..always_mut..AlwaysMut$LT$wasmtime..runtime..component..resource_table..ResourceTable$GT$$GT$17h9d50f4c7abe86cb4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr135drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..always_mut..AlwaysMut$LT$wasmtime..runtime..fiber..RawFiber$GT$$GT$$GT$17h35ef6cb8ec16b7aaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr135drop_in_place$LT$core..result..Result$LT$wasmtime..runtime..store..UpdateDeadline$C$wasmtime_internal_core..error..error..Error$GT$$GT$17h848fcbd1ec48760aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr135drop_in_place$LT$std..collections..hash..map..HashMap$LT$alloc..borrow..Cow$LT$str$GT$$C$alloc..borrow..Cow$LT$$u5b$u8$u5d$$GT$$GT$$GT$17h9ef3e390916df10aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr138drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..gc..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc054983dfedc1e36E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr139drop_in_place$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$$GT$17hea6edf5effb2a967E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr141drop_in_place$LT$core..option..Option$LT$alloc..boxed..Box$LT$dyn$u20$wasmtime..runtime..store..StoreDebugHandler$LT$$LP$$RP$$GT$$GT$$GT$$GT$17h5e1ce18b44439e7fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr144drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_module..$u7b$$u7b$closure$u7d$$u7d$$GT$17h4624b4266972ec2eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr144drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_tables..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf8b1a50d55ed8b70E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr145drop_in_place$LT$wasmtime_environ..collections..btree_map..TryBTreeMap$LT$usize$C$wasmtime..runtime..module..registry..RegisteredModuleId$GT$$GT$17h3a6f32d9a2fb6b72E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr148drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..grow_gc_heap..$u7b$$u7b$closure$u7d$$u7d$$GT$17hd98f980e30e752d7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr150drop_in_place$LT$alloc..collections..btree..map..BTreeMap$LT$wasmtime..runtime..debug..BreakpointKey$C$wasmtime..runtime..debug..BreakpointKey$GT$$GT$17hd9d43e7ba19b2f53E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr154drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..instance..OwnedInstance$LT$wasmtime..runtime..vm..component..ComponentInstance$GT$$GT$$GT$17hb69a806b4968a98dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr154drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc7bc06506eb3e096E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr156drop_in_place$LT$wasmtime_environ..collections..hash_map..TryHashMap$LT$wasmtime..runtime..linker..ImportKey$C$wasmtime..runtime..linker..Definition$GT$$GT$17hafd386075cadf3ecE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr157drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$$GT$$GT$17hb388243c4933d6adE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr159drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..grow_or_collect_gc_heap..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb8cd027140e48171E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr162drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_module..$u7b$$u7b$closure$u7d$$u7d$..DeallocateOnDrop$GT$17hf260293d6c073fbfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr170drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime..runtime..store..data..InstanceId$C$wasmtime..runtime..store..StoreInstance$GT$$GT$17hd23f34d2f80fa8dfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr171drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$$GT$$GT$17h3ed9ebe5ea98b076E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr173drop_in_place$LT$wasmtime_environ..collections..btree_map..TryBTreeMap$LT$wasmtime..runtime..module..registry..RegisteredModuleId$C$wasmtime..runtime..module..Module$GT$$GT$17hb50cbfdb7229c56aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr176drop_in_place$LT$$LT$alloc..vec..drain..Drain$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$std..sync..mpmc..waker..Entry$C$alloc..alloc..Global$GT$$GT$17ha51a90555e81476bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr181drop_in_place$LT$cranelift_entity..primary..PrimaryMap$LT$wasmtime_environ..component..types..RuntimeComponentInstanceIndex$C$wasmtime..runtime..vm..component..InstanceState$GT$$GT$17h0076ce34e68996caE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr182drop_in_place$LT$std..collections..hash..set..HashSet$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$wasmtime..runtime..component..concurrent..GuestThread$GT$$GT$$GT$17h3e1706154925f7ddE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr187drop_in_place$LT$$LT$alloc..collections..vec_deque..VecDeque$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..Dropper$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17hadd6c5817e181966E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr187drop_in_place$LT$wasmtime..runtime..component..concurrent..$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$..prepare_call$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h2a9d9501edfffcb6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr233drop_in_place$LT$alloc..collections..btree..map..BTreeMap$LT$wasmtime_environ..component..types..TypeComponentGlobalErrorContextTableIndex$C$wasmtime..runtime..component..concurrent..error_contexts..GlobalErrorContextRefCount$GT$$GT$17h68fad4c8a8f97017E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr240drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedGlobalIndex$C$wasmtime..runtime..vm..store_box..StoreBox$LT$wasmtime..runtime..trampoline..global..VMHostGlobalContext$GT$$GT$$GT$17h207bbf82a36e614eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr241drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedTableIndex$C$$LP$wasmtime..runtime..vm..instance..allocator..TableAllocationIndex$C$wasmtime..runtime..vm..table..Table$RP$$GT$$GT$17hbe49d4d78c497706E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr245drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedMemoryIndex$C$$LP$wasmtime..runtime..vm..instance..allocator..MemoryAllocationIndex$C$wasmtime..runtime..vm..memory..Memory$RP$$GT$$GT$17h25bb2b6b7b041a55E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr284drop_in_place$LT$$LT$alloc..collections..btree..map..IntoIter$LT$K$C$V$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$wasmtime..runtime..component..concurrent..QualifiedThreadId$C$wasmtime..runtime..component..concurrent..GuestCallKind$C$alloc..alloc..Global$GT$$GT$17hb06b0a47bb2fca5dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr327drop_in_place$LT$wasmtime_internal_fiber..RunResult$LT$core..result..Result$LT$core..ptr..non_null..NonNull$LT$core..task..wake..Context$GT$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..fiber..StoreFiberYield$C$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$GT$$GT$17hf3b0690d3db1e080E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr34drop_in_place$LT$anyhow..Error$GT$17h210422f563fd89aaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr403drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..retry_after_gc_async$LT$$LP$$RP$$C$wasmtime..runtime..gc..enabled..rooting..Rooted$LT$wasmtime..runtime..gc..enabled..arrayref..ArrayRef$GT$$C$wasmtime..runtime..gc..enabled..arrayref..ArrayRef.._new_async..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hddb7532aa94431cfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr422drop_in_place$LT$wasmtime..runtime..fiber..$LT$impl$u20$wasmtime..runtime..store..context..StoreContextMut$LT$$LP$$RP$$GT$$GT$..with_blocking$LT$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$..block_on_debug_handler..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0a4f4859924259aaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h1a6af2ce3b24dbd7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr45drop_in_place$LT$wasmtime..config..Config$GT$17h6ed94123fdc424d5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr46drop_in_place$LT$std..backtrace..Backtrace$GT$17hd5ff272feb06f813E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr50drop_in_place$LT$std..sync..mpmc..waker..Waker$GT$17h2728838ce588ab42E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr54drop_in_place$LT$wasmtime..runtime..types..RefType$GT$17ha39d2193cd87a774E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr54drop_in_place$LT$wasmtime..runtime..types..ValType$GT$17h3ec29c11dee9fdb9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr55drop_in_place$LT$wasmtime..runtime..vm..gc..GcStore$GT$17hd37ca9aec43e4a84E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr56drop_in_place$LT$wasmtime..runtime..bug..WasmtimeBug$GT$17h16381282630d8dd9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr56drop_in_place$LT$wasmtime_internal_fiber..FiberStack$GT$17h3760f21d963a2b08E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..debug..DebugEvent$GT$17h80c545a3c5b19fd9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..fiber..AsyncState$GT$17hbfc8818588830550E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..fiber..StoreFiber$GT$17h91929c91174fadfaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..types..ExternType$GT$17h7bcb1a0fbdc9f547E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..fiber..FiberFuture$GT$17h7c9af9d8b151c4deE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..linker..Definition$GT$17ha0584f65db9bc2bbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..store..StoreOpaque$GT$17h1b819d3dde1168efE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..types..StorageType$GT$17heb28ba15f8227dfcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..vm..memory..Memory$GT$17hdfea25a8ff27f428E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..debug..FrameDataCache$GT$17h534dc7b5bf219c9cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..store..AutoAssertNoGc$GT$17he55e59baec65b5dcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..vm..ModuleRuntimeInfo$GT$17h300c1c111d5e1d8aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..vm..mmap_vec..MmapVec$GT$17had0c8d0489808fd4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..code..StoreCodeStorage$GT$17hf910b20e09c66897E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..component..values..Val$GT$17h11ee0f5407e766ebE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..debug..BreakpointState$GT$17h4d34a96e92ffa5acE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..instance..OwnedImports$GT$17h201ce99deb8e3842E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..store..data..StoreData$GT$17h88235be21709b70fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..vm..traphandlers..Trap$GT$17h20c0726686593e8cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr634drop_in_place$LT$wasmtime..runtime..fiber..on_fiber$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$C$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..store..async_..$LT$impl$u20$wasmtime..runtime..store..context..StoreContextMut$LT$$LP$$RP$$GT$$GT$..on_fiber$LT$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..instance..Instance..new_started$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h64e4949a14e7dedfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr64drop_in_place$LT$$u5b$wasmtime..runtime..types..ValType$u5d$$GT$17h223a59eaeb7f25e8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr64drop_in_place$LT$wasmtime_internal_core..error..error..Error$GT$17h9cba9a107f884a12E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr65drop_in_place$LT$wasmtime..compile..code_builder..CodeBuilder$GT$17h7ec8e46e06699caaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr65drop_in_place$LT$wasmtime..runtime..store..func_refs..Storage$GT$17he88492766f28b970E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr66drop_in_place$LT$wasmtime..runtime..linker..UnknownImportError$GT$17hcf3f927d1759a75cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr66drop_in_place$LT$wasmtime..runtime..store..func_refs..FuncRefs$GT$17h0924cee9b7ae935fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr68drop_in_place$LT$wasmtime..runtime..vm..component..InstanceState$GT$17h843503109b6100f7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..component..concurrent..Caller$GT$17hf3c43248cb3ae652E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..gc..enabled..rooting..RootSet$GT$17hf9453350631bdf7dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..type_registry..RegisteredType$GT$17h6304f378b1233b06E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr70drop_in_place$LT$wasmtime..runtime..vm..gc..func_ref..FuncRefTable$GT$17h3b2d78d36d8e18c0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr71drop_in_place$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$17ha70b4c300d0c0c34E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr72drop_in_place$LT$alloc..collections..btree..set..BTreeSet$LT$u32$GT$$GT$17h0ba6e056bcb220b8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestTask$GT$17hf5b44d3fbaa9dbfcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..component..resource_table..Entry$GT$17he665b3af85293656E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..module..registry..ModuleRegistry$GT$17hfa7afb44ee282b90E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h7b8840585d006d2bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr73drop_in_place$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$GT$17hd009b9c3fd6c6abeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr74drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestThread$GT$17hb86c23c5fe3abbf8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr76drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestCallKind$GT$17h219ddea68763de8dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr76drop_in_place$LT$wasmtime..runtime..component..store..ComponentTaskState$GT$17h39dc76b163469957E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr77drop_in_place$LT$wasmtime..runtime..instance..InstancePre$LT$$LP$$RP$$GT$$GT$17hfcf6b387ed9bb977E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$anyhow..error..ContextError$LT$$RF$str$C$anyhow..Error$GT$$GT$17h95a25e519a9689b3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h0da66ed800b3fc2aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$core..option..Option$LT$wasmtime_environ..gc..GcLayout$GT$$GT$17he09b428ca0776a06E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$core..option..Option$LT$wasmtime_internal_cache..Cache$GT$$GT$17h6cf30b7e94e5ac1fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr79drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestThreadState$GT$17hd03c6ad76a102ac6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr80drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h792c05dcae81f982E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr81drop_in_place$LT$wasmtime..runtime..vm..gc..host_data..ExternRefHostDataTable$GT$17h9c29453a5e8c8306E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr82drop_in_place$LT$alloc..vec..drain..Drain$LT$std..sync..mpmc..waker..Entry$GT$$GT$17hcc21817118acc4f0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr83drop_in_place$LT$alloc..vec..drain..Drain$LT$wasmtime..runtime..values..Val$GT$$GT$17he1fc0484b11aa02eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr85drop_in_place$LT$alloc..vec..Vec$LT$wasmtime..runtime..component..values..Val$GT$$GT$17hddda4903aa9e610aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr86drop_in_place$LT$anyhow..error..ErrorImpl$LT$core..num..error..TryFromIntError$GT$$GT$17h88a03e75dd345b83E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr88drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..bug..WasmtimeBug$GT$$GT$17h0ed35345230bee22E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr88drop_in_place$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$17h16cdb1e21cfe36efE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h236740a45b7af874E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr92drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..cow..MemoryImageSlot$GT$$GT$17hf3be623b24720e46E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr93drop_in_place$LT$anyhow..error..ContextError$LT$alloc..string..String$C$anyhow..Error$GT$$GT$17h7766cb2c1e850fb3E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr93drop_in_place$LT$std..sync..poison..mutex..MutexGuard$LT$std..sync..mpmc..zero..Inner$GT$$GT$17haed243e1629f279aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr93drop_in_place$LT$wasmtime..runtime..component..concurrent..futures_and_streams..ReadState$GT$17ha949d5ecb0eee6d6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr93drop_in_place$LT$wasmtime..runtime..vm..memory..Memory..grow..$u7b$$u7b$closure$u7d$$u7d$$GT$17h24dd7a7959351f21E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr94drop_in_place$LT$$LP$alloc..string..String$C$wasmtime..runtime..component..values..Val$RP$$GT$17h951d189ce12dadf7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr94drop_in_place$LT$alloc..vec..Vec$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17h4aec7f3a113e282fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr94drop_in_place$LT$wasmtime..runtime..component..concurrent..futures_and_streams..WriteState$GT$17he0ec0733433ac9bfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr94drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..do_gc..$u7b$$u7b$closure$u7d$$u7d$$GT$17h887701dd9b96d209E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr96drop_in_place$LT$wasmtime..runtime..instance..Instance..new_raw..$u7b$$u7b$closure$u7d$$u7d$$GT$17h66ff151cb35a0fa9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr98drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..linker..UnknownImportError$GT$$GT$17h28b8b4d4a3dc6c3dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr98drop_in_place$LT$wasmtime..runtime..vm..memory..LocalMemory..grow..$u7b$$u7b$closure$u7d$$u7d$$GT$17h4ff213e254616ebbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core4iter6traits8iterator8Iterator3nth17h0c9538fb485050b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core4iter6traits8iterator8Iterator3nth17hc281e848bbf1900aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core4iter8adapters11try_process17hcd955c77086e6f50E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error11description17h00689516bf3f3145E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error11description17h142e9faa591e05e9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error11description17h81bb667cc9555740E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error11description17hdabed765b395ec5fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h036f06f709f43c56E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h0b522a4401f77b01E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h2db92249ba74d814E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h3ef1ce03f60651acE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h4110ba167dfcc8ffE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17h6574a1084c0eeac9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17ha491fb5ae83ba771E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error5cause17he7bf873774e91701E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7provide17h054575c260b193e8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7provide17h06ad4c3a3477e84eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7provide17h2e2f95d1ab6967a2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7provide17hcb58f30effbc8d25E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h01f90757f3b22005E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h031e40cb3da43978E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h10d36ca40d9b01a0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h10de6378a5096896E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h23716192f6f08d23E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h30c18c931ddf78f1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h31f9951079865ddcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h36a9fb587ac62a2eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h4d067166e74d861aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h4f26aa4d9ae5237bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h5273694536dda5fcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h5371bd45d67946f4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h5c42eaf503be9731E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h6be510c58a1d0a8aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h770ca06dd6b25999E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h7b517544c75b9342E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17h93ca7bee374f8159E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17ha0e0249063cfcd86E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hc26f75f5c2c26bc8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hcccf33393046a07bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hcde643fa82264d33E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hce981b47608bcc91E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17he51e755e4d28420fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5error5Error7type_id17hebb014e61764e2f1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core5slice29_$LT$impl$u20$$u5b$T$u5d$$GT$11copy_within17he4a6ea9502d65e20E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h25bc07936bbad7e7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h292f0578dd81dc41E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h47eaa5715736af00E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h9932c1ddb1e3baa1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17hc2e2b6ecf87d4747E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17h7cc7467e70566293E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17h976e63392323d449E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hd7acb93b80b2ad2aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17hfbe59fad4974d867E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h6496983a11bf72a5E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN65_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hda00aab7a2298031E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN65_$LT$smallvec..CollectionAllocErr$u20$as$u20$core..fmt..Debug$GT$3fmt17h31adddcc004385aeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN66_$LT$core..option..Option$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17he1e149aff84f72fcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN67_$LT$wasmtime..runtime..values..Val$u20$as$u20$core..fmt..Debug$GT$3fmt17ha6b2866e4f9dfd4dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN68_$LT$wasmtime_environ..types..Limits$u20$as$u20$core..fmt..Debug$GT$3fmt17h18702af479ac05bcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$anyhow..context..Quoted$LT$C$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h035c57b7191e7d1fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN69_$LT$anyhow..context..Quoted$LT$C$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hae760f1f144150a5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error10object_ref17h065b8169a0f56f62E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error10object_ref17h84c613bfb2b14101E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error10object_ref17h8fe46dc917daaed5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error10object_ref17heb6a277f169a5096E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17h0d49abc108261f7aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17h1bdf2ddd543c75feE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17h4d454bb21aaf46afE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17h7388aa2b9d506bcfE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17h7f63b5957625514fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error11object_drop17ha21af0af8c448d78E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h039bc44afb32efb6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h1bbed9b70d692751E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h488e8bdcc9f4bb04E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h5996fce082a9d859E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h70a43e43349a3a51E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17h8d2293eb10f294b0E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17hb408feff1f0f0379E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17hb70d5d42b3c99117E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17hbd6d6e8bb9bc1132E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17hdf67c65f3f0ab15dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error12object_boxed17hf85d75e3d95a1b3aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17h72ba50b8cc357e67E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17h7640c95a4cedd024E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17h94ea9c5707fa8638E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17h9ef4852408f7869aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17ha4386804887eb64bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17ha84ec1879fa950daE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17heda4b7bac57ede36E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17hf27fe959239ccd6fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error15object_downcast17hf6acdc4f842ac0d6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17context_backtrace17h0814119547c1ce96E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17context_backtrace17h10600493fbf6bd8bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17h120df483334bdf52E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17h175e64e7ebd67684E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17h31b7b724d36f3029E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17h64f0959485e4b6baE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17h70819e9bae10d1f2E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error17object_drop_front17he74a6a0a7fec47f7E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error22context_chain_downcast17ha3ce2fbc52225087E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error22context_chain_downcast17hdbcff4518ee6391eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23context_chain_drop_rest17h289401a35d48edf8E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23context_chain_drop_rest17h953fbb1a96f2bc77E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h086539d6e2131671E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h08d228be839c6102E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h3422d5ad5164e920E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h453d66cbbb0d299eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h8f1115292d3f718dE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h92fb0d8196bcbfd6E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17h96eeac25f0b61309E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17hb16cfcaa5e8d4c4eE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17hb29134b8ddfb3124E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17hb6f3fd1f3c68b6f3E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN6anyhow5error23object_reallocate_boxed17hbfbda40a32053ad2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3msg17hdba8f70190463dbfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3msg17hed263fdd465f8d4dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h04b75c8d904c1f64E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h14181c53be1cd617E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h79e3273c46681e8dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h9919beca5a272e81E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17haf3943c7895450f2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17hea8ba639ca394728E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17hec1a662cee3485ccE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h1c0b1ffdb47359ecE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h246259f62e040c7bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h4f01dc6f1513ebeaE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h5a140a845d47dfbbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h5a44be3170f3a81fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h6174af1aa3c1bcf9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17ha784b8414081f6beE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hbdb51adad50129a4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hc7f95b1003bd69c1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hf50faf80214234f2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hf79610a86cef9d4aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow7context101_$LT$impl$u20$core..error..Error$u20$for$u20$anyhow..error..ContextError$LT$C$C$anyhow..Error$GT$$GT$6source17h524fdb72099cf4c4E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow7context101_$LT$impl$u20$core..error..Error$u20$for$u20$anyhow..error..ContextError$LT$C$C$anyhow..Error$GT$$GT$6source17he385803c08c8a667E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow7context87_$LT$impl$u20$core..fmt..Debug$u20$for$u20$anyhow..error..ContextError$LT$C$C$E$GT$$GT$3fmt17h2da3439a37fcd6ceE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN6anyhow7context87_$LT$impl$u20$core..fmt..Debug$u20$for$u20$anyhow..error..ContextError$LT$C$C$E$GT$$GT$3fmt17h58b83317fc9f1e64E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN70_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h047e65eb70d7389eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$u8$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h856260e3031e6dfeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$wasmtime_environ..types..IndexType$u20$as$u20$core..fmt..Debug$GT$3fmt17h2b6432d5463f3c6cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN71_$LT$wasmtime_environ..types..TypeIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h2c88595a25b9b881E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..error..Error$GT$6source17h052a785e7659c1bcE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h0532ddab6171035bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$str$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17hb18cdae1a04b11bfE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$u16$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17hfc4b0a07798a9bbbE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$u32$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h7d704f9bd286e8b9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN72_$LT$wasmtime..runtime..bug..WasmtimeBug$u20$as$u20$core..fmt..Debug$GT$3fmt17h525a2aa89bd2f441E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN73_$LT$wasmtime..runtime..debug..DebugEvent$u20$as$u20$core..fmt..Debug$GT$3fmt17h26ae1da37528b03aE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN73_$LT$wasmtime..runtime..types..HeapType$u20$as$u20$core..clone..Clone$GT$5clone17h1223d9ca2fd5e8e7E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN74_$LT$wasmtime_environ..trap_encoding..Trap$u20$as$u20$core..fmt..Debug$GT$3fmt17hbff1258c3b0d6f8fE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$anyhow..wrapper..MessageError$LT$M$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h217338c6039a6919E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN75_$LT$anyhow..wrapper..MessageError$LT$M$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h9f3ac07b2632ea9cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$std..sync..poison..PoisonError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h17608b5ad2bc6cf8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN76_$LT$wasmtime..runtime..store..data..StoreId$u20$as$u20$core..fmt..Debug$GT$3fmt17he38da34a5d490defE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN78_$LT$wasmtime..runtime..component..values..Val$u20$as$u20$core..fmt..Debug$GT$3fmt17hf3bb9ac369425201E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN79_$LT$wasmtime..runtime..store..data..InstanceId$u20$as$u20$core..fmt..Debug$GT$3fmt17h2a49a38d9c37051cE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN82_$LT$wasmtime..runtime..exception..ThrownException$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ec97ba4213115cdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN82_$LT$wasmtime..runtime..linker..UnknownImportError$u20$as$u20$core..fmt..Debug$GT$3fmt17h38cb11f5190411d2E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN85_$LT$wasmtime..runtime..component..concurrent..Status$u20$as$u20$core..fmt..Debug$GT$3fmt17hda38cc5f949eedaeE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN85_$LT$wasmtime_environ..types..EngineOrModuleTypeIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h579084b97fe50ba8E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN86_$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hfa08f8f6cf50177bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$T$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h399b7900b4b6cd52E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$wasmtime_environ..component..types..TypeFutureIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h8b23508baf91626eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN88_$LT$wasmtime_environ..component..types..TypeStreamIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h8883ac237cb9c207E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN89_$LT$wasmtime..runtime..gc..enabled..rooting..GcRootIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h6c79c03568195e6bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8smallvec17SmallVec$LT$A$GT$21reserve_one_unchecked17hfa19c8de8d1375edE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8smallvec17SmallVec$LT$A$GT$8try_grow17hd5f433f9b8ef2859E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$17h9b70c5b062d399faE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2vm10const_expr16ConstEvalContext10struct_new28_$u7b$$u7b$closure$u7d$$u7d$17hb4e2b7f8b89efb50E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator4eval28_$u7b$$u7b$closure$u7d$$u7d$17hfc7b0a7359481fc1E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime2vm8instance9allocator17InstanceAllocator10as_pooling17hf311bac941f382a9E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime4func4Func18call_unchecked_raw17hada08d5de48a67cbE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime5store11StoreOpaque15ensure_gc_store28_$u7b$$u7b$closure$u7d$$u7d$17h364f1b4639bafebaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime5store2gc55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$2gc28_$u7b$$u7b$closure$u7d$$u7d$17h72d4fa387db7a07cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime5store5token19StoreToken$LT$T$GT$14as_context_mut17hcf63f3c3ef433861E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime6linker15Linker$LT$T$GT$11instantiate17hbd902af207364e13E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime8instance8Instance9start_raw17h11937e7c139e351aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams28lower_error_context_to_index17hc6558b251e8e5742E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10guest_read17hce93b03f2f937d7bE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10guest_read28_$u7b$$u7b$closure$u7d$$u7d$17h4698cd005cc29565E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$11guest_write17h70da2bf6472481adE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$11guest_write28_$u7b$$u7b$closure$u7d$$u7d$17hdee9406593457cffE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$4copy17hb0f59a8fcf6981b1E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$10set_thread17h375452b600c99720E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$10set_thread17ha6c1511e4cc2f7cdE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10queue_call9make_call28_$u7b$$u7b$closure$u7d$$u7d$17h59b342a0fe726d03E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10start_call17h848bfbd32cb5d412E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10start_call28_$u7b$$u7b$closure$u7d$$u7d$17h0c166f5e3320d0e0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$19thread_new_indirect17hcd93d19c255e0b4cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component4func16call_post_return17hde95384a46f1a0a9E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN8wasmtime7runtime9component4func5typed13bad_type_info17h1a899de997e76ceaE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component4func7options11LiftContext3new17h1c6e82124fb8300bE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$3get17h89630054d5398014E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$3new17h359c62b83f331b32E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$7realloc17h989c0727bdfee489E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component6values10lower_list17h87d6b37fd0f34c6aE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component6values10unexpected17h848ebee3fbbdbed5E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component6values14GenericVariant5store17h382c654a068e5b7cE
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component6values3Val5store17h05c7773ecf3e2901E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN8wasmtime7runtime9component6values9lower_map17h5e1530d8dcd74326E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN90_$LT$alloc..boxed..Box$LT$F$C$A$GT$$u20$as$u20$core..ops..function..FnOnce$LT$Args$GT$$GT$9call_once17h655706a69463a006E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN92_$LT$wasmtime..runtime..component..concurrent..CurrentThread$u20$as$u20$core..fmt..Debug$GT$3fmt17hff2b44dfb03758f6E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN92_$LT$wasmtime..runtime..module..registry..RegisteredModuleId$u20$as$u20$core..fmt..Debug$GT$3fmt17hcf168433d733c9c0E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN94_$LT$wasmtime..runtime..component..resources..ty..ResourceType$u20$as$u20$core..fmt..Debug$GT$3fmt17hde5175c2c082e688E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$12store_opaque17h63c1961a78492a74E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$21component_async_store17h776dc8ff1e25263dE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$22block_on_debug_handler17hb64dbbbe8f406229E
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$26new_epoch_updated_deadline17h047a79ac3834df0eE
+[2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$33resource_limiter_and_store_opaque17hd8026408841f7876E
+[2m[DEBUG][0m ANALYZE [USER]: _ZN9hashbrown3map28HashMap$LT$K$C$V$C$S$C$A$GT$6insert17hafff8f0184ac6fdeE
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 987
+[32m[INFO][0m   FFI Boundaries: 2551
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 2141
+[32m[INFO][0m     - LibC calls: 0
+[31m[ERROR][0m   Dangerous calls: 2
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[2m[DEBUG][0m ZONE-SKIP: _RNvMNtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB2_5Waker10disconnect is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10disconnect is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXs2_NtNtCsg55jX0GwzBC_3std4hash6randomNtB5_13DefaultHasherNtNtCsl8K0bEFm1U0_4core4hash6Hasher5write is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXs5_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_15TryFromIntErrorNtNtB9_3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsW_NtNtCsl8K0bEFm1U0_4core3fmt3nummNtB7_5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsX_NtNtCsl8K0bEFm1U0_4core3fmt3numyNtB7_5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsZ_NtNtCsl8K0bEFm1U0_4core3fmt3numjNtB7_5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsd_NtNtCsl8K0bEFm1U0_4core5alloc6layoutNtB5_11LayoutErrorNtNtB9_3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsf_NtCsl8K0bEFm1U0_4core3fmtbNtB5_5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsq_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt7Display3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsr_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Debug3fmt is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..error..Error$GT$6source17h01c74038f903cfe4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..error..Error$GT$6source17hbcdfaae26a5d1f7cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h9ca198136a381a1dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN100_$LT$wasmtime_internal_core..error..context..ContextError$LT$C$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17hcfa5c48be4e94e4eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN101_$LT$wasmtime..runtime..component..resource_table..ResourceTableError$u20$as$u20$core..fmt..Debug$GT$3fmt17hc66bae710771d82cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h426fbb8e8b6eaca0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h7b88c8ca63b5ad5fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hb5c70d165a8b4128E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN102_$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17he3507e09bc6f2ca1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN106_$LT$core..iter..adapters..GenericShunt$LT$I$C$R$GT$$u20$as$u20$core..iter..traits..iterator..Iterator$GT$4next17h20a12566569bff4eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN108_$LT$wasmtime..runtime..component..resources..host_tables..HostResourceIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17hbdbb649c4684139bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$wasmtime..runtime..component..concurrent..futures_and_streams..ReturnCode$u20$as$u20$core..fmt..Debug$GT$3fmt17h5f0d60f069877496E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$20assert_fp_is_aligned17hf4427004d4d1627eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$25get_next_older_pc_from_fp17h1b2932896905b013E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$28next_older_fp_from_fp_offset17hf38f694e576740f2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN110_$LT$wasmtime_internal_unwinder..arch..UnwindHost$u20$as$u20$wasmtime_internal_unwinder..stackwalk..Unwind$GT$28next_older_sp_from_fp_offset17h0c9f38ef86b3fc39E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$10sync_start17hbb92d6c441b123f2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11async_start17h2107a0421e0348e8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11future_read17h219402feda6d25c7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$11stream_read17h51958c2198ff9574E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12future_write17h054ac7d0ee16f22aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12prepare_call17h841c94afb4044745E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$12stream_write17hed024e20e45ede04E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$16flat_stream_read17hac699aa1303c8a93E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$17flat_stream_write17h1309328ec98011aeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$19thread_new_indirect17h2ff1c9b4b67eab29E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$20future_drop_writable17h4ded1d9cd506d7c1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$20stream_drop_writable17h419a2d69fd16ea03E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN129_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..component..concurrent..VMComponentAsyncStore$GT$27error_context_debug_message17h72627241a8851930E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN139_$LT$wasmtime..runtime..component..concurrent..future_stream_any..FutureAny$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h00fdbe2ac547e582E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN139_$LT$wasmtime..runtime..component..concurrent..future_stream_any..StreamAny$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h4050254c0b7cf82cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$12purge_module17h648d5ffcd8305defE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$15validate_memory17h32d262935957cb6fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$15validate_module17hee1241b569913a34E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$18validate_component17h4f7cedad21187f0dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$19next_available_pkey17h024cbc6187adccfdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN162_$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$u20$as$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$29increment_core_instance_count17h94051b7ec51da9a9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN16wasmtime_environ11collections11primary_map26TryPrimaryMap$LT$K$C$V$GT$4push17h5eea247650ad2772E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN22wasmtime_internal_core5alloc3vec15TryVec$LT$T$GT$16into_boxed_slice17h1de2fc0bc9b01319E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h290fec2618875519E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17h522a8c93023dce67E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN36_$LT$T$u20$as$u20$core..any..Any$GT$7type_id17heceeba30590bb510E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN3std3sys4sync8once_box16OnceBox$LT$T$GT$10initialize17h2242860ef9b9649dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h02814422e2c7ddb9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h037e009d91cfacdfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h19d9176de983d799E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1a8a6a8eab1d4785E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1c328630d5366592E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1f3ad422df3a45d3E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h24bbdd03f755b579E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2e9e854d83bc039dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ea2606a39a012a1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h2fe1a81a3cf6fea7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h30dae8e14e174398E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h31e0eb74c810d5a5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h32ab932b80447165E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h343b431f70ea1446E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h3c3b8f59cc1d8309E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h402f1a73d5a4728eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4138fc7c8b5731faE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h441e5daab5a5b4a6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h463ce697b7bb9cb7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h468adad4bfa000dbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4badfc12c73f3d0dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4cdd961704f76587E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h4e3f3d10fa6ed195E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h563b442872d61272E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h584a5a278596bc2fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h59af5f175080f882E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5a2c9f093dd10dd6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5c0d85d890281350E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h5e576684d2548347E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h607bd83c0dcdb740E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6a37ea98da5c290bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6c82381ca8677be1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h6f75c450f1da05c4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h70c065540624f1cfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h71f1a4b015c3b3efE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h755703bd4445f635E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h761e1b01436c2da8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7627f5ecf7e69fc2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h772019537b671755E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h786316e3ba79986fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7b6f728c7691892eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7bd02672466ddfa8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h7d6486059f30e80dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h81dd7a24f138195eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8329690785542d96E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8593a28467526d6cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h86cf9931f7cfea68E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h88a22440dc13032eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h897de506850dcb96E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h8ae3170c7bdc2125E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h92140be053d80f06E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h98ef73006ce56f79E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9ada68df86d2660eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9b3611d226f8858fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h9e8df6ba493b1b34E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha2d0167b12a22b82E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha64b0ebeff9f25d6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha99ba400c06d82c0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17ha9b43abdad177e99E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17haa8f84f716c76c0fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17had09afc2e6983f72E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hb1f913e6d73bb9faE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbc6618c20808850bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbcfcb6dd21635fe4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbe9431bbe4fe1c63E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hbfdb471e9f3c559fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0388e4696f3779aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc0b0da3b765ec834E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc1ab31c19c27cd75E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc2183995838398bdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc3edafa59a033e38E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc668c8165c367b65E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc7b8a58cac28f163E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc86c20531ecf6e30E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hc92c785287dab59cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hca858a520eccef2aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd0f210c1e8a6dd83E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd20a9e2a25becb4aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd3012d9882da0046E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hd4abea4d8f96f6adE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hda135690870c4d29E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hdffa5403351813c0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17he21d12d41de2c28cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17he6827bc74b9f8cdaE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hea13d58be7189708E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hee9d472063d88efdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf048d546f1457492E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf051a39cafd4dc93E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf1659839ef478b29E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf258e6ad6f48e0adE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf2e733f4389ea3c5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf34c869d212e2f9fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hf798fe0f6972f9cbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hfc3b6350bfc5f660E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17hfca6411ff2d277c1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h13078e186168d66cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hbcec578fc89a2127E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17hc9a11d289a8723a4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3fmt5Write10write_char17h5ebc7591f4a9103cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3fmt5Write9write_fmt17h2c9ad23fc7e4233bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h5058f21fba884725E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h62722ebbce99f2e6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h718d0feb19c8f16aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h779f22a8ff2e8f2cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hbacb6e81011acaaeE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17hecb1b9b32990092dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce9call_once17h2f7e90b45036201dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ops8function6FnOnce9call_once17h970eb7028d12b1caE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$alloc..vec..into_iter..IntoIter$LT$wasmtime..runtime..component..values..Val$GT$$GT$17h77bdabaacbf4ec5aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..component..concurrent..LiftResult$GT$$GT$17h30a3c75e27dabbaeE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..component..concurrent..WorkerItem$GT$$GT$17h9f41ba2cea4cdc5aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17hce08b30505bab20bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr101drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..on_demand..OnDemandInstanceAllocator$GT$17h32f490ec285261d4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr102drop_in_place$LT$wasmtime..runtime..vm..gc..gc_runtime..collect_async..$u7b$$u7b$closure$u7d$$u7d$$GT$17h008180e98536eeceE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr102drop_in_place$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$17h008d98192bee8186E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr104drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..ensure_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17habfd6d9b51aea0f7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr104drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..types..ValType$GT$$GT$17h6dc1e3e296d50a1bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr106drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17h587679a72b9d18eaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17hf625d383ed118f61E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr108drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..linker..Definition$GT$$GT$17h54200251e7322d96E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr109drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$$LP$$RP$$GT$$GT$$GT$17h64fa416775156fc8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr109drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..sys..unix..unwind..UnwindRegistration$GT$$GT$17h1daeee42aaac12d4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr109drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..traphandlers..coredump..CoreDumpStack$GT$$GT$17h744dbc1f49c4bfd9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr110drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$wasmtime..runtime..vm..gc..gc_runtime..GarbageCollection$GT$$GT$17hb7a8c5afd2184270E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..error..ContextError$LT$$RF$str$C$anyhow..Error$GT$$GT$$GT$17hee25392a204fe71aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..store..ResourceLimiterInner$LT$$LP$$RP$$GT$$GT$$GT$17hc86dff38808e1e6bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$wasmtime..runtime..vm..instance..Instance..table_init_segment..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc3f9206ef762e815E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_tables..$u7b$$u7b$closure$u7d$$u7d$$GT$17hd56e66f0d865261cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr111drop_in_place$LT$wasmtime_internal_core..slab..Entry$LT$wasmtime..runtime..module..registry..LoadedCode$GT$$GT$17h99d38fee8c1613e5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr112drop_in_place$LT$core..cell..Cell$LT$wasmtime..runtime..vm..traphandlers..call_thread_state..UnwindState$GT$$GT$17hf97e2576facef103E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr112drop_in_place$LT$wasmtime..runtime..store..StoreResourceLimiter..memory_growing..$u7b$$u7b$closure$u7d$$u7d$$GT$17h09316023357b1e45E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr112drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_globals..$u7b$$u7b$closure$u7d$$u7d$$GT$17h04b3ca9d0975ededE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr113drop_in_place$LT$std..collections..hash..set..HashSet$LT$wasmtime..runtime..type_registry..RegisteredType$GT$$GT$17h2e41e4cd103af297E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr113drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstEvalContext..struct_new..$u7b$$u7b$closure$u7d$$u7d$$GT$17h582fa579abf31bdfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr113drop_in_place$LT$wasmtime..runtime..vm..instance..allocator..initialize_instance..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf20ddefd3487c9beE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$$LP$wasmtime..runtime..component..values..Val$C$wasmtime..runtime..component..values..Val$RP$$GT$17h43950b81fa54cd00E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$core..option..Option$LT$wasmtime_internal_jit_debug..gdb_jit_int..GdbJitImageRegistration$GT$$GT$17h34f974fb667cca5cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr114drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstExprEvaluator..eval_loop..$u7b$$u7b$closure$u7d$$u7d$$GT$17ha3c84775adeee7baE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr115drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..store..func_refs..Storage$GT$$GT$17h4535a5f0704d1ea0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr116drop_in_place$LT$core..result..Result$LT$anyhow..Error$C$wasmtime_internal_core..error..error..OomOrDynError$GT$$GT$17h7ef082fc764db7f7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr116drop_in_place$LT$wasmtime..runtime..instance..Instance..new_started$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17heed3d94719bbb125E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr116drop_in_place$LT$wasmtime..runtime..vm..instance..OwnedInstance$LT$wasmtime..runtime..vm..instance..Instance$GT$$GT$17h7078a6ffdb34f8e9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr118drop_in_place$LT$alloc..collections..vec_deque..VecDeque$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17h5d370b1d374d59e1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr118drop_in_place$LT$alloc..vec..Vec$LT$alloc..boxed..Box$LT$wasmtime..runtime..vm..stack_switching..VMContRef$GT$$GT$$GT$17he4053aa67500bd62E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr119drop_in_place$LT$wasmtime_internal_core..alloc..vec..TryVec$LT$wasmtime..runtime..type_registry..RegisteredType$GT$$GT$17hefe0e82bae64e578E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr121drop_in_place$LT$wasmtime..runtime..vm..const_expr..ConstEvalContext..struct_new_default..$u7b$$u7b$closure$u7d$$u7d$$GT$17h7d22ad83b47ffd28E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr124drop_in_place$LT$wasmtime_internal_core..error..error..ForeignError$LT$wasmtime..runtime..linker..UnknownImportError$GT$$GT$17hec4408215a224a5dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr125drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..error..ContextError$LT$alloc..string..String$C$anyhow..Error$GT$$GT$$GT$17h33068772b3cab314E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr125drop_in_place$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$$GT$17hfb41e0cd02104e87E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr129drop_in_place$LT$wasmtime..runtime..vm..store_box..StoreBox$LT$wasmtime..runtime..trampoline..global..VMHostGlobalContext$GT$$GT$17hea4228f1d629d247E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr131drop_in_place$LT$$LP$wasmtime..runtime..vm..instance..allocator..TableAllocationIndex$C$wasmtime..runtime..vm..table..Table$RP$$GT$17hec590df0929aa6fcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr131drop_in_place$LT$std..sync..poison..PoisonError$LT$std..sync..poison..mutex..MutexGuard$LT$std..sync..mpmc..zero..Inner$GT$$GT$$GT$17h24581c2b89c20dd2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr132drop_in_place$LT$wasmtime..runtime..vm..always_mut..AlwaysMut$LT$wasmtime..runtime..component..resource_table..ResourceTable$GT$$GT$17h9d50f4c7abe86cb4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr135drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..always_mut..AlwaysMut$LT$wasmtime..runtime..fiber..RawFiber$GT$$GT$$GT$17h35ef6cb8ec16b7aaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr135drop_in_place$LT$core..result..Result$LT$wasmtime..runtime..store..UpdateDeadline$C$wasmtime_internal_core..error..error..Error$GT$$GT$17h848fcbd1ec48760aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr135drop_in_place$LT$std..collections..hash..map..HashMap$LT$alloc..borrow..Cow$LT$str$GT$$C$alloc..borrow..Cow$LT$$u5b$u8$u5d$$GT$$GT$$GT$17h9ef3e390916df10aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr138drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..gc..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc054983dfedc1e36E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr139drop_in_place$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$$GT$17hea6edf5effb2a967E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr141drop_in_place$LT$core..option..Option$LT$alloc..boxed..Box$LT$dyn$u20$wasmtime..runtime..store..StoreDebugHandler$LT$$LP$$RP$$GT$$GT$$GT$$GT$17h5e1ce18b44439e7fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr144drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_module..$u7b$$u7b$closure$u7d$$u7d$$GT$17h4624b4266972ec2eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr144drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_tables..$u7b$$u7b$closure$u7d$$u7d$$GT$17hf8b1a50d55ed8b70E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr145drop_in_place$LT$wasmtime_environ..collections..btree_map..TryBTreeMap$LT$usize$C$wasmtime..runtime..module..registry..RegisteredModuleId$GT$$GT$17h3a6f32d9a2fb6b72E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr148drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..grow_gc_heap..$u7b$$u7b$closure$u7d$$u7d$$GT$17hd98f980e30e752d7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr150drop_in_place$LT$alloc..collections..btree..map..BTreeMap$LT$wasmtime..runtime..debug..BreakpointKey$C$wasmtime..runtime..debug..BreakpointKey$GT$$GT$17hd9d43e7ba19b2f53E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr154drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..instance..OwnedInstance$LT$wasmtime..runtime..vm..component..ComponentInstance$GT$$GT$$GT$17hb69a806b4968a98dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr154drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$..allocate_gc_store..$u7b$$u7b$closure$u7d$$u7d$$GT$17hc7bc06506eb3e096E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr156drop_in_place$LT$wasmtime_environ..collections..hash_map..TryHashMap$LT$wasmtime..runtime..linker..ImportKey$C$wasmtime..runtime..linker..Definition$GT$$GT$17hafd386075cadf3ecE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr157drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$$GT$$GT$17hb388243c4933d6adE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr159drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..grow_or_collect_gc_heap..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb8cd027140e48171E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr162drop_in_place$LT$$LT$dyn$u20$wasmtime..runtime..vm..instance..allocator..InstanceAllocator$GT$..allocate_module..$u7b$$u7b$closure$u7d$$u7d$..DeallocateOnDrop$GT$17hf260293d6c073fbfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr170drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime..runtime..store..data..InstanceId$C$wasmtime..runtime..store..StoreInstance$GT$$GT$17hd23f34d2f80fa8dfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr171drop_in_place$LT$anyhow..error..ErrorImpl$LT$anyhow..wrapper..MessageError$LT$wasmtime_internal_core..error..context..ContextError$LT$alloc..string..String$GT$$GT$$GT$$GT$17h3ed9ebe5ea98b076E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr173drop_in_place$LT$wasmtime_environ..collections..btree_map..TryBTreeMap$LT$wasmtime..runtime..module..registry..RegisteredModuleId$C$wasmtime..runtime..module..Module$GT$$GT$17hb50cbfdb7229c56aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr176drop_in_place$LT$$LT$alloc..vec..drain..Drain$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$std..sync..mpmc..waker..Entry$C$alloc..alloc..Global$GT$$GT$17ha51a90555e81476bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr181drop_in_place$LT$cranelift_entity..primary..PrimaryMap$LT$wasmtime_environ..component..types..RuntimeComponentInstanceIndex$C$wasmtime..runtime..vm..component..InstanceState$GT$$GT$17h0076ce34e68996caE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr182drop_in_place$LT$std..collections..hash..set..HashSet$LT$wasmtime..runtime..component..concurrent..table..TableId$LT$wasmtime..runtime..component..concurrent..GuestThread$GT$$GT$$GT$17h3e1706154925f7ddE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr187drop_in_place$LT$$LT$alloc..collections..vec_deque..VecDeque$LT$T$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..Dropper$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17hadd6c5817e181966E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr187drop_in_place$LT$wasmtime..runtime..component..concurrent..$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$..prepare_call$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h2a9d9501edfffcb6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr233drop_in_place$LT$alloc..collections..btree..map..BTreeMap$LT$wasmtime_environ..component..types..TypeComponentGlobalErrorContextTableIndex$C$wasmtime..runtime..component..concurrent..error_contexts..GlobalErrorContextRefCount$GT$$GT$17h68fad4c8a8f97017E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr240drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedGlobalIndex$C$wasmtime..runtime..vm..store_box..StoreBox$LT$wasmtime..runtime..trampoline..global..VMHostGlobalContext$GT$$GT$$GT$17h207bbf82a36e614eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr241drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedTableIndex$C$$LP$wasmtime..runtime..vm..instance..allocator..TableAllocationIndex$C$wasmtime..runtime..vm..table..Table$RP$$GT$$GT$17hbe49d4d78c497706E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr245drop_in_place$LT$wasmtime_environ..collections..primary_map..TryPrimaryMap$LT$wasmtime_environ..types..DefinedMemoryIndex$C$$LP$wasmtime..runtime..vm..instance..allocator..MemoryAllocationIndex$C$wasmtime..runtime..vm..memory..Memory$RP$$GT$$GT$17h25bb2b6b7b041a55E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr284drop_in_place$LT$$LT$alloc..collections..btree..map..IntoIter$LT$K$C$V$C$A$GT$$u20$as$u20$core..ops..drop..Drop$GT$..drop..DropGuard$LT$wasmtime..runtime..component..concurrent..QualifiedThreadId$C$wasmtime..runtime..component..concurrent..GuestCallKind$C$alloc..alloc..Global$GT$$GT$17hb06b0a47bb2fca5dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr327drop_in_place$LT$wasmtime_internal_fiber..RunResult$LT$core..result..Result$LT$core..ptr..non_null..NonNull$LT$core..task..wake..Context$GT$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..fiber..StoreFiberYield$C$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$GT$$GT$17hf3b0690d3db1e080E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr34drop_in_place$LT$anyhow..Error$GT$17h210422f563fd89aaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr403drop_in_place$LT$wasmtime..runtime..store..gc..$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$..retry_after_gc_async$LT$$LP$$RP$$C$wasmtime..runtime..gc..enabled..rooting..Rooted$LT$wasmtime..runtime..gc..enabled..arrayref..ArrayRef$GT$$C$wasmtime..runtime..gc..enabled..arrayref..ArrayRef.._new_async..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hddb7532aa94431cfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr422drop_in_place$LT$wasmtime..runtime..fiber..$LT$impl$u20$wasmtime..runtime..store..context..StoreContextMut$LT$$LP$$RP$$GT$$GT$..with_blocking$LT$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$..block_on_debug_handler..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0a4f4859924259aaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h1a6af2ce3b24dbd7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr45drop_in_place$LT$wasmtime..config..Config$GT$17h6ed94123fdc424d5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr46drop_in_place$LT$std..backtrace..Backtrace$GT$17hd5ff272feb06f813E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr50drop_in_place$LT$std..sync..mpmc..waker..Waker$GT$17h2728838ce588ab42E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr54drop_in_place$LT$wasmtime..runtime..types..RefType$GT$17ha39d2193cd87a774E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr54drop_in_place$LT$wasmtime..runtime..types..ValType$GT$17h3ec29c11dee9fdb9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr55drop_in_place$LT$wasmtime..runtime..vm..gc..GcStore$GT$17hd37ca9aec43e4a84E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr56drop_in_place$LT$wasmtime..runtime..bug..WasmtimeBug$GT$17h16381282630d8dd9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr56drop_in_place$LT$wasmtime_internal_fiber..FiberStack$GT$17h3760f21d963a2b08E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..debug..DebugEvent$GT$17h80c545a3c5b19fd9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..fiber..AsyncState$GT$17hbfc8818588830550E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..fiber..StoreFiber$GT$17h91929c91174fadfaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr57drop_in_place$LT$wasmtime..runtime..types..ExternType$GT$17h7bcb1a0fbdc9f547E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..fiber..FiberFuture$GT$17h7c9af9d8b151c4deE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..linker..Definition$GT$17ha0584f65db9bc2bbE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..store..StoreOpaque$GT$17h1b819d3dde1168efE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..types..StorageType$GT$17heb28ba15f8227dfcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr58drop_in_place$LT$wasmtime..runtime..vm..memory..Memory$GT$17hdfea25a8ff27f428E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..debug..FrameDataCache$GT$17h534dc7b5bf219c9cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..store..AutoAssertNoGc$GT$17he55e59baec65b5dcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..vm..ModuleRuntimeInfo$GT$17h300c1c111d5e1d8aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr61drop_in_place$LT$wasmtime..runtime..vm..mmap_vec..MmapVec$GT$17had0c8d0489808fd4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..code..StoreCodeStorage$GT$17hf910b20e09c66897E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..component..values..Val$GT$17h11ee0f5407e766ebE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..debug..BreakpointState$GT$17h4d34a96e92ffa5acE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..instance..OwnedImports$GT$17h201ce99deb8e3842E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..store..data..StoreData$GT$17h88235be21709b70fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr62drop_in_place$LT$wasmtime..runtime..vm..traphandlers..Trap$GT$17h20c0726686593e8cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr634drop_in_place$LT$wasmtime..runtime..fiber..on_fiber$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$C$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..store..async_..$LT$impl$u20$wasmtime..runtime..store..context..StoreContextMut$LT$$LP$$RP$$GT$$GT$..on_fiber$LT$core..result..Result$LT$$LP$$RP$$C$wasmtime_internal_core..error..error..Error$GT$$C$wasmtime..runtime..instance..Instance..new_started$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$..$u7b$$u7b$closure$u7d$$u7d$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h64e4949a14e7dedfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr64drop_in_place$LT$$u5b$wasmtime..runtime..types..ValType$u5d$$GT$17h223a59eaeb7f25e8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr64drop_in_place$LT$wasmtime_internal_core..error..error..Error$GT$17h9cba9a107f884a12E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr65drop_in_place$LT$wasmtime..compile..code_builder..CodeBuilder$GT$17h7ec8e46e06699caaE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr65drop_in_place$LT$wasmtime..runtime..store..func_refs..Storage$GT$17he88492766f28b970E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr66drop_in_place$LT$wasmtime..runtime..linker..UnknownImportError$GT$17hcf3f927d1759a75cE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr66drop_in_place$LT$wasmtime..runtime..store..func_refs..FuncRefs$GT$17h0924cee9b7ae935fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr68drop_in_place$LT$wasmtime..runtime..vm..component..InstanceState$GT$17h843503109b6100f7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..component..concurrent..Caller$GT$17hf3c43248cb3ae652E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..gc..enabled..rooting..RootSet$GT$17hf9453350631bdf7dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr69drop_in_place$LT$wasmtime..runtime..type_registry..RegisteredType$GT$17h6304f378b1233b06E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr70drop_in_place$LT$wasmtime..runtime..vm..gc..func_ref..FuncRefTable$GT$17h3b2d78d36d8e18c0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr71drop_in_place$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$17ha70b4c300d0c0c34E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr72drop_in_place$LT$alloc..collections..btree..set..BTreeSet$LT$u32$GT$$GT$17h0ba6e056bcb220b8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestTask$GT$17hf5b44d3fbaa9dbfcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..component..resource_table..Entry$GT$17he665b3af85293656E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr72drop_in_place$LT$wasmtime..runtime..module..registry..ModuleRegistry$GT$17hfa7afb44ee282b90E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h7b8840585d006d2bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr73drop_in_place$LT$wasmtime..runtime..store..StoreInner$LT$$LP$$RP$$GT$$GT$17hd009b9c3fd6c6abeE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr74drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestThread$GT$17hb86c23c5fe3abbf8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr76drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestCallKind$GT$17h219ddea68763de8dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr76drop_in_place$LT$wasmtime..runtime..component..store..ComponentTaskState$GT$17h39dc76b163469957E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr77drop_in_place$LT$wasmtime..runtime..instance..InstancePre$LT$$LP$$RP$$GT$$GT$17hfcf6b387ed9bb977E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$anyhow..error..ContextError$LT$$RF$str$C$anyhow..Error$GT$$GT$17h95a25e519a9689b3E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h0da66ed800b3fc2aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$core..option..Option$LT$wasmtime_environ..gc..GcLayout$GT$$GT$17he09b428ca0776a06E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$core..option..Option$LT$wasmtime_internal_cache..Cache$GT$$GT$17h6cf30b7e94e5ac1fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr79drop_in_place$LT$wasmtime..runtime..component..concurrent..GuestThreadState$GT$17hd03c6ad76a102ac6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr80drop_in_place$LT$core..cell..UnsafeCell$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h792c05dcae81f982E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr81drop_in_place$LT$wasmtime..runtime..vm..gc..host_data..ExternRefHostDataTable$GT$17h9c29453a5e8c8306E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr82drop_in_place$LT$alloc..vec..drain..Drain$LT$std..sync..mpmc..waker..Entry$GT$$GT$17hcc21817118acc4f0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr83drop_in_place$LT$alloc..vec..drain..Drain$LT$wasmtime..runtime..values..Val$GT$$GT$17he1fc0484b11aa02eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr85drop_in_place$LT$alloc..vec..Vec$LT$wasmtime..runtime..component..values..Val$GT$$GT$17hddda4903aa9e610aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr86drop_in_place$LT$anyhow..error..ErrorImpl$LT$core..num..error..TryFromIntError$GT$$GT$17h88a03e75dd345b83E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr88drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..bug..WasmtimeBug$GT$$GT$17h0ed35345230bee22E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr88drop_in_place$LT$wasmtime_internal_core..error..context..ContextError$LT$$RF$str$GT$$GT$17h16cdb1e21cfe36efE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17h236740a45b7af874E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr92drop_in_place$LT$core..option..Option$LT$wasmtime..runtime..vm..cow..MemoryImageSlot$GT$$GT$17hf3be623b24720e46E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr93drop_in_place$LT$anyhow..error..ContextError$LT$alloc..string..String$C$anyhow..Error$GT$$GT$17h7766cb2c1e850fb3E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr93drop_in_place$LT$std..sync..poison..mutex..MutexGuard$LT$std..sync..mpmc..zero..Inner$GT$$GT$17haed243e1629f279aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr93drop_in_place$LT$wasmtime..runtime..component..concurrent..futures_and_streams..ReadState$GT$17ha949d5ecb0eee6d6E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr93drop_in_place$LT$wasmtime..runtime..vm..memory..Memory..grow..$u7b$$u7b$closure$u7d$$u7d$$GT$17h24dd7a7959351f21E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr94drop_in_place$LT$$LP$alloc..string..String$C$wasmtime..runtime..component..values..Val$RP$$GT$17h951d189ce12dadf7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr94drop_in_place$LT$alloc..vec..Vec$LT$wasmtime..runtime..component..concurrent..WorkItem$GT$$GT$17h4aec7f3a113e282fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr94drop_in_place$LT$wasmtime..runtime..component..concurrent..futures_and_streams..WriteState$GT$17he0ec0733433ac9bfE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr94drop_in_place$LT$wasmtime..runtime..store..StoreOpaque..do_gc..$u7b$$u7b$closure$u7d$$u7d$$GT$17h887701dd9b96d209E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr96drop_in_place$LT$wasmtime..runtime..instance..Instance..new_raw..$u7b$$u7b$closure$u7d$$u7d$$GT$17h66ff151cb35a0fa9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr98drop_in_place$LT$anyhow..error..ErrorImpl$LT$wasmtime..runtime..linker..UnknownImportError$GT$$GT$17h28b8b4d4a3dc6c3dE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr98drop_in_place$LT$wasmtime..runtime..vm..memory..LocalMemory..grow..$u7b$$u7b$closure$u7d$$u7d$$GT$17h4ff213e254616ebbE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core4iter6traits8iterator8Iterator3nth17h0c9538fb485050b9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core4iter6traits8iterator8Iterator3nth17hc281e848bbf1900aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core4iter8adapters11try_process17hcd955c77086e6f50E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error11description17h00689516bf3f3145E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error11description17h142e9faa591e05e9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error11description17h81bb667cc9555740E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error11description17hdabed765b395ec5fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h036f06f709f43c56E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h0b522a4401f77b01E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h2db92249ba74d814E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h3ef1ce03f60651acE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h4110ba167dfcc8ffE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17h6574a1084c0eeac9E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17ha491fb5ae83ba771E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error5cause17he7bf873774e91701E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7provide17h054575c260b193e8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7provide17h06ad4c3a3477e84eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7provide17h2e2f95d1ab6967a2E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7provide17hcb58f30effbc8d25E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h01f90757f3b22005E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h031e40cb3da43978E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h10d36ca40d9b01a0E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h10de6378a5096896E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h23716192f6f08d23E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h30c18c931ddf78f1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h31f9951079865ddcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h36a9fb587ac62a2eE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h4d067166e74d861aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h4f26aa4d9ae5237bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h5273694536dda5fcE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h5371bd45d67946f4E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h5c42eaf503be9731E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h6be510c58a1d0a8aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h770ca06dd6b25999E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h7b517544c75b9342E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17h93ca7bee374f8159E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17ha0e0249063cfcd86E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hc26f75f5c2c26bc8E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hcccf33393046a07bE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hcde643fa82264d33E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hce981b47608bcc91E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17he51e755e4d28420fE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5error5Error7type_id17hebb014e61764e2f1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN4core5slice29_$LT$impl$u20$$u5b$T$u5d$$GT$11copy_within17he4a6ea9502d65e20E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h25bc07936bbad7e7E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h292f0578dd81dc41E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h47eaa5715736af00E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17h9932c1ddb1e3baa1E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc11collections5btree3map25IntoIter$LT$K$C$V$C$A$GT$10dying_next17hc2e2b6ecf87d4747E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17h7cc7467e70566293E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17h976e63392323d449E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec19RawVec$LT$T$C$A$GT$8grow_one17hd7acb93b80b2ad2aE is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17hfbe59fad4974d867E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h6496983a11bf72a5E is runtime_internal zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN65_$LT$alloc..vec..Vec$LT$T$C$A$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hda00aab7a2298031E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN65_$LT$smallvec..CollectionAllocErr$u20$as$u20$core..fmt..Debug$GT$3fmt17h31adddcc004385aeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$core..option..Option$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17he1e149aff84f72fcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN67_$LT$wasmtime..runtime..values..Val$u20$as$u20$core..fmt..Debug$GT$3fmt17ha6b2866e4f9dfd4dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN68_$LT$wasmtime_environ..types..Limits$u20$as$u20$core..fmt..Debug$GT$3fmt17h18702af479ac05bcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$anyhow..context..Quoted$LT$C$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h035c57b7191e7d1fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN69_$LT$anyhow..context..Quoted$LT$C$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hae760f1f144150a5E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3msg17hdba8f70190463dbfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3msg17hed263fdd465f8d4dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h04b75c8d904c1f64E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h14181c53be1cd617E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h79e3273c46681e8dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17h9919beca5a272e81E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17haf3943c7895450f2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17hea8ba639ca394728E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$3new17hec1a662cee3485ccE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h1c0b1ffdb47359ecE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h246259f62e040c7bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h4f01dc6f1513ebeaE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h5a140a845d47dfbbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h5a44be3170f3a81fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17h6174af1aa3c1bcf9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17ha784b8414081f6beE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hbdb51adad50129a4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hc7f95b1003bd69c1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hf50faf80214234f2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow5error31_$LT$impl$u20$anyhow..Error$GT$9construct17hf79610a86cef9d4aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow7context101_$LT$impl$u20$core..error..Error$u20$for$u20$anyhow..error..ContextError$LT$C$C$anyhow..Error$GT$$GT$6source17h524fdb72099cf4c4E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow7context101_$LT$impl$u20$core..error..Error$u20$for$u20$anyhow..error..ContextError$LT$C$C$anyhow..Error$GT$$GT$6source17he385803c08c8a667E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow7context87_$LT$impl$u20$core..fmt..Debug$u20$for$u20$anyhow..error..ContextError$LT$C$C$E$GT$$GT$3fmt17h2da3439a37fcd6ceE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN6anyhow7context87_$LT$impl$u20$core..fmt..Debug$u20$for$u20$anyhow..error..ContextError$LT$C$C$E$GT$$GT$3fmt17h58b83317fc9f1e64E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN70_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h047e65eb70d7389eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$u8$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h856260e3031e6dfeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$wasmtime_environ..types..IndexType$u20$as$u20$core..fmt..Debug$GT$3fmt17h2b6432d5463f3c6cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN71_$LT$wasmtime_environ..types..TypeIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h2c88595a25b9b881E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..error..Error$GT$6source17h052a785e7659c1bcE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$anyhow..error..ErrorImpl$LT$E$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h0532ddab6171035bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$str$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17hb18cdae1a04b11bfE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$u16$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17hfc4b0a07798a9bbbE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$u32$u20$as$u20$wasmtime..runtime..component..func..typed..Lower$GT$22linear_lower_to_memory17h7d704f9bd286e8b9E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN72_$LT$wasmtime..runtime..bug..WasmtimeBug$u20$as$u20$core..fmt..Debug$GT$3fmt17h525a2aa89bd2f441E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN73_$LT$wasmtime..runtime..debug..DebugEvent$u20$as$u20$core..fmt..Debug$GT$3fmt17h26ae1da37528b03aE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN73_$LT$wasmtime..runtime..types..HeapType$u20$as$u20$core..clone..Clone$GT$5clone17h1223d9ca2fd5e8e7E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN74_$LT$wasmtime_environ..trap_encoding..Trap$u20$as$u20$core..fmt..Debug$GT$3fmt17hbff1258c3b0d6f8fE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$anyhow..wrapper..MessageError$LT$M$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h217338c6039a6919E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN75_$LT$anyhow..wrapper..MessageError$LT$M$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h9f3ac07b2632ea9cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$std..sync..poison..PoisonError$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17h17608b5ad2bc6cf8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN76_$LT$wasmtime..runtime..store..data..StoreId$u20$as$u20$core..fmt..Debug$GT$3fmt17he38da34a5d490defE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN78_$LT$wasmtime..runtime..component..values..Val$u20$as$u20$core..fmt..Debug$GT$3fmt17hf3bb9ac369425201E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN79_$LT$wasmtime..runtime..store..data..InstanceId$u20$as$u20$core..fmt..Debug$GT$3fmt17h2a49a38d9c37051cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN82_$LT$wasmtime..runtime..exception..ThrownException$u20$as$u20$core..fmt..Debug$GT$3fmt17h2ec97ba4213115cdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN82_$LT$wasmtime..runtime..linker..UnknownImportError$u20$as$u20$core..fmt..Debug$GT$3fmt17h38cb11f5190411d2E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN85_$LT$wasmtime..runtime..component..concurrent..Status$u20$as$u20$core..fmt..Debug$GT$3fmt17hda38cc5f949eedaeE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN85_$LT$wasmtime_environ..types..EngineOrModuleTypeIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h579084b97fe50ba8E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN86_$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$T$GT$$u20$as$u20$core..fmt..Debug$GT$3fmt17hfa08f8f6cf50177bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$wasmtime..runtime..gc..GcHeapOutOfMemory$LT$T$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17h399b7900b4b6cd52E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$wasmtime_environ..component..types..TypeFutureIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h8b23508baf91626eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN88_$LT$wasmtime_environ..component..types..TypeStreamIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h8883ac237cb9c207E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN89_$LT$wasmtime..runtime..gc..enabled..rooting..GcRootIndex$u20$as$u20$core..fmt..Debug$GT$3fmt17h6c79c03568195e6bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8smallvec17SmallVec$LT$A$GT$21reserve_one_unchecked17hfa19c8de8d1375edE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8smallvec17SmallVec$LT$A$GT$8try_grow17hd5f433f9b8ef2859E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime5store2gc55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$2gc28_$u7b$$u7b$closure$u7d$$u7d$17h72d4fa387db7a07cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime5store5token19StoreToken$LT$T$GT$14as_context_mut17hcf63f3c3ef433861E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime6linker15Linker$LT$T$GT$11instantiate17hbd902af207364e13E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10guest_read17hce93b03f2f937d7bE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10guest_read28_$u7b$$u7b$closure$u7d$$u7d$17h4698cd005cc29565E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$11guest_write17h70da2bf6472481adE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$11guest_write28_$u7b$$u7b$closure$u7d$$u7d$17hdee9406593457cffE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent19futures_and_streams66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$4copy17hb0f59a8fcf6981b1E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$10set_thread17h375452b600c99720E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent55_$LT$impl$u20$wasmtime..runtime..store..StoreOpaque$GT$10set_thread17ha6c1511e4cc2f7cdE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10queue_call9make_call28_$u7b$$u7b$closure$u7d$$u7d$17h59b342a0fe726d03E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10start_call17h848bfbd32cb5d412E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$10start_call28_$u7b$$u7b$closure$u7d$$u7d$17h0c166f5e3320d0e0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component10concurrent66_$LT$impl$u20$wasmtime..runtime..component..instance..Instance$GT$19thread_new_indirect17hcd93d19c255e0b4cE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$3get17h89630054d5398014E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$3new17h359c62b83f331b32E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN8wasmtime7runtime9component4func7options21LowerContext$LT$T$GT$7realloc17h989c0727bdfee489E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN90_$LT$alloc..boxed..Box$LT$F$C$A$GT$$u20$as$u20$core..ops..function..FnOnce$LT$Args$GT$$GT$9call_once17h655706a69463a006E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN92_$LT$wasmtime..runtime..component..concurrent..CurrentThread$u20$as$u20$core..fmt..Debug$GT$3fmt17hff2b44dfb03758f6E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN92_$LT$wasmtime..runtime..module..registry..RegisteredModuleId$u20$as$u20$core..fmt..Debug$GT$3fmt17hcf168433d733c9c0E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN94_$LT$wasmtime..runtime..component..resources..ty..ResourceType$u20$as$u20$core..fmt..Debug$GT$3fmt17hde5175c2c082e688E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$12store_opaque17h63c1961a78492a74E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$21component_async_store17h776dc8ff1e25263dE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$22block_on_debug_handler17hb64dbbbe8f406229E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$26new_epoch_updated_deadline17h047a79ac3834df0eE is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN96_$LT$wasmtime..runtime..store..StoreInner$LT$T$GT$$u20$as$u20$wasmtime..runtime..vm..VMStore$GT$33resource_limiter_and_store_opaque17hd8026408841f7876E is safe zone — language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN9hashbrown3map28HashMap$LT$K$C$V$C$S$C$A$GT$6insert17hafff8f0184ac6fdeE is safe zone — language guarantees apply
+[32m[INFO][0m RC-Container: 1 functions identified as refcount-managed (skipped)
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11132 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1226 used after free in _ZN22wasmtime_internal_core5error5error5Error8downcast17h27d39bc4c2dcf326E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3900 used after free in _ZN6anyhow5error23object_reallocate_boxed17hbfbda40a32053ad2E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 169 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11010 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2103 used after free in _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h3bcc5cee253c580dE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 8958 used after free in _ZN8wasmtime7runtime4func4Func18call_unchecked_raw17hada08d5de48a67cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9767 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5687 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 160 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3548 used after free in _ZN6anyhow5error23object_reallocate_boxed17h08d228be839c6102E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1183 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17hdc93c08a7ce1f9ebE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4271 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11009 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 7630 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4693 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9773 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2792 used after free in _ZN23wasmtime_internal_fiber4unix11fiber_start17h0399edf2da7850b1E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4700 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4309 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10717 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 778 used after free in _ZN17wasmtime_ffi_test13create_engine17ha4c07892c5b063fbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 12255 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1183 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17hdc93c08a7ce1f9ebE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4278 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9240 used after free in _ZN8wasmtime7runtime5store11StoreOpaque15ensure_gc_store28_$u7b$$u7b$closure$u7d$$u7d$17h364f1b4639bafebaE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10998 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4727 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11067 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 941 used after free in _ZN22wasmtime_internal_core5error5error13BoxedDynError3new17h7355531c37b3bfc3E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5687 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11132 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4278 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 165 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11130 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9680 used after free in _ZN8wasmtime7runtime5store11StoreOpaque15ensure_gc_store28_$u7b$$u7b$closure$u7d$$u7d$17h364f1b4639bafebaE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1121 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h43265a1a3d343146E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4271 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1006 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h0c18d0b134babb65E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9767 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3723 used after free in _ZN6anyhow5error23object_reallocate_boxed17h96eeac25f0b61309E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4700 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 778 used after free in _ZN17wasmtime_ffi_test13create_engine17ha4c07892c5b063fbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11066 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9240 used after free in _ZN8wasmtime7runtime5store11StoreOpaque15ensure_gc_store28_$u7b$$u7b$closure$u7d$$u7d$17h364f1b4639bafebaE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 885 used after free in _ZN17wasmtime_ffi_test13create_module17h488af5b8a92c1ad9E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1006 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h0c18d0b134babb65E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 12480 used after free in _ZN8wasmtime7runtime8instance8Instance9start_raw17h11937e7c139e351aE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 129 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10998 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 164 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 11008 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 885 used after free in _ZN17wasmtime_ffi_test13create_module17h488af5b8a92c1ad9E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2249 used after free in _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h4f57ad329f4b0419E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4693 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10984 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4309 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5684 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 8958 used after free in _ZN8wasmtime7runtime4func4Func18call_unchecked_raw17hada08d5de48a67cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5695 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10998 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4271 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1058 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h1ba2c4622be04015E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9245 used after free in _ZN8wasmtime7runtime5store11StoreOpaque15ensure_gc_store28_$u7b$$u7b$closure$u7d$$u7d$17h364f1b4639bafebaE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 885 used after free in _ZN17wasmtime_ffi_test13create_module17h488af5b8a92c1ad9E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9769 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 159 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 3125 used after free in _ZN6anyhow5error11object_drop17h7388aa2b9d506bcfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 12299 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1152 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h652af3c796386d67E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4693 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10985 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1093 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h1ecf29ef3712df54E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1093 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h1ecf29ef3712df54E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 163 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4278 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef10_new_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h697661621063e806E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2790 used after free in _ZN23wasmtime_internal_fiber4unix11fiber_start17h0399edf2da7850b1E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 129 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10984 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9773 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2103 used after free in _ZN22wasmtime_internal_core5error6vtable25into_boxed_dyn_core_error17h3bcc5cee253c580dE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5695 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 2789 used after free in _ZN23wasmtime_internal_fiber4unix11fiber_start17h0399edf2da7850b1E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4700 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 9758 used after free in _ZN8wasmtime7runtime5store11StoreOpaque17allocate_instance28_$u7b$$u7b$closure$u7d$$u7d$17h94e036850e267121E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 12366 used after free in _ZN8wasmtime7runtime8instance8Instance9start_raw17h11937e7c139e351aE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 4727 used after free in _ZN8wasmtime7runtime2gc7enabled8arrayref8ArrayRef16_new_fixed_async28_$u7b$$u7b$closure$u7d$$u7d$28_$u7b$$u7b$closure$u7d$$u7d$17h3bd2338cb5720d74E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 8878 used after free in _ZN8wasmtime7runtime4func4Func18call_unchecked_raw17hada08d5de48a67cbE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 12480 used after free in _ZN8wasmtime7runtime8instance8Instance9start_raw17h11937e7c139e351aE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 941 used after free in _ZN22wasmtime_internal_core5error5error13BoxedDynError3new17h7355531c37b3bfc3E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 160 used after free in _ZN17wasmtime_ffi_test12create_store17hf8974c4018b1b9bfE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 5684 used after free in _ZN8wasmtime7runtime2vm10const_expr18ConstExprEvaluator9eval_loop28_$u7b$$u7b$closure$u7d$$u7d$17h5fad31894404cf3fE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 10985 used after free in _ZN8wasmtime7runtime5types8FuncType3new17h1cf9c91109c6755bE
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1058 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h1ba2c4622be04015E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1152 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h652af3c796386d67E
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 1121 used after free in _ZN22wasmtime_internal_core5error5error5Error3new17h43265a1a3d343146E
+[32m[INFO][0m PointerOwnership: Found 96 use-after-free issues (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 0 allocations, 293 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 0, reused: 0, in_use: 0
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    619
+  Safe zone (skipped):         239 (74.3%)
+  Runtime internal (skipped):  221
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                159
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                96[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       618.39    618388.17    618388.17
+detect                                  2        83.56     41778.65     41801.46
+total                                   1       618.40    618397.54    618397.54
+analysis                                1       603.40    603399.21    603399.21
+[32m[INFO][0m PointerOwnership: 4 ops, 1923.74ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 2551 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 987
+
+[INFO] Facts generated: 293
+
+[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/wasmtime_test.json
+
