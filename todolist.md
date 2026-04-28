@@ -1,15 +1,27 @@
 # OmniScope v0.1.8 Development Plan — Trust Release
 
-> **Version**: v0.1.8 (Trust Release)  
-> **Goal**: 提升信任度，而非扩张版图  
-> **Target Metrics**: FFI accuracy 73% → 85%+, HIGH severity precision 90%+  
+> **Version**: v0.1.8 (Trust Release)
+> **Goal**: 提升信任度，而非扩张版图
+> **Target Metrics**: FFI accuracy 73% → 85%+, HIGH severity precision 90%+
 > **Coding Rules**: Follow `plan/rules/rules.md` strictly (snake_case, <1000 lines/file, English comments)
 
 ---
 
-## Philosophy (from plan/v0.1.8.md)
+## Strategic Positioning (from plan/roadmap/RoadMap.md)
 
-> v0.1.8 = 提升信任，而不是扩张版图  
+> **先做可信的小而强，再做全面的大平台。**
+>
+> Product tagline: *Detect memory and lifecycle risks at unsafe language boundaries.*
+> Alt: *Audit Rust/C/Zig/Go integrations and closed-source native libraries.*
+
+**If only one thing**: Make `omniscope audit sqlite3.c --sarif` work and ship a GitHub demo.
+This is worth more than adding 10 more rules.
+
+---
+
+## Philosophy
+
+> v0.1.8 = 提升信任，而不是扩张版图
 > 先让用户觉得：**这工具说话靠谱。**
 
 ---
@@ -79,6 +91,7 @@
 | `llvm.expect.*` | any | Branch prediction hint |
 | `llvm.coro.*` | any | Coroutine intrinsics |
 | `llvm.gc.*` | any | Garbage collection |
+| Rust stdlib synthetic calls | `__rust_*`, `sync_channel::`, `mpsc::` | Rust std safe primitives (not real FFI) |
 
 **Implementation plan**:
 
@@ -199,6 +212,7 @@
 | setsockopt unchecked | LOW | **LOW** | Keep (already correct) |
 | EVP_CIPHER_CTX_new NULL | MEDIUM | **HIGH** | Crypto key leak, security issue |
 | pthread_mutex leak | MEDIUM | **MEDIUM** | Keep |
+| fork in multithreaded context | LOW | **HIGH** | At-fork handler missing, deadlock/corruption |
 | llvm.threadlocal | LOW | **SUPPRESSED** | Not a real issue |
 
 **Implementation plan**:
@@ -400,14 +414,20 @@ Before marking any task complete:
 
 | Metric | v0.1.7 (baseline) | v0.1.8 (target) | How to measure |
 |--------|-------------------|-----------------|---------------|
-| **FFI Accuracy** | ~73% | **82-87%** | TP/(TP+FP) on benchmark |
+| **FFI Accuracy** | ~73% | **85%+** | TP/(TP+FP) on benchmark |
 | **HIGH Severity Precision** | ~60% | **90%+** | TP@HIGH / total@HIGH |
 | **First 5 Findings Quality** | Mixed | **All TP or near-TP** | Manual review of top 5 |
 | **Findings / KLOC** | Variable | **<2.0** | Total issues / total KLOC |
 | **BLST FFI Issues** | 3 (all FP) | **0** | Noise elimination |
 | **SQLITE3 FP Rate** | ~20% | **<10%** | Inter-procedural help |
+| **SQLite/libuv Benchmark** | Unstable | **Stable** | Reproducible results |
 | **SARIF Output** | N/A | **Supported** | Functional test |
+| **GitHub Actions** | N/A | **Usable** | CI pipeline integration |
 | **Build Time** | Stable | **No regression** | zig build time |
+
+### v0.1.8 Release Gate
+
+All of the above must pass before tagging v0.1.8.
 
 ---
 
@@ -436,3 +456,104 @@ Phase 4 (Verification):
   Benchmark page generation
   v0.1.8 release tagging
 ```
+
+---
+
+## Future Roadmap (from plan/roadmap/RoadMap.md)
+
+### Phase 2: v0.1.9 — Knowledge Release
+
+**Goal**: 让 OmniScope 开始具备"专家知识库"。
+
+**OmniScope-Signatures.db** — 记录常见 FFI contract：
+
+| Function | Contract |
+|----------|----------|
+| `sqlite3_open` | out-param + nullable |
+| `pthread_create` | callback escapes |
+| `EVP_*_new` | must_free + nullable |
+| `BIO_new` | must_free |
+| `LoadLibrary` | handle lifecycle |
+| `PyGILState_Ensure` | thread state contract |
+| `JNI FindClass` | nullable + exception state |
+
+**用户自定义规则（轻量）**:
+```
+library: vendor_sdk
+function: sdk_open
+returns: handle
+must_call: sdk_close
+nullable: true
+```
+
+**Target**: Accuracy 88%+, 商业价值 **高**
+
+---
+
+### Phase 3: v0.2.0 — Binary Bridge Release
+
+**Goal**: 进入闭源库 / 供应链安全场景。
+
+**Binary Frontend MVP**: `.so` / `.dll`
+- imports / exports
+- allocator/free symbols
+- dangerous API surface
+- callback exports
+- dynamic loading graph
+
+**RetDec / Binary Lifting** (优先于 Ghidra 集成):
+```
+binary → LLVM IR → existing OmniScope passes
+```
+最大化复用现有资产。
+
+**Usage**: `omniscope audit vendor.dll src/`
+
+**Target**: Accuracy 88%+, 商业价值 **很高**
+
+---
+
+### Phase 4: v0.3.x — Hybrid Deep Analysis
+
+按需触发，而不是默认全开。
+
+**angr Validator** (仅对 HIGH findings):
+- integer overflow reachability
+- bounds bypass path
+- use-after-free path feasibility
+
+**Ghidra Side Evidence** (仅做):
+- type hints
+- CFG complexity
+- hidden free/global writes
+
+**Target**: Accuracy 90%+, 企业级
+
+---
+
+## Metrics Roadmap (Realistic)
+
+| Version | Core Goal | Accuracy | Commercial Value |
+|---------|-----------|----------|------------------|
+| v0.1.8 | 信任建立 | 85%+ | 中 |
+| v0.1.9 | 知识库化 | 88%+ | 高 |
+| v0.2.0 | Binary 审计 | 88%+ | 很高 |
+| v0.3.x | Hybrid 深度验证 | 90%+ | 企业级 |
+
+---
+
+## Explicitly Deferred (Do NOT do now)
+
+- **Objective-C Runtime** → v0.3+: 复杂、市场窄、ROI 低
+- **全程序复杂数据流框架重写** → 别做，继续围绕 FFI boundary 做定向分析
+
+---
+
+## Development Principle (from RoadMap)
+
+> 你现在已经过了"能不能做出来"的阶段。
+> 新的开发计划应该围绕：
+>
+> **可信度 → 知识库 → Binary 扩张 → Hybrid 深挖**
+>
+> 而不是继续线性堆 feature。

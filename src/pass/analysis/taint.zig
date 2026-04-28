@@ -274,7 +274,7 @@ pub const TaintPass = struct {
     fn isTaintSink(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
