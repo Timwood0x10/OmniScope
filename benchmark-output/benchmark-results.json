@@ -1,6 +1,6 @@
 {
-  "benchmark_id": "omniscope-20260427-114716",
-  "timestamp": "2026-04-27T03:47:16Z",
+  "benchmark_id": "omniscope-20260428-153651",
+  "timestamp": "2026-04-28T07:36:51Z",
   "scope": "FFI/Unsafe Boundary Analysis",
   "environment": {
     "os": "Darwin",
@@ -9,18 +9,18 @@
     "build_mode": "ReleaseFast"
   },
   "ffi_summary": {
-    "ffi_critical": 2,
-    "ffi_high": 81
+    "ffi_critical": 3,
+    "ffi_high": 78
   },
   "results": {
     "total_tp": 57,
-    "total_fp": 73,
+    "total_fp": 68,
     "total_fn": 16,
-    "total_detected": 130,
+    "total_detected": 125,
     "total_expected": 73,
-    "precision": 0.4385,
+    "precision": 0.4560,
     "recall": 0.7808,
-    "f1_score": 0.5616,
+    "f1_score": 0.5758,
     "false_positive_rate": 0
   },
   "targets": {
@@ -32,7 +32,7 @@
   },
   "per_file": [
 
-    {"file": "cpp_ffi_simple.ll", "detected": 12, "expected": 3, "ffi_critical": 0, "ffi_high": 6},
+    {"file": "cpp_ffi_simple.ll", "detected": 7, "expected": 3, "ffi_critical": 0, "ffi_high": 3},
     {"file": "boundary_test.ll", "detected": 14, "expected": 14, "ffi_critical": 0, "ffi_high": 7},
     {"file": "stress_patterns.ll", "detected": 28, "expected": 44, "ffi_critical": 0, "ffi_high": 5},
     {"file": "openssl_wrapper.ll", "detected": 24, "expected": 4, "ffi_critical": 0, "ffi_high": 17},

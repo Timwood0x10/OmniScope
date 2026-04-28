@@ -533,6 +533,33 @@ fn classifyGoFunction(func_name: []const u8) ZoneKind {
 
 /// Classify a C++ function.
 fn classifyCppFunction(func_name: []const u8) ZoneKind {
+    const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
+
+    if (SemanticRegistry.lookup(func_name)) |sem| {
+        switch (sem.kind) {
+            .command_exec,
+            .unchecked_copy,
+            .format_string,
+            .memory_map,
+            .dynamic_loading,
+            .jni,
+            .python_c_api,
+            .allocator,
+            .deallocator,
+            .network_io,
+            .file_io,
+            .signal_handler,
+            .thread_mgmt,
+            .process_mgmt,
+            .rust_ownership,
+            .borrow_escaped,
+            .go_cgo_alloc,
+            .zig_allocator,
+            .cpp_allocator,
+            => return .ffi,
+        }
+    }
+
     for (CPP_ESCAPE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .unsafe;
@@ -602,6 +629,120 @@ fn isCppFunction(func_name: []const u8) bool {
     if (std.mem.startsWith(u8, func_name, "_Z")) return true;
     if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
     return false;
+}
+
+/// Detect if function is C using name-based heuristics.
+///
+/// C functions typically use snake_case naming and don't have
+/// Rust/Zig/Go/C++ specific prefixes.
+fn isCFunction(func_name: []const u8) bool {
+    if (func_name.len == 0) return false;
+
+    if (isRustFunction(func_name)) return false;
+    if (isZigFunction(func_name)) return false;
+    if (isGoFunction(func_name)) return false;
+    if (isCppFunction(func_name)) return false;
+
+    if (std.mem.startsWith(u8, func_name, "_")) return false;
+    if (std.mem.indexOf(u8, func_name, "$") != null) return false;
+
+    if (std.mem.indexOf(u8, func_name, "llvm.") != null) return false;
+    if (std.mem.indexOf(u8, func_name, "__gnu_cxx") != null) return false;
+    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return false;
+
+    return true;
+}
+
+/// Classify a C function based on name patterns.
+///
+/// For pure C code, we use name heuristics to detect FFI relevance:
+/// - snake_case with known FFI patterns → .ffi
+/// - pure internal C logic → .unknown (conservative)
+fn classifyCFunction(func_name: []const u8) ZoneKind {
+    const C_FFI_PATTERNS = [_][]const u8{
+        "FFI_",
+        "dlopen",
+        "dlsym",
+        "dlclose",
+        "mmap",
+        "munmap",
+        "socket",
+        "connect",
+        "bind",
+        "listen",
+        "accept",
+        "send",
+        "recv",
+        "close",
+        "fopen",
+        "fclose",
+        "read",
+        "write",
+        "open",
+        "pipe",
+        "pthread_",
+        "sem_",
+        "shm_",
+        "msg_",
+        "mkfifo",
+        "fork",
+        "exec",
+        "wait",
+        "kill",
+        "signal",
+        "alarm",
+        "setjmp",
+        "longjmp",
+        "exit",
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+        "memcpy",
+        "memmove",
+        "memset",
+        "memcmp",
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "strlen",
+        "strcmp",
+        "strncmp",
+        "sprintf",
+        "snprintf",
+        "atoi",
+        "atol",
+        "strtol",
+        "strtod",
+        "malloc_zone",
+        "Py_",
+        "PyObject",
+        "JNI_",
+        "NewGlobalRef",
+        "DeleteGlobalRef",
+        "GetMethodID",
+        "GetFieldID",
+        "FindClass",
+        "Call",
+    };
+
+    for (C_FFI_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .ffi;
+        }
+    }
+
+    if (std.mem.indexOf(u8, func_name, "_cb") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_callback") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_handler") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_hook") != null) return .ffi;
+
+    if (std.mem.indexOf(u8, func_name, "_init") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_cleanup") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_destroy") != null) return .ffi;
+
+    return .unknown;
 }
 
 /// Statistics for zone classification.
@@ -677,4 +818,99 @@ test "isLikelyRuntimeInternal - C/C++ stdlib" {
     try std.testing.expect(isLikelyRuntimeInternal("__cxa_begin_catch"));
     try std.testing.expect(isLikelyRuntimeInternal("__clang_call_terminate"));
     try std.testing.expect(!isLikelyRuntimeInternal("my_function"));
+}
+
+test "classifyCppFunction - registry linkage" {
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("malloc"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("free"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlopen"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlsym"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlclose"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("mmap"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("munmap"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fopen"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fclose"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("socket"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("close"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("pthread_create"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("pthread_join"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("signal"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fork"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("execvp"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("Py_INCREF"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("Py_DECREF"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("NewGlobalRef"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("DeleteGlobalRef"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("GetMethodID"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("system"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("popen"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("printf"));
+}
+
+test "classifyCppFunction - CPP_ESCAPE_PATTERNS" {
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("reinterpret_cast<int*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("const_cast<int*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("static_cast<void*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("std::thread"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("CreateThread"));
+}
+
+test "classifyCppFunction - CPP_SAFE_PATTERNS" {
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::vector<int>::push_back"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::string::c_str"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::unique_ptr::get"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::shared_ptr::clone"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::map::insert"));
+}
+
+test "classifyCppFunction - extern C" {
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" my_func"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" void foo()"));
+}
+
+test "classifyCppFunction - unknown" {
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("my_custom_function"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("some_internal_func"));
+}
+
+test "isCFunction - positive detection" {
+    try std.testing.expect(isCFunction("my_c_function"));
+    try std.testing.expect(isCFunction("process_data"));
+    try std.testing.expect(isCFunction("handle_request"));
+    try std.testing.expect(isCFunction("init_server"));
+    try std.testing.expect(isCFunction("cleanup_resources"));
+}
+
+test "isCFunction - negative detection (not C)" {
+    try std.testing.expect(!isCFunction("_ZN4core3ptr"));
+    try std.testing.expect(!isCFunction("std::vector"));
+    try std.testing.expect(!isCFunction("runtime.main"));
+    try std.testing.expect(!isCFunction("llvm.memcpy"));
+    try std.testing.expect(!isCFunction("__gnu_cxx::"));
+    try std.testing.expect(!isCFunction("_ZN3std"));
+    try std.testing.expect(!isCFunction("my_func$u20$name"));
+}
+
+test "classifyCFunction - FFI patterns" {
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("FFI_01_dlopen_null_check"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_dlopen_wrapper"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("dlopen_handle"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pthread_create_cb"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("signal_handler"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("malloc_wrapper"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("free_memory"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_mmap_handler"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("socket_create"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("fopen_file"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("cleanup_init"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_resource"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("PyObject_Call"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("JNI_OnLoad"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("NewGlobalRef"));
+}
+
+test "classifyCFunction - non-FFI returns unknown" {
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("my_internal_func"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("calculate_value"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("process_data_internal"));
 }
