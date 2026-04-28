@@ -15,6 +15,7 @@
 //! - C++: extern C, reinterpret_cast, manual malloc/free
 
 const std = @import("std");
+const c = @import("../ir/llvm_raw.zig").c;
 
 /// Zone classification for code regions.
 pub const ZoneKind = enum(u8) {
@@ -286,6 +287,85 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     return .unknown;
 }
 
+/// Classify a function using LLVM metadata (more precise than string matching).
+///
+/// Uses LLVM API to check:
+/// - IsDeclaration: external declarations are typically library/runtime code
+/// - Linkage type: internal linkage = user code, external = library
+/// - IntrinsicID: compiler intrinsics should be skipped
+pub fn classifyFunctionFromLLVM(
+    func: c.LLVMValueRef,
+    func_name: []const u8,
+) ZoneKind {
+    // Check if it's a declaration (external, no definition)
+    if (c.LLVMIsDeclaration(func) != 0) {
+        // Declarations are typically runtime/library functions
+        // But some may be user-defined extern functions
+        const linkage = c.LLVMGetLinkage(func);
+
+        // External linkage + declaration = likely runtime/library
+        if (linkage == c.LLVMExternalLinkage or
+            linkage == c.LLVMExternalWeakLinkage or
+            linkage == c.LLVMCommonLinkage)
+        {
+            // Further check if it looks like user FFI vs stdlib
+            if (isLikelyRuntimeInternal(func_name)) {
+                return .runtime_internal;
+            }
+            return .ffi; // External declarations are FFI boundaries
+        }
+
+        // Internal/private declarations = likely user code
+        return .unknown;
+    }
+
+    // Check for compiler intrinsics using intrinsic ID
+    const intrinsic_id = c.LLVMGetIntrinsicID(func);
+    if (intrinsic_id != 0) {
+        return .runtime_internal; // All intrinsics are safe
+    }
+
+    // For defined functions, use string-based classification as fallback
+    return classifyFunction(func_name, null);
+}
+
+/// Check if function name looks like runtime internal code.
+fn isLikelyRuntimeInternal(name: []const u8) bool {
+    // Rust standard library patterns
+    const rust_stdlib_patterns = [_][]const u8{
+        "_ZN4core",      "_ZN5alloc", "_ZN3std",
+        "llvm.",         "__rust_",   "__cg",
+        // Drop glue, panic, etc.
+        "drop_in_place", "panic_",
+    };
+
+    for (rust_stdlib_patterns) |pat| {
+        if (std.mem.startsWith(u8, name, pat)) return true;
+    }
+
+    // Go runtime patterns
+    const go_runtime_patterns = [_][]const u8{
+        "runtime.", "_cgo_",  "crosscall2",
+        "__go_",    "__gcc_",
+    };
+
+    for (go_runtime_patterns) |pat| {
+        if (std.mem.startsWith(u8, name, pat)) return true;
+    }
+
+    // C/C++ standard library patterns
+    const cc_stdlib_patterns = [_][]const u8{
+        "__gnu_cxx",              "__cxa_",
+        "__clang_call_terminate", "llvm.",
+    };
+
+    for (cc_stdlib_patterns) |pat| {
+        if (std.mem.indexOf(u8, name, pat) != null) return true;
+    }
+
+    return false;
+}
+
 /// Source language for classification.
 pub const Language = enum(u8) {
     rust,
@@ -495,4 +575,26 @@ test "ZoneStats" {
     try std.testing.expectEqual(@as(u32, 4), stats.total());
     try std.testing.expectEqual(@as(u32, 2), stats.safe_count);
     try std.testing.expectEqual(@as(f64, 0.75), stats.skipRatio());
+}
+
+test "isLikelyRuntimeInternal - Rust stdlib" {
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN4core3ptr13drop_in_place"));
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN5alloc6raw_vec17RawVec"));
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN3std3fmt9Arguments"));
+    try std.testing.expect(isLikelyRuntimeInternal("llvm.memcpy.p0i8.p0i8.i64"));
+    try std.testing.expect(!isLikelyRuntimeInternal("_ZN4my_crate3foo3bar"));
+}
+
+test "isLikelyRuntimeInternal - Go runtime" {
+    try std.testing.expect(isLikelyRuntimeInternal("runtime.mallocgc"));
+    try std.testing.expect(isLikelyRuntimeInternal("_cgo_12345"));
+    try std.testing.expect(isLikelyRuntimeInternal("crosscall2"));
+    try std.testing.expect(!isLikelyRuntimeInternal("main.main"));
+}
+
+test "isLikelyRuntimeInternal - C/C++ stdlib" {
+    try std.testing.expect(isLikelyRuntimeInternal("__gnu_cxx::__enable_if"));
+    try std.testing.expect(isLikelyRuntimeInternal("__cxa_begin_catch"));
+    try std.testing.expect(isLikelyRuntimeInternal("__clang_call_terminate"));
+    try std.testing.expect(!isLikelyRuntimeInternal("my_function"));
 }

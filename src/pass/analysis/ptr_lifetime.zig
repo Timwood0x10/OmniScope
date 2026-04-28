@@ -100,6 +100,7 @@ pub const LifetimeStats = struct {
     return_stack_addr_found: u32 = 0,
     use_after_free_found: u32 = 0,
     heap_ambiguous_found: u32 = 0,
+    heap_intentional_transfer: u32 = 0,
 
     pub fn formatSummary(self: LifetimeStats, writer: anytype) !void {
         try writer.writeAll("\n╔══════════════════════════════════════╗\n");
@@ -111,6 +112,7 @@ pub const LifetimeStats = struct {
         try writer.print("║  Return-stack-address:   {d:>8}      ║\n", .{self.return_stack_addr_found});
         try writer.print("║  Use-after-free risks:   {d:>8}      ║\n", .{self.use_after_free_found});
         try writer.print("║  Heap ownership issues:  {d:>8}      ║\n", .{self.heap_ambiguous_found});
+        try writer.print("║  Factory transfers (ok): {d:>8}      ║\n", .{self.heap_intentional_transfer});
         try writer.writeAll("╚══════════════════════════════════════╝\n");
     }
 };
@@ -165,8 +167,8 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
     if (isExternFunction(callee_name)) return true;
 
     const retaining_patterns = [_][]const u8{
-        "register_", "set_", "add_", "insert_", "push_",
-        "store_", "save_", "cache_", "copy_",
+        "register_", "set_",  "add_",   "insert_", "push_",
+        "store_",    "save_", "cache_", "copy_",
     };
 
     for (retaining_patterns) |pat| {
@@ -182,10 +184,9 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
 
 /// Heap allocation functions.
 const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc", "calloc", "realloc", "aligned_alloc",
-    "valloc", "pvalloc", "memalign",
-    "operator new", "operator new[]",
-    "into_raw", "allocImpl",
+    "malloc",         "calloc",   "realloc",   "aligned_alloc",
+    "valloc",         "pvalloc",  "memalign",  "operator new",
+    "operator new[]", "into_raw", "allocImpl",
 };
 
 /// Classify the allocation site of a pointer value.
@@ -260,10 +261,11 @@ pub const PtrLifetimePass = struct {
             try analyzeFunction(ctx, func, diag, &stats);
         }
 
-        diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations",
-            .{ stats.total_functions_analyzed, stats.total_pointers_tracked,
-               stats.stack_escapes_found + stats.return_stack_addr_found +
-                   stats.use_after_free_found + stats.heap_ambiguous_found });
+        diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
+            stats.total_functions_analyzed,
+            stats.total_pointers_tracked,
+            stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
+        });
     }
 
     fn analyzeFunction(
@@ -430,6 +432,45 @@ pub const PtrLifetimePass = struct {
         if (opcode == c.LLVMRet) {
             try checkReturnViolation(ctx, inst, func, func_name, pointer_map, diag, stats);
         }
+
+        if (opcode == c.LLVMStore) {
+            try checkStoreToGlobal(ctx, inst, func_name, pointer_map, diag, stats);
+        }
+    }
+
+    fn checkStoreToGlobal(
+        ctx: *PassContext,
+        inst: c.LLVMValueRef,
+        func_name: []const u8,
+        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        diag: *DiagnosticWriter,
+        stats: *LifetimeStats,
+    ) !void {
+        const ptr_operand = c.LLVMGetOperand(inst, 1);
+        const value_operand = c.LLVMGetOperand(inst, 0);
+
+        if (ptr_operand == null or value_operand == null) return;
+
+        if (isGlobalVariable(ptr_operand)) {
+            if (pointer_map.get(value_operand)) |ptr_info| {
+                if (ptr_info.alloc_site == .heap and !ptr_info.escaped) {
+                    try reportHeapToGlobal(ctx, func_name, ptr_info, inst, diag);
+                    stats.heap_ambiguous_found += 1;
+                    if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
+                } else if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
+                    try reportStackToGlobal(ctx, func_name, ptr_info, inst, diag);
+                    stats.stack_escapes_found += 1;
+                    if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
+                }
+            }
+        }
+    }
+
+    fn isGlobalVariable(ptr: c.LLVMValueRef) bool {
+        if (ptr == null) return false;
+        const value_kind = c.LLVMGetValueKind(ptr);
+        return value_kind == c.LLVMGlobalVariableValueKind or
+            c.LLVMIsAGlobalVar(ptr) != 0;
     }
 
     fn checkCallViolation(
@@ -493,8 +534,44 @@ pub const PtrLifetimePass = struct {
             if (ptr_info.alloc_site == .stack) {
                 try reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
                 stats.return_stack_addr_found += 1;
+            } else if (ptr_info.alloc_site == .heap) {
+                if (!isIntentionalOwnershipTransfer(func_name)) {
+                    try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
+                    stats.heap_ambiguous_found += 1;
+                } else {
+                    diag.debug("[SUPPRESSED] Heap return in factory function: {s} (intentional ownership transfer)", .{func_name});
+                    stats.heap_intentional_transfer += 1;
+                }
             }
         }
+    }
+
+    fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
+        const factory_prefixes = [_][]const u8{
+            "create", "Create", "CREATE",
+            "new",    "New",    "NEW",
+            "make",   "Make",   "MAKE",
+            "alloc",  "Alloc",  "ALLOC",
+            "malloc", "calloc", "realloc",
+            "open",   "Open",   "init",
+            "Init",   "dup",    "Dup",
+            "clone",  "Clone",  "copy",
+            "Copy",   "from",   "From",
+            "wrap",   "Wrap",   "build",
+            "Build",
+        };
+        for (factory_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) return true;
+        }
+        const factory_suffixes = [_][]const u8{
+            "_create", "_new",  "_make", "_alloc",
+            "_new_",   "_init", "_ctor", "_construct",
+            "_clone",  "_copy", "_dup",  "_from",
+        };
+        for (factory_suffixes) |suffix| {
+            if (std.mem.endsWith(u8, func_name, suffix)) return true;
+        }
+        return false;
     }
 
     fn isFreeFunction(fn_name: []const u8) bool {
@@ -575,6 +652,108 @@ fn reportReturnStackAddr(
 
     try ctx.addIssue(issue);
     diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportReturnHeapPtr(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Function returns heap-allocated pointer");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (caller must free)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Returning heap pointer creates ownership transfer ambiguity - who frees?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Function returns heap-allocated pointer ({s}) - caller may not know to free (CWE-401/CWE-662)",
+        .{ptr_info.source_desc},
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.72,
+        trace,
+    );
+
+    try ctx.addIssue(issue);
+    diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportHeapToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Heap-allocated pointer stored to global variable");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (global lifetime)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage of heap pointer creates leak risk - when is it freed?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) stored to global in {s} - potential memory leak if never freed (CWE-401)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.75,
+        trace,
+    );
+
+    try ctx.addIssue(issue);
+    diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportStackToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Stack-local pointer stored to global variable");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage outlives stack frame - dangling pointer after return");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Stack pointer ({s}) stored to global in {s} - dangling pointer after function returns (CWE-562)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.90,
+        trace,
+    );
+
+    try ctx.addIssue(issue);
+    diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 fn reportUseAfterFree(

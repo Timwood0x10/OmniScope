@@ -53,7 +53,8 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
         baseline-check \
-        install-deps release benchmark benchmark-full
+        install-deps release benchmark benchmark-full \
+        regression-test bench-perf stability-test e2e-test test-all-phase7
 
 # ========================================
 # Default Target - Run All Tests
@@ -601,6 +602,45 @@ corpus-check: corpus
 	@echo "%"
 
 # ========================================
+
+# ========================================
+# Phase 7: Regression Testing & Quality Gate (v0.1.6)
+# ========================================
+
+regression-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           REGRESSION TEST SUITE (v0.1.6)                      ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/regression_test.sh all
+
+bench-perf: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           PERFORMANCE BENCHMARK (v0.1.6)                      ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/bench_perf.sh all
+
+stability-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           STABILITY TEST SUITE (v0.1.6)                       ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/stability_test.sh all
+
+e2e-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           END-TO-END PIPELINE TEST                            ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/stability_test.sh e2e
+
+test-all-phase7: test regression-test bench-perf stability-test
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           PHASE 7 QUALITY GATE COMPLETE                        ║"
+	@echo "╠════════════════════════════════════════════════════════════════╣"
+	@echo "║  ✓ Unit Tests          (make test)                           ║"
+	@echo "║  ✓ Regression Tests    (make regression-test)                ║"
+	@echo "║  ✓ Performance Bench   (make bench-perf)                     ║"
+	@echo "║  ✓ Stability Tests     (make stability-test)                 ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
 
 # ========================================
 # Help
