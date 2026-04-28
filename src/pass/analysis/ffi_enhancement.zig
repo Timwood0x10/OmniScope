@@ -62,11 +62,11 @@ pub fn classifyRustIntrinsic(name: []const u8) IntrinsicRisk {
 
     // === CRITICAL: Memory operations that directly manipulate raw memory ===
     const critical_intrinsics = [_][]const u8{
-        "copy", "copy_nonoverlapping",
-        "write_bytes", "volatile_set_memory",
-        "volatile_load", "volatile_store",
+        "copy",                    "copy_nonoverlapping",
+        "write_bytes",             "volatile_set_memory",
+        "volatile_load",           "volatile_store",
         "unaligned_volatile_load", "unaligned_volatile_store",
-        "read_via_copy", "write_via_move",
+        "read_via_copy",           "write_via_move",
     };
     for (critical_intrinsics) |intr| {
         if (std.mem.indexOf(u8, base_name, intr) != null) return .critical;
@@ -74,13 +74,11 @@ pub fn classifyRustIntrinsic(name: []const u8) IntrinsicRisk {
 
     // === HIGH: Pointer operations that may produce invalid addresses ===
     const high_intrinsics = [_][]const u8{
-        "offset", "arith_offset", "ptr_offset_from", "ptr_offset_from_unsigned",
-        "ptr_mask", "ptr_guaranteed_cmp",
-        "ptr_metadata", "aggregate_raw_ptr",
-        "slice_get_unchecked",
-        "transmute", "transmute_unchecked",
-        "unchecked_add", "unchecked_sub", "unchecked_mul",
-        "unchecked_div", "unchecked_shl", "unchecked_shr",
+        "offset",              "arith_offset",       "ptr_offset_from",     "ptr_offset_from_unsigned",
+        "ptr_mask",            "ptr_guaranteed_cmp", "ptr_metadata",        "aggregate_raw_ptr",
+        "slice_get_unchecked", "transmute",          "transmute_unchecked", "unchecked_add",
+        "unchecked_sub",       "unchecked_mul",      "unchecked_div",       "unchecked_shl",
+        "unchecked_shr",
     };
     for (high_intrinsics) |intr| {
         if (std.mem.indexOf(u8, base_name, intr) != null) return .high;
@@ -88,9 +86,8 @@ pub fn classifyRustIntrinsic(name: []const u8) IntrinsicRisk {
 
     // === MEDIUM: Type conversion and exception handling ===
     const medium_intrinsics = [_][]const u8{
-        "va_arg", "va_copy", "va_start", "va_end",
-        "catch_unwind", "catch_panic",
-        "panic", "begin_panic",
+        "va_arg",            "va_copy",     "va_start", "va_end",
+        "catch_unwind",      "catch_panic", "panic",    "begin_panic",
         "nontemporal_store",
     };
     for (medium_intrinsics) |intr| {
@@ -99,25 +96,20 @@ pub fn classifyRustIntrinsic(name: []const u8) IntrinsicRisk {
 
     // === LOW: Informational only ===
     const low_intrinsics = [_][]const u8{
-        "size_of", "size_of_val", "size_of_val_raw",
-        "align_of", "align_of_val", "align_of_val_raw",
-        "offset_of", "field_offset",
-        "type_name", "type_id", "type_id_eq", "type_id_vtable",
-        "discriminant_value",
-        "vtable_size", "vtable_align",
-        "variant_count",
-        "ctpop", "ctlz", "ctlz_nonzero", "cttz", "cttz_nonzero",
-        "bswap", "bitreverse",
-        "rotate_left", "rotate_right",
-        "three_way_compare",
-        "saturating_add", "saturating_sub",
-        "exact_div", "div_exact",
-        "wrapping_add", "wrapping_sub", "wrapping_mul",
-        "add_with_overflow", "sub_with_overflow", "mul_with_overflow",
-        "carryling_mul_add",
-        "disjoint_bitor",
-        "unchecked_funnel_shl", "unchecked_funnel_shr",
-        "carryless_mul",
+        "size_of",              "size_of_val",       "size_of_val_raw",
+        "align_of",             "align_of_val",      "align_of_val_raw",
+        "offset_of",            "field_offset",      "type_name",
+        "type_id",              "type_id_eq",        "type_id_vtable",
+        "discriminant_value",   "vtable_size",       "vtable_align",
+        "variant_count",        "ctpop",             "ctlz",
+        "ctlz_nonzero",         "cttz",              "cttz_nonzero",
+        "bswap",                "bitreverse",        "rotate_left",
+        "rotate_right",         "three_way_compare", "saturating_add",
+        "saturating_sub",       "exact_div",         "div_exact",
+        "wrapping_add",         "wrapping_sub",      "wrapping_mul",
+        "add_with_overflow",    "sub_with_overflow", "mul_with_overflow",
+        "carryling_mul_add",    "disjoint_bitor",    "unchecked_funnel_shl",
+        "unchecked_funnel_shr", "carryless_mul",
     };
     for (low_intrinsics) |intr| {
         if (std.mem.indexOf(u8, base_name, intr) != null) return .low;
@@ -229,16 +221,15 @@ const RUST_DROP_GLUE_PATTERNS = &[_][]const u8{
 
 /// Rust monomorphization artifact patterns.
 const RUST_MONO_PATTERNS = &[_][]const u8{
-    "$LT$", "$GT$", "$u20$", "$C$", "$BP$",
-    "_RNv", "_RIN", "_RIC",
-    "::hash::", "::fmt::", "::panicking::",
-    "_ZN4core", "_ZN5alloc", "_ZN3std",
+    "$LT$",          "$GT$",     "$u20$",     "$C$",      "$BP$",
+    "_RNv",          "_RIN",     "_RIC",      "::hash::", "::fmt::",
+    "::panicking::", "_ZN4core", "_ZN5alloc", "_ZN3std",
 };
 
 /// Rust stdlib prefixes.
 const RUST_STDLIB_PREFIXES = &[_][]const u8{
     "_ZN4core", "_ZN5alloc", "_ZN3std",
-    "core::", "alloc::", "std::",
+    "core::",   "alloc::",   "std::",
 };
 
 fn isRustDropGlue(name: []const u8) bool {
@@ -280,17 +271,17 @@ fn isRustExternC(name: []const u8) bool {
 // ============================================================================
 
 const ZIG_COMPILER_PATTERNS = &[_][]const u8{
-    "zig_start", "__zig_launch",
-    "GeneralPurposeAllocator",
-    "array_list", "hash_map",
-    "start.zig", "panic.zig",
+    "zig_start",               "__zig_launch",
+    "GeneralPurposeAllocator", "array_list",
+    "hash_map",                "start.zig",
+    "panic.zig",
 };
 
 const ZIG_STDLIB_PATTERNS = &[_][]const u8{
-    "std.", "zig.",
-    "mem.Allocator", "ArrayList",
+    "std.",               "zig.",
+    "mem.Allocator",      "ArrayList",
     "StringArrayHashMap", "AutoHashMap",
-    "fmt.allocPrint", "heap.GeneralPurposeAllocator",
+    "fmt.allocPrint",     "heap.GeneralPurposeAllocator",
 };
 
 fn isZigCompilerGenerated(name: []const u8) bool {
@@ -322,14 +313,16 @@ fn isZigExtern(name: []const u8) bool {
 
 const CPP_STDLIB_PATTERNS = &[_][]const u8{
     "std::__", "__gnu_cxx::__", "__cxa_",
-    "_ZSt", "_ZNSt",
-    "__clang_call_terminate",
+    "_ZSt",    "_ZNSt",         "__clang_call_terminate",
 };
 
 const CPP_COMPILER_PATTERNS = &[_][]const u8{
     "__clang_call_terminate",
-    "__cxa_throw", "__cxa_begin_catch", "__cxa_end_catch",
-    "_GLOBAL__sub_", "_Z41__static_initialization",
+    "__cxa_throw",
+    "__cxa_begin_catch",
+    "__cxa_end_catch",
+    "_GLOBAL__sub_",
+    "_Z41__static_initialization",
 };
 
 fn isCppStdlib(name: []const u8) bool {
@@ -368,7 +361,7 @@ const GO_RUNTIME_PATTERNS = &[_][]const u8{
 };
 
 const GO_CGO_GLUE_PATTERNS = &[_][]const u8{
-    "_cgo_", "_Cfunc_", "_cgo_gotypes",
+    "_cgo_",      "_Cfunc_", "_cgo_gotypes",
     "crosscall2",
 };
 
@@ -398,16 +391,15 @@ fn isGoUserFunc(name: []const u8) bool {
 // ============================================================================
 
 const C_STDLIB_FUNCTIONS = &[_][]const u8{
-    "malloc", "calloc", "realloc", "free",
-    "printf", "fprintf", "sprintf", "snprintf",
-    "scanf", "fscanf", "sscanf",
-    "strcpy", "strncpy", "strcat", "strncat",
-    "memcpy", "memmove", "memset", "memcmp",
-    "open", "close", "read", "write",
-    "fopen", "fclose", "fread", "fwrite",
-    "pthread_create", "pthread_mutex_lock",
-    "signal", "abort", "exit", "_exit",
-    "mmap", "munmap", "mprotect",
+    "malloc",             "calloc",  "realloc", "free",
+    "printf",             "fprintf", "sprintf", "snprintf",
+    "scanf",              "fscanf",  "sscanf",  "strcpy",
+    "strncpy",            "strcat",  "strncat", "memcpy",
+    "memmove",            "memset",  "memcmp",  "open",
+    "close",              "read",    "write",   "fopen",
+    "fclose",             "fread",   "fwrite",  "pthread_create",
+    "pthread_mutex_lock", "signal",  "abort",   "exit",
+    "_exit",              "mmap",    "munmap",  "mprotect",
 };
 
 fn isCStandardLib(name: []const u8) bool {

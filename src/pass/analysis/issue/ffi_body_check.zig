@@ -594,9 +594,9 @@ pub const FFIBodyCheckPass = struct {
                     const num_operands = c.LLVMGetNumOperands(inst);
                     if (num_operands >= 1) {
                         const called_value = c.LLVMGetOperand(inst, num_operands - 1);
-                        if (called_value != null) {
+                        if (@intFromPtr(called_value) != 0) {
                             const func_name = c.LLVMGetValueName(called_value);
-                            if (func_name != null) {
+                            if (@intFromPtr(func_name) != 0) {
                                 const func_name_slice = std.mem.span(func_name);
 
                                 // Noise reduction: skip truly low risk functions

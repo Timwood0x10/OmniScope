@@ -340,7 +340,10 @@ pub const CallbackEscapePass = struct {
         stats: *EscapeStats,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = std.mem.span(func_name_ptr);
+        const func_name = if (@intFromPtr(func_name_ptr) != 0)
+            std.mem.span(func_name_ptr)
+        else
+            "unknown";
 
         stats.total_functions_analyzed += 1;
 
@@ -430,9 +433,10 @@ pub const CallbackEscapePass = struct {
                             const arg = c.LLVMGetOperand(inst, i);
                             if (@intFromPtr(arg) != 0) {
                                 const arg_type = c.LLVMTypeOf(arg);
+                                if (@intFromPtr(arg_type) == 0) continue;
                                 if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
                                     const elem_type = c.LLVMGetElementType(arg_type);
-                                    if (elem_type != null and
+                                    if (@intFromPtr(elem_type) != 0 and
                                         c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
                                     {
                                         if (isLikelyCallbackFunction(elem_type, callee_name)) {
@@ -453,9 +457,10 @@ pub const CallbackEscapePass = struct {
                     const value_op = c.LLVMGetOperand(inst, 0);
                     if (@intFromPtr(value_op) != 0) {
                         const value_type = c.LLVMTypeOf(value_op);
+                        if (@intFromPtr(value_type) == 0) continue;
                         if (c.LLVMGetTypeKind(value_type) == c.LLVMPointerTypeKind) {
                             const elem_type = c.LLVMGetElementType(value_type);
-                            if (elem_type != null and
+                            if (@intFromPtr(elem_type) != 0 and
                                 c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
                             {
                                 const ptr_op = c.LLVMGetOperand(inst, 1);
@@ -568,7 +573,9 @@ pub const CallbackEscapePass = struct {
                 while (i < num_ops) : (i += 1) {
                     const op = c.LLVMGetOperand(inst, i);
                     if (@intFromPtr(op) != 0) {
-                        const type_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(op));
+                        const op_type = c.LLVMTypeOf(op);
+                        if (@intFromPtr(op_type) == 0) continue;
+                        const type_kind = c.LLVMGetTypeKind(op_type);
                         if (type_kind == c.LLVMPointerTypeKind) {
                             has_ptr_arg = true;
                             break;

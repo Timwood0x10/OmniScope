@@ -159,10 +159,11 @@ pub const LockPass = struct {
 
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known lock function
@@ -197,10 +198,11 @@ pub const LockPass = struct {
 
         // Get called function - use LLVMGetCalledValue for call instructions
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check for common lock acquire patterns (more precise than just "lock")

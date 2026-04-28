@@ -179,7 +179,7 @@ pub const AttributionSummary = struct {
             self.suppressed_issues,
             if (self.total_raw_issues > 0)
                 @as(f64, @floatFromInt(self.suppressed_issues)) /
-                @as(f64, @floatFromInt(self.total_raw_issues)) * 100.0
+                    @as(f64, @floatFromInt(self.total_raw_issues)) * 100.0
             else
                 0.0,
         });

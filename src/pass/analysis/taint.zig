@@ -188,10 +188,11 @@ pub const TaintPass = struct {
     fn isTaintSource(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint source
@@ -277,6 +278,7 @@ pub const TaintPass = struct {
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint sink

@@ -218,13 +218,19 @@ pub const PointerOwnershipPass = struct {
         defer analysis_timer.stop() catch {};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
-
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
             const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
             ctx.zone_stats.record(zone);
+
+            // Skip declarations (extern functions without bodies in this module).
+            // PointerOwnership is an intra-procedural pass that scans instructions
+            // inside function bodies (alloc/store/load/call/GEP). Declarations have
+            // no body to analyze — their effects are handled at call sites within
+            // defined (non-declaration) caller functions. Zone classification is
+            // recorded above for accurate statistics before skipping.
+            if (c.LLVMIsDeclaration(func) != 0) continue;
 
             switch (zone) {
                 .safe, .runtime_internal => {

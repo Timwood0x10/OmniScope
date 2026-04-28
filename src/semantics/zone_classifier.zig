@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
+const debug_info = @import("../ir/debug_info.zig");
 
 /// Zone classification for code regions.
 pub const ZoneKind = enum(u8) {
@@ -363,10 +364,12 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
 
 /// Classify a function using LLVM metadata (more precise than string matching).
 ///
-/// Uses LLVM API to check:
-/// - IsDeclaration: external declarations are typically library/runtime code
-/// - Linkage type: internal linkage = user code, external = library
-/// - IntrinsicID: compiler intrinsics should be skipped
+/// Uses LLVM API to check (in priority order):
+///   1. IsDeclaration: external declarations are typically library/runtime code
+///   2. Linkage type: internal linkage = user code, external = library
+///   3. IntrinsicID: compiler intrinsics should be skipped
+///   4. Subprogram debug info path: source file location for stdlib detection
+///   5. String-based fallback: name pattern matching
 pub fn classifyFunctionFromLLVM(
     func: c.LLVMValueRef,
     func_name: []const u8,
@@ -399,8 +402,84 @@ pub fn classifyFunctionFromLLVM(
         return .runtime_internal; // All intrinsics are safe
     }
 
+    // Layer 4: Use LLVM subprogram debug metadata for source-path-based classification
+    // This is more accurate than string matching because it uses actual source locations
+    if (classifyBySubprogramPath(func)) |zone| {
+        return zone;
+    }
+
     // For defined functions, use string-based classification as fallback
     return classifyFunction(func_name, null);
+}
+
+/// Classify a function by its LLVM DISubprogram debug metadata source path.
+///
+/// Checks the source file location from debug info to determine if the function
+/// comes from standard library vs user code. This is significantly more accurate
+/// than name-based heuristics, especially for mangled names (Rust _ZN*, C++ _Z*).
+///
+/// Returns:
+///   ZoneKind if classification succeeded via debug path, null otherwise
+fn classifyBySubprogramPath(func: c.LLVMValueRef) ?ZoneKind {
+    const subprogram = debug_info.DebugInfoUtils.getFunctionSubprogram(func) orelse return null;
+
+    // Use the same approach as ffi_boundary.extractDebugFilePath (verified working)
+    const file_ref = c.LLVMDIScopeGetFile(subprogram.raw);
+    if (@intFromPtr(file_ref) == 0) return null;
+
+    var filename_len: c_uint = undefined;
+    const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+    if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+    const max_path_len: c_uint = 4096;
+    if (filename_len > max_path_len) return null;
+    if (filename_ptr[0] == 0) return null;
+
+    const filename = filename_ptr[0..filename_len];
+
+    // Rust standard library paths → runtime_internal (skip analysis)
+    const rust_stdlib_paths = [_][]const u8{
+        "/rustc/",         "/.rustup/",        "/rustlib/",
+        "library/core/",   "library/alloc/",   "library/std/",
+        "/src/libcore/",   "/src/liballoc/",   "/src/libstd/",
+        "cargo/registry/", ".cargo/registry/",
+    };
+    for (rust_stdlib_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // Zig standard library paths → runtime_internal
+    const zig_stdlib_paths = [_][]const u8{
+        "/zig/lib/std/", "/zig/lib/builtin/",
+        "lib/std/",      "lib/builtin/",
+    };
+    for (zig_stdlib_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // Go runtime paths → runtime_internal
+    const go_runtime_paths = [_][]const u8{
+        "/usr/local/go/src/runtime/", "/go/src/runtime/",
+        "go/src/runtime/",            "_cgo_gotypes.go",
+    };
+    for (go_runtime_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // C/C++ system header paths → safe
+    const system_paths = [_][]const u8{
+        "/usr/include/",  "/usr/local/include/",
+        "/include/",      "/sysroot/",
+        "/llvm-project/", "/libcxx/",
+    };
+    for (system_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .safe;
+    }
+
+    // CGo generated files → runtime_internal (compiler-generated glue)
+    if (std.mem.indexOf(u8, filename, "_cgo_") != null) return .runtime_internal;
+
+    return null; // No match — fall through to string-based classification
 }
 
 /// Check if function name looks like runtime internal code.

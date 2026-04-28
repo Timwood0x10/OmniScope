@@ -161,6 +161,7 @@ pub const AliasPass = struct {
     fn collectPointer(self: *AliasPass, inst: c.LLVMValueRef) !void {
         // Get type
         const inst_type = c.LLVMTypeOf(inst);
+        if (@intFromPtr(inst_type) == 0) return;
         const type_kind = c.LLVMGetTypeKind(inst_type);
 
         // Check if this is a pointer type

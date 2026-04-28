@@ -862,10 +862,12 @@ pub fn detectResourceLeaks(
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
 
-                const callee = c.LLVMGetOperand(inst, @intCast(c.LLVMGetNumOperands(inst) - 1));
+                const num_operands = c.LLVMGetNumOperands(inst);
+                if (num_operands == 0) continue;
+                const callee = c.LLVMGetOperand(inst, @intCast(num_operands - 1));
                 if (@intFromPtr(callee) == 0) continue;
                 const callee_name = c.LLVMGetValueName(callee);
-                if (callee_name == null) continue;
+                if (@intFromPtr(callee_name) == 0) continue;
                 const name_slice = std.mem.span(callee_name);
 
                 var res_iter = resource_funcs.iterator();

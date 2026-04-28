@@ -109,10 +109,9 @@ const PACKED_STRUCT_PATTERNS = &[_][]const u8{
 
 /// Functions known to be variadic (take variable arguments).
 const VARIADIC_FUNCTIONS = &[_][]const u8{
-    "printf", "fprintf", "sprintf", "snprintf",
-    "scanf", "fscanf", "sscanf",
-    "openlog", "syslog",
-    "execl", "execle", "execlp",
+    "printf",         "fprintf", "sprintf", "snprintf",
+    "scanf",          "fscanf",  "sscanf",  "openlog",
+    "syslog",         "execl",   "execle",  "execlp",
     "pthread_create",
 };
 
@@ -158,7 +157,7 @@ pub fn isExternCall(callee_name: []const u8) bool {
     }
 
     const common_extern_prefixes = [_][]const u8{
-        "SDL_", "GL_", "glfw", "curl", "openssl",
+        "SDL_",     "GL_",     "glfw", "curl",  "openssl",
         "pthread_", "signal(", "mmap", "ioctl",
     };
     for (common_extern_prefixes) |prefix| {
@@ -198,10 +197,8 @@ pub const ABIMismatchPass = struct {
             try analyzeFunction(ctx, func, diag, &stats);
         }
 
-        diag.info("ABIMismatch: analyzed {} funcs, {} extern calls, {} violations found",
-            .{ stats.total_functions_analyzed, stats.extern_calls_checked,
-               stats.packed_struct_violations + stats.alignment_mismatches +
-                   stats.size_mismatches + stats.variadic_issues + stats.endianness_warnings });
+        diag.info("ABIMismatch: analyzed {} funcs, {} extern calls, {} violations found", .{ stats.total_functions_analyzed, stats.extern_calls_checked, stats.packed_struct_violations + stats.alignment_mismatches +
+            stats.size_mismatches + stats.variadic_issues + stats.endianness_warnings });
     }
 
     fn analyzeFunction(

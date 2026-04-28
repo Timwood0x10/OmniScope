@@ -603,6 +603,9 @@ pub const FFIBoundaryPass = struct {
         // v0.1.7: Specialized boundary checks for dynamic loading/JNI/Python
         checkSpecializedBoundary(diag, inst, caller_func, called_name);
 
+        // v0.1.8 tech-debt: Return value escape analysis at FFI boundaries
+        checkReturnValueEscape(diag, inst, caller_func, called_name);
+
         // Phase 3 Task #2: Cross-language type compatibility check
         checkTypeCompatibility(diag, inst);
 
@@ -911,6 +914,112 @@ pub const FFIBoundaryPass = struct {
         }
     }
 
+    /// Check if the return value of an FFI call escapes to unsafe contexts.
+    ///
+    /// Return value escape patterns:
+    /// 1. Stored to global variable (cross-function lifetime escape)
+    /// 2. Passed to another FFI function as argument (may be held long-term)
+    /// 3. Used as callback parameter (may outlive caller's stack frame)
+    ///
+    /// This is critical for FFI safety because escaped pointers/references
+    /// may be used after their valid lifetime ends (CWE-416, CWE-562).
+    fn checkReturnValueEscape(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        _: c.LLVMValueRef,
+        callee_name: []const u8,
+    ) void {
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return;
+
+        // Only analyze FFI boundary calls that return pointer-like types
+        const result_type = c.LLVMTypeOf(inst);
+        if (@intFromPtr(result_type) == 0) return;
+        if (c.LLVMGetTypeKind(result_type) != c.LLVMPointerTypeKind and
+            c.LLVMGetTypeKind(result_type) != c.LLVMIntegerTypeKind)
+        {
+            return;
+        }
+
+        // Scan all uses of this instruction's result in the same function
+        var use = c.LLVMGetFirstUse(inst);
+        while (@intFromPtr(use) != 0) : (use = c.LLVMGetNextUse(use)) {
+            const user_inst = c.LLVMGetUser(use);
+            if (@intFromPtr(user_inst) == 0) continue;
+            const user_opcode = c.LLVMGetInstructionOpcode(user_inst);
+
+            // Pattern 1: Store to global variable → cross-function lifetime escape
+            if (user_opcode == c.LLVMStore) {
+                const ptr_op = c.LLVMGetOperand(user_inst, 1);
+                if (@intFromPtr(ptr_op) != 0 and
+                    c.LLVMGetValueKind(ptr_op) == c.LLVMGlobalVariableValueKind)
+                {
+                    diag.warn("  [RETURN-ESCAPE] {s} return value stored to global variable — may outlive function scope", .{callee_name});
+                    diag.warn("    Risk: Use-after-return if global is accessed after resource cleanup (CWE-416)", .{});
+                }
+            }
+
+            // Pattern 2: Passed to another extern/FFI function as argument
+            if (user_opcode == c.LLVMCall or user_opcode == c.LLVMInvoke) {
+                const called_val = c.LLVMGetCalledValue(user_inst);
+                if (@intFromPtr(called_val) != 0) {
+                    const name_ptr = c.LLVMGetValueName(called_val);
+                    if (@intFromPtr(name_ptr) != 0) {
+                        const next_callee = std.mem.span(name_ptr);
+                        // Check if it's an FFI boundary function (extern or known pattern)
+                        const is_next_extern = c.LLVMIsDeclaration(called_val) != 0;
+                        const is_known_ffi = isDynamicLoadingFunction(next_callee) or
+                            isJNIFunction(next_callee) or
+                            isPythonCApiFunction(next_callee) or
+                            std.mem.indexOf(u8, next_callee, "pthread_") != null or
+                            std.mem.indexOf(u8, next_callee, "socket") != null or
+                            std.mem.indexOf(u8, next_callee, "connect") != null or
+                            std.mem.indexOf(u8, next_callee, "open") != null;
+                        if (is_next_extern or is_known_ffi) {
+                            diag.warn("  [RETURN-ESCAPE] {s} return value passed to another FFI function ({s}) — may be held long-term", .{
+                                callee_name, next_callee,
+                            });
+                            diag.warn("    Risk: Resource lifetime extends beyond caller's control (CWE-562)", .{});
+                        }
+                    }
+                }
+            }
+
+            // Pattern 3: Used as callback argument (pthread_create/signal/etc)
+            if (user_opcode == c.LLVMCall or user_opcode == c.LLVMInvoke) {
+                const called_val = c.LLVMGetCalledValue(user_inst);
+                if (@intFromPtr(called_val) != 0) {
+                    const name_ptr = c.LLVMGetValueName(called_val);
+                    if (@intFromPtr(name_ptr) != 0) {
+                        const next_callee = std.mem.span(name_ptr);
+                        const callback_receivers = [_][]const u8{
+                            "pthread_create",  "signal",                      "sigaction",
+                            "atexit",          "qsort",                       "bsearch",
+                            "RegisterNatives", "SetUnhandledExceptionFilter",
+                        };
+                        for (callback_receivers) |cr| {
+                            if (std.mem.indexOf(u8, next_callee, cr) != null) {
+                                // Check if THIS instruction's result is the callback arg
+                                const num_ops = c.LLVMGetNumOperands(user_inst);
+                                var op_i: u32 = 0;
+                                while (op_i < num_ops) : (op_i += 1) {
+                                    const op = c.LLVMGetOperand(user_inst, op_i);
+                                    if (@intFromPtr(op) == @intFromPtr(inst)) {
+                                        diag.warn("  [RETURN-ESCAPE] {s} return value used as callback arg to {s} — may outlive stack", .{
+                                            callee_name, next_callee,
+                                        });
+                                        diag.warn("    Risk: Callback invoked after caller returns with dangling reference (CWE-562)", .{});
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn checkTypeCompatibility(
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
@@ -1114,6 +1223,7 @@ pub const FFIBoundaryPass = struct {
         // Pattern 1: Taking address of local variable and passing to FFI
         // This is usually OK for input parameters but dangerous for output params
         const num_operands = c.LLVMGetNumOperands(inst);
+        if (num_operands == 0) return;
         var i: c.uint = 0;
         while (i < @as(c.uint, @intCast(num_operands - 1))) : (i += 1) {
             const arg = c.LLVMGetOperand(inst, i);
@@ -1174,6 +1284,7 @@ pub const FFIBoundaryPass = struct {
 
         // 1. Passing NULL to non-nullable pointer parameter
         const num_operands = c.LLVMGetNumOperands(inst);
+        if (num_operands == 0) return;
         var i: c.uint = 0;
         while (i < @as(c.uint, @intCast(num_operands - 1))) : (i += 1) {
             const arg = c.LLVMGetOperand(inst, i);

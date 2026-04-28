@@ -105,19 +105,17 @@ const THREAD_FUNCTIONS = &[_][]const u8{
 
 /// Functions commonly used in signal handlers that are NOT async-signal-safe.
 const SIGNAL_UNSAFE_FUNCTIONS = &[_][]const u8{
-    "malloc", "free", "calloc", "realloc",
-    "printf", "fprintf", "sprintf",
-    "malloc", "syslog",
-    "getpwuid", "getgrgid",
-    "strtok", "asctime", "ctime",
-    "std::string",
+    "malloc",  "free",     "calloc",      "realloc",
+    "printf",  "fprintf",  "sprintf",     "malloc",
+    "syslog",  "getpwuid", "getgrgid",    "strtok",
+    "asctime", "ctime",    "std::string",
 };
 
 /// Callback-like function name patterns.
 const CALLBACK_PATTERNS = &[_][]const u8{
-    "callback", "handler", "on_", "cb_",
-    "_cb", "listener", "observer",
-    "signal_handler", "sig_handler",
+    "callback",    "handler",  "on_",      "cb_",
+    "_cb",         "listener", "observer", "signal_handler",
+    "sig_handler",
 };
 
 /// Check if an instruction or function involves C++ exception handling.
@@ -196,10 +194,8 @@ pub const ThreadCrossingPass = struct {
             try analyzeFunction(ctx, func, diag, &stats);
         }
 
-        diag.info("ThreadCrossing: analyzed {} funcs, {} callbacks, {} violations found",
-            .{ stats.total_functions_analyzed, stats.callbacks_found,
-               stats.exception_ffi_violations + stats.unsynchronized_writes +
-                   stats.lock_risks + stats.signal_unsafe_calls });
+        diag.info("ThreadCrossing: analyzed {} funcs, {} callbacks, {} violations found", .{ stats.total_functions_analyzed, stats.callbacks_found, stats.exception_ffi_violations + stats.unsynchronized_writes +
+            stats.lock_risks + stats.signal_unsafe_calls });
     }
 
     fn analyzeFunction(

@@ -177,6 +177,30 @@ pub const SemanticRegistry = struct {
         return sem.description;
     }
 
+    pub fn layer1Count() usize {
+        return layer1.len;
+    }
+
+    pub fn layer2Count() usize {
+        return layer2.len;
+    }
+
+    pub fn layer3Count() usize {
+        return layer3.len;
+    }
+
+    pub fn layer4Count() usize {
+        return layer4.len;
+    }
+
+    pub fn layer5Count() usize {
+        return layer5.len;
+    }
+
+    pub fn layer6Count() usize {
+        return layer6.len;
+    }
+
     pub fn totalCount() usize {
         return layer1.len + layer2.len + layer3.len + layer4.len + layer5.len + layer6.len +
             jni.len + python_c_api.len + file_io.len + network_io.len +
