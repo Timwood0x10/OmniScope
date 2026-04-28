@@ -111,8 +111,8 @@ pub const cross_lang = struct {
     pub const PtrAllocSite = @import("pass/analysis/ptr_lifetime.zig").PtrAllocSite;
     pub const LifetimeViolation = @import("pass/analysis/ptr_lifetime.zig").LifetimeViolation;
     pub const LifetimeStats = @import("pass/analysis/ptr_lifetime.zig").LifetimeStats;
-    pub const isExternFunction = @import("pass/analysis/ptr_lifetime.zig").isExternFunction;
-    pub const mayRetainPointer = @import("pass/analysis/ptr_lifetime.zig").mayRetainPointer;
+    pub const is_extern_function = @import("pass/analysis/ptr_lifetime.zig").is_extern_function;
+    pub const may_retain_pointer = @import("pass/analysis/ptr_lifetime.zig").may_retain_pointer;
 
     pub const CallbackEscapePass = @import("pass/analysis/callback_escape.zig").CallbackEscapePass;
     pub const EscapeViolation = @import("pass/analysis/callback_escape.zig").EscapeViolation;

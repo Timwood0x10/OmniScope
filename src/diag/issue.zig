@@ -500,6 +500,12 @@ pub const FFIBoundary = struct {
         c_to_rust,
         /// C calling Zig
         c_to_zig,
+        /// Dynamic library loading (dlopen/dlsym/dlclose)
+        dynamic_loading,
+        /// Java Native Interface call
+        jni_call,
+        /// Python C API call
+        python_c_api_call,
         /// Unknown external call
         external_unknown,
     };

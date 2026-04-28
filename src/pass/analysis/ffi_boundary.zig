@@ -235,35 +235,34 @@ pub const FFIBoundaryPass = struct {
     /// Returns the source file path if available, null otherwise.
     /// This enables Layer 2 (Path-based) noise filtering for precise stdlib detection.
     fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
-        // Get subprogram (debug info) from function
         const subprogram = c.LLVMGetSubprogram(func);
         if (@intFromPtr(subprogram) == 0) return null;
 
-        // Get file from scope
         const file_ref = c.LLVMDIScopeGetFile(subprogram);
         if (@intFromPtr(file_ref) == 0) return null;
 
-        // Get filename from DIFile
         var filename_len: c_uint = undefined;
         const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
         if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
 
-        // Safety: limit max path length to prevent issues with corrupt metadata
-        const max_path_len = 4096;
+        const max_path_len: c_uint = 4096;
         if (filename_len > max_path_len) return null;
 
-        // Validate that the pointer points to readable memory
-        // by checking for null terminator within bounds
-        var valid = true;
-        for (filename_ptr[0..filename_len]) |ch| {
-            if (ch == 0) {
-                valid = false;
+        if (filename_ptr[0] == 0) return null;
+
+        var has_null_terminator = false;
+        var i: c_uint = 0;
+        while (i < filename_len) : (i += 1) {
+            if (filename_ptr[i] == 0) {
+                has_null_terminator = true;
                 break;
             }
         }
-        if (!valid) return null;
 
-        // Return as slice (valid for duration of analysis)
+        if (!has_null_terminator and filename_ptr[filename_len - 1] != 0) {
+            return null;
+        }
+
         return filename_ptr[0..filename_len];
     }
 
@@ -421,7 +420,7 @@ pub const FFIBoundaryPass = struct {
                 // FP suppression: intentional/safe/test patterns
                 // Functions named safe_*, correct_*, test_*, demo_* etc.
                 // are reference implementations, not production code
-                if (isLikelyIntentionalPattern(caller_demangled)) {
+                if (is_likely_intentional_pattern(caller_demangled)) {
                     diag.debug("[SUPPRESSED] RISKY LIBC CALL in intentional function: {s} -> {s}", .{ caller_demangled, callee_demangled });
                     stats.suppressed_intentional += 1;
                 } else {
@@ -473,7 +472,7 @@ pub const FFIBoundaryPass = struct {
             // Skip known-safe Zig internal functions and @cImport bindings
             if (caller_lang == .zig or caller_lang == .unknown) {
                 // Check Zig-specific filters
-                if (isZigInternalFunction(caller_name)) {
+                if (is_zig_internal_function(caller_name)) {
                     diag.debug("ZIG-SKIP: {s} -> {s} (internal function)", .{ caller_name, called_name });
                     stats.cross_lang += 1;
                     return false;
@@ -486,7 +485,7 @@ pub const FFIBoundaryPass = struct {
                     }
                 } else {
                     // No semantic info — basic check for safe cimport
-                    if (isZigSafeCImport(called_name)) {
+                    if (is_zig_safe_cimport(called_name)) {
                         diag.debug("ZIG-SKIP: {s} -> {s} (safe cimport)", .{ caller_name, called_name });
                         stats.cross_lang += 1;
                         return false;
@@ -494,7 +493,7 @@ pub const FFIBoundaryPass = struct {
                 }
             }
 
-            const boundary_kind = classifyBoundaryKind(caller_lang, callee_lang);
+            const boundary_kind = classify_boundary_kind_enhanced(caller_lang, callee_lang, called_name);
 
             // Create location
             const location = Location.init(caller_name);
@@ -601,6 +600,9 @@ pub const FFIBoundaryPass = struct {
         // P1 Task 2.1: Validate API contract compliance
         validateAPIContract(diag, inst, caller_func, sem);
 
+        // v0.1.7: Specialized boundary checks for dynamic loading/JNI/Python
+        checkSpecializedBoundary(diag, inst, caller_func, called_name);
+
         // Phase 3 Task #2: Cross-language type compatibility check
         checkTypeCompatibility(diag, inst);
 
@@ -689,14 +691,20 @@ pub const FFIBoundaryPass = struct {
                     // Check if either operand is our call instruction's result
                     if (@intFromPtr(op0) == @intFromPtr(inst) or @intFromPtr(op1) == @intFromPtr(inst)) {
                         const other_op = if (@intFromPtr(op0) == @intFromPtr(inst)) op1 else op0;
+                        if (c.LLVMIsAConstantPointerNull(other_op) != null) return true;
+                        if (c.LLVMIsAConstantInt(other_op) != null) {
+                            const int_val = c.LLVMConstIntGetSExtValue(other_op);
+                            if (int_val == 0) return true;
+                        }
                         const other_name = c.LLVMGetValueName(other_op);
                         if (@intFromPtr(other_name) != 0) {
                             const name_str = std.mem.span(other_name);
-                            // "null" in LLVM IR
-                            if (std.mem.indexOf(u8, name_str, "null") != null) return true;
+                            if (std.mem.indexOf(u8, name_str, "null") != null or
+                                std.mem.indexOf(u8, name_str, "NULL") != null)
+                            {
+                                return true;
+                            }
                         }
-                        // Also check if it's a constant null (ConstantPointerNull)
-                        if (c.LLVMIsAConstantPointerNull(other_op) != null) return true;
                     }
                 }
             }
@@ -764,6 +772,145 @@ pub const FFIBoundaryPass = struct {
     /// - Size mismatches (i32 vs i64 on different ABIs)
     /// - Function pointer type mismatches
     /// - Struct layout incompatibility (Rust repr(C) vs C struct)
+    fn checkSpecializedBoundary(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        called_name: []const u8,
+    ) void {
+        if (isDynamicLoadingFunction(called_name)) {
+            checkDynamicLoadingSafety(diag, inst, caller_func, called_name);
+        }
+        if (isJNIFunction(called_name)) {
+            checkJNIBoundarySafety(diag, inst, caller_func, called_name);
+        }
+        if (isPythonCApiFunction(called_name)) {
+            checkPythonCApiSafety(diag, inst, caller_func, called_name);
+        }
+    }
+
+    fn checkDynamicLoadingSafety(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        called_name: []const u8,
+    ) void {
+        if (std.mem.indexOf(u8, called_name, "dlopen") != null or
+            std.mem.indexOf(u8, called_name, "dlsym") != null)
+        {
+            const has_null_guard = checkNullGuard(inst, caller_func);
+            if (!has_null_guard) {
+                diag.warn("  [DLOPEN] {s} returns NULL on failure but no NULL check detected", .{called_name});
+                diag.warn("    Risk: NULL pointer dereference / crash (CWE-690)", .{});
+            }
+        }
+
+        if (std.mem.indexOf(u8, called_name, "dlclose") != null) {
+            diag.debug("  [DLOPEN] dlclose called - verify no dlsym-derived pointers are used after this point", .{});
+        }
+    }
+
+    fn checkJNIBoundarySafety(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        called_name: []const u8,
+    ) void {
+        const nullable_jni = [_][]const u8{
+            "FindClass",    "GetMethodID",      "GetStaticMethodID",
+            "GetFieldID",   "GetStaticFieldID", "NewStringUTF",
+            "NewByteArray", "GetObjectClass",
+        };
+        for (nullable_jni) |jni_fn| {
+            if (std.mem.indexOf(u8, called_name, jni_fn) != null) {
+                const has_null_guard = checkNullGuard(inst, caller_func);
+                if (!has_null_guard) {
+                    diag.warn("  [JNI] {s} returns NULL on failure but no NULL check detected", .{called_name});
+                    diag.warn("    Risk: JNI exception pending / NullPointerException (CWE-690)", .{});
+                }
+                break;
+            }
+        }
+
+        const call_methods = [_][]const u8{
+            "CallVoidMethod",       "CallIntMethod",       "CallObjectMethod",
+            "CallStaticVoidMethod", "CallStaticIntMethod", "CallNonvirtualVoidMethod",
+        };
+        for (call_methods) |call_fn| {
+            if (std.mem.indexOf(u8, called_name, call_fn) != null) {
+                diag.warn("  [JNI] {s} called - verify ExceptionCheck/ExceptionClear follows", .{called_name});
+                diag.warn("    Risk: Unchecked JNI exception propagates undefined behavior (CWE-755)", .{});
+                break;
+            }
+        }
+    }
+
+    fn checkPythonCApiSafety(
+        diag: *DiagnosticWriter,
+        inst: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
+        called_name: []const u8,
+    ) void {
+        const nullable_py = [_][]const u8{
+            "PyArg_ParseTuple",      "PyArg_ParseKeywords", "Py_BuildValue",
+            "PyObject_Call",         "PyObject_CallObject", "PyObject_CallFunction",
+            "PyTuple_New",           "PyList_New",          "PyDict_New",
+            "PyLong_AsLong",         "PyFloat_AsDouble",    "PyCapsule_GetPointer",
+            "PyImport_ImportModule",
+        };
+        for (nullable_py) |py_fn| {
+            if (std.mem.indexOf(u8, called_name, py_fn) != null) {
+                const has_null_guard = checkNullGuard(inst, caller_func);
+                if (!has_null_guard) {
+                    diag.warn("  [PYTHON] {s} returns NULL on failure but no NULL check detected", .{called_name});
+                    diag.warn("    Risk: Exception set but not checked / crash (CWE-690/CWE-252)", .{});
+                }
+                break;
+            }
+        }
+
+        const gil_required_patterns = [_][]const u8{
+            "PyEval_EvalCode",
+            "PyEval_CallObject",
+            "PyEval_CallFunction",
+            "PyObject_CallObject",
+            "PyObject_CallFunction",
+            "PyObject_CallMethod",
+            "PyRun_SimpleString",
+            "PyRun_File",
+            "PyImport_Import",
+            "PyImport_ReloadModule",
+            "PyObject_GetAttr",
+            "PyObject_SetAttr",
+            "PyObject_GetItem",
+            "PyObject_SetItem",
+        };
+        var needs_gil = false;
+        for (gil_required_patterns) |p| {
+            if (std.mem.indexOf(u8, called_name, p) != null) {
+                needs_gil = true;
+                break;
+            }
+        }
+        if (needs_gil) {
+            diag.warn("  [PYTHON] {s} requires GIL - verify PyGILState_Ensure or PyGILState_GetThisThreadState", .{called_name});
+            diag.warn("    Race condition risk if called without GIL (CWE-362/CWE-662)", .{});
+        }
+
+        const error_check_patterns = [_][]const u8{
+            "PyArg_ParseTuple",     "PyArg_ParseKeywords",   "Py_BuildValue",
+            "PyObject_Call",        "PyDict_GetItem",        "PyList_GetItem",
+            "PyTuple_GetItem",      "PyLong_AsLong",         "PyFloat_AsDouble",
+            "PyCapsule_GetPointer", "PyImport_ImportModule",
+        };
+        for (error_check_patterns) |p| {
+            if (std.mem.indexOf(u8, called_name, p) != null) {
+                diag.debug("  [PYTHON] {s} may set exception - consider PyErr_Occurred() check after call", .{called_name});
+                break;
+            }
+        }
+    }
+
     fn checkTypeCompatibility(
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
@@ -1073,7 +1220,7 @@ pub const FFIBoundaryPass = struct {
     /// Check if a Zig function is an internal/runtime function (SAFE — skip analysis).
     /// Based on zig_ffi_filter.md: Zig compiler-generated helpers are guaranteed
     /// safe by the type system and should not generate FFI warnings.
-    pub fn isZigInternalFunction(func_name: []const u8) bool {
+    pub fn is_zig_internal_function(func_name: []const u8) bool {
         // Check against known-safe internal patterns
         for (FFIPatterns.zig_internal_patterns) |pattern| {
             if (std.mem.indexOf(u8, func_name, pattern) != null) {
@@ -1104,7 +1251,7 @@ pub const FFIBoundaryPass = struct {
 
     /// Check if a called C function from @cImport is a known-safe binding.
     /// These are standard libc functions that Zig wraps safely.
-    pub fn isZigSafeCImport(func_name: []const u8) bool {
+    pub fn is_zig_safe_cimport(func_name: []const u8) bool {
         for (FFIPatterns.zig_cimport_safe) |pattern| {
             if (std.mem.eql(u8, func_name, pattern) or
                 std.mem.indexOf(u8, func_name, pattern) != null)
@@ -1123,12 +1270,12 @@ pub const FFIBoundaryPass = struct {
         sem: FunctionSemantics,
     ) bool {
         // Rule 1: Skip if caller is Zig internal function
-        if (isZigInternalFunction(caller_func_name)) {
+        if (is_zig_internal_function(caller_func_name)) {
             return false;
         }
 
         // Rule 2: Skip if callee is known-safe @cImport binding AND not dangerous
-        if (isZigSafeCImport(callee_func_name)) {
+        if (is_zig_safe_cimport(callee_func_name)) {
             // Still report if it's semantically dangerous (system, exec, etc.)
             if (sem.kind == .command_exec or sem.kind == .unchecked_copy) {
                 return true; // Override: dangerous calls always reported
@@ -1321,6 +1468,77 @@ pub const FFIBoundaryPass = struct {
         return false;
     }
 
+    /// Classify FFI boundary with enhanced detection for dynamic loading/JNI/Python
+    fn classify_boundary_kind_enhanced(caller_lang: Language, callee_lang: Language, func_name: []const u8) BoundaryKind {
+        if (isDynamicLoadingFunction(func_name)) return .dynamic_loading;
+        if (isJNIFunction(func_name)) return .jni_call;
+        if (isPythonCApiFunction(func_name)) return .python_c_api_call;
+        return classifyBoundaryKind(caller_lang, callee_lang);
+    }
+
+    fn isDynamicLoadingFunction(func_name: []const u8) bool {
+        const dl_patterns = [_][]const u8{ "dlopen", "dlsym", "dlclose" };
+        for (dl_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
+        return false;
+    }
+
+    fn isJNIFunction(func_name: []const u8) bool {
+        if (std.mem.startsWith(u8, func_name, "JNI_")) return true;
+        if (std.mem.startsWith(u8, func_name, "Java_")) return true;
+        const jni_patterns = [_][]const u8{
+            "FindClass",                "GetMethodID",             "GetStaticMethodID",
+            "GetFieldID",               "GetStaticFieldID",        "NewObject",
+            "CallVoidMethod",           "CallIntMethod",           "CallObjectMethod",
+            "CallStaticVoidMethod",     "CallStaticIntMethod",     "CallStaticObjectMethod",
+            "CallNonvirtualVoidMethod", "CallNonvirtualIntMethod", "NewStringUTF",
+            "NewGlobalRef",             "NewLocalRef",             "DeleteGlobalRef",
+            "DeleteLocalRef",           "NewByteArray",            "AttachCurrentThread",
+            "DetachCurrentThread",      "GetEnv",                  "GetJavaVM",
+            "MonitorEnter",             "MonitorExit",             "ExceptionCheck",
+            "ExceptionClear",           "ExceptionDescribe",       "ExceptionOccurred",
+            "Throw",                    "ThrowNew",                "GetStringUTFChars",
+            "ReleaseStringUTFChars",    "GetObjectField",          "SetObjectField",
+            "GetIntField",              "SetIntField",             "IsSameObject",
+            "IsInstanceOf",
+        };
+        for (jni_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
+        return false;
+    }
+
+    fn isPythonCApiFunction(func_name: []const u8) bool {
+        if (std.mem.startsWith(u8, func_name, "Py_")) return true;
+        if (std.mem.startsWith(u8, func_name, "Py")) {
+            const py_prefixes = [_][]const u8{
+                "PyArg_",        "PyBool",        "PyBytes",          "PyCallable",
+                "PyDict",        "PyErr_",        "PyEval_",          "PyFile",
+                "PyFloat",       "PyFrame",       "PyFrozenSet",      "PyGC_",
+                "PyGetSetDescr", "PyHash",        "PyImport_",        "PyInt_",
+                "PyIter",        "PyList_",       "PyLong",           "PyMapping",
+                "PyMem_",        "PyMethodDescr", "PyModule_",        "PyObject_",
+                "PyProperty",    "PyRange",       "PySeqIter",        "PySet_",
+                "PySlice",       "PyString",      "PyStructSequence", "PySys_",
+                "PyThreadState", "PyTraceBack",   "PyTuple_",         "PyType",
+                "PyUnicode",     "PyWeakref",     "PyCapsule",
+            };
+            for (py_prefixes) |p| {
+                if (std.mem.indexOf(u8, func_name, p) != null) return true;
+            }
+        }
+        const py_gil_patterns = [_][]const u8{
+            "PyGILState_",            "PyEval_InitThreads",
+            "PyEval_RestoreThread",   "PyEval_SaveThread",
+            "Py_BEGIN_ALLOW_THREADS", "Py_END_ALLOW_THREADS",
+        };
+        for (py_gil_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
+        return false;
+    }
+
     /// Check if a function is a C++ ABI runtime internal function.
     /// These are compiler-generated functions for exception handling,
     /// thread-local storage initialization, dynamic type info, and
@@ -1374,7 +1592,7 @@ pub const FFIBoundaryPass = struct {
 
     /// Check if a function name represents a dangerous FFI pattern.
     /// Uses Semantic Registry for comprehensive risk assessment.
-    pub fn isDangerousPattern(func_name: []const u8) bool {
+    pub fn is_dangerous_pattern(func_name: []const u8) bool {
         return SemanticRegistry.isKnown(func_name);
     }
 
@@ -1389,7 +1607,7 @@ pub const FFIBoundaryPass = struct {
     /// These functions should have their FFI warnings suppressed or
     /// downgraded to INFO level, as they are not production code
     /// where real vulnerabilities would matter.
-    pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+    pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
         const intentional_prefixes = [_][]const u8{
             "safe_", // safe_example, safe_usage
             "correct_", // correct_usage, correct_pattern
@@ -1438,52 +1656,98 @@ test "FFIBoundaryPass - deps" {
     try std.testing.expectEqual(@as(usize, 0), FFIBoundaryPass.deps.len);
 }
 
-test "FFIBoundaryPass - isDangerousPattern" {
+test "FFIBoundaryPass - is_dangerous_pattern" {
     // Exact matches from Layer 1 (FFI high-risk functions)
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("system"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("free"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("malloc"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("strcpy"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("system"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("free"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("malloc"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("strcpy"));
 
     // Contains matches from Layer 2 (Rust ownership patterns)
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("into_raw"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("std::boxed::Box<T>::into_raw"));
-    try std.testing.expect(FFIBoundaryPass.isDangerousPattern("as_ptr"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("into_raw"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("std::boxed::Box<T>::into_raw"));
+    try std.testing.expect(FFIBoundaryPass.is_dangerous_pattern("as_ptr"));
 
     // Unknown functions are not flagged
-    try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("safe_func"));
-    try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("print_message"));
-    try std.testing.expect(!FFIBoundaryPass.isDangerousPattern("exec_cmd"));
+    try std.testing.expect(!FFIBoundaryPass.is_dangerous_pattern("safe_func"));
+    try std.testing.expect(!FFIBoundaryPass.is_dangerous_pattern("print_message"));
+    try std.testing.expect(!FFIBoundaryPass.is_dangerous_pattern("exec_cmd"));
 }
 
-test "FFIBoundaryPass - isLikelyIntentionalPattern" {
+test "FFIBoundaryPass - is_likely_intentional_pattern" {
     // Prefix-based intentional patterns
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("safe_example"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("correct_usage"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("test_malloc"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("demo_ffi"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("sample_code"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("bench_alloc"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("fixture_data"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("mock_database"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("stub_network"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("reference_impl"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("safe_example"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("correct_usage"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("test_malloc"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("demo_ffi"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("sample_code"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("bench_alloc"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("fixture_data"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("mock_database"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("stub_network"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("reference_impl"));
 
     // Suffix-based intentional patterns
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("malloc_test"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("free_test"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("malloc_test"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("free_test"));
 
     // Contains-based intentional patterns
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("intentional_leak_example"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("known_safe_function"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("expected_behavior"));
-    try std.testing.expect(FFIBoundaryPass.isLikelyIntentionalPattern("deliberate_mismatch"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("intentional_leak_example"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("known_safe_function"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("expected_behavior"));
+    try std.testing.expect(FFIBoundaryPass.is_likely_intentional_pattern("deliberate_mismatch"));
 
     // Production code should NOT be suppressed
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("process_data"));
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("handle_connection"));
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("encrypt_data"));
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("leak_example"));
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("use_after_free_example"));
-    try std.testing.expect(!FFIBoundaryPass.isLikelyIntentionalPattern("format_string_example"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("process_data"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("handle_connection"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("encrypt_data"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("leak_example"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("use_after_free_example"));
+    try std.testing.expect(!FFIBoundaryPass.is_likely_intentional_pattern("format_string_example"));
+}
+
+test "FFIBoundaryPass - isDynamicLoadingFunction" {
+    try std.testing.expect(FFIBoundaryPass.isDynamicLoadingFunction("dlopen"));
+    try std.testing.expect(FFIBoundaryPass.isDynamicLoadingFunction("dlopen64"));
+    try std.testing.expect(FFIBoundaryPass.isDynamicLoadingFunction("dlsym"));
+    try std.testing.expect(FFIBoundaryPass.isDynamicLoadingFunction("dlclose"));
+    try std.testing.expect(!FFIBoundaryPass.isDynamicLoadingFunction("malloc"));
+    try std.testing.expect(!FFIBoundaryPass.isDynamicLoadingFunction("open"));
+}
+
+test "FFIBoundaryPass - isJNIFunction" {
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("JNI_OnLoad"));
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("FindClass"));
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("GetMethodID"));
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("NewGlobalRef"));
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("DeleteGlobalRef"));
+    try std.testing.expect(FFIBoundaryPass.isJNIFunction("CallVoidMethod"));
+    try std.testing.expect(!FFIBoundaryPass.isJNIFunction("malloc"));
+    try std.testing.expect(!FFIBoundaryPass.isJNIFunction("dlopen"));
+}
+
+test "FFIBoundaryPass - isPythonCApiFunction" {
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("Py_Initialize"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyObject_Call"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyTuple_New"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyList_New"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyDict_New"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyModule_Create"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyImport_ImportModule"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyCapsule_GetPointer"));
+    try std.testing.expect(FFIBoundaryPass.isPythonCApiFunction("PyGILState_Ensure"));
+    try std.testing.expect(!FFIBoundaryPass.isPythonCApiFunction("malloc"));
+    try std.testing.expect(!FFIBoundaryPass.isPythonCApiFunction("dlopen"));
+}
+
+test "FFIBoundaryPass - classify_boundary_kind_enhanced" {
+    try std.testing.expectEqual(BoundaryKind.dynamic_loading, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "dlopen"));
+    try std.testing.expectEqual(BoundaryKind.dynamic_loading, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "dlsym"));
+    try std.testing.expectEqual(BoundaryKind.dynamic_loading, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "dlclose"));
+    try std.testing.expectEqual(BoundaryKind.jni_call, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "JNI_OnLoad"));
+    try std.testing.expectEqual(BoundaryKind.jni_call, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "FindClass"));
+    try std.testing.expectEqual(BoundaryKind.python_c_api_call, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "Py_Initialize"));
+    try std.testing.expectEqual(BoundaryKind.python_c_api_call, FFIBoundaryPass.classify_boundary_kind_enhanced(.c, .unknown, "PyObject_Call"));
+    try std.testing.expectEqual(BoundaryKind.rust_to_c, FFIBoundaryPass.classify_boundary_kind_enhanced(.rust, .c, "malloc"));
+    try std.testing.expectEqual(BoundaryKind.external_unknown, FFIBoundaryPass.classify_boundary_kind_enhanced(.unknown, .unknown, "unknown_func"));
 }

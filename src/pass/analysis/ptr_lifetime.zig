@@ -93,6 +93,23 @@ pub const PtrInfo = struct {
     freed: bool = false,
     /// Basic block where the pointer was allocated (for scope tracking)
     alloc_bb_id: usize = 0,
+    /// Resource handle this pointer is derived from (e.g., dlopen handle for dlsym result)
+    derived_from_handle: ?c.LLVMValueRef = null,
+    /// Type of resource handle if derived
+    resource_type: ResourceType = .none,
+    /// Whether source_desc was dynamically allocated (for safe free)
+    needs_free: bool = false,
+};
+
+/// Resource types for lifecycle tracking.
+pub const ResourceType = enum(u8) {
+    none,
+    dlopen_handle,
+    mmap_region,
+    file_handle,
+    socket_fd,
+    jni_ref,
+    python_obj,
 };
 
 /// Analysis result for a single function.
@@ -160,8 +177,30 @@ const CALLBACK_TAKING_FUNCTIONS = &[_][]const u8{
     "hook",
 };
 
+/// Known deallocator/finalizer functions that release resources.
+/// These are paired with their corresponding allocators to reduce false positives.
+pub const KNOWN_DEALLOCATORS = struct {
+    pub const finalize_functions = &[_][]const u8{
+        "sqlite3_finalize", "sqlite3_step",   "mysql_stmt_close",
+        "stmt_finalize",    "query_finalize", "statement_finalize",
+    };
+    pub const close_functions = &[_][]const u8{
+        "fclose",       "close",        "closedir",            "closed", "shutdown",
+        "SSL_shutdown", "BIO_free_all", "EVP_CIPHER_CTX_free",
+    };
+    pub const free_functions = &[_][]const u8{
+        "sqlite3_free",      "mysql_free_result",   "PQclear", "nghttp2_session_del",
+        "curl_easy_cleanup", "curl_slist_free_all",
+    };
+    pub const destroy_functions = &[_][]const u8{
+        "sqlite3_close", "sqlite3_close_v2", "mysql_close",
+        "destroy",       "Delete",           "Release",
+        "Free",
+    };
+};
+
 /// Check if a callee name looks like an extern/FFI function.
-pub fn isExternFunction(name: []const u8) bool {
+pub fn is_extern_function(name: []const u8) bool {
     if (name.len == 0) return false;
 
     for (FFI_RETAINING_FUNCTIONS) |func| {
@@ -175,9 +214,37 @@ pub fn isExternFunction(name: []const u8) bool {
     return false;
 }
 
+/// Check if function is a known deallocator that releases resources.
+/// Used to reduce false positives in leak detection.
+pub fn is_known_deallocator(func_name: []const u8) bool {
+    inline for (.{ KNOWN_DEALLOCATORS.finalize_functions, KNOWN_DEALLOCATORS.close_functions, KNOWN_DEALLOCATORS.free_functions, KNOWN_DEALLOCATORS.destroy_functions }) |group| {
+        for (group) |dealloc| {
+            if (std.mem.indexOf(u8, func_name, dealloc) != null) return true;
+        }
+    }
+    return false;
+}
+
+fn isResourceCloseFunctionForIntentional(fn_name: []const u8) bool {
+    const close_fns = [_][]const u8{
+        "dlclose",         "munmap",         "fclose",    "close",
+        "DeleteGlobalRef", "DeleteLocalRef", "Py_DECREF", "Py_XDECREF",
+    };
+    for (close_fns) |close_fn| {
+        if (std.mem.indexOf(u8, fn_name, close_fn) != null) return true;
+    }
+    return false;
+}
+
+/// Check if pointer was freed by a known deallocator.
+/// Returns true if the free operation was intentional.
+pub fn is_intentional_free(func_name: []const u8) bool {
+    return is_known_deallocator(func_name) or isResourceCloseFunctionForIntentional(func_name);
+}
+
 /// Check if a function may store/retain its pointer argument.
-pub fn mayRetainPointer(callee_name: []const u8) bool {
-    if (isExternFunction(callee_name)) return true;
+pub fn may_retain_pointer(callee_name: []const u8) bool {
+    if (is_extern_function(callee_name)) return true;
 
     const retaining_patterns = [_][]const u8{
         "register_", "set_",  "add_",   "insert_", "push_",
@@ -197,17 +264,16 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
 
 /// Heap allocation functions.
 const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",         "calloc",        "realloc",        "aligned_alloc",
-    "valloc",         "pvalloc",       "memalign",       "operator new",
-    "operator new[]", "into_raw",      "allocImpl",
-    "mmap",           "dlopen",        "fopen",          "socket",
-    "JNI_OnLoad",     "Py_Initialize",
-    "Py_BuildValue",  "PyTuple_New",   "PyList_New",     "PyDict_New",
-    "NewStringUTF",   "NewByteArray",  "NewGlobalRef",
+    "malloc",         "calloc",        "realloc",      "aligned_alloc",
+    "valloc",         "pvalloc",       "memalign",     "operator new",
+    "operator new[]", "into_raw",      "allocImpl",    "mmap",
+    "dlopen",         "fopen",         "socket",       "JNI_OnLoad",
+    "Py_Initialize",  "Py_BuildValue", "PyTuple_New",  "PyList_New",
+    "PyDict_New",     "NewStringUTF",  "NewByteArray", "NewGlobalRef",
 };
 
 /// Classify the allocation site of a pointer value.
-pub fn classifyPtrOrigin(
+pub fn classify_ptr_origin(
     inst: c.LLVMValueRef,
     opcode: c_uint,
     func: c.LLVMValueRef,
@@ -221,6 +287,7 @@ pub fn classifyPtrOrigin(
                 .alloc_site = .stack,
                 .source_inst = inst,
                 .source_desc = desc,
+                .needs_free = true,
             };
         },
         c.LLVMCall, c.LLVMInvoke => {
@@ -239,6 +306,7 @@ pub fn classifyPtrOrigin(
                         .alloc_site = .heap,
                         .source_inst = inst,
                         .source_desc = desc,
+                        .needs_free = true,
                     };
                 }
             }
@@ -367,6 +435,7 @@ pub const PtrLifetimePass = struct {
                     .source_inst = inst,
                     .source_desc = desc,
                     .alloc_bb_id = bb_id,
+                    .needs_free = true,
                 };
                 try putPtrInfo(pointer_map, inst, info, allocator);
                 stats.total_pointers_tracked += 1;
@@ -387,6 +456,7 @@ pub const PtrLifetimePass = struct {
                                     .source_inst = inst,
                                     .source_desc = desc,
                                     .alloc_bb_id = bb_id,
+                                    .needs_free = true,
                                 };
                                 try putPtrInfo(pointer_map, inst, info, allocator);
                                 stats.total_pointers_tracked += 1;
@@ -394,10 +464,78 @@ pub const PtrLifetimePass = struct {
                             }
                         }
 
+                        if (is_resource_alloc_function(callee_name)) |res_type| {
+                            const desc = try std.fmt.allocPrint(allocator, "resource via {s}()", .{callee_name});
+                            const info = PtrInfo{
+                                .alloc_site = .heap,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                                .alloc_bb_id = bb_id,
+                                .resource_type = res_type,
+                                .needs_free = true,
+                            };
+                            try putPtrInfo(pointer_map, inst, info, allocator);
+                            stats.total_pointers_tracked += 1;
+                        }
+
+                        if (std.mem.indexOf(u8, callee_name, "dlsym") != null) {
+                            const num_ops = c.LLVMGetNumOperands(inst);
+                            var op_idx: u32 = 0;
+                            while (op_idx < @min(num_ops, 2)) : (op_idx += 1) {
+                                const handle_arg = c.LLVMGetOperand(inst, op_idx);
+                                if (@intFromPtr(handle_arg) == 0) continue;
+                                if (pointer_map.get(handle_arg)) |handle_info| {
+                                    if (handle_info.resource_type == .dlopen_handle or
+                                        handle_info.resource_type == .none)
+                                    {
+                                        const desc = try std.fmt.allocPrint(allocator, "dlsym-derived pointer from {s}", .{handle_info.source_desc});
+                                        const info = PtrInfo{
+                                            .alloc_site = .heap,
+                                            .source_inst = inst,
+                                            .source_desc = desc,
+                                            .alloc_bb_id = bb_id,
+                                            .derived_from_handle = handle_arg,
+                                            .resource_type = handle_info.resource_type,
+                                            .needs_free = true,
+                                        };
+                                        try putPtrInfo(pointer_map, inst, info, allocator);
+                                        stats.total_pointers_tracked += 1;
+                                    }
+                                }
+                            }
+                        }
+
                         if (isFreeFunction(callee_name)) {
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (pointer_map.getPtr(ptr_arg)) |ptr_info| {
                                 ptr_info.freed = true;
+                            }
+                        }
+
+                        if (isResourceCloseFunction(callee_name)) |closed_type| {
+                            const handle_arg = c.LLVMGetOperand(inst, 0);
+                            if (pointer_map.getPtr(handle_arg)) |handle_info| {
+                                handle_info.freed = true;
+                                var it = pointer_map.iterator();
+                                while (it.next()) |entry| {
+                                    if (entry.value_ptr.resource_type == closed_type and
+                                        entry.value_ptr.derived_from_handle != null)
+                                    {
+                                        const derived = entry.value_ptr.derived_from_handle.?;
+                                        if (isSameOrAlias(derived, handle_arg)) {
+                                            entry.value_ptr.freed = true;
+                                        }
+                                    }
+                                }
+                            } else {
+                                var it = pointer_map.iterator();
+                                while (it.next()) |entry| {
+                                    if (entry.value_ptr.resource_type == closed_type and
+                                        entry.value_ptr.derived_from_handle == null)
+                                    {
+                                        entry.value_ptr.freed = true;
+                                    }
+                                }
                             }
                         }
                     }
@@ -427,7 +565,7 @@ pub const PtrLifetimePass = struct {
         allocator: std.mem.Allocator,
     ) !void {
         const gop = try map.getOrPut(key);
-        if (gop.found_existing) {
+        if (gop.found_existing and gop.value_ptr.needs_free) {
             allocator.free(gop.value_ptr.source_desc);
         }
         gop.value_ptr.* = info;
@@ -445,6 +583,7 @@ pub const PtrLifetimePass = struct {
             var new_info = src_info;
             new_info.source_desc = desc;
             new_info.alloc_bb_id = bb_id;
+            new_info.needs_free = true;
             try putPtrInfo(pointer_map, dst, new_info, allocator);
         }
     }
@@ -527,7 +666,7 @@ pub const PtrLifetimePass = struct {
 
         const callee_name = std.mem.span(name_ptr);
 
-        if (!mayRetainPointer(callee_name)) return;
+        if (!may_retain_pointer(callee_name)) return;
 
         const num_ops = c.LLVMGetNumOperands(inst);
         var i: u32 = 0;
@@ -546,7 +685,11 @@ pub const PtrLifetimePass = struct {
                     stats.heap_ambiguous_found += 1;
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                 } else if (ptr_info.freed) {
-                    try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    if (ptr_info.resource_type != .none) {
+                        try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    } else {
+                        try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    }
                     stats.use_after_free_found += 1;
                 }
             }
@@ -572,14 +715,44 @@ pub const PtrLifetimePass = struct {
                 stats.return_stack_addr_found += 1;
             } else if (ptr_info.alloc_site == .heap) {
                 if (!isIntentionalOwnershipTransfer(func_name)) {
-                    try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
-                    stats.heap_ambiguous_found += 1;
+                    if (is_lifecycle_bound_return(func_name, ptr_info)) {
+                        diag.debug("[MARKED] Lifecycle-bound return: {s} -> {s} (handle-dependent lifetime)", .{ func_name, ptr_info.source_desc });
+                        stats.heap_intentional_transfer += 1;
+                    } else {
+                        try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
+                        stats.heap_ambiguous_found += 1;
+                    }
                 } else {
                     diag.debug("[SUPPRESSED] Heap return in factory function: {s} (intentional ownership transfer)", .{func_name});
                     stats.heap_intentional_transfer += 1;
                 }
             }
         }
+    }
+
+    fn is_lifecycle_bound_return(func_name: []const u8, ptr_info: PtrInfo) bool {
+        if (ptr_info.resource_type == .none) return false;
+        if (ptr_info.resource_type == .dlopen_handle) {
+            return std.mem.indexOf(u8, func_name, "dlsym") != null;
+        }
+        if (ptr_info.resource_type == .mmap_region) {
+            return std.mem.indexOf(u8, func_name, "mmap") != null;
+        }
+        if (ptr_info.resource_type == .file_handle) {
+            return std.mem.indexOf(u8, func_name, "fopen") != null;
+        }
+        if (ptr_info.resource_type == .socket_fd) {
+            return std.mem.indexOf(u8, func_name, "socket") != null;
+        }
+        if (ptr_info.resource_type == .jni_ref) {
+            return std.mem.indexOf(u8, func_name, "NewStringUTF") != null or
+                std.mem.indexOf(u8, func_name, "NewByteArray") != null;
+        }
+        if (ptr_info.resource_type == .python_obj) {
+            return std.mem.indexOf(u8, func_name, "Py_BuildValue") != null or
+                std.mem.indexOf(u8, func_name, "PyTuple_New") != null;
+        }
+        return false;
     }
 
     fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
@@ -618,19 +791,101 @@ pub const PtrLifetimePass = struct {
         return false;
     }
 
-    fn isResourceCloseFunction(fn_name: []const u8) bool {
-        const close_fns = [_][]const u8{
-            "dlclose", "munmap", "fclose", "close",
-            "DeleteGlobalRef", "DeleteLocalRef",
-            "Py_DECREF", "Py_XDECREF",
-        };
-        for (close_fns) |close_fn| {
-            if (std.mem.indexOf(u8, fn_name, close_fn) != null) return true;
+    fn isResourceCloseFunction(fn_name: []const u8) ?ResourceType {
+        if (std.mem.indexOf(u8, fn_name, "dlclose") != null) return .dlopen_handle;
+        if (std.mem.indexOf(u8, fn_name, "munmap") != null) return .mmap_region;
+        if (std.mem.indexOf(u8, fn_name, "fclose") != null) return .file_handle;
+        if (isSocketClose(fn_name)) return .socket_fd;
+        if (std.mem.indexOf(u8, fn_name, "DeleteGlobalRef") != null or
+            std.mem.indexOf(u8, fn_name, "DeleteLocalRef") != null) return .jni_ref;
+        if (std.mem.indexOf(u8, fn_name, "Py_DECREF") != null or
+            std.mem.indexOf(u8, fn_name, "Py_XDECREF") != null) return .python_obj;
+        return null;
+    }
+
+    fn isSameOrAlias(a: c.LLVMValueRef, b: c.LLVMValueRef) bool {
+        if (@intFromPtr(a) == @intFromPtr(b)) return true;
+        if (isDerivedFrom(a, b) or isDerivedFrom(b, a)) return true;
+        return false;
+    }
+
+    fn isDerivedFrom(value: c.LLVMValueRef, base: c.LLVMValueRef) bool {
+        if (@intFromPtr(value) == 0 or @intFromPtr(base) == 0) return false;
+        const opcode = c.LLVMGetInstructionOpcode(value);
+        if (opcode == c.LLVMBitCast or opcode == c.LLVMPtrToInt or
+            opcode == c.LLVMIntToPtr or opcode == c.LLVMAddrSpaceCast)
+        {
+            const src = c.LLVMGetOperand(value, 0);
+            if (@intFromPtr(src) == @intFromPtr(base)) return true;
+            if (isDerivedFrom(src, base)) return true;
+        }
+        if (opcode == c.LLVMGetElementPtr) {
+            const ptr_op = c.LLVMGetOperand(value, 0);
+            if (@intFromPtr(ptr_op) == @intFromPtr(base)) return true;
+            if (isDerivedFrom(ptr_op, base)) return true;
         }
         return false;
     }
 
-    fn getResourceType(fn_name: []const u8) ?[]const u8 {
+    fn isSocketClose(fn_name: []const u8) bool {
+        const non_socket_patterns = [_][]const u8{
+            "file_",   "document", "database",  "db_",
+            "window",  "dir_",     "stream",    "buf_",
+            "mem_",    "str_",     "xml_",      "json_",
+            "log_",    "config",   "session",   "cache",
+            "mutex",   "lock",     "semaphore", "cond_",
+            "thread",  "process",  "handle",    "ref_",
+            "context", "scope",    "state",     "node",
+        };
+        for (non_socket_patterns) |np| {
+            if (std.mem.indexOf(u8, fn_name, np) != null and
+                std.mem.indexOf(u8, fn_name, "close") != null)
+            {
+                return false;
+            }
+        }
+
+        const exact_matches = [_][]const u8{
+            "close", "::close",
+        };
+        for (exact_matches) |m| {
+            if (std.mem.eql(u8, fn_name, m)) return true;
+        }
+        const socket_patterns = [_][]const u8{
+            "socket_close", "sock_close",  "fd_close",
+            "::close(",     "posix_close", "shutdown",
+        };
+        for (socket_patterns) |p| {
+            if (std.mem.indexOf(u8, fn_name, p) != null) return true;
+        }
+        if (std.mem.endsWith(u8, fn_name, "_close")) {
+            const prefix = fn_name[0 .. fn_name.len - 6];
+            const socket_prefixes = [_][]const u8{
+                "sock",   "fd_",    "conn", "pipe",
+                "listen", "accept",
+            };
+            for (socket_prefixes) |sp| {
+                if (std.mem.indexOf(u8, prefix, sp) != null) return true;
+            }
+        }
+        return false;
+    }
+
+    fn is_resource_alloc_function(fn_name: []const u8) ?ResourceType {
+        if (std.mem.indexOf(u8, fn_name, "dlopen") != null) return .dlopen_handle;
+        if (std.mem.indexOf(u8, fn_name, "mmap64") != null or
+            std.mem.indexOf(u8, fn_name, "mmap2") != null or
+            std.mem.indexOf(u8, fn_name, "mmap") != null) return .mmap_region;
+        if (std.mem.indexOf(u8, fn_name, "shm_open") != null) return .mmap_region;
+        if (std.mem.indexOf(u8, fn_name, "fopen") != null) return .file_handle;
+        if (std.mem.indexOf(u8, fn_name, "socket") != null) return .socket_fd;
+        if (std.mem.indexOf(u8, fn_name, "JNI_") != null or
+            std.mem.indexOf(u8, fn_name, "Java_") != null) return .jni_ref;
+        if (std.mem.startsWith(u8, fn_name, "Py")) return .python_obj;
+        return null;
+    }
+
+    fn get_resource_type(fn_name: []const u8) ?[]const u8 {
         if (std.mem.indexOf(u8, fn_name, "dlopen") != null or std.mem.indexOf(u8, fn_name, "dlsym") != null) return "dlhandle";
         if (std.mem.indexOf(u8, fn_name, "mmap") != null) return "mmap";
         if (std.mem.indexOf(u8, fn_name, "fopen") != null or std.mem.indexOf(u8, fn_name, "FILE") != null) return "file";
@@ -849,6 +1104,61 @@ fn reportUseAfterFree(
     diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
 }
 
+fn reportResourceUAF(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const resource_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlopen handle",
+        .mmap_region => "memory mapping",
+        .file_handle => "file handle",
+        .socket_fd => "socket descriptor",
+        .jni_ref => "JNI reference",
+        .python_obj => "Python object",
+        .none => "resource",
+    };
+
+    const violation_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlclose called while dlsym-derived pointers may still be in use",
+        .mmap_region => "munmap called while pointers to mapped region may still be in use",
+        .file_handle => "fclose called while FILE* may still be used",
+        .socket_fd => "close called while socket fd may still be used",
+        .jni_ref => "DeleteGlobalRef/DeleteLocalRef called while reference may still be in use",
+        .python_obj => "Py_DECREF/Py_XDECREF called while object may still be referenced",
+        .none => "resource released while still in use",
+    };
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Resource used after release");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Resource type: {s}, origin: {s}", .{ resource_desc, ptr_info.source_desc });
+    trace[2] = try makeTraceEntry(ctx.allocator, "{s} - passed to {s}()", .{ violation_desc, callee_name });
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Released {s} ({s}) passed to {s}() - potential use-after-release (CWE-416/CWE-908)",
+        .{ resource_desc, ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .use_after_free,
+        message,
+        location,
+        .critical,
+        0.85,
+        trace,
+    );
+
+    try ctx.addIssue(issue);
+    diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+}
+
 fn reportHeapAmbiguous(
     ctx: *PassContext,
     func_name: []const u8,
@@ -898,23 +1208,23 @@ test "PtrLifetimePass - name and kind" {
     try std.testing.expectEqual(PassKind.analysis, PtrLifetimePass.kind);
 }
 
-test "isExternFunction - known patterns" {
-    try std.testing.expect(isExternFunction("register_callback"));
-    try std.testing.expect(isExternFunction("c_callback"));
-    try std.testing.expect(isExternFunction("pthread_create"));
-    try std.testing.expect(isExternFunction("signal"));
-    try std.testing.expect(!isExternFunction("my_func"));
-    try std.testing.expect(!isExternFunction("printf"));
+test "is_extern_function - known patterns" {
+    try std.testing.expect(is_extern_function("register_callback"));
+    try std.testing.expect(is_extern_function("c_callback"));
+    try std.testing.expect(is_extern_function("pthread_create"));
+    try std.testing.expect(is_extern_function("signal"));
+    try std.testing.expect(!is_extern_function("my_func"));
+    try std.testing.expect(!is_extern_function("printf"));
 }
 
-test "mayRetainPointer - retaining patterns" {
-    try std.testing.expect(mayRetainPointer("register_handler"));
-    try std.testing.expect(mayRetainPointer("set_callback"));
-    try std.testing.expect(mayRetainPointer("add_observer"));
-    try std.testing.expect(mayRetainPointer("store_data"));
-    try std.testing.expect(!mayRetainPointer("memcpy"));
-    try std.testing.expect(!mayRetainPointer("printf"));
-    try std.testing.expect(!mayRetainPointer("free"));
+test "may_retain_pointer - retaining patterns" {
+    try std.testing.expect(may_retain_pointer("register_handler"));
+    try std.testing.expect(may_retain_pointer("set_callback"));
+    try std.testing.expect(may_retain_pointer("add_observer"));
+    try std.testing.expect(may_retain_pointer("store_data"));
+    try std.testing.expect(!may_retain_pointer("memcpy"));
+    try std.testing.expect(!may_retain_pointer("printf"));
+    try std.testing.expect(!may_retain_pointer("free"));
 }
 
 /// Report heap pointer escaping to FFI boundary.
@@ -1015,8 +1325,8 @@ test "LifetimeAnalysisResult - initialization" {
     try std.testing.expectEqualStrings("test_function", result.func_name);
 }
 
-test "classifyPtrOrigin - pattern matching" {
-    try std.testing.expect(classifyPtrOrigin(null, c.LLVMAlloca, null, std.testing.allocator) != null);
+test "classify_ptr_origin - pattern matching" {
+    try std.testing.expect(classify_ptr_origin(null, c.LLVMAlloca, null, std.testing.allocator) != null);
 }
 
 test "isFreeFunction - detection" {
@@ -1049,4 +1359,124 @@ test "getResourceType - classification" {
     try std.testing.expectEqualStrings("python", PtrLifetimePass.getResourceType("Py_BuildValue"));
     try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("malloc"));
     try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("printf"));
+}
+
+test "is_resource_alloc_function - returns ResourceType" {
+    try std.testing.expectEqual(ResourceType.dlopen_handle, PtrLifetimePass.is_resource_alloc_function("dlopen"));
+    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap"));
+    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap64"));
+    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap2"));
+    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("shm_open"));
+    try std.testing.expectEqual(ResourceType.file_handle, PtrLifetimePass.is_resource_alloc_function("fopen"));
+    try std.testing.expectEqual(ResourceType.socket_fd, PtrLifetimePass.is_resource_alloc_function("socket"));
+    try std.testing.expectEqual(ResourceType.jni_ref, PtrLifetimePass.is_resource_alloc_function("JNI_OnLoad"));
+    try std.testing.expectEqual(ResourceType.jni_ref, PtrLifetimePass.is_resource_alloc_function("Java_com_example_MyClass"));
+    try std.testing.expectEqual(ResourceType.python_obj, PtrLifetimePass.is_resource_alloc_function("Py_BuildValue"));
+    try std.testing.expectEqual(ResourceType.python_obj, PtrLifetimePass.is_resource_alloc_function("PyObject_Call"));
+    try std.testing.expectEqual(null, PtrLifetimePass.is_resource_alloc_function("malloc"));
+    try std.testing.expectEqual(null, PtrLifetimePass.is_resource_alloc_function("free"));
+}
+
+test "ResourceType - enum values" {
+    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(ResourceType.none));
+    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(ResourceType.dlopen_handle));
+    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(ResourceType.mmap_region));
+    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(ResourceType.file_handle));
+    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(ResourceType.socket_fd));
+    try std.testing.expectEqual(@as(u8, 5), @intFromEnum(ResourceType.jni_ref));
+    try std.testing.expectEqual(@as(u8, 6), @intFromEnum(ResourceType.python_obj));
+}
+
+test "is_lifecycle_bound_return - dlsym" {
+    const info = PtrInfo{
+        .alloc_site = .heap,
+        .source_inst = null,
+        .source_desc = "resource via dlsym()",
+        .resource_type = .dlopen_handle,
+    };
+    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("dlsym", info));
+    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("malloc", info));
+}
+
+test "is_lifecycle_bound_return - mmap" {
+    const info = PtrInfo{
+        .alloc_site = .heap,
+        .source_inst = null,
+        .source_desc = "resource via mmap()",
+        .resource_type = .mmap_region,
+    };
+    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("mmap", info));
+    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("mmap64", info));
+    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("malloc", info));
+}
+
+test "is_lifecycle_bound_return - file/socket" {
+    const file_info = PtrInfo{
+        .alloc_site = .heap,
+        .source_inst = null,
+        .source_desc = "resource via fopen()",
+        .resource_type = .file_handle,
+    };
+    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("fopen", file_info));
+    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("open", file_info));
+
+    const sock_info = PtrInfo{
+        .alloc_site = .heap,
+        .source_inst = null,
+        .source_desc = "resource via socket()",
+        .resource_type = .socket_fd,
+    };
+    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("socket", sock_info));
+    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("accept", sock_info));
+}
+
+test "is_known_deallocator - finalize" {
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_finalize"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_stmt_close"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("stmt_finalize"));
+}
+
+test "is_known_deallocator - close" {
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("fclose"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("close"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("SSL_shutdown"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("EVP_CIPHER_CTX_free"));
+}
+
+test "is_known_deallocator - free" {
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_free"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_free_result"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("PQclear"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("curl_easy_cleanup"));
+}
+
+test "is_known_deallocator - destroy" {
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_close"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_close"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("Delete"));
+    try std.testing.expect(PtrLifetimePass.is_known_deallocator("Release"));
+}
+
+test "is_known_deallocator - negative" {
+    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("malloc"));
+    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("calloc"));
+    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("dlopen"));
+}
+
+test "is_intentional_free - known deallocators" {
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("sqlite3_finalize"));
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("fclose"));
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("curl_easy_cleanup"));
+}
+
+test "is_intentional_free - resource close" {
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("dlclose"));
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("munmap"));
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("DeleteGlobalRef"));
+    try std.testing.expect(PtrLifetimePass.is_intentional_free("Py_DECREF"));
+}
+
+test "is_intentional_free - negative" {
+    try std.testing.expect(!PtrLifetimePass.is_intentional_free("malloc"));
+    try std.testing.expect(!PtrLifetimePass.is_intentional_free("dlopen"));
 }

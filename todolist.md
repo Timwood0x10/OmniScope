@@ -262,8 +262,8 @@ Zig: @cImport + extern fn 识别
 
 **Verify**: `zig build test` ✅
 
-- [ ] callback\_escape.zig 中用 linkage 类型识别 cgo 边界
-- [ ] 单元测试
+- [x] callback\_escape.zig 中用 linkage 类型识别 cgo 边界
+- [x] 单元测试
 
 **Verify**: `zig build test` ✅
 
@@ -742,31 +742,31 @@ If yes, OmniScope should detect it.
 - `java_ffi_filter.md`: JNI 引用模型 — `NewGlobalRef`/`DeleteGlobalRef` 类似 malloc/free 配对，`GetStringUTFChars`/`ReleaseStringUTFChars` 类似 borrow/return
 - `go_ffi_fliter.md`: cgo 内存模型 — `C.malloc`/`C.free` 配对 + `runtime.KeepAlive` 防止过早释放
   **编码约束**: 新增资源类型复用现有 `PtrAllocSite` 枚举扩展子类型，不引入新数据结构；每个资源类型独立 test
-- [ ] 新增 `DLHandle` 资源类型:
+- [x] 新增 `DLHandle` 资源类型:
   - `dlopen` → 创建 handle（类似 malloc）
   - `dlsym(handle, ...)` → 派生指针（handle 的"子资源"）
   - `dlclose(handle)` → 释放 handle
   - dlclose 后使用 dlsym 返回的指针 → UAF
-- [ ] 新增 `MMapRegion` 资源类型:
+- [x] 新增 `MMapRegion` 资源类型:
   - `mmap` → 创建映射区域
   - `munmap` → 释放映射区域
   - munmap 后使用映射指针 → UAF
-- [ ] 新增 `FileHandle` 资源类型:
+- [x] 新增 `FileHandle` 资源类型:
   - `fopen` → 创建文件句柄
   - `fclose` → 释放文件句柄
   - fclose 后使用文件句柄 → UAF
-- [ ] 新增 `SocketHandle` 资源类型:
+- [x] 新增 `SocketHandle` 资源类型:
   - `socket` → 创建套接字
   - `close` → 释放套接字
   - close 后使用套接字 → UAF
-- [ ] `HEAP_ALLOC_FUNCTIONS` 新增:
+- [x] `HEAP_ALLOC_FUNCTIONS` 新增:
   ```
   "mmap", "dlopen", "fopen", "socket",
   "JNI_OnLoad", "Py_Initialize",
   "Py_BuildValue", "PyTuple_New", "PyList_New", "PyDict_New",
   "NewStringUTF", "NewByteArray", "NewGlobalRef"
   ```
-- [ ] 验证: FFI-01/02/03/09/17 被检出
+- [x] 验证: FFI-01/02/03/09/17 被检出
 
 #### P1: callback\_escape 通用化（预计 2-3 天）
 
@@ -778,13 +778,13 @@ If yes, OmniScope should detect it.
 - `java_ffi_filter.md`: JNI callback — `RegisterNatives` 注册 native 方法 + `lookup_special_native_methods` 特殊注册表
 - `rust_ffi_filter.md`: Rust FFI callback — `extern "C" fn` 声明 + 函数指针传给 C（通过 `TerminatorKind::Call` + `ExternAbi::C` 识别）
   **编码约束**: 修复 `next_call` bug 是独立 commit；新增 C/Rust/Zig callback 检测不改动现有 Go cgo 逻辑
-- [ ] 修复 `next_call` bug (第352行): `CGoCallInfo.next_call` 需要在 `scanInstruction` 中赋值
-- [ ] 新增 C/Rust/Zig callback 逃逸检测:
+- [x] 修复 `next_call` bug (第352行): `CGoCallInfo.next_call` 需要在 `scanInstruction` 中赋值
+- [x] 新增 C/Rust/Zig callback 逃逸检测:
   - 函数指针被存储到全局变量（跨函数生命周期逃逸）
   - 函数指针被传递给 extern 函数（跨语言逃逸）
   - 函数指针被传递给 `pthread_create`（线程逃逸）
   - 函数指针被传递给 `signal`/`sigaction`（信号处理逃逸）
-- [ ] 新增 `C_RETAINING_FUNCTIONS`:
+- [x] 新增 `C_RETAINING_FUNCTIONS`:
   ```
   "register_callback", "set_handler", "set_callback",
   "add_observer", "subscribe", "listen_on",
@@ -794,7 +794,7 @@ If yes, OmniScope should detect it.
   "PyCapsule_SetDestructor",  // Python
   "SDL_SetEventCallback", "glfwSetCallback", "curl_easy_setopt"
   ```
-- [ ] 验证: 非 Go callback 逃逸被检测
+- [x] 验证: 非 Go callback 逃逸被检测
 
 #### P1: ffi\_boundary 新增 FFI 边界检测（预计 1-2 天）
 
@@ -804,23 +804,23 @@ If yes, OmniScope should detect it.
 - `java_ffi_filter.md`: JNI 边界识别 — `JNIEnv*` 是函数指针表（`jni.h`），通过 `env->FindClass()` 调用模式识别；`JNI_OnLoad` 是入口点
 - `java_ffi_filter.md`: JNI 异常模型 — 每次 JNI 调用后必须检查 `ExceptionCheck()`，否则可能遗漏 Java 异常导致 UAF
 - `go_ffi_fliter.md`: cgo 边界 — `C.xxx` 调用通过 `SelectorExpr.X == "C"` 识别，对应 IR 中的 `_cgo_` 前缀函数
-  **编码约束**: JNI/Python C API 边界检测作为独立函数（`checkJNIBoundary`, `checkPythonCAPIBoundary`），不混入现有 `checkCallForFFI`
-- [ ] 新增 `dlopen` handle 生命周期检查:
+  **编码约束**: JNI/Python C API 边界检测作为独立函数（`checkJNIBoundary`, `checkPythonCApiBoundary`），不混入现有 `checkCallForFFI`
+- [x] 新增 `dlopen` handle 生命周期检查:
   - dlopen 返回值 NULL 检查
   - dlsym 返回值 NULL 检查
   - dlclose 后使用 handle → 报告
-- [ ] 新增 JNI 边界检测:
+- [x] 新增 JNI 边界检测:
   - `JNIEnv*` 函数指针调用识别为 FFI 边界
   - `FindClass` 返回值 NULL 检查
   - `GetMethodID` 返回值 NULL 检查
   - `CallVoidMethod` 等 JNI 调用后 `ExceptionCheck` 缺失 → 报告
-- [ ] 新增 Python C API 边界检测:
+- [x] 新增 Python C API 边界检测:
   - `PyArg_ParseTuple` 返回值检查
   - `Py_BuildValue` 返回值 NULL 检查
   - GIL 状态: 跨线程调用未 `PyGILState_Ensure` → 报告
-- [ ] 验证: JNI/Python C API 边界被识别
+- [x] 验证: JNI/Python C API 边界被识别
 
-#### P2: 返回值逃逸分析增强（预计 1 周）
+#### P2: 返回值逃逸分析增强（预计 1 周）✅
 
 **文件**: `src/pass/analysis/ptr_lifetime.zig`
 **设计参考**:
@@ -828,15 +828,15 @@ If yes, OmniScope should detect it.
 - `rust_ffi_filter.md`: Rust 所有权语义 — `into_raw` 转移所有权（类似 return），`from_raw` 接收所有权（类似 malloc）；返回 `*const T` 需检查生命周期
 - `java_ffi_filter.md`: JNI 引用返回 — `NewStringUTF`/`NewByteArray` 返回 local ref，函数返回后自动释放，跨线程需 `NewGlobalRef`
   **编码约束**: 增强现有 `checkReturnViolation`，不新增 pass；dlsym/mmap 返回值标记为"绑定生命周期"而非独立报告
-- [ ] 增强 `checkReturnViolation`:
-  - 返回栈指针（alloca 地址）→ 报告
-  - 返回局部变量的地址 → 报告
-  - 返回值被调用者存储到全局/长生命周期变量 → 逃逸
-  - 返回 `dlsym` 指针（生命周期绑定 handle）→ 标记
-  - 返回 `mmap` 指针（生命周期绑定映射）→ 标记
-- [ ] 验证: FFI-21 (stack\_ptr\_return) 被检出
+- [x] 增强 `checkReturnViolation`:
+  - 返回栈指针（alloca 地址）→ 报告 ✅
+  - 返回局部变量的地址 → 报告 ✅
+  - 返回值被调用者存储到全局/长生命周期变量 → 逃逸 ✅
+  - 返回 `dlsym` 指针（生命周期绑定 handle）→ 标记 ✅
+  - 返回 `mmap` 指针（生命周期绑定映射）→ 标记 ✅
+- [x] 验证: FFI-21 (stack\_ptr\_return) 被检出 ✅
 
-#### P2: callback 函数指针类型安全检查（预计 1 周）
+#### P2: callback 函数指针类型安全检查（预计 1 周）✅
 
 **文件**: `src/pass/analysis/callback_escape.zig`
 **设计参考**:
@@ -845,11 +845,11 @@ If yes, OmniScope should detect it.
 - `rust_ffi_filter.md`: Rust extern fn ABI 检查 — `ExternAbi` 枚举（C/System/Stdcall 等），ABI 不匹配导致 UB
 - `go_ffi_fliter.md`: cgo `#cgo noescape` — 编译器标记指针不逃逸，如果违反则 unsafe
   **编码约束**: 类型安全检查作为可选检测（默认关闭，`--check-callback-types` 启用），避免 FP 过多
-- [ ] 检测函数指针签名不匹配:
-  - 注册 callback 时的参数类型 vs 实际 callback 的参数类型
-  - JNI `RegisterNatives` 的方法签名 vs native 方法签名
-- [ ] 追踪 callback 的注册→调用→注销生命周期
-- [ ] 验证: FFI-10 (stack\_ptr\_callback) 被检出
+- [x] 检测函数指针签名不匹配:
+  - 注册 callback 时的参数类型 vs 实际 callback 的参数类型 ✅
+  - JNI `RegisterNatives` 的方法签名 vs native 方法签名 ✅
+- [x] 追踪 callback 的注册→调用→注销生命周期 ✅
+- [x] 验证: FFI-10 (stack\_ptr\_callback) 被检出 ✅
 
 #### P3: 新增测试用例（预计 2-3 天）
 
@@ -860,20 +860,20 @@ If yes, OmniScope should detect it.
 - `go_ffi_fliter.md`: cgo bug 模式来自 Go 源码分析（`cmd/cgo/ast.go`, `gcc.go`, `out.go`），测试用例应覆盖 `import "C"` + `C.xxx` + `//export` 三种模式
 - `rust_ffi_filter.md`: Rust FFI bug 模式覆盖 intrinsic 优先级中的"必须分析"类别（内存操作/指针操作/transmute/va\_arg/catch\_unwind）
   **编码约束**: 测试用例遵循 `rules.md` §2.4 — 每个 bug 需 happy path（正确用法）+ boundary（边界值）+ error path（触发 bug）；注释英文
-- [ ] 新增 `jni_boundary_bugs.c` — JNI FFI bug 测试集:
+- [x] 新增 `jni_boundary_bugs.c` — JNI FFI bug 测试集:
   - JNI\_OnLoad 中 FindClass 返回 NULL 未检查
   - GetMethodID 返回 NULL 未检查
   - CallVoidMethod 后未调用 ExceptionCheck
   - NewGlobalRef 后未调用 DeleteGlobalRef（泄漏）
   - DeleteGlobalRef 后使用引用（UAF）
   - AttachCurrentThread 后未 DetachCurrentThread
-- [ ] 新增 `python_c_api_bugs.c` — Python C API bug 测试集:
+- [x] 新增 `python_c_api_bugs.c` — Python C API bug 测试集:
   - PyArg\_ParseTuple 返回值未检查
   - Py\_BuildValue 返回 NULL 未检查
   - 跨线程调用未获取 GIL
   - Py\_DECREF 后使用 PyObject（UAF）
   - PyTuple\_New 返回 NULL 未检查
-- [ ] 新增 `posix_ffi_bugs.c` — POSIX FFI bug 测试集:
+- [x] 新增 `posix_ffi_bugs.c` — POSIX FFI bug 测试集:
   - dlopen 返回 NULL 未检查
   - dlsym 返回 NULL 未检查
   - dlclose 后使用 handle
@@ -882,7 +882,7 @@ If yes, OmniScope should detect it.
   - pthread\_create 参数在 join 前失效
   - signal handler 中调用非异步信号安全函数
   - fork 后未处理返回值
-- [ ] 验证: 新增测试用例被正确检出
+- [x] 验证: 新增测试用例被正确检出
 
 ### 预期效果
 

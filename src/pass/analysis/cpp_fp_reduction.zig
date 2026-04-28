@@ -200,7 +200,7 @@ pub fn isMeyersSingletonPattern(func_name: []const u8) bool {
 }
 
 /// Check if a function name matches known intentional test patterns.
-pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
     if (std.mem.eql(u8, func_name, "main")) return true;
     const intentional_prefixes = [_][]const u8{
         "correct_", "valid_",  "example_", "good_",
@@ -950,7 +950,7 @@ pub fn detectMemoryLeaks(
 
         const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph) catch false;
         if (!has_free_path) {
-            if (isLikelyIntentionalPattern(alloc_info.func_name)) {
+            if (is_likely_intentional_pattern(alloc_info.func_name)) {
                 continue;
             }
             if (isLikelyStructMemberOwnership(alloc_info.func_name)) {

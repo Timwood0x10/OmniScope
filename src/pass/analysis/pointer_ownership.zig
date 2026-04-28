@@ -882,8 +882,8 @@ pub const PointerOwnershipPass = struct {
     fn isMeyersSingletonPattern(func_name: []const u8) bool {
         return cpp_fp.isMeyersSingletonPattern(func_name);
     }
-    fn isLikelyIntentionalPattern(func_name: []const u8) bool {
-        return cpp_fp.isLikelyIntentionalPattern(func_name);
+    fn is_likely_intentional_pattern(func_name: []const u8) bool {
+        return cpp_fp.is_likely_intentional_pattern(func_name);
     }
     fn detectRaiiManagedAllocations(
         func: c.LLVMValueRef,
