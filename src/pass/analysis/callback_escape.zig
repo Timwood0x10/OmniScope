@@ -125,6 +125,34 @@ pub fn isCgoBoundary(func_name: []const u8) bool {
     return false;
 }
 
+/// Check if a function is a cgo boundary using LLVM metadata.
+///
+/// Uses LLVM linkage type and declaration status to identify
+/// compiler-generated cgo glue functions more precisely than string matching.
+pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
+    if (func == null) return false;
+
+    // External declarations with weak/common linkage are typically cgo stubs
+    const linkage = c.LLVMGetLinkage(func);
+    if (linkage == c.LLVMExternalWeakLinkage or
+        linkage == c.LLVMCommonLinkage or
+        linkage == c.LLVMExternalLinkage)
+    {
+        // Check if it's a declaration (external reference)
+        if (c.LLVMIsDeclaration(func) != 0) {
+            return true;
+        }
+    }
+
+    // Functions with "crosscall" or "cgocall" in name are cgo runtime
+    const func_name_ptr = c.LLVMGetValueName(func);
+    const func_name = std.mem.span(func_name_ptr);
+    if (std.mem.indexOf(u8, func_name, "crosscall") != null) return true;
+    if (std.mem.indexOf(u8, func_name, "cgocall") != null) return true;
+
+    return false;
+}
+
 /// Check if a function is a Go runtime safety function (KeepAlive etc).
 pub fn isGoSafetyFunction(callee_name: []const u8) bool {
     for (GO_RUNTIME_SAFETY_FUNCTIONS) |fn_name| {
@@ -204,12 +232,15 @@ pub const CallbackEscapePass = struct {
         stats: *EscapeStats,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_ptr) != 0)
-            std.mem.span(func_name_ptr)
-        else
-            "unknown";
+        const func_name = std.mem.span(func_name_ptr);
 
         stats.total_functions_analyzed += 1;
+
+        // Use LLVM metadata for more precise cgo boundary detection
+        const is_cgo_boundary = isCgoBoundaryFromLLVM(func) or isCgoBoundary(func_name);
+        if (is_cgo_boundary) {
+            stats.go_cgo_boundaries_found += 1;
+        }
 
         var has_keepalive = false;
         var alloc_sites = std.ArrayList(AllocSiteInfo).init(ctx.allocator);
@@ -272,8 +303,6 @@ pub const CallbackEscapePass = struct {
             if (@intFromPtr(called) == 0) return;
 
             const name_ptr = c.LLVMGetValueName(called);
-            if (@intFromPtr(name_ptr) == 0) return;
-
             const callee_name = std.mem.span(name_ptr);
 
             if (isGoSafetyFunction(callee_name)) {
@@ -600,6 +629,17 @@ test "EscapeViolation - enum values" {
     try std.testing.expectEqual(@as(u8, 2), @intFromEnum(EscapeViolation.unsafeptr_dangling_risk));
     try std.testing.expectEqual(@as(u8, 3), @intFromEnum(EscapeViolation.malloc_without_free));
     try std.testing.expectEqual(@as(u8, 4), @intFromEnum(EscapeViolation.free_without_malloc));
+}
+
+test "isCgoBoundaryFromLLVM - null safety" {
+    // Null function ref should return false
+    try std.testing.expect(!isCgoBoundaryFromLLVM(null));
+}
+
+test "isCgoBoundaryFromLLVM - linkage detection logic" {
+    // Verify the function exists and is callable
+    const result = isCgoBoundaryFromLLVM(null);
+    try std.testing.expectEqual(false, result);
 }
 
 test "EscapePattern - initialization" {

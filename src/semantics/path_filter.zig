@@ -488,10 +488,7 @@ pub const PathFilterStats = struct {
         switch (result.origin) {
             .user => self.user_code_found += 1,
             .stdlib => {
-                if (std.mem.indexOf(u8, result.reason, "Rust") != null) self.rust_stdlib_found += 1
-                else if (std.mem.indexOf(u8, result.reason, "Zig") != null) self.zig_stdlib_found += 1
-                else if (std.mem.indexOf(u8, result.reason, "C++") != null) self.cpp_stdlib_found += 1
-                else if (std.mem.indexOf(u8, result.reason, "Go") != null) self.go_runtime_found += 1;
+                if (std.mem.indexOf(u8, result.reason, "Rust") != null) self.rust_stdlib_found += 1 else if (std.mem.indexOf(u8, result.reason, "Zig") != null) self.zig_stdlib_found += 1 else if (std.mem.indexOf(u8, result.reason, "C++") != null) self.cpp_stdlib_found += 1 else if (std.mem.indexOf(u8, result.reason, "Go") != null) self.go_runtime_found += 1;
             },
             .compiler_generated => {
                 if (std.mem.indexOf(u8, result.reason, "cgo") != null or
@@ -550,7 +547,7 @@ test "classifyByPath - Zig stdlib" {
 test "classifyByPath - user code" {
     const loc = debug_info.SourceLocation{
         .file = "main.zig",
-        .directory = "/Users/scc/code/zigcode/OmniScope/src",
+        .directory = "～/OmniScope/src",
         .line = 10,
         .column = 4,
     };

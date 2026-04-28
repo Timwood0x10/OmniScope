@@ -15,7 +15,7 @@
 
 **Root cause**: `__memcpy_chk` (glibc fortified memcpy) was registered in SemanticRegistry as `.unchecked_copy` risk. Every call to it in SQLite (278 instances across FTS5, VDBE, pager, btree modules) was flagged as FFI RISK.
 
-**Fix**: Added libc fortified function skip list in [ffi_boundary.zig:210-219](file:///Users/scc/code/zigcode/OmniSope/src/pass/analysis/ffi_boundary.zig#L210):
+**Fix**: Added libc fortified function skip list in [ffi_boundary.zig:210-219](file://～/OmniSope/src/pass/analysis/ffi_boundary.zig#L210):
 ```zig
 const safe_libc_patterns = [_][]const u8{
     "__memcpy_chk", "__memmove_chk", "__memset_chk",

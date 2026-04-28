@@ -1,0 +1,263 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: ～/OmniScope/corpus/ffi-dense/output/zlib_binding.ll
+
+
+[DEBUG] Loading file: ～/OmniScope/corpus/ffi-dense/output/zlib_binding.ll
+[INFO] Loaded: 29 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: inflate_leak
+[31m[ERROR][0m [MEDIUM] FFI RISK: inflate_leak -> inflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:21:5
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib inflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: inflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   CONTRACT WARNING: inflateInit transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to inflateInit_ — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: deflate_leak
+[31m[ERROR][0m [MEDIUM] FFI RISK: deflate_leak -> deflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:35:5
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib deflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: deflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   CONTRACT WARNING: deflateInit transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateInit_ — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: compress_overflow
+[2m[DEBUG][0m ANALYZE [USER]: use_after_free_example
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: use_after_free_example -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:60:19
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: use_after_free_example -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:64:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: use_after_free_example -> printf
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:67:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[2m[DEBUG][0m ANALYZE [USER]: double_free_example
+[31m[ERROR][0m [MEDIUM] FFI RISK: double_free_example -> inflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:78:5
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib inflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: inflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   CONTRACT WARNING: inflateInit transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to inflateInit_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: double_free_example -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:81:21
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: double_free_example -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:90:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m [MEDIUM] FFI RISK: double_free_example -> inflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:93:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib inflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to inflateEnd — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: uninit_stream_example
+[31m[ERROR][0m [MEDIUM] FFI RISK: uninit_stream_example -> inflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:105:5
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib inflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: inflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   CONTRACT WARNING: inflateInit transfers ownership but result may be discarded (leak risk)
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to inflateInit_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: uninit_stream_example -> inflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:110:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib inflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to inflateEnd — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: error_path_leak
+[31m[ERROR][0m [MEDIUM] FFI RISK: error_path_leak -> deflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:119:9
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib deflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: deflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateInit_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: error_path_leak -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:123:21
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] FFI RISK: error_path_leak -> deflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:135:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib deflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateEnd — verify scope safety
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: error_path_leak -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:136:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: gzfile_leak
+[31m[ERROR][0m [MEDIUM] FFI RISK: gzfile_leak -> gzopen
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:143:19
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib gz file open (allocates handle)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: gzopen returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m ANALYZE [USER]: unchecked_gzread
+[31m[ERROR][0m [MEDIUM] FFI RISK: unchecked_gzread -> gzopen
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:154:19
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib gz file open (allocates handle)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: gzopen returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: unchecked_gzread -> printf
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:162:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[31m[ERROR][0m [MEDIUM] FFI RISK: unchecked_gzread -> gzclose
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:164:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib gz file close (frees handle)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m ANALYZE [USER]: invalid_compression_level
+[31m[ERROR][0m [MEDIUM] FFI RISK: invalid_compression_level -> deflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:174:18
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib deflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: deflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateInit_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: invalid_compression_level -> deflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:180:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib deflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateEnd — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: correct_compress
+[31m[ERROR][0m [MEDIUM] FFI RISK: correct_compress -> deflateInit_
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:190:9
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Zlib deflate stream initialization (allocates state)
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: deflateInit returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateInit_ — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: correct_compress -> deflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:202:9
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib deflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateEnd — verify scope safety
+[31m[ERROR][0m [MEDIUM] FFI RISK: correct_compress -> deflateEnd
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/zlib_binding.c:207:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Zlib deflate stream cleanup (frees state)
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to deflateEnd — verify scope safety
+[2m[DEBUG][0m ANALYZE [USER]: main
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 29
+[32m[INFO][0m   FFI Boundaries: 33
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 33
+[32m[INFO][0m     - LibC calls: 12
+[31m[ERROR][0m   Dangerous calls: 24
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in double_free_example
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in error_path_leak
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in deflate_leak
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in gzfile_leak
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in inflate_leak
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in unchecked_gzread
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in use_after_free_example
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in uninit_stream_example
+[2m[DEBUG][0m DOUBLE-FREE-SKIP: 2 frees of alloc 290 in 2 different BBs (correct_compress) — multi-path cleanup
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 150 used after free in error_path_leak
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 263 used after free in invalid_compression_level
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 290 used after free in correct_compress
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 97 used after free in double_free_example
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 128 used after free in uninit_stream_example
+[33m[WARN][0m USE-AFTER-FREE [MEDIUM]: Pointer 290 used after free in correct_compress
+[32m[INFO][0m PointerOwnership: Found 8 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 6 use-after-free issues (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 12 allocations, 10 frees, 12 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 12, reused: 0, in_use: 12
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    12
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                12
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                14[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         4.74      4742.79      4742.79
+detect                                  2         1.61       803.10       828.13
+total                                   1         4.75      4749.17      4749.17
+analysis                                1         4.03      4034.96      4034.96
+[32m[INFO][0m PointerOwnership: 4 ops, 15.13ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 33 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 29
+
+[INFO] Facts generated: 22
+
+[INFO] Report saved to: ～/OmniScope/outputs/audit/zlib_binding.json
+

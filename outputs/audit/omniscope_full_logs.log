@@ -5065,7 +5065,7 @@ analysis                                1       273.06    273056.50    273056.50
 
 [2m[DEBUG][0m ANALYZE [USER]: encrypt_leak_ctx
 [31m[ERROR][0m [HIGH] FFI RISK: encrypt_leak_ctx -> EVP_CIPHER_CTX_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:94:27
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:94:27
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5075,7 +5075,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [2m[DEBUG][0m ANALYZE [USER]: bio_leak
 [31m[ERROR][0m [HIGH] FFI RISK: bio_leak -> BIO_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:103:16
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:103:16
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL BIO allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5085,7 +5085,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [2m[DEBUG][0m ANALYZE [USER]: rsa_key_leak
 [31m[ERROR][0m [HIGH] FFI RISK: rsa_key_leak -> RSA_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:112:16
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:112:16
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL RSA key allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5095,7 +5095,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [2m[DEBUG][0m ANALYZE [USER]: encrypt_unchecked
 [31m[ERROR][0m [HIGH] FFI RISK: encrypt_unchecked -> EVP_CIPHER_CTX_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:125:27
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:125:27
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5104,7 +5104,7 @@ analysis                                1       273.06    273056.50    273056.50
 [33m[WARN][0m   Risk: NULL pointer dereference / crash
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [31m[ERROR][0m [HIGH] FFI RISK: encrypt_unchecked -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:136:5
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:136:5
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
@@ -5112,12 +5112,12 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m ANALYZE [USER]: weak_random
 [2m[DEBUG][0m ANALYZE [USER]: password_handling
 [31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: password_handling -> printf
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:158:5
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:158:5
 [31m[ERROR][0m   Kind: format_string
 [31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
 [2m[DEBUG][0m ANALYZE [USER]: ssl_ctx_leak
 [31m[ERROR][0m [HIGH] FFI RISK: ssl_ctx_leak -> SSL_CTX_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:167:20
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:167:20
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL SSL context allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5127,7 +5127,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [2m[DEBUG][0m ANALYZE [USER]: x509_leak
 [31m[ERROR][0m [MEDIUM] FFI RISK: x509_leak -> X509_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:178:18
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:178:18
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL X509 certificate allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5138,7 +5138,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m ANALYZE [USER]: unprotected_key
 [2m[DEBUG][0m ANALYZE [USER]: error_handling_bug
 [31m[ERROR][0m [HIGH] FFI RISK: error_handling_bug -> BIO_new_file
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:205:16
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:205:16
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL BIO allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5148,7 +5148,7 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [MEDIUM] FFI RISK: error_handling_bug -> PEM_read_bio_X509
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:212:18
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:212:18
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL PEM read (allocates object)
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5161,20 +5161,20 @@ analysis                                1       273.06    273056.50    273056.50
 [2m[DEBUG][0m   LIFETIME: NULL passed as param 2 to PEM_read_bio_X509 — verify intent
 [2m[DEBUG][0m   LIFETIME: NULL passed as param 3 to PEM_read_bio_X509 — verify intent
 [31m[ERROR][0m [HIGH] FFI RISK: error_handling_bug -> BIO_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:219:5
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:219:5
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL BIO deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [MEDIUM] FFI RISK: error_handling_bug -> X509_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:220:5
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:220:5
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL X509 certificate deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [2m[DEBUG][0m ANALYZE [USER]: correct_encryption
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_new
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:227:27
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:227:27
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
@@ -5183,31 +5183,31 @@ analysis                                1       273.06    273056.50    273056.50
 [33m[WARN][0m   Risk: NULL pointer dereference / crash
 [2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:232:9
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:232:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:237:9
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:237:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:243:9
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:243:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:249:9
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:249:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
 [33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: correct_encryption -> EVP_CIPHER_CTX_free
-[31m[ERROR][0m   Location: /Users/scc/code/zigcode/OmniScope/corpus/ffi-dense/openssl_wrapper.c:253:5
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/ffi-dense/openssl_wrapper.c:253:5
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: OpenSSL cipher context deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership

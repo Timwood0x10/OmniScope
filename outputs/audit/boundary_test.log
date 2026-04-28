@@ -1,0 +1,170 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: ～/OmniScope/corpus/medium/output/boundary_test.ll
+
+
+[DEBUG] Loading file: ～/OmniScope/corpus/medium/output/boundary_test.ll
+[INFO] Loaded: 35 functions
+
+
+[2m[DEBUG][0m ANALYZE [USER]: null_ptr_ffi_boundary
+[2m[DEBUG][0m ANALYZE [USER]: zero_size_alloc
+[2m[DEBUG][0m ANALYZE [USER]: max_size_alloc
+[2m[DEBUG][0m ANALYZE [USER]: negative_size_alloc
+[2m[DEBUG][0m ANALYZE [USER]: buffer_near_overflow
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: buffer_near_overflow -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:78:27
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: buffer_near_overflow -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:85:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: buffer_at_overflow
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: buffer_at_overflow -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:90:27
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: buffer_at_overflow -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:98:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: create_circular_ownership
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: create_circular_ownership -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:108:26
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: create_circular_ownership -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:109:26
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: create_circular_ownership -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:112:20
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: create_circular_ownership -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:113:20
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: ffi_double_free
+[2m[DEBUG][0m ANALYZE [USER]: ffi_use_after_free
+[2m[DEBUG][0m ANALYZE [USER]: ownership_transfer_to_null
+[2m[DEBUG][0m ANALYZE [USER]: ffi_in_error_path
+[2m[DEBUG][0m ANALYZE [USER]: nested_ffi_partial_cleanup
+[2m[DEBUG][0m ANALYZE [USER]: ffi_loop_early_exit
+[2m[DEBUG][0m ANALYZE [USER]: mixed_allocation_sources
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: mixed_allocation_sources -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:214:13
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[2m[DEBUG][0m ANALYZE [USER]: ffi_format_string
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: ffi_format_string -> printf
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:225:5
+[31m[ERROR][0m   Kind: format_string
+[31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
+[2m[DEBUG][0m ANALYZE [USER]: ffi_buffer_overflow
+[2m[DEBUG][0m ANALYZE [USER]: allocation_size_overflow
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: allocation_size_overflow -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:242:24
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: allocation_size_overflow -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:245:9
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: ffi_realloc
+[31m[ERROR][0m [MEDIUM] FFI RISK: ffi_realloc -> realloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:255:25
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Reallocate memory - consumes old, returns new ownership
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: realloc returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
+[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m ANALYZE [USER]: ffi_ptr_escape
+[2m[DEBUG][0m ANALYZE [USER]: store_ffi_ptr_global
+[2m[DEBUG][0m ANALYZE [USER]: concurrent_ffi_allocs
+[2m[DEBUG][0m ANALYZE [USER]: main
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: main -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/medium/boundary_test.c:299:19
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 35
+[32m[INFO][0m   FFI Boundaries: 43
+[32m[INFO][0m     - Cross-language: 9
+[32m[INFO][0m     - External unknown: 34
+[32m[INFO][0m     - LibC calls: 13
+[31m[ERROR][0m   Dangerous calls: 14
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in buffer_at_overflow
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in create_circular_ownership
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in mixed_allocation_sources
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in allocation_size_overflow
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in buffer_near_overflow
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in ffi_realloc
+[31m[ERROR][0m VULNERABILITY OMI-001 [critical] [Confidence: medium]
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m Reason: allocation may return NULL, used without null guard
+[32m[INFO][0m PointerOwnership: Found 6 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 7 allocations, 13 frees, 7 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 7, reused: 0, in_use: 7
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    22
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                22
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                6[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1        11.00     10997.46     10997.46
+detect                                  2         2.27      1137.10      1160.13
+total                                   1        11.01     11014.42     11014.42
+analysis                                1        10.28     10277.63     10277.63
+[32m[INFO][0m PointerOwnership: 4 ops, 34.56ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 43 boundaries, found 1 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 35
+
+[INFO] Facts generated: 20
+
+[INFO] Report saved to: ～/OmniScope/outputs/audit/boundary_test.json
+

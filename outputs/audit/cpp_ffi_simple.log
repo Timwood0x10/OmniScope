@@ -1,0 +1,105 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: ～/OmniScope/corpus/small/output/cpp_ffi_simple.ll
+
+
+[DEBUG] Loading file: ～/OmniScope/corpus/small/output/cpp_ffi_simple.ll
+[INFO] Loaded: 12 functions
+
+
+[31m[ERROR][0m VULNERABILITY OMI-001 [medium] [Confidence: MEDIUM]
+[31m[ERROR][0m Type: tainted_path_to_sink
+[31m[ERROR][0m Reason: Untrusted data flows to sensitive sink without validation
+[31m[ERROR][0m Path:
+[31m[ERROR][0m   [Sink] strcpy()
+[31m[ERROR][0m     └─> raii_escape()
+[31m[ERROR][0m   [Source] main() - initial taint source
+[2m[DEBUG][0m ANALYZE [USER]: cpp_new_c_free
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: cpp_new_c_free -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/small/cpp_ffi_simple.cpp:23:5
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m ANALYZE [USER]: cpp_malloc_cpp_delete
+[31m[ERROR][0m [MEDIUM] RISKY LIBC CALL: cpp_malloc_cpp_delete -> malloc
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/small/cpp_ffi_simple.cpp:28:24
+[31m[ERROR][0m   Kind: allocator
+[31m[ERROR][0m   Detail: Allocate memory - returns ownership, check for null
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[2m[DEBUG][0m ANALYZE [USER]: raii_escape
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: raii_escape -> strcpy
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/small/cpp_ffi_simple.cpp:36:5
+[31m[ERROR][0m   Kind: unchecked_copy
+[31m[ERROR][0m   Detail: Unchecked string copy - buffer overflow risk
+[2m[DEBUG][0m ANALYZE [USER]: correct_cpp_new_delete
+[2m[DEBUG][0m [SUPPRESSED] RISKY LIBC CALL in intentional function: correct_cpp_new_delete -> strcpy
+[2m[DEBUG][0m ANALYZE [USER]: correct_c_malloc_free
+[2m[DEBUG][0m [SUPPRESSED] RISKY LIBC CALL in intentional function: correct_c_malloc_free -> malloc
+[2m[DEBUG][0m [SUPPRESSED] RISKY LIBC CALL in intentional function: correct_c_malloc_free -> strcpy
+[2m[DEBUG][0m [SUPPRESSED] RISKY LIBC CALL in intentional function: correct_c_malloc_free -> free
+[2m[DEBUG][0m ANALYZE [USER]: main
+[31m[ERROR][0m [HIGH] RISKY LIBC CALL: main -> free
+[31m[ERROR][0m   Location: ～/OmniScope/corpus/small/cpp_ffi_simple.cpp:62:9
+[31m[ERROR][0m   Kind: deallocator
+[31m[ERROR][0m   Detail: Free memory - consumes ownership, cross-language mismatch risk
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[32m[INFO][0m FFI Analysis Summary:
+[32m[INFO][0m   Functions analyzed: 12
+[32m[INFO][0m   FFI Boundaries: 2
+[32m[INFO][0m     - Cross-language: 0
+[32m[INFO][0m     - External unknown: 2
+[32m[INFO][0m     - LibC calls: 8
+[31m[ERROR][0m   Dangerous calls: 8
+[32m[INFO][0m   Semantic Registry: 166 functions known
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in cpp_malloc_cpp_delete
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in cpp_new_c_free
+[33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in raii_escape
+[31m[ERROR][0m VULNERABILITY OMI-002 [critical] [Confidence: medium]
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m Reason: allocation may return NULL, used without null guard
+[31m[ERROR][0m VULNERABILITY OMI-003 [critical] [Confidence: medium]
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m Reason: allocation may return NULL, used without null guard
+[32m[INFO][0m PointerOwnership: Found 3 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 5 allocations, 5 frees, 5 tracked pointers
+[32m[INFO][0m PointerOwnership: 3 cross-FFI ownership transfers detected
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 5, reused: 0, in_use: 5
+
+[36m═══════════════════════════════════════════════════════════════[0m
+[1mZone Classification Summary[0m
+[36m═══════════════════════════════════════════════════════════════[0m
+
+  Total functions analyzed:    6
+  Safe zone (skipped):         0 (0.0%)
+  Runtime internal (skipped):  0
+  Unsafe zone (analyzed):      0
+  FFI zone (analyzed):         0
+  Unknown zone:                6
+
+[32m  Escape zone functions:       0 (0.0% of total)[0m
+[33m  Issues found:                6[0m
+
+[36m═══════════════════════════════════════════════════════════════[0m
+
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         1.89      1888.63      1888.63
+detect                                  2         1.06       532.23       562.04
+total                                   1         1.89      1894.83      1894.83
+analysis                                1         1.59      1585.25      1585.25
+[32m[INFO][0m PointerOwnership: 4 ops, 6.43ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 2 boundaries, found 0 issues
+[INFO] Analysis complete
+
+[INFO] Functions processed: 12
+
+[INFO] Facts generated: 13
+
+[INFO] Report saved to: ～/OmniScope/outputs/audit/cpp_ffi_simple.json
+

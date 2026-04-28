@@ -94,27 +94,28 @@ pub const DiagnosticAggregator = struct {
             }
 
             // Validate .kind is an enum type
-            const KindType = @TypeOf(@field(@as(T, undefined), "kind"));
+            const KindType = std.meta.FieldType(T, .kind);
             if (@typeInfo(KindType) != .Enum) {
                 @compileError(".kind must be an enum type");
             }
 
             // Validate .location is a struct type
-            const LocType = @TypeOf(@field(@as(T, undefined), "location"));
+            const LocType = std.meta.FieldType(T, .location);
             if (@typeInfo(LocType) != .Struct) {
                 @compileError(".location must be a struct type");
             }
 
             // If location has a .function field, validate its type
             if (@hasField(LocType, "function")) {
-                const FuncType = @TypeOf(@field(@field(@as(T, undefined), "location"), "function"));
+                const FuncType = std.meta.FieldType(LocType, .function);
                 if (FuncType != []const u8) {
                     @compileError(".location.function must be []const u8");
                 }
             }
         }
 
-        const func_name = if (@hasField(@TypeOf(@field(@as(T, undefined), "location")), "function"))
+        const LocType = std.meta.FieldType(T, .location);
+        const func_name = if (@hasField(LocType, "function"))
             @field(@field(issue, "location"), "function")
         else
             "(unknown)";
@@ -125,10 +126,10 @@ pub const DiagnosticAggregator = struct {
         hasher.update(func_name);
         hasher.update(kind_tag);
         const loc = @field(issue, "location");
-        if (@hasField(@TypeOf(loc), "file")) {
+        if (@hasField(LocType, "file")) {
             if (@field(loc, "file")) |file| hasher.update(file);
         }
-        if (@hasField(@TypeOf(loc), "line")) {
+        if (@hasField(LocType, "line")) {
             if (@field(loc, "line")) |line| {
                 hasher.update(&std.mem.toBytes(line));
             }
