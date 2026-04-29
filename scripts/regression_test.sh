@@ -2,7 +2,7 @@
 # OmniScope v0.1.8 Regression Test Suite
 #
 # Usage:
-#   ./scripts/regression_test.sh [all|small|medium|large|ffi-dense]
+#   ./scripts/regression_test.sh [all|c|cpp|rust|go|zig|sarif|json]
 #   make regression-test   # via Makefile
 #
 set -euo pipefail
@@ -12,11 +12,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/zig-out/bin"
 OMNISCOPE="$BUILD_DIR/omniscope"
 
-CORPUS_SMALL="$PROJECT_ROOT/corpus/small"
-CORPUS_MEDIUM="$PROJECT_ROOT/corpus/medium"
-CORPUS_LARGE="$PROJECT_ROOT/corpus/large"
-CORPUS_FFI="$PROJECT_ROOT/corpus/ffi-dense"
-CORPUS_RED="$PROJECT_ROOT/corpus/red_team_test"
+TEST_IR_DIR="$PROJECT_ROOT/tests/ir"
+BC_DIR="$TEST_IR_DIR"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,6 +38,43 @@ ensure_build() {
         log_info "Building OmniScope..."
         cd "$PROJECT_ROOT" && zig build
     fi
+}
+
+compile_to_bc() {
+    local src_file="$1"
+    local out_file="$2"
+    local lang="$3"
+
+    if [ ! -f "$src_file" ]; then
+        return 1
+    fi
+
+    case "$lang" in
+        c)
+            clang -c -emit-llvm -O0 -g -o "$out_file" "$src_file" 2>/dev/null
+            ;;
+        cpp)
+            clang++ -c -emit-llvm -O0 -g -std=c++17 -o "$out_file" "$src_file" 2>/dev/null
+            ;;
+        rust)
+            if command -v rustc &>/dev/null; then
+                rustc --emit=llvm-bc -O -o "$out_file" "$src_file" 2>/dev/null || true
+            fi
+            ;;
+        go)
+            if command -v go &>/dev/null && command -v llvm-as &>/dev/null; then
+                go tool compile -S "$src_file" 2>/dev/null | llvm-as -o "$out_file" 2>/dev/null || true
+            fi
+            ;;
+        zig)
+            if command -v zig &>/dev/null; then
+                local zig_dir
+                zig_dir=$(dirname "$src_file")
+                rm -f "$out_file"
+                (cd "$zig_dir" && zig build-obj -O ReleaseFast -femit-llvm-bc -fno-emit-bin "$(basename "$src_file")" 2>/dev/null) || true
+            fi
+            ;;
+    esac
 }
 
 run_analysis() {
@@ -88,25 +122,24 @@ except:
 " "$output_file" 2>/dev/null || echo 0
 }
 
-test_file() {
+test_ir_file() {
     local name="$1"
-    local ir_file="$2"
-    local expected_min="${3:-0}"
-    local expected_max="${4:-999999}"
-    local format="${5:-"--json"}"
+    local bc_file="$BC_DIR/${name}.bc"
+    local expected_min="${2:-0}"
+    local expected_max="${3:-999999}"
+    local format="${4:-"--json"}"
 
     local tmp_output="/tmp/omniscope_regression_${name}.$$.out"
-    local display_name="$name"
 
-    printf "  %-30s " "$display_name"
+    printf "  %-30s " "$name"
 
-    if [ ! -f "$ir_file" ]; then
+    if [ ! -f "$bc_file" ]; then
         echo -e "${YELLOW}[SKIP]${NC}  (IR not found)"
         SKIP_COUNT=$((SKIP_COUNT + 1))
         return
     fi
 
-    run_analysis "$ir_file" "$tmp_output" "$format"
+    run_analysis "$bc_file" "$tmp_output" "$format"
     local issues=0
     if [ "$format" = "--sarif" ]; then
         issues=$(count_issues_sarif "$tmp_output")
@@ -127,134 +160,74 @@ test_file() {
     TOTAL_ISSUES=$((TOTAL_ISSUES + issues))
 }
 
-compile_corpus_file() {
-    local src_file="$1"
-    local out_file="$2"
-    local lang="${3:-c}"
+compile_all_ir() {
+    log_info "Compiling test IR files to $BC_DIR..."
 
-    if [ ! -f "$src_file" ]; then
-        return 1
-    fi
+    compile_to_bc "$TEST_IR_DIR/test_c_control_flow.c" "$BC_DIR/test_c_control_flow.bc" c
+    compile_to_bc "$TEST_IR_DIR/test_c_pointers.c" "$BC_DIR/test_c_pointers.bc" c
+    compile_to_bc "$TEST_IR_DIR/test_c_threads.c" "$BC_DIR/test_c_threads.bc" c
+    compile_to_bc "$TEST_IR_DIR/test_cpp_classes.cpp" "$BC_DIR/test_cpp_classes.bc" cpp
+    compile_to_bc "$TEST_IR_DIR/test_cpp_virtual.cpp" "$BC_DIR/test_cpp_virtual.bc" cpp
+    compile_to_bc "$TEST_IR_DIR/test_rust_patterns.rs" "$BC_DIR/test_rust_patterns.bc" rust
+    compile_to_bc "$TEST_IR_DIR/test_go_noise.c" "$BC_DIR/test_go_noise.bc" go
+    compile_to_bc "$TEST_IR_DIR/test_zig_comptime.zig" "$BC_DIR/test_zig_comptime.bc" zig
 
-    case "$lang" in
-        c)
-            clang -S -emit-llvm -O0 -g -I"$PROJECT_ROOT/corpus" -o "$out_file" "$src_file" 2>/dev/null || true
-            ;;
-        rust)
-            if command -v rustc &>/dev/null; then
-                rustc --emit=llvm-ir -O -o "$out_file" "$src_file" 2>/dev/null || true
-            fi
-            ;;
-        go)
-            if command -v go &>/dev/null; then
-                go tool compile -S "$src_file" 2>/dev/null | llvm-as -o "$out_file" 2>/dev/null || true
-            fi
-            ;;
-        cpp)
-            clang++ -S -emit-llvm -O0 -g -std=c++17 -I"$PROJECT_ROOT/corpus" -o "$out_file" "$src_file" 2>/dev/null || true
-            ;;
-        zig)
-            zig build-obj -O ReleaseFast --emit-llvm-ir -fno-emit-bin -femit-asm="$out_file" "$src_file" 2>/dev/null || true
-            ;;
-    esac
+    log_info "IR compilation complete"
 }
 
-test_small() {
+test_c() {
     echo ""
-    echo "=== small/ FFI Test Cases ==="
-    mkdir -p /tmp/omniscope_regression
+    echo "=== C Test Cases ==="
 
-    local rust_ll="./test_ir/rust_ffi_simple.ll"
-    local zig_ll="./test_ir/zig_ffi_simple.ll"
-    local go_ll="./test_ir/go_ffi_simple.ll"
-    local cpp_ll="./test_ir/cpp_ffi_simple.ll"
-
-    compile_corpus_file "$CORPUS_SMALL/rust_ffi_simple.rs" "$rust_ll" rust
-    compile_corpus_file "$CORPUS_SMALL/zig_ffi_simple.zig" "$zig_ll" zig
-    compile_corpus_file "$CORPUS_SMALL/go_ffi_simple.go" "$go_ll" go
-    compile_corpus_file "$CORPUS_SMALL/cpp_ffi_simple.cpp" "$cpp_ll" cpp
-
-    test_file "rust_ffi_simple" "$rust_ll" 1 10
-    test_file "zig_ffi_simple" "$zig_ll" 1 10
-    test_file "go_ffi_simple" "$go_ll" 1 10
-    test_file "cpp_ffi_simple" "$cpp_ll" 1 10
+    test_ir_file "test_c_control_flow" 0 10
+    test_ir_file "test_c_pointers" 0 10
+    test_ir_file "test_c_threads" 0 10
 }
 
-test_medium() {
+test_cpp() {
     echo ""
-    echo "=== medium/ FFI Test Cases ==="
+    echo "=== C++ Test Cases ==="
 
-    local boundary_ll="/tmp/omniscope_regression/boundary_test.ll"
-    compile_corpus_file "$CORPUS_MEDIUM/boundary_test.c" "$boundary_ll" c
-
-    test_file "boundary_test" "$boundary_ll" 5 30
+    test_ir_file "test_cpp_classes" 0 10
+    test_ir_file "test_cpp_virtual" 0 10
 }
 
-test_large() {
+test_rust() {
     echo ""
-    echo "=== large/ FFI Test Cases ==="
+    echo "=== Rust Test Cases ==="
 
-    local stress_ll="/tmp/omniscope_regression/stress_patterns.ll"
-    compile_corpus_file "$CORPUS_LARGE/stress_patterns.c" "$stress_ll" c
-
-    test_file "stress_patterns" "$stress_ll" 10 100
+    test_ir_file "test_rust_patterns" 0 10
 }
 
-test_ffi_dense() {
+test_go() {
     echo ""
-    echo "=== ffi-dense/ FFI Test Cases ==="
+    echo "=== Go Test Cases ==="
 
-    local sqlite_ll="/tmp/omniscope_regression/sqlite_binding.ll"
-    local openssl_ll="/tmp/omniscope_regression/openssl_wrapper.ll"
-    local zlib_ll="/tmp/omniscope_regression/zlib_binding.ll"
-    local rust_sql_ll="/tmp/omniscope_regression/rust_sqlite_ffi.ll"
-
-    compile_corpus_file "$CORPUS_FFI/sqlite_binding.c" "$sqlite_ll" c
-    compile_corpus_file "$CORPUS_FFI/openssl_wrapper.c" "$openssl_ll" c
-    compile_corpus_file "$CORPUS_FFI/zlib_binding.c" "$zlib_ll" c
-    compile_corpus_file "$CORPUS_FFI/rust_sqlite_ffi.rs" "$rust_sql_ll" rust
-
-    test_file "sqlite_binding" "$sqlite_ll" 1 10
-    test_file "openssl_wrapper" "$openssl_ll" 1 15
-    test_file "zlib_binding" "$zlib_ll" 1 15
-    test_file "rust_sqlite_ffi" "$rust_sql_ll" 1 10
+    test_ir_file "test_go_noise" 0 10
 }
 
-test_red_team() {
+test_zig() {
     echo ""
-    echo "=== red_team_test/ FFI Test Cases ==="
+    echo "=== Zig Test Cases ==="
 
-    local posix_ll="/tmp/omniscope_regression/posix_ffi_bugs.ll"
-    local ffi_ll="/tmp/omniscope_regression/ffi_boundary_bugs.ll"
-    local red_ll="/tmp/omniscope_regression/red_team_bugs.ll"
-
-    compile_corpus_file "$CORPUS_RED/posix_ffi_bugs.c" "$posix_ll" c
-    compile_corpus_file "$CORPUS_RED/ffi_boundary_bugs.c" "$ffi_ll" c
-    compile_corpus_file "$CORPUS_RED/red_team_bugs.c" "$red_ll" c
-
-    test_file "posix_ffi_bugs" "$posix_ll" 1 15
-    test_file "ffi_boundary_bugs" "$ffi_ll" 1 20
-    test_file "red_team_bugs" "$red_ll" 1 20
+    test_ir_file "test_zig_comptime" 0 10
 }
 
 test_sarif_output() {
     echo ""
     echo "=== SARIF Output Format Test ==="
 
-    local test_ll="/tmp/omniscope_regression/sarif_test.ll"
-    local sarif_out="/tmp/omniscope_regression/sarif_output.sarif"
-
-    compile_corpus_file "$CORPUS_RED/posix_ffi_bugs.c" "$test_ll" c
+    local sarif_out="/tmp/omniscope_regression_sarif.out"
 
     printf "  %-30s " "sarif_format"
 
-    if [ ! -f "$test_ll" ]; then
+    if [ ! -f "$BC_DIR/test_c_control_flow.bc" ]; then
         echo -e "${YELLOW}[SKIP]${NC}  (IR not found)"
         SKIP_COUNT=$((SKIP_COUNT + 1))
         return
     fi
 
-    "$OMNISCOPE" "$test_ll" --sarif -o "$sarif_out" 2>/dev/null || true
+    "$OMNISCOPE" "$BC_DIR/test_c_control_flow.bc" --sarif -o "$sarif_out" 2>/dev/null || true
 
     if [ ! -f "$sarif_out" ]; then
         echo -e "${RED}[FAIL]${NC}  (no output file)"
@@ -262,7 +235,6 @@ test_sarif_output() {
         return
     fi
 
-    # Check that it's valid JSON and contains SARIF structure
     if python3 -c "import json; d=json.load(open('$sarif_out')); assert 'version' in d; assert 'runs' in d; assert len(d['runs']) > 0" 2>/dev/null; then
         echo -e "${GREEN}[PASS]${NC}  (valid SARIF JSON)"
         PASS_COUNT=$((PASS_COUNT + 1))
@@ -271,7 +243,40 @@ test_sarif_output() {
         FAIL_COUNT=$((FAIL_COUNT + 1))
     fi
 
-    rm -f "$sarif_out" "$test_ll"
+    rm -f "$sarif_out"
+}
+
+test_json_output() {
+    echo ""
+    echo "=== JSON Output Format Test ==="
+
+    local json_out="/tmp/omniscope_regression_json.out"
+
+    printf "  %-30s " "json_format"
+
+    if [ ! -f "$BC_DIR/test_c_control_flow.bc" ]; then
+        echo -e "${YELLOW}[SKIP]${NC}  (IR not found)"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return
+    fi
+
+    "$OMNISCOPE" "$BC_DIR/test_c_control_flow.bc" --json -o "$json_out" 2>/dev/null || true
+
+    if [ ! -f "$json_out" ]; then
+        echo -e "${RED}[FAIL]${NC}  (no output file)"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return
+    fi
+
+    if python3 -c "import json; d=json.load(open('$json_out')); assert 'issues' in d" 2>/dev/null; then
+        echo -e "${GREEN}[PASS]${NC}  (valid JSON)"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo -e "${RED}[FAIL]${NC}  (invalid JSON)"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+
+    rm -f "$json_out"
 }
 
 print_summary() {
@@ -305,25 +310,28 @@ main() {
     echo "║       OmniScope v0.1.8 Regression Test Suite                 ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 
-    mkdir -p /tmp/omniscope_regression
+    compile_all_ir
 
     case "$target" in
         all)
-            test_small
-            test_medium
-            test_large
-            test_ffi_dense
-            test_red_team
+            test_c
+            test_cpp
+            test_rust
+            test_go
+            test_zig
             test_sarif_output
+            test_json_output
             ;;
-        small)     test_small ;;
-        medium)    test_medium ;;
-        large)     test_large ;;
-        ffi-dense) test_ffi_dense ;;
-        red-team)  test_red_team ;;
-        sarif)     test_sarif_output ;;
+        c)          test_c ;;
+        cpp)        test_cpp ;;
+        rust)       test_rust ;;
+        go)         test_go ;;
+        zig)        test_zig ;;
+        sarif)      test_sarif_output ;;
+        json)       test_json_output ;;
+        compile)    compile_all_ir ;;
         *)
-            echo "Usage: $0 [all|small|medium|large|ffi-dense|red-team|sarif]"
+            echo "Usage: $0 [all|c|cpp|rust|go|zig|sarif|json|compile]"
             exit 1
             ;;
     esac

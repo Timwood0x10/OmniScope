@@ -485,6 +485,26 @@ pub const CallbackEscapePass = struct {
         }
 
         for (callback_escapes.items) |escape| {
+            // Validate callback signature when receiver is a known pattern.
+            // This catches type mismatches like passing int(*)(int,int) to signal()
+            // which expects void(*)(int). Reports as low-confidence to avoid FP.
+            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
+                const cb_type = c.LLVMGetElementType(
+                    c.LLVMTypeOf(escape.callback_arg),
+                );
+                if (@intFromPtr(cb_type) != 0) {
+                    const type_str = c.LLVMGetStructName(cb_type);
+                    const type_name = if (@intFromPtr(type_str) != 0)
+                        std.mem.span(type_str)
+                    else
+                        "";
+                    if (!validate_callback_signature(escape.receiver_name, type_name)) {
+                        try reportSignatureMismatch(ctx, func_name, escape, diag);
+                        stats.callback_escapes += 1;
+                        continue;
+                    }
+                }
+            }
             try reportGenericCallbackEscape(ctx, func_name, escape, diag);
             stats.callback_escapes += 1;
         }
@@ -764,6 +784,39 @@ fn reportGenericCallbackEscape(
     diag.warn("[CALLBACK-ESCAPE] {s} -> {s} in {s}", .{ "fn_ptr", escape.receiver_name, func_name });
 }
 
+/// Report a callback signature mismatch between receiver expectation and actual callback type.
+/// Low confidence (0.45) to avoid false positives from incomplete type information in LLVM IR.
+fn reportSignatureMismatch(
+    ctx: *PassContext,
+    func_name: []const u8,
+    escape: CallbackEscapeInfo,
+    diag: *DiagnosticWriter,
+) !void {
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 2);
+    trace[0] = TraceEntry.init("Callback passed to receiver with incompatible signature");
+    trace[1] = try makeTrace(ctx.allocator, "Type mismatch may cause undefined behavior at runtime (CWE-688)", .{});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Callback signature may not match {s} expectation in {s} - potential UB from ABI mismatch",
+        .{ escape.receiver_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .callback_signature_mismatch,
+        message,
+        location,
+        .low,
+        0.45,
+        trace,
+    );
+
+    try ctx.addIssue(issue);
+    diag.warn("[CALLBACK-SIG] {s} -> {s} in {s}", .{ "sig_mismatch", escape.receiver_name, func_name });
+}
+
 fn reportUnsafePtrRisk(
     ctx: *PassContext,
     func_name: []const u8,
@@ -1011,4 +1064,23 @@ test "validate_callback_signature - JNI patterns" {
     try std.testing.expect(validate_callback_signature("pthread_create", "void*"));
     try std.testing.expect(validate_callback_signature("signal", "void, int"));
     try std.testing.expect(!validate_callback_signature("signal", "int, int"));
+}
+
+test "validate_callback_signature - boundary cases" {
+    // Empty type string should return false
+    try std.testing.expect(!validate_callback_signature("pthread_create", ""));
+    // Unknown receiver with valid type should return false (not in known patterns)
+    try std.testing.expect(!validate_callback_signature("unknown_func", "void*"));
+    // atexit accepts void(*)(void)
+    try std.testing.expect(validate_callback_signature("atexit", "void*"));
+    // qsort accepts void(*)(const void*, const void*)
+    try std.testing.expect(validate_callback_signature("qsort", "void*"));
+    // bsearch accepts void(*)(const void*, const void*)
+    try std.testing.expect(validate_callback_signature("bsearch", "void*"));
+    // pthread_key_create accepts void(*)(void*)
+    try std.testing.expect(validate_callback_signature("pthread_key_create", "void*"));
+    // sigaction accepts void(*)(int)
+    try std.testing.expect(validate_callback_signature("sigaction", "void, int"));
+    // on_exit accepts void(*)(int, void*)
+    try std.testing.expect(validate_callback_signature("on_exit", "void, int"));
 }

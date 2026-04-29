@@ -35,6 +35,8 @@ pub const IssueKind = enum {
     null_dereference,
     /// Rust borrow escape: as_ptr result passed to FFI may dangle
     borrow_escape,
+    /// Callback function signature does not match receiver expectation
+    callback_signature_mismatch,
     /// Free called on non-malloc pointer
     invalid_free,
     /// Unknown issue type
@@ -56,6 +58,7 @@ pub const IssueKind = enum {
             .malloc_unchecked => "malloc_unchecked",
             .null_dereference => "null_dereference",
             .borrow_escape => "borrow_escape",
+            .callback_signature_mismatch => "callback_signature_mismatch",
             .invalid_free => "invalid_free",
             .unknown => "unknown",
         };
@@ -79,6 +82,7 @@ pub const IssueKind = enum {
             .malloc_unchecked => 252, // CWE-252: Unchecked Return Value
             .null_dereference => 476, // CWE-476: NULL Pointer Dereference
             .borrow_escape => 704, // CWE-704: Incorrect Type Conversion or Cast
+            .callback_signature_mismatch => 688, // CWE-688: Function Call With Incorrect Argument Type
             .invalid_free => 590, // CWE-590: Free of Memory Not on Heap
             .unknown => 0,
         };
@@ -100,6 +104,7 @@ pub const IssueKind = enum {
             .malloc_unchecked => "Malloc result used without null check",
             .null_dereference => "Null pointer dereference - nullable allocation used without guard",
             .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
+            .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
             .invalid_free => "Free called on non-malloc pointer",
             .unknown => "Unknown issue type",
         };
@@ -572,6 +577,7 @@ pub const FFIBoundary = struct {
 test "IssueKind - toString" {
     try std.testing.expectEqualStrings("ffi_unsafe_call", IssueKind.ffi_unsafe_call.toString());
     try std.testing.expectEqualStrings("unchecked_return", IssueKind.unchecked_return.toString());
+    try std.testing.expectEqualStrings("callback_signature_mismatch", IssueKind.callback_signature_mismatch.toString());
     try std.testing.expectEqualStrings("unknown", IssueKind.unknown.toString());
 }
 
@@ -801,12 +807,14 @@ test "IssueKind - toCweId" {
     try std.testing.expectEqual(@as(u32, 120), IssueKind.buffer_overflow.toCweId());
     try std.testing.expectEqual(@as(u32, 252), IssueKind.malloc_unchecked.toCweId());
     try std.testing.expectEqual(@as(u32, 590), IssueKind.invalid_free.toCweId());
+    try std.testing.expectEqual(@as(u32, 688), IssueKind.callback_signature_mismatch.toCweId());
 }
 
 test "IssueKind - toDescription" {
     try std.testing.expectEqualStrings("Command injection vulnerability", IssueKind.command_injection.toDescription());
     try std.testing.expectEqualStrings("Malloc result used without null check", IssueKind.malloc_unchecked.toDescription());
     try std.testing.expectEqualStrings("Free called on non-malloc pointer", IssueKind.invalid_free.toDescription());
+    try std.testing.expectEqualStrings("Callback signature does not match receiver expectation - potential ABI mismatch", IssueKind.callback_signature_mismatch.toDescription());
 }
 
 test "Confidence - toString" {
