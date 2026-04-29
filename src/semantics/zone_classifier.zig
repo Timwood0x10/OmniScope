@@ -358,6 +358,7 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (isZigFunction(func_name)) return classifyZigFunction(func_name);
     if (isGoFunction(func_name)) return classifyGoFunction(func_name);
     if (isCppFunction(func_name)) return classifyCppFunction(func_name);
+    if (isCFunction(func_name)) return classifyCFunction(func_name);
 
     return .unknown;
 }
@@ -796,6 +797,7 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "strtod",
         "malloc_zone",
         "Py_",
+        "PY_",
         "PyObject",
         "JNI_",
         "NewGlobalRef",

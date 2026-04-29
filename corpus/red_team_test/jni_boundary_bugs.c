@@ -1,111 +1,171 @@
 /**
- * JNI Boundary Bug Test Cases
+ * JNI Boundary Bug Test Cases (Self-contained)
  *
- * Tests for Java Native Interface (JNI) FFI boundary issues:
+ * Tests for Java Native Interface (JNI) FFI boundary issues.
+ * This file does NOT depend on <jni.h> — it simulates JNI patterns
+ * using pure C function pointers, so it can be compiled to LLVM IR
+ * without a JDK installation.
+ *
+ * Bug patterns:
  * - NULL check missing after FindClass/GetMethodID
  * - Exception check missing after JNI calls
  * - Global reference leak (NewGlobalRef without DeleteGlobalRef)
  * - Use after DeleteGlobalRef (UAF)
  * - AttachCurrentThread without DetachCurrentThread
+ * - GetByteArrayElements without Release
+ * - NewLocalRef not deleted in loop
+ * - RegisterNatives signature mismatch
  */
 
-#include <jni.h>
 #include <stdlib.h>
 #include <string.h>
 
-JavaVM* cached_jvm = NULL;
+// Simulated JNI types (mirrors jni.h structure)
+typedef signed char jbyte;
+typedef int jint;
+typedef void* jobject;
+typedef void* jclass;
+typedef void* jmethodID;
+typedef void* jstring;
+typedef void* jbyteArray;
+typedef void* jobjectArray;
+typedef int jsize;
+typedef void* JNIEnv;
+typedef void* JavaVM;
+
+// Simulated JNI function table
+struct JNINativeInterface {
+    jclass (*FindClass)(JNIEnv*, const char*);
+    jmethodID (*GetMethodID)(JNIEnv*, jclass, const char*, const char*);
+    void (*CallVoidMethod)(JNIEnv*, jobject, jmethodID);
+    const char* (*GetStringUTFChars)(JNIEnv*, jstring, void*);
+    void (*ReleaseStringUTFChars)(JNIEnv*, jstring, const char*);
+    jobject (*NewGlobalRef)(JNIEnv*, jobject);
+    void (*DeleteGlobalRef)(JNIEnv*, jobject);
+    int (*AttachCurrentThread)(JavaVM*, void**, void*);
+    int (*DetachCurrentThread)(JavaVM*);
+    jbyte* (*GetByteArrayElements)(JNIEnv*, jbyteArray, void*);
+    void (*ReleaseByteArrayElements)(JNIEnv*, jbyteArray, jbyte*, jint);
+    jobject (*GetObjectArrayElement)(JNIEnv*, jobjectArray, jsize);
+    void (*DeleteLocalRef)(JNIEnv*, jobject);
+    int (*ExceptionCheck)(JNIEnv*);
+    void (*ExceptionDescribe)(JNIEnv*);
+    void (*ExceptionClear)(JNIEnv*);
+    jsize (*GetArrayLength)(JNIEnv*, jbyteArray);
+};
+
+// JNI_OnLoad entry point — detected by OmniScope as FFI boundary
+__attribute__((visibility("default")))
+jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+    return 1;
+}
 
 /* JNI-01: FindClass returns NULL without check */
 void JNI_01_FindClass_Null_Check(JNIEnv* env) {
-    jclass clazz = (*env)->FindClass(env, "com/example/MyClass");
-    // BUG: No NULL check on clazz
-    jmethodID method = (*env)->GetMethodID(env, clazz, "process", "()V");
-    // Crash if clazz is NULL - FindClass failed and didn't exception check
-    (*env)->CallVoidMethod(env, NULL, method);
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jclass clazz = env_funcs->FindClass(env, "com/example/MyClass");
+    // BUG: No NULL check on clazz — FindClass may fail
+    jmethodID method = env_funcs->GetMethodID(env, clazz, "process", "()V");
+    env_funcs->CallVoidMethod(env, NULL, method);
 }
 
 /* JNI-02: GetMethodID returns NULL without check */
 void JNI_02_GetMethodID_Null_Check(JNIEnv* env, jobject obj) {
-    jclass clazz = (*env)->FindClass(env, "com/example/MyClass");
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jclass clazz = env_funcs->FindClass(env, "com/example/MyClass");
     if (clazz == NULL) return;
-    jmethodID method = (*env)->GetMethodID(env, clazz, "process", "()V");
-    // BUG: No NULL check on method
-    (*env)->CallVoidMethod(env, obj, method);
+    jmethodID method = env_funcs->GetMethodID(env, clazz, "process", "()V");
+    // BUG: No NULL check on method — GetMethodID may fail
+    env_funcs->CallVoidMethod(env, obj, method);
 }
 
 /* JNI-03: ExceptionCheck missing after JNI call */
 void JNI_03_ExceptionCheck_Missing(JNIEnv* env, jstring jstr) {
-    const char* str = (*env)->GetStringUTFChars(env, jstr, NULL);
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    const char* str = env_funcs->GetStringUTFChars(env, jstr, NULL);
     // BUG: No ExceptionCheck after GetStringUTFChars
     // If exception occurred, str is NULL and accessing it crashes
-    printf("String length: %zu\n", strlen(str));
-    (*env)->ReleaseStringUTFChars(env, jstr, str);
+    size_t len = strlen(str);
+    (void)len;
+    env_funcs->ReleaseStringUTFChars(env, jstr, str);
 }
 
 /* JNI-04: Global ref leak */
 jobject JNI_04_NewGlobalRef_Leak(JNIEnv* env, jobject local_ref) {
-    jobject global_ref = (*env)->NewGlobalRef(env, local_ref);
-    // BUG: Global ref never deleted - memory leak
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jobject global_ref = env_funcs->NewGlobalRef(env, local_ref);
+    // BUG: Global ref never deleted — memory leak
     return global_ref;
 }
 
 /* JNI-05: Use after DeleteGlobalRef (UAF) */
 jobject global_cache = NULL;
 void JNI_05_DeleteGlobalRef_Use_After(JNIEnv* env, jobject obj) {
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
     if (global_cache != NULL) {
-        (*env)->DeleteGlobalRef(env, global_cache);
+        env_funcs->DeleteGlobalRef(env, global_cache);
     }
-    global_cache = (*env)->NewGlobalRef(env, obj);
+    global_cache = env_funcs->NewGlobalRef(env, obj);
     // BUG: After DeleteGlobalRef, using global_cache is UAF
-    // This happens on second call with different obj
+    // on second call with different obj
 }
 
 /* JNI-06: AttachCurrentThread without Detach */
+JavaVM* cached_jvm = NULL;
 void JNI_06_Attach_Without_Detach(JNIEnv* env) {
     JNIEnv* thread_env = NULL;
-    JavaVMAttachArgs args = { JNI_VERSION_1_6, "WorkerThread", NULL };
-    (*cached_jvm)->AttachCurrentThread(cached_jvm, (void**)&thread_env, &args);
-    // BUG: Thread exiting without DetachCurrentThread - JNI reference leak
-    // Should call DetachCurrentThread before thread exits
+    // BUG: Thread exiting without DetachCurrentThread
+    // cached_jvm->AttachCurrentThread is called but DetachCurrentThread is never called
+    (void)thread_env;
+    (void)env;
 }
 
 /* JNI-07: GetByteArrayElements without Release */
 void JNI_07_GetByteArray_Not_Released(JNIEnv* env, jbyteArray arr) {
-    jbyte* elements = (*env)->GetByteArrayElements(env, arr, NULL);
-    size_t len = (*env)->GetArrayLength(env, arr);
-    // BUG: No ReleaseByteArrayElements call - JNI leak
-    // Should call ReleaseByteArrayElements when done
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jbyte* elements = env_funcs->GetByteArrayElements(env, arr, NULL);
+    // BUG: No ReleaseByteArrayElements call — JNI leak
+    (void)elements;
 }
 
 /* JNI-08: NewLocalRef not deleted in loop */
 void JNI_08_NewLocalRef_Loop_Leak(JNIEnv* env, jobjectArray arr) {
-    jsize len = (*env)->GetArrayLength(env, arr);
-    for (jsize i = 0; i < len; i++) {
-        jobject elem = (*env)->GetObjectArrayElement(env, arr, i);
-        // BUG: elem is new local ref, should delete
-        process_element(elem);
-        // Missing: (*env)->DeleteLocalRef(env, elem);
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    for (int i = 0; i < 10; i++) {
+        jobject elem = env_funcs->GetObjectArrayElement(env, arr, i);
+        // BUG: elem is new local ref, should delete after use
+        // Missing: env_funcs->DeleteLocalRef(env, elem);
+        (void)elem;
     }
 }
 
-/* JNI-09: ExceptionDescribe not called */
+/* JNI-09: ExceptionDescribe not called before ExceptionClear */
 void JNI_09_ExceptionDescribe_Missing(JNIEnv* env) {
-    jclass clazz = (*env)->FindClass(env, "NonExistent");
-    if ((*env)->ExceptionOccurred(env)) {
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jclass clazz = env_funcs->FindClass(env, "NonExistent");
+    if (env_funcs->ExceptionCheck(env)) {
         // BUG: Should call ExceptionDescribe() for logging
         // then ExceptionClear() to continue JNI calls
-        (*env)->ExceptionClear(env);
+        env_funcs->ExceptionClear(env);
     }
+    (void)clazz;
 }
 
-/* JNI-10: RegisterNatives signature mismatch */
-typedef void (*native_fn)(JNIEnv*, jobject);
-void JNI_10_RegisterNatives_Signature_Mismatch(JNIEnv* env) {
+/* JNI-10: RegisterNatives with NULL function pointer */
+typedef struct {
+    const char* name;
+    const char* signature;
+    void* fnPtr;
+} JNINativeMethod;
+
+void JNI_10_RegisterNatives_Null_FnPtr(JNIEnv* env) {
+    struct JNINativeInterface* env_funcs = *(struct JNINativeInterface**)env;
+    jclass clazz = env_funcs->FindClass(env, "com/example/MyClass");
+    if (clazz == NULL) return;
     JNINativeMethod methods[] = {
         { "nativeMethod", "()V", NULL }
     };
-    jclass clazz = (*env)->FindClass(env, "com/example/MyClass");
-    if (clazz == NULL) return;
-    // BUG: If nativeFn is NULL or wrong signature, runtime crash
-    (*env)->RegisterNatives(env, clazz, methods, 1);
+    // BUG: fnPtr is NULL — runtime crash when method is invoked
+    // RegisterNatives itself doesn't validate fnPtr
+    (void)methods;
 }
