@@ -287,12 +287,13 @@ pub const DiagnosticWriter = struct {
 
 /// Print zone classification summary
 /// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
-pub fn printZoneSummary(stats: zone_classifier.ZoneStats, issue_count: u32) void {
+pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) void {
     if (log.current_log_level == .quiet) return;
 
     const total = stats.total();
     const escape_count = stats.unsafe_count + stats.ffi_count;
     const skip_ratio = stats.skipRatio();
+    const issue_stats = dfg.getIssueStats();
 
     std.debug.print("\n" ++ Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n", .{});
     std.debug.print(Colors.bold ++ "Zone Classification Summary" ++ Colors.reset ++ "\n", .{});
@@ -308,8 +309,56 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, issue_count: u32) void
 
     std.debug.print(Colors.green ++ "  Escape zone functions:       {d} ({d:.1}% of total)" ++ Colors.reset ++ "\n", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
 
-    if (issue_count > 0) {
-        std.debug.print(Colors.yellow ++ "  Issues found:                {d}" ++ Colors.reset ++ "\n\n", .{issue_count});
+    if (issue_stats.total > 0) {
+        std.debug.print(Colors.yellow ++ "  Issues found:              {d}" ++ Colors.reset ++ "\n", .{issue_stats.total});
+
+        std.debug.print("\n    " ++ Colors.bold ++ "Issue breakdown by category:" ++ Colors.reset ++ "\n", .{});
+        if (issue_stats.memory_leak > 0) {
+            std.debug.print("      Memory leak:              {d}\n", .{issue_stats.memory_leak});
+        }
+        if (issue_stats.use_after_free > 0) {
+            std.debug.print("      Use after free:           {d}\n", .{issue_stats.use_after_free});
+        }
+        if (issue_stats.double_free > 0) {
+            std.debug.print("      Double free:               {d}\n", .{issue_stats.double_free});
+        }
+        if (issue_stats.ffi_unsafe > 0) {
+            std.debug.print("      FFI unsafe call:          {d}\n", .{issue_stats.ffi_unsafe});
+        }
+        if (issue_stats.command_injection > 0) {
+            std.debug.print("      Command injection:         {d}\n", .{issue_stats.command_injection});
+        }
+        if (issue_stats.buffer_overflow > 0) {
+            std.debug.print("      Buffer overflow:          {d}\n", .{issue_stats.buffer_overflow});
+        }
+        if (issue_stats.format_string > 0) {
+            std.debug.print("      Format string:            {d}\n", .{issue_stats.format_string});
+        }
+        if (issue_stats.type_mismatch > 0) {
+            std.debug.print("      Type mismatch:            {d}\n", .{issue_stats.type_mismatch});
+        }
+        if (issue_stats.borrow_escape > 0) {
+            std.debug.print("      Borrow escape:            {d}\n", .{issue_stats.borrow_escape});
+        }
+        if (issue_stats.null_dereference > 0) {
+            std.debug.print("      Null dereference:         {d}\n", .{issue_stats.null_dereference});
+        }
+        if (issue_stats.invalid_free > 0) {
+            std.debug.print("      Invalid free:             {d}\n", .{issue_stats.invalid_free});
+        }
+        if (issue_stats.unchecked_return > 0) {
+            std.debug.print("      Unchecked return:         {d}\n", .{issue_stats.unchecked_return});
+        }
+        if (issue_stats.malloc_unchecked > 0) {
+            std.debug.print("      Malloc unchecked:         {d}\n", .{issue_stats.malloc_unchecked});
+        }
+        if (issue_stats.callback_mismatch > 0) {
+            std.debug.print("      Callback mismatch:        {d}\n", .{issue_stats.callback_mismatch});
+        }
+        if (issue_stats.unknown > 0) {
+            std.debug.print("      Unknown:                  {d}\n", .{issue_stats.unknown});
+        }
+        std.debug.print("\n", .{});
     } else {
         std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
     }

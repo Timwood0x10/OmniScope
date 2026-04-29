@@ -421,8 +421,7 @@ pub const PointerOwnershipPass = struct {
             pool_stats.in_use,
         });
 
-        const issue_count = stats.cross_ffi_transfers + stats.violations + stats.memory_leaks + stats.double_frees + stats.use_after_frees;
-        @import("../pass.zig").printZoneSummary(ctx.zone_stats, issue_count);
+        @import("../pass.zig").printZoneSummary(ctx.zone_stats, ctx.data_flow_graph);
     }
 
     /// Check if debug metadata is available in the module.

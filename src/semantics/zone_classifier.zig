@@ -797,7 +797,7 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "strtod",
         "malloc_zone",
         "Py_",
-        "PY_",
+        "py_",
         "PyObject",
         "JNI_",
         "NewGlobalRef",

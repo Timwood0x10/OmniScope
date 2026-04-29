@@ -13,6 +13,9 @@ const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 
 const Location = @import("../../diag/issue.zig").Location;
+const Issue = @import("../../diag/issue.zig").Issue;
+const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const IssueSeverity = @import("../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
 const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
@@ -545,11 +548,11 @@ pub const FFIBoundaryPass = struct {
                         diag.debug("FFI-SKIP: {s} -> {s} — safe context", .{ caller_name, called_name });
                     } else {
                         stats.dangerous_count += 1;
-                        printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
+                        try printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
                     }
                 } else {
                     stats.dangerous_count += 1;
-                    printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
+                    try printDangerousCallDetail(diag, ctx, caller_name, called_name, sem, inst, caller_func);
                 }
             }
 
@@ -567,7 +570,7 @@ pub const FFIBoundaryPass = struct {
         sem: FunctionSemantics,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
-    ) void {
+    ) !void {
         const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch null;
         const caller_free: bool = caller_demangled != null;
         const caller_final: []const u8 = caller_demangled orelse caller_name;
@@ -603,7 +606,20 @@ pub const FFIBoundaryPass = struct {
             diag.err("  Warning: Result requires NULL check", .{});
         }
 
-        // Show taint status for command execution functions
+        const location = Location.init(caller_final);
+        const message = try std.fmt.allocPrint(ctx.allocator, "FFI RISK: {s} -> {s}: {s}", .{
+            caller_final, callee_final, sem.description,
+        });
+        defer ctx.allocator.free(message);
+        const issue = Issue.init(
+            riskKindToIssueKind(sem.kind),
+            message,
+            location,
+            registrySeverityToIssueSeverity(sem.severity),
+            0.8,
+        );
+        try ctx.addIssue(issue);
+
         if (sem.kind == .command_exec) {
             if (@intFromPtr(inst) != 0) {
                 const inst_id = std.math.cast(u32, @intFromPtr(inst)) orelse return;
@@ -616,23 +632,14 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // P1 Task 2.1: Validate API contract compliance
-        validateAPIContract(diag, inst, caller_func, sem);
-
-        // v0.1.7: Specialized boundary checks for dynamic loading/JNI/Python
-        checkSpecializedBoundary(diag, inst, caller_func, called_name);
-
-        // v0.1.8 tech-debt: Return value escape analysis at FFI boundaries
-        checkReturnValueEscape(diag, inst, caller_func, called_name);
-
-        // Phase 3 Task #2: Cross-language type compatibility check
-        checkTypeCompatibility(diag, inst);
-
-        // Phase 3 Task #4: Lifetime annotation inference at FFI boundaries
-        inferLifetimeConstraints(diag, inst, caller_func, sem);
+        validateAPIContract(ctx, diag, inst, caller_func, sem) catch {};
+        checkSpecializedBoundary(ctx, diag, inst, caller_func, called_name) catch {};
+        checkReturnValueEscape(ctx, diag, inst, caller_func, called_name) catch {};
+        checkTypeCompatibility(ctx, diag, inst, caller_func) catch {};
+        inferLifetimeConstraints(ctx, diag, inst, caller_func, sem) catch {};
     }
 
-    /// P1 Task 2.1: Extern "C" API Contract Validation.
+    /// Extern "C" API Contract Validation.
     ///
     /// After detecting a dangerous FFI call, validate that the caller
     /// properly honors the function's documented contract:
@@ -644,11 +651,19 @@ pub const FFIBoundaryPass = struct {
     /// 3. Ownership chain: If `transfers_ownership`, warn if result is
     ///    discarded without free/store (potential leak).
     fn validateAPIContract(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         sem: FunctionSemantics,
-    ) void {
+    ) !void {
+        // Get caller name for issue reporting
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
         // Check 1: NULL guard validation (intra-procedural + inter-procedural)
         if (sem.requires_null_check) {
             const has_intra_null_guard = checkNullGuard(inst, caller_func);
@@ -662,6 +677,13 @@ pub const FFIBoundaryPass = struct {
                     sem.pattern,
                 });
                 diag.warn("  Risk: NULL pointer dereference / crash", .{});
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "NULL check missing after {s} in {s}", .{
+                        sem.pattern, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                }
 
                 // P0-3: Context-aware severity re-ranking
                 if (severity_rules.severity_boost_for_pattern(
@@ -698,6 +720,13 @@ pub const FFIBoundaryPass = struct {
                         std.mem.eql(u8, called_name_str, "gets");
                     if (is_unbounded) {
                         diag.warn("  CONTRACT WARNING: Unbounded buffer operation ({s}) — consider bounded alternative", .{called_name_str});
+                        {
+                            const msg = try std.fmt.allocPrint(ctx.allocator, "Unbounded buffer operation: {s} in {s}", .{
+                                called_name_str, caller_name,
+                            });
+                            defer ctx.allocator.free(msg);
+                            reportFFIIssue(ctx, .buffer_overflow, msg, caller_name, .medium, 0.70) catch {};
+                        }
                     }
                 }
             }
@@ -710,8 +739,30 @@ pub const FFIBoundaryPass = struct {
                 diag.warn("  CONTRACT WARNING: {s} transfers ownership but result may be discarded (leak risk)", .{
                     sem.pattern,
                 });
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "Ownership transfer without chain: {s} in {s}", .{
+                        sem.pattern, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .malloc_unchecked, msg, caller_name, .low, 0.50) catch {};
+                }
             }
         }
+    }
+
+    /// Report an FFI issue to both the diagnostic log and the issue tracking system.
+    /// This bridges the gap between diag.warn (debug output) and ctx.addIssue (SARIF/JSON).
+    fn reportFFIIssue(
+        ctx: *PassContext,
+        issue_kind: IssueKind,
+        message: []const u8,
+        func_name: []const u8,
+        severity: IssueSeverity,
+        confidence: f32,
+    ) !void {
+        const location = Location.init(func_name);
+        const issue = Issue.init(issue_kind, message, location, severity, confidence);
+        try ctx.addIssue(issue);
     }
 
     /// Scan forward in the same basic block for a NULL comparison of the call result.
@@ -820,28 +871,36 @@ pub const FFIBoundaryPass = struct {
     /// - Function pointer type mismatches
     /// - Struct layout incompatibility (Rust repr(C) vs C struct)
     fn checkSpecializedBoundary(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         called_name: []const u8,
-    ) void {
+    ) !void {
         if (isDynamicLoadingFunction(called_name)) {
-            checkDynamicLoadingSafety(diag, inst, caller_func, called_name);
+            try checkDynamicLoadingSafety(ctx, diag, inst, caller_func, called_name);
         }
         if (isJNIFunction(called_name)) {
-            checkJNIBoundarySafety(diag, inst, caller_func, called_name);
+            checkJNIBoundarySafety(ctx, diag, inst, caller_func, called_name) catch {};
         }
         if (isPythonCApiFunction(called_name)) {
-            checkPythonCApiSafety(diag, inst, caller_func, called_name);
+            checkPythonCApiSafety(ctx, diag, inst, caller_func, called_name) catch {};
         }
     }
 
     fn checkDynamicLoadingSafety(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         called_name: []const u8,
-    ) void {
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
         if (std.mem.indexOf(u8, called_name, "dlopen") != null or
             std.mem.indexOf(u8, called_name, "dlsym") != null)
         {
@@ -849,6 +908,13 @@ pub const FFIBoundaryPass = struct {
             if (!has_null_guard) {
                 diag.warn("  [DLOPEN] {s} returns NULL on failure but no NULL check detected", .{called_name});
                 diag.warn("    Risk: NULL pointer dereference / crash (CWE-690)", .{});
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "{s} returns NULL on failure without check in {s}", .{
+                        called_name, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                }
             }
         }
 
@@ -858,11 +924,17 @@ pub const FFIBoundaryPass = struct {
     }
 
     fn checkJNIBoundarySafety(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         called_name: []const u8,
-    ) void {
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
         const nullable_jni = [_][]const u8{
             "FindClass",    "GetMethodID",      "GetStaticMethodID",
             "GetFieldID",   "GetStaticFieldID", "NewStringUTF",
@@ -874,6 +946,13 @@ pub const FFIBoundaryPass = struct {
                 if (!has_null_guard) {
                     diag.warn("  [JNI] {s} returns NULL on failure but no NULL check detected", .{called_name});
                     diag.warn("    Risk: JNI exception pending / NullPointerException (CWE-690)", .{});
+                    {
+                        const msg = try std.fmt.allocPrint(ctx.allocator, "[JNI] {s} returns NULL without check in {s}", .{
+                            called_name, caller_name,
+                        });
+                        defer ctx.allocator.free(msg);
+                        reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                    }
                 }
                 break;
             }
@@ -887,17 +966,30 @@ pub const FFIBoundaryPass = struct {
             if (std.mem.indexOf(u8, called_name, call_fn) != null) {
                 diag.warn("  [JNI] {s} called - verify ExceptionCheck/ExceptionClear follows", .{called_name});
                 diag.warn("    Risk: Unchecked JNI exception propagates undefined behavior (CWE-755)", .{});
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "[JNI] {s} may raise unchecked exception in {s}", .{
+                        called_name, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.60) catch {};
+                }
                 break;
             }
         }
     }
 
     fn checkPythonCApiSafety(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         called_name: []const u8,
-    ) void {
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
         const nullable_py = [_][]const u8{
             "PyArg_ParseTuple",      "PyArg_ParseKeywords", "Py_BuildValue",
             "PyObject_Call",         "PyObject_CallObject", "PyObject_CallFunction",
@@ -911,6 +1003,13 @@ pub const FFIBoundaryPass = struct {
                 if (!has_null_guard) {
                     diag.warn("  [PYTHON] {s} returns NULL on failure but no NULL check detected", .{called_name});
                     diag.warn("    Risk: Exception set but not checked / crash (CWE-690/CWE-252)", .{});
+                    {
+                        const msg = try std.fmt.allocPrint(ctx.allocator, "[PYTHON] {s} returns NULL without check in {s}", .{
+                            called_name, caller_name,
+                        });
+                        defer ctx.allocator.free(msg);
+                        reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                    }
                 }
                 break;
             }
@@ -942,6 +1041,13 @@ pub const FFIBoundaryPass = struct {
         if (needs_gil) {
             diag.warn("  [PYTHON] {s} requires GIL - verify PyGILState_Ensure or PyGILState_GetThisThreadState", .{called_name});
             diag.warn("    Race condition risk if called without GIL (CWE-362/CWE-662)", .{});
+            {
+                const msg = try std.fmt.allocPrint(ctx.allocator, "[PYTHON] {s} requires GIL in {s} - verify PyGILState_Ensure", .{
+                    called_name, caller_name,
+                });
+                defer ctx.allocator.free(msg);
+                reportFFIIssue(ctx, .ffi_unsafe_call, msg, caller_name, .medium, 0.55) catch {};
+            }
         }
 
         const error_check_patterns = [_][]const u8{
@@ -968,11 +1074,17 @@ pub const FFIBoundaryPass = struct {
     /// This is critical for FFI safety because escaped pointers/references
     /// may be used after their valid lifetime ends (CWE-416, CWE-562).
     fn checkReturnValueEscape(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
-        _: c.LLVMValueRef,
+        caller_func: c.LLVMValueRef,
         callee_name: []const u8,
-    ) void {
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
         const opcode = c.LLVMGetInstructionOpcode(inst);
         if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return;
 
@@ -1000,6 +1112,13 @@ pub const FFIBoundaryPass = struct {
                 {
                     diag.warn("  [RETURN-ESCAPE] {s} return value stored to global variable — may outlive function scope", .{callee_name});
                     diag.warn("    Risk: Use-after-return if global is accessed after resource cleanup (CWE-416)", .{});
+                    {
+                        const msg = try std.fmt.allocPrint(ctx.allocator, "[RETURN-ESCAPE] {s} stored to global in {s} - may outlive scope", .{
+                            callee_name, caller_name,
+                        });
+                        defer ctx.allocator.free(msg);
+                        reportFFIIssue(ctx, .use_after_free, msg, caller_name, .medium, 0.70) catch {};
+                    }
                 }
             }
 
@@ -1024,6 +1143,13 @@ pub const FFIBoundaryPass = struct {
                                 callee_name, next_callee,
                             });
                             diag.warn("    Risk: Resource lifetime extends beyond caller's control (CWE-562)", .{});
+                            {
+                                const msg = try std.fmt.allocPrint(ctx.allocator, "[RETURN-ESCAPE] {s} passed to FFI {s} in {s} - lifetime risk", .{
+                                    callee_name, next_callee, caller_name,
+                                });
+                                defer ctx.allocator.free(msg);
+                                reportFFIIssue(ctx, .borrow_escape, msg, caller_name, .medium, 0.65) catch {};
+                            }
                         }
                     }
                 }
@@ -1043,7 +1169,6 @@ pub const FFIBoundaryPass = struct {
                         };
                         for (callback_receivers) |cr| {
                             if (std.mem.indexOf(u8, next_callee, cr) != null) {
-                                // Check if THIS instruction's result is the callback arg
                                 const num_ops = c.LLVMGetNumOperands(user_inst);
                                 var op_i: u32 = 0;
                                 while (op_i < num_ops) : (op_i += 1) {
@@ -1053,6 +1178,13 @@ pub const FFIBoundaryPass = struct {
                                             callee_name, next_callee,
                                         });
                                         diag.warn("    Risk: Callback invoked after caller returns with dangling reference (CWE-562)", .{});
+                                        {
+                                            const msg = try std.fmt.allocPrint(ctx.allocator, "[RETURN-ESCAPE] {s} used as callback arg to {s} in {s} - may outlive stack", .{
+                                                callee_name, next_callee, caller_name,
+                                            });
+                                            defer ctx.allocator.free(msg);
+                                            reportFFIIssue(ctx, .borrow_escape, msg, caller_name, .high, 0.75) catch {};
+                                        }
                                         break;
                                     }
                                 }
@@ -1065,9 +1197,16 @@ pub const FFIBoundaryPass = struct {
     }
 
     fn checkTypeCompatibility(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
-    ) void {
+        caller_func: c.LLVMValueRef,
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
         const callee_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(callee_val) == 0) return;
         // Only check external declarations (extern "C" functions)
@@ -1109,6 +1248,13 @@ pub const FFIBoundaryPass = struct {
                         describeLLVMType(param_type),
                         arg_kind,
                     });
+                    {
+                        const msg = try std.fmt.allocPrint(ctx.allocator, "TYPE MISMATCH: Param {d} pointer/integer confusion in {s}", .{
+                            param_idx, caller_name,
+                        });
+                        defer ctx.allocator.free(msg);
+                        reportFFIIssue(ctx, .type_mismatch, msg, caller_name, .high, 0.80) catch {};
+                    }
                 }
             }
 
@@ -1121,6 +1267,13 @@ pub const FFIBoundaryPass = struct {
                         diag.warn("  SIZE MISMATCH: Param {d} — i{d} vs i{d} (potential truncation/sign-extension)", .{
                             param_idx, arg_bits, param_bits,
                         });
+                        {
+                            const msg = try std.fmt.allocPrint(ctx.allocator, "SIZE MISMATCH: Param {d} i{d} vs i{d} in {s}", .{
+                                param_idx, arg_bits, param_bits, caller_name,
+                            });
+                            defer ctx.allocator.free(msg);
+                            reportFFIIssue(ctx, .type_mismatch, msg, caller_name, .medium, 0.70) catch {};
+                        }
                     }
                 }
             }
@@ -1161,11 +1314,17 @@ pub const FFIBoundaryPass = struct {
     /// 2. Dangling pointer detection: using stack-allocated or short-lived args after call
     /// 3. Parameter validity: ensure pointer arguments remain valid during call
     fn inferLifetimeConstraints(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         sem: FunctionSemantics,
-    ) void {
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
         const callee_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(callee_val) == 0) return;
 
@@ -1179,14 +1338,21 @@ pub const FFIBoundaryPass = struct {
             diag.debug("  LIFETIME: Return value -> {s}", .{lifetime.description});
             if (lifetime.risk_level == .warning or lifetime.risk_level == .danger) {
                 diag.warn("  LIFETIME RISK: {s}", .{lifetime.warning});
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "LIFETIME RISK: {s} in {s}", .{
+                        lifetime.warning, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .use_after_free, msg, caller_name, .medium, 0.70) catch {};
+                }
             }
         }
 
         // 2. Check for dangling pointer patterns in arguments
-        checkDanglingPointerPatterns(diag, inst, caller_func, func_name);
+        try checkDanglingPointerPatterns(ctx, diag, inst, caller_func, func_name);
 
         // 3. Validate parameter lifetime constraints
-        validateParameterLifetime(diag, inst, func_name, sem);
+        try validateParameterLifetime(ctx, diag, inst, func_name, caller_func, sem);
     }
 
     /// Categories of return value lifetimes at FFI boundaries
@@ -1257,12 +1423,17 @@ pub const FFIBoundaryPass = struct {
 
     /// Detect dangling pointer patterns at FFI boundaries
     fn checkDanglingPointerPatterns(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         callee_name: []const u8,
-    ) void {
-        _ = caller_func;
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
 
         // Pattern 1: Taking address of local variable and passing to FFI
         // This is usually OK for input parameters but dangerous for output params
@@ -1294,6 +1465,13 @@ pub const FFIBoundaryPass = struct {
                     if (@intFromPtr(ptr_operand) != 0 and c.LLVMIsAInstruction(ptr_operand) != null) {
                         if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMAlloca) {
                             diag.warn("  DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope", .{});
+                            {
+                                const msg = try std.fmt.allocPrint(ctx.allocator, "DANGLING RISK: Stack variable passed to {s} in {s} - may be invalid", .{
+                                    callee_name, caller_name,
+                                });
+                                defer ctx.allocator.free(msg);
+                                reportFFIIssue(ctx, .use_after_free, msg, caller_name, .high, 0.80) catch {};
+                            }
                         }
                     }
                 }
@@ -1317,12 +1495,19 @@ pub const FFIBoundaryPass = struct {
 
     /// Validate that pointer arguments satisfy lifetime requirements
     fn validateParameterLifetime(
+        ctx: *PassContext,
         diag: *DiagnosticWriter,
         inst: c.LLVMValueRef,
         callee_name: []const u8,
+        caller_func: c.LLVMValueRef,
         sem: FunctionSemantics,
-    ) void {
+    ) !void {
         _ = sem;
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
 
         // Check for common lifetime violations:
 
@@ -1347,6 +1532,13 @@ pub const FFIBoundaryPass = struct {
             // 2. Check for integer-to-pointer cast (potential invalid address)
             if (c.LLVMIsAIntToPtrInst(arg)) |_| {
                 diag.warn("  LIFETIME RISK: inttoptr conversion passed to {s} — possible invalid pointer", .{callee_name});
+                {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "LIFETIME RISK: inttoptr passed to {s} in {s} - possible invalid pointer", .{
+                        callee_name, caller_name,
+                    });
+                    defer ctx.allocator.free(msg);
+                    reportFFIIssue(ctx, .null_dereference, msg, caller_name, .high, 0.85) catch {};
+                }
             }
         }
     }
@@ -1795,6 +1987,39 @@ pub const FFIBoundaryPass = struct {
         }
 
         return false;
+    }
+
+    fn riskKindToIssueKind(risk: RiskKind) IssueKind {
+        return switch (risk) {
+            .command_exec => .command_injection,
+            .unchecked_copy => .ffi_unsafe_call,
+            .format_string => .format_string,
+            .allocator => .memory_leak,
+            .deallocator => .invalid_free,
+            .rust_ownership => .cross_language_leak,
+            .borrow_escaped => .borrow_escape,
+            .memory_map => .memory_leak,
+            .file_io => .ffi_unsafe_call,
+            .network_io => .ffi_unsafe_call,
+            .go_cgo_alloc => .memory_leak,
+            .zig_allocator => .memory_leak,
+            .cpp_allocator => .memory_leak,
+            .dynamic_loading => .ffi_unsafe_call,
+            .jni => .ffi_unsafe_call,
+            .python_c_api => .ffi_unsafe_call,
+            .signal_handler => .ffi_unsafe_call,
+            .thread_mgmt => .ffi_unsafe_call,
+            .process_mgmt => .ffi_unsafe_call,
+        };
+    }
+
+    fn registrySeverityToIssueSeverity(registry_severity: Severity) IssueSeverity {
+        return switch (registry_severity) {
+            .low => .low,
+            .medium => .medium,
+            .high => .high,
+            .critical => .critical,
+        };
     }
 };
 

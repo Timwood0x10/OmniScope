@@ -480,6 +480,68 @@ pub const DataFlowGraph = struct {
         };
     }
 
+    pub const IssueStats = struct {
+        total: usize,
+        memory_leak: usize,
+        use_after_free: usize,
+        double_free: usize,
+        ffi_unsafe: usize,
+        command_injection: usize,
+        buffer_overflow: usize,
+        format_string: usize,
+        type_mismatch: usize,
+        borrow_escape: usize,
+        null_dereference: usize,
+        invalid_free: usize,
+        unchecked_return: usize,
+        malloc_unchecked: usize,
+        callback_mismatch: usize,
+        cross_language_leak: usize,
+        unknown: usize,
+    };
+
+    pub fn getIssueStats(self: *const DataFlowGraph) IssueStats {
+        var stats = IssueStats{
+            .total = self.issues.items.len,
+            .memory_leak = 0,
+            .use_after_free = 0,
+            .double_free = 0,
+            .ffi_unsafe = 0,
+            .command_injection = 0,
+            .buffer_overflow = 0,
+            .format_string = 0,
+            .type_mismatch = 0,
+            .borrow_escape = 0,
+            .null_dereference = 0,
+            .invalid_free = 0,
+            .unchecked_return = 0,
+            .malloc_unchecked = 0,
+            .callback_mismatch = 0,
+            .cross_language_leak = 0,
+            .unknown = 0,
+        };
+        for (self.issues.items) |issue| {
+            switch (issue.kind) {
+                .memory_leak, .cross_language_leak => stats.memory_leak += 1,
+                .use_after_free => stats.use_after_free += 1,
+                .double_free => stats.double_free += 1,
+                .ffi_unsafe_call => stats.ffi_unsafe += 1,
+                .command_injection => stats.command_injection += 1,
+                .buffer_overflow => stats.buffer_overflow += 1,
+                .format_string => stats.format_string += 1,
+                .type_mismatch => stats.type_mismatch += 1,
+                .borrow_escape => stats.borrow_escape += 1,
+                .null_dereference => stats.null_dereference += 1,
+                .invalid_free => stats.invalid_free += 1,
+                .unchecked_return => stats.unchecked_return += 1,
+                .malloc_unchecked => stats.malloc_unchecked += 1,
+                .callback_signature_mismatch => stats.callback_mismatch += 1,
+                .unknown => stats.unknown += 1,
+            }
+        }
+        return stats;
+    }
+
     /// Graph statistics
     pub const GraphStats = struct {
         /// Total number of nodes
