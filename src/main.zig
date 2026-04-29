@@ -193,6 +193,9 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
     try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
 
     const analysis_start = std.time.milliTimestamp();
     const result = try pipeline.runStaticAnalysis();

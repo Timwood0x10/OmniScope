@@ -210,7 +210,7 @@ test_zig() {
     echo ""
     echo "=== Zig Test Cases ==="
 
-    test_ir_file "test_zig_comptime" 0 10
+    test_ir_file "test_zig_comptime" 0 30
 }
 
 test_sarif_output() {

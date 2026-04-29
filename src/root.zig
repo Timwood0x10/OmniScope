@@ -132,6 +132,12 @@ pub const cross_lang = struct {
     pub const isExceptionRelated = @import("pass/analysis/thread_crossing.zig").isExceptionRelated;
 
     pub const FFIUnsafePass = @import("pass/analysis/issue/ffi_unsafe.zig").FFIUnsafePass;
+    pub const FFIBodyCheckPass = @import("pass/analysis/issue/ffi_body_check.zig").FFIBodyCheckPass;
+    pub const ReturnCheckPass = @import("pass/analysis/issue/return_check.zig").ReturnCheckPass;
+    pub const MemorySafetyPass = @import("pass/analysis/issue/memory_safety.zig").MemorySafetyPass;
+    pub const IntegerOverflowPass = @import("pass/analysis/issue/integer_overflow.zig").IntegerOverflowPass;
+    pub const MallocCheckPass = @import("pass/analysis/issue/malloc_check.zig").MallocCheckPass;
+    pub const FreeValidationPass = @import("pass/analysis/issue/free_validation.zig").FreeValidationPass;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;
     pub const FFIAnalysisResult = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisResult;
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
