@@ -30,6 +30,9 @@ const FactKind = @import("../../fact/fact.zig").FactKind;
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 
+const NoiseReduction = @import("noise_reduction.zig");
+const FPWhitelist = @import("../filter/fp_whitelist.zig");
+
 /// Error type for ownership analysis operations
 pub const FFIAnalysisError = error{
     NoModule,
@@ -205,11 +208,22 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn collectAllocationSites(self: *FFIAnalysisPass, mod: c.LLVMModuleRef, diag: *DiagnosticWriter) !void {
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
+
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
+
+            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+
+            // Defense-in-depth: known FP whitelist
+            if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             const language = self.detectLanguageWithDwarf(func, func_name);
 
@@ -253,11 +267,22 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn collectFreeSites(self: *FFIAnalysisPass, mod: c.LLVMModuleRef, diag: *DiagnosticWriter) !void {
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
+
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
+
+            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+
+            // Defense-in-depth: known FP whitelist
+            if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             const language = self.detectLanguageWithDwarf(func, func_name);
 
@@ -558,6 +583,27 @@ pub const FFIAnalysisPass = struct {
         }
 
         return .c;
+    }
+
+    /// Extract debug file path from LLVM subprogram metadata.
+    /// Used by NoiseReduction Layer 2 (path-based filter).
+    fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
+        const subprogram = c.LLVMGetSubprogram(func);
+        if (@intFromPtr(subprogram) == 0) return null;
+
+        const file_ref = c.LLVMDIScopeGetFile(subprogram);
+        if (@intFromPtr(file_ref) == 0) return null;
+
+        var filename_len: c_uint = undefined;
+        const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+        if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+        // Sanity check on path length
+        const max_path_len: c_uint = 4096;
+        if (filename_len > max_path_len) return null;
+        if (filename_ptr[0] == 0) return null;
+
+        return filename_ptr[0..filename_len];
     }
 
     fn detectLanguageWithDwarf(_: *FFIAnalysisPass, func: c.LLVMValueRef, func_name: []const u8) Language {

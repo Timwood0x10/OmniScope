@@ -188,8 +188,8 @@ test_cpp() {
     echo ""
     echo "=== C++ Test Cases ==="
 
-    test_ir_file "test_cpp_classes" 0 10
-    test_ir_file "test_cpp_virtual" 0 10
+    test_ir_file "test_cpp_classes" 0 20
+    test_ir_file "test_cpp_virtual" 0 20
 }
 
 test_rust() {

@@ -591,7 +591,7 @@ pub const FFIBodyCheckPass = struct {
                 // Check if this is a call instruction
                 if (opcode == c.LLVMCall) {
                     // Get the called function - callee is at num_operands - 1
-                    const num_operands = c.LLVMGetNumOperands(inst);
+                    const num_operands = @as(c_uint, @bitCast(c.LLVMGetNumOperands(inst)));
                     if (num_operands >= 1) {
                         const called_value = c.LLVMGetOperand(inst, num_operands - 1);
                         if (@intFromPtr(called_value) != 0) {
@@ -612,7 +612,7 @@ pub const FFIBodyCheckPass = struct {
                                 var args = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, @as(usize, @intCast(num_operands)) - 1) catch return error.OutOfMemory;
                                 defer args.deinit(ctx.allocator);
 
-                                var arg_idx: u32 = 0;
+                                var arg_idx: c_uint = 0;
                                 while (arg_idx < num_operands - 1) : (arg_idx += 1) {
                                     const arg = c.LLVMGetOperand(inst, arg_idx);
                                     if (arg != null) {

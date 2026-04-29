@@ -36,6 +36,7 @@ const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const NoiseReduction = @import("noise_reduction.zig");
 
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
@@ -305,6 +306,7 @@ pub const CallbackEscapePass = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = EscapeStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
@@ -322,10 +324,11 @@ pub const CallbackEscapePass = struct {
             const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
             ctx.zone_stats.record(zone);
 
-            switch (zone) {
-                .safe, .runtime_internal => continue,
-                .unsafe, .ffi, .unknown => {},
-            }
+            // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
@@ -335,6 +338,26 @@ pub const CallbackEscapePass = struct {
 
         diag.info("CallbackEscape: analyzed {} funcs, {} cgo boundaries, {} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +
             stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans });
+    }
+
+    /// Extract debug file path from LLVM subprogram metadata.
+    /// Used by NoiseReduction Layer 2 (path-based filter).
+    fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
+        const subprogram = c.LLVMGetSubprogram(func);
+        if (@intFromPtr(subprogram) == 0) return null;
+
+        const file_ref = c.LLVMDIScopeGetFile(subprogram);
+        if (@intFromPtr(file_ref) == 0) return null;
+
+        var filename_len: c_uint = undefined;
+        const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+        if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+        const max_path_len: c_uint = 4096;
+        if (filename_len > max_path_len) return null;
+        if (filename_ptr[0] == 0) return null;
+
+        return filename_ptr[0..filename_len];
     }
 
     fn analyzeFunction(
@@ -358,12 +381,12 @@ pub const CallbackEscapePass = struct {
         }
 
         var has_keepalive = false;
-        var alloc_sites = std.ArrayList(AllocSiteInfo).init(ctx.allocator);
-        defer alloc_sites.deinit();
-        var free_sites = std.ArrayList(FreeSiteInfo).init(ctx.allocator);
-        defer free_sites.deinit();
-        var cgo_calls = std.ArrayList(CGoCallInfo).init(ctx.allocator);
-        defer cgo_calls.deinit();
+        var alloc_sites: std.ArrayList(AllocSiteInfo) = .{};
+        defer alloc_sites.deinit(ctx.allocator);
+        var free_sites: std.ArrayList(FreeSiteInfo) = .{};
+        defer free_sites.deinit(ctx.allocator);
+        var cgo_calls: std.ArrayList(CGoCallInfo) = .{};
+        defer cgo_calls.deinit(ctx.allocator);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -415,8 +438,8 @@ pub const CallbackEscapePass = struct {
         diag: *DiagnosticWriter,
         stats: *EscapeStats,
     ) !void {
-        var callback_escapes = std.ArrayList(CallbackEscapeInfo).init(ctx.allocator);
-        defer callback_escapes.deinit();
+        var callback_escapes: std.ArrayList(CallbackEscapeInfo) = .{};
+        defer callback_escapes.deinit(ctx.allocator);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -444,7 +467,7 @@ pub const CallbackEscapePass = struct {
                                         c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
                                     {
                                         if (isLikelyCallbackFunction(elem_type, callee_name)) {
-                                            try callback_escapes.append(.{
+                                            try callback_escapes.append(ctx.allocator, .{
                                                 .inst = inst,
                                                 .receiver_name = callee_name,
                                                 .callback_arg = arg,
@@ -470,7 +493,7 @@ pub const CallbackEscapePass = struct {
                                 const ptr_op = c.LLVMGetOperand(inst, 1);
                                 if (@intFromPtr(ptr_op) != 0) {
                                     if (isGlobalVariable(ptr_op)) {
-                                        try callback_escapes.append(.{
+                                        try callback_escapes.append(ctx.allocator, .{
                                             .inst = inst,
                                             .receiver_name = "global_store",
                                             .callback_arg = value_op,
@@ -574,14 +597,14 @@ pub const CallbackEscapePass = struct {
                 std.mem.indexOf(u8, callee_name, "malloc") != null or
                 std.mem.indexOf(u8, callee_name, "calloc") != null)
             {
-                try alloc_sites.append(.{
+                try alloc_sites.append(allocator, .{
                     .inst_id = inst,
                     .func_name = try allocator.dupe(u8, callee_name),
                 });
             }
 
             if (std.mem.indexOf(u8, callee_name, "free") != null) {
-                try free_sites.append(.{
+                try free_sites.append(allocator, .{
                     .inst_id = inst,
                     .func_name = try allocator.dupe(u8, callee_name),
                 });
@@ -607,7 +630,7 @@ pub const CallbackEscapePass = struct {
                     }
                 }
 
-                try cgo_calls.append(.{
+                try cgo_calls.append(allocator, .{
                     .inst = inst,
                     .callee_name = try allocator.dupe(u8, callee_name),
                     .is_pointer_arg = has_ptr_arg,

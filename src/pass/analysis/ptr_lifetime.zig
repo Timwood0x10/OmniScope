@@ -39,6 +39,7 @@ const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const NoiseReduction = @import("noise_reduction.zig");
 
 /// Allocation site classification for pointers.
 pub const PtrAllocSite = enum(u8) {
@@ -341,6 +342,7 @@ pub const PtrLifetimePass = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = LifetimeStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
@@ -358,10 +360,11 @@ pub const PtrLifetimePass = struct {
             const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
             ctx.zone_stats.record(zone);
 
-            switch (zone) {
-                .safe, .runtime_internal => continue,
-                .unsafe, .ffi, .unknown => {},
-            }
+            // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
@@ -374,6 +377,26 @@ pub const PtrLifetimePass = struct {
             stats.total_pointers_tracked,
             stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
         });
+    }
+
+    /// Extract debug file path from LLVM subprogram metadata.
+    /// Used by NoiseReduction Layer 2 (path-based filter).
+    fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
+        const subprogram = c.LLVMGetSubprogram(func);
+        if (@intFromPtr(subprogram) == 0) return null;
+
+        const file_ref = c.LLVMDIScopeGetFile(subprogram);
+        if (@intFromPtr(file_ref) == 0) return null;
+
+        var filename_len: c_uint = undefined;
+        const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+        if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+        const max_path_len: c_uint = 4096;
+        if (filename_len > max_path_len) return null;
+        if (filename_ptr[0] == 0) return null;
+
+        return filename_ptr[0..filename_len];
     }
 
     fn analyzeFunction(
@@ -550,6 +573,18 @@ pub const PtrLifetimePass = struct {
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id);
             },
 
+            c.LLVMStore => {
+                const value = c.LLVMGetOperand(inst, 0);
+                const dest = c.LLVMGetOperand(inst, 1);
+                if (pointer_map.get(value)) |src_info| {
+                    var new_info = src_info;
+                    const desc = try allocator.dupe(u8, src_info.source_desc);
+                    new_info.source_desc = desc;
+                    new_info.needs_free = true;
+                    try putPtrInfo(pointer_map, dest, new_info, allocator);
+                }
+            },
+
             c.LLVMGetElementPtr => {
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id);
             },
@@ -648,8 +683,7 @@ pub const PtrLifetimePass = struct {
     fn isGlobalVariable(ptr: c.LLVMValueRef) bool {
         if (ptr == null) return false;
         const value_kind = c.LLVMGetValueKind(ptr);
-        return value_kind == c.LLVMGlobalVariableValueKind or
-            c.LLVMIsAGlobalVar(ptr) != 0;
+        return value_kind == c.LLVMGlobalVariableValueKind;
     }
 
     fn checkCallViolation(
@@ -712,6 +746,10 @@ pub const PtrLifetimePass = struct {
         const num_ops = c.LLVMGetNumOperands(inst);
         if (num_ops == 0) return;
 
+        if (isCppDestructorOrConstructor(func_name)) {
+            return;
+        }
+
         const retval = c.LLVMGetOperand(inst, 0);
         if (pointer_map.get(retval)) |ptr_info| {
             if (ptr_info.alloc_site == .stack) {
@@ -755,6 +793,20 @@ pub const PtrLifetimePass = struct {
         if (ptr_info.resource_type == .python_obj) {
             return std.mem.indexOf(u8, func_name, "Py_BuildValue") != null or
                 std.mem.indexOf(u8, func_name, "PyTuple_New") != null;
+        }
+        return false;
+    }
+
+    fn isCppDestructorOrConstructor(func_name: []const u8) bool {
+        if (func_name.len == 0) return false;
+        if (func_name[func_name.len - 1] == 'E') {
+            if (std.mem.indexOf(u8, func_name, "C1E") != null or
+                std.mem.indexOf(u8, func_name, "C2E") != null or
+                std.mem.indexOf(u8, func_name, "D1E") != null or
+                std.mem.indexOf(u8, func_name, "D2E") != null)
+            {
+                return true;
+            }
         }
         return false;
     }

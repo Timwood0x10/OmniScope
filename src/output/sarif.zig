@@ -67,8 +67,8 @@ pub const SarifOutput = struct {
         try self.writeJsonString(w, self.tool_version);
         try w.writeAll(",\"informationUri\":");
         try self.writeJsonString(w, self.tool_uri);
+        try w.writeAll("}},\"rules\":[");
 
-        try w.writeAll(",\"rules\":[");
         const kinds = [_]IssueKind{
             .memory_leak,
             .ffi_unsafe_call,
@@ -116,50 +116,48 @@ pub const SarifOutput = struct {
             try writeUint64(w, line_num);
             try w.writeAll(",\"startColumn\":");
             try writeUint64(w, col_num);
-            try w.writeAll("}}}]}");
+            try w.writeAll("}}}],\"properties\":{\"confidence\":");
+            try writeFloat(w, issue.confidence);
+            try w.writeAll(",\"confidenceLevel\":");
+            try self.writeJsonString(w, issue.confidence_level.toString());
+            if (issue.reason.len > 0) {
+                try w.writeAll(",\"reason\":");
+                try self.writeJsonString(w, issue.reason);
+            }
+            try w.writeAll("}");
 
             if (issue.trace) |trace| {
                 if (trace.len > 0) {
                     try w.writeAll(",\"codeFlows\":[{\"threadFlows\":[{\"locations\":[");
                     for (trace, 0..) |entry, ei| {
                         if (ei > 0) try w.writeAll(",");
-                        try w.writeAll("{\"location\":{\"physicalLocation\":{");
+                        try w.writeAll("{\"location\":{\"physicalLocation\":{\"artifactLocation\":{\"uri\":");
                         if (entry.location) |loc| {
-                            try w.writeAll("\"artifactLocation\":{\"uri\":");
                             try self.writeJsonString(w, loc.file orelse "unknown");
                             try w.writeAll("},\"region\":{\"startLine\":");
                             try writeUint64(w, loc.line orelse 1);
-                            try w.writeAll("}");
+                        } else {
+                            try self.writeJsonString(w, "unknown");
+                            try w.writeAll("},\"region\":{\"startLine\":1");
                         }
-                        try w.writeAll("},\"message\":{\"text\":");
+                        try w.writeAll("}}},\"message\":{\"text\":");
                         try self.writeJsonString(w, entry.description);
-                        try w.writeAll("}}}");
+                        try w.writeAll("}}");
                     }
                     try w.writeAll("]}]}]");
                 }
             }
-
-            try w.writeAll(",\"properties\":{\"confidence\":");
-            try writeFloat(w, issue.confidence);
-            try w.writeAll(",\"confidenceLevel\":");
-            try self.writeJsonString(w, issue.confidence_level.toString());
-            try w.writeAll("");
-            if (issue.reason.len > 0) {
-                try w.writeAll(",\"reason\":");
-                try self.writeJsonString(w, issue.reason);
-            }
             try w.writeAll("}");
         }
 
-        try w.writeAll("]}}}]}");
+        try w.writeAll("]}]}");
 
         return try buf.toOwnedSlice();
     }
 
     fn writeJsonString(self: *SarifOutput, writer: anytype, s: []const u8) !void {
-        const escaped = try std.json.Stringify.valueAlloc(self.allocator, .{s}, .{});
-        defer self.allocator.free(escaped);
-        try writer.writeAll(escaped);
+        _ = self;
+        try writer.print("{f}", .{std.json.fmt(s, .{})});
     }
 
     pub fn writeToFile(self: *SarifOutput, path: []const u8, issues: []const Issue) !void {
