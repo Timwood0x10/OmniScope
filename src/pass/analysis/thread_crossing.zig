@@ -320,7 +320,7 @@ fn reportExceptionAcrossFFI(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[EXCEPTION-FFI] {s}", .{func_name});
 }
 
@@ -351,7 +351,7 @@ fn reportUnsyncedWrite(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[UNSYNCED-WRITE] {s}", .{func_name});
 }
 
@@ -382,7 +382,7 @@ fn reportLockRisk(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[LOCK-RISK] {s}", .{func_name});
 }
 
@@ -413,7 +413,7 @@ fn reportSignalUnsafe(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[SIGNAL-UNSAFE] {s}", .{func_name});
 }
 

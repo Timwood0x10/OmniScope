@@ -89,7 +89,7 @@ pub const FFIUnsafePass = struct {
                 confidence,
             );
 
-            try ctx.addIssue(issue);
+            try ctx.addIssue(&issue);
             ctx.allocator.free(issue_message);
             issue_count += 1;
         }

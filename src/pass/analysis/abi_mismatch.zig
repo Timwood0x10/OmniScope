@@ -339,7 +339,7 @@ fn reportPackedStructFFI(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[PACKED-FFI] {s} -> {s}() in {s}", .{ type_str, callee_name, func_name });
 }
 
@@ -372,7 +372,7 @@ fn reportEndiannessRisk(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[ENDIAN-RISK] {s} -> {s}() in {s}", .{ type_str, callee_name, func_name });
 }
 
@@ -403,7 +403,7 @@ fn reportVariadicWarning(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[VARIADIC] {s}() in {s}", .{ callee_name, func_name });
 }
 

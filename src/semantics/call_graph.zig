@@ -73,7 +73,7 @@ pub const CallNode = struct {
     /// Whether this is an FFI boundary function.
     is_ffi_boundary: bool,
     /// Calls made by this function.
-    outgoing_edges: std.AutoArrayList(u64),
+    outgoing_edges: std.ArrayList(u64),
 };
 
 /// Represents a call edge in the call graph.
@@ -95,13 +95,13 @@ pub const CallEdge = struct {
 /// Main call graph structure.
 pub const CallGraph = struct {
     /// Map from function name → node ID.
-    nodes_by_name: std.AutoHashMap([]const u8, u64),
+    nodes_by_name: std.StringHashMap(u64),
     /// Map from function ref → node ID.
     nodes_by_ref: std.AutoHashMap(u64, u64),
     /// All nodes in the graph.
-    nodes: std.AutoArrayList(CallNode),
+    nodes: std.ArrayList(CallNode),
     /// All edges in the graph.
-    edges: std.AutoArrayList(CallEdge),
+    edges: std.ArrayList(CallEdge),
     /// Next available node ID.
     next_node_id: u64,
     /// Next available edge ID.
@@ -117,10 +117,10 @@ pub const CallGraph = struct {
         errdefer arena.deinit();
 
         return CallGraph{
-            .nodes_by_name = std.AutoHashMap([]const u8, u64).init(arena.allocator()),
+            .nodes_by_name = std.StringHashMap(u64).init(arena.allocator()),
             .nodes_by_ref = std.AutoHashMap(u64, u64).init(arena.allocator()),
-            .nodes = std.AutoArrayList(CallNode).init(arena.allocator()),
-            .edges = std.AutoArrayList(CallEdge).init(arena.allocator()),
+            .nodes = std.ArrayList(CallNode).init(arena.allocator()),
+            .edges = std.ArrayList(CallEdge).init(arena.allocator()),
             .next_node_id = 1,
             .next_edge_id = 1,
             .arena = arena,
@@ -157,10 +157,10 @@ pub const CallGraph = struct {
             .param_count = if (func_ref != null) c.LLVMCountParams(func_ref) else 0,
             .is_external = is_external,
             .is_ffi_boundary = is_ffi_boundary,
-            .outgoing_edges = std.AutoArrayList(u64).init(graph.arena.allocator()),
+            .outgoing_edges = std.ArrayList(u64).init(graph.arena.allocator()),
         };
 
-        try graph.nodes.push(node);
+        try graph.nodes.append(node);
         try graph.nodes_by_name.put(node.name, id);
         if (func_ref != null) {
             const ref_int = @as(u64, @intFromPtr(func_ref));
@@ -190,11 +190,11 @@ pub const CallGraph = struct {
             .func_name = try graph.arena.allocator().dupe(u8, func_name),
         };
 
-        try graph.edges.push(edge);
+        try graph.edges.append(edge);
 
         // Add to caller's outgoing edges.
         if (graph.nodes.items.len > caller_id) {
-            try graph.nodes.items[@as(usize, caller_id - 1)].outgoing_edges.push(id);
+            try graph.nodes.items[@as(usize, caller_id - 1)].outgoing_edges.append(id);
         }
 
         return id;
@@ -279,15 +279,95 @@ pub fn propagateMemoryGraphThroughCall(
 }
 
 /// Analyzes a call site to determine argument transfer directions.
+/// Uses LLVM type information and callee name heuristics.
+/// Accepts raw pointer values as u64 to avoid cross-cimport type mismatches.
 pub fn analyzeArgumentDirections(
-    call_inst: c.LLVMValueRef,
-    caller_func: c.LLVMValueRef,
-    callee_func: c.LLVMValueRef,
-) []ArgumentMapping {
-    _ = call_inst;
-    _ = caller_func;
-    _ = callee_func;
-    return &.{};
+    call_inst_ptr: u64,
+    callee_name: []const u8,
+    param_count: u32,
+    get_operand_fn: *const fn (u64, u32) u64,
+    get_type_kind_fn: *const fn (u64) u32,
+    get_elem_type_kind_fn: *const fn (u64) u32,
+    arena: std.mem.Allocator,
+) ![]ArgumentMapping {
+    var mappings = std.ArrayList(ArgumentMapping).init(arena);
+    errdefer mappings.deinit(arena);
+
+    var i: u32 = 0;
+    while (i < param_count) : (i += 1) {
+        const arg = get_operand_fn(call_inst_ptr, i);
+        if (arg == 0) continue;
+
+        const type_kind = get_type_kind_fn(arg);
+        if (type_kind != c.LLVMPointerTypeKind) continue;
+
+        const elem_type_kind = get_elem_type_kind_fn(arg);
+
+        const direction: TransferDirection = if (elem_type_kind == c.LLVMFunctionTypeKind)
+            .borrowed_only
+        else if (elem_type_kind == c.LLVMPointerTypeKind)
+            .callee_to_caller
+        else
+            classifyArgDirectionByName(callee_name, i);
+
+        const param_name = std.fmt.allocPrint(arena, "param_{}", .{i}) catch "param";
+
+        const is_output = isOutputParam(callee_name, i);
+
+        try mappings.append(arena, .{
+            .caller_arg = arg,
+            .param_name = param_name,
+            .direction = direction,
+            .is_output_param = is_output,
+        });
+    }
+
+    return mappings.items;
+}
+
+/// Classifies argument direction by callee name patterns only (no LLVM types).
+fn classifyArgDirectionByName(callee_name: []const u8, param_index: u32) TransferDirection {
+    // Functions with "get"/"read"/"recv" prefix: pointer args are often output
+    const read_prefixes = [_][]const u8{
+        "get_", "read_", "recv_", "fetch_", "query_", "load_",
+    };
+    for (read_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, callee_name, prefix)) {
+            if (param_index > 0) return .callee_to_caller;
+        }
+    }
+
+    // Functions with "set_"/"write_"/"send_": pointer args are typically input
+    const write_prefixes = [_][]const u8{
+        "set_", "write_", "send_", "put_", "store_", "copy_",
+    };
+    for (write_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, callee_name, prefix)) {
+            return .caller_to_callee;
+        }
+    }
+
+    return .caller_to_callee;
+}
+
+/// Checks if a parameter at the given index is an output parameter.
+fn isOutputParam(callee_name: []const u8, param_index: u32) bool {
+    const output_suffix_patterns = [_][]const u8{
+        "sqlite3_prepare",   "sqlite3_open",
+        "getsockopt",        "getaddrinfo",
+        "getnameinfo",       "pthread_create",
+        "pthread_join",      "clock_gettime",
+        "gettimeofday",      "regcomp",
+        "curl_easy_getinfo",
+    };
+    for (output_suffix_patterns) |prefix| {
+        if (std.mem.startsWith(u8, callee_name, prefix)) {
+            return true;
+        }
+    }
+
+    _ = param_index;
+    return false;
 }
 
 // ============================================================================

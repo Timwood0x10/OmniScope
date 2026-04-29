@@ -163,10 +163,8 @@ pub const IntrinsicFilter = struct {
         filter.addConditional("llvm.memmove.inline", "Inline memory move, rarely used");
 
         // Risky intrinsics - these may indicate real issues.
-        filter.addRisky("llvm.memcpy.element.unordered.atomic",
-            "Atomic memcpy - may have memory ordering issues");
-        filter.addRisky("llvm.memmove.element.unordered.atomic",
-            "Atomic memmove - may have memory ordering issues");
+        filter.addRisky("llvm.memcpy.element.unordered.atomic", "Atomic memcpy - may have memory ordering issues");
+        filter.addRisky("llvm.memmove.element.unordered.atomic", "Atomic memmove - may have memory ordering issues");
 
         return filter;
     }

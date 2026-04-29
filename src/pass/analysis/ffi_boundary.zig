@@ -618,7 +618,7 @@ pub const FFIBoundaryPass = struct {
             registrySeverityToIssueSeverity(sem.severity),
             0.8,
         );
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
 
         if (sem.kind == .command_exec) {
             if (@intFromPtr(inst) != 0) {
@@ -761,7 +761,7 @@ pub const FFIBoundaryPass = struct {
     ) !void {
         const location = Location.init(func_name);
         const issue = Issue.init(issue_kind, message, location, severity, confidence);
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
     }
 
     /// Scan forward in the same basic block for a NULL comparison of the call result.

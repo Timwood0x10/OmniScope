@@ -357,8 +357,11 @@ pub const DataFlowGraph = struct {
     ///   - issue: The issue to add
     pub fn addIssue(self: *DataFlowGraph, issue: Issue) !void {
         const message_copy = try self.allocator.dupe(u8, issue.message);
+        errdefer self.allocator.free(message_copy);
+
         var issue_copy = issue;
         issue_copy.message = message_copy;
+        issue_copy.owned = true;
 
         try self.issues.append(self.allocator, issue_copy);
 

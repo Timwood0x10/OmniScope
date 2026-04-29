@@ -170,7 +170,7 @@ pub const RustFfiAuditor = struct {
                 });
 
                 const vuln_id = ctx.getNextVulnId();
-                ctx.addIssue(Issue.initWithReason(
+                ctx.addIssue(&Issue.initWithReason(
                     .borrow_escape,
                     "Potential as_ptr borrow escape: local Rust value pointer passed to FFI",
                     Location.init(func_name),
@@ -220,7 +220,7 @@ pub const RustFfiAuditor = struct {
                 });
 
                 const vuln_id = ctx.getNextVulnId();
-                ctx.addIssue(Issue.initWithReason(
+                ctx.addIssue(&Issue.initWithReason(
                     .cross_language_leak,
                     "Cross-language alloc mismatch: Rust-alloc freed by C free()",
                     Location.init(func_name),

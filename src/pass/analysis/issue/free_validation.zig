@@ -334,7 +334,7 @@ pub const FreeValidationPass = struct {
             trace,
         );
 
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
 
         diag.warn("Invalid {s} on {s} pointer in function: {s}", .{ free_func_name, origin_str, caller_name });
     }

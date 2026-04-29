@@ -132,7 +132,7 @@ pub const ReturnCheckPass = struct {
             confidence,
         );
 
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
         ctx.allocator.free(issue_message);
 
         diag.warn("Unchecked return value: {s} -> {s}", .{ caller_name, clean_name });

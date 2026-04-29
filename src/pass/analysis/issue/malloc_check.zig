@@ -229,7 +229,7 @@ pub const MallocCheckPass = struct {
             trace,
         );
 
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
 
         diag.warn("Unchecked {s} result in function: {s}", .{ alloc_func_name, caller_name });
     }

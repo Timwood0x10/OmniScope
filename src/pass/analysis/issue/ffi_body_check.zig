@@ -660,7 +660,7 @@ pub const FFIBodyCheckPass = struct {
                                             0.8,
                                         );
 
-                                        try ctx.addIssue(issue);
+                                        try ctx.addIssue(&issue);
                                         issue_count += 1;
 
                                         diag.warn("FFIBodyCheck: malloc result not checked in function '{s}'", .{boundary.function_name});
@@ -693,7 +693,7 @@ pub const FFIBodyCheckPass = struct {
                                                 0.9,
                                             );
 
-                                            try ctx.addIssue(issue);
+                                            try ctx.addIssue(&issue);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: double free detected in function '{s}'", .{boundary.function_name});
@@ -717,7 +717,7 @@ pub const FFIBodyCheckPass = struct {
                                                 0.7,
                                             );
 
-                                            try ctx.addIssue(issue);
+                                            try ctx.addIssue(&issue);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: free called on non-malloc pointer in function '{s}'", .{boundary.function_name});
@@ -744,7 +744,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
@@ -766,7 +766,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
@@ -788,7 +788,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });

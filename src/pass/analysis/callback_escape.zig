@@ -37,6 +37,7 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const NoiseReduction = @import("noise_reduction.zig");
+const call_graph_mod = @import("../../semantics/call_graph.zig");
 
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
@@ -382,11 +383,20 @@ pub const CallbackEscapePass = struct {
 
         var has_keepalive = false;
         var alloc_sites: std.ArrayList(AllocSiteInfo) = .{};
-        defer alloc_sites.deinit(ctx.allocator);
+        defer {
+            for (alloc_sites.items) |site| ctx.allocator.free(site.func_name);
+            alloc_sites.deinit(ctx.allocator);
+        }
         var free_sites: std.ArrayList(FreeSiteInfo) = .{};
-        defer free_sites.deinit(ctx.allocator);
+        defer {
+            for (free_sites.items) |site| ctx.allocator.free(site.func_name);
+            free_sites.deinit(ctx.allocator);
+        }
         var cgo_calls: std.ArrayList(CGoCallInfo) = .{};
-        defer cgo_calls.deinit(ctx.allocator);
+        defer {
+            for (cgo_calls.items) |call| ctx.allocator.free(call.callee_name);
+            cgo_calls.deinit(ctx.allocator);
+        }
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -508,6 +518,52 @@ pub const CallbackEscapePass = struct {
         }
 
         for (callback_escapes.items) |escape| {
+            // v0.1.8: Use call_graph argument direction analysis to filter
+            // false-positive callback escapes. If the callback argument is
+            // classified as borrowed_only (e.g. function pointer callback),
+            // it's a legitimate pattern, not an escape.
+            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
+                const called_val = c.LLVMGetCalledValue(escape.inst);
+                if (@intFromPtr(called_val) != 0) {
+                    const callee_name_ptr = c.LLVMGetValueName(called_val);
+                    const callee_name = if (@intFromPtr(callee_name_ptr) != 0)
+                        std.mem.span(callee_name_ptr)
+                    else
+                        "unknown";
+
+                    // Inline argument direction analysis to avoid cross-cimport type issues.
+                    const cb_arg_hash = @as(u64, @intFromPtr(escape.callback_arg));
+                    var is_borrowed = false;
+                    const num_ops = c.LLVMGetNumOperands(escape.inst);
+                    var j: u32 = 0;
+                    while (j < num_ops) : (j += 1) {
+                        const arg = c.LLVMGetOperand(escape.inst, j);
+                        if (@intFromPtr(arg) == 0) continue;
+                        const arg_hash = @as(u64, @intFromPtr(arg));
+                        if (arg_hash != cb_arg_hash) continue;
+
+                        // Check if this arg is a function pointer (callback)
+                        const arg_type = c.LLVMTypeOf(arg);
+                        if (@intFromPtr(arg_type) != 0 and
+                            c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
+                        {
+                            const elem_type = c.LLVMGetElementType(arg_type);
+                            if (@intFromPtr(elem_type) != 0 and
+                                c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
+                            {
+                                is_borrowed = true;
+                            }
+                        }
+                        break;
+                    }
+
+                    if (is_borrowed) {
+                        diag.debug("[SUPPRESSED] Callback arg is borrowed_only (not an escape): {s} -> {s}", .{ func_name, callee_name });
+                        continue;
+                    }
+                }
+            }
+
             // Validate callback signature when receiver is a known pattern.
             // This catches type mismatches like passing int(*)(int,int) to signal()
             // which expects void(*)(int). Reports as low-confidence to avoid FP.
@@ -734,7 +790,7 @@ fn reportMissingKeepAlive(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[NO-KEEPALIVE] {s} -> {s}() in {s}", .{ "Go ptr", call.callee_name, func_name });
 }
 
@@ -766,7 +822,7 @@ fn reportCBytesEscape(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[CBYTES-ESCAPE] {s} in {s}", .{ call.callee_name, func_name });
 }
 
@@ -803,7 +859,7 @@ fn reportGenericCallbackEscape(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-ESCAPE] {s} -> {s} in {s}", .{ "fn_ptr", escape.receiver_name, func_name });
 }
 
@@ -836,7 +892,7 @@ fn reportSignatureMismatch(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-SIG] {s} -> {s} in {s}", .{ "sig_mismatch", escape.receiver_name, func_name });
 }
 
@@ -868,7 +924,7 @@ fn reportUnsafePtrRisk(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[UNSAFE-PTR] {s} in {s}", .{ call.callee_name, func_name });
 }
 
@@ -900,7 +956,7 @@ fn reportMallocLeak(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[MALLOC-LEAK] {} allocs vs {} frees in {s}", .{ malloc_count, free_count, func_name });
 }
 
@@ -932,7 +988,7 @@ fn reportFreeOrphan(
         trace,
     );
 
-    try ctx.addIssue(issue);
+    try ctx.addIssue(&issue);
     diag.warn("[FREE-ORPHAN] {} frees vs {} allocs in {s}", .{ free_count, malloc_count, func_name });
 }
 

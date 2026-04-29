@@ -42,8 +42,8 @@ pub fn severity_boost_for_pattern(
     // ── Pattern 2: Crypto API NULL check failure → HIGH
     // Missing NULL check on crypto allocation = potential key material leak
     const crypto_patterns = [_][]const u8{
-        "EVP_", "RSA_", "DSA_", "EC_", "AES_",
-        "BIO_", "HMAC_", "SHA", "MD5",
+        "EVP_", "RSA_",  "DSA_", "EC_", "AES_",
+        "BIO_", "HMAC_", "SHA",  "MD5",
     };
     for (crypto_patterns) |pat| {
         if (std.mem.indexOf(u8, func_name, pat) != null) {

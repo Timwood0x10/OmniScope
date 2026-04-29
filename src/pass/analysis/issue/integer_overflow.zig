@@ -83,7 +83,7 @@ pub const IntegerOverflowPass = struct {
                         confidence,
                     );
 
-                    try ctx.addIssue(issue);
+                    try ctx.addIssue(&issue);
 
                     diag.warn("Integer overflow detected in function: {s}", .{caller_name});
                     return true;

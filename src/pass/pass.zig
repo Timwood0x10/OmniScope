@@ -13,6 +13,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
+const Issue = @import("../diag/issue.zig").Issue;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -189,16 +190,20 @@ pub const PassContext = struct {
     /// Features cross-pass deduplication: if another pass has already
     /// reported an issue with the same (function, kind) signature,
     /// this call is silently skipped to avoid duplicate alerts.
-    pub fn addIssue(self: *PassContext, issue: anytype) !void {
+    pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
         const dedup_key = self.dedupKey(issue);
         const gop = try self.reported_keys.getOrPut(dedup_key);
-        if (gop.found_existing) return;
-        try self.data_flow_graph.addIssue(issue);
+        if (gop.found_existing) {
+            var dup = issue.*;
+            dup.deinit(self.allocator);
+            return;
+        }
+        try self.data_flow_graph.addIssue(issue.*);
     }
 
     /// Compute a dedup key from an issue's (func_name, kind) pair.
     /// Uses FNV-1a hash for fast lookup.
-    fn dedupKey(self: *PassContext, issue: anytype) u64 {
+    fn dedupKey(self: *PassContext, issue: *const Issue) u64 {
         _ = self;
         const func_name = @field(issue, "location").function;
         const kind_tag = @tagName(@field(issue, "kind"));

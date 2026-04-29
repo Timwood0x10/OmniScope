@@ -228,7 +228,7 @@ pub const BufferOverflowPass = struct {
 
     /// Helper function to register a detected issue with the context.
     fn reportIssue(ctx: *PassContext, issue: Issue, diag: *DiagnosticWriter) !void {
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
         diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), issue.message });
     }
 };

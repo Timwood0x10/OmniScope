@@ -149,7 +149,7 @@ pub fn detectAsPtrBorrowEscape(
 
                 const vuln_id = ctx.getNextVulnId();
                 const func_name = getFunctionName(func);
-                ctx.addIssue(Issue.initWithReason(
+                ctx.addIssue(&Issue.initWithReason(
                     .borrow_escape,
                     "Potential as_ptr borrow escape: local Rust value pointer passed to FFI",
                     Location.init(func_name),
@@ -435,7 +435,7 @@ pub fn detectNullDereferences(
             if (reported_funcs.contains(func_ptr_key)) continue;
 
             const vulnerability_id = ctx.getNextVulnId();
-            ctx.addIssue(Issue.init(
+            ctx.addIssue(&Issue.init(
                 .null_dereference,
                 "Potential null dereference: pointer used without null check",
                 Location.init(alloc_info.func_name),
@@ -613,7 +613,7 @@ pub fn detectDoubleFree(
             const confidence: f32 = 0.92;
             const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
 
-            ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
+            ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
             ctx.allocator.free(msg);
 
             diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
@@ -656,7 +656,7 @@ pub fn detectUseAfterFree(
 
                     if (!free_map.contains(to_id)) {
                         stats.use_after_frees += 1;
-                        ctx.addIssue(Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
+                        ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
                             diag.warn("Failed to register use_after_free issue", .{});
                         };
                         diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
@@ -823,7 +823,7 @@ pub fn detectLoopLeaks(
     for (leak_candidates.items) |candidate| {
         const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch "Loop memory leak detected";
         defer ctx.allocator.free(msg);
-        ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
+        ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
         diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
     }
 }
@@ -897,7 +897,7 @@ pub fn detectResourceLeaks(
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
                 const msg = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch "Resource leak detected";
-                ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
+                ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
                 diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
             }
         }
@@ -965,7 +965,7 @@ pub fn detectMemoryLeaks(
             const already_reported = reported_func_ptrs.contains(func_ptr_key);
             if (!already_reported) {
                 stats.memory_leaks += 1;
-                ctx.addIssue(Issue.init(
+                ctx.addIssue(&Issue.init(
                     .memory_leak,
                     "Memory allocated but never freed",
                     Location.init(alloc_info.func_name),
@@ -1414,7 +1414,7 @@ pub fn detectCrossLangAllocMismatch(
             if (!flows_to_free) continue;
 
             const vuln_id = ctx.getNextVulnId();
-            ctx.addIssue(Issue.initWithReason(
+            ctx.addIssue(&Issue.initWithReason(
                 .cross_language_leak,
                 "Cross-language alloc mismatch: Rust-alloc freed by C free()",
                 Location.init(alloc.func_name),

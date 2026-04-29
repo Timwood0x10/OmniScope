@@ -90,7 +90,7 @@ pub const AllocatorKB = struct {
     /// Map from function name → AllocatorInfo (deallocators).
     deallocators: std.StringHashMap(AllocatorInfo),
     /// Known safe allocator pairs.
-    pairs: std.AutoArrayList(AllocatorPair),
+    pairs: std.ArrayList(AllocatorPair),
     /// Arena allocator for long-lived data.
     arena: std.heap.ArenaAllocator,
     /// Temporary allocator.
@@ -104,7 +104,7 @@ pub const AllocatorKB = struct {
         var kb = AllocatorKB{
             .allocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
             .deallocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
-            .pairs = std.AutoArrayList(AllocatorPair).init(arena.allocator()),
+            .pairs = std.ArrayList(AllocatorPair).init(arena.allocator()),
             .arena = undefined,
             .temp_allocator = temp_allocator,
         };
@@ -201,7 +201,7 @@ pub const AllocatorKB = struct {
                 .free = free_info,
                 .is_confirmed = true,
             };
-            try kb.pairs.push(pair);
+            try kb.pairs.append(pair);
         }
     }
 
@@ -246,13 +246,13 @@ pub const AllocatorKB = struct {
         // Heuristic patterns for allocators - narrow patterns only to reduce false positives.
         const alloc_patterns = [_][]const u8{
             "malloc", "alloc", "new", "create",
-            "make", "open",
+            "make",   "open",
         };
 
         // Heuristic patterns for deallocators.
         const free_patterns = [_][]const u8{
-            "free", "release", "destroy", "close", "cleanup",
-            "delete", "unref", "finalize",
+            "free",   "release", "destroy",  "close", "cleanup",
+            "delete", "unref",   "finalize",
         };
 
         // Check allocator patterns.

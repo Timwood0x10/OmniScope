@@ -255,12 +255,11 @@ fn detect_ownership_transfer(call_inst: c.LLVMValueRef, callee_name: []const u8)
 /// Known acquisition functions that return owned resources.
 fn is_acquisition_function(name: []const u8) bool {
     const acquisitions = [_][]const u8{
-        "dlopen",    "dlsym",     "mmap",      "malloc",
-        "calloc",    "realloc",    "socket",    "accept",
-        "fopen",     "sqlite3_open", "EVP_CIPHER_CTX_new",
-        "BIO_new",   "RSA_new",   "LoadLibrary", "GetProcAddress",
-        "JNI_FindClass",       "NewGlobalRef",
-        "PyGILState_Ensure",   "PyObject_Call",
+        "dlopen",       "dlsym",             "mmap",               "malloc",
+        "calloc",       "realloc",           "socket",             "accept",
+        "fopen",        "sqlite3_open",      "EVP_CIPHER_CTX_new", "BIO_new",
+        "RSA_new",      "LoadLibrary",       "GetProcAddress",     "JNI_FindClass",
+        "NewGlobalRef", "PyGILState_Ensure", "PyObject_Call",
     };
     for (acquisitions) |acq| {
         if (std.mem.indexOf(u8, name, acq) != null) return true;
@@ -271,10 +270,10 @@ fn is_acquisition_function(name: []const u8) bool {
 /// Known release functions that consume owned resources.
 fn is_release_function(name: []const u8) bool {
     const releases = [_][]const u8{
-        "dlclose",   "munmap",    "free",       "close",
-        "fclose",    "sqlite3_close", "EVP_CIPHER_CTX_free",
-        "BIO_free",  "RSA_free",  "FreeLibrary", "DeleteGlobalRef",
-        "PyGILState_Release",   "Py_DECREF",
+        "dlclose",   "munmap",        "free",                "close",
+        "fclose",    "sqlite3_close", "EVP_CIPHER_CTX_free", "BIO_free",
+        "RSA_free",  "FreeLibrary",   "DeleteGlobalRef",     "PyGILState_Release",
+        "Py_DECREF",
     };
     for (releases) |rel| {
         if (std.mem.indexOf(u8, name, rel) != null) return true;
