@@ -205,7 +205,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
 
     const issues = pipeline.getIssues();
 
-    if (issues.len > 0 or config.output_format == .json) {
+    if (issues.len > 0 or config.output_format == .json or config.output_format == .sarif) {
         if (config.output_format == .json) {
             const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
                 std.log.err("Failed to format JSON output: {}", .{err});
@@ -228,7 +228,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.5");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.8");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;

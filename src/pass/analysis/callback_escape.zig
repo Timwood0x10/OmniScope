@@ -35,6 +35,7 @@ const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
+const FPWhitelist = @import("../filter/fp_whitelist.zig");
 
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
@@ -325,6 +326,9 @@ pub const CallbackEscapePass = struct {
                 .safe, .runtime_internal => continue,
                 .unsafe, .ffi, .unknown => {},
             }
+
+            // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
+            if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             try analyzeFunction(ctx, func, diag, &stats);
         }

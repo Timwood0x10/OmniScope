@@ -18,6 +18,9 @@ const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+
+const NULL_GUARD_SCAN_LIMIT: u32 = 20;
+const OWNERSHIP_CHAIN_SCAN_LIMIT: u32 = 15;
 const FunctionSemantics = @import("../../registry/semantic_registry.zig").FunctionSemantics;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 const Severity = @import("../../registry/semantic_registry.zig").Severity;
@@ -26,6 +29,9 @@ const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
 // Phase 4: Cross-Language Noise Reduction Engine
 const NoiseReduction = @import("noise_reduction.zig");
+const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const ip_ffi = @import("ip_ffi.zig");
+const severity_rules = @import("severity_rules.zig");
 const SourceLocation = @import("../../ir/debug_info.zig").SourceLocation;
 
 /// Error type for FFI boundary detection operations.
@@ -302,6 +308,13 @@ pub const FFIBoundaryPass = struct {
             return result;
         }
 
+        // Defense-in-depth: known FP whitelist (v0.1.8 audit verified patterns)
+        // Catches patterns that may slip through Layer 1/2 noise reduction
+        if (FPWhitelist.is_known_fp(func_name)) |fp| {
+            diag.debug("FP-WHITELIST [{s}]: {s}", .{ fp.reason, func_name });
+            return result;
+        }
+
         // Log user code / third-party for visibility
         if (classification.origin == .user) {
             diag.debug("ANALYZE [USER]: {s}", .{func_name});
@@ -403,12 +416,14 @@ pub const FFIBoundaryPass = struct {
             // Report high-risk libc functions from Semantic Registry
             if (is_dangerous) {
                 stats.dangerous_count += 1;
-                const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
-                const caller_was_allocated = @intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr);
-                defer if (caller_was_allocated) ctx.allocator.free(caller_demangled);
-                const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
-                const callee_was_allocated = @intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr);
-                defer if (callee_was_allocated) ctx.allocator.free(callee_demangled);
+                const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch null;
+                const caller_free: bool = caller_demangled != null;
+                const caller_final: []const u8 = caller_demangled orelse caller_name;
+                defer if (caller_free) ctx.allocator.free(caller_demangled.?);
+                const callee_demangled = demangleRustName(ctx.allocator, called_name) catch null;
+                const callee_free: bool = callee_demangled != null;
+                const callee_final: []const u8 = callee_demangled orelse called_name;
+                defer if (callee_free) ctx.allocator.free(callee_demangled.?);
                 const sem = semantics.?;
 
                 const severity_str = sem.severity.toString();
@@ -420,11 +435,11 @@ pub const FFIBoundaryPass = struct {
                 // FP suppression: intentional/safe/test patterns
                 // Functions named safe_*, correct_*, test_*, demo_* etc.
                 // are reference implementations, not production code
-                if (is_likely_intentional_pattern(caller_demangled)) {
-                    diag.debug("[SUPPRESSED] RISKY LIBC CALL in intentional function: {s} -> {s}", .{ caller_demangled, callee_demangled });
+                if (is_likely_intentional_pattern(caller_final)) {
+                    diag.debug("[SUPPRESSED] RISKY LIBC CALL in intentional function: {s} -> {s}", .{ caller_final, callee_final });
                     stats.suppressed_intentional += 1;
                 } else {
-                    diag.err("[{s}] RISKY LIBC CALL: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+                    diag.err("[{s}] RISKY LIBC CALL: {s} -> {s}", .{ severity_str, caller_final, callee_final });
 
                     // Show source location if available
                     if (debug_loc) |loc| {
@@ -553,17 +568,21 @@ pub const FFIBoundaryPass = struct {
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
     ) void {
-        const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch caller_name;
-        defer if (@intFromPtr(caller_demangled.ptr) != @intFromPtr(caller_name.ptr)) ctx.allocator.free(caller_demangled);
-        const callee_demangled = demangleRustName(ctx.allocator, called_name) catch called_name;
-        defer if (@intFromPtr(callee_demangled.ptr) != @intFromPtr(called_name.ptr)) ctx.allocator.free(callee_demangled);
+        const caller_demangled = demangleRustName(ctx.allocator, caller_name) catch null;
+        const caller_free: bool = caller_demangled != null;
+        const caller_final: []const u8 = caller_demangled orelse caller_name;
+        defer if (caller_free) ctx.allocator.free(caller_demangled.?);
+        const callee_demangled = demangleRustName(ctx.allocator, called_name) catch null;
+        const callee_free: bool = callee_demangled != null;
+        const callee_final: []const u8 = callee_demangled orelse called_name;
+        defer if (callee_free) ctx.allocator.free(callee_demangled.?);
 
         const severity_str = sem.severity.toString();
         const kind_str = @tagName(sem.kind);
 
         const debug_loc = DebugInfoUtils.getInstructionDebugLoc(inst);
 
-        diag.err("[{s}] FFI RISK: {s} -> {s}", .{ severity_str, caller_demangled, callee_demangled });
+        diag.err("[{s}] FFI RISK: {s} -> {s}", .{ severity_str, caller_final, callee_final });
 
         if (debug_loc) |loc| {
             if (loc.valid()) {
@@ -630,16 +649,37 @@ pub const FFIBoundaryPass = struct {
         caller_func: c.LLVMValueRef,
         sem: FunctionSemantics,
     ) void {
-        // Check 1: NULL guard validation
+        // Check 1: NULL guard validation (intra-procedural + inter-procedural)
         if (sem.requires_null_check) {
-            const has_null_guard = checkNullGuard(inst, caller_func);
+            const has_intra_null_guard = checkNullGuard(inst, caller_func);
+            // V0.1.8 P0-2: Also check inter-procedurally (scan instructions after call)
+            const has_ip_null_guard = ip_ffi.check_null_guard_after(inst);
+            // Accept NULL guard from EITHER source (defense-in-depth)
+            const has_null_guard = has_intra_null_guard or has_ip_null_guard;
+
             if (!has_null_guard) {
                 diag.warn("  CONTRACT VIOLATION: {s} returns nullable pointer but no NULL check detected", .{
                     sem.pattern,
                 });
                 diag.warn("  Risk: NULL pointer dereference / crash", .{});
+
+                // P0-3: Context-aware severity re-ranking
+                if (severity_rules.severity_boost_for_pattern(
+                    @intFromEnum(sem.severity),
+                    sem.pattern,
+                    "null not checked",
+                )) |boosted| {
+                    diag.debug("  SEVERITY BOOST: base={} → boosted={}", .{
+                        @intFromEnum(sem.severity),
+                        boosted,
+                    });
+                }
             } else {
-                diag.debug("  Contract OK: NULL guard present for {s}", .{sem.pattern});
+                diag.debug("  Contract OK: NULL guard present for {s} (intra={}, ip={})", .{
+                    sem.pattern,
+                    has_intra_null_guard,
+                    has_ip_null_guard,
+                });
             }
         }
 
@@ -647,14 +687,18 @@ pub const FFIBoundaryPass = struct {
         if (sem.kind == .format_string) {
             const func_name_ptr = c.LLVMGetValueName(inst);
             if (@intFromPtr(func_name_ptr) != 0) {
-                const called_name_str = std.mem.span(func_name_ptr);
-                const is_unbounded = (std.mem.indexOf(u8, called_name_str, "sprintf") != null and
-                    std.mem.indexOf(u8, called_name_str, "snprintf") == null) or
-                    (std.mem.indexOf(u8, called_name_str, "strcpy") != null and
-                        std.mem.indexOf(u8, called_name_str, "strncpy") == null) or
-                    std.mem.eql(u8, called_name_str, "gets");
-                if (is_unbounded) {
-                    diag.warn("  CONTRACT WARNING: Unbounded buffer operation ({s}) — consider bounded alternative", .{called_name_str});
+                var name_len: usize = 0;
+                const raw_name = c.LLVMGetValueName2(inst, &name_len);
+                if (name_len > 0 and name_len < 1024) {
+                    const called_name_str = raw_name[0..name_len];
+                    const is_unbounded = (std.mem.indexOf(u8, called_name_str, "sprintf") != null and
+                        std.mem.indexOf(u8, called_name_str, "snprintf") == null) or
+                        (std.mem.indexOf(u8, called_name_str, "strcpy") != null and
+                            std.mem.indexOf(u8, called_name_str, "strncpy") == null) or
+                        std.mem.eql(u8, called_name_str, "gets");
+                    if (is_unbounded) {
+                        diag.warn("  CONTRACT WARNING: Unbounded buffer operation ({s}) — consider bounded alternative", .{called_name_str});
+                    }
                 }
             }
         }
@@ -677,7 +721,7 @@ pub const FFIBoundaryPass = struct {
         if (@intFromPtr(parent_bb) == 0) return false;
 
         var next_inst = c.LLVMGetNextInstruction(inst);
-        const scan_limit: u32 = 20; // Don't scan too far
+        const scan_limit: u32 = NULL_GUARD_SCAN_LIMIT; // Don't scan too far
         var scanned: u32 = 0;
 
         while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
@@ -724,7 +768,7 @@ pub const FFIBoundaryPass = struct {
 
         // Scan forward to see how the result is used
         var next_inst = c.LLVMGetNextInstruction(inst);
-        const scan_limit: u32 = 15;
+        const scan_limit: u32 = OWNERSHIP_CHAIN_SCAN_LIMIT;
         var scanned: u32 = 0;
 
         while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
@@ -1072,7 +1116,7 @@ pub const FFIBoundaryPass = struct {
             if (param_kind == c.LLVMIntegerTypeKind and arg_kind == c.LLVMIntegerTypeKind) {
                 const param_bits = c.LLVMGetIntTypeWidth(param_type);
                 const arg_bits = c.LLVMGetIntTypeWidth(arg_type);
-                if (param_bits > 0 and arg_bits > 0 and param_bits != arg_bits) {
+                if (param_bits > 0 and arg_bits > 0 and param_bits < 8192 and arg_bits < 8192 and param_bits != arg_bits) {
                     if (param_bits >= arg_bits * 2 or arg_bits >= param_bits * 2) {
                         diag.warn("  SIZE MISMATCH: Param {d} — i{d} vs i{d} (potential truncation/sign-extension)", .{
                             param_idx, arg_bits, param_bits,
@@ -1477,11 +1521,12 @@ pub const FFIBoundaryPass = struct {
         return .unknown;
     }
 
-    /// Demangle a Rust mangled name to a readable format
-    /// Returns an allocated string that caller must free.
-    fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) ![]u8 {
+    /// Demangle a Rust mangled name to a readable format.
+    /// Returns null if the name is not a Rust mangled name (caller should use the original).
+    /// Returns an allocated string on success (caller must free it).
+    fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error{OutOfMemory}!?[]u8 {
         if (mangled.len < 4 or mangled[0] != '_' or mangled[1] != 'Z' or mangled[2] != 'N') {
-            return try allocator.dupe(u8, mangled);
+            return null;
         }
 
         var pos: usize = 3;
@@ -1539,12 +1584,12 @@ pub const FFIBoundaryPass = struct {
         }
 
         if (comp_count >= 2) {
-            return std.fmt.allocPrint(allocator, "{s}::{s}", .{ components[0], components[1] });
+            return (try std.fmt.allocPrint(allocator, "{s}::{s}", .{ components[0], components[1] }));
         } else if (comp_count == 1) {
-            return try allocator.dupe(u8, components[0]);
+            return (try allocator.dupe(u8, components[0]));
         }
 
-        return try allocator.dupe(u8, mangled);
+        return (try allocator.dupe(u8, mangled));
     }
 
     /// Classify the boundary kind based on caller and callee languages
