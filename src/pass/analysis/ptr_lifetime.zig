@@ -249,14 +249,31 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
     if (is_extern_function(callee_name)) return true;
 
     const retaining_patterns = [_][]const u8{
-        "register_", "set_",  "add_",   "insert_", "push_",
-        "store_",    "save_", "cache_", "copy_",
+        "register_", "add_",  "insert_", "push_",
+        "store_",    "save_", "cache_",  "copy_",
     };
 
     for (retaining_patterns) |pat| {
         if (std.mem.startsWith(u8, callee_name, pat)) return true;
     }
 
+    if (std.mem.startsWith(u8, callee_name, "set_")) {
+        if (isOutputParamSetter(callee_name)) return false;
+        return true;
+    }
+
+    return false;
+}
+
+fn isOutputParamSetter(func_name: []const u8) bool {
+    const output_param_patterns = [_][]const u8{
+        "_ip",  "_addr", "_port", "_fd",    "_sock",
+        "_buf", "_len",  "_size", "_count", "_ptr",
+        "_str", "_name", "_path", "_url",
+    };
+    for (output_param_patterns) |pat| {
+        if (std.mem.indexOf(u8, func_name, pat) != null) return true;
+    }
     return false;
 }
 
@@ -750,6 +767,11 @@ pub const PtrLifetimePass = struct {
             return;
         }
 
+        if (isNonPointerReturnType(inst)) {
+            diag.debug("[SUPPRESSED] C API output parameter pattern: {s} returns non-pointer (likely using output params)", .{func_name});
+            return;
+        }
+
         const retval = c.LLVMGetOperand(inst, 0);
         if (pointer_map.get(retval)) |ptr_info| {
             if (ptr_info.alloc_site == .stack) {
@@ -809,6 +831,14 @@ pub const PtrLifetimePass = struct {
             }
         }
         return false;
+    }
+
+    fn isNonPointerReturnType(ret_inst: c.LLVMValueRef) bool {
+        const ret_value = c.LLVMGetOperand(ret_inst, 0);
+        if (ret_value == null) return false;
+        const value_type = c.LLVMTypeOf(ret_value);
+        if (value_type == null) return false;
+        return c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind;
     }
 
     fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
