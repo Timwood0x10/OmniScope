@@ -1,6 +1,6 @@
 {
-  "benchmark_id": "omniscope-20260428-153651",
-  "timestamp": "2026-04-28T07:36:51Z",
+  "benchmark_id": "omniscope-20260429-174159",
+  "timestamp": "2026-04-29T09:41:59Z",
   "scope": "FFI/Unsafe Boundary Analysis",
   "environment": {
     "os": "Darwin",

@@ -41,6 +41,13 @@ const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const NoiseReduction = @import("noise_reduction.zig");
 
+// v0.1.8: New semantic modules
+const memory_graph = @import("../../semantics/memory_graph.zig");
+const call_graph_mod = @import("../../semantics/call_graph.zig");
+const allocator_kb = @import("../../semantics/allocator_kb.zig");
+const intrinsic_filter = @import("../../semantics/intrinsic_filter.zig");
+const output_param_classifier = @import("../../semantics/output_param_classifier.zig");
+
 /// Allocation site classification for pointers.
 pub const PtrAllocSite = enum(u8) {
     /// Allocated via malloc/calloc/realloc (heap)
@@ -93,6 +100,8 @@ pub const PtrInfo = struct {
     escaped: bool = false,
     /// Whether this pointer has been freed
     freed: bool = false,
+    /// v0.1.8: Whether this pointer has been double-freed (freed twice)
+    double_free_detected: bool = false,
     /// Basic block where the pointer was allocated (for scope tracking)
     alloc_bb_id: usize = 0,
     /// Resource handle this pointer is derived from (e.g., dlopen handle for dlsym result)
@@ -246,6 +255,9 @@ pub fn is_intentional_free(func_name: []const u8) bool {
 
 /// Check if a function may store/retain its pointer argument.
 pub fn may_retain_pointer(callee_name: []const u8) bool {
+    // v0.1.8: Check if this is an LLVM intrinsic that should be suppressed.
+    if (isIntrinsicNoise(callee_name)) return false;
+
     if (is_extern_function(callee_name)) return true;
 
     const retaining_patterns = [_][]const u8{
@@ -266,14 +278,25 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
 }
 
 fn isOutputParamSetter(func_name: []const u8) bool {
-    const output_param_patterns = [_][]const u8{
+    // v0.1.8: Check for output parameter patterns.
+
+    // Check if function has output parameters based on common patterns.
+    const output_patterns = [_][]const u8{
         "_ip",  "_addr", "_port", "_fd",    "_sock",
         "_buf", "_len",  "_size", "_count", "_ptr",
         "_str", "_name", "_path", "_url",
     };
-    for (output_param_patterns) |pat| {
+    for (output_patterns) |pat| {
         if (std.mem.indexOf(u8, func_name, pat) != null) return true;
     }
+
+    // Also check for pp*, xpp* patterns (Windows API style).
+    if (std.mem.startsWith(u8, func_name, "pp") or
+        std.mem.startsWith(u8, func_name, "xpp"))
+    {
+        return true;
+    }
+
     return false;
 }
 
@@ -281,7 +304,7 @@ fn isOutputParamSetter(func_name: []const u8) bool {
 // Allocation Site Detection
 // ============================================================================
 
-/// Heap allocation functions.
+/// Heap allocation functions (legacy list, for compatibility).
 const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "malloc",         "calloc",        "realloc",      "aligned_alloc",
     "valloc",         "pvalloc",       "memalign",     "operator new",
@@ -290,6 +313,59 @@ const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "Py_Initialize",  "Py_BuildValue", "PyTuple_New",  "PyList_New",
     "PyDict_New",     "NewStringUTF",  "NewByteArray", "NewGlobalRef",
 };
+
+/// v0.1.8: Check if a function is a known heap allocator using Allocator KB.
+var g_allocator_kb: ?allocator_kb.AllocatorKB = null;
+var g_allocator_kb_init_failed: bool = false;
+
+pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
+    if (g_allocator_kb_init_failed) return null;
+    if (g_allocator_kb == null) {
+        g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
+            std.debug.print("[WARN] AllocatorKB init failed: {}, falling back to legacy detection\n", .{err});
+            g_allocator_kb_init_failed = true;
+            return null;
+        };
+    }
+    return &g_allocator_kb.?;
+}
+
+pub fn isHeapAllocFunction(func_name: []const u8) bool {
+    for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
+        if (std.mem.indexOf(u8, func_name, alloc_fn) != null) return true;
+    }
+
+    if (getAllocatorKB()) |kb| {
+        if (kb.isAllocator(func_name)) return true;
+    }
+
+    return false;
+}
+
+/// v0.1.8: Check if a function is a known deallocator using Allocator KB.
+pub fn isKnownDeallocFunction(func_name: []const u8) bool {
+    if (getAllocatorKB()) |kb| {
+        if (kb.isDeallocator(func_name)) return true;
+    }
+
+    return is_known_deallocator(func_name);
+}
+
+/// v0.1.8: Check if a function is an LLVM intrinsic that should be suppressed.
+/// Note: IntrinsicFilter.init() does not return an error, so no error handling needed.
+var g_intrinsic_filter: ?intrinsic_filter.IntrinsicFilter = null;
+
+pub fn getIntrinsicFilter() *intrinsic_filter.IntrinsicFilter {
+    if (g_intrinsic_filter == null) {
+        g_intrinsic_filter = intrinsic_filter.IntrinsicFilter.init();
+    }
+    return &g_intrinsic_filter.?;
+}
+
+pub fn isIntrinsicNoise(func_name: []const u8) bool {
+    const filter = getIntrinsicFilter();
+    return filter.shouldSuppress(func_name);
+}
 
 /// Classify the allocation site of a pointer value.
 pub fn classify_ptr_origin(
@@ -549,10 +625,21 @@ pub const PtrLifetimePass = struct {
                             }
                         }
 
+                        // v0.1.8: Double-free detection via Memory Graph.
                         if (isFreeFunction(callee_name)) {
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (pointer_map.getPtr(ptr_arg)) |ptr_info| {
-                                ptr_info.freed = true;
+                                if (ptr_info.freed and !ptr_info.double_free_detected) {
+                                    // Double-free detected! Mark it.
+                                    ptr_info.double_free_detected = true;
+                                    ptr_info.source_desc = try std.fmt.allocPrint(
+                                        allocator,
+                                        "DOUBLE_FREE: {s}",
+                                        .{ptr_info.source_desc},
+                                    );
+                                } else {
+                                    ptr_info.freed = true;
+                                }
                             }
                         }
 
@@ -657,6 +744,7 @@ pub const PtrLifetimePass = struct {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+            try checkDoubleFreeViolation(ctx, inst, func_name, pointer_map, diag, stats);
             try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, diag, stats);
         }
 
@@ -666,6 +754,34 @@ pub const PtrLifetimePass = struct {
 
         if (opcode == c.LLVMStore) {
             try checkStoreToGlobal(ctx, inst, func_name, pointer_map, diag, stats);
+        }
+    }
+
+    /// v0.1.8: Check for double-free violations.
+    fn checkDoubleFreeViolation(
+        _: *PassContext,
+        inst: c.LLVMValueRef,
+        func_name: []const u8,
+        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        diag: *DiagnosticWriter,
+        stats: *LifetimeStats,
+    ) !void {
+        const called = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called) == 0) return;
+
+        const name_ptr = c.LLVMGetValueName(called);
+        if (@intFromPtr(name_ptr) == 0) return;
+
+        const callee_name = std.mem.span(name_ptr);
+
+        if (!isFreeFunction(callee_name)) return;
+
+        const ptr_arg = c.LLVMGetOperand(inst, 0);
+        if (pointer_map.get(ptr_arg)) |ptr_info| {
+            if (ptr_info.double_free_detected) {
+                diag.warn("[DOUBLE_FREE] {s} freed twice in {s}", .{ ptr_info.source_desc, func_name });
+                stats.use_after_free_found += 1;
+            }
         }
     }
 
