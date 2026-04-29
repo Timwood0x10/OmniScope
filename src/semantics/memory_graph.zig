@@ -149,13 +149,29 @@ pub const MemoryGraph = struct {
     }
 };
 
-/// FNV-1a hash with wrapping multiplication.
-/// Wrapping is intentional: hash values are not ordered, overflow is expected.
+/// FNV-1a hash with intentional overflow (RFC 7049).
+///
+/// Uses the Fowler-Noll-Vo hash algorithm variant 1a for combining
+/// multiple u64 values into a single hash key. This is used for
+/// deduplication keys in MemoryGraph node lookups.
+///
+/// **Why wrapping multiply?**
+/// FNV-1a deliberately uses modular arithmetic overflow as part of
+/// its mixing function. The `*%` operator in Zig performs wrapping
+/// multiplication which matches the FNV specification. This is NOT
+/// a bug - overflow is mathematically expected and required.
+///
+/// Parameters:
+///   - values: Array of u64 values to hash
+///
+/// Returns:
+///   - Combined 64-bit hash value
 fn hashValues(values: []const u64) u64 {
-    var hash: u64 = 0xcbf29ce484222325;
+    var hash: u64 = 0xcbf29ce484222325; // FNV offset basis (64-bit)
     for (values) |val| {
-        hash ^= val;
-        hash = hash *% 0x100000001b3;
+        hash ^= val; // FNV-1a: XOR before multiply
+        // Wrapping multiply is correct here - overflow is expected in FNV-1a
+        hash = hash *% 0x100000001b3; // FNV prime (64-bit)
     }
     return hash;
 }

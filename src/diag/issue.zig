@@ -39,6 +39,9 @@ pub const IssueKind = enum {
     callback_signature_mismatch,
     /// Free called on non-malloc pointer
     invalid_free,
+    /// Static buffer misuse: using thread-unsafe functions (ctime, strerror, etc.)
+    /// These return pointers to static storage that must NOT be freed and are not thread-safe.
+    static_buffer_misuse,
     /// Unknown issue type
     unknown,
 
@@ -60,6 +63,7 @@ pub const IssueKind = enum {
             .borrow_escape => "borrow_escape",
             .callback_signature_mismatch => "callback_signature_mismatch",
             .invalid_free => "invalid_free",
+            .static_buffer_misuse => "static_buffer_misuse",
             .unknown => "unknown",
         };
     }
@@ -84,6 +88,7 @@ pub const IssueKind = enum {
             .borrow_escape => 704, // CWE-704: Incorrect Type Conversion or Cast
             .callback_signature_mismatch => 688, // CWE-688: Function Call With Incorrect Argument Type
             .invalid_free => 590, // CWE-590: Free of Memory Not on Heap
+            .static_buffer_misuse => 242, // CWE-242: Use of Inherently Dangerous Function
             .unknown => 0,
         };
     }
@@ -106,6 +111,7 @@ pub const IssueKind = enum {
             .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
             .invalid_free => "Free called on non-malloc pointer",
+            .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
             .unknown => "Unknown issue type",
         };
     }

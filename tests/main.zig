@@ -135,7 +135,11 @@ test "IssueType: all variants" {
 // ========================================
 
 test "RiskKind: all variants" {
-    try std.testing.expectEqual(@as(usize, 19), @typeInfo(registry.RiskKind).@"enum".fields.len);
+    // P2-1: Added .static_buffer variant (14 POSIX static buffer functions)
+    // v0.1.8: Added .static_buffer_misuse IssueKind for precise classification
+    // Total RiskKind variants: 20
+    // Total IssueKind variants: 17 (was 16 before .static_buffer_misuse)
+    try std.testing.expectEqual(@as(usize, 20), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================

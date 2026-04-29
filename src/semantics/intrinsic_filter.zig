@@ -169,34 +169,50 @@ pub const IntrinsicFilter = struct {
         return filter;
     }
 
+    /// Release resources held by the intrinsic filter.
+    ///
+    /// Must be called when the filter is no longer needed to avoid
+    /// leaking the internal hash table memory.
+    pub fn deinit(filter: *IntrinsicFilter) void {
+        filter.intrinsics.deinit();
+    }
+
     /// Adds a safe intrinsic.
+    ///
+    /// NOTE: OOM is silently ignored because failing to register a single
+    /// intrinsic filter rule is non-fatal - the worst case is one extra
+    /// false positive report, which is acceptable for a best-effort filter.
     fn addSafe(filter: *IntrinsicFilter, name: []const u8, reason: []const u8) void {
         filter.intrinsics.put(name, IntrinsicInfo{
             .name = name,
             .category = .safe,
             .suppress = true,
             .reason = reason,
-        }) catch return;
+        }) catch return; // OOM: skip this rule (non-fatal)
     }
 
     /// Adds a conditional safe intrinsic.
+    ///
+    /// NOTE: See addSafe() for OOM handling rationale.
     fn addConditional(filter: *IntrinsicFilter, name: []const u8, reason: []const u8) void {
         filter.intrinsics.put(name, IntrinsicInfo{
             .name = name,
             .category = .conditional_safe,
             .suppress = false,
             .reason = reason,
-        }) catch return;
+        }) catch return; // OOM: skip this rule (non-fatal)
     }
 
     /// Adds a risky intrinsic.
+    ///
+    /// NOTE: See addSafe() for OOM handling rationale.
     fn addRisky(filter: *IntrinsicFilter, name: []const u8, reason: []const u8) void {
         filter.intrinsics.put(name, IntrinsicInfo{
             .name = name,
             .category = .risky,
             .suppress = false,
             .reason = reason,
-        }) catch return;
+        }) catch return; // OOM: skip this rule (non-fatal)
     }
 
     /// Checks if a function name is an LLVM intrinsic and whether to suppress.

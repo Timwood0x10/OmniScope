@@ -257,10 +257,24 @@ pub const FreeValidationPass = struct {
         const origin_info = pointer_origins.get(ptr_arg);
         const origin = if (origin_info) |info| info.origin else .unknown;
 
-        // Only from_malloc is valid for free
-        if (origin != .from_malloc) {
-            try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
-            return true;
+        // Only report for clearly invalid origins (not unknown - may be cross-function alloc)
+        // unknown origin is skipped because allocation may have happened in another function
+        //
+        // ValueOrigin enum coverage (ffi_semantics.zig):
+        //   - .from_param / .from_global / .from_constant → invalid free (report)
+        //   - .from_malloc → valid (skip)
+        //   - .unknown → cross-function alloc (skip to avoid false positives)
+        //
+        // NOTE: This switch is exhaustive for all ValueOrigin variants.
+        // The Zig compiler will emit a compile error if new enum values are added
+        // without updating this switch, ensuring completeness at compile time.
+        switch (origin) {
+            .from_param, .from_global, .from_constant => {
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
+            .from_malloc => {},
+            .unknown => {},
         }
 
         return false;

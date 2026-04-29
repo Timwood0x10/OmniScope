@@ -36,6 +36,38 @@ pub const network_io_functions = [_]types.FunctionSemantics{
     .{ .pattern = "getsockopt", .match_type = .exact, .kind = .network_io, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Get socket option - check return value for errors" },
 };
 
+/// P2-1: Functions that return pointers to static buffers.
+///
+/// These functions return pointers to internal static storage that:
+/// - Must NOT be freed (doing so is undefined behavior)
+/// - May be overwritten by subsequent calls (not thread-safe)
+/// - Should be copied if long-term retention is needed
+///
+/// Migrated from deleted `inferLifetimeConstraints` to preserve knowledge.
+pub const static_buffer_functions = [_]types.FunctionSemantics{
+    // Time functions - return pointer to static string buffer
+    .{ .pattern = "ctime", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Time to string - returns static buffer, NOT thread-safe" },
+    .{ .pattern = "ctime_r", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Time to string (reentrant) - user-provided buffer, thread-safe" },
+    .{ .pattern = "asctime", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Time struct to string - returns static buffer, NOT thread-safe" },
+    .{ .pattern = "asctime_r", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Time struct to string (reentrant) - user-provided buffer" },
+
+    // Network functions - return static structs/buffers
+    .{ .pattern = "inet_ntoa", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "IP to string - returns static buffer, use inet_ntop instead" },
+    .{ .pattern = "gethostbyname", .match_type = .exact, .kind = .static_buffer, .severity = .medium, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "DNS lookup - returns static hostent, deprecated" },
+    .{ .pattern = "gethostbyaddr", .match_type = .exact, .kind = .static_buffer, .severity = .medium, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Reverse DNS - returns static hostent, deprecated" },
+
+    // User/Group database functions - return static buffers
+    .{ .pattern = "getgrgid", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "GID to group name - returns static group struct" },
+    .{ .pattern = "getgrnam", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Group name to GID - returns static group struct" },
+    .{ .pattern = "getpwuid", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "UID to passwd entry - returns static passwd struct" },
+    .{ .pattern = "getpwnam", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "Username to passwd entry - returns static passwd struct" },
+
+    // Error/terminal functions
+    .{ .pattern = "strerror", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Error number to string - returns static buffer, use strerror_r instead" },
+    .{ .pattern = "ttyname", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "FD to terminal name - returns static buffer path" },
+    .{ .pattern = "ctermid", .match_type = .exact, .kind = .static_buffer, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Controlling terminal name - returns static buffer" },
+};
+
 test "posix_io_reg: file_io function count" {
     try std.testing.expectEqual(@as(usize, 10), file_io_functions.len);
 }
@@ -75,4 +107,32 @@ test "posix_io_reg: getaddrinfo/freeaddrinfo pairs" {
             try std.testing.expectEqual(@as(bool, true), entry.consumes_ownership);
         }
     }
+}
+
+test "posix_io_reg: static_buffer_functions count" {
+    // P2-1: Verify all known static buffer functions are registered
+    try std.testing.expect(static_buffer_functions.len >= 14);
+}
+
+test "posix_io_reg: static_buffer key functions present" {
+    // P2-1: Verify critical static buffer functions are included
+    const expected = [_][]const u8{
+        "ctime", "asctime", "inet_ntoa", "gethostbyname",
+        "getgrgid", "getpwuid", "strerror", "ttyname",
+    };
+
+    var found_count: usize = 0;
+    for (expected) |func_name| {
+        for (static_buffer_functions) |entry| {
+            if (std.mem.eql(u8, func_name, entry.pattern)) {
+                found_count += 1;
+                // Verify they have correct semantics
+                try std.testing.expectEqual(@as(bool, false), entry.transfers_ownership);
+                try std.testing.expectEqual(@as(bool, false), entry.consumes_ownership);
+                break;
+            }
+        }
+    }
+
+    try std.testing.expectEqual(expected.len, found_count);
 }

@@ -21,6 +21,8 @@ pub const RiskKind = enum {
     signal_handler,
     thread_mgmt,
     process_mgmt,
+    /// P2-1: Functions returning pointers to static buffers (ctime, strerror, etc.)
+    static_buffer,
 };
 
 /// Severity level for risk assessment.

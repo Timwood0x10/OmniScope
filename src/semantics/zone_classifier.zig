@@ -636,6 +636,7 @@ fn classifyCppFunction(func_name: []const u8) ZoneKind {
             .go_cgo_alloc,
             .zig_allocator,
             .cpp_allocator,
+            .static_buffer,
             => return .ffi,
         }
     }

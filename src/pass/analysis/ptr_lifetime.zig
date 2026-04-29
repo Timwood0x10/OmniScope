@@ -48,6 +48,9 @@ const allocator_kb = @import("../../semantics/allocator_kb.zig");
 const intrinsic_filter = @import("../../semantics/intrinsic_filter.zig");
 const output_param_classifier = @import("../../semantics/output_param_classifier.zig");
 
+// P1-1: Inter-procedural FFI analysis for caller context
+const ip_ffi = @import("ip_ffi.zig");
+
 /// Allocation site classification for pointers.
 pub const PtrAllocSite = enum(u8) {
     /// Allocated via malloc/calloc/realloc (heap)
@@ -1013,7 +1016,13 @@ pub const PtrLifetimePass = struct {
                 stats.return_stack_addr_found += 1;
             } else if (ptr_info.alloc_site == .heap) {
                 if (!isIntentionalOwnershipTransfer(func_name)) {
-                    if (is_lifecycle_bound_return(func_name, ptr_info)) {
+                    // P1-1: Use inter-procedural knowledge to detect acquisition functions.
+                    // If this function is a known resource acquisition function (dlopen, malloc,
+                    // socket, etc.), the heap return is intentional ownership transfer, not a leak.
+                    if (ip_ffi.is_acquisition_function(func_name)) {
+                        diag.debug("[SUPPRESSED] Heap return in acquisition function: {s} (ip_ffi detected)", .{func_name});
+                        stats.heap_intentional_transfer += 1;
+                    } else if (is_lifecycle_bound_return(func_name, ptr_info)) {
                         diag.debug("[MARKED] Lifecycle-bound return: {s} -> {s} (handle-dependent lifetime)", .{ func_name, ptr_info.source_desc });
                         stats.heap_intentional_transfer += 1;
                     } else {
@@ -1078,8 +1087,8 @@ pub const PtrLifetimePass = struct {
 
         // Constructor/factory naming patterns.
         const factory_suffixes = [_][]const u8{
-            "New", "Create", "Make", "Alloc", "AllocX",
-            "Init", "Open", "Build", "From", "Copy",
+            "New",  "Create", "Make",  "Alloc", "AllocX",
+            "Init", "Open",   "Build", "From",  "Copy",
         };
         for (factory_suffixes) |suffix| {
             if (std.mem.endsWith(u8, func_name, suffix)) return true;
@@ -1087,15 +1096,15 @@ pub const PtrLifetimePass = struct {
 
         // Common C API patterns that use alloca internally.
         const factory_substrings = [_][]const u8{
-            "Expr", "Select", "Token", "SrcList", "Name",
-            "Trigger", "CollSeq", "Vtab", "Module",
+            "Expr",    "Select",  "Token", "SrcList", "Name",
+            "Trigger", "CollSeq", "Vtab",  "Module",
         };
         for (factory_substrings) |sub| {
             if (std.mem.indexOf(u8, func_name, sub) != null) {
                 // Only suppress if the function also has a factory-like prefix.
                 const factory_prefixes = [_][]const u8{
                     "sqlite3", "rowSet", "alloc", "create",
-                    "vtab", "attach", "token",
+                    "vtab",    "attach", "token",
                 };
                 for (factory_prefixes) |prefix| {
                     if (std.mem.startsWith(u8, func_name, prefix)) return true;

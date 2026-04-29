@@ -502,6 +502,7 @@ pub const DataFlowGraph = struct {
         malloc_unchecked: usize,
         callback_mismatch: usize,
         cross_language_leak: usize,
+        static_buffer_misuse: usize,
         unknown: usize,
     };
 
@@ -523,6 +524,7 @@ pub const DataFlowGraph = struct {
             .malloc_unchecked = 0,
             .callback_mismatch = 0,
             .cross_language_leak = 0,
+            .static_buffer_misuse = 0,
             .unknown = 0,
         };
         for (self.issues.items) |issue| {
@@ -541,6 +543,7 @@ pub const DataFlowGraph = struct {
                 .unchecked_return => stats.unchecked_return += 1,
                 .malloc_unchecked => stats.malloc_unchecked += 1,
                 .callback_signature_mismatch => stats.callback_mismatch += 1,
+                .static_buffer_misuse => stats.static_buffer_misuse += 1,
                 .unknown => stats.unknown += 1,
             }
         }

@@ -141,6 +141,7 @@ pub const MemorySafetyPass = struct {
         );
 
         try ctx.addIssue(&issue);
+        ctx.allocator.free(message);
 
         diag.warn("Double free detected in function: {s} via {s}", .{ caller_name, func_name });
     }

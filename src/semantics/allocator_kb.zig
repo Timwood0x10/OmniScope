@@ -146,7 +146,8 @@ pub const AllocatorKB = struct {
         // libuv allocators.
         try kb.addBuiltinPair("uv__malloc", "uv__free", "libuv");
         try kb.addBuiltinPair("uv_malloc", "uv_free", "libuv");
-        try kb.addBuiltinPair("uv_buf_init", null, "libuv");
+        // NOTE: uv_buf_init is NOT a memory allocator - it only initializes
+        // a uv_buf_t struct (sets base/len fields). Removed to avoid false positives.
         try kb.addBuiltinPair("uv_loop_init", "uv_loop_close", "libuv");
         try kb.addBuiltinPair("uv_handle_init", "uv_close", "libuv");
 
@@ -240,7 +241,7 @@ pub const AllocatorKB = struct {
         kb: *AllocatorKB,
         name: []const u8,
     ) ?AllocatorInfo {
-        // Check if already known.
+        // Check if already known (builtin or previously discovered).
         if (kb.allocators.contains(name)) return null;
 
         // Heuristic patterns for allocators - narrow patterns only to reduce false positives.
@@ -266,6 +267,9 @@ pub const AllocatorKB = struct {
                     .is_heuristic = true,
                     .confidence = 60,
                 };
+                // PERSIST: Store discovered allocator in hash table for future lookups.
+                // This avoids redundant heuristic matching on subsequent calls.
+                kb.allocators.put(name, info) catch return info;
                 return info;
             }
         }
@@ -281,6 +285,8 @@ pub const AllocatorKB = struct {
                     .is_heuristic = true,
                     .confidence = 60,
                 };
+                // PERSIST: Store discovered deallocator in hash table.
+                kb.allocators.put(name, info) catch return info;
                 return info;
             }
         }

@@ -37,6 +37,11 @@ const ip_ffi = @import("ip_ffi.zig");
 const severity_rules = @import("severity_rules.zig");
 const SourceLocation = @import("../../ir/debug_info.zig").SourceLocation;
 
+// P2-2: Extracted modules (refactored from this file)
+const type_checker = @import("ffi_type_checker.zig");
+const lang_classifier = @import("ffi_language_classifier.zig");
+const safety_checker = @import("ffi_safety_checker.zig");
+
 /// Error type for FFI boundary detection operations.
 pub const FFIBoundaryError = error{
     /// Memory allocation failed.
@@ -1752,6 +1757,11 @@ pub const FFIBoundaryPass = struct {
             .signal_handler => .ffi_unsafe_call,
             .thread_mgmt => .ffi_unsafe_call,
             .process_mgmt => .ffi_unsafe_call,
+            // P2-1: Static buffer functions (ctime, strerror, etc.) return pointers to static storage.
+            // These must NOT be freed (doing so is UB), so they are NOT memory leaks.
+            // The real risks are: thread-unsafe + data overwrite on next call.
+            // Classified as static_buffer_misuse to distinguish from general FFI unsafe calls.
+            .static_buffer => .static_buffer_misuse,
         };
     }
 

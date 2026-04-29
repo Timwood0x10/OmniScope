@@ -252,8 +252,40 @@ fn detect_ownership_transfer(call_inst: c.LLVMValueRef, callee_name: []const u8)
     return .none;
 }
 
-/// Known acquisition functions that return owned resources.
-fn is_acquisition_function(name: []const u8) bool {
+/// Check if a function is a known resource acquisition function.
+///
+/// Acquisition functions return owned resources (memory handles, file descriptors,
+/// sockets, etc.) that must be explicitly released by the caller. Detecting these
+/// functions is crucial for:
+/// - **Ownership tracking**: Knowing when ownership is transferred to the caller
+/// - **Leak detection**: Identifying unreleased resources
+/// - **False positive suppression**: Avoiding reporting heap returns in acquisition
+///   functions as memory leaks (they're intentional ownership transfers)
+///
+/// **Supported categories:**
+/// - Memory allocators: malloc, calloc, realloc, mmap
+/// - File I/O: fopen, sqlite3_open
+/// - Network: socket, accept
+/// - Dynamic loading: dlopen, dlsym, LoadLibrary, GetProcAddress
+/// - Crypto (OpenSSL): EVP_CIPHER_CTX_new, BIO_new, RSA_new
+/// - Java (JNI): JNI_FindClass, NewGlobalRef
+/// - Python (C API): PyGILState_Ensure, PyObject_Call
+///
+/// Parameters:
+///   - name: Function name string to check (case-sensitive)
+///
+/// Returns:
+///   - true if the function is a known resource acquisition function
+///   - false otherwise (including unknown functions)
+///
+/// Example:
+/// ```zig
+/// if (is_acquisition_function("malloc")) {
+///     // This function returns owned memory - intentional transfer, not a leak
+///     diag.debug("Heap return in acquisition function", .{});
+/// }
+/// ```
+pub fn is_acquisition_function(name: []const u8) bool {
     const acquisitions = [_][]const u8{
         "dlopen",       "dlsym",             "mmap",               "malloc",
         "calloc",       "realloc",           "socket",             "accept",
