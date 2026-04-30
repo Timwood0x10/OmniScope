@@ -213,6 +213,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
     try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
 
     const analysis_start = std.time.milliTimestamp();
     const result = try pipeline.runStaticAnalysis();
@@ -328,7 +329,7 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .borrow_escape => .borrow_escape,
         .ffi_unsafe_call => .ffi_unsafe_call,
         .unchecked_return => .unchecked_return,
-        .type_mismatch => .type_mismatch,
+        .type_mismatch, .ffi_type_mismatch => .type_mismatch,
         .command_injection => .command_injection,
         .buffer_overflow => .buffer_overflow,
         .format_string => .format_string,

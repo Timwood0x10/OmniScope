@@ -15,6 +15,8 @@ pub const IssueKind = enum {
     unchecked_return,
     /// Type mismatch across FFI boundary
     type_mismatch,
+    /// FFI type mismatch (size, alignment, signedness)
+    ffi_type_mismatch,
     /// Memory leak across language boundary
     cross_language_leak,
     /// General memory leak (not necessarily cross-language)
@@ -51,6 +53,7 @@ pub const IssueKind = enum {
             .ffi_unsafe_call => "ffi_unsafe_call",
             .unchecked_return => "unchecked_return",
             .type_mismatch => "type_mismatch",
+            .ffi_type_mismatch => "ffi_type_mismatch",
             .cross_language_leak => "cross_language_leak",
             .memory_leak => "memory_leak",
             .use_after_free => "use_after_free",
@@ -76,6 +79,7 @@ pub const IssueKind = enum {
             .ffi_unsafe_call => 668, // CWE-668: Exposure of Resource to Wrong Sphere
             .unchecked_return => 252, // CWE-252: Unchecked Return Value
             .type_mismatch => 704, // CWE-704: Incorrect Type Conversion or Cast
+            .ffi_type_mismatch => 704, // CWE-704: Incorrect Type Conversion or Cast
             .cross_language_leak => 401, // CWE-401: Memory Leak
             .memory_leak => 401, // CWE-401: Memory Leak
             .use_after_free => 416, // CWE-416: Use After Free
@@ -99,6 +103,7 @@ pub const IssueKind = enum {
             .ffi_unsafe_call => "FFI call without proper safety validation",
             .unchecked_return => "Function return value not checked after call",
             .type_mismatch => "Type mismatch across FFI boundary",
+            .ffi_type_mismatch => "FFI type mismatch (size, alignment, or signedness)",
             .cross_language_leak => "Memory leak across language boundary",
             .memory_leak => "Memory allocated but never freed",
             .use_after_free => "Use after free across language boundary",

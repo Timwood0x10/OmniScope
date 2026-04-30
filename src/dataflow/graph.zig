@@ -550,7 +550,7 @@ pub const DataFlowGraph = struct {
                 .command_injection => stats.command_injection += 1,
                 .buffer_overflow => stats.buffer_overflow += 1,
                 .format_string => stats.format_string += 1,
-                .type_mismatch => stats.type_mismatch += 1,
+                .type_mismatch, .ffi_type_mismatch => stats.type_mismatch += 1,
                 .borrow_escape => stats.borrow_escape += 1,
                 .null_dereference => stats.null_dereference += 1,
                 .invalid_free => stats.invalid_free += 1,

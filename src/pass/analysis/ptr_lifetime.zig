@@ -896,6 +896,18 @@ pub const PtrLifetimePass = struct {
                         const to_hash = @as(u64, @intFromPtr(value));
                         mg.trackAlias(from_hash, to_hash) catch {};
                     }
+                } else {
+                    // v0.2.0: Record content source even when value is not in pointer_map.
+                    // This handles stores from global constants, function parameters,
+                    // and untracked call results — without this, load inherits the
+                    // alloca's .stack source instead of the actual content source.
+                    if (mem_graph) |mg| {
+                        const dest_ptr = @as(u64, @intFromPtr(dest));
+                        const content_kind = inferContentKind(value);
+                        if (content_kind != .unknown) {
+                            mg.recordContentSource(dest_ptr, content_kind);
+                        }
+                    }
                 }
             },
 
@@ -930,6 +942,45 @@ pub const PtrLifetimePass = struct {
 
             else => {},
         }
+    }
+
+    /// Infer the content source kind of a value that is not in pointer_map.
+    /// Used by store's else branch to record content_source for values that
+    /// pointer_map doesn't track (global constants, function params, etc.).
+    fn inferContentKind(value: c.LLVMValueRef) memory_graph.SourceKind {
+        // Global variable (e.g., @.str.1027, @g_var)
+        if (c.LLVMIsAGlobalValue(value) != null) return .resource_alloc;
+        // Function pointer
+        if (c.LLVMIsAFunction(value) != null) return .resource_alloc;
+        // Constant expression or constant int (null pointer, inttoptr, etc.)
+        if (c.LLVMIsAConstant(value) != null) return .resource_alloc;
+
+        // Call/invoke result — the callee may return heap memory.
+        const opcode = c.LLVMGetInstructionOpcode(value);
+        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+            const called = c.LLVMGetCalledValue(value);
+            if (@intFromPtr(called) != 0) {
+                const name_ptr = c.LLVMGetValueName(called);
+                if (@intFromPtr(name_ptr) != 0) {
+                    const callee_name = std.mem.span(name_ptr);
+                    // Check if this is a known allocator function
+                    if (getAllocatorKB()) |kb| {
+                        if (kb.isAllocator(callee_name)) return .heap_alloc;
+                    }
+                    // Fallback: check common allocator patterns
+                    if (std.mem.indexOf(u8, callee_name, "malloc") != null or
+                        std.mem.indexOf(u8, callee_name, "calloc") != null or
+                        std.mem.indexOf(u8, callee_name, "realloc") != null or
+                        std.mem.indexOf(u8, callee_name, "alloc") != null)
+                    {
+                        return .heap_alloc;
+                    }
+                }
+            }
+            return .call_result;
+        }
+
+        return .unknown;
     }
 
     fn putPtrInfo(
