@@ -1,4 +1,4 @@
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1777513934,"summary":{"functions":52,"issues":25,"time_ms":18},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1777527579,"summary":{"functions":52,"issues":25,"time_ms":19},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":401,"message":"FFI RISK: encrypt_leak_ctx -> EVP_CIPHER_CTX_new: OpenSSL cipher context allocation","location":{"function":"encrypt_leak_ctx"}},
   {"id":"OMI-002","kind":"unchecked_return","severity":"medium","confidence":"HEURISTIC","confidence_score":0.65,"cwe_id":252,"message":"NULL check missing after EVP_CIPHER_CTX_new in encrypt_leak_ctx","location":{"function":"encrypt_leak_ctx"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":401,"message":"FFI RISK: bio_leak -> BIO_new: OpenSSL BIO allocation","location":{"function":"bio_leak"}},

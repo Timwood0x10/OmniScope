@@ -262,6 +262,8 @@ pub const Issue = struct {
     trace: ?[]TraceEntry,
     /// Whether message and trace are owned
     owned: bool,
+    /// Whether location.function is heap-allocated and should be freed
+    function_owned: bool,
 
     /// Create a new issue
     ///
@@ -292,6 +294,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
+            .function_owned = false,
         };
     }
 
@@ -315,6 +318,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
+            .function_owned = false,
         };
     }
 
@@ -349,6 +353,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = trace,
             .owned = true,
+            .function_owned = false,
         };
     }
 
@@ -381,6 +386,9 @@ pub const Issue = struct {
         if (self.owned) {
             if (self.message.len > 0) {
                 allocator.free(self.message);
+            }
+            if (self.function_owned and self.location.function.len > 0) {
+                allocator.free(self.location.function);
             }
             if (self.trace) |trace| {
                 for (trace) |*entry| {

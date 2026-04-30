@@ -1,4 +1,3 @@
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1777513942,"summary":{"functions":36,"issues":2,"time_ms":36},"issues":[
-  {"id":"OMI-001","kind":"double_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":415,"message":"Potential double free of pointer via '_RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc' (confidence: 80.00%)","location":{"function":"_ZN6ark_ff6fields5utils17k_adicity_big_int17h6a0086abe5b008abE"}},
-  {"id":"OMI-002","kind":"invalid_free","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":590,"message":"_RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc() called on function parameter pointer (confidence: 75.00%)","location":{"function":"_ZN6ark_ff6fields5utils17k_adicity_big_int17h6a0086abe5b008abE"}}
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1777527592,"summary":{"functions":36,"issues":1,"time_ms":38},"issues":[
+  {"id":"OMI-001","kind":"invalid_free","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":590,"message":"_RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc() called on function parameter pointer (confidence: 75.00%)","location":{"function":"_ZN6ark_ff6fields5utils17k_adicity_big_int17h6a0086abe5b008abE"}}
 ]}

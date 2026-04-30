@@ -359,10 +359,21 @@ pub const DataFlowGraph = struct {
         const message_copy = try self.allocator.dupe(u8, issue.message);
         errdefer self.allocator.free(message_copy);
 
+        var func_copy: ?[]u8 = null;
+        errdefer {
+            if (func_copy) |f| self.allocator.free(f);
+        }
+
         var issue_copy = issue;
         issue_copy.message = message_copy;
-        issue_copy.owned = true;
 
+        if (issue.location.function.len > 0) {
+            func_copy = try self.allocator.dupe(u8, issue.location.function);
+            issue_copy.location.function = func_copy.?;
+            issue_copy.function_owned = true;
+        }
+
+        issue_copy.owned = true;
         try self.issues.append(self.allocator, issue_copy);
 
         if (issue.owned and issue.message.len > 0) {

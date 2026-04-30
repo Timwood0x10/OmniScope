@@ -1,0 +1,18 @@
+abseil2024|19|borrow_escape(19)
+libuv150|138|double_free(39) ffi_unsafe_call(38) borrow_escape(36)
+wabt_wast2json|7|memory_leak(2) malloc_unchecked(2) borrow_escape(2)
+curl8|148|double_free(66) borrow_escape(60) ffi_unsafe_call(18)
+sqlite3|436|double_free(225) borrow_escape(136) memory_leak(60)
+rust_sqlite|23|memory_leak(11) invalid_free(6) unchecked_return(2)
+wasmtime_test|208|invalid_free(176) use_after_free(26) borrow_escape(4)
+openssl_wrapper|25|memory_leak(8) unchecked_return(8) double_free(6)
+jsoncpp195|16|borrow_escape(7) memory_leak(4) format_string(3)
+ripgrep141|2|invalid_free(2)
+blst|64|invalid_free(54) use_after_free(9) memory_leak(1)
+zkcrypto_ff|0|
+libsodium_sign|0|
+libsodium_blake2b|0|
+gnark_test|30|borrow_escape(21) memory_leak(3) double_free(2)
+ring|18|invalid_free(18)
+ark_ff|1|invalid_free(1)
+zkcrypto_bls12_381|3|double_free(2) invalid_free(1)

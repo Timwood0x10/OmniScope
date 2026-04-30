@@ -108,7 +108,7 @@ pub const AllocatorKB = struct {
         var kb = AllocatorKB{
             .allocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
             .deallocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
-            .pairs = std.ArrayList(AllocatorPair).init(arena.allocator()),
+            .pairs = std.ArrayList(AllocatorPair).initCapacity(arena.allocator(), 0) catch unreachable,
             .arena = undefined,
             .temp_allocator = temp_allocator,
         };
@@ -193,7 +193,7 @@ pub const AllocatorKB = struct {
         if (free_name) |fname| {
             const free_info = AllocatorInfo{
                 .name = fname,
-                .kind = .heap_free,
+                .kind = .unknown,
                 .matching_free = alloc_name,
                 .source = source,
                 .is_heuristic = false,
@@ -206,7 +206,7 @@ pub const AllocatorKB = struct {
                 .free = free_info,
                 .is_confirmed = true,
             };
-            try kb.pairs.append(pair);
+            try kb.pairs.append(kb.arena.allocator(), pair);
         }
 
         // Static buffer functions: return pointer to internal static storage.

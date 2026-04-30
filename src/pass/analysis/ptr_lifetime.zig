@@ -113,6 +113,9 @@ pub const PtrInfo = struct {
     resource_type: ResourceType = .none,
     /// Whether source_desc was dynamically allocated (for safe free)
     needs_free: bool = false,
+    /// Whether this alloca is used only for storing function parameters.
+    /// If true, it's a "param storage alloca" — safe, not a borrow_escape risk.
+    is_param_storage: bool = false,
 };
 
 /// Resource types for lifecycle tracking.
@@ -586,13 +589,14 @@ pub const PtrLifetimePass = struct {
     fn trackInstruction(
         allocator: std.mem.Allocator,
         inst: c.LLVMValueRef,
-        _: c.LLVMValueRef,
+        func: c.LLVMValueRef,
         bb_id: usize,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
         mem_graph: ?*memory_graph.MemoryGraph,
         stats: *LifetimeStats,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
+        const func_ptr = @as(u64, @intFromPtr(func));
 
         switch (opcode) {
             c.LLVMAlloca => {
@@ -606,6 +610,12 @@ pub const PtrLifetimePass = struct {
                 };
                 try putPtrInfo(pointer_map, inst, info, allocator);
                 stats.total_pointers_tracked += 1;
+
+                // v0.1.9: Sync alloca with MemoryGraph — mark as stack allocation.
+                if (mem_graph) |mg| {
+                    const inst_ptr = @as(u64, @intFromPtr(inst));
+                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca) catch {};
+                }
             },
 
             c.LLVMCall, c.LLVMInvoke => {
@@ -628,10 +638,11 @@ pub const PtrLifetimePass = struct {
                                 try putPtrInfo(pointer_map, inst, info, allocator);
                                 stats.total_pointers_tracked += 1;
 
-                                // v0.1.8: Sync with MemoryGraph for cross-alias double-free detection.
+                                // v0.1.9: Sync with MemoryGraph — mark as heap allocation.
                                 if (mem_graph) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackAlloc(inst_ptr, inst_ptr) catch {};
+                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc) catch {};
+                                    mg.recordFuncAlloc(func_ptr);
                                 }
                                 break;
                             }
@@ -650,10 +661,11 @@ pub const PtrLifetimePass = struct {
                             try putPtrInfo(pointer_map, inst, info, allocator);
                             stats.total_pointers_tracked += 1;
 
-                            // v0.1.8: Sync resource allocation with MemoryGraph.
+                            // v0.1.9: Sync resource allocation with MemoryGraph.
                             if (mem_graph) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
-                                _ = mg.trackAlloc(inst_ptr, inst_ptr) catch {};
+                                _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc) catch {};
+                                mg.recordFuncAlloc(func_ptr);
                             }
                         }
 
@@ -695,6 +707,10 @@ pub const PtrLifetimePass = struct {
 
                         // v0.1.8: Double-free detection via Memory Graph.
                         if (isFreeFunction(callee_name)) {
+                            // v0.1.9: Record free for alloc/free balance checking.
+                            if (mem_graph) |mg| {
+                                mg.recordFuncFree(func_ptr);
+                            }
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (pointer_map.getPtr(ptr_arg)) |ptr_info| {
                                 if (ptr_info.freed and !ptr_info.double_free_detected) {
@@ -717,6 +733,10 @@ pub const PtrLifetimePass = struct {
                         }
 
                         if (isResourceCloseFunction(callee_name)) |closed_type| {
+                            // v0.1.9: Record free for alloc/free balance checking.
+                            if (mem_graph) |mg| {
+                                mg.recordFuncFree(func_ptr);
+                            }
                             const handle_arg = c.LLVMGetOperand(inst, 0);
                             if (pointer_map.getPtr(handle_arg)) |handle_info| {
                                 handle_info.freed = true;
@@ -747,20 +767,65 @@ pub const PtrLifetimePass = struct {
             },
 
             c.LLVMLoad => {
+                // v0.1.9: Load inherits the content source of the loaded pointer.
+                // If %ptr points to an alloca that contains a heap pointer,
+                // the loaded value's source is .heap_alloc (not .alloca).
+                if (mem_graph) |mg| {
+                    const src_ptr = @as(u64, @intFromPtr(c.LLVMGetOperand(inst, 0)));
+                    const content_kind = mg.getContentSource(src_ptr);
+                    if (content_kind != .unknown) {
+                        const inst_ptr = @as(u64, @intFromPtr(inst));
+                        _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind) catch {};
+                        // Note: load does NOT call recordFuncAlloc — it reads
+                        // memory, not allocates it. The alloc was already counted
+                        // when the original allocation instruction was processed.
+                    }
+                }
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
             },
 
             c.LLVMStore => {
                 const value = c.LLVMGetOperand(inst, 0);
                 const dest = c.LLVMGetOperand(inst, 1);
+
+                // v0.1.9: Mark alloca as param storage if storing a function parameter.
+                // Pattern: %arg.addr = alloca i32; store i32 %arg, ptr %arg.addr
+                // This alloca is just a local copy of a parameter — safe.
+                if (isFuncParam(value, func)) {
+                    if (pointer_map.getPtr(dest)) |dest_info| {
+                        if (dest_info.alloc_site == .stack) {
+                            dest_info.is_param_storage = true;
+                        }
+                    }
+                }
+                // Store does NOT change dest's own source — dest is still whatever
+                // it was (alloca, heap, etc.). But we record what kind of value
+                // was stored INTO dest, so that load can inherit the content's source.
                 if (pointer_map.get(value)) |src_info| {
+                    // Record content source: dest now contains a value whose
+                    // source is src_info.alloc_site.
+                    if (mem_graph) |mg| {
+                        const dest_ptr = @as(u64, @intFromPtr(dest));
+                        const content_kind: memory_graph.SourceKind = switch (src_info.alloc_site) {
+                            .heap => .heap_alloc,
+                            .stack => .alloca,
+                            .global => .unknown,
+                            .parameter => .unknown,
+                            .constant => .unknown,
+                            .unknown => .unknown,
+                        };
+                        mg.recordContentSource(dest_ptr, content_kind);
+                    }
+
+                    // Still propagate via pointer_map for double-free tracking
+                    // (alias relationship: dest aliases to value's allocation).
                     var new_info = src_info;
                     const desc = try allocator.dupe(u8, src_info.source_desc);
                     new_info.source_desc = desc;
                     new_info.needs_free = true;
                     try putPtrInfo(pointer_map, dest, new_info, allocator);
 
-                    // v0.1.8: Sync alias with MemoryGraph for cross-alias double-free.
+                    // Sync alias with MemoryGraph for cross-alias double-free.
                     if (mem_graph) |mg| {
                         const from_hash = @as(u64, @intFromPtr(dest));
                         const to_hash = @as(u64, @intFromPtr(value));
@@ -838,7 +903,7 @@ pub const PtrLifetimePass = struct {
         }
 
         if (opcode == c.LLVMRet) {
-            try checkReturnViolation(ctx, inst, func, func_name, pointer_map, diag, stats);
+            try checkReturnViolation(ctx, inst, func, func_name, pointer_map, mem_graph, diag, stats);
         }
 
         if (opcode == c.LLVMStore) {
@@ -975,9 +1040,10 @@ pub const PtrLifetimePass = struct {
     fn checkReturnViolation(
         ctx: *PassContext,
         inst: c.LLVMValueRef,
-        _: c.LLVMValueRef,
+        func: c.LLVMValueRef,
         func_name: []const u8,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        mem_graph: ?*memory_graph.MemoryGraph,
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
     ) !void {
@@ -989,8 +1055,6 @@ pub const PtrLifetimePass = struct {
         }
 
         // v0.1.8: Use OutputParamClassifier for precise C API output param detection.
-        // This replaces the old isNonPointerReturnType heuristic which only checked
-        // the return type but couldn't distinguish output-param APIs from real escapes.
         if (output_param_classifier.OutputParamClassifier.isLikelyOutputParamFunction(func_name)) {
             diag.debug("[SUPPRESSED] C API output parameter pattern: {s} (known output-param family)", .{func_name});
             stats.heap_intentional_transfer += 1;
@@ -1004,16 +1068,76 @@ pub const PtrLifetimePass = struct {
         }
 
         const retval = c.LLVMGetOperand(inst, 0);
+
+        // v0.1.9: Use MemoryGraph source kind to filter borrow_escape FP.
+        // If the return value is known to come from a heap/resource allocation,
+        // it cannot be a borrow_escape (stack address return).
+        if (mem_graph) |mg| {
+            const retval_ptr = @as(u64, @intFromPtr(retval));
+            const source = mg.getSourceKind(retval_ptr);
+            if (source == .heap_alloc or source == .resource_alloc) {
+                // Return value comes from malloc/calloc/dlopen/etc. — safe.
+                diag.debug("[SUPPRESSED] Return value is heap/resource allocation (MemoryGraph): {s}", .{func_name});
+                stats.heap_intentional_transfer += 1;
+                return;
+            }
+
+            // v0.1.9: Alloc/free balance check.
+            // If this function has net positive allocations (more allocs than frees),
+            // it's likely a factory/constructor that returns heap memory.
+            // This is a project-agnostic signal — no whitelists needed.
+            const func_ptr = @as(u64, @intFromPtr(func));
+            const counter = mg.getFuncCounter(func_ptr);
+            if (counter.hasHeapOps() and counter.net() > 0) {
+                diag.debug("[SUPPRESSED] Function has net heap allocations ({d} allocs, {d} frees): {s}", .{ counter.allocs, counter.frees, func_name });
+                stats.heap_intentional_transfer += 1;
+                return;
+            }
+        }
+
+        // v0.1.9: Check if retval is a call instruction result from a known allocator.
+        // This catches cases where MemoryGraph doesn't track the call (e.g., custom allocators).
+        const retval_opcode = c.LLVMGetInstructionOpcode(retval);
+        if (retval_opcode == c.LLVMCall or retval_opcode == c.LLVMInvoke) {
+            const called_val = c.LLVMGetCalledValue(retval);
+            if (@intFromPtr(called_val) != 0) {
+                const callee_name_ptr = c.LLVMGetValueName(called_val);
+                if (@intFromPtr(callee_name_ptr) != 0) {
+                    const callee_name = std.mem.span(callee_name_ptr);
+                    // Check AllocatorKB for known allocators.
+                    if (getAllocatorKB()) |kb| {
+                        if (kb.isAllocator(callee_name)) {
+                            diag.debug("[SUPPRESSED] Return value from known allocator {s} in {s}", .{ callee_name, func_name });
+                            stats.heap_intentional_transfer += 1;
+                            return;
+                        }
+                    }
+                    // Check HEAP_ALLOC_FUNCTIONS.
+                    for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
+                        if (std.mem.indexOf(u8, callee_name, alloc_fn) != null) {
+                            diag.debug("[SUPPRESSED] Return value from heap alloc {s} in {s}", .{ callee_name, func_name });
+                            stats.heap_intentional_transfer += 1;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         if (pointer_map.get(retval)) |ptr_info| {
             if (ptr_info.alloc_site == .stack) {
-                // v0.1.8: Suppress alloca-return in constructor/factory patterns.
-                // Functions like sqlite3PExpr(), sqlite3SelectNew() use alloca as
-                // temporary workspace but return heap-allocated objects. The alloca
-                // is just an intermediate — the actual return value points to malloc'd
-                // memory copied from the alloca. Reporting these creates massive noise.
-                // TODO: Implement isAllocaReturnSuppressed if needed.
-                try reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
-                stats.return_stack_addr_found += 1;
+                // v0.1.9: Skip param storage allocas — they are local copies of
+                // function parameters, not dangerous stack address returns.
+                if (ptr_info.is_param_storage) {
+                    diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
+                    stats.heap_intentional_transfer += 1;
+                } else if (isAllocaReturnSuppressed(func_name, ptr_info)) {
+                    diag.debug("[SUPPRESSED] Alloca return in constructor/factory: {s}", .{func_name});
+                    stats.heap_intentional_transfer += 1;
+                } else {
+                    try reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
+                    stats.return_stack_addr_found += 1;
+                }
             } else if (ptr_info.alloc_site == .heap) {
                 if (!isIntentionalOwnershipTransfer(func_name)) {
                     // P1-1: Use inter-procedural knowledge to detect acquisition functions.
@@ -1112,6 +1236,16 @@ pub const PtrLifetimePass = struct {
             }
         }
 
+        return false;
+    }
+
+    /// Checks if a value is a function parameter.
+    fn isFuncParam(val: c.LLVMValueRef, func: c.LLVMValueRef) bool {
+        const num_params = c.LLVMCountParams(func);
+        var i: u32 = 0;
+        while (i < num_params) : (i += 1) {
+            if (c.LLVMGetParam(func, i) == val) return true;
+        }
         return false;
     }
 
