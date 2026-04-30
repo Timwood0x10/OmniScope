@@ -194,19 +194,19 @@ pub const OutputParamClassifier = struct {
 
         // Check function name patterns that strongly suggest output params
         const strong_patterns = [_][]const u8{
-            "sqlite3_prepare",  "sqlite3_open",   "sqlite3_bind",
-            "sqlite3_column",  "sqlite3_status", "sqlite3_busy_",
-            "sqlite3_errcode", "getsockopt",      "setsockopt",
-            "getaddrinfo",     "getnameinfo",     "pthread_create",
-            "pthread_join",    "clock_gettime",   "clock_getres",
-            "gettimeofday",    "regcomp",         "regexec",
-            "curl_easy_getinfo","curl_easy_setopt",
-            "avcodec_",        "avformat_",       "avparser_",
-            "json_",           "json_object_get", "json_array_get",
-            "xmlParse",        "xmlGetProp",      "ldap_",
+            "sqlite3_prepare",   "sqlite3_open",     "sqlite3_bind",
+            "sqlite3_column",    "sqlite3_status",   "sqlite3_busy_",
+            "sqlite3_errcode",   "getsockopt",       "setsockopt",
+            "getaddrinfo",       "getnameinfo",      "pthread_create",
+            "pthread_join",      "clock_gettime",    "clock_getres",
+            "gettimeofday",      "regcomp",          "regexec",
+            "curl_easy_getinfo", "curl_easy_setopt", "avcodec_",
+            "avformat_",         "avparser_",        "json_",
+            "json_object_get",   "json_array_get",   "xmlParse",
+            "xmlGetProp",        "ldap_",
             // v0.2.0: Extended libuv patterns
-            "uv_req_",         "uv_timer_",
-            "uv_getaddrinfo",
+                       "uv_req_",
+            "uv_timer_",         "uv_getaddrinfo",
         };
         for (strong_patterns) |pat| {
             if (std.mem.indexOf(u8, func_name, pat) != null) return true;

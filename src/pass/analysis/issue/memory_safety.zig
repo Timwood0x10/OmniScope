@@ -158,6 +158,14 @@ pub const MemorySafetyPass = struct {
 
         for (freed_pointers.items) |freed_ptr| {
             if (freed_ptr == ptr_value) {
+                // Suppress double free in Rust panic/cleanup paths.
+                // Rust's panic handling invokes destructors in cleanup paths,
+                // which can trigger apparent double-free patterns that are
+                // actually safe (drop glue checks for already-dropped state).
+                if (isRustPanicOrCleanupFunction(caller_func)) {
+                    diag.debug("[SUPPRESSED] Double free in Rust panic/cleanup: {s}", .{free_func_name});
+                    return false;
+                }
                 try reportDoubleFree(ctx, caller_func, free_func_name, diag);
                 return true;
             }
@@ -249,6 +257,29 @@ pub const MemorySafetyPass = struct {
             func_name,
             confidence * 100.0,
         });
+    }
+
+    /// Check if a function is a Rust panic or cleanup handler.
+    /// Rust's panic handling and drop glue invoke destructors in cleanup paths,
+    /// which can create apparent double-free patterns that are actually safe.
+    fn isRustPanicOrCleanupFunction(func: c.LLVMValueRef) bool {
+        const name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(name_ptr) == 0) return false;
+        const func_name = std.mem.span(name_ptr);
+
+        // Rust panic infrastructure
+        if (std.mem.indexOf(u8, func_name, "panic") != null) return true;
+        // Rust drop glue (compiler-generated destructors)
+        if (std.mem.indexOf(u8, func_name, "drop_in_place") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "drop_and_deallocate") != null) return true;
+        // Rust unwinding / cleanup
+        if (std.mem.indexOf(u8, func_name, "_Unwind_") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "cleanup") != null) return true;
+        // Rust dealloc intrinsics (compiler-inserted)
+        if (std.mem.indexOf(u8, func_name, "__rustc__rustc_dealloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
+
+        return false;
     }
 };
 

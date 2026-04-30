@@ -182,6 +182,8 @@
 | 2026-04-30 | graph.zig getIssuesBySeverity trace sharing + missing fields | `trace=null`, added `reason`/`function_owned` |
 | 2026-04-30 | cpp\_fp\_reduction.zig RESOURCE LEAK msg leak | manual free after `Issue.init` (owned=false) |
 | 2026-04-30 | ptr\_lifetime.zig defer free without needs_free check | added `if (needs_free)` guard |
+| 2026-04-30 | free\_validation.zig 176 Invalid free FP (wasmtime) | `isRustDeallocFunction()` — skip `from_param` + `__rustc__rustc_dealloc` |
+| 2026-04-30 | memory\_safety.zig 172 Double free FP (wasmtime) | `isRustPanicOrCleanupFunction()` — suppress double free in panic/cleanup/drop paths |
 
 ***
 

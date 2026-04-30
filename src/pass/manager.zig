@@ -198,20 +198,14 @@ pub const PassManager = struct {
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;
             self.passes.items[idx].run_fn(ctx, diag) catch |err| {
-                diag.warn("PassManager: pass '{s}' failed with error: {}, degrading gracefully", .{
-                    pass_name,
-                    err
-                });
+                diag.warn("PassManager: pass '{s}' failed with error: {}, degrading gracefully", .{ pass_name, err });
                 pass_failures += 1;
                 // Continue running remaining passes
             };
         }
 
         if (pass_failures > 0) {
-            diag.info("PassManager: completed with {} degraded passes out of {}", .{
-                pass_failures,
-                self.resolved_order.?.len
-            });
+            diag.info("PassManager: completed with {} degraded passes out of {}", .{ pass_failures, self.resolved_order.?.len });
         }
     }
 

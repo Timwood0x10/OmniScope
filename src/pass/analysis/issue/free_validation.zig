@@ -269,7 +269,16 @@ pub const FreeValidationPass = struct {
         // The Zig compiler will emit a compile error if new enum values are added
         // without updating this switch, ensuring completeness at compile time.
         switch (origin) {
-            .from_param, .from_global, .from_constant => {
+            .from_param => {
+                // Skip from_param when the free function is a Rust dealloc.
+                // Rust's ownership model transfers allocation responsibility to callees,
+                // so __rustc__rustc_dealloc on function parameters is normal behavior.
+                // This avoids false positives for cross-function memory management.
+                if (isRustDeallocFunction(callee_name)) return false;
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
+            .from_global, .from_constant => {
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -277,6 +286,17 @@ pub const FreeValidationPass = struct {
             .unknown => {},
         }
 
+        return false;
+    }
+
+    /// Check if function is a Rust deallocation function.
+    /// Rust's ownership model transfers allocation responsibility across functions,
+    /// so dealloc on function parameters is normal and should not be flagged.
+    fn isRustDeallocFunction(func_name: []const u8) bool {
+        // __rustc__rustc_dealloc is the compiler-inserted deallocation intrinsic
+        if (std.mem.indexOf(u8, func_name, "__rustc__rustc_dealloc") != null) return true;
+        // __rust_dealloc is the older Rust deallocation intrinsic
+        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
         return false;
     }
 

@@ -407,12 +407,12 @@ pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
 pub fn isRefCountOperation(func_name: []const u8) bool {
     const rc_patterns = [_][]const u8{
         // Abseil (existing)
-        "CordRep3Ref", "CordRep5Unref", "RefcountAndFlags",
-        "AddRef",      "Release",       "Retain",
-        "ref_count",   "RefCount",      "Unref",
-        "decrement",   "increment",
+        "CordRep3Ref",       "CordRep5Unref",     "RefcountAndFlags",
+        "AddRef",            "Release",           "Retain",
+        "ref_count",         "RefCount",          "Unref",
+        "decrement",         "increment",
         // SQLite reference counting operations (Ref/Unref only)
-        "sqlite3ValueRef",
+                "sqlite3ValueRef",
         "sqlite3BtreeEnter", "sqlite3BtreeLeave",
     };
     for (rc_patterns) |pattern| {
