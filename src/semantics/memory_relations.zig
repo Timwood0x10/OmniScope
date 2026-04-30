@@ -63,7 +63,7 @@ pub const MemoryRelations = struct {
     string_table: std.AutoHashMap(u64, []const u8),
 
     pub fn init(allocator: std.mem.Allocator, estimated_funcs: usize) !MemoryRelations {
-        const capacity = @max(estimated_funcs, 64);
+        const capacity = @max(estimated_funcs, 256);
 
         var self = MemoryRelations{
             .allocator = allocator,
@@ -194,7 +194,7 @@ pub const MemoryRelations = struct {
 
     /// Check if any function in the call chain has allocations (iterative DFS)
     pub fn hasAllocInCalleeChain(self: *MemoryRelations, func_hash: u64) bool {
-        var visited = std.AutoHashMap(void, void).init(self.allocator);
+        var visited = std.AutoHashMap(u64, void).init(self.allocator);
         defer visited.deinit();
 
         var stack: [64]u64 = undefined;
@@ -207,8 +207,8 @@ pub const MemoryRelations = struct {
             stack_len -= 1;
             const current = stack[stack_len];
 
-            if (visited.contains({})) continue;
-            visited.put({}, {}) catch {};
+            if (visited.contains(current)) continue;
+            visited.put(current, {}) catch {};
 
             const stats = self.func_stats.get(current);
             if (stats != null and stats.?.alloc_count > 0) {

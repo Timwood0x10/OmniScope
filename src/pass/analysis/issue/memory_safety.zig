@@ -55,20 +55,16 @@ pub const MemorySafetyPass = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
-        var func_count: usize = 0;
-        var tmp_func = c.LLVMGetFirstFunction(mod);
-        while (@intFromPtr(tmp_func) != 0) : (tmp_func = c.LLVMGetNextFunction(tmp_func)) {
-            func_count += 1;
-        }
-
-        var relations = try MemoryRelations.init(ctx.allocator, func_count);
+        var relations = try MemoryRelations.init(ctx.allocator, 0);
         defer relations.deinit();
 
         var issue_count: usize = 0;
+        var func_count: usize = 0;
         var freed_pointers = std.ArrayList(u64).empty;
         defer freed_pointers.deinit(ctx.allocator);
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            func_count += 1;
             issue_count += try scanAndAnalyzeFunction(ctx, func, &relations, &freed_pointers, diag);
         }
 

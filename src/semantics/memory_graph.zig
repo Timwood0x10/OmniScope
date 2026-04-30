@@ -139,6 +139,8 @@ pub const MemoryGraph = struct {
         });
 
         const node = try graph.allocator.create(AllocNode);
+        errdefer graph.allocator.destroy(node);
+
         node.* = AllocNode{
             .id = id,
             .alloc_inst = alloc_inst_ptr,
@@ -148,9 +150,13 @@ pub const MemoryGraph = struct {
             .freed_by = null,
             .source_kind = kind,
         };
+        errdefer node.aliases.deinit();
 
         try node.aliases.put(ret_value_ptr, {});
         try graph.nodes.put(ret_value_ptr, node);
+        errdefer {
+            _ = graph.nodes.remove(ret_value_ptr);
+        }
         try graph.node_store.append(graph.allocator, node);
 
         return id;
@@ -323,61 +329,69 @@ pub const FnClass = enum {
 
 pub const FuzzyMatcher = struct {
     pub fn classify(fn_name: []const u8) FnClass {
-        const lower = toLower(fn_name);
-
-        if (std.mem.endsWith(u8, lower, "malloc") or
-            std.mem.endsWith(u8, lower, "calloc") or
-            std.mem.endsWith(u8, lower, "realloc") or
-            std.mem.endsWith(u8, lower, "_alloc") or
-            std.mem.endsWith(u8, lower, "alloc") or
-            std.mem.indexOf(u8, lower, "alloc") != null) {
+        if (endsWithLower(fn_name, "malloc") or
+            endsWithLower(fn_name, "calloc") or
+            endsWithLower(fn_name, "realloc") or
+            endsWithLower(fn_name, "_alloc") or
+            endsWithLower(fn_name, "alloc") or
+            indexOfLower(fn_name, "alloc") != null)
+        {
             return .alloc;
         }
 
-        if (std.mem.endsWith(u8, lower, "free") or
-            std.mem.endsWith(u8, lower, "_free") or
-            std.mem.indexOf(u8, lower, "dealloc") != null) {
+        if (endsWithLower(fn_name, "free") or
+            endsWithLower(fn_name, "_free") or
+            indexOfLower(fn_name, "dealloc") != null)
+        {
             return .free;
         }
 
-        if (std.mem.endsWith(u8, lower, "_new") or
-            std.mem.indexOf(u8, lower, "_new_") != null) {
+        if (endsWithLower(fn_name, "_new") or
+            indexOfLower(fn_name, "_new_") != null)
+        {
             return .alloc;
         }
 
-        if (std.mem.endsWith(u8, lower, "_delete") or
-            std.mem.indexOf(u8, lower, "_delete_") != null) {
+        if (endsWithLower(fn_name, "_delete") or
+            indexOfLower(fn_name, "_delete_") != null)
+        {
             return .free;
         }
 
-        if (std.mem.endsWith(u8, lower, "_init") or
-            std.mem.endsWith(u8, lower, "init")) {
+        if (endsWithLower(fn_name, "_init") or
+            endsWithLower(fn_name, "init"))
+        {
             return .init;
         }
 
-        if (std.mem.endsWith(u8, lower, "_cleanup") or
-            std.mem.endsWith(u8, lower, "cleanup") or
-            std.mem.endsWith(u8, lower, "finalize")) {
+        if (endsWithLower(fn_name, "_cleanup") or
+            endsWithLower(fn_name, "cleanup") or
+            endsWithLower(fn_name, "finalize"))
+        {
             return .cleanup;
         }
 
-        if (std.mem.endsWith(u8, lower, "_create") or
-            std.mem.endsWith(u8, lower, "create")) {
+        if (endsWithLower(fn_name, "_create") or
+            endsWithLower(fn_name, "create"))
+        {
             return .create;
         }
 
-        if (std.mem.endsWith(u8, lower, "_destroy") or
-            std.mem.endsWith(u8, lower, "destroy")) {
+        if (endsWithLower(fn_name, "_destroy") or
+            endsWithLower(fn_name, "destroy"))
+        {
             return .destroy;
         }
 
-        if (std.mem.endsWith(u8, lower, "_open") or
-            std.mem.endsWith(u8, lower, "dlopen")) {
+        if (endsWithLower(fn_name, "_open") or
+            endsWithLower(fn_name, "dlopen"))
+        {
             return .open;
         }
 
-        if (std.mem.endsWith(u8, lower, "_close") or
-            std.mem.endsWith(u8, lower, "dlclose")) {
+        if (endsWithLower(fn_name, "_close") or
+            endsWithLower(fn_name, "dlclose"))
+        {
             return .close;
         }
 
@@ -404,53 +418,62 @@ pub const FuzzyMatcher = struct {
             return false;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "new") and
-            std.mem.endsWith(u8, toLower(free_fn), "delete")) {
+        if (endsWithLower(alloc_fn, "new") and
+            endsWithLower(free_fn, "delete"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "malloc") and
-            std.mem.endsWith(u8, toLower(free_fn), "free")) {
+        if (endsWithLower(alloc_fn, "malloc") and
+            endsWithLower(free_fn, "free"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "alloc") and
-            std.mem.endsWith(u8, toLower(free_fn), "free")) {
+        if (endsWithLower(alloc_fn, "alloc") and
+            endsWithLower(free_fn, "free"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "calloc") and
-            std.mem.endsWith(u8, toLower(free_fn), "free")) {
+        if (endsWithLower(alloc_fn, "calloc") and
+            endsWithLower(free_fn, "free"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "realloc") and
-            std.mem.endsWith(u8, toLower(free_fn), "free")) {
+        if (endsWithLower(alloc_fn, "realloc") and
+            endsWithLower(free_fn, "free"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "init") and
-            std.mem.endsWith(u8, toLower(free_fn), "cleanup")) {
+        if (endsWithLower(alloc_fn, "init") and
+            endsWithLower(free_fn, "cleanup"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "create") and
-            std.mem.endsWith(u8, toLower(free_fn), "destroy")) {
+        if (endsWithLower(alloc_fn, "create") and
+            endsWithLower(free_fn, "destroy"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "open") and
-            std.mem.endsWith(u8, toLower(free_fn), "close")) {
+        if (endsWithLower(alloc_fn, "open") and
+            endsWithLower(free_fn, "close"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "dlopen") and
-            std.mem.endsWith(u8, toLower(free_fn), "dlclose")) {
+        if (endsWithLower(alloc_fn, "dlopen") and
+            endsWithLower(free_fn, "dlclose"))
+        {
             return true;
         }
 
-        if (std.mem.endsWith(u8, toLower(alloc_fn), "new")) {
-            return std.mem.endsWith(u8, toLower(free_fn), "free");
+        if (endsWithLower(alloc_fn, "new")) {
+            return endsWithLower(free_fn, "free");
         }
 
         return false;
@@ -499,8 +522,32 @@ pub const FuzzyMatcher = struct {
         return prefix;
     }
 
-    fn toLower(s: []const u8) []const u8 {
-        return s;
+    /// Case-insensitive endsWith. Zero allocation.
+    fn endsWithLower(haystack: []const u8, needle: []const u8) bool {
+        if (needle.len > haystack.len) return false;
+        const offset = haystack.len - needle.len;
+        for (needle, 0..) |ch, i| {
+            if (std.ascii.toLower(haystack[offset + i]) != ch) return false;
+        }
+        return true;
+    }
+
+    /// Case-insensitive indexOf. Zero allocation.
+    fn indexOfLower(haystack: []const u8, needle: []const u8) ?usize {
+        if (needle.len > haystack.len) return null;
+        const limit = haystack.len - needle.len;
+        var i: usize = 0;
+        while (i <= limit) : (i += 1) {
+            var matched = true;
+            for (needle, 0..) |ch, j| {
+                if (std.ascii.toLower(haystack[i + j]) != ch) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (matched) return i;
+        }
+        return null;
     }
 };
 

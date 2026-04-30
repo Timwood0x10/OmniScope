@@ -43,6 +43,11 @@ const known_output_param_families = [_]OutputParamFunctionFamily{
     .{ .prefix = "sqlite3_prepare", .output_param_index = 4, .description = "sqlite3 prepare stmt" },
     .{ .prefix = "sqlite3_open", .output_param_index = 1, .description = "sqlite3 open db" },
     .{ .prefix = "sqlite3_bind_", .output_param_index = 0xFFFF, .description = "sqlite3 bind (no output)" },
+    // v0.2.0: Extended SQLite output param patterns
+    .{ .prefix = "sqlite3_status", .output_param_index = 1, .description = "sqlite3 status value" },
+    .{ .prefix = "sqlite3_busy_", .output_param_index = 1, .description = "sqlite3 busy handler" },
+    .{ .prefix = "sqlite3_errcode", .output_param_index = 0xFFFF, .description = "sqlite3 error code" },
+    .{ .prefix = "sqlite3_column_", .output_param_index = 0xFFFF, .description = "sqlite3 column access" },
     .{ .prefix = "getsockopt", .output_param_index = 4, .description = "getsockopt optval" },
     .{ .prefix = "getaddrinfo", .output_param_index = 3, .description = "getaddrinfo result" },
     .{ .prefix = "getnameinfo", .output_param_index = 4, .description = "getnameinfo host" },
@@ -64,11 +69,17 @@ const known_output_param_families = [_]OutputParamFunctionFamily{
     .{ .prefix = "JNI_CreateJavaVM", .output_param_index = 0, .description = "JNI vm ptr" },
     .{ .prefix = "regcomp", .output_param_index = 1, .description = "regex compiled" },
     .{ .prefix = "ldap_search_s", .output_param_index = 4, .description = "ldap result" },
+    // v0.2.0: Extended libcurl patterns
     .{ .prefix = "curl_easy_getinfo", .output_param_index = 2, .description = "curl info ptr" },
+    .{ .prefix = "curl_easy_setopt", .output_param_index = 0xFFFF, .description = "curl set option" },
+    // v0.2.0: Extended libav patterns
     .{ .prefix = "avcodec_open2", .output_param_index = 0, .description = "avcodec context" },
     .{ .prefix = "avcodec_decode", .output_param_index = 2, .description = "avcodec frame" },
+    // v0.2.0: JSON/XML patterns
     .{ .prefix = "json_parse", .output_param_index = 1, .description = "json parse result" },
+    .{ .prefix = "json_object_get", .output_param_index = 0xFFFF, .description = "json object get" },
     .{ .prefix = "xmlParseChunk", .output_param_index = 0, .description = "xml parser ctx" },
+    .{ .prefix = "xmlGetProp", .output_param_index = 0xFFFF, .description = "xml get property" },
 };
 
 /// Output Parameter Classifier.
@@ -184,13 +195,18 @@ pub const OutputParamClassifier = struct {
         // Check function name patterns that strongly suggest output params
         const strong_patterns = [_][]const u8{
             "sqlite3_prepare",  "sqlite3_open",   "sqlite3_bind",
-            "getsockopt",       "setsockopt",     "getaddrinfo",
-            "getnameinfo",      "pthread_create", "pthread_join",
-            "clock_gettime",    "clock_getres",   "gettimeofday",
-            "regcomp",          "regexec",        "curl_easy_getinfo",
-            "curl_easy_setopt", "avcodec_",       "avformat_",
-            "avparser_",        "json_",          "xmlParse",
-            "ldap_",
+            "sqlite3_column",  "sqlite3_status", "sqlite3_busy_",
+            "sqlite3_errcode", "getsockopt",      "setsockopt",
+            "getaddrinfo",     "getnameinfo",     "pthread_create",
+            "pthread_join",    "clock_gettime",   "clock_getres",
+            "gettimeofday",    "regcomp",         "regexec",
+            "curl_easy_getinfo","curl_easy_setopt",
+            "avcodec_",        "avformat_",       "avparser_",
+            "json_",           "json_object_get", "json_array_get",
+            "xmlParse",        "xmlGetProp",      "ldap_",
+            // v0.2.0: Extended libuv patterns
+            "uv_req_",         "uv_timer_",
+            "uv_getaddrinfo",
         };
         for (strong_patterns) |pat| {
             if (std.mem.indexOf(u8, func_name, pat) != null) return true;

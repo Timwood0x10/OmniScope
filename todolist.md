@@ -173,6 +173,15 @@
 | 2026-04-30 | static\_lifetime knowledge lost       | migrated to AllocatorKB                  |
 | 2026-04-30 | resolveSourceKind comment misleading  | clarified priority semantics             |
 | 2026-04-30 | FuncCounter.net() i32 overflow risk   | → i64                                    |
+| 2026-04-30 | Issue.deinit double-free (Invalid free) | `function_owned` guard, don't free borrowed ptr |
+| 2026-04-30 | hasAllocInCalleeChain DFS broken       | `AutoHashMap(void,void)` → `AutoHashMap(u64,void)` |
+| 2026-04-30 | trackAlloc partial failure leak       | 3-layer errdefer chain                   |
+| 2026-04-30 | FuzzyMatcher.toLower() no-op           | `endsWithLower`/`indexOfLower` zero-alloc impl |
+| 2026-04-30 | memory\_safety.zig double module scan  | removed first pass, single-scan now      |
+| 2026-04-30 | graph.zig clear() double-free message | removed redundant `free()` before `deinit` |
+| 2026-04-30 | graph.zig getIssuesBySeverity trace sharing + missing fields | `trace=null`, added `reason`/`function_owned` |
+| 2026-04-30 | cpp\_fp\_reduction.zig RESOURCE LEAK msg leak | manual free after `Issue.init` (owned=false) |
+| 2026-04-30 | ptr\_lifetime.zig defer free without needs_free check | added `if (needs_free)` guard |
 
 ***
 

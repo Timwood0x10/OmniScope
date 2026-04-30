@@ -323,16 +323,25 @@ const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
 /// v0.1.8: Check if a function is a known heap allocator using Allocator KB.
 var g_allocator_kb: ?allocator_kb.AllocatorKB = null;
 var g_allocator_kb_init_failed: bool = false;
+var g_allocator_kb_lock = std.atomic.Value(bool).init(false);
 
 pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
     if (g_allocator_kb_init_failed) return null;
-    if (g_allocator_kb == null) {
-        g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
-            std.debug.print("[WARN] AllocatorKB init failed: {}, falling back to legacy detection\n", .{err});
-            g_allocator_kb_init_failed = true;
-            return null;
-        };
-    }
+    if (g_allocator_kb != null) return &g_allocator_kb.?;
+
+    // Spinlock: only one thread initializes at a time.
+    while (g_allocator_kb_lock.swap(true, .acquire)) {}
+    defer g_allocator_kb_lock.store(false, .release);
+
+    // Double-check after acquiring lock.
+    if (g_allocator_kb_init_failed) return null;
+    if (g_allocator_kb != null) return &g_allocator_kb.?;
+
+    g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
+        std.debug.print("[WARN] AllocatorKB init failed: {}, falling back to legacy detection\n", .{err});
+        g_allocator_kb_init_failed = true;
+        return null;
+    };
     return &g_allocator_kb.?;
 }
 
@@ -360,11 +369,17 @@ pub fn isKnownDeallocFunction(func_name: []const u8) bool {
 /// v0.1.8: Check if a function is an LLVM intrinsic that should be suppressed.
 /// Note: IntrinsicFilter.init() does not return an error, so no error handling needed.
 var g_intrinsic_filter: ?intrinsic_filter.IntrinsicFilter = null;
+var g_intrinsic_filter_lock = std.atomic.Value(bool).init(false);
 
 pub fn getIntrinsicFilter() *intrinsic_filter.IntrinsicFilter {
-    if (g_intrinsic_filter == null) {
-        g_intrinsic_filter = intrinsic_filter.IntrinsicFilter.init();
-    }
+    if (g_intrinsic_filter != null) return &g_intrinsic_filter.?;
+
+    while (g_intrinsic_filter_lock.swap(true, .acquire)) {}
+    defer g_intrinsic_filter_lock.store(false, .release);
+
+    if (g_intrinsic_filter != null) return &g_intrinsic_filter.?;
+
+    g_intrinsic_filter = intrinsic_filter.IntrinsicFilter.init();
     return &g_intrinsic_filter.?;
 }
 
@@ -509,7 +524,11 @@ pub const PtrLifetimePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
-            try analyzeFunction(ctx, func, diag, &stats, &mem_graph);
+            // v0.2.0: P2-3 — Single-function error isolation
+            analyzeFunction(ctx, func, diag, &stats, &mem_graph) catch |err| {
+                diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
+                continue;
+            };
         }
 
         diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
@@ -552,6 +571,27 @@ pub const PtrLifetimePass = struct {
         else
             "unknown";
 
+        // v0.2.0: P2-2 — Function size protection (skip oversized functions)
+        var bb_count: usize = 0;
+        var inst_count: usize = 0;
+        {
+            var tmp_bb = c.LLVMGetFirstBasicBlock(func);
+            while (@intFromPtr(tmp_bb) != 0) : (tmp_bb = c.LLVMGetNextBasicBlock(tmp_bb)) {
+                bb_count += 1;
+                var tmp_inst = c.LLVMGetFirstInstruction(tmp_bb);
+                while (@intFromPtr(tmp_inst) != 0) : (tmp_inst = c.LLVMGetNextInstruction(tmp_inst)) {
+                    inst_count += 1;
+                    if (inst_count > 50000) break; // Early exit
+                }
+                if (bb_count > 1000 or inst_count > 50000) break;
+            }
+        }
+
+        if (bb_count > 1000 or inst_count > 50000) {
+            diag.debug("[SKIPPED] Oversized function: {s} ({} BBs, {} instructions)", .{ func_name, bb_count, inst_count });
+            return;
+        }
+
         stats.total_functions_analyzed += 1;
 
         var pointer_map = std.AutoHashMap(c.LLVMValueRef, PtrInfo).init(ctx.allocator);
@@ -559,7 +599,9 @@ pub const PtrLifetimePass = struct {
         defer {
             var iter = pointer_map.iterator();
             while (iter.next()) |entry| {
-                ctx.allocator.free(entry.value_ptr.source_desc);
+                if (entry.value_ptr.needs_free) {
+                    ctx.allocator.free(entry.value_ptr.source_desc);
+                }
             }
             pointer_map.deinit();
         }
@@ -645,6 +687,28 @@ pub const PtrLifetimePass = struct {
                                     mg.recordFuncAlloc(func_ptr);
                                 }
                                 break;
+                            }
+                        }
+
+                        // v0.2.0: Triple-source heap detection — AllocatorKB check
+                        if (getAllocatorKB()) |kb| {
+                            if (kb.isAllocator(callee_name)) {
+                                const desc = try std.fmt.allocPrint(allocator, "heap via allocator {s}()", .{callee_name});
+                                const info = PtrInfo{
+                                    .alloc_site = .heap,
+                                    .source_inst = inst,
+                                    .source_desc = desc,
+                                    .alloc_bb_id = bb_id,
+                                    .needs_free = true,
+                                };
+                                try putPtrInfo(pointer_map, inst, info, allocator);
+                                stats.total_pointers_tracked += 1;
+
+                                if (mem_graph) |mg| {
+                                    const inst_ptr = @as(u64, @intFromPtr(inst));
+                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc) catch {};
+                                    mg.recordFuncAlloc(func_ptr);
+                                }
                             }
                         }
 
@@ -895,6 +959,9 @@ pub const PtrLifetimePass = struct {
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
     ) !void {
+        // v0.2.0: Null pointer guard — prevent SIGABRT on invalid IR
+        if (@intFromPtr(inst) == 0) return;
+
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
@@ -1222,13 +1289,21 @@ pub const PtrLifetimePass = struct {
         const factory_substrings = [_][]const u8{
             "Expr",    "Select",  "Token", "SrcList", "Name",
             "Trigger", "CollSeq", "Vtab",  "Module",
+            // v0.2.0: Extended factory patterns for C API recognition
+             "Malloc",
+            "Alloc",   "Realloc", "Hash",  "List",    "Table",
+            "Cache",   "Pool",
         };
         for (factory_substrings) |sub| {
             if (std.mem.indexOf(u8, func_name, sub) != null) {
                 // Only suppress if the function also has a factory-like prefix.
                 const factory_prefixes = [_][]const u8{
-                    "sqlite3", "rowSet", "alloc", "create",
-                    "vtab",    "attach", "token",
+                    "sqlite3",  "rowSet",    "alloc", "create",
+                    "vtab",     "attach",    "token",
+                    // v0.2.0: Extended prefixes for broader coverage
+                    "curl_",
+                    "uv_",      "json_",     "xml_",  "ldap_",
+                    "avcodec_", "avformat_",
                 };
                 for (factory_prefixes) |prefix| {
                     if (std.mem.startsWith(u8, func_name, prefix)) return true;

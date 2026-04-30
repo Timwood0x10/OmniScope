@@ -389,9 +389,14 @@ pub fn isAllocationByName(callee_name: []const u8) bool {
 
 pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
     const rc_class_patterns = [_][]const u8{
+        // Abseil (existing) — C++ mangled names with length prefixes
         "4Cord",             "7CordRep",      "10CordRepBtree",    "11CordRepRing",
         "12CordRepExternal", "13CordRepFlat", "14SubstringHolder", "16RefcountAndFlags",
         "RefCounted",        "RefPtr",        "shared_count",      "weak_count",
+        // SQLite — use longer, more specific substrings to avoid FP
+        "sqlite3_value",     "sqlite3_str",   "VdbeCursor",        "BtCursor",
+        "sqlite3Btree",      "Schema",        "sqlite3_table",     "sqlite3_index",
+        "sqlite3_trigger",   "sqlite3_view",  "sqlite3_expr",
     };
     for (rc_class_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -401,10 +406,14 @@ pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
 
 pub fn isRefCountOperation(func_name: []const u8) bool {
     const rc_patterns = [_][]const u8{
+        // Abseil (existing)
         "CordRep3Ref", "CordRep5Unref", "RefcountAndFlags",
         "AddRef",      "Release",       "Retain",
         "ref_count",   "RefCount",      "Unref",
         "decrement",   "increment",
+        // SQLite reference counting operations (Ref/Unref only)
+        "sqlite3ValueRef",
+        "sqlite3BtreeEnter", "sqlite3BtreeLeave",
     };
     for (rc_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -428,6 +437,15 @@ pub fn detectNullDereferences(
         const alloc_info = entry.value_ptr.*;
 
         if (!isNullableAllocation(alloc_info)) continue;
+
+        // Skip if the pointer is never used (no aliases in flow graph).
+        // A pointer that is allocated but never dereferenced cannot cause a null deref.
+        if (flow_graph.get(alloc_info.ptr_value_id)) |aliases| {
+            if (aliases.count() == 0) continue;
+        } else {
+            // No entry in flow graph means the pointer was never used at all.
+            continue;
+        }
 
         const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph) catch continue;
         if (!is_guarded) {
@@ -498,9 +516,7 @@ pub fn isNullableAllocation(alloc: *const AllocSite) bool {
         "deflateInit",   "gzopen",
     };
     for (nullable_patterns) |pattern| {
-        if (std.mem.indexOf(u8, alloc.func_name, pattern) != null or
-            std.mem.indexOf(u8, alloc.debug_file orelse "", pattern) != null)
-        {
+        if (std.mem.indexOf(u8, alloc.func_name, pattern) != null) {
             return true;
         }
     }
@@ -898,6 +914,9 @@ pub fn detectResourceLeaks(
                 const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
                 const msg = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch "Resource leak detected";
                 ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
+                if (!std.mem.eql(u8, msg, "Resource leak detected")) {
+                    ctx.allocator.free(msg);
+                }
                 diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
             }
         }

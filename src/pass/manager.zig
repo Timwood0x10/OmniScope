@@ -193,9 +193,25 @@ pub const PassManager = struct {
             _ = try self.resolveDependencies();
         }
 
-        // Execute in resolved order
+        // Execute in resolved order with graceful degradation (v0.2.0)
+        var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
-            try self.passes.items[idx].run_fn(ctx, diag);
+            const pass_name = self.passes.items[idx].name;
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                diag.warn("PassManager: pass '{s}' failed with error: {}, degrading gracefully", .{
+                    pass_name,
+                    err
+                });
+                pass_failures += 1;
+                // Continue running remaining passes
+            };
+        }
+
+        if (pass_failures > 0) {
+            diag.info("PassManager: completed with {} degraded passes out of {}", .{
+                pass_failures,
+                self.resolved_order.?.len
+            });
         }
     }
 

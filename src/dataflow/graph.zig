@@ -376,6 +376,7 @@ pub const DataFlowGraph = struct {
         issue_copy.owned = true;
         try self.issues.append(self.allocator, issue_copy);
 
+        // Transfer ownership of original message (trace is shared via shallow copy).
         if (issue.owned and issue.message.len > 0) {
             self.allocator.free(issue.message);
         }
@@ -428,9 +429,11 @@ pub const DataFlowGraph = struct {
                     .severity = issue.severity,
                     .confidence = issue.confidence,
                     .confidence_level = issue.confidence_level,
+                    .reason = issue.reason,
                     .ffi_boundary = issue.ffi_boundary,
-                    .trace = issue.trace,
+                    .trace = null,
                     .owned = true,
+                    .function_owned = false,
                 };
                 index += 1;
             }
@@ -582,7 +585,6 @@ pub const DataFlowGraph = struct {
         self.ffi_boundaries.clearRetainingCapacity();
 
         for (self.issues.items) |*issue| {
-            self.allocator.free(issue.message);
             issue.deinit(self.allocator);
         }
         self.issues.clearRetainingCapacity();
