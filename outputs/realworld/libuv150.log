@@ -29,7 +29,7 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_hrtime
 [2m[DEBUG][0m ANALYZE [USER]: uv_close
 [2m[DEBUG][0m ANALYZE [USER]: uv__make_close_pending
-[2m[DEBUG][0m ANALYZE [USER]: uv__socket_sockopt
+[2m[DEBUG][0m FP-WHITELIST [libuv internal socket + caller closes (design choice)]: uv__socket_sockopt
 [2m[DEBUG][0m ANALYZE [USER]: uv__getiovmax
 [2m[DEBUG][0m ANALYZE [USER]: uv_is_closing
 [2m[DEBUG][0m ANALYZE [USER]: uv_backend_fd
@@ -50,19 +50,7 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__queue_split.14
 [2m[DEBUG][0m ANALYZE [USER]: uv_update_time
 [2m[DEBUG][0m ANALYZE [USER]: uv_is_active
-[2m[DEBUG][0m ANALYZE [USER]: uv__socket
-[31m[ERROR][0m [MEDIUM] FFI RISK: uv__socket -> socket
-[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/core.c:519:12
-[31m[ERROR][0m   Kind: network_io
-[31m[ERROR][0m   Detail: Create socket - returns ownership, must close
-[31m[ERROR][0m   Warning: This function TRANSFERS ownership
-[31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: socket returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
+[2m[DEBUG][0m FP-WHITELIST [libuv internal socket + caller closes (design choice)]: uv__socket
 [2m[DEBUG][0m ANALYZE [USER]: uv__nonblock_ioctl
 [2m[DEBUG][0m ANALYZE [USER]: uv__cloexec
 [2m[DEBUG][0m ANALYZE [USER]: uv__close
@@ -134,9 +122,46 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_uptime
 [2m[DEBUG][0m ANALYZE [USER]: uv_cpu_info
 [2m[DEBUG][0m ANALYZE [USER]: uv_dlopen
+[31m[ERROR][0m [LOW] FFI RISK: uv_dlopen -> dlerror
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:34:3
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get dynamic loading error message
+[31m[ERROR][0m [HIGH] FFI RISK: uv_dlopen -> dlopen
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:36:17
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Open dynamic library - returns handle, must dlclose to release
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: dlopen returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   [DLOPEN] dlopen returns NULL on failure but no NULL check detected
+[33m[WARN][0m     Risk: NULL pointer dereference / crash (CWE-690)
 [2m[DEBUG][0m ANALYZE [USER]: uv__dlerror
+[31m[ERROR][0m [LOW] FFI RISK: uv__dlerror -> dlerror
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:70:12
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get dynamic loading error message
 [2m[DEBUG][0m ANALYZE [USER]: uv_dlclose
+[31m[ERROR][0m [HIGH] FFI RISK: uv_dlclose -> dlclose
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:47:5
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Close dynamic library - invalidates symbols from dlsym
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[2m[DEBUG][0m   [DLOPEN] dlclose called - verify no dlsym-derived pointers are used after this point
 [2m[DEBUG][0m ANALYZE [USER]: uv_dlsym
+[31m[ERROR][0m [LOW] FFI RISK: uv_dlsym -> dlerror
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:54:3
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get dynamic loading error message
+[31m[ERROR][0m [HIGH] FFI RISK: uv_dlsym -> dlsym
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/dl.c:55:10
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get symbol from dynamic library - returns pointer, invalid after dlclose
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: dlsym returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   [DLOPEN] dlsym returns NULL on failure but no NULL check detected
+[33m[WARN][0m     Risk: NULL pointer dereference / crash (CWE-690)
 [2m[DEBUG][0m ANALYZE [USER]: uv_dlerror
 [2m[DEBUG][0m ANALYZE [USER]: uv_fs_poll_init
 [2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.37
@@ -183,6 +208,19 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__fs_buf_offset
 [2m[DEBUG][0m ANALYZE [USER]: uv__pwritev
 [2m[DEBUG][0m ANALYZE [USER]: uv__preadv_or_pwritev
+[31m[ERROR][0m [HIGH] FFI RISK: uv__preadv_or_pwritev -> dlsym
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/fs.c:482:9
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get symbol from dynamic library - returns pointer, invalid after dlclose
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: dlsym returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   [DLOPEN] dlsym returns NULL on failure but no NULL check detected
+[33m[WARN][0m     Risk: NULL pointer dereference / crash (CWE-690)
+[31m[ERROR][0m [LOW] FFI RISK: uv__preadv_or_pwritev -> dlerror
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/fs.c:483:5
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get dynamic loading error message
 [2m[DEBUG][0m ANALYZE [USER]: uv__preadv_emul
 [2m[DEBUG][0m ANALYZE [USER]: uv__pwritev_emul
 [2m[DEBUG][0m ANALYZE [USER]: uv__preadv_or_pwritev_emul
@@ -196,6 +234,21 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__fs_scandir_sort
 [2m[DEBUG][0m ANALYZE [USER]: uv__preadv
 [2m[DEBUG][0m ANALYZE [USER]: uv__mkostemp_initonce
+[31m[ERROR][0m [HIGH] FFI RISK: uv__mkostemp_initonce -> dlsym
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/fs.c:287:40
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get symbol from dynamic library - returns pointer, invalid after dlclose
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: dlsym returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   [DLOPEN] dlsym returns NULL on failure but no NULL check detected
+[33m[WARN][0m     Risk: NULL pointer dereference / crash (CWE-690)
+[33m[WARN][0m   [RETURN-ESCAPE] dlsym return value stored to global variable — may outlive function scope
+[33m[WARN][0m     Risk: Use-after-return if global is accessed after resource cleanup (CWE-416)
+[31m[ERROR][0m [LOW] FFI RISK: uv__mkostemp_initonce -> dlerror
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/fs.c:293:3
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get dynamic loading error message
 [2m[DEBUG][0m ANALYZE [USER]: uv__lstat
 [2m[DEBUG][0m ANALYZE [USER]: uv__fstat
 [2m[DEBUG][0m ANALYZE [USER]: uv_fs_open
@@ -325,13 +378,40 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_posix_spawn
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_and_init_child_posix_spawn
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_and_init_child_fork
+[31m[ERROR][0m [CRITICAL] FFI RISK: uv__spawn_and_init_child_fork -> fork
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/process.c:828:10
+[31m[ERROR][0m   Kind: process_mgmt
+[31m[ERROR][0m   Detail: Fork process - double-free risk in child before exec
 [2m[DEBUG][0m ANALYZE [USER]: uv__process_child_init
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__process_child_init -> signal
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/process.c:298:20
+[31m[ERROR][0m   Kind: signal_handler
+[31m[ERROR][0m   Detail: Set signal handler - only async-signal-safe functions allowed in handler
+[31m[ERROR][0m [LOW] FFI RISK: uv__process_child_init -> sigprocmask
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/process.c:394:7
+[31m[ERROR][0m   Kind: signal_handler
+[31m[ERROR][0m   Detail: Change signal mask - block/unblock signals
+[31m[ERROR][0m [CRITICAL] FFI RISK: uv__process_child_init -> execvp
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/process.c:400:3
+[31m[ERROR][0m   Kind: process_mgmt
+[31m[ERROR][0m   Detail: Execute with PATH search - command injection risk
 [2m[DEBUG][0m ANALYZE [USER]: uv__write_errno
 [2m[DEBUG][0m ANALYZE [USER]: uv__write_int
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_set_posix_spawn_attrs
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_set_posix_spawn_file_actions
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_resolve_and_spawn
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_posix_spawn_fncs
+[31m[ERROR][0m [HIGH] FFI RISK: uv__spawn_init_posix_spawn_fncs -> dlsym
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/process.c:423:5
+[31m[ERROR][0m   Kind: dynamic_loading
+[31m[ERROR][0m   Detail: Get symbol from dynamic library - returns pointer, invalid after dlclose
+[31m[ERROR][0m   Warning: Result requires NULL check
+[33m[WARN][0m   CONTRACT VIOLATION: dlsym returns nullable pointer but no NULL check detected
+[33m[WARN][0m   Risk: NULL pointer dereference / crash
+[33m[WARN][0m   [DLOPEN] dlsym returns NULL on failure but no NULL check detected
+[33m[WARN][0m     Risk: NULL pointer dereference / crash (CWE-690)
+[33m[WARN][0m   [RETURN-ESCAPE] dlsym return value stored to global variable — may outlive function scope
+[33m[WARN][0m     Risk: Use-after-return if global is accessed after resource cleanup (CWE-416)
 [2m[DEBUG][0m ANALYZE [USER]: uv__spawn_init_can_use_setsid
 [2m[DEBUG][0m ANALYZE [USER]: uv_process_kill
 [2m[DEBUG][0m ANALYZE [USER]: uv_kill
@@ -353,7 +433,15 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_tree_s_RB_REMOVE
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_first_handle
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_unregister_handler
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__signal_unregister_handler -> sigaction
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/signal.c:256:7
+[31m[ERROR][0m   Kind: signal_handler
+[31m[ERROR][0m   Detail: Set signal handler with options - preferred over signal()
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_register_handler
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv__signal_register_handler -> sigaction
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/signal.c:238:7
+[31m[ERROR][0m   Kind: signal_handler
+[31m[ERROR][0m   Detail: Set signal handler with options - preferred over signal()
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_unlock_and_unblock
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_handler
 [2m[DEBUG][0m ANALYZE [USER]: uv__signal_lock
@@ -376,6 +464,10 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__queue_init.160
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_io
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_connect
+[31m[ERROR][0m [LOW] FFI RISK: uv__stream_connect -> getsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/stream.c:1264:5
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Get socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv___stream_fd
 [2m[DEBUG][0m ANALYZE [USER]: uv__read
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_eof
@@ -406,6 +498,10 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_select
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_osx_cb_close
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_open
+[31m[ERROR][0m [LOW] FFI RISK: uv__stream_open -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/stream.c:427:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__stream_destroy
 [2m[DEBUG][0m ANALYZE [USER]: uv__server_io
 [2m[DEBUG][0m ANALYZE [USER]: uv__emfile_trick
@@ -431,6 +527,14 @@
 [2m[DEBUG][0m ANALYZE [USER]: maybe_bind_socket
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_init
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcp_bind
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_bind -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:167:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_bind -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:180:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: maybe_new_socket
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcp_connect
 [2m[DEBUG][0m ANALYZE [USER]: uv__is_ipv6_link_local
@@ -440,9 +544,33 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_getsockname
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_getpeername
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_close_reset
+[31m[ERROR][0m [LOW] FFI RISK: uv_tcp_close_reset -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:405:12
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcp_listen
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcp_nodelay
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_nodelay -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:455:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcp_keepalive
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_keepalive -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:478:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_keepalive -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:558:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_keepalive -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:565:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv__tcp_keepalive -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tcp.c:571:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_nodelay
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_keepalive
 [2m[DEBUG][0m ANALYZE [USER]: uv_tcp_simultaneous_accepts
@@ -453,7 +581,17 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__min_stack_size
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_create
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_create_ex
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_thread_create_ex -> pthread_create
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:181:9
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Create new thread - thread must be joined or detached
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_detach
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_thread_detach -> pthread_detach
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:134:10
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Detach thread - auto-cleanup, cannot pthread_join after
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_setaffinity
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_getaffinity
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_getcpu
@@ -465,11 +603,35 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_thread_getname
 [2m[DEBUG][0m ANALYZE [USER]: uv__thread_getname
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_init
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_mutex_init -> pthread_mutex_init
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:329:9
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Initialize mutex - must pthread_mutex_destroy to cleanup
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_init_recursive
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_mutex_init_recursive -> pthread_mutex_init
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:349:9
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Initialize mutex - must pthread_mutex_destroy to cleanup
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_destroy
+[31m[ERROR][0m [HIGH] FFI RISK: uv_mutex_destroy -> pthread_mutex_destroy
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:359:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Destroy mutex - locked mutex = UB
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_lock
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_mutex_lock -> pthread_mutex_lock
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:365:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Lock mutex - deadlock risk if not unlocked, double-lock risk
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_trylock
 [2m[DEBUG][0m ANALYZE [USER]: uv_mutex_unlock
+[31m[ERROR][0m [HIGH] FFI RISK: uv_mutex_unlock -> pthread_mutex_unlock
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:385:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Unlock mutex - paired with lock, unlock without lock = UB
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_init
 [2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_destroy
 [2m[DEBUG][0m ANALYZE [USER]: uv_rwlock_rdlock
@@ -486,8 +648,35 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_sem_trywait
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_init
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_destroy
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_cond_destroy -> pthread_mutex_init
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:779:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Initialize mutex - must pthread_mutex_destroy to cleanup
+[31m[ERROR][0m   Warning: This function TRANSFERS ownership
+[31m[ERROR][0m [MEDIUM] FFI RISK: uv_cond_destroy -> pthread_mutex_lock
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:782:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Lock mutex - deadlock risk if not unlocked, double-lock risk
+[31m[ERROR][0m [HIGH] FFI RISK: uv_cond_destroy -> pthread_mutex_unlock
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:792:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Unlock mutex - paired with lock, unlock without lock = UB
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
+[31m[ERROR][0m [HIGH] FFI RISK: uv_cond_destroy -> pthread_mutex_destroy
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:795:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Destroy mutex - locked mutex = UB
+[31m[ERROR][0m   Warning: This function CONSUMES ownership
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_signal
+[31m[ERROR][0m [LOW] FFI RISK: uv_cond_signal -> pthread_cond_signal
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:804:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Signal condition - wake one waiting thread
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_broadcast
+[31m[ERROR][0m [LOW] FFI RISK: uv_cond_broadcast -> pthread_cond_broadcast
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/thread.c:809:7
+[31m[ERROR][0m   Kind: thread_mgmt
+[31m[ERROR][0m   Detail: Broadcast condition - wake all waiting threads
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_wait
 [2m[DEBUG][0m ANALYZE [USER]: uv_cond_timedwait
 [2m[DEBUG][0m ANALYZE [USER]: uv_key_create
@@ -541,6 +730,10 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__tcsetattr
 [2m[DEBUG][0m ANALYZE [USER]: uv_tty_init
 [2m[DEBUG][0m ANALYZE [USER]: uv_guess_handle
+[31m[ERROR][0m [LOW] FFI RISK: uv_guess_handle -> getsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/tty.c:448:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Get socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__tty_is_slave
 [2m[DEBUG][0m ANALYZE [USER]: uv__queue_remove.299
 [2m[DEBUG][0m ANALYZE [USER]: uv__fstat.300
@@ -559,8 +752,16 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv__queue_insert_tail.315
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_run_completed
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_bind
+[31m[ERROR][0m [LOW] FFI RISK: uv__udp_bind -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:402:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__set_recverr
 [2m[DEBUG][0m ANALYZE [USER]: uv__sock_reuseaddr
+[31m[ERROR][0m [LOW] FFI RISK: uv__sock_reuseaddr -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:322:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_connect
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_maybe_deferred_bind
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_disconnect
@@ -580,17 +781,53 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_open
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_membership
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_membership4
+[31m[ERROR][0m [LOW] FFI RISK: uv__udp_set_membership4 -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:689:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_membership6
+[31m[ERROR][0m [LOW] FFI RISK: uv__udp_set_membership6 -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:736:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_source_membership
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_source_membership6
+[31m[ERROR][0m [LOW] FFI RISK: uv__udp_set_source_membership6 -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:840:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_set_source_membership4
+[31m[ERROR][0m [LOW] FFI RISK: uv__udp_set_source_membership4 -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:791:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_broadcast
+[31m[ERROR][0m [LOW] FFI RISK: uv_udp_set_broadcast -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:1027:7
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_ttl
 [2m[DEBUG][0m ANALYZE [USER]: uv__setsockopt_maybe_char
 [2m[DEBUG][0m ANALYZE [USER]: uv__setsockopt
+[31m[ERROR][0m [LOW] FFI RISK: uv__setsockopt -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:990:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv__setsockopt -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:996:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_ttl
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_loop
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_set_multicast_interface
+[31m[ERROR][0m [LOW] FFI RISK: uv_udp_set_multicast_interface -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:1151:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
+[31m[ERROR][0m [LOW] FFI RISK: uv_udp_set_multicast_interface -> setsockopt
+[31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/unix/udp.c:1159:9
+[31m[ERROR][0m   Kind: network_io
+[31m[ERROR][0m   Detail: Set socket option - check return value for errors
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_getpeername
 [2m[DEBUG][0m ANALYZE [USER]: uv_udp_getsockname
 [2m[DEBUG][0m ANALYZE [USER]: uv__udp_recv_start
@@ -650,9 +887,6 @@
 [31m[ERROR][0m   Location: /tmp/libuv-v1.50.0/src/uv-common.c:597:5
 [31m[ERROR][0m   Kind: format_string
 [31m[ERROR][0m   Detail: Print formatted - format string vulnerability if user-controlled
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI — ensure variable is still in scope
 [2m[DEBUG][0m ANALYZE [USER]: uv_default_loop
 [2m[DEBUG][0m ANALYZE [USER]: uv_print_active_handles
 [2m[DEBUG][0m ANALYZE [USER]: uv_ref
@@ -694,12 +928,563 @@
 [2m[DEBUG][0m ANALYZE [USER]: uv_version_string
 [32m[INFO][0m FFI Analysis Summary:
 [32m[INFO][0m   Functions analyzed: 877
-[32m[INFO][0m   FFI Boundaries: 999
+[32m[INFO][0m   FFI Boundaries: 993
 [32m[INFO][0m     - Cross-language: 0
-[32m[INFO][0m     - External unknown: 999
+[32m[INFO][0m     - External unknown: 993
 [32m[INFO][0m     - LibC calls: 121
-[31m[ERROR][0m   Dangerous calls: 6
-[32m[INFO][0m   Semantic Registry: 166 functions known
+[31m[ERROR][0m   Dangerous calls: 57
+[32m[INFO][0m   Semantic Registry: 267 functions known
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_async_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__async_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_async_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__async_fork returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_clock_gettime (known output-param family)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_hrtime returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_close() in uv_close
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__getiovmax returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_is_closing returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_backend_fd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_backend_timeout returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.9 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__backend_timeout returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_alive returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__loop_alive returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_run returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.12
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_is_active returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__nonblock_ioctl returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__cloexec returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__close returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__close_nocheckstdio returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__close_nocancel returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__open_file
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__open_cloexec returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__accept returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__nonblock_fcntl returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__recvmsg returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cwd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_chdir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fileno returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__io_active returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fd_exists returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_getrusage returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__getrusage returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_getrusage_thread returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__slurp returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__dup2_cloexec returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in uv_os_homedir
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in uv_os_homedir
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_homedir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_getenv returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_get_passwd returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] MemoryGraph detected double-free of pointer in uv__getpwuid_r
+[33m[WARN][0m [DOUBLE_FREE] MemoryGraph detected double-free of pointer in uv__getpwuid_r
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__getpwuid_r returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_tmpdir returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] MemoryGraph detected double-free of pointer in uv_os_get_group
+[33m[WARN][0m [DOUBLE_FREE] MemoryGraph detected double-free of pointer in uv_os_get_group
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_get_group returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_get_passwd2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_translate_sys_error returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_environ returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_setenv returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_unsetenv returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_gethostname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_get_osfhandle returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_open_osfhandle returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_getpid returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_getppid returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cpumask_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_getpriority returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_setpriority returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_getpriority returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_setpriority returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_os_uname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__getsockpeername returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_gettimeofday (known output-param family)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__search_path returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_available_parallelism returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__sock_reuseport returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__platform_loop_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__hrtime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_exepath returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_get_free_memory returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_get_total_memory returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_get_constrained_memory returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_get_available_memory returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_resident_set_memory returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_uptime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cpu_info returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_dlopen returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__dlerror returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_dlsym returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_poll_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_poll_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: statbuf_eq (known output-param family)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_poll_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_poll_getpath returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_close returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_copyfile returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_fdatasync returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_fstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_fsync returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_futime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_lutime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_lstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_mkdtemp returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv__fs_mkstemp
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_mkstemp returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_read returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_scandir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_opendir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_readdir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_closedir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_readlink returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_realpath returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_sendfile returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_stat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_statfs returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_utime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_write_all returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_buf_offset returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__pwritev returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__preadv_or_pwritev returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__preadv_emul returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__pwritev_emul returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__preadv_or_pwritev_emul returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_to_timeval returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_statx returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_sendfile_emul returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_pathmax_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_scandir_filter returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_scandir_sort returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__preadv returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__lstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_sendfile returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_unlink returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_access returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_chmod returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_chown returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_close returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_fchmod returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_fchown returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_lchown returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_fdatasync returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_fstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_fsync returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_ftruncate returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_futime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_lutime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_lstat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_link returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_mkdir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_mkdtemp returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_mkstemp returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_read returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_scandir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_opendir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_readdir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_closedir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_readlink returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_realpath returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_rename returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_rmdir returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_stat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_symlink returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_utime returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_copyfile returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_statfs returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_get_system_error returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__utf8_decode1 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__utf8_decode1_slow returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__idna_toascii returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__idna_toascii_label returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_wtf8_length_as_utf16 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__wtf8_decode1 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_utf16_length_as_wtf8 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__get_surrogate_value returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_utf16_to_wtf8 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_inet_ntop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: inet_ntop4 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: inet_ntop6 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_inet_pton returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: inet_pton4 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: inet_pton6 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__kqueue_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv__io_fork
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__io_fork returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__io_check_fd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fstat.69 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.72 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.75
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__basename_r
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_event_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_event_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_event_stop returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_loop_cleanup() in uv_loop_init
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_loop_fork() in uv_loop_fork
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_fork returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.99 returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_loop_cleanup() in uv__loop_close
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__loop_configure returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_bind2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: includes_nul returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__pipe_listen returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_connect2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_getsockname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__pipe_getsockpeername returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_getpeername returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_pending_count returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_pending_type returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe_chmod returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stat.107 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_pipe returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__make_pipe returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_poll_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_poll_init_socket returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_poll_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_poll_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__process_init returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.121
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.126 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__spawn_find_path_in_env
+[33m[WARN][0m [DOUBLE_FREE] MemoryGraph detected double-free of pointer in uv_spawn
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_spawn returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__process_init_stdio returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_and_init_child returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__process_open_stream returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_and_init_child_posix_spawn returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_and_init_child_fork returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> signal() in uv__process_child_init
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_set_posix_spawn_attrs returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_set_posix_spawn_file_actions returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__spawn_resolve_and_spawn returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_process_kill returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_kill returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_random returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__random returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_unlock returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_loop_once_init() in uv__signal_loop_fork
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_loop_fork returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_loop_once_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_stop() in uv__signal_event
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_block_and_lock() in uv__signal_stop
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_REMOVE() in uv__signal_stop
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_first_handle() in uv__signal_stop
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_unregister_handler() in uv__signal_stop
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_stop
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_REMOVE_COLOR() in uv__signal_tree_s_RB_REMOVE
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_REMOVE_COLOR() in uv__signal_tree_s_RB_REMOVE
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_REMOVE_COLOR() in uv__signal_tree_s_RB_REMOVE
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__signal_tree_s_RB_REMOVE
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_NFIND() in uv__signal_first_handle
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__signal_first_handle
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_register_handler returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_first_handle() in uv__signal_handler
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_NEXT() in uv__signal_handler
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_lock returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__signal_tree_s_RB_NEXT
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_compare() in uv__signal_tree_s_RB_NFIND
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_compare() in uv__signal_tree_s_RB_NFIND
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__signal_tree_s_RB_NFIND
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_compare returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_stop() in uv__signal_loop_cleanup
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_loop_once_init() in uv_signal_init
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_signal_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_stop() in uv__signal_close
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_signal_start returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_stop() in uv__signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_block_and_lock() in uv__signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_first_handle() in uv__signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_start
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_INSERT() in uv__signal_start
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__signal_start returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_compare() in uv__signal_tree_s_RB_INSERT
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_compare() in uv__signal_tree_s_RB_INSERT
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_INSERT_COLOR() in uv__signal_tree_s_RB_INSERT
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_tree_s_RB_INSERT_COLOR() in uv__signal_tree_s_RB_INSERT
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__signal_tree_s_RB_INSERT
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start_oneshot
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start_oneshot
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_start() in uv_signal_start_oneshot
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_signal_start_oneshot returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> uv__signal_stop() in uv_signal_stop
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_signal_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv___stream_fd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.169 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.174
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__write_req_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__try_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__write_req_update returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__handle_fd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__writev returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stream_recv_cmsg returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stream_queue_fd returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stream_try_select returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__stream_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__emfile_trick returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_accept returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_listen returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_shutdown returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_write2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__check_before_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_try_write returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_try_write2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__read_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_read_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_is_readable returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_is_writable returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_stream_set_blocking returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__strscpy returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__strtok
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_init_ex returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: new_socket returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: maybe_bind_socket returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcp_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: maybe_new_socket returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcp_connect returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__is_ipv6_link_local returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__ipv6_link_local_scope_id returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_getsockname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_getpeername returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_close_reset returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcp_listen returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcp_nodelay returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcp_keepalive returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_nodelay returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_keepalive returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_simultaneous_accepts returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_socketpair returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__thread_stack_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__default_stack_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__min_stack_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_create returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_create_ex returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_detach returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_setaffinity returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_getaffinity returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_getcpu returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_join returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_equal returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_setname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__thread_setname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_thread_getname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__thread_getname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_mutex_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_mutex_init_recursive returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_mutex_trylock returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_rwlock_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_rwlock_tryrdlock returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_rwlock_trywrlock returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_sem_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> semaphore_signal() in uv_sem_post
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_sem_trywait returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cond_init returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-ESCAPE] stack alloca -> pthread_cond_signal() in uv_cond_signal
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cond_timedwait returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_key_create returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.266 returns non-pointer (likely using output params)
+[33m[WARN][0m [HEAP-TO-GLOBAL] heap via uv__malloc() -> global in init_threads
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.273
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: slow_work_thread_threshold returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_queue_work returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_cancel returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__work_cancel returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_stop returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from timer_heap
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: timer_less_than returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_again returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_get_repeat returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_timer_get_due_in returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from heap_min
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.293 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.294
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tcsetattr returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tty_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_guess_handle returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__tty_is_slave returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fstat.300 returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv_tty_set_mode
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv_tty_set_mode
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tty_set_mode returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv__tty_close
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tty_get_winsize returns non-pointer (likely using output params)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv_tty_reset_mode
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tty_reset_mode returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tty_get_vterm_state returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.312 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.313
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__set_recverr returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__sock_reuseaddr returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_connect returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_maybe_deferred_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_disconnect returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_sendmsgv returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_prep_pkt returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_sendmsg1 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_try_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_init_ex returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_using_recvmmsg returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_recvmmsg returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_open returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_membership returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_set_membership4 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_set_membership6 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_source_membership returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_set_source_membership6 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_set_source_membership4 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_broadcast returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_ttl returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__setsockopt_maybe_char (known output-param family)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__setsockopt (known output-param family)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_multicast_ttl returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_multicast_loop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_set_multicast_interface returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_getpeername returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_getsockname returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_recv_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_recv_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_try_send2 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__strdup
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__malloc
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__strndup
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__realloc
+[2m[DEBUG][0m [SUPPRESSED] Heap return in acquisition function: uv__reallocf (ip_ffi detected)
+[33m[WARN][0m [STACK-TO-GLOBAL] stack alloca -> global in uv_replace_allocator
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_replace_allocator returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_handle_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_req_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_buf_init returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv_err_name_r
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv_err_name
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv_strerror_r
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv_strerror
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_ip4_addr returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _OSSwapInt16 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_ip6_addr returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_ip4_name returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_ip6_name returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_ip_name returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_init_ex returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_bind returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_tcp_connect returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_connect returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_is_connected returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__udp_check_before_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_try_send returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_try_send2 returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_recv_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_udp_recv_stop returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__queue_empty.408 returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__queue_head.409
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv_default_loop
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_has_ref returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_now returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__count_bufs returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_recv_buffer_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_send_buffer_size returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_fs_event_getpath returns non-pointer (likely using output params)
+[33m[WARN][0m [RETURN-STACK] stack alloca returned from uv__get_nbufs
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv__fs_get_dirent_type returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_configure returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] Heap return in factory function: uv_loop_new (intentional ownership transfer)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_loop_close returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_read_start returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_metrics_info returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_metrics_idle_time returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: uv_version returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 639 funcs, tracked 2622 ptrs, found 91 violations
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv_os_homedir
+[33m[WARN][0m [FREE-ORPHAN] 3 frees vs 2 allocs in uv__getpwuid_r
+[33m[WARN][0m [FREE-ORPHAN] 3 frees vs 2 allocs in uv_os_get_group
+[33m[WARN][0m [FREE-ORPHAN] 3 frees vs 1 allocs in uv_os_environ
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv__search_path
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_get_available_memory
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_cpu_info
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__dlerror
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_dlclose
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in timer_close_cb
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_read
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_scandir
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_readdir
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_closedir
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv__fs_statfs
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_write_all
+[33m[WARN][0m [FREE-ORPHAN] 3 frees vs 0 allocs in uv_fs_req_cleanup
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_link
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_read
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_rename
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_symlink
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_write
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_fs_copyfile
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_utf16_to_wtf8
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__io_fork
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv_fs_event_start
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_fs_event_stop
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 1 allocs in uv_loop_init
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv__loop_close
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__pipe_close
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 1 allocs in uv_spawn
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__write_callbacks
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__write_req_finish
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv__stream_queue_fd
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__stream_osx_cb_close
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_accept
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv_write2
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__stream_close
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__ipv6_link_local_scope_id
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__threadpool_cleanup
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in init_threads
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__udp_run_completed
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv__udp_send
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv__strdup
+[33m[WARN][0m [MALLOC-LEAK] 1 allocs vs 0 frees in uv__strndup
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__realloc
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__reallocf
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_os_free_passwd
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_os_free_group
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv__fs_scandir_cleanup
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv__fs_readdir_cleanup
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in uv_loop_delete
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv_os_free_environ
+[33m[WARN][0m [FREE-ORPHAN] 2 frees vs 0 allocs in uv_free_cpu_info
+[32m[INFO][0m CallbackEscape: analyzed 639 funcs, 0 cgo boundaries, 64 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[33m[WARN][0m Double free detected in function: uv_os_homedir via uv_os_free_passwd
+[32m[INFO][0m MemorySafety: Analyzed functions, found 1 memory issues
+[32m[INFO][0m FreeValidation: Analyzed functions, found 0 invalid free calls
+[2m[DEBUG][0m ZONE-SKIP: _OSSwapInt16 is safe zone — language guarantees apply
 [32m[INFO][0m PointerOwnership: Found 0 allocations, 5 frees, 0 tracked pointers
 [32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
 [32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
@@ -709,15 +1494,24 @@
 [1mZone Classification Summary[0m
 [36m═══════════════════════════════════════════════════════════════[0m
 
-  Total functions analyzed:    647
-  Safe zone (skipped):         0 (0.0%)
-  Runtime internal (skipped):  0
+  Total functions analyzed:    2631
+  Safe zone (skipped):         3 (1.1%)
+  Runtime internal (skipped):  27
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                647
+  FFI zone (analyzed):         1491
+  Unknown zone:                1110
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
-[32m  Issues found:                0[0m
+[32m  Escape zone functions:       1491 (56.7% of total)[0m
+[33m  Issues found:              155[0m
+
+    [1mIssue breakdown by category:[0m
+      Memory leak:              15
+      Use after free:           2
+      Double free:               39
+      FFI unsafe call:          37
+      Format string:            2
+      Borrow escape:            55
+      Unchecked return:         5
 
 [36m═══════════════════════════════════════════════════════════════[0m
 
@@ -726,12 +1520,14 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1       299.53    299527.75    299527.75
-detect                                  2         2.95      1476.73      1517.54
-total                                   1       299.54    299539.63    299539.63
-analysis                                1       254.51    254511.00    254511.00
-[32m[INFO][0m PointerOwnership: 4 ops, 856.53ms total
-[32m[INFO][0m FFIUnsafe: Analyzed 999 boundaries, found 3 issues
+init                                    1       349.46    349457.96    349457.96
+detect                                  2         3.17      1584.33      1626.75
+total                                   1       349.48    349476.00    349476.00
+analysis                                1       299.53    299534.13    299534.13
+[32m[INFO][0m PointerOwnership: 4 ops, 1001.64ms total
+[32m[INFO][0m FFIUnsafe: Analyzed 993 boundaries, found 3 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 993 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 877

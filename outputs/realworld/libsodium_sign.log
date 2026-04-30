@@ -26,6 +26,23 @@
 [32m[INFO][0m     - External unknown: 10
 [32m[INFO][0m     - LibC calls: 0
 [32m[INFO][0m   Dangerous calls: 0
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519ph_statebytes returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_bytes returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_seedbytes returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_publickeybytes returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_secretkeybytes returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_messagebytes_max returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_sk_to_seed returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519_sk_to_pk returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519ph_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519ph_update returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519ph_final_create returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: crypto_sign_ed25519ph_final_verify returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 12 funcs, tracked 17 ptrs, found 0 violations
+[32m[INFO][0m CallbackEscape: analyzed 12 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m MemorySafety: Analyzed functions, found 0 memory issues
+[32m[INFO][0m FreeValidation: Analyzed functions, found 0 invalid free calls
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
 [2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
 [32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
@@ -37,14 +54,14 @@
 [1mZone Classification Summary[0m
 [36m═══════════════════════════════════════════════════════════════[0m
 
-  Total functions analyzed:    12
-  Safe zone (skipped):         0 (0.0%)
-  Runtime internal (skipped):  0
+  Total functions analyzed:    57
+  Safe zone (skipped):         0 (5.3%)
+  Runtime internal (skipped):  3
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                12
+  FFI zone (analyzed):         21
+  Unknown zone:                33
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Escape zone functions:       21 (36.8% of total)[0m
 [32m  Issues found:                0[0m
 
 [36m═══════════════════════════════════════════════════════════════[0m
@@ -54,12 +71,14 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         2.49      2492.88      2492.88
-detect                                  2         0.10        50.96        84.21
-total                                   1         2.50      2499.08      2499.08
-analysis                                1         2.10      2098.54      2098.54
-[32m[INFO][0m PointerOwnership: 4 ops, 7.19ms total
+init                                    1         2.96      2964.75      2964.75
+detect                                  2         0.06        31.13        55.42
+total                                   1         2.97      2970.96      2970.96
+analysis                                1         2.61      2610.67      2610.67
+[32m[INFO][0m PointerOwnership: 4 ops, 8.61ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 10 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 10 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 19

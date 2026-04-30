@@ -292,6 +292,216 @@
 [32m[INFO][0m     - External unknown: 4115
 [32m[INFO][0m     - LibC calls: 0
 [32m[INFO][0m   Dangerous calls: 0
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError12len_mismatch17h666fc2d9d4fb94dfE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError8too_long17h3c5db59601358357E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic16limb_slice_error14LimbSliceError9too_short17h17e04b0361b6513dE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$11encode_mont17h04d9ac68e27426c3E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$3mul17h55b07e1eed516058E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$7is_zero17h4ec56e844275279dE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring10arithmetic6bigint7modulus4mont13Mont$LT$M$GT$12alloc_uninit17h1d5890e2cbf71bfeE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring24deprecated_constant_time23verify_slices_are_equal17h4dbb1fd6f701ab8eE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec10curve255196x2551911x25519_ecdh17h8d2aac7892f75af5E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec10curve255196x2551926x25519_public_from_private17h7cf270b19f1b09a4E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec10curve255196x2551927x25519_generate_private_key17ha12459cf2cc15772E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec10curve255196x2551930x25519_check_private_key_bytes17h469fca85392d499eE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b11private_key19public_from_private17hac8a5ab8761e57b3E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b11private_key31big_endian_affine_from_jacobian17h35cf2ae2bcc87357E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b42verify_affine_point_is_on_the_curve_scaled17ha31a9dcc4fb0649dE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b4ecdh4ecdh17h3bd52f849ad44ac8E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b4ecdh9p256_ecdh17hdd3b5c891c43b4f6E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b4ecdh9p384_ecdh17h3fd697da4d26e5a3E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve24p256_public_from_private17h51a2601a645ea2ecE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve24p384_public_from_private17hfbed5a2fa0717798E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve25p256_generate_private_key17hadc99ab79f1b588aE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve25p384_generate_private_key17hb81c72bbd5164207E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve28p256_check_private_key_bytes17h0a62c5d22ed2ada0E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5curve28p384_check_private_key_bytes17h4bd56f19434e4ce8E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5ecdsa12verification26EcdsaVerificationAlgorithm13verify_digest14sig_r_equals_x17h99ad6921bc8afe0fE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn117h1620da03abe9993bE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5ecdsa7signing14format_rs_asn118format_integer_tlv17he02600ac38745defE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2ec7suite_b5ecdsa7signing15format_rs_fixed17h7a30c617dd7351e6E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2io3der16positive_integer17h93bd1b7d8f08a081E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2io3der19nonnegative_integer17haddb56b478152c28E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2io3der24expect_tag_and_get_value17ha7d6741bda5fe9e6E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2io3der37bit_string_tagged_with_no_unused_bits17h4782cc46060e0aabE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring2io3der6nested17h8225ffcd07980901E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring3rsa10public_key9PublicKey3new28_$u7b$$u7b$closure$u7d$$u7d$17h3cbb35b7fe48ffefE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead13less_safe_key11LessSafeKey9fmt_debug17hd225a7daebebb574E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey13open_in_place17ha62432387060240aE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead25chacha20_poly1305_openssh10OpeningKey21decrypt_packet_length17h6f67fe513f6cacc2E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead3gcm8fallback3w6414gcm_mul64_nohw17h32df1ca2b7beae53E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead4quic12aes_new_mask17hf96791dea1ca776aE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead4quic17chacha20_new_mask17h96e45e6685e9b7caE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead4quic19HeaderProtectionKey8new_mask17heecbf5309c11e6b7E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4aead9algorithm9Algorithm11open_within17h041168ce15cdb578E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4hkdf8fill_okm17h3e46792d52bff51cE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4hmac6verify17hd0fec634e2f5851cE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring4limb43parse_big_endian_in_range_and_pad_consttime17h38db6e3edb209322E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring5error14input_too_long26InputTooLongError$LT$T$GT$3new17h1003935211604f39E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring6digest12finish_error11FinishError27pending_not_a_partial_block17hb89d6ca00cbc890fE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring6pbkdf212derive_block17hc182eb7084143b4bE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring6pbkdf26verify17hbb4d6aab68017536E returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ™™™™™™™™™™™™ freed twice in _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 170 funcs, tracked 841 ptrs, found 19 violations
+[32m[INFO][0m CallbackEscape: analyzed 170 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint4elem72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$16elem_reduce_mont17h257667d03f1fbb72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring8testutil8TestCase13consume_usize17h2eee6fed57df2204E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4ring8testutil8TestCase18consume_usize_bits17h53700af9b579909cE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[32m[INFO][0m MemorySafety: Analyzed functions, found 84 memory issues
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr104drop_in_place$LT$alloc..vec..Vec$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$$GT$17h1c963f24e5181427E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr104drop_in_place$LT$alloc..vec..Vec$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$$GT$17h1c963f24e5181427E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr104drop_in_place$LT$alloc..vec..Vec$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$$GT$17h1c963f24e5181427E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr140drop_in_place$LT$$LP$core..result..Result$LT$u8$C$alloc..string..String$GT$$C$core..result..Result$LT$u8$C$alloc..string..String$GT$$RP$$GT$17h65bf4f459841a4d5E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr140drop_in_place$LT$$LP$core..result..Result$LT$u8$C$alloc..string..String$GT$$C$core..result..Result$LT$u8$C$alloc..string..String$GT$$RP$$GT$17h65bf4f459841a4d5E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr162drop_in_place$LT$ring..arithmetic..bigint..exp..elem_exp_consttime_inner$LT$ring..rsa..N$C$ring..rsa..keypair..P$C$1024_usize$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb48e6ee4e1db6d04E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr162drop_in_place$LT$ring..arithmetic..bigint..exp..elem_exp_consttime_inner$LT$ring..rsa..N$C$ring..rsa..keypair..P$C$1024_usize$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17hb48e6ee4e1db6d04E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr45drop_in_place$LT$ring..io..writer..Writer$GT$17h937aff7e351eeb6bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr48drop_in_place$LT$ring..rsa..keypair..KeyPair$GT$17h4903c8d8ed01a733E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr53drop_in_place$LT$ring..rsa..public_key..PublicKey$GT$17h966839be798241d3E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr53drop_in_place$LT$ring..rsa..public_key..PublicKey$GT$17h966839be798241d3E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr81drop_in_place$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$17h8b8cb1b32c110d14E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr81drop_in_place$LT$$LP$alloc..string..String$C$alloc..string..String$C$bool$RP$$GT$17h8b8cb1b32c110d14E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr85drop_in_place$LT$ring..rsa..keypair..PrivateCrtPrime$LT$ring..rsa..keypair..P$GT$$GT$17h464f3ff3d3fc5101E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr85drop_in_place$LT$ring..rsa..keypair..PrivateCrtPrime$LT$ring..rsa..keypair..P$GT$$GT$17h464f3ff3d3fc5101E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$11encode_mont17h04d9ac68e27426c3E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem17Elem$LT$M$C$E$GT$3mul17h55b07e1eed516058E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem25verify_inverses_consttime17hc9cf766dd444261bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$16elem_reduce_mont17h257667d03f1fbb72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint4elem72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$16elem_reduce_mont17h257667d03f1fbb72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring10arithmetic6bigint72_$LT$impl$u20$ring..arithmetic..bigint..boxed_limbs..Uninit$LT$M$GT$$GT$30into_elem_from_be_bytes_padded17h51c552585167a7c8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring2io6writer119_$LT$impl$u20$core..convert..From$LT$ring..io..writer..Writer$GT$$u20$for$u20$alloc..boxed..Box$LT$$u5b$u8$u5d$$GT$$GT$4from17he911965951e595a9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa4base10public_key121PublicKey$LT$ring..arithmetic..bigint..modulus..mont..IntoMont$LT$ring..rsa..N$C$ring..arithmetic..montgomery..RR$GT$$GT$17exponentiate_elem17h75480116d9df31bdE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h8217ef1700822b97E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4ring3rsa7keypair24PrivateCrtPrime$LT$M$GT$3new17h834da6f6af1d6be9E
+[32m[INFO][0m FreeValidation: Analyzed functions, found 46 invalid free calls
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
 [2m[DEBUG][0m ZONE-SKIP: _RNvXs5_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_15TryFromIntErrorNtNtB9_3fmt5Debug3fmt is safe zone ‚Äî language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _RNvXsc_NtNtCsl8K0bEFm1U0_4core3num5errorNtB5_13ParseIntErrorNtNtB9_3fmt5Debug3fmt is safe zone ‚Äî language guarantees apply
@@ -581,15 +791,19 @@
 [1mZone Classification Summary[0m
 [36m‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê[0m
 
-  Total functions analyzed:    278
-  Safe zone (skipped):         261 (100.0%)
-  Runtime internal (skipped):  17
+  Total functions analyzed:    1230
+  Safe zone (skipped):         783 (73.9%)
+  Runtime internal (skipped):  126
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
+  FFI zone (analyzed):         321
   Unknown zone:                0
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
-[32m  Issues found:                0[0m
+[32m  Escape zone functions:       321 (26.1% of total)[0m
+[33m  Issues found:              32[0m
+
+    [1mIssue breakdown by category:[0m
+      Double free:               14
+      Invalid free:             18
 
 [36m‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê[0m
 
@@ -598,12 +812,14 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        89.76     89756.63     89756.63
-detect                                  2         0.12        61.02        93.00
-total                                   1        89.77     89769.42     89769.42
-analysis                                1        89.57     89570.17     89570.17
-[32m[INFO][0m PointerOwnership: 4 ops, 269.22ms total
+init                                    1        95.01     95011.92     95011.92
+detect                                  2         0.10        49.29        78.25
+total                                   1        95.02     95020.21     95020.21
+analysis                                1        94.82     94815.67     94815.67
+[32m[INFO][0m PointerOwnership: 4 ops, 284.95ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 4307 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 4307 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 410

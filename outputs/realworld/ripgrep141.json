@@ -1,3 +1,4 @@
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777343288,"summary":{"functions":75,"issues":0,"time_ms":31},"issues":[
-
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1777513938,"summary":{"functions":75,"issues":2,"time_ms":66},"issues":[
+  {"id":"OMI-001","kind":"invalid_free","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":590,"message":"_RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc() called on function parameter pointer (confidence: 75.00%)","location":{"function":"_ZN3std2io5error5Error3new17h22dcb2f70f966c09E"}},
+  {"id":"OMI-002","kind":"invalid_free","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":590,"message":"_RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc() called on function parameter pointer (confidence: 75.00%)","location":{"function":"_ZN4core3ptr238drop_in_place$LT$alloc..boxed..convert..$LT$impl$u20$core..convert..From$LT$alloc..string..String$GT$$u20$for$u20$alloc..boxed..Box$LT$dyn$u20$core..error..Error$u2b$core..marker..Sync$u2b$core..marker..Send$GT$$GT$..from..StringError$GT$17h7b48e86fa678e9c6E"}}
 ]}

@@ -22,31 +22,33 @@ const BoundaryKind = FFIBoundary.BoundaryKind;
 const FFIPatterns = struct {
     /// Known Rust FFI patterns in function names
     pub const rust_patterns = [_][]const u8{
-        "_ZN",           // Rust mangled name prefix
-        "_rust_",        // Rust extern function prefix
-        "rs2py_",        // Rust-to-Python bridge
-        "rust_",         // Generic Rust prefix
+        "_ZN", // Rust mangled name prefix
+        "_rust_", // Rust extern function prefix
+        "rs2py_", // Rust-to-Python bridge
+        "rust_", // Generic Rust prefix
     };
 
     /// Known Zig FFI patterns in function names
     pub const zig_patterns = [_][]const u8{
-        "zig_",          // Zig external function prefix
-        "extern",        // Zig extern block marker
-        "c_",            // Zig C interop convention
+        "zig_", // Zig external function prefix
+        "extern", // Zig extern block marker
+        "c_", // Zig C interop convention
     };
 
     /// Known libc function names (exact match)
     pub const libc_patterns = [_][]const u8{
-        "malloc", "calloc", "realloc", "free",
-        "memcpy", "memmove", "memset", "memcmp",
-        "strcpy", "strncpy", "strlen", "strcmp", "strchr",
-        "fopen", "fclose", "fread", "fwrite", "fgets", "fputs",
-        "open", "close", "read", "write", "lseek",
-        "printf", "fprintf", "sprintf", "snprintf",
-        "scanf", "fscanf", "sscanf",
-        "pthread_create", "pthread_join", "pthread_mutex_lock", "pthread_mutex_unlock",
-        "socket", "connect", "bind", "listen", "accept", "recv", "send",
-        "dlopen", "dlsym", "dlclose",
+        "malloc",       "calloc",             "realloc",              "free",
+        "memcpy",       "memmove",            "memset",               "memcmp",
+        "strcpy",       "strncpy",            "strlen",               "strcmp",
+        "strchr",       "fopen",              "fclose",               "fread",
+        "fwrite",       "fgets",              "fputs",                "open",
+        "close",        "read",               "write",                "lseek",
+        "printf",       "fprintf",            "sprintf",              "snprintf",
+        "scanf",        "fscanf",             "sscanf",               "pthread_create",
+        "pthread_join", "pthread_mutex_lock", "pthread_mutex_unlock", "socket",
+        "connect",      "bind",               "listen",               "accept",
+        "recv",         "send",               "dlopen",               "dlsym",
+        "dlclose",
     };
 };
 
@@ -450,10 +452,10 @@ pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
 /// These are template instantiation helpers and should be skipped during analysis.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
     const stl_prefixes = [_][]const u8{
-        "_ZSt",              // GCC/Clang STL mangling prefix
-        "_ZNSt",            // GCC/Clang STL nested name mangling
-        "std::",             // MSVC namespace (unlikely but possible)
-        "__gnu_debug",      // libstdc++ debug mode
+        "_ZSt", // GCC/Clang STL mangling prefix
+        "_ZNSt", // GCC/Clang STL nested name mangling
+        "std::", // MSVC namespace (unlikely but possible)
+        "__gnu_debug", // libstdc++ debug mode
         "__gxx_personality", // Exception personality routine
     };
     for (stl_prefixes) |prefix| {

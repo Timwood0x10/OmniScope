@@ -273,6 +273,24 @@
 [32m[INFO][0m     - External unknown: 6787
 [32m[INFO][0m     - LibC calls: 0
 [32m[INFO][0m   Dangerous calls: 0
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN6subtle9black_box17hc9b8d8d53213bec5E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812fp2Fp7is_zero17h89d7d39fa361b386E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812fp2Fp25lexicographically_largest17h6c063af7fffb7375E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3813fp23Fp27is_zero17ha96710c6de7f0139E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g18G1Affine15is_torsion_free17h4240e22ec32a9284E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g18G1Affine11is_on_curve17h1daf2b948981ce3fE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g112G1Projective11is_on_curve17h8e63568647ea9197E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g28G2Affine15is_torsion_free17h20f71e958901adc9E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g28G2Affine11is_on_curve17h41c4ffd0704c56c4E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN9bls12_3812g212G2Projective11is_on_curve17h6150cd2901c4a843E returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 87 funcs, tracked 1905 ptrs, found 0 violations
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in _ZN9bls12_3812g18G1Affine17from_uncompressed17hee9dffa0efc1116fE
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in _ZN9bls12_3812g18G1Affine15from_compressed17hcb0adc107c29decaE
+[32m[INFO][0m CallbackEscape: analyzed 87 funcs, 0 cgo boundaries, 2 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m MemorySafety: Analyzed functions, found 0 memory issues
+[33m[WARN][0m Invalid __rust_dealloc on function parameter pointer in function: _ZN4core3ptr135drop_in_place$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$GT$17hf314ab93c552dc17E
+[32m[INFO][0m FreeValidation: Analyzed functions, found 1 invalid free calls
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
 [2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h039046147a197613E is safe zone — language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _ZN42_$LT$$RF$T$u20$as$u20$core..fmt..Debug$GT$3fmt17h1129ef72639f0439E is safe zone — language guarantees apply
@@ -456,15 +474,19 @@
 [1mZone Classification Summary[0m
 [36m═══════════════════════════════════════════════════════════════[0m
 
-  Total functions analyzed:    259
-  Safe zone (skipped):         166 (66.4%)
-  Runtime internal (skipped):  6
+  Total functions analyzed:    906
+  Safe zone (skipped):         498 (70.2%)
+  Runtime internal (skipped):  138
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                87
+  FFI zone (analyzed):         15
+  Unknown zone:                255
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
-[32m  Issues found:                0[0m
+[32m  Escape zone functions:       15 (1.7% of total)[0m
+[33m  Issues found:              3[0m
+
+    [1mIssue breakdown by category:[0m
+      Double free:               2
+      Invalid free:             1
 
 [36m═══════════════════════════════════════════════════════════════[0m
 
@@ -473,12 +495,14 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1      1057.35   1057352.13   1057352.13
-detect                                  2         0.16        78.58       117.33
-total                                   1      1057.37   1057366.71   1057366.71
-analysis                                1      1018.46   1018460.58   1018460.58
-[32m[INFO][0m PointerOwnership: 4 ops, 3133.34ms total
+init                                    1      1164.45   1164450.25   1164450.25
+detect                                  2         0.12        61.85        98.04
+total                                   1      1164.46   1164462.08   1164462.08
+analysis                                1      1123.09   1123087.79   1123087.79
+[32m[INFO][0m PointerOwnership: 4 ops, 3452.12ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 6787 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 6787 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 302

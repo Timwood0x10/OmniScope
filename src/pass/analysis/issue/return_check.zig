@@ -189,10 +189,10 @@ pub const ReturnCheckPass = struct {
             if (std.mem.startsWith(u8, func_name, prefix)) {
                 // But exclude known internal variants
                 const known_safe = &[_][]const u8{
-                    "mallocWithAlarm", "malloc_size", "malloc_usable_size",
+                    "mallocWithAlarm",  "malloc_size",        "malloc_usable_size",
                     "malloc_zone_free", "malloc_zone_malloc", "malloc_set_zone_name",
-                    "readCoord", "readData",
-                    "openStatTable", "openDatabase",
+                    "readCoord",        "readData",           "openStatTable",
+                    "openDatabase",
                 };
                 var is_known_safe = false;
                 for (known_safe) |safe| {

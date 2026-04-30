@@ -31,15 +31,11 @@
 [33m[WARN][0m   CONTRACT VIOLATION: sqlite3_prepare returns nullable pointer but no NULL check detected
 [33m[WARN][0m   Risk: NULL pointer dereference / crash
 [33m[WARN][0m   CONTRACT WARNING: sqlite3_prepare transfers ownership but result may be discarded (leak risk)
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_prepare_v2 â€” verify scope safety
-[2m[DEBUG][0m   LIFETIME: NULL passed as param 4 to sqlite3_prepare_v2 â€” verify intent
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::leak_cstring -> sqlite3_finalize
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:104:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 prepared statement deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_open
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:188:18
@@ -47,46 +43,34 @@
 [31m[ERROR][0m   Detail: SQLite3 database connection allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: sqlite3_open returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_open â€” verify scope safety
+[2m[DEBUG][0m   Contract OK: NULL guard present for sqlite3_open (intra=true, ip=true)
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_prepare_v2
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:199:18
 [31m[ERROR][0m   Kind: allocator
 [31m[ERROR][0m   Detail: SQLite3 prepared statement allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: sqlite3_prepare returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_prepare_v2 â€” verify scope safety
-[2m[DEBUG][0m   LIFETIME: NULL passed as param 4 to sqlite3_prepare_v2 â€” verify intent
+[2m[DEBUG][0m   Contract OK: NULL guard present for sqlite3_prepare (intra=true, ip=true)
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_close
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:201:13
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 database connection deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_finalize
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:213:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 prepared statement deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_close
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:214:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 database connection deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::correct_usage -> sqlite3_close
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:191:17
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 database connection deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::leak_database -> sqlite3_open
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:55:18
@@ -94,10 +78,7 @@
 [31m[ERROR][0m   Detail: SQLite3 database connection allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: sqlite3_open returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_open â€” verify scope safety
+[2m[DEBUG][0m   Contract OK: NULL guard present for sqlite3_open (intra=true, ip=true)
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi13sql_injection17h8a0cf381519616d9E
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::leak_statement -> sqlite3_prepare_v2
@@ -106,11 +87,7 @@
 [31m[ERROR][0m   Detail: SQLite3 prepared statement allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: sqlite3_prepare returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_prepare_v2 â€” verify scope safety
-[2m[DEBUG][0m   LIFETIME: NULL passed as param 4 to sqlite3_prepare_v2 â€” verify intent
+[2m[DEBUG][0m   Contract OK: NULL guard present for sqlite3_prepare (intra=true, ip=true)
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi14use_after_free17h6f729f1d2f372575E
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::use_after_free -> sqlite3_prepare_v2
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:116:9
@@ -121,15 +98,11 @@
 [33m[WARN][0m   CONTRACT VIOLATION: sqlite3_prepare returns nullable pointer but no NULL check detected
 [33m[WARN][0m   Risk: NULL pointer dereference / crash
 [33m[WARN][0m   CONTRACT WARNING: sqlite3_prepare transfers ownership but result may be discarded (leak risk)
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_prepare_v2 â€” verify scope safety
-[2m[DEBUG][0m   LIFETIME: NULL passed as param 4 to sqlite3_prepare_v2 â€” verify intent
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::use_after_free -> sqlite3_finalize
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:125:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 prepared statement deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [2m[DEBUG][0m ANALYZE [USER]: _ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::null_pointer_deref -> sqlite3_prepare_v2
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:141:18
@@ -137,17 +110,12 @@
 [31m[ERROR][0m   Detail: SQLite3 prepared statement allocation
 [31m[ERROR][0m   Warning: This function TRANSFERS ownership
 [31m[ERROR][0m   Warning: Result requires NULL check
-[33m[WARN][0m   CONTRACT VIOLATION: sqlite3_prepare returns nullable pointer but no NULL check detected
-[33m[WARN][0m   Risk: NULL pointer dereference / crash
-[2m[DEBUG][0m   LIFETIME: Return value -> heap-allocated (caller owns, must free)
-[2m[DEBUG][0m   LIFETIME: Stack address (alloca) passed to sqlite3_prepare_v2 â€” verify scope safety
-[2m[DEBUG][0m   LIFETIME: NULL passed as param 4 to sqlite3_prepare_v2 â€” verify intent
+[2m[DEBUG][0m   Contract OK: NULL guard present for sqlite3_prepare (intra=true, ip=true)
 [31m[ERROR][0m [HIGH] FFI RISK: rust_sqlite_ffi::null_pointer_deref -> sqlite3_finalize
 [31m[ERROR][0m   Location: /private/tmp/rust_sqlite_build/src/lib.rs:149:9
 [31m[ERROR][0m   Kind: deallocator
 [31m[ERROR][0m   Detail: SQLite3 prepared statement deallocation
 [31m[ERROR][0m   Warning: This function CONSUMES ownership
-[33m[WARN][0m   DANGLING RISK: Loading from stack variable and passing to FFI â€” ensure variable is still in scope
 [2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h571a1ef878f33964E
 [2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3fmt5Write9write_fmt17h0c3d03da12f0bba3E
 [2m[DEBUG][0m NOISE-SKIP [COMPILER_GEN]: _ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h2e3f1850384cd4c7E
@@ -161,16 +129,55 @@
 [32m[INFO][0m     - External unknown: 174
 [32m[INFO][0m     - LibC calls: 2
 [31m[ERROR][0m   Dangerous calls: 16
-[32m[INFO][0m   Semantic Registry: 166 functions known
-[2m[DEBUG][0m ZONE-SKIP: _RNvXsK_NtCsl8K0bEFm1U0_4core3fmtNtB5_5ErrorNtB5_5Debug3fmt is safe zone â€” language guarantees apply
-[2m[DEBUG][0m ZONE-SKIP: _RNvXsZ_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Write10write_char is safe zone â€” language guarantees apply
-[2m[DEBUG][0m ZONE-SKIP: _RNvXsZ_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Write9write_str is safe zone â€” language guarantees apply
-[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h571a1ef878f33964E is safe zone â€” language guarantees apply
+[32m[INFO][0m   Semantic Registry: 267 functions known
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi12leak_cstring17h85bb5ff18bf4ee7dE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi12leak_cstring17h85bb5ff18bf4ee7dE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13sql_injection17h8a0cf381519616d9E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi13sql_injection17h8a0cf381519616d9E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi14use_after_free17h6f729f1d2f372575E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi14use_after_free17h6f729f1d2f372575E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ªªªªªªªªªªªª freed twice in _ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE
+[32m[INFO][0m PtrLifetime: analyzed 8 funcs, tracked 57 ptrs, found 20 violations
+[33m[WARN][0m [FREE-ORPHAN] 1 frees vs 0 allocs in _ZN15rust_sqlite_ffi13sql_injection17h8a0cf381519616d9E
+[32m[INFO][0m CallbackEscape: analyzed 8 funcs, 0 cgo boundaries, 1 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi12leak_cstring17h85bb5ff18bf4ee7dE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13correct_usage17h5304f150db4c1ccaE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi13sql_injection17h8a0cf381519616d9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi14leak_statement17h3d00606947b40b51E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi14use_after_free17h6f729f1d2f372575E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[32m[INFO][0m MemorySafety: Analyzed functions, found 12 memory issues
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h2e3f1850384cd4c7E
+[32m[INFO][0m FreeValidation: Analyzed functions, found 1 invalid free calls
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsK_NtCsl8K0bEFm1U0_4core3fmtNtB5_5ErrorNtB5_5Debug3fmt is runtime_internal zone â€” language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsZ_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Write10write_char is runtime_internal zone â€” language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _RNvXsZ_NtCs1OjIl8oxbrv_5alloc6stringNtB5_6StringNtNtCsl8K0bEFm1U0_4core3fmt5Write9write_str is runtime_internal zone â€” language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN44_$LT$$RF$T$u20$as$u20$core..fmt..Display$GT$3fmt17h571a1ef878f33964E is runtime_internal zone â€” language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _ZN4core3fmt5Write9write_fmt17h0c3d03da12f0bba3E is runtime_internal zone â€” language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _ZN4core3ptr42drop_in_place$LT$alloc..string..String$GT$17h2e3f1850384cd4c7E is runtime_internal zone â€” language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$11finish_grow17h0f524889a4f1927dE is runtime_internal zone â€” language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _ZN5alloc7raw_vec20RawVecInner$LT$A$GT$7reserve21do_reserve_and_handle17h159c9a4ed90f329fE is runtime_internal zone â€” language guarantees apply
-[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$alloc..borrow..Cow$LT$B$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17hb8b32b6a070df4b8E is safe zone â€” language guarantees apply
+[2m[DEBUG][0m ZONE-SKIP: _ZN66_$LT$alloc..borrow..Cow$LT$B$GT$$u20$as$u20$core..fmt..Display$GT$3fmt17hb8b32b6a070df4b8E is runtime_internal zone â€” language guarantees apply
 [33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZN15rust_sqlite_ffi12leak_cstring17h85bb5ff18bf4ee7dE
 [33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZN15rust_sqlite_ffi13leak_database17h22679325a01853f6E
 [33m[WARN][0m MEMORY LEAK [MEDIUM]: Memory allocated but never freed in _ZN15rust_sqlite_ffi18null_pointer_deref17hbc422f02c8f05e0bE
@@ -188,15 +195,23 @@
 [1mZone Classification Summary[0m
 [36mâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[0m
 
-  Total functions analyzed:    17
-  Safe zone (skipped):         5 (52.9%)
-  Runtime internal (skipped):  4
+  Total functions analyzed:    153
+  Safe zone (skipped):         0 (29.4%)
+  Runtime internal (skipped):  45
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                8
+  FFI zone (analyzed):         84
+  Unknown zone:                24
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
-[33m  Issues found:                6[0m
+[32m  Escape zone functions:       84 (54.9% of total)[0m
+[33m  Issues found:              29[0m
+
+    [1mIssue breakdown by category:[0m
+      Memory leak:              11
+      Use after free:           1
+      Double free:               7
+      Invalid free:             6
+      Unchecked return:         2
+      Malloc unchecked:         2
 
 [36mâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•[0m
 
@@ -205,17 +220,35 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        40.55     40549.79     40549.79
-detect                                  2         1.85       923.31       943.46
-total                                   1        40.56     40555.92     40555.92
-analysis                                1        39.32     39318.58     39318.58
-[32m[INFO][0m PointerOwnership: 4 ops, 122.27ms total
+init                                    1        45.12     45118.33     45118.33
+detect                                  2         1.94       969.73       995.71
+total                                   1        45.12     45124.54     45124.54
+analysis                                1        43.86     43860.46     43860.46
+[32m[INFO][0m PointerOwnership: 4 ops, 136.04ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 233 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 233 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 51
 
 [INFO] Facts generated: 16
 
-[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/rust_sqlite.json
-
+Segmentation fault at address 0x101620000
+/Users/scc/code/zigcode/OmniScope/src/main.zig:68:10: 0x100fe8138 in writeJsonEscaped__anon_20799 (OmniScope)
+    for (s) |c| {
+         ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:388:29: 0x100feb83b in formatIssuesAsJson (OmniScope)
+        try writeJsonEscaped(writer, issue.location.function);
+                            ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:230:51: 0x101004ef7 in runSingleFileAnalysis (OmniScope)
+            const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
+                                                  ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:634:34: 0x10100b0d7 in main (OmniScope)
+        try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
+                                 ^
+/Users/scc/.zvm/0.15.2/lib/std/start.zig:627:37: 0x10100b75f in main (OmniScope)
+            const result = root.main() catch |err| {
+                                    ^
+???:?:?: 0x196f92b97 in ??? (???)
+???:?:?: 0x0 in ??? (???)

@@ -117,8 +117,8 @@ test "posix_io_reg: static_buffer_functions count" {
 test "posix_io_reg: static_buffer key functions present" {
     // P2-1: Verify critical static buffer functions are included
     const expected = [_][]const u8{
-        "ctime", "asctime", "inet_ntoa", "gethostbyname",
-        "getgrgid", "getpwuid", "strerror", "ttyname",
+        "ctime",    "asctime",  "inet_ntoa", "gethostbyname",
+        "getgrgid", "getpwuid", "strerror",  "ttyname",
     };
 
     var found_count: usize = 0;

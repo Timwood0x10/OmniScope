@@ -171,13 +171,15 @@ All P0 items must pass before tagging v0.1.8
 
 ## P2 — Remaining Work
 
-### P2-1: static_lifetime 知识迁移
+### P2-1: static_lifetime 知识迁移 ✅
 
-**Problem**: `inferLifetimeConstraints` 被删除时，ctime/asctime/inet_ntoa 等返回静态缓冲区的知识丢失
+**Status**: ✅ **DONE**
 
-**Implementation Plan**:
-- [ ] 迁移 static_lifetime_funcs 到 `allocator_kb.zig` 或 `posix_io_reg.zig`
-- [ ] 涉及函数: ctime, asctime, inet_ntoa, getgrgid, getpwuid, gethostbyname, strerror, ttyname
+- [x] 添加 `AllocKind.static_buffer` 到 `allocator_kb.zig` ✅
+- [x] 16 个静态缓冲区函数注册到 AllocatorKB (ctime, asctime, strerror, inet_ntoa, getgrgid, getpwuid, getpwnam, getpwent, getgrnam, grent, tmpnam, gcvt, ecvt, fcvt, crypt, strsignal) ✅
+- [x] 添加 `isStaticBuffer()` / `isStaticBufferFunction()` API ✅
+- [x] `ffi_safety_checker.isStaticBufferFunction()` 优先使用 AllocatorKB，fallback 到硬编码 ✅
+- [x] 修复子串误匹配 (精确匹配 + 最多 3 个下划线前缀) ✅
 
 ### P2-2: ffi_boundary.zig 拆分
 

@@ -24,6 +24,21 @@
 [32m[INFO][0m     - External unknown: 59
 [32m[INFO][0m     - LibC calls: 0
 [32m[INFO][0m   Dangerous calls: 0
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_init_param returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_init returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_init_salt_personal returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_init_key returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_update returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_init_key_salt_personal returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_final returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_salt_personal returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _sodium_blake2b_pick_best_implementation returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 10 funcs, tracked 5 ptrs, found 0 violations
+[32m[INFO][0m CallbackEscape: analyzed 10 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m MemorySafety: Analyzed functions, found 0 memory issues
+[32m[INFO][0m FreeValidation: Analyzed functions, found 0 invalid free calls
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
 [2m[DEBUG][0m DOUBLE-FREE: No free sites, skipping
 [32m[INFO][0m PointerOwnership: Found 0 allocations, 0 frees, 0 tracked pointers
@@ -35,14 +50,14 @@
 [1mZone Classification Summary[0m
 [36m═══════════════════════════════════════════════════════════════[0m
 
-  Total functions analyzed:    10
-  Safe zone (skipped):         0 (0.0%)
-  Runtime internal (skipped):  0
+  Total functions analyzed:    63
+  Safe zone (skipped):         0 (28.6%)
+  Runtime internal (skipped):  18
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                10
+  FFI zone (analyzed):         15
+  Unknown zone:                30
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
+[32m  Escape zone functions:       15 (23.8% of total)[0m
 [32m  Issues found:                0[0m
 
 [36m═══════════════════════════════════════════════════════════════[0m
@@ -52,12 +67,14 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         9.17      9169.42      9169.42
-detect                                  2         0.09        42.50        75.96
-total                                   1         9.18      9175.21      9175.21
-analysis                                1         8.24      8236.67      8236.67
-[32m[INFO][0m PointerOwnership: 4 ops, 26.67ms total
+init                                    1         9.74      9744.58      9744.58
+detect                                  2         0.11        55.00        89.25
+total                                   1         9.75      9751.71      9751.71
+analysis                                1         8.76      8755.33      8755.33
+[32m[INFO][0m PointerOwnership: 4 ops, 28.36ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 59 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 59 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 21

@@ -41,6 +41,10 @@ pub const AllocKind = enum(u8) {
     stack_alloc,
     /// Global/static allocation.
     global_alloc,
+    /// Static buffer return: function returns pointer to internal static storage.
+    /// The caller must NOT free this pointer. It is NOT thread-safe.
+    /// Examples: ctime(), asctime(), inet_ntoa(), strerror().
+    static_buffer,
     /// Unknown allocation type.
     unknown,
 };
@@ -204,6 +208,28 @@ pub const AllocatorKB = struct {
             };
             try kb.pairs.append(pair);
         }
+
+        // Static buffer functions: return pointer to internal static storage.
+        // These must NOT be freed and are NOT thread-safe.
+        // The _r variants (ctime_r, asctime_r, etc.) use caller-provided
+        // buffers and are safe — they are NOT listed here.
+        const static_buf_funcs = [_][]const u8{
+            "ctime",     "asctime",  "strerror", "strsignal",
+            "inet_ntoa", "getgrgid", "getgrnam", "getpwuid",
+            "getpwnam",  "getpwent", "grent",    "tmpnam",
+            "gcvt",      "ecvt",     "fcvt",     "crypt",
+        };
+        for (static_buf_funcs) |fname| {
+            const info = AllocatorInfo{
+                .name = fname,
+                .kind = .static_buffer,
+                .matching_free = null, // Must NOT be freed!
+                .source = "posix",
+                .is_heuristic = false,
+                .confidence = 100,
+            };
+            try kb.allocators.put(fname, info);
+        }
     }
 
     /// Looks up an allocator by name.
@@ -224,6 +250,26 @@ pub const AllocatorKB = struct {
     /// Checks if a function name is a known deallocator.
     pub fn isDeallocator(kb: *AllocatorKB, name: []const u8) bool {
         return kb.deallocators.contains(name);
+    }
+
+    /// Checks if a function returns a pointer to static internal storage.
+    /// These functions must NOT be freed by the caller and are NOT thread-safe.
+    /// Returns the AllocatorInfo if found, null otherwise.
+    pub fn isStaticBufferFunction(kb: *AllocatorKB, name: []const u8) ?AllocatorInfo {
+        return kb.allocators.get(name) orelse {
+            // Also check with _r suffix (reentrant variants are NOT static).
+            // ctime_r, asctime_r etc. use caller-provided buffers — safe.
+            return null;
+        };
+    }
+
+    /// Checks if a function name is a known static buffer function.
+    /// Convenience wrapper that returns bool.
+    pub fn isStaticBuffer(kb: *AllocatorKB, name: []const u8) bool {
+        if (kb.allocators.get(name)) |info| {
+            return info.kind == .static_buffer;
+        }
+        return false;
     }
 
     /// Finds the matching deallocator for an allocator.

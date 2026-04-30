@@ -248,7 +248,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.8");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.6");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;
@@ -344,7 +344,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     const timestamp = std.time.timestamp();
     const writer = output.writer();
 
-    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.8\",\"timestamp\":");
+    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.6\",\"timestamp\":");
     try writer.print("{d}", .{timestamp});
     try writer.writeAll(",\"summary\":{");
     try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });
@@ -621,7 +621,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v0.1.8\n", .{});
+        std.debug.print("OmniScope v0.1.6\n", .{});
         return;
     }
 

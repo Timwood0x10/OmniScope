@@ -36,12 +36,13 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         0.24       241.50       241.50
-detect                                  2         0.07        36.15        63.75
-total                                   1         0.25       250.83       250.83
-analysis                                1         0.07        65.83        65.83
-[32m[INFO][0m PointerOwnership: 4 ops, 0.63ms total
+init                                    1         0.31       311.38       311.38
+detect                                  2         0.10        50.81        92.42
+total                                   1         0.32       318.17       318.17
+analysis                                1         0.10        95.29        95.29
+[32m[INFO][0m PointerOwnership: 4 ops, 0.83ms total
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [INFO] Analysis complete
 
 [INFO] Functions processed: 0

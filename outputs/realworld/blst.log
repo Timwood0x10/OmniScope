@@ -290,7 +290,224 @@
 [32m[INFO][0m     - External unknown: 1286
 [32m[INFO][0m     - LibC calls: 0
 [31m[ERROR][0m   Dangerous calls: 3
-[32m[INFO][0m   Semantic Registry: 166 functions known
+[32m[INFO][0m   Semantic Registry: 267 functions known
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst4uniq17h94f07cbdc27eb274E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk18AggregatePublicKey14add_public_key17hcbd2af96e39e8f67E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk18AggregateSignature13add_signature17h19d8ff4847861530E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk18AggregateSignature14subgroup_check17hd303a08c7d1194b9E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk18AggregateSignature8validate17he14490d04e34930aE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9PublicKey8validate17h4282ff4c6c544644E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature14subgroup_check17hc7d6fa2dfb0c4e56E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature21fast_aggregate_verify17hd25c932ccd87dcadE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature36fast_aggregate_verify_pre_aggregated17h8ba306ee6fd47d05E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in _ZN4blst6min_pk9Signature6verify17h6470afe656f5bb23E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in _ZN4blst6min_pk9Signature6verify17h6470afe656f5bb23E
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature6verify17h6470afe656f5bb23E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst6min_pk9Signature8validate17h57a34f138fdc1177E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7Pairing11finalverify17hf0caa9b9df09ceb2E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7Pairing15mul_n_aggregate17hf44962b1fdf82a23E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7Pairing3new17h60d16035da34edb1E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7Pairing5merge17hc44c227346706a1eE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7Pairing9aggregate17h393504ce9010a463E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig18AggregatePublicKey14add_public_key17h53be55a7b323e8f5E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig18AggregateSignature13add_signature17h2eeeb01d66fa443dE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig18AggregateSignature14subgroup_check17h29760537f5d350afE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig18AggregateSignature8validate17h436dd10dc9ad924cE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9PublicKey8validate17h0b28800173cff924E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature14subgroup_check17h07ea81381c2f1fcdE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature21fast_aggregate_verify17h43a8d704343fa87fE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature36fast_aggregate_verify_pre_aggregated17h8800d37ecbb1daa9E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE returns non-pointer (likely using output params)
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in _ZN4blst7min_sig9Signature6verify17hfbbf024c5ae3b0f2E
+[33m[WARN][0m [DOUBLE_FREE] DOUBLE_FREE: ������������ freed twice in _ZN4blst7min_sig9Signature6verify17hfbbf024c5ae3b0f2E
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature6verify17hfbbf024c5ae3b0f2E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst7min_sig9Signature8validate17h55442ce1f659628dE returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst9blst_fp1211finalverify17h14bec77413124ff2E returns non-pointer (likely using output params)
+[2m[DEBUG][0m [SUPPRESSED] C API output parameter pattern: _ZN4blst9blst_fp128in_group17hb90e09b7c0581e1eE returns non-pointer (likely using output params)
+[32m[INFO][0m PtrLifetime: analyzed 96 funcs, tracked 242 ptrs, found 4 violations
+[32m[INFO][0m CallbackEscape: analyzed 96 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[33m[WARN][0m Double free detected in function: _ZN10threadpool10ThreadPool7execute17he1b7ec36415abac2E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN3std3sys4sync8once_box16OnceBox$LT$T$GT$10initialize17hf0a62a2f7ccaf022E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN3std4sync4mpmc4zero16Channel$LT$T$GT$4send28_$u7b$$u7b$closure$u7d$$u7d$17h2e989d17f4f4acceE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst4uniq17h94f07cbdc27eb274E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst6min_pk9Signature16aggregate_verify17h2dc618f9747f0e0bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst6min_pk9Signature36verify_multiple_aggregate_signatures17h7bc8dca8844a78feE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst6min_pk9Signature6verify17h6470afe656f5bb23E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst7min_sig9Signature16aggregate_verify17h1dc483043734d4e4E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst7min_sig9Signature36verify_multiple_aggregate_signatures17h22a3ea0d28b5cdfeE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4blst7min_sig9Signature6verify17hfbbf024c5ae3b0f2E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17h98043bb31d599f82E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ops8function6FnOnce40call_once$u7b$$u7b$vtable.shim$u7d$$u7d$17he9549558c8af5ed1E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17h371e249e69b22043E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17h19b1b631180b05ecE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr128drop_in_place$LT$std..sync..mpsc..SendError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hdfc41eeae02a57f4E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr130drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$usize$GT$$GT$$GT$$GT$17h96312bad8d6f8cc9E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr131drop_in_place$LT$std..sync..mpmc..zero..Packet$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd99a20a89f723c2bE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h9c2ec2bdbd58d7c7E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17h124112c291fd99d5E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h886c3bac3f893e59E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr140drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17hf51b29c0109dc69aE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr142drop_in_place$LT$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd33732664d871bdcE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr181drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h6b271170dbde34e8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr195drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h4b92d29ad704ffb8E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr59drop_in_place$LT$std..sync..mpsc..Receiver$LT$usize$GT$$GT$17hca8fe4beb661e570E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr61drop_in_place$LT$std..sync..mpsc..SyncSender$LT$usize$GT$$GT$17hc0354ead80fc993fE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p1$GT$$GT$17hb3f75d702d295541E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p2$GT$$GT$17h6feb034272074cb1E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_fp12$GT$$GT$17hb49c5acded7f7961E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..Pairing$GT$$GT$17h047a02e81f097061E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p1$GT$$GT$17hd1cc764502569170E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p2$GT$$GT$17h6802bd0e71c06b98E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr71drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_fp12$GT$$GT$17h6effcf7be82938d2E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h3bcd61dcf0040b4aE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr82drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$threadpool..ThreadPool$GT$$GT$17h8526ae658e888546E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr88drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h1ce4726b0fe1778aE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17hdad6439edde60a78E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN4core3ptr94drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$17h5a143906fd98d491E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h43bb7c9f79b1515dE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h0eb1f9c065a6d8dbE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN67_$LT$$u5b$blst..blst_p1_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h0eb1f9c065a6d8dbE via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h226c9fd344576445E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[33m[WARN][0m Double free detected in function: _ZN67_$LT$$u5b$blst..blst_p2_affine$u5d$$u20$as$u20$blst..MultiPoint$GT$4mult17h226c9fd344576445E via _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc
+[32m[INFO][0m MemorySafety: Analyzed functions, found 63 memory issues
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN39_$LT$F$u20$as$u20$threadpool..FnBox$GT$8call_box17hbf52a2437085da1bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc15Sender$LT$T$GT$4send17h9c9df8992823b771E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h0c6ffbb98e892664E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h83aa1a54f9917937E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h83aa1a54f9917937E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17h939fd6f66fd73061E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17ha837b0506c492e91E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN3std4sync4mpmc17Receiver$LT$T$GT$4recv17he74b53f1f666e14cE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17h371e249e69b22043E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr101drop_in_place$LT$std..sys..sync..once_box..OnceBox$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$17h371e249e69b22043E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr106drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$17h3836b298d4cf2fa6E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17h19b1b631180b05ecE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr107drop_in_place$LT$core..pin..Pin$LT$alloc..boxed..Box$LT$std..sys..pal..unix..sync..mutex..Mutex$GT$$GT$$GT$17h19b1b631180b05ecE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$17h402bce7b9c869c58E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$17ha89e78bea3bcd973E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr114drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$17hbeaef2e9339e5f7aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr116drop_in_place$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$17h773e3ebc57fd47d9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr128drop_in_place$LT$std..sync..mpsc..SendError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hdfc41eeae02a57f4E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr128drop_in_place$LT$std..sync..mpsc..SendError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hdfc41eeae02a57f4E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr130drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$usize$GT$$GT$$GT$$GT$17h96312bad8d6f8cc9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr130drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$usize$GT$$GT$$GT$$GT$17h96312bad8d6f8cc9E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr131drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$usize$GT$$GT$$GT$$GT$17h17554acad622cf16E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr131drop_in_place$LT$std..sync..mpmc..zero..Packet$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd99a20a89f723c2bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr131drop_in_place$LT$std..sync..mpmc..zero..Packet$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd99a20a89f723c2bE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr135drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$blst..Pairing$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h1e20771aa5a412ffE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h9c2ec2bdbd58d7c7E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h9c2ec2bdbd58d7c7E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17h124112c291fd99d5E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17h124112c291fd99d5E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h886c3bac3f893e59E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr138drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h886c3bac3f893e59E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..Pairing$GT$$GT$$GT$$GT$17h00b96bd4c18d47a2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p1$GT$$GT$$GT$$GT$17ha08a303d600113dcE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr139drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_p2$GT$$GT$$GT$$GT$17h7ec0c1c86dbb10a8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr140drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17hf51b29c0109dc69aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr140drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..list..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17hf51b29c0109dc69aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr141drop_in_place$LT$alloc..boxed..Box$LT$std..sync..mpmc..counter..Counter$LT$std..sync..mpmc..array..Channel$LT$blst..blst_fp12$GT$$GT$$GT$$GT$17h1c6bb89b5e5df311E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr142drop_in_place$LT$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd33732664d871bdcE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr142drop_in_place$LT$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$17hd33732664d871bdcE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr154drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$core..ops..function..FnOnce$LT$$LP$$RP$$GT$$u2b$Output$u20$$u3d$$u20$$LP$$RP$$u2b$core..marker..Send$GT$$GT$17h4c842965cd7f675eE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr154drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$core..ops..function..FnOnce$LT$$LP$$RP$$GT$$u2b$Output$u20$$u3d$$u20$$LP$$RP$$u2b$core..marker..Send$GT$$GT$17h4c842965cd7f675eE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr181drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h6b271170dbde34e8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr181drop_in_place$LT$core..result..Result$LT$$LP$$RP$$C$std..sync..mpmc..error..SendTimeoutError$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$$GT$$GT$17h6b271170dbde34e8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr195drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h4b92d29ad704ffb8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr195drop_in_place$LT$core..option..Option$LT$std..sync..mpmc..zero..Channel$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$..send..$u7b$$u7b$closure$u7d$$u7d$$GT$$GT$17h4b92d29ad704ffb8E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr42drop_in_place$LT$std..io..error..Error$GT$17h88382321e3d4e81dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr43drop_in_place$LT$threadpool..ThreadPool$GT$17hea79289a74557f72E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr59drop_in_place$LT$std..sync..mpsc..Receiver$LT$usize$GT$$GT$17hca8fe4beb661e570E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr59drop_in_place$LT$std..sync..mpsc..Receiver$LT$usize$GT$$GT$17hca8fe4beb661e570E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr59drop_in_place$LT$std..sync..nonpoison..condvar..Condvar$GT$17h6875e1a49382d776E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr61drop_in_place$LT$std..sync..mpsc..SyncSender$LT$usize$GT$$GT$17hc0354ead80fc993fE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr61drop_in_place$LT$std..sync..mpsc..SyncSender$LT$usize$GT$$GT$17hc0354ead80fc993fE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..Pairing$GT$$GT$17ha63272bb2bff6f07E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p1$GT$$GT$17hb3f75d702d295541E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p1$GT$$GT$17hb3f75d702d295541E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p2$GT$$GT$17h6feb034272074cb1E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr67drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_p2$GT$$GT$17h6feb034272074cb1E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr68drop_in_place$LT$std..sync..mpsc..SendError$LT$blst..Pairing$GT$$GT$17hce097124bc444877E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_fp12$GT$$GT$17hb49c5acded7f7961E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..Receiver$LT$blst..blst_fp12$GT$$GT$17hb49c5acded7f7961E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..Pairing$GT$$GT$17h047a02e81f097061E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..Pairing$GT$$GT$17h047a02e81f097061E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p1$GT$$GT$17hd1cc764502569170E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p1$GT$$GT$17hd1cc764502569170E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p2$GT$$GT$17h6802bd0e71c06b98E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr69drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_p2$GT$$GT$17h6802bd0e71c06b98E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr71drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_fp12$GT$$GT$17h6effcf7be82938d2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr71drop_in_place$LT$std..sync..mpsc..SyncSender$LT$blst..blst_fp12$GT$$GT$17h6effcf7be82938d2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h3bcd61dcf0040b4aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr73drop_in_place$LT$alloc..vec..Vec$LT$std..sync..mpmc..waker..Entry$GT$$GT$17h3bcd61dcf0040b4aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr82drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$threadpool..ThreadPool$GT$$GT$17h8526ae658e888546E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr82drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$threadpool..ThreadPool$GT$$GT$17h8526ae658e888546E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr88drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h1ce4726b0fe1778aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr88drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..zero..Inner$GT$$GT$17h1ce4726b0fe1778aE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17hdad6439edde60a78E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr89drop_in_place$LT$std..sync..poison..mutex..Mutex$LT$std..sync..mpmc..waker..Waker$GT$$GT$17hdad6439edde60a78E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr90drop_in_place$LT$$LP$std..sync..barrier..Barrier$C$core..sync..atomic..AtomicUsize$RP$$GT$17h4f6cc2b74bac1fe2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr94drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$17h5a143906fd98d491E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN4core3ptr94drop_in_place$LT$alloc..boxed..Box$LT$dyn$u20$threadpool..FnBox$u2b$core..marker..Send$GT$$GT$17h5a143906fd98d491E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h43bb7c9f79b1515dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h43bb7c9f79b1515dE
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h6e2227d8b07284c2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h6e2227d8b07284c2E
+[33m[WARN][0m Invalid _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc on function parameter pointer in function: _ZN5alloc4sync16Arc$LT$T$C$A$GT$9drop_slow17h90bf7f71190cb708E
+[32m[INFO][0m FreeValidation: Analyzed functions, found 113 invalid free calls
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
 [2m[DEBUG][0m ZONE-SKIP: _RNvMNtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB2_5Waker6notify is safe zone — language guarantees apply
 [2m[DEBUG][0m ZONE-SKIP: _RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker10disconnect is safe zone — language guarantees apply
@@ -521,15 +738,21 @@
 [1mZone Classification Summary[0m
 [36m═══════════════════════════════════════════════════════════════[0m
 
-  Total functions analyzed:    267
-  Safe zone (skipped):         39 (64.0%)
-  Runtime internal (skipped):  132
+  Total functions analyzed:    1248
+  Safe zone (skipped):         117 (45.7%)
+  Runtime internal (skipped):  453
   Unsafe zone (analyzed):      0
-  FFI zone (analyzed):         0
-  Unknown zone:                96
+  FFI zone (analyzed):         393
+  Unknown zone:                285
 
-[32m  Escape zone functions:       0 (0.0% of total)[0m
-[33m  Issues found:                48[0m
+[32m  Escape zone functions:       393 (31.5% of total)[0m
+[33m  Issues found:              116[0m
+
+    [1mIssue breakdown by category:[0m
+      Memory leak:              1
+      Use after free:           9
+      Double free:               52
+      Invalid free:             54
 
 [36m═══════════════════════════════════════════════════════════════[0m
 
@@ -538,17 +761,35 @@
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1       280.27    280266.75    280266.75
-detect                                  2         7.78      3890.40      3912.42
-total                                   1       280.27    280273.83    280273.83
-analysis                                1       274.69    274686.71    274686.71
-[32m[INFO][0m PointerOwnership: 4 ops, 843.01ms total
+init                                    1       314.10    314102.88    314102.88
+detect                                  2         7.93      3964.96      3995.63
+total                                   1       314.11    314109.79    314109.79
+analysis                                1       307.95    307952.67    307952.67
+[32m[INFO][0m PointerOwnership: 4 ops, 944.10ms total
 [32m[INFO][0m FFIUnsafe: Analyzed 1366 boundaries, found 0 issues
+[32m[INFO][0m FFIBodyCheck: Analyzing 1366 FFI boundaries for dangerous function calls
+[32m[INFO][0m FFIBodyCheck: Found 0 dangerous function calls
 [INFO] Analysis complete
 
 [INFO] Functions processed: 416
 
 [INFO] Facts generated: 56
 
-[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/blst.json
-
+Segmentation fault at address 0x102ae0000
+/Users/scc/code/zigcode/OmniScope/src/main.zig:68:10: 0x1023e8138 in writeJsonEscaped__anon_20799 (OmniScope)
+    for (s) |c| {
+         ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:388:29: 0x1023eb83b in formatIssuesAsJson (OmniScope)
+        try writeJsonEscaped(writer, issue.location.function);
+                            ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:230:51: 0x102404ef7 in runSingleFileAnalysis (OmniScope)
+            const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
+                                                  ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:634:34: 0x10240b0d7 in main (OmniScope)
+        try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
+                                 ^
+/Users/scc/.zvm/0.15.2/lib/std/start.zig:627:37: 0x10240b75f in main (OmniScope)
+            const result = root.main() catch |err| {
+                                    ^
+???:?:?: 0x196f92b97 in ??? (???)
+???:?:?: 0x0 in ??? (???)

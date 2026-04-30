@@ -16,6 +16,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const allocator_kb = @import("../../semantics/allocator_kb.zig");
 
 /// Maximum number of instructions to scan for NULL guard patterns.
 const NULL_GUARD_SCAN_LIMIT: u32 = 20;
@@ -321,21 +322,22 @@ pub fn checkReturnValueEscape(
 ///
 /// Detection heuristic: function name matches known static-buffer patterns.
 pub fn isStaticBufferFunction(func_name: []const u8) bool {
+    // Primary: check AllocatorKB for authoritative knowledge.
+    if (allocator_kb.getAllocatorKB()) |kb| {
+        if (kb.isStaticBuffer(func_name)) return true;
+    }
+
+    // Fallback: hardcoded patterns for when KB is not initialized.
+    // Uses exact match + up to 3 leading underscores (libc internal wrappers).
     const static_buf_patterns = [_][]const u8{
-        "ctime",       "ctime_r",      "asctime",    "asctime_r",
-        "strerror",    "strerror_r",   "strsignal",  "inet_ntoa",
-        "inet_ntop_r", "getgrgid",     "getgrnam",   "getpwuid",
-        "getpwnam",    "getpwent",    "grent",      "setbuf",
-        "setvbuf",     "tmpnam",      "tempnam",    "gcvt",
-        "ecvt",        "fcvt",         "crypt",
+        "ctime",     "asctime",  "strerror", "strsignal",
+        "inet_ntoa", "getgrgid", "getgrnam", "getpwuid",
+        "getpwnam",  "getpwent", "grent",    "tmpnam",
+        "gcvt",      "ecvt",     "fcvt",     "crypt",
     };
     for (static_buf_patterns) |pat| {
-        // Exact match: function name equals the pattern exactly.
         if (std.mem.eql(u8, func_name, pat)) return true;
-        // Suffix match: e.g., "__ctime", "___ctime" (libc internal wrappers).
-        // But NOT "my_strerror_handler" — require the match to start near the end.
         if (func_name.len > pat.len) {
-            // Allow up to 3 leading underscores (libc internal naming).
             const prefix = func_name[0 .. func_name.len - pat.len];
             var all_underscore = true;
             for (prefix) |ch| {
