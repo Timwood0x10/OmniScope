@@ -524,7 +524,7 @@ pub const PtrLifetimePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
-            // v0.2.0: P2-3 — Single-function error isolation
+            // P2-3 — Single-function error isolation
             analyzeFunction(ctx, func, diag, &stats, &mem_graph) catch |err| {
                 diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
@@ -572,7 +572,7 @@ pub const PtrLifetimePass = struct {
         else
             "unknown";
 
-        // v0.2.0: P2-2 — Function size protection (skip oversized functions)
+        // P2-2 — Function size protection (skip oversized functions)
         var bb_count: usize = 0;
         var inst_count: usize = 0;
         {
@@ -691,7 +691,7 @@ pub const PtrLifetimePass = struct {
                             }
                         }
 
-                        // v0.2.0: Triple-source heap detection — AllocatorKB check
+                        // Triple-source heap detection — AllocatorKB check
                         if (getAllocatorKB()) |kb| {
                             if (kb.isAllocator(callee_name)) {
                                 const desc = try std.fmt.allocPrint(allocator, "heap via allocator {s}()", .{callee_name});
@@ -907,6 +907,27 @@ pub const PtrLifetimePass = struct {
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
             },
 
+            // v0.2.0: Track whether this function returns a pointer.
+            // Used by checkCallViolation to identify sink functions:
+            // functions that don't return pointers are likely consumers,
+            // not forwarders, so passing a stack pointer to them is safer.
+            c.LLVMRet => {
+                if (mem_graph) |mg| {
+                    const num_ops = c.LLVMGetNumOperands(inst);
+                    if (num_ops > 0) {
+                        const ret_val = c.LLVMGetOperand(inst, 0);
+                        if (@intFromPtr(ret_val) != 0) {
+                            const ret_type = c.LLVMTypeOf(ret_val);
+                            if (@intFromPtr(ret_type) != 0 and
+                                c.LLVMGetTypeKind(ret_type) == c.LLVMPointerTypeKind)
+                            {
+                                mg.recordFuncReturns(func_ptr);
+                            }
+                        }
+                    }
+                }
+            },
+
             else => {},
         }
     }
@@ -960,14 +981,14 @@ pub const PtrLifetimePass = struct {
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
     ) !void {
-        // v0.2.0: Null pointer guard — prevent SIGABRT on invalid IR
+        // Null pointer guard — prevent SIGABRT on invalid IR
         if (@intFromPtr(inst) == 0) return;
 
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
             try checkDoubleFreeViolation(ctx, inst, func_name, pointer_map, mem_graph, diag, stats);
-            try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, diag, stats);
+            try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats);
         }
 
         if (opcode == c.LLVMRet) {
@@ -1064,6 +1085,7 @@ pub const PtrLifetimePass = struct {
         func_name: []const u8,
         _: usize,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        mem_graph: ?*memory_graph.MemoryGraph,
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
     ) !void {
@@ -1077,14 +1099,75 @@ pub const PtrLifetimePass = struct {
 
         if (!may_retain_pointer(callee_name)) return;
 
+        // v0.2.0: Cross-function sink detection via MemoryGraph.
+        // If the callee function never returns a pointer, it's likely a sink
+        // that consumes its arguments rather than forwarding them.
+        // Passing a stack pointer to a sink is much safer than passing to
+        // a function that might store or return the pointer.
+        //
+        // Two detection strategies:
+        //   1. Defined functions: FuncCounter.returns_pointer (from ret tracking)
+        //   2. Declared functions (no body): check call instruction's return type
+        if (mem_graph) |mg| {
+            const callee_ptr = @as(u64, @intFromPtr(called));
+            const callee_counter = mg.getFuncCounter(callee_ptr);
+
+            // For declared functions (no body), infer from call return type.
+            // If the call returns void/non-pointer, the callee is a sink.
+            const callee_returns_ptr = if (callee_counter.hasHeapOps())
+                callee_counter.returns_pointer
+            else blk: {
+                // Declared function — check call return type directly.
+                const ret_type = c.LLVMTypeOf(inst);
+                if (@intFromPtr(ret_type) != 0 and
+                    c.LLVMGetTypeKind(ret_type) == c.LLVMPointerTypeKind)
+                {
+                    break :blk true;
+                }
+                break :blk false;
+            };
+
+            if (!callee_returns_ptr) {
+                // Callee never returns a pointer → likely a sink.
+                // Suppress stack escape for sink functions.
+                // Note: we still report use-after-free (freed pointers are always dangerous).
+                const num_ops = c.LLVMGetNumOperands(inst);
+                var i: u32 = 0;
+                while (i < num_ops) : (i += 1) {
+                    const arg = c.LLVMGetOperand(inst, i);
+                    if (pointer_map.get(arg)) |ptr_info| {
+                        if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
+                            diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
+                            stats.stack_escapes_found += 1;
+                            if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
+                        } else if (ptr_info.freed) {
+                            if (ptr_info.resource_type != .none) {
+                                try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
+                            } else {
+                                try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                            }
+                            stats.use_after_free_found += 1;
+                        }
+                    }
+                }
+                return;
+            }
+        }
+
         const num_ops = c.LLVMGetNumOperands(inst);
         var i: u32 = 0;
         while (i < num_ops) : (i += 1) {
             const arg = c.LLVMGetOperand(inst, i);
             if (pointer_map.get(arg)) |ptr_info| {
                 if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                    try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
-                    stats.stack_escapes_found += 1;
+                    // Check suppression for callback/hook patterns
+                    if (isStackEscapeSuppressed(callee_name, ptr_info)) {
+                        diag.debug("[SUPPRESSED] Stack escape in callback/hook: {s}", .{callee_name});
+                        stats.stack_escapes_found += 1;
+                    } else {
+                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        stats.stack_escapes_found += 1;
+                    }
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                 } else if (ptr_info.alloc_site == .heap and !ptr_info.escaped) {
                     // v0.1.6: Heap pointer escaping to FFI is also critical.
@@ -1161,6 +1244,29 @@ pub const PtrLifetimePass = struct {
                 stats.heap_intentional_transfer += 1;
                 return;
             }
+
+            // v0.2.0: Check callee's alloc/free balance.
+            // Wrapper functions like sqlite3_malloc() delegate to sqlite3Malloc()
+            // and return the result. The wrapper itself has net()=0, but the callee
+            // has net()>0. This catches the pattern without project-specific whitelists.
+            const retval_opcode = c.LLVMGetInstructionOpcode(retval);
+            if (retval_opcode == c.LLVMCall or retval_opcode == c.LLVMInvoke) {
+                const callee_val = c.LLVMGetCalledValue(retval);
+                if (@intFromPtr(callee_val) != 0) {
+                    const callee_ptr = @as(u64, @intFromPtr(callee_val));
+                    const callee_counter = mg.getFuncCounter(callee_ptr);
+                    if (callee_counter.hasHeapOps() and callee_counter.net() > 0) {
+                        diag.debug("[SUPPRESSED] Callee has net heap allocations ({d} allocs, {d} frees): {s} -> {s}", .{
+                            callee_counter.allocs,
+                            callee_counter.frees,
+                            func_name,
+                            std.mem.span(c.LLVMGetValueName(callee_val)),
+                        });
+                        stats.heap_intentional_transfer += 1;
+                        return;
+                    }
+                }
+            }
         }
 
         // v0.1.9: Check if retval is a call instruction result from a known allocator.
@@ -1198,6 +1304,14 @@ pub const PtrLifetimePass = struct {
                 // function parameters, not dangerous stack address returns.
                 if (ptr_info.is_param_storage) {
                     diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
+                    stats.heap_intentional_transfer += 1;
+                // v0.2.0: Skip sret allocas — LLVM uses "alloca ptr" as a return
+                // value slot for functions returning pointers. The alloca itself is
+                // on the stack, but it only holds a pointer to heap-allocated memory.
+                // Returning the alloca address is the standard LLVM sret pattern,
+                // not a dangerous stack escape.
+                } else if (isSretAlloca(retval, inst, func)) {
+                    diag.debug("[SUPPRESSED] Sret alloca (return value slot, not real stack escape): {s}", .{func_name});
                     stats.heap_intentional_transfer += 1;
                 } else if (isAllocaReturnSuppressed(func_name, ptr_info)) {
                     diag.debug("[SUPPRESSED] Alloca return in constructor/factory: {s}", .{func_name});
@@ -1271,6 +1385,37 @@ pub const PtrLifetimePass = struct {
     /// Checks if a function returning an alloca pointer should be suppressed.
     /// Many C projects use alloca as temporary workspace in constructor/factory
     /// functions (e.g., sqlite3PExpr, sqlite3SelectNew). The alloca is just an
+    /// Check if a retval is an sret-style alloca (return value slot).
+    /// LLVM generates "alloca ptr" as a local slot to hold the return value.
+    /// The alloca is on the stack but only holds a pointer to heap memory.
+    /// Returning the alloca address is standard LLVM behavior, not a stack escape.
+    ///
+    /// Detection: retval is an alloca, its allocated type is ptr (not a data buffer),
+    /// and the function's return type is also ptr.
+    fn isSretAlloca(retval: c.LLVMValueRef, _: c.LLVMValueRef, func: c.LLVMValueRef) bool {
+        // retval must be an alloca instruction
+        if (c.LLVMGetInstructionOpcode(retval) != c.LLVMAlloca) return false;
+
+        // The alloca's allocated type must be ptr (not i8, [N x i8], etc.)
+        const alloca_type = c.LLVMGetAllocatedType(retval);
+        if (@intFromPtr(alloca_type) == 0) return false;
+        if (c.LLVMGetTypeKind(alloca_type) != c.LLVMPointerTypeKind) return false;
+
+        // The function's return type must also be ptr.
+        // Use LLVMGetElementType(LLVMTypeOf(func)) to get the function type,
+        // consistent with the rest of the codebase.
+        const func_ptr_type = c.LLVMTypeOf(func);
+        if (@intFromPtr(func_ptr_type) == 0) return false;
+        const func_type = c.LLVMGetElementType(func_ptr_type);
+        if (@intFromPtr(func_type) == 0) return false;
+        if (c.LLVMGetTypeKind(func_type) != c.LLVMFunctionTypeKind) return false;
+        const ret_type = c.LLVMGetReturnType(func_type);
+        if (@intFromPtr(ret_type) == 0) return false;
+        if (c.LLVMGetTypeKind(ret_type) != c.LLVMPointerTypeKind) return false;
+
+        return true;
+    }
+
     /// intermediate buffer — the actual return value points to heap memory that
     /// was copied from the alloca. Reporting these creates massive noise.
     fn isAllocaReturnSuppressed(func_name: []const u8, ptr_info: PtrInfo) bool {
@@ -1288,12 +1433,16 @@ pub const PtrLifetimePass = struct {
 
         // Common C API patterns that use alloca internally.
         const factory_substrings = [_][]const u8{
-            "Expr",    "Select",  "Token", "SrcList", "Name",
-            "Trigger", "CollSeq", "Vtab",  "Module",
-            // v0.2.0: Extended factory patterns for C API recognition
-             "Malloc",
-            "Alloc",   "Realloc", "Hash",  "List",    "Table",
-            "Cache",   "Pool",
+            "Expr",     "Select",   "Token",        "SrcList",     "Name",
+            "Trigger",  "CollSeq",  "Vtab",         "Module",
+            // Extended factory patterns for C API recognition
+                 "Malloc",
+            "Alloc",    "Realloc",  "Hash",         "List",        "Table",
+            "Cache",    "Pool",
+            // Callback/Hook patterns that legitimately take stack addrs
+                "Hook",         "Callback",    "Handler",
+            "Notifier", "Observer", "busy_handler", "commit_hook", "rollback_hook",
+            "wal_hook",
         };
         for (factory_substrings) |sub| {
             if (std.mem.indexOf(u8, func_name, sub) != null) {
@@ -1301,7 +1450,7 @@ pub const PtrLifetimePass = struct {
                 const factory_prefixes = [_][]const u8{
                     "sqlite3",  "rowSet",    "alloc", "create",
                     "vtab",     "attach",    "token",
-                    // v0.2.0: Extended prefixes for broader coverage
+                    // Extended prefixes for broader coverage
                     "curl_",
                     "uv_",      "json_",     "xml_",  "ldap_",
                     "avcodec_", "avformat_",
@@ -1309,9 +1458,40 @@ pub const PtrLifetimePass = struct {
                 for (factory_prefixes) |prefix| {
                     if (std.mem.startsWith(u8, func_name, prefix)) return true;
                 }
+                // Suppress callback/hook patterns regardless of prefix
+                if (std.mem.indexOf(u8, func_name, "Hook") != null or
+                    std.mem.indexOf(u8, func_name, "Callback") != null or
+                    std.mem.indexOf(u8, func_name, "Handler") != null or
+                    std.mem.indexOf(u8, func_name, "busy_handler") != null or
+                    std.mem.indexOf(u8, func_name, "_hook") != null)
+                {
+                    return true;
+                }
             }
         }
 
+        // Thread creation pattern - pthread_create legitimately takes stack addr
+        if (std.mem.indexOf(u8, func_name, "pthread_create") != null) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// Check if a stack escape should be suppressed.
+    /// Callback/hook patterns legitimately receive stack pointers.
+    fn isStackEscapeSuppressed(callee_name: []const u8, _: PtrInfo) bool {
+        // Callback/Hook patterns that legitimately take stack pointers
+        const callback_patterns = [_][]const u8{
+            "Hook",         "Callback",    "Handler",       "Notifier", "Observer",
+            "busy_handler", "commit_hook", "rollback_hook", "wal_hook", "pthread_create",
+            "pthread_join",
+        };
+        for (callback_patterns) |pattern| {
+            if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+                return true;
+            }
+        }
         return false;
     }
 

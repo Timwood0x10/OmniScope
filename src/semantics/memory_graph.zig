@@ -33,12 +33,17 @@ pub const SourceKind = enum(u8) {
 };
 
 /// Per-function alloc/free balance counter.
-/// Tracks how many heap allocations and frees a function performs.
+/// Tracks how many heap allocations and frees a function performs,
+/// and whether the function returns a pointer value.
 pub const FuncCounter = struct {
     /// Number of heap/resource allocations in this function.
     allocs: u32,
     /// Number of free calls in this function.
     frees: u32,
+    /// Whether this function returns a pointer value.
+    /// Functions that don't return pointers are likely "sink" functions
+    /// that consume their arguments rather than forwarding them.
+    returns_pointer: bool,
 
     /// Net allocation count: positive means more allocs than frees.
     pub fn net(self: FuncCounter) i64 {
@@ -49,6 +54,34 @@ pub const FuncCounter = struct {
     pub fn hasHeapOps(self: FuncCounter) bool {
         return self.allocs > 0 or self.frees > 0;
     }
+};
+
+/// Status of an ownership transfer between functions.
+pub const OwnershipTransferStatus = enum(u8) {
+    /// Transfer is valid and correct.
+    valid,
+    /// Pointer is not tracked in the memory graph.
+    not_tracked,
+    /// Attempting to transfer ownership that the function doesn't have.
+    transfer_without_ownership,
+    /// Attempting to transfer ownership after the pointer was freed.
+    transfer_after_free,
+    /// Potential double transfer (ownership already transferred).
+    potential_double_transfer,
+};
+
+/// Complete lifecycle information for a resource.
+pub const ResourceLifecycle = struct {
+    /// The instruction that allocated this resource.
+    allocation_site: u64,
+    /// How the resource was created (heap, stack, resource, etc.).
+    source_kind: SourceKind,
+    /// All pointer values that alias to this allocation.
+    aliases: []const u64,
+    /// Whether the resource has been freed.
+    is_freed: bool,
+    /// The instruction that freed this resource (if any).
+    free_site: ?u64,
 };
 
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
@@ -201,7 +234,7 @@ pub const MemoryGraph = struct {
     pub fn recordFuncAlloc(graph: *MemoryGraph, func_ptr: u64) void {
         const gop = graph.func_counters.getOrPut(func_ptr) catch return;
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .allocs = 0, .frees = 0 };
+            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
         }
         gop.value_ptr.allocs += 1;
     }
@@ -210,15 +243,26 @@ pub const MemoryGraph = struct {
     pub fn recordFuncFree(graph: *MemoryGraph, func_ptr: u64) void {
         const gop = graph.func_counters.getOrPut(func_ptr) catch return;
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .allocs = 0, .frees = 0 };
+            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
         }
         gop.value_ptr.frees += 1;
+    }
+
+    /// Records that a function returns a pointer value.
+    /// Used by borrow_escape analysis to identify sink functions
+    /// (functions that consume pointers without returning them).
+    pub fn recordFuncReturns(graph: *MemoryGraph, func_ptr: u64) void {
+        const gop = graph.func_counters.getOrPut(func_ptr) catch return;
+        if (!gop.found_existing) {
+            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
+        }
+        gop.value_ptr.returns_pointer = true;
     }
 
     /// Gets the alloc/free counter for a function.
     /// Returns zero-initialized counter if the function is not tracked.
     pub fn getFuncCounter(graph: *MemoryGraph, func_ptr: u64) FuncCounter {
-        return graph.func_counters.get(func_ptr) orelse .{ .allocs = 0, .frees = 0 };
+        return graph.func_counters.get(func_ptr) orelse .{ .allocs = 0, .frees = 0, .returns_pointer = false };
     }
 
     // =====================================================================
@@ -295,6 +339,148 @@ pub const MemoryGraph = struct {
         graph.func_counters.clearRetainingCapacity();
         graph.content_sources.clearRetainingCapacity();
         graph.next_id = 1;
+    }
+
+    // =====================================================================
+    // Advanced Detection Methods
+    // =====================================================================
+
+    /// Checks if a pointer is used after being freed via an alias.
+    ///
+    /// This detects the pattern:
+    ///   ptr1 = malloc();
+    ///   ptr2 = ptr1;      // alias
+    ///   free(ptr1);
+    ///   use(ptr2);        // BUG: use after free via alias
+    ///
+    /// Arguments:
+    ///   ptr_val - The pointer value being used
+    ///   use_inst - The instruction using the pointer
+    ///
+    /// Returns:
+    ///   The allocation node if use-after-free detected, null otherwise
+    pub fn isUseAfterFreeViaAlias(graph: *MemoryGraph, ptr_val: u64, use_inst: u64) ?*const AllocNode {
+        _ = use_inst; // Future: use for ordering check
+
+        // Find the allocation this pointer belongs to
+        const node = graph.nodes.get(ptr_val) orelse return null;
+
+        // Check if the allocation has been freed
+        if (!node.freed) return null;
+
+        // This pointer is being used after the allocation was freed
+        return node;
+    }
+
+    /// Finds all aliases of a pointer that form a use-after-free chain.
+    ///
+    /// Given a freed pointer, returns all other pointers that alias to it
+    /// and could be used after the free, creating a use-after-free bug.
+    ///
+    /// Arguments:
+    ///   ptr_val - The pointer that was freed
+    ///
+    /// Returns:
+    ///   Slice of alias pointer values (caller owns the memory)
+    pub fn findDangerousAliases(graph: *MemoryGraph, ptr_val: u64, allocator: std.mem.Allocator) ![]u64 {
+        const node = graph.nodes.get(ptr_val) orelse return &.{};
+        if (!node.freed) return &.{};
+
+        var aliases = std.ArrayList(u64).init(allocator);
+        errdefer aliases.deinit();
+
+        var iter = node.aliases.iterator();
+        while (iter.next()) |entry| {
+            try aliases.append(entry.key_ptr.*);
+        }
+
+        return aliases.items;
+    }
+
+    /// Validates ownership transfer between functions.
+    ///
+    /// Checks if a function correctly transfers ownership of a resource
+    /// to another function. This helps detect:
+    ///   - Transfer without ownership (caller doesn't own it)
+    ///   - Missing transfer (caller should transfer but doesn't)
+    ///   - Double transfer (ownership transferred twice)
+    ///
+    /// Arguments:
+    ///   from_func - Function transferring ownership
+    ///   to_func - Function receiving ownership
+    ///   ptr_val - The pointer being transferred
+    ///
+    /// Returns:
+    ///   OwnershipTransferStatus indicating if the transfer is valid
+    pub fn validateOwnershipTransfer(
+        graph: *MemoryGraph,
+        from_func: u64,
+        to_func: u64,
+        ptr_val: u64,
+    ) OwnershipTransferStatus {
+        const node = graph.nodes.get(ptr_val) orelse return .not_tracked;
+
+        // Check if from_func has ownership to transfer
+        const from_counter = graph.getFuncCounter(from_func);
+        if (from_counter.net() <= 0) {
+            // from_func doesn't have extra ownership to transfer
+            return .transfer_without_ownership;
+        }
+
+        // Check if the pointer is already freed
+        if (node.freed) {
+            return .transfer_after_free;
+        }
+
+        // Check if to_func already has ownership
+        const to_counter = graph.getFuncCounter(to_func);
+        if (to_counter.net() > 0) {
+            // to_func already owns something, might be double transfer
+            return .potential_double_transfer;
+        }
+
+        return .valid;
+    }
+
+    /// Analyzes the complete lifecycle of a resource.
+    ///
+    /// Traces a resource from allocation through all uses to deallocation,
+    /// providing a comprehensive view for debugging and leak detection.
+    ///
+    /// Arguments:
+    ///   alloc_inst - The allocation instruction to analyze
+    ///   allocator - Allocator for result arrays
+    ///
+    /// Returns:
+    ///   ResourceLifecycle with complete trace information
+    pub fn analyzeLifecycle(
+        graph: *MemoryGraph,
+        alloc_inst: u64,
+        allocator: std.mem.Allocator,
+    ) !ResourceLifecycle {
+        const node = graph.nodes.get(alloc_inst) orelse return .{
+            .allocation_site = alloc_inst,
+            .source_kind = .unknown,
+            .aliases = &.{},
+            .is_freed = false,
+            .free_site = null,
+        };
+
+        var aliases = std.ArrayList(u64).init(allocator);
+        errdefer aliases.deinit();
+
+        var iter = node.aliases.iterator();
+        while (iter.next()) |entry| {
+            try aliases.append(entry.key_ptr.*);
+        }
+
+        return ResourceLifecycle{
+            .allocation_site = node.alloc_inst,
+            .source_kind = node.source_kind,
+            .aliases = aliases.items,
+            .is_freed = node.freed,
+            .free_site = node.freed_by,
+        };
     }
 };
 

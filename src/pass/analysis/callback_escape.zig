@@ -700,6 +700,17 @@ pub const CallbackEscapePass = struct {
         }
     }
 
+    /// Checks malloc/free pairing with cross-function ownership awareness.
+    ///
+    /// This function analyzes the balance between allocations and frees within
+    /// a single function, but with awareness of common ownership transfer patterns:
+    ///
+    ///   1. Factory functions: Return ownership to caller (more allocs than frees)
+    ///   2. Destructor functions: Consume ownership from caller (more frees than allocs)
+    ///   3. Transfer functions: Receive and pass on ownership (balanced but via params)
+    ///
+    /// By recognizing these patterns, we can suppress false positives where the
+    /// mismatch is intentional and correct.
     fn checkMallocFreePairing(
         ctx: *PassContext,
         func_name: []const u8,
@@ -711,20 +722,54 @@ pub const CallbackEscapePass = struct {
         var malloc_count: u32 = 0;
         var free_count: u32 = 0;
 
+        // Count allocations
         for (alloc_sites.items) |site| {
             if (std.mem.indexOf(u8, site.func_name, "malloc") != null or
-                std.mem.indexOf(u8, site.func_name, "calloc") != null)
+                std.mem.indexOf(u8, site.func_name, "calloc") != null or
+                std.mem.indexOf(u8, site.func_name, "realloc") != null)
             {
                 malloc_count += 1;
             }
         }
 
+        // Count frees
         for (free_sites.items) |site| {
             if (std.mem.indexOf(u8, site.func_name, "free") != null) {
                 free_count += 1;
             }
         }
 
+        // Pattern 1: Factory/Constructor functions
+        // These intentionally have more allocs than frees because they transfer
+        // ownership to the caller via return value or output parameter.
+        if (isFactoryFunction(func_name)) {
+            if (malloc_count > free_count) {
+                // This is expected for factory functions
+                diag.debug("[SUPPRESSED] Factory function {s}: {} allocs > {} frees (ownership transferred to caller)", .{ func_name, malloc_count, free_count });
+                return;
+            }
+        }
+
+        // Pattern 2: Destructor/Cleanup functions
+        // These intentionally have more frees than allocs because they consume
+        // ownership from the caller via parameters.
+        if (isDestructorFunction(func_name)) {
+            if (free_count > malloc_count) {
+                // This is expected for destructor functions
+                diag.debug("[SUPPRESSED] Destructor function {s}: {} frees > {} allocs (ownership consumed from caller)", .{ func_name, free_count, malloc_count });
+                return;
+            }
+        }
+
+        // Pattern 3: Transfer functions
+        // These may have unbalanced counts but are correct because they receive
+        // ownership via parameters and pass it on via return values.
+        if (isTransferFunction(func_name)) {
+            diag.debug("[SUPPRESSED] Transfer function {s}: {} allocs, {} frees (ownership flows through)", .{ func_name, malloc_count, free_count });
+            return;
+        }
+
+        // Report actual issues only if no pattern matches
         if (malloc_count > free_count) {
             try reportMallocLeak(ctx, func_name, malloc_count, free_count, diag);
             stats.malloc_leaks += @as(u32, @intCast(malloc_count - free_count));
@@ -734,6 +779,48 @@ pub const CallbackEscapePass = struct {
             try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
             stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
         }
+    }
+
+    /// Checks if a function is a factory/constructor that transfers ownership to caller.
+    fn isFactoryFunction(func_name: []const u8) bool {
+        const factory_patterns = [_][]const u8{
+            "Alloc", "Create", "New", "Init", "Open", "Dup",
+            "Malloc", "Calloc", "Realloc",
+        };
+        for (factory_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Checks if a function is a destructor that consumes ownership from caller.
+    fn isDestructorFunction(func_name: []const u8) bool {
+        const destructor_patterns = [_][]const u8{
+            "Free", "Destroy", "Delete", "Close", "Release", "Cleanup",
+            "Finish", "Finalize", "Dispose",
+        };
+        for (destructor_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Checks if a function is a transfer function that passes ownership through.
+    fn isTransferFunction(func_name: []const u8) bool {
+        // Functions that receive ownership and pass it on
+        const transfer_patterns = [_][]const u8{
+            "Clone", "Copy", "Move", "Transfer", "Take",
+        };
+        for (transfer_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 };
 

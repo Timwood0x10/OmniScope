@@ -169,7 +169,7 @@ pub const MemorySafetyPass = struct {
                 // Rust's panic handling invokes destructors in cleanup paths,
                 // which can trigger apparent double-free patterns that are
                 // actually safe (drop glue checks for already-dropped state).
-                if (isRustPanicOrCleanupFunction(caller_func)) {
+                if (isRustPanicOrCleanupStr(free_func_name)) {
                     diag.debug("[SUPPRESSED] Double free in Rust panic/cleanup: {s}", .{free_func_name});
                     return false;
                 }
@@ -273,7 +273,11 @@ pub const MemorySafetyPass = struct {
         const name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(name_ptr) == 0) return false;
         const func_name = std.mem.span(name_ptr);
+        return isRustPanicOrCleanupStr(func_name);
+    }
 
+    /// String version for direct name checking
+    fn isRustPanicOrCleanupStr(func_name: []const u8) bool {
         // Rust panic infrastructure
         if (std.mem.indexOf(u8, func_name, "panic") != null) return true;
         // Rust drop glue (compiler-generated destructors)

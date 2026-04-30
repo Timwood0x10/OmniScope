@@ -119,13 +119,13 @@ pub const PassContext = struct {
         return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
     }
 
-    /// v0.2.0: P-DEGRADE-3 — Increment degraded function counter
+    /// P-DEGRADE-3 — Increment degraded function counter
     /// Call this when a function analysis is skipped due to an error
     pub fn recordDegradedFunction(self: *PassContext) void {
         _ = self.degraded_functions.fetchAdd(1, .seq_cst);
     }
 
-    /// v0.2.0: P-DEGRADE-3 — Get degraded function count
+    /// P-DEGRADE-3 — Get degraded function count
     pub fn getDegradedFunctionCount(self: *const PassContext) u32 {
         return self.degraded_functions.load(.seq_cst);
     }

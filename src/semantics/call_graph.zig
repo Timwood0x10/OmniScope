@@ -262,18 +262,73 @@ pub const PropagationResult = struct {
 
 /// Propagates MemoryGraph through a call edge.
 /// This creates alias relationships between caller arguments and callee parameters.
+///
+/// This is the KEY function for cross-function ownership tracking.
+/// When a pointer is passed from caller to callee, we track that the callee's
+/// parameter is an ALIAS of the caller's pointer, enabling cross-function
+/// double-free detection and ownership verification.
+///
+/// Arguments:
+///   graph - The call graph containing the edge
+///   edge_id - The ID of the call edge to propagate through
+///   memory_graph - The memory graph to update with alias relationships
+///   track_alias_fn - Callback to record alias relationships
+///
+/// Returns:
+///   PropagationResult with success status and number of aliases created
 pub fn propagateMemoryGraphThroughCall(
     graph: *CallGraph,
     edge_id: u64,
-    _: anytype,
+    memory_graph: anytype,
     comptime track_alias_fn: fn (anytype, u64, u64) CallGraphError!void,
 ) PropagationResult {
-    _ = graph;
-    _ = edge_id;
-    _ = track_alias_fn;
+    const edge = graph.getEdge(edge_id) orelse return PropagationResult{
+        .success = false,
+        .aliases_created = 0,
+        .error_message = "Edge not found",
+    };
+
+    var aliases_created: u32 = 0;
+
+    // Process each argument mapping at this call site
+    for (edge.argument_mappings) |mapping| {
+        switch (mapping.direction) {
+            .caller_to_callee => {
+                // Pointer flows from caller to callee
+                // Create alias: callee's param is an alias of caller's arg
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
+                aliases_created += 1;
+            },
+            .callee_to_caller => {
+                // Pointer flows from callee to caller (return value or output param)
+                // This indicates ownership transfer from callee to caller
+                // The caller becomes responsible for the resource
+                if (mapping.is_output_param) {
+                    // Output parameter: callee writes to caller's pointer
+                    // This is a common pattern for factory functions
+                    track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg) catch continue;
+                    aliases_created += 1;
+                }
+            },
+            .bidirectional => {
+                // Pointer may be modified and returned
+                // Track both directions
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
+                track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg) catch continue;
+                aliases_created += 2;
+            },
+            .borrowed_only => {
+                // Pointer is borrowed, not transferred
+                // No ownership change, but still track for use-after-free detection
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
+                aliases_created += 1;
+            },
+        }
+    }
+
     return PropagationResult{
         .success = true,
-        .aliases_created = 0,
+        .aliases_created = aliases_created,
         .error_message = null,
     };
 }
@@ -325,48 +380,147 @@ pub fn analyzeArgumentDirections(
     return mappings.items;
 }
 
-/// Classifies argument direction by callee name patterns only (no LLVM types).
+/// Classifies argument direction by callee name patterns and common C API conventions.
+///
+/// This function uses heuristics based on function naming patterns to determine
+/// how pointer arguments flow across function boundaries. This is essential for
+/// tracking ownership transfer in C code where ownership is not explicit in types.
+///
+/// Common patterns recognized:
+///   - Alloc/Create/Init → gives ownership (callee_to_caller)
+///   - Free/Destroy/Close → takes ownership (caller_to_callee)
+///   - Get/Read/Fetch → output parameter (callee_to_caller)
+///   - Set/Write/Send → input parameter (caller_to_callee)
+///
+/// Arguments:
+///   callee_name - Name of the function being called
+///   param_index - Index of the parameter being classified
+///
+/// Returns:
+///   TransferDirection indicating how the pointer flows
 fn classifyArgDirectionByName(callee_name: []const u8, param_index: u32) TransferDirection {
-    // Functions with "get"/"read"/"recv" prefix: pointer args are often output
-    const read_prefixes = [_][]const u8{
+    // Pattern 1: Factory/Constructor functions - give ownership
+    // These functions allocate resources and transfer ownership to caller
+    const factory_patterns = [_][]const u8{
+        "Alloc", "Create", "New", "Init", "Open", "Dup",
+    };
+    for (factory_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            // First param is often the output pointer (T**)
+            if (param_index == 0) return .callee_to_caller;
+        }
+    }
+
+    // Pattern 2: Destructor/Cleanup functions - take ownership
+    // These functions consume resources and invalidate the pointer
+    const cleanup_patterns = [_][]const u8{
+        "Free", "Destroy", "Delete", "Close", "Release", "Cleanup",
+    };
+    for (cleanup_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return .caller_to_callee;
+        }
+    }
+
+    // Pattern 3: Getter functions - output parameters
+    // These functions write results to caller-provided buffers
+    const getter_prefixes = [_][]const u8{
         "get_", "read_", "recv_", "fetch_", "query_", "load_",
     };
-    for (read_prefixes) |prefix| {
+    for (getter_prefixes) |prefix| {
         if (std.mem.startsWith(u8, callee_name, prefix)) {
+            // Later parameters are often output buffers
             if (param_index > 0) return .callee_to_caller;
         }
     }
 
-    // Functions with "set_"/"write_"/"send_": pointer args are typically input
-    const write_prefixes = [_][]const u8{
+    // Pattern 4: Setter functions - input parameters
+    // These functions read from caller-provided data
+    const setter_prefixes = [_][]const u8{
         "set_", "write_", "send_", "put_", "store_", "copy_",
     };
-    for (write_prefixes) |prefix| {
+    for (setter_prefixes) |prefix| {
         if (std.mem.startsWith(u8, callee_name, prefix)) {
             return .caller_to_callee;
         }
     }
 
+    // Pattern 5: Thread/Process creation - special case
+    // pthread_create, sqlite3ThreadCreate, etc.
+    if (std.mem.indexOf(u8, callee_name, "ThreadCreate") != null or
+        std.mem.indexOf(u8, callee_name, "pthread_create") != null)
+    {
+        // First param is output (thread handle), rest are input
+        if (param_index == 0) return .callee_to_caller;
+        return .caller_to_callee;
+    }
+
+    // Pattern 6: Mutex operations - special case
+    // pthreadMutexAlloc returns mutex, pthreadMutexFree consumes it
+    if (std.mem.indexOf(u8, callee_name, "MutexAlloc") != null) {
+        return .callee_to_caller;
+    }
+    if (std.mem.indexOf(u8, callee_name, "MutexFree") != null) {
+        return .caller_to_callee;
+    }
+
+    // Default: assume caller passes data to callee
     return .caller_to_callee;
 }
 
 /// Checks if a parameter at the given index is an output parameter.
+///
+/// Output parameters are pointers through which the callee writes results
+/// to the caller. Common patterns include:
+///   - T** parameters (double pointers) for returning allocated objects
+///   - void** parameters for returning generic pointers
+///   - Last parameters in getter functions
+///
+/// This is critical for recognizing factory patterns where ownership is
+/// transferred via output parameters rather than return values.
+///
+/// Arguments:
+///   callee_name - Name of the function being called
+///   param_index - Index of the parameter to check
+///
+/// Returns:
+///   true if this parameter is an output parameter
 fn isOutputParam(callee_name: []const u8, param_index: u32) bool {
-    const output_suffix_patterns = [_][]const u8{
-        "sqlite3_prepare",   "sqlite3_open",
-        "getsockopt",        "getaddrinfo",
-        "getnameinfo",       "pthread_create",
-        "pthread_join",      "clock_gettime",
-        "gettimeofday",      "regcomp",
+    // Pattern 1: Known output parameter functions
+    const output_param_functions = [_][]const u8{
+        "sqlite3_prepare", "sqlite3_open", "sqlite3ThreadCreate",
+        "pthread_create", "pthread_join",
+        "getsockopt", "getaddrinfo", "getnameinfo",
+        "clock_gettime", "gettimeofday", "regcomp",
         "curl_easy_getinfo",
     };
-    for (output_suffix_patterns) |prefix| {
-        if (std.mem.startsWith(u8, callee_name, prefix)) {
-            return true;
+    for (output_param_functions) |pattern| {
+        if (std.mem.startsWith(u8, callee_name, pattern)) {
+            // First or second parameter is typically the output
+            return param_index <= 1;
         }
     }
 
-    _ = param_index;
+    // Pattern 2: Factory functions with output parameters
+    // Common pattern: int create_XXX(XXX** ppResult, ...)
+    if (std.mem.indexOf(u8, callee_name, "Create") != null or
+        std.mem.indexOf(u8, callee_name, "Alloc") != null or
+        std.mem.indexOf(u8, callee_name, "Init") != null)
+    {
+        // First parameter is often the output (T**)
+        if (param_index == 0) return true;
+    }
+
+    // Pattern 3: Getter functions with output buffers
+    // Common pattern: int get_XXX(..., void* pBuffer, size_t* pSize)
+    if (std.mem.startsWith(u8, callee_name, "get_") or
+        std.mem.startsWith(u8, callee_name, "read_") or
+        std.mem.startsWith(u8, callee_name, "fetch_"))
+    {
+        // Later parameters are often output buffers
+        if (param_index >= 1) return true;
+    }
+
     return false;
 }
 

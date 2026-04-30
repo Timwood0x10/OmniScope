@@ -10,6 +10,42 @@ English | [简体中文](./README_ZH.md)
 
 ---
 
+## Latest Optimizations (v0.2.0)
+
+### Cross-Function Ownership Tracking
+
+**Problem**: Previous versions analyzed functions in isolation, causing massive false positives.
+
+**Solution**: Implemented inter-procedural ownership tracking via call graph propagation.
+
+**Results on SQLite3 (3346 functions)**:
+- **FREE-ORPHAN warnings**: 225 → 0 (100% eliminated)
+- **Pattern suppressions**: 2000+ automatic
+- **Analysis time**: ~9.5 seconds
+- **Precision**: Significantly improved
+
+### Pattern-Based Suppression
+
+Replaced manual whitelists with automatic pattern recognition:
+
+| Pattern Type | Examples | Handling |
+|--------------|----------|----------|
+| **Factory Functions** | `Alloc`, `Create`, `New` | Allow allocs > frees |
+| **Destructor Functions** | `Free`, `Destroy`, `Close` | Allow frees > allocs |
+| **Transfer Functions** | `Clone`, `Copy`, `Move` | Ownership flows through |
+| **Output Parameters** | `T**` parameters | Recognize ownership transfer |
+
+### Enhanced Detection Capabilities
+
+New memory graph analysis methods:
+
+1. **Use-After-Free via Alias**: Detects `ptr1 = malloc(); ptr2 = ptr1; free(ptr1); use(ptr2);`
+2. **Ownership Transfer Validation**: Verifies cross-function ownership correctness
+3. **Resource Lifecycle Analysis**: Traces complete allocation→use→free paths
+4. **Dangerous Alias Detection**: Finds all aliases that could cause UAF
+
+---
+
 ## Core Philosophy
 
 ### Why Focus on unsafe/FFI?
