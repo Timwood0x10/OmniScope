@@ -527,6 +527,7 @@ pub const PtrLifetimePass = struct {
             // v0.2.0: P2-3 — Single-function error isolation
             analyzeFunction(ctx, func, diag, &stats, &mem_graph) catch |err| {
                 diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
                 continue;
             };
         }

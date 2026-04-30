@@ -194,7 +194,14 @@ pub const ABIMismatchPass = struct {
         var stats = ABIStats{};
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            try analyzeFunction(ctx, func, diag, &stats);
+            // Function-level error isolation
+            analyzeFunction(ctx, func, diag, &stats) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("ABIMismatch: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
         }
 
         diag.info("ABIMismatch: analyzed {} funcs, {} extern calls, {} violations found", .{ stats.total_functions_analyzed, stats.extern_calls_checked, stats.packed_struct_violations + stats.alignment_mismatches +

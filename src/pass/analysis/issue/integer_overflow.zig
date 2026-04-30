@@ -29,7 +29,14 @@ pub const IntegerOverflowPass = struct {
 
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            issue_count += try analyzeFunction(ctx, func, diag);
+            // Function-level error isolation
+            const count = analyzeFunction(ctx, func, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("IntegerOverflow: skipped function due to error: {} ({s})", .{ err, func_name });
+                continue;
+            };
+            issue_count += count;
         }
 
         diag.info("IntegerOverflow: Analyzed functions, found {} potential overflows", .{issue_count});

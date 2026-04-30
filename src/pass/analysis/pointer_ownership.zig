@@ -241,7 +241,8 @@ pub const PointerOwnershipPass = struct {
             }
 
             if (!isRustFFIRelevantFunction(func)) continue;
-            try analyzeFunctionForOwnership(
+            // Function-level error isolation
+            analyzeFunctionForOwnership(
                 ctx.allocator,
                 func,
                 &alloc_map,
@@ -253,7 +254,11 @@ pub const PointerOwnershipPass = struct {
                 &alloc_pool,
                 &free_pool,
                 &null_check_recognizer,
-            );
+            ) catch |err| {
+                diag.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
         }
 
         {

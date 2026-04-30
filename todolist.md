@@ -184,6 +184,7 @@
 | 2026-04-30 | ptr\_lifetime.zig defer free without needs_free check | added `if (needs_free)` guard |
 | 2026-04-30 | free\_validation.zig 176 Invalid free FP (wasmtime) | `isRustDeallocFunction()` — skip `from_param` + `__rustc__rustc_dealloc` |
 | 2026-04-30 | memory\_safety.zig 172 Double free FP (wasmtime) | `isRustPanicOrCleanupFunction()` — suppress double free in panic/cleanup/drop paths |
+| 2026-04-30 | isRustPanicOrCleanupFunction 匹配过宽 | 加 `_ZN`/`_R` Rust mangled 前缀守卫，避免抑制 C 函数 |
 
 ***
 

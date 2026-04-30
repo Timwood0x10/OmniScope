@@ -334,7 +334,12 @@ pub const CallbackEscapePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
-            try analyzeFunction(ctx, func, diag, &stats);
+            // Function-level error isolation
+            analyzeFunction(ctx, func, diag, &stats) catch |err| {
+                diag.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
         }
 
         diag.info("CallbackEscape: analyzed {} funcs, {} cgo boundaries, {} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +

@@ -79,6 +79,7 @@ pub const Pipeline = struct {
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
             .reported_keys = std.AutoHashMap(u64, void).init(self.allocator),
             .zone_stats = .{},
+            .degraded_functions = std.atomic.Value(u32).init(0),
         };
         defer ctx.deinit();
 

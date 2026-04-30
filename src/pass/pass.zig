@@ -56,6 +56,10 @@ pub const PassContext = struct {
     /// Zone statistics for function classification
     zone_stats: zone_classifier.ZoneStats,
 
+    /// Degradation statistics
+    /// Tracks the number of functions that were skipped due to errors
+    degraded_functions: std.atomic.Value(u32),
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -80,6 +84,7 @@ pub const PassContext = struct {
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
             .reported_keys = std.AutoHashMap(u64, void).init(allocator),
             .zone_stats = zone_classifier.ZoneStats{},
+            .degraded_functions = std.atomic.Value(u32).init(0),
         };
     }
 
@@ -112,6 +117,17 @@ pub const PassContext = struct {
     /// Get a unique vulnerability ID (shared across all detection passes)
     pub fn getNextVulnId(self: *PassContext) u32 {
         return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
+    }
+
+    /// v0.2.0: P-DEGRADE-3 — Increment degraded function counter
+    /// Call this when a function analysis is skipped due to an error
+    pub fn recordDegradedFunction(self: *PassContext) void {
+        _ = self.degraded_functions.fetchAdd(1, .seq_cst);
+    }
+
+    /// v0.2.0: P-DEGRADE-3 — Get degraded function count
+    pub fn getDegradedFunctionCount(self: *const PassContext) u32 {
+        return self.degraded_functions.load(.seq_cst);
     }
 
     /// Release all resources held by this context

@@ -221,8 +221,14 @@ pub const FFIBoundaryPass = struct {
             // Skip declarations (only analyze definitions)
             if (c.LLVMIsDeclaration(func) != 0) continue;
 
-            // Analyze function for FFI calls
-            const result = try analyzeFunction(ctx, func, diag);
+            // Function-level error isolation
+            const result = analyzeFunction(ctx, func, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("FFIBoundary: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
             stats.total_boundaries += result.count;
             stats.cross_lang += result.cross_lang;
             stats.libc += result.libc;

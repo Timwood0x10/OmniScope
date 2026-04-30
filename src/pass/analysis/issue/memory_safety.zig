@@ -65,7 +65,14 @@ pub const MemorySafetyPass = struct {
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             func_count += 1;
-            issue_count += try scanAndAnalyzeFunction(ctx, func, &relations, &freed_pointers, diag);
+            //  Function-level error isolation
+            const count = scanAndAnalyzeFunction(ctx, func, &relations, &freed_pointers, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("MemorySafety: skipped function due to error: {} ({s})", .{ err, func_name });
+                continue;
+            };
+            issue_count += count;
         }
 
         diag.info("MemorySafety: Single-pass scan complete — {} functions, {} issues detected", .{

@@ -520,8 +520,14 @@ pub const FFIBodyCheckPass = struct {
             const func = c.LLVMGetNamedFunction(module, null_terminated_name.ptr);
             if (func == null) continue;
 
-            // Check if this function contains dangerous calls
-            const found_issues = try analyzeFunction(ctx, func, &boundary, diag);
+            // Function-level error isolation
+            const found_issues = analyzeFunction(ctx, func, &boundary, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("FFIBodyCheck: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
             issue_count += found_issues;
         }
 
