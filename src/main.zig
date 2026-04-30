@@ -301,7 +301,8 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
         defer allocator.free(out_dir);
 
         std.fs.cwd().makePath(out_dir) catch |err| {
-            logInfo("Warning: Failed to create output directory '{s}': {s}\n", .{ out_dir, @errorName(err) });
+            log.err("Failed to create {s}: {s}", .{ out_dir, @errorName(err) });
+            return;
         };
         const mem_json = try std.fmt.allocPrint(allocator, "{s}/memory.json", .{out_dir});
         defer allocator.free(mem_json);
