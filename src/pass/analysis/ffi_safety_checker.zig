@@ -261,6 +261,9 @@ fn checkPythonCApiSafety(
 /// Detects patterns where a potentially dangerous pointer (from malloc, mmap, etc.)
 /// is stored to a global variable or passed to a callback function, which could
 /// lead to use-after-free if the callback outlives the current scope.
+///
+/// Note: This function was originally part of P2-1 boundary analysis,
+/// extracted during P2-2 refactoring for better separation of concerns.
 pub fn checkReturnValueEscape(
     ctx: *PassContext,
     diag: *DiagnosticWriter,
@@ -269,7 +272,7 @@ pub fn checkReturnValueEscape(
     called_name: []const u8,
     report_fn: *const fn (*PassContext, IssueKind, []const u8, []const u8, anytype, f32) anyerror!void,
 ) !void {
-    const num_uses: usize = 0;
+    var num_uses: usize = 0;
     var use = c.LLVMGetFirstUse(inst);
     while (@intFromPtr(use) != 0) : (use = c.LLVMGetNextUse(use)) {
         num_uses += 1;
@@ -297,6 +300,64 @@ pub fn checkReturnValueEscape(
 
         report_fn(ctx, .borrow_escape, msg, caller_name, .medium, 0.60) catch {};
     }
+}
+
+/// Check for static buffer misuse (P2-1).
+///
+/// Static buffer functions (ctime, strerror, getpwnam, inet_ntoa, etc.) return
+/// pointers to **internal static storage**, not heap-allocated memory.
+///
+/// Critical properties:
+///   - Must NOT be freed (doing so is UB / segfault)
+///   - NOT a memory leak (no allocation occurred)
+///   - Thread-unsafe: next call overwrites previous result
+///   - Data race if called from multiple threads simultaneously
+///
+/// This is classified as `static_buffer_misuse` (NOT `memory_leak` or `ffi_unsafe_call`)
+/// because the risk profile is distinct:
+///   - No ownership transfer → not a leak
+///   - Not an FFI safety issue per se → it's a C API contract violation
+///   - Real bugs: data corruption (overwrite), crash (free on static), TOCTOU
+///
+/// Detection heuristic: function name matches known static-buffer patterns.
+pub fn isStaticBufferFunction(func_name: []const u8) bool {
+    const static_buf_patterns = [_][]const u8{
+        "ctime",       "ctime_r",      "asctime",    "asctime_r",
+        "strerror",    "strerror_r",   "strsignal",  "inet_ntoa",
+        "inet_ntop_r", "getgrgid",     "getgrnam",   "getpwuid",
+        "getpwnam",    "getpwent",    "grent",      "setbuf",
+        "setvbuf",     "tmpnam",      "tempnam",    "gcvt",
+        "ecvt",        "fcvt",         "crypt",
+    };
+    for (static_buf_patterns) |pat| {
+        // Exact match: function name equals the pattern exactly.
+        if (std.mem.eql(u8, func_name, pat)) return true;
+        // Suffix match: e.g., "__ctime", "___ctime" (libc internal wrappers).
+        // But NOT "my_strerror_handler" — require the match to start near the end.
+        if (func_name.len > pat.len) {
+            // Allow up to 3 leading underscores (libc internal naming).
+            const prefix = func_name[0 .. func_name.len - pat.len];
+            var all_underscore = true;
+            for (prefix) |ch| {
+                if (ch != '_') {
+                    all_underscore = false;
+                    break;
+                }
+            }
+            if (all_underscore and prefix.len <= 3) return true;
+        }
+    }
+    return false;
+}
+
+/// Map static buffer risk to issue kind.
+///
+/// P2-1: Static buffer functions return pointers to static storage.
+/// These must NOT be freed (doing so is UB), so they are NOT memory leaks.
+/// The real risks are: thread-unsafe + data overwrite on next call.
+/// Classified as static_buffer_misuse to distinguish from general FFI unsafe calls.
+pub fn staticBufferIssueKind() IssueKind {
+    return .static_buffer_misuse;
 }
 
 // ═══════════════════════════════════════════════════════════════

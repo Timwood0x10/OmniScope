@@ -54,7 +54,8 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         real-world real-world-ir real-world-run \
         baseline-check \
         install-deps release benchmark benchmark-full \
-        regression-test bench-perf stability-test e2e-test test-all-phase7
+        regression-test bench-perf stability-test e2e-test test-all-phase7 \
+        viz visualize
 
 # ========================================
 # Default Target - Run All Tests
@@ -488,7 +489,7 @@ clean:
 	rm -rf $(REAL_WORLD_IR)
 	rm -f $(EXAMPLES_DIR)/zig_cffi/main.ll $(EXAMPLES_DIR)/zig_cffi/main.o
 	rm -rf zig-out .zig-cache
-	rm -rf corpus/*/output
+	rm -rf corpus/*/output output
 	@echo "Clean complete."
 
 # ========================================
@@ -643,6 +644,22 @@ test-all-phase7: test regression-test bench-perf stability-test
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 
 # ========================================
+# Visualization Commands
+# ========================================
+
+VIZ_INPUT ?= corpus/real_world/other/sqlite3.ll
+
+viz visualize: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              MEMORY GRAPH VISUALIZATION                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@mkdir -p output
+	$(ZIG) build run -- --visualize $(VIZ_INPUT)
+	@echo ""
+	@echo "Output: output/$(shell basename $(VIZ_INPUT) .ll)/memory.html"
+	@open output/$(shell basename $(VIZ_INPUT) .ll)/memory.html 2>/dev/null || true
+
+# ========================================
 # Help
 # ========================================
 
@@ -711,6 +728,11 @@ help:
 	@echo ""
 	@echo "Regression Guard:"
 	@echo "  make baseline-check  Run baseline regression test (SQLite + curl + libuv)"
+	@echo ""
+	@echo "Visualization Commands:"
+	@echo "  make viz             Generate & open memory graph HTML (default: sqlite3.ll)"
+	@echo "  make visualize       Alias for 'make viz'"
+	@echo "  make viz VIZ_INPUT=foo.ll  Analyze specific .ll file"
 	@echo ""
 	@echo "Report Commands (JSON/SARIF):"
 	@echo "  make rust-json           Generate Rust JSON report"

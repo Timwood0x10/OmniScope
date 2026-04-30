@@ -1757,10 +1757,7 @@ pub const FFIBoundaryPass = struct {
             .signal_handler => .ffi_unsafe_call,
             .thread_mgmt => .ffi_unsafe_call,
             .process_mgmt => .ffi_unsafe_call,
-            // P2-1: Static buffer functions (ctime, strerror, etc.) return pointers to static storage.
-            // These must NOT be freed (doing so is UB), so they are NOT memory leaks.
-            // The real risks are: thread-unsafe + data overwrite on next call.
-            // Classified as static_buffer_misuse to distinguish from general FFI unsafe calls.
+            // Delegates to staticBufferIssueKind() — see P2-1 in ffi_safety_checker.zig
             .static_buffer => .static_buffer_misuse,
         };
     }

@@ -260,6 +260,9 @@ pub const DiagnosticWriter = struct {
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
         if (log.current_log_level == .quiet) return;
         if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
+        // WARN messages only show in verbose mode or higher (not normal mode)
+        // This reduces noise: normal mode shows only issues, verbose shows analysis details
+        if (std.mem.eql(u8, severity, "WARN") and log.current_log_level == .normal) return;
 
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {

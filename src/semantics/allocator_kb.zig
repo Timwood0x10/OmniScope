@@ -267,8 +267,9 @@ pub const AllocatorKB = struct {
                     .is_heuristic = true,
                     .confidence = 60,
                 };
-                // PERSIST: Store discovered allocator in hash table for future lookups.
-                // This avoids redundant heuristic matching on subsequent calls.
+                // PERSIST: Cache discovered allocator in hash table to avoid
+                // redundant heuristic matching on subsequent calls.
+                // OOM: skip caching (non-fatal); info is still returned correctly.
                 kb.allocators.put(name, info) catch return info;
                 return info;
             }
