@@ -243,7 +243,7 @@ test "PassManager - run passes" {
     var manager = PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);

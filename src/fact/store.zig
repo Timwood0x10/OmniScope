@@ -116,13 +116,13 @@ pub const FactStore = struct {
 };
 
 test "FactStore - init and deinit" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
     try std.testing.expectEqual(@as(usize, 0), store.count());
 }
 
 test "FactStore - insert" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -136,7 +136,7 @@ test "FactStore - insert" {
 }
 
 test "FactStore - queryByKind" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -152,7 +152,7 @@ test "FactStore - queryByKind" {
 }
 
 test "FactStore - get out of bounds" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     const fact = store.get(0);
@@ -160,7 +160,7 @@ test "FactStore - get out of bounds" {
 }
 
 test "FactStore - large scale insert and retrieve" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     const count = 10000;
@@ -188,7 +188,7 @@ test "FactStore - large scale insert and retrieve" {
 }
 
 test "FactStore - queryByKind with mixed kinds" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Insert facts of all kinds
@@ -219,7 +219,7 @@ test "FactStore - queryByKind with mixed kinds" {
 }
 
 test "FactStore - append-only property" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Insert facts
@@ -243,7 +243,7 @@ test "FactStore - append-only property" {
 }
 
 test "FactStore - boundary values" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Test with maximum u32 values
@@ -262,7 +262,7 @@ test "FactStore - boundary values" {
 }
 
 test "FactStore - zero values" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Insert fact with all zero values
@@ -277,7 +277,7 @@ test "FactStore - zero values" {
 }
 
 test "FactStore - mixed operations" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Insert facts of different kinds
@@ -301,7 +301,7 @@ test "FactStore - mixed operations" {
 }
 
 test "FactStore - all fact kinds" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Test all fact kinds are valid

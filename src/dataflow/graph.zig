@@ -611,7 +611,7 @@ pub const DataFlowGraph = struct {
 // Unit tests
 
 test "DataFlowGraph - init and deinit" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -624,7 +624,7 @@ test "DataFlowGraph - init and deinit" {
 }
 
 test "DataFlowGraph - addNode" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -642,7 +642,7 @@ test "DataFlowGraph - addNode" {
 }
 
 test "DataFlowGraph - addNode duplicate" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -660,7 +660,7 @@ test "DataFlowGraph - addNode duplicate" {
 }
 
 test "DataFlowGraph - addEdge" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -684,7 +684,7 @@ test "DataFlowGraph - addEdge" {
 }
 
 test "DataFlowGraph - addEdge invalid node" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -704,7 +704,7 @@ test "DataFlowGraph - addEdge invalid node" {
 }
 
 test "DataFlowGraph - markTainted" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -728,7 +728,7 @@ test "DataFlowGraph - markTainted" {
 }
 
 test "DataFlowGraph - addIssue" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -751,7 +751,7 @@ test "DataFlowGraph - addIssue" {
 }
 
 test "DataFlowGraph - getStats" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
@@ -799,7 +799,7 @@ test "DataFlowGraph - getStats" {
 }
 
 test "DataFlowGraph - clear" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);

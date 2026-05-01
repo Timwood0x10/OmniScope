@@ -123,7 +123,7 @@ pub const QueryEngine = struct {
 };
 
 test "QueryEngine - queryByKind" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -138,7 +138,7 @@ test "QueryEngine - queryByKind" {
 }
 
 test "QueryEngine - queryBySubject" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -153,7 +153,7 @@ test "QueryEngine - queryBySubject" {
 }
 
 test "QueryEngine - queryByObject" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -168,7 +168,7 @@ test "QueryEngine - queryByObject" {
 }
 
 test "QueryEngine - queryByContext" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -183,7 +183,7 @@ test "QueryEngine - queryByContext" {
 }
 
 test "QueryEngine - complex query scenario" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Build a small fact graph:
@@ -222,7 +222,7 @@ test "QueryEngine - complex query scenario" {
 }
 
 test "QueryEngine - empty query results" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     try store.insert(.cfg_edge, 1, 2, 0);
@@ -248,7 +248,7 @@ test "QueryEngine - empty query results" {
 }
 
 test "QueryEngine - query on large dataset" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     const count = 1000;
@@ -279,7 +279,7 @@ test "QueryEngine - query on large dataset" {
 }
 
 test "QueryEngine - query with zero values" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     // Insert facts with zero values
@@ -295,7 +295,7 @@ test "QueryEngine - query with zero values" {
 }
 
 test "QueryEngine - query empty store" {
-    var store = FactStore.init(std.testing.allocator);
+    var store = try FactStore.init(std.testing.allocator);
     defer store.deinit();
 
     var engine = QueryEngine.init(&store);

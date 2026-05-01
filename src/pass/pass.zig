@@ -473,14 +473,14 @@ test "Pass - comptime validation" {
 }
 
 test "PassContext - init and deinit" {
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    const ctx = PassContext.init(
+    var ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -493,7 +493,7 @@ test "PassContext - init and deinit" {
 }
 
 test "PassContext - getNextId" {
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
@@ -519,7 +519,7 @@ test "PassContext - getNextId" {
 }
 
 test "PassContext - setModule and hasModule" {
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
@@ -544,14 +544,14 @@ test "PassContext - setModule and hasModule" {
 }
 
 test "PassContext - access to components" {
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
     var query_engine = QueryEngine.init(&fact_store);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    const ctx = PassContext.init(
+    var ctx = PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,

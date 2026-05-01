@@ -380,41 +380,35 @@ test "Issue - setFFIBoundary" {
 
 test "Location - init" {
     const location = Location.init("test_func");
-    try std.testing.expectEqualStrings("test_func", location.function);
+    try std.testing.expectEqualStrings("test_func", location.func);
     try std.testing.expect(location.file == null);
-    try std.testing.expect(location.line == null);
+    try std.testing.expect(location.line == 0);
 }
 
-test "Location - initFull" {
-    const location = Location.initFull("test_func", "test.zig", 42, 10);
-    try std.testing.expectEqualStrings("test_func", location.function);
+test "Location - initWithFile" {
+    const location = Location.initWithFile("test.zig", "test_func", 42, 10);
+    try std.testing.expectEqualStrings("test_func", location.func);
     try std.testing.expectEqualStrings("test.zig", location.file.?);
-    try std.testing.expectEqual(@as(u32, 42), location.line.?);
-    try std.testing.expectEqual(@as(u32, 10), location.column.?);
+    try std.testing.expectEqual(@as(u32, 42), location.line);
+    try std.testing.expectEqual(@as(u32, 10), location.column);
 }
 
-test "Location - setFile" {
-    var location = Location.init("test_func");
-    try std.testing.expect(location.file == null);
-
-    location.setFile("test.zig");
-    try std.testing.expectEqualStrings("test.zig", location.file.?);
-}
-
-test "Location - format" {
-    var allocator = std.testing.allocator;
-
-    // Test minimal location
+test "Location - hasFilePath" {
     const location1 = Location.init("test_func");
-    const formatted1 = try location1.format(allocator);
-    defer allocator.free(formatted1);
-    try std.testing.expectEqualStrings("test_func", formatted1);
+    try std.testing.expect(!location1.hasFilePath());
 
-    // Test full location
-    const location2 = Location.initFull("test_func", "test.zig", 42, 10);
-    const formatted2 = try location2.format(allocator);
-    defer allocator.free(formatted2);
-    try std.testing.expectEqualStrings("test.zig:42:10", formatted2);
+    const location2 = Location.initWithFile("test.zig", "test_func", 0, 0);
+    try std.testing.expect(location2.hasFilePath());
+}
+
+test "Location - displayName" {
+    // Test minimal location (func only)
+    const location1 = Location.init("test_func");
+    try std.testing.expectEqualStrings("test_func", location1.displayName());
+
+    // Test full location (file available)
+    const location2 = Location.initWithFile("test.zig", "test_func", 42, 10);
+    try std.testing.expectEqualStrings("test.zig", location2.displayName());
 }
 
 test "FFIBoundary - init" {
@@ -528,6 +522,7 @@ test "Issue - hasTrace" {
         .ffi_boundary = null,
         .trace = &[_]TraceEntry{},
         .owned = false,
+        .function_owned = false,
     };
     try std.testing.expect(!issue2.hasTrace());
 }
