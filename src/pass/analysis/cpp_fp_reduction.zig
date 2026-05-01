@@ -1238,12 +1238,12 @@ pub fn detectViolations(
                         diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
                         diag.warn("  Type: {s}", .{@tagName(violation.kind)});
                         diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.function,
+                            alloc_loc.func,
                             @tagName(alloc.lang),
                             alloc.inst_id,
                         });
                         diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.function,
+                            free_loc.func,
                             @tagName(free_site.lang),
                             free_site.inst_id,
                         });
@@ -1251,12 +1251,12 @@ pub fn detectViolations(
                     } else {
                         diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
                         diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.function,
+                            alloc_loc.func,
                             @tagName(alloc.lang),
                             alloc.inst_id,
                         });
                         diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.function,
+                            free_loc.func,
                             @tagName(free_site.lang),
                             free_site.inst_id,
                         });

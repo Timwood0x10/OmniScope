@@ -305,10 +305,10 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
             graph_issues[i] = .{
                 .kind = issueToGraphKind(issue.kind),
                 .message = issue.message,
-                .function = issue.location.function,
+                .function = issue.location.func,
                 .severity = @tagName(issue.severity),
                 .confidence = issue.confidence,
-                .line = issue.location.line orelse 0,
+                .line = issue.location.line,
             };
         }
 
@@ -373,9 +373,8 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         const id_str = try std.fmt.allocPrint(allocator, "OMI-{d:0>3}", .{idx + 1});
         defer allocator.free(id_str);
 
-        const file_str = issue.location.file orelse null;
-        const line_num = issue.location.line orelse null;
-        const col_num = issue.location.column orelse null;
+        const line_num = if (issue.location.line > 0) issue.location.line else null;
+        const col_num = if (issue.location.column > 0) issue.location.column else null;
         const cwe_id = issue.kind.toCweId();
 
         try writer.writeAll("  {\"id\":\"");
@@ -402,10 +401,10 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         try writer.writeAll("\",\"location\":{");
 
         try writer.writeAll("\"function\":\"");
-        try writeJsonEscaped(writer, issue.location.function);
+        try writeJsonEscaped(writer, issue.location.func);
         try writer.writeAll("\"");
 
-        if (file_str) |f| {
+        if (issue.location.file) |f| {
             try writer.writeAll(",\"file\":\"");
             try writeJsonEscaped(writer, f);
             try writer.writeAll("\"");

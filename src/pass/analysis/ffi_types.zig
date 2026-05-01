@@ -219,7 +219,7 @@ pub const python_capi_patterns = struct {
     pub const error_check = [_][]const u8{
         "PyArg_ParseTuple",     "PyArg_ParseKeywords",   "Py_BuildValue",
         "PyObject_Call",        "PyDict_GetItem",        "PyList_GetItem",
-        "PyTuplet_Item",      "PyLong_AsLong",         "PyFloat_AsDouble",
+        "PyTuplet_Item",        "PyLong_AsLong",         "PyFloat_AsDouble",
         "PyCapsule_GetPointer", "PyImport_ImportModule",
     };
 };

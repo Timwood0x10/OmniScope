@@ -100,9 +100,9 @@ pub const SarifOutput = struct {
         try w.writeAll("],\"results\":[");
         for (issues, 0..) |issue, idx| {
             if (idx > 0) try w.writeAll(",");
-            const file_str = issue.location.file orelse "unknown";
-            const line_num = issue.location.line orelse 1;
-            const col_num = issue.location.column orelse 1;
+            const file_str = if (issue.location.file) |f| f else "unknown";
+            const line_num = if (issue.location.line > 0) issue.location.line else 1;
+            const col_num = if (issue.location.column > 0) issue.location.column else 1;
 
             try w.writeAll("{\"ruleId\":");
             try self.writeJsonString(w, @tagName(issue.kind));
@@ -133,9 +133,9 @@ pub const SarifOutput = struct {
                         if (ei > 0) try w.writeAll(",");
                         try w.writeAll("{\"location\":{\"physicalLocation\":{\"artifactLocation\":{\"uri\":");
                         if (entry.location) |loc| {
-                            try self.writeJsonString(w, loc.file orelse "unknown");
+                            try self.writeJsonString(w, if (loc.file) |f| f else "unknown");
                             try w.writeAll("},\"region\":{\"startLine\":");
-                            try writeUint64(w, loc.line orelse 1);
+                            try writeUint64(w, if (loc.line > 0) loc.line else 1);
                         } else {
                             try self.writeJsonString(w, "unknown");
                             try w.writeAll("},\"region\":{\"startLine\":1");

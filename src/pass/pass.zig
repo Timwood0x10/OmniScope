@@ -213,7 +213,7 @@ pub const PassContext = struct {
         // P2-1: Risk weighting integration.
         // Classify the function origin and apply risk level adjustment.
         // Suppressed issues are silently dropped — no noise in output.
-        const func_name = issue.location.function;
+        const func_name = issue.location.func;
         const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
         const risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
         if (risk == .suppressed) {
@@ -249,13 +249,17 @@ pub const PassContext = struct {
     /// Uses FNV-1a hash for fast lookup.
     fn dedupKey(self: *PassContext, issue: *const Issue) u64 {
         _ = self;
-        const func_name = @field(issue, "location").function;
+        const func_name = @field(issue, "location").func;
         const kind_tag = @tagName(@field(issue, "kind"));
         var hasher = std.hash.Fnv1a_64.init();
         hasher.update(func_name);
         hasher.update(kind_tag);
-        if (@field(issue, "location").file) |file| hasher.update(file);
-        if (@field(issue, "location").line) |line| hasher.update(&std.mem.toBytes(line));
+        const loc = @field(issue, "location");
+        if (loc.hasValidPosition()) {
+            hasher.update(loc.func);
+            hasher.update(&std.mem.toBytes(loc.line));
+            hasher.update(&std.mem.toBytes(loc.column));
+        }
         return hasher.final();
     }
 

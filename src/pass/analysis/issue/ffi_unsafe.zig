@@ -64,7 +64,7 @@ pub const FFIUnsafePass = struct {
             if (isLikelySafeContext(boundary, vuln_type)) {
                 diag.debug("FFIUnsafe-SKIP: {s} in caller={s} — safe context", .{
                     cleanFunctionName(boundary.function_name),
-                    boundary.location.function,
+                    boundary.location.func,
                 });
                 return 0;
             }
@@ -212,10 +212,10 @@ pub const FFIUnsafePass = struct {
         if (vuln_type != .format_string) return false;
 
         const func_name = boundary.function_name;
-        const caller_name = boundary.location.function;
+        const caller_name = boundary.location.func;
 
         // Primary: check file path from debug info
-        const context_str = boundary.location.file orelse caller_name;
+        const context_str = if (boundary.location.file) |f| f else caller_name;
 
         const safe_patterns = [_][]const u8{
             "sqlite3.c", "sqlite3", "sqlite",
@@ -264,7 +264,7 @@ pub const FFIUnsafePass = struct {
     fn adjustConfidenceForContext(boundary: *const FFIBoundary, vuln_type: IssueKind, base_confidence: f32) f32 {
         var confidence = base_confidence;
 
-        const context_str = boundary.location.file orelse boundary.location.function;
+        const context_str = if (boundary.location.file) |f| f else boundary.function_name;
 
         // Reduce confidence for format-string issues in source files that are
         // known to be well-maintained C libraries (not user-facing input handlers)

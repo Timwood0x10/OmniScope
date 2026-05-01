@@ -313,7 +313,7 @@ fn checkUnknownFFIPointerUsage(args: []c.LLVMValueRef, func_name: []const u8, ct
             if (info.origin == .from_malloc) {
                 // malloc'd pointer passed to unknown FFI without validation
                 const trace = try ctx.allocator.alloc([]const u8, 2);
-                trace[0] = try std.fmt.allocPrint(ctx.allocator, "Pointer from malloc in function {s}", .{info.location.function});
+                trace[0] = try std.fmt.allocPrint(ctx.allocator, "Pointer from malloc in function {s}", .{info.location.func});
                 trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to unknown FFI function {s}", .{func_name});
 
                 return VulnerabilityInfo{
@@ -365,7 +365,7 @@ fn checkFormatStringVulnerability(
         if (info.origin == .from_param or info.origin == .from_malloc) {
             // Format string from parameter - potential vulnerability
             const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Format string argument in function {s}", .{info.location.function});
+            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Format string argument in function {s}", .{info.location.func});
             trace[1] = try std.fmt.allocPrint(ctx.allocator, "Used as format string in {s} call", .{func_name});
 
             return VulnerabilityInfo{
@@ -415,7 +415,7 @@ fn checkCommandInjectionVulnerability(
         if (info.origin == .from_param) {
             // Command from parameter - potential injection
             const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.function});
+            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.func});
             trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without validation", .{func_name});
 
             return VulnerabilityInfo{
