@@ -35,6 +35,7 @@ const FuzzyMatcher = @import("../../../semantics/memory_graph.zig").FuzzyMatcher
 const MemoryRelations = @import("../../../semantics/memory_relations.zig").MemoryRelations;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
+const ffi_utils = @import("../ffi_utils.zig");
 
 /// Hash a string slice to u64 for zero-copy operations
 fn hashString(s: []const u8) u64 {
@@ -317,24 +318,11 @@ pub const MemorySafetyPass = struct {
     /// Only applies to Rust-mangled functions to avoid suppressing C code
     /// that happens to contain "cleanup" or "panic" in its name.
     fn isRustPanicOrCleanupStr(func_name: []const u8) bool {
-        // Only apply to Rust-mangled functions
+        // Guard: only apply to Rust-mangled functions
         const is_rust = std.mem.indexOf(u8, func_name, "_ZN") != null or
             std.mem.indexOf(u8, func_name, "_R") != null;
         if (!is_rust) return false;
-
-        // Rust panic infrastructure
-        if (std.mem.indexOf(u8, func_name, "panic") != null) return true;
-        // Rust drop glue (compiler-generated destructors)
-        if (std.mem.indexOf(u8, func_name, "drop_in_place") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "drop_and_deallocate") != null) return true;
-        // Rust unwinding / cleanup
-        if (std.mem.indexOf(u8, func_name, "_Unwind_") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "cleanup") != null) return true;
-        // Rust dealloc intrinsics (compiler-inserted)
-        if (std.mem.indexOf(u8, func_name, "__rustc__rustc_dealloc") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
-
-        return false;
+        return ffi_utils.isRustDropGlue(func_name);
     }
 };
 

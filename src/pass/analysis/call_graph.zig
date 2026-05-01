@@ -11,6 +11,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const ptr_types = @import("ptr_lifetime_types.zig");
 
 /// Classification of function origin in the call graph.
 /// Used to determine trust boundaries and FFI transitions.
@@ -23,10 +24,8 @@ pub const FunctionKind = enum {
     external_unknown,
 };
 
-/// List of known libc functions that are considered trusted.
-/// These are NOT treated as FFI boundaries even if external.
-/// Note: Dangerous functions like system, exec, popen are NOT included here
-/// because they should be treated as potential FFI boundaries for security analysis.
+/// Trusted libc functions (source: config/languages/c.json).
+/// Dangerous functions (system, exec, popen) are NOT included — see DANGEROUS_FUNCTIONS.
 pub const LIBC_FUNCTIONS = &[_][]const u8{
     "malloc",
     "free",
@@ -79,10 +78,10 @@ pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
 
 pub fn isLibC(func_name: []const u8) bool {
     for (LIBC_FUNCTIONS) |libc_name| {
-        if (std.mem.eql(u8, func_name, libc_name)) {
-            return true;
-        }
+        if (std.mem.eql(u8, func_name, libc_name)) return true;
     }
+    if (ptr_types.isHeapAllocFunction(func_name)) return true;
+    if (ptr_types.isKnownDeallocFunction(func_name)) return true;
     return false;
 }
 

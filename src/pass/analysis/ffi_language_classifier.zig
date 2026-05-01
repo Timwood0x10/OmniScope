@@ -128,22 +128,36 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         }
     }
 
+    // Rust v0 mangling prefix (RFC 2603) — _R<hash>...
+    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') return .rust;
+    // Rust ownership transfer / drop glue patterns
+    const rust_ownership = [_][]const u8{ "into_raw", "from_raw", "drop_in_place" };
+    for (rust_ownership) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return .rust;
+    }
+
+    // C++ Itanium mangling (_Z prefix)
+    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z') return .cpp;
+
     // Check for Zig patterns (be more specific to avoid false positives)
     for (FFIPatterns.zig_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            // Check for additional Zig-specific patterns
             if (std.mem.indexOf(u8, func_name, "zig_") != null or
                 std.mem.indexOf(u8, func_name, "@") != null)
             {
                 return .zig;
             }
-            // If only matched "extern" or "c_" prefix without Zig indicators,
-            // it's likely a C function with extern declaration
             if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
                 continue;
             }
             return .zig;
         }
+    }
+    // Zig allocator patterns
+    if (std.mem.indexOf(u8, func_name, "Allocator.") != null or
+        std.mem.indexOf(u8, func_name, "allocImpl") != null)
+    {
+        return .zig;
     }
 
     // Check for libc functions — these are C by definition

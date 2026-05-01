@@ -23,26 +23,18 @@ const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
+const ffi_utils = @import("../ffi_utils.zig");
+const ptr_types = @import("../ptr_lifetime_types.zig");
 
-/// Memory deallocation functions
-const FREE_FUNCTIONS = &[_][]const u8{
-    "free",
-    "dealloc",
-    "deallocate",
-    "operator delete",
-    "operator delete[]",
+/// Memory deallocation functions — basic memory deallocators for free validation.
+/// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
+/// covers library-specific cleanup (sqlite3_free, curl_easy_cleanup, etc.).
+pub const FREE_FUNCTIONS = &[_][]const u8{
+    "free", "dealloc", "deallocate", "operator delete", "operator delete[]",
 };
 
-/// Memory allocation functions
-const ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",
-    "calloc",
-    "realloc",
-    "aligned_alloc",
-    "valloc",
-    "pvalloc",
-    "memalign",
-};
+/// Memory allocation functions — delegated to ptr_types (single source of truth).
+pub const ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
 
 /// Free validation detection pass
 ///
@@ -303,13 +295,16 @@ pub const FreeValidationPass = struct {
     }
 
     /// Check if function is a Rust deallocation function.
-    /// Rust's ownership model transfers allocation responsibility across functions,
-    /// so dealloc on function parameters is normal and should not be flagged.
+    /// Only matches actual Rust dealloc intrinsics (NOT general drop glue).
+    /// Drop glue includes destructors that don't necessarily deallocate memory.
     fn isRustDeallocFunction(func_name: []const u8) bool {
-        // __rustc__rustc_dealloc is the compiler-inserted deallocation intrinsic
-        if (std.mem.indexOf(u8, func_name, "__rustc__rustc_dealloc") != null) return true;
-        // __rust_dealloc is the older Rust deallocation intrinsic
-        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
+        const rust_dealloc_patterns = [_][]const u8{
+            "__rustc__rustc_dealloc",
+            "__rust_dealloc",
+        };
+        for (rust_dealloc_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
         return false;
     }
 

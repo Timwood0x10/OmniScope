@@ -11,6 +11,8 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
 const lifetime = @import("../../lifetime/root.zig");
+const ffi_utils = @import("ffi_utils.zig");
+const ptr_types = @import("ptr_lifetime_types.zig");
 
 /// Convert internal Language enum to lifetime.LanguageHint.
 pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
@@ -42,13 +44,8 @@ pub fn isAllocationInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
         return sem.kind == .allocator or sem.kind == .cpp_allocator;
     }
 
-    // Fallback: check for known allocation patterns.
-    return std.mem.eql(u8, callee_name, "malloc") or
-        std.mem.eql(u8, callee_name, "calloc") or
-        std.mem.eql(u8, callee_name, "realloc") or
-        std.mem.eql(u8, callee_name, "aligned_alloc") or
-        std.mem.indexOf(u8, callee_name, "into_raw") != null or
-        std.mem.indexOf(u8, callee_name, "operator new") != null;
+    // Fallback: delegate to centralized allocator detection (ptr_types + AllocatorKB).
+    return ptr_types.isHeapAllocFunction(callee_name);
 }
 
 /// Classify the type of allocation.
@@ -91,47 +88,16 @@ pub fn identifyLanguageFromCallee(inst: c.LLVMValueRef, opcode: c_uint) Language
 
     const callee_name = std.mem.span(callee_name_ptr);
 
-    // Rust uses _R prefix for v0 mangling (RFC 2603).
-    if (callee_name.len > 2 and
-        callee_name[0] == '_' and
-        callee_name[1] == 'R')
-    {
-        return .rust;
-    }
-
-    // Check for Rust-specific patterns.
-    if (std.mem.indexOf(u8, callee_name, "into_raw") != null or
-        std.mem.indexOf(u8, callee_name, "from_raw") != null or
-        std.mem.indexOf(u8, callee_name, "drop_in_place") != null)
-    {
-        return .rust;
-    }
-
-    // Check for C standard library functions.
-    if (std.mem.eql(u8, callee_name, "malloc") or
-        std.mem.eql(u8, callee_name, "free") or
-        std.mem.eql(u8, callee_name, "calloc") or
-        std.mem.eql(u8, callee_name, "realloc"))
-    {
-        return .c;
-    }
-
-    // C++ mangled names start with _Z.
-    if (callee_name.len > 2 and
-        callee_name[0] == '_' and
-        callee_name[1] == 'Z')
-    {
-        return .cpp;
-    }
-
-    // Check for Zig allocator patterns.
-    if (std.mem.indexOf(u8, callee_name, "Allocator.") != null or
-        std.mem.indexOf(u8, callee_name, "allocImpl") != null)
-    {
-        return .zig;
-    }
-
-    return .unknown;
+    // Delegate to ffi_utils (single source of truth for language detection).
+    // Convert from Language enum (ffi_utils) to our local Language enum.
+    const lang = ffi_utils.identifyCalleeLanguage(callee_name);
+    return switch (lang) {
+        .c => .c,
+        .rust => .rust,
+        .cpp => .cpp,
+        .zig => .zig,
+        else => .unknown,
+    };
 }
 
 /// Check if an instruction is a free using SemanticRegistry.

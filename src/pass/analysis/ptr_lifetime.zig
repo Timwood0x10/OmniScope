@@ -98,7 +98,7 @@ pub const FreeSiteList = struct {
             self.capacity = new_cap;
         }
         self.items[self.items.len] = record;
-        self.items = self.items[0..self.items.len + 1];
+        self.items = self.items[0 .. self.items.len + 1];
     }
 
     fn deinit(self: *FreeSiteList) void {

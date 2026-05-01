@@ -208,13 +208,22 @@ pub fn isStlInternalFunction(func_name: []const u8) bool {
 /// UAF patterns here are normal destructor chaining, NOT bugs.
 pub fn isRustDropGlue(func_name: []const u8) bool {
     const drop_patterns = [_][]const u8{
-        "drop_in_place", // core::ptr::drop_in_place
-        "_ZN4core3ptr13drop_in_place", // mangled form
+        // Drop glue / compiler-generated destructors
+        "drop_in_place",
+        "_ZN4core3ptr13drop_in_place",
         "<T as core::ops::drop::Drop>::drop",
-        "::drop", // generic Drop impl
+        "::drop",
+        "real_drop_in_place",
+        "drop_and_deallocate",
+        // Dealloc intrinsics (compiler-inserted)
         "__rust_dealloc",
         "__rust_alloc",
-        "real_drop_in_place",
+        "__rustc__rustc_dealloc",
+        // Panic infrastructure
+        "panic",
+        // Unwinding / cleanup paths
+        "_Unwind_",
+        "cleanup",
     };
     for (drop_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
