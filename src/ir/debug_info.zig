@@ -155,7 +155,8 @@ pub const DIFile = struct {
     pub fn getDirectory(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const dir_ptr = c.LLVMDIFileGetDirectory(self.raw, &len);
-        if (@intFromPtr(dir_ptr) == 0 or len == 0) return "";
+        const max_path_len: c_uint = 4096;
+        if (@intFromPtr(dir_ptr) == 0 or len == 0 or len > max_path_len) return "";
         return dir_ptr[0..len];
     }
 
@@ -163,7 +164,8 @@ pub const DIFile = struct {
     pub fn getFilename(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const name_ptr = c.LLVMDIFileGetFilename(self.raw, &len);
-        if (@intFromPtr(name_ptr) == 0 or len == 0) return "";
+        const max_path_len: c_uint = 4096;
+        if (@intFromPtr(name_ptr) == 0 or len == 0 or len > max_path_len) return "";
         return name_ptr[0..len];
     }
 

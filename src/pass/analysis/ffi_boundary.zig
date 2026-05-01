@@ -1472,10 +1472,26 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Default: non-Rust, non-Zig functions with C ABI naming are C.
-        // This includes extern "C" declarations, libc wrappers, etc.
-        // Rust mangled names start with _ZN or _R; Zig uses zig_/c_ prefixes.
-        // Everything else in a typical LLVM IR module follows C naming conventions.
+        // Check for Go functions (main.* or runtime.* patterns)
+        if (std.mem.startsWith(u8, func_name, "main.") or
+            std.mem.startsWith(u8, func_name, "runtime.") or
+            std.mem.startsWith(u8, func_name, "syscall."))
+        {
+            return .go;
+        }
+
+        // Check for Objective-C functions
+        if (std.mem.startsWith(u8, func_name, "_OBJC_") or
+            std.mem.startsWith(u8, func_name, "objc_"))
+        {
+            return .unknown;
+        }
+
+        // For external declarations with C ABI naming (no Rust/Zig/Go/ObjC
+        // patterns), classify as C. This covers extern "C" functions,
+        // libc wrappers, and typical C library functions.
+        // Internal (non-external) functions default to unknown to avoid
+        // misclassifying language-specific internal helpers.
         return .c;
     }
 
