@@ -32,6 +32,7 @@ const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 
 const NoiseReduction = @import("noise_reduction.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const hooks = @import("../../registry/hooks.zig");
 
 /// Error type for ownership analysis operations
 pub const FFIAnalysisError = error{
@@ -185,6 +186,11 @@ pub const FFIAnalysisPass = struct {
         ctx.data_flow_graph.setFFIMatcher(&matcher);
         try ctx.data_flow_graph.createFFIBoundariesFromMatcher();
 
+        // Phase R5.2: Initialize Hook system for cross-language ownership tracking.
+        // Hooks detect Rust into_raw/from_raw pairing, Python refcount balance, Go escapes.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
+
         // Step 3: Collect allocation and free sites
         try self.collectAllocationSites(mod, diag);
         try self.collectFreeSites(mod, diag);
@@ -196,6 +202,22 @@ pub const FFIAnalysisPass = struct {
         // v0.1.6: Enhanced detection
         try self.detectErrorPathLeaks(diag);
         try self.detectCrossPathDoubleFree(diag);
+
+        // Phase R5.2: Check hook state for module-level ownership issues.
+        // Rust unpaired transfers indicate potential cross-language leaks.
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            diag.warn("OwnershipViolation: {} unpaired Rust ownership transfer(s) detected — potential cross-language leak", .{hooks.rustUnpairedTransferCount()});
+        }
+        if (hooks.pythonUnbalancedDecrefCount() > 0) {
+            const count = hooks.pythonUnbalancedDecrefCount();
+            try self.violations.append(.{
+                .violation_type = .use_after_free,
+                .severity = .high,
+                .function_name = "python_ffi_boundary",
+                .description = std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch "Python refcount imbalance",
+                .confidence = 0.80,
+            });
+        }
 
         // Step 5: Store results
         try self.storeResults(ctx);

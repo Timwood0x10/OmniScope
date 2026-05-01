@@ -39,6 +39,8 @@ const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
+const hooks = @import("../../registry/hooks.zig");
 const NoiseReduction = @import("noise_reduction.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
@@ -183,6 +185,10 @@ pub const PtrLifetimePass = struct {
         };
         defer mem_graph.deinit();
 
+        // Phase R5.1: Initialize Hook system for Rust ownership tracking.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
+
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) {
                 const func_name_raw = c.LLVMGetValueName(func);
@@ -215,12 +221,52 @@ pub const PtrLifetimePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
+            // Phase R5.1: Reset hook state per function scope
+            hooks.resetHookStatesForFunction();
+
             // P2-3 — Single-function error isolation
             analyzeFunction(ctx, func, diag, &stats, &mem_graph) catch |err| {
                 diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
                 continue;
             };
+
+            // Phase R5.1: Check hook state for end-of-function issues.
+            if (hooks.rustUnpairedTransferCount() > 0) {
+                const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
+                defer ctx.allocator.free(msg);
+                const trace = try ctx.allocator.alloc(TraceEntry, 1);
+                errdefer ctx.allocator.free(trace);
+                trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak");
+                const issue = Issue.initWithTrace(
+                    .cross_language_leak,
+                    msg,
+                    Location.init(func_name),
+                    .medium,
+                    0.65,
+                    trace,
+                );
+                try ctx.addIssue(&issue);
+            }
+            {
+                const count = hooks.pythonUnbalancedDecrefCount();
+                if (count > 0) {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) in {s}", .{ count, func_name });
+                    defer ctx.allocator.free(msg);
+                    const trace = try ctx.allocator.alloc(TraceEntry, 1);
+                    errdefer ctx.allocator.free(trace);
+                    trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free");
+                    const issue = Issue.initWithTrace(
+                        .use_after_free,
+                        msg,
+                        Location.init(func_name),
+                        .high,
+                        0.80,
+                        trace,
+                    );
+                    try ctx.addIssue(&issue);
+                }
+            }
         }
 
         diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{

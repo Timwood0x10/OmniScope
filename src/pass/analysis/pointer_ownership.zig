@@ -44,6 +44,7 @@ const cpp_fp = @import("cpp_fp_reduction.zig");
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
+const hooks = @import("../../registry/hooks.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -219,6 +220,10 @@ pub const PointerOwnershipPass = struct {
         };
         defer analysis_timer.stop() catch {};
 
+        // Phase R5.3: Initialize Hook system for ownership transfer tracking.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
+
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
@@ -252,6 +257,10 @@ pub const PointerOwnershipPass = struct {
             }
 
             if (!isRustFFIRelevantFunction(func)) continue;
+
+            // Phase R5.3: Reset hook state per function scope
+            hooks.resetHookStatesForFunction();
+
             // Function-level error isolation
             analyzeFunctionForOwnership(
                 ctx.allocator,
@@ -270,6 +279,16 @@ pub const PointerOwnershipPass = struct {
                 ctx.recordDegradedFunction();
                 continue;
             };
+
+            // Phase R5.3: Check hook state for end-of-function ownership issues.
+            if (hooks.rustUnpairedTransferCount() > 0) {
+                diag.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{func_name});
+                stats.cross_ffi_transfers += 1;
+            }
+            if (hooks.pythonUnbalancedDecrefCount() > 0) {
+                diag.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), func_name });
+                stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
+            }
         }
 
         {
