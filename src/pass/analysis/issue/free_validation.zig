@@ -21,6 +21,8 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
+const noise_filter = @import("../../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Memory deallocation functions
 const FREE_FUNCTIONS = &[_][]const u8{
@@ -77,6 +79,14 @@ pub const FreeValidationPass = struct {
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
         var issue_count: usize = 0;
 
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_ptr) == 0) return 0;
+        const func_name = std.mem.span(func_name_ptr);
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        if (!classification.origin.shouldReportByDefault()) return 0;
+
         // Track pointer origins within this function
         var pointer_origins = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(ctx.allocator);
         defer {
@@ -91,11 +101,6 @@ pub const FreeValidationPass = struct {
         // First pass: track function parameters as from_param
         {
             var param = c.LLVMGetFirstParam(func);
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
 
             var param_index: u32 = 0;
             while (@intFromPtr(param) != 0) : (param = c.LLVMGetNextParam(param)) {

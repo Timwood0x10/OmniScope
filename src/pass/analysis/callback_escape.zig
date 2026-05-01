@@ -37,6 +37,8 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const NoiseReduction = @import("noise_reduction.zig");
+const noise_filter = @import("../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 
 /// Types of callback escaping violations detected.
@@ -379,6 +381,11 @@ pub const CallbackEscapePass = struct {
             "unknown";
 
         stats.total_functions_analyzed += 1;
+
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        if (!classification.origin.shouldReportByDefault()) return;
 
         // Use LLVM metadata for more precise cgo boundary detection
         const is_cgo_boundary = isCgoBoundaryFromLLVM(func) or isCgoBoundary(func_name);

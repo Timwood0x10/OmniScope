@@ -20,6 +20,8 @@ const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 
 const ffi_semantics = @import("../ffi_semantics.zig");
+const noise_filter = @import("../../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Value origin tracking information
 const ValueInfo = struct {
@@ -554,6 +556,14 @@ pub const FFIBodyCheckPass = struct {
         boundary: *const FFIBoundary,
         diag: *DiagnosticWriter,
     ) !usize {
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_ptr) != 0) {
+            const func_name = std.mem.span(func_name_ptr);
+            const func_loc = DebugInfoUtils.getFunctionLocation(func);
+            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            if (!classification.origin.shouldReportByDefault()) return 0;
+        }
         // Initialize analysis context
         var analysis_ctx = AnalysisContext{
             .allocator = ctx.allocator,

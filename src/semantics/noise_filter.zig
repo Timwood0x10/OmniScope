@@ -696,7 +696,7 @@ fn isLLVMIntrinsic(name: []const u8) bool {
 
 /// Check if name looks like a Rust-mangled function (_ZN...).
 fn isRustMangledName(name: []const u8) bool {
-    return std.mem.startsWith(u8, name, "_ZN");
+    return std.mem.startsWith(u8, name, "_ZN") or std.mem.startsWith(u8, name, "_R");
 }
 
 /// Check if name looks like a C++-mangled function (_Z...).

@@ -40,6 +40,8 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const NoiseReduction = @import("noise_reduction.zig");
+const noise_filter = @import("../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
 // v0.1.8: New semantic modules
 const memory_graph = @import("../../semantics/memory_graph.zig");
@@ -486,6 +488,15 @@ pub const PtrLifetimePass = struct {
                 if (classification.origin == .compiler_generated) continue;
                 if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
+                // INTEGRATION: Three-layer noise filter (name + path + behavior)
+                // Layer 2 uses debug info from the function's source location
+                const func_loc = DebugInfoUtils.getFunctionLocation(func);
+                const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+                if (!full_classification.origin.shouldReportByDefault()) {
+                    diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, full_classification.origin.toString(), full_classification.reason });
+                    continue;
+                }
+
                 if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
                 try analyzeFunction(ctx, func, diag, &stats, null);
@@ -520,6 +531,14 @@ pub const PtrLifetimePass = struct {
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+
+            // INTEGRATION: Three-layer noise filter (name + path + behavior)
+            const func_loc = DebugInfoUtils.getFunctionLocation(func);
+            const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            if (!full_classification.origin.shouldReportByDefault()) {
+                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, full_classification.origin.toString(), full_classification.reason });
+                continue;
+            }
 
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
@@ -970,8 +989,7 @@ pub const PtrLifetimePass = struct {
                     // Fallback: check common allocator patterns
                     if (std.mem.indexOf(u8, callee_name, "malloc") != null or
                         std.mem.indexOf(u8, callee_name, "calloc") != null or
-                        std.mem.indexOf(u8, callee_name, "realloc") != null or
-                        std.mem.indexOf(u8, callee_name, "alloc") != null)
+                        std.mem.indexOf(u8, callee_name, "realloc") != null)
                     {
                         return .heap_alloc;
                     }
@@ -1436,6 +1454,8 @@ pub const PtrLifetimePass = struct {
     /// Checks if a function returning an alloca pointer should be suppressed.
     /// Many C projects use alloca as temporary workspace in constructor/factory
     /// functions (e.g., sqlite3PExpr, sqlite3SelectNew). The alloca is just an
+    /// intermediate buffer — the actual return value points to heap memory that
+    /// was copied from the alloca. Reporting these creates massive noise.
     /// Check if a retval is an sret-style alloca (return value slot).
     /// LLVM generates "alloca ptr" as a local slot to hold the return value.
     /// The alloca is on the stack but only holds a pointer to heap memory.
@@ -1467,6 +1487,9 @@ pub const PtrLifetimePass = struct {
         return true;
     }
 
+    /// Checks if a function returning an alloca pointer should be suppressed.
+    /// Many C projects use alloca as temporary workspace in constructor/factory
+    /// functions (e.g., sqlite3PExpr, sqlite3SelectNew). The alloca is just an
     /// intermediate buffer — the actual return value points to heap memory that
     /// was copied from the alloca. Reporting these creates massive noise.
     fn isAllocaReturnSuppressed(func_name: []const u8, ptr_info: PtrInfo) bool {

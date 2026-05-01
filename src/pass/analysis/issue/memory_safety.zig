@@ -33,6 +33,8 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const FuzzyMatcher = @import("../../../semantics/memory_graph.zig").FuzzyMatcher;
 const MemoryRelations = @import("../../../semantics/memory_relations.zig").MemoryRelations;
+const noise_filter = @import("../../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Hash a string slice to u64 for zero-copy operations
 fn hashString(s: []const u8) u64 {
@@ -94,6 +96,11 @@ pub const MemorySafetyPass = struct {
 
         const func_name = std.mem.span(func_name_ptr);
         const func_hash = hashString(func_name);
+
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        if (!classification.origin.shouldReportByDefault()) return 0;
 
         _ = try relations.internString(func_name);
 
@@ -169,8 +176,27 @@ pub const MemorySafetyPass = struct {
                 // Rust's panic handling invokes destructors in cleanup paths,
                 // which can trigger apparent double-free patterns that are
                 // actually safe (drop glue checks for already-dropped state).
-                if (isRustPanicOrCleanupStr(free_func_name)) {
-                    diag.debug("[SUPPRESSED] Double free in Rust panic/cleanup: {s}", .{free_func_name});
+                const caller_name_ptr = c.LLVMGetValueName(caller_func);
+                if (@intFromPtr(caller_name_ptr) != 0) {
+                    const caller_name = std.mem.span(caller_name_ptr);
+                    if (isRustPanicOrCleanupStr(caller_name)) {
+                        diag.debug("[SUPPRESSED] Double free in Rust panic/cleanup: {s}", .{free_func_name});
+                        return false;
+                    }
+                }
+                // Also suppress if the free target is a compiler-generated
+                // function (e.g., drop_in_place, panic_in_cleanup).
+                // Also suppress Rust stdlib panic/cleanup functions —
+                // double-free involving panic_in_cleanup is always FP.
+                // Do NOT suppress libc alloc/free (malloc, free, etc.) —
+                // those are real deallocation calls.
+                const callee_classification = noise_filter.classifyFunctionFull(free_func_name, null, null, null);
+                if (callee_classification.origin == .compiler_generated) {
+                    diag.debug("[SUPPRESSED] Double free in compiler-generated function: {s} ({s})", .{ free_func_name, callee_classification.reason });
+                    return false;
+                }
+                if (callee_classification.origin == .stdlib and isRustPanicOrCleanupStr(free_func_name)) {
+                    diag.debug("[SUPPRESSED] Double free in Rust stdlib panic/cleanup: {s}", .{free_func_name});
                     return false;
                 }
                 try reportDoubleFree(ctx, caller_func, free_func_name, diag);
@@ -266,18 +292,15 @@ pub const MemorySafetyPass = struct {
         });
     }
 
-    /// Check if a function is a Rust panic or cleanup handler.
-    /// Rust's panic handling and drop glue invoke destructors in cleanup paths,
-    /// which can create apparent double-free patterns that are actually safe.
-    fn isRustPanicOrCleanupFunction(func: c.LLVMValueRef) bool {
-        const name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(name_ptr) == 0) return false;
-        const func_name = std.mem.span(name_ptr);
-        return isRustPanicOrCleanupStr(func_name);
-    }
-
-    /// String version for direct name checking
+    /// String version for direct name checking.
+    /// Only applies to Rust-mangled functions to avoid suppressing C code
+    /// that happens to contain "cleanup" or "panic" in its name.
     fn isRustPanicOrCleanupStr(func_name: []const u8) bool {
+        // Only apply to Rust-mangled functions
+        const is_rust = std.mem.indexOf(u8, func_name, "_ZN") != null or
+            std.mem.indexOf(u8, func_name, "_R") != null;
+        if (!is_rust) return false;
+
         // Rust panic infrastructure
         if (std.mem.indexOf(u8, func_name, "panic") != null) return true;
         // Rust drop glue (compiler-generated destructors)
