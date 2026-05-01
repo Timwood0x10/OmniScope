@@ -206,10 +206,44 @@ pub const SemanticRegistry = struct {
             jni.len + python_c_api.len + file_io.len + network_io.len +
             signal_handler.len + thread_mgmt.len + process_mgmt.len + dynamic_loading.len;
     }
+
+    // ========================================================================
+    // Hook System (Phase 3)
+    // ========================================================================
+
+    /// Registered analysis hooks (comptime-initialized for zero runtime cost).
+    var hooks: [MAX_HOOKS]?types.AnalysisHook = [_]?types.AnalysisHook{null} ** MAX_HOOKS;
+    var hook_count: usize = 0;
+
+    const MAX_HOOKS = 16;
+
+    /// Register an analysis hook. Returns error if hook table is full.
+    pub fn registerHook(hook: types.AnalysisHook) !void {
+        if (hook_count >= MAX_HOOKS) return error.HookTableFull;
+        hooks[hook_count] = hook;
+        hook_count += 1;
+    }
+
+    /// Run all registered hooks against the given context.
+    /// Stops at first hook that returns .issue_found or .suppressed.
+    pub fn runHooks(ctx: *types.HookContext) types.HookResult {
+        for (hooks[0..hook_count]) |opt_hook| {
+            if (opt_hook) |hook| {
+                const result = hook.run(ctx);
+                if (result != .none) return result;
+            }
+        }
+        return .none;
+    }
+
+    /// Get number of registered hooks.
+    pub fn hookCount() usize {
+        return hook_count;
+    }
 };
 
 test "SemanticRegistry - RiskKind enum" {
-    try std.testing.expectEqual(@as(usize, 19), @typeInfo(RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 20), @typeInfo(RiskKind).@"enum".fields.len);
 }
 
 test "SemanticRegistry - Severity enum" {
