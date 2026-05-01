@@ -100,7 +100,7 @@ pub const FreeSiteRecord = struct {
     /// The basic block ID where the free occurred
     bb_id: usize,
     /// The basic block ref (for predecessor check)
-    bb_ref: c.LLVMBasicBlockRef,
+    bb_ref: c.LLVMValueRef,
     /// The free instruction
     free_inst: c.LLVMValueRef,
 };

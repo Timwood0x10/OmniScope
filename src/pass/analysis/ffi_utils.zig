@@ -22,73 +22,15 @@ const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 // ============================================================================
 
 /// Identify the language of a function based on its characteristics.
-/// Delegates to ffi_language_classifier for implementation.
+/// Delegates to unified language_detector (single source of truth).
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
-    return @import("ffi_language_classifier.zig").identifyLanguage(func);
+    return @import("../../semantics/language_detector.zig").identifyLanguage(func);
 }
 
 /// Identify the language of a called function based on its name.
+/// Delegates to unified language_detector (single source of truth).
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
-    // LLVM intrinsics (llvm.* prefix) are compiler-generated,
-    // not any language's FFI function. Skip them to prevent
-    // misclassification (e.g., llvm.threadlocal.address.p0 as Zig).
-    if (std.mem.startsWith(u8, func_name, "llvm.")) {
-        return .unknown;
-    }
-
-    // Check for Rust patterns
-    for (ffi_types.FFIPatterns.rust_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .rust;
-        }
-    }
-
-    // Check for Zig patterns (be more specific to avoid false positives)
-    for (ffi_types.FFIPatterns.zig_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            // Check for additional Zig-specific patterns
-            if (std.mem.indexOf(u8, func_name, "zig_") != null or
-                std.mem.indexOf(u8, func_name, "@") != null)
-            {
-                return .zig;
-            }
-            // If only matched "extern" or "c_" prefix without Zig indicators,
-            // it's likely a C function with extern declaration
-            if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
-                continue;
-            }
-            return .zig;
-        }
-    }
-
-    // Check for libc functions — these are C by definition
-    for (ffi_types.FFIPatterns.libc_patterns) |pattern| {
-        if (std.mem.eql(u8, func_name, pattern)) {
-            return .c;
-        }
-    }
-
-    // Check for Go functions (main.* or runtime.* patterns)
-    if (std.mem.startsWith(u8, func_name, "main.") or
-        std.mem.startsWith(u8, func_name, "runtime.") or
-        std.mem.startsWith(u8, func_name, "syscall."))
-    {
-        return .go;
-    }
-
-    // Check for Objective-C functions
-    if (std.mem.startsWith(u8, func_name, "_OBJC_") or
-        std.mem.startsWith(u8, func_name, "objc_"))
-    {
-        return .unknown;
-    }
-
-    // For external declarations with C ABI naming (no Rust/Zig/Go/ObjC
-    // patterns), classify as C. This covers extern "C" functions,
-    // libc wrappers, and typical C library functions.
-    // Internal (non-external) functions default to unknown to avoid
-    // misclassifying language-specific internal helpers.
-    return .c;
+    return @import("../../semantics/language_detector.zig").identifyCalleeLanguage(func_name);
 }
 
 // ============================================================================
@@ -258,6 +200,25 @@ pub fn isStlInternalFunction(func_name: []const u8) bool {
         if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
     }
     if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
+    return false;
+}
+
+/// Check if a function is Rust's drop_in_place (destructor glue).
+/// These are guaranteed safe by Rust's ownership system —
+/// UAF patterns here are normal destructor chaining, NOT bugs.
+pub fn isRustDropGlue(func_name: []const u8) bool {
+    const drop_patterns = [_][]const u8{
+        "drop_in_place", // core::ptr::drop_in_place
+        "_ZN4core3ptr13drop_in_place", // mangled form
+        "<T as core::ops::drop::Drop>::drop",
+        "::drop", // generic Drop impl
+        "__rust_dealloc",
+        "__rust_alloc",
+        "real_drop_in_place",
+    };
+    for (drop_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
+    }
     return false;
 }
 

@@ -255,11 +255,10 @@ pub const PassContext = struct {
         hasher.update(func_name);
         hasher.update(kind_tag);
         const loc = @field(issue, "location");
-        if (loc.hasValidPosition()) {
-            hasher.update(loc.func);
-            hasher.update(&std.mem.toBytes(loc.line));
-            hasher.update(&std.mem.toBytes(loc.column));
-        }
+        hasher.update(loc.func); // Function name always participates in dedup
+        if (loc.file) |f| hasher.update(f); // File path (if available)
+        if (loc.line > 0) hasher.update(&std.mem.toBytes(loc.line)); // Line number (if available)
+        if (loc.column > 0) hasher.update(&std.mem.toBytes(loc.column)); // Column (if available)
         return hasher.final();
     }
 

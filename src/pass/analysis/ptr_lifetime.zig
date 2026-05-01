@@ -46,18 +46,17 @@ const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 // v0.1.8: New semantic modules
 const memory_graph = @import("../../semantics/memory_graph.zig");
 const call_graph_mod = @import("../../semantics/call_graph.zig");
+const allocator_kb = @import("../../semantics/allocator_kb.zig");
+const intrinsic_filter = @import("../../semantics/intrinsic_filter.zig");
 const output_param_classifier = @import("../../semantics/output_param_classifier.zig");
 
 // P1-1: Inter-procedural FFI analysis for caller context
 const ip_ffi = @import("ip_ffi.zig");
 
-// Type definitions, constants, and shared utilities extracted to types file
+// Type definitions, constants, and utilities shared across analysis passes.
+// All PtrAllocSite/LifetimeViolation/PtrInfo/etc. come from here.
 const ptr_types = @import("ptr_lifetime_types.zig");
 
-// Reporting functions extracted to separate module
-const reporting = @import("lifetime_reporting.zig");
-
-// Re-export public items for external consumers (root.zig and other modules)
 pub const PtrAllocSite = ptr_types.PtrAllocSite;
 pub const LifetimeViolation = ptr_types.LifetimeViolation;
 pub const PtrInfo = ptr_types.PtrInfo;
@@ -66,17 +65,46 @@ pub const FreeSiteRecord = ptr_types.FreeSiteRecord;
 pub const LifetimeAnalysisResult = ptr_types.LifetimeAnalysisResult;
 pub const LifetimeStats = ptr_types.LifetimeStats;
 pub const KNOWN_DEALLOCATORS = ptr_types.KNOWN_DEALLOCATORS;
+pub const HEAP_ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
+
 pub const is_extern_function = ptr_types.is_extern_function;
 pub const is_known_deallocator = ptr_types.is_known_deallocator;
 pub const is_intentional_free = ptr_types.is_intentional_free;
 pub const may_retain_pointer = ptr_types.may_retain_pointer;
+pub const isIntrinsicNoise = ptr_types.isIntrinsicNoise;
+pub const getAllocatorKB = ptr_types.getAllocatorKB;
 pub const isHeapAllocFunction = ptr_types.isHeapAllocFunction;
 pub const isKnownDeallocFunction = ptr_types.isKnownDeallocFunction;
-pub const getAllocatorKB = ptr_types.getAllocatorKB;
-pub const getIntrinsicFilter = ptr_types.getIntrinsicFilter;
-pub const isIntrinsicNoise = ptr_types.isIntrinsicNoise;
 pub const classify_ptr_origin = ptr_types.classify_ptr_origin;
-pub const HEAP_ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
+
+/// Lightweight growable list for FreeSiteRecord (contains opaque C types
+/// that prevent std.ArrayList from monomorphizing correctly in Zig 0.15.2).
+pub const FreeSiteList = struct {
+    items: []FreeSiteRecord,
+    capacity: usize,
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator) FreeSiteList {
+        return .{ .items = &.{}, .capacity = 0, .allocator = allocator };
+    }
+
+    fn append(self: *FreeSiteList, record: FreeSiteRecord) !void {
+        if (self.items.len >= self.capacity) {
+            const new_cap = if (self.capacity == 0) 4 else self.capacity * 2;
+            const new_items = try self.allocator.alloc(FreeSiteRecord, new_cap);
+            @memcpy(new_items[0..self.items.len], self.items);
+            if (self.capacity > 0) self.allocator.free(self.items);
+            self.items = new_items;
+            self.capacity = new_cap;
+        }
+        self.items[self.items.len] = record;
+        self.items = self.items[0..self.items.len + 1];
+    }
+
+    fn deinit(self: *FreeSiteList) void {
+        if (self.capacity > 0) self.allocator.free(self.items);
+    }
+};
 
 // ============================================================================
 // Main Pass
@@ -259,9 +287,9 @@ pub const PtrLifetimePass = struct {
 
         var pointer_map = std.AutoHashMap(c.LLVMValueRef, PtrInfo).init(ctx.allocator);
 
-        // P0-3: Track free sites per pointer for path-sensitive double-free.
+        // Track free sites per pointer for path-sensitive double-free.
         // Key: pointer hash (u64), Value: list of free site records.
-        var free_sites = std.AutoHashMap(u64, std.ArrayList(FreeSiteRecord)).init(ctx.allocator);
+        var free_sites = std.AutoHashMap(u64, FreeSiteList).init(ctx.allocator);
 
         defer {
             var iter = pointer_map.iterator();
@@ -275,7 +303,7 @@ pub const PtrLifetimePass = struct {
             // Clean up free_sites
             var fs_iter = free_sites.iterator();
             while (fs_iter.next()) |entry| {
-                entry.value_ptr.deinit(ctx.allocator);
+                entry.value_ptr.deinit();
             }
             free_sites.deinit();
         }
@@ -295,8 +323,9 @@ pub const PtrLifetimePass = struct {
         bb_id = 0;
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
+            const bb_ref: c.LLVMValueRef = @ptrCast(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try checkViolations(ctx, inst, func, func_name, bb_id, bb, &pointer_map, mem_graph, diag, stats, &free_sites);
+                try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
             }
             bb_id += 1;
         }
@@ -775,12 +804,12 @@ pub const PtrLifetimePass = struct {
         func: c.LLVMValueRef,
         func_name: []const u8,
         bb_id: usize,
-        bb_ref: c.LLVMBasicBlockRef,
+        bb_ref: c.LLVMValueRef,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
         mem_graph: ?*memory_graph.MemoryGraph,
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
-        free_sites: *std.AutoHashMap(u64, std.ArrayList(FreeSiteRecord)),
+        free_sites: *std.AutoHashMap(u64, FreeSiteList),
     ) !void {
         // Null pointer guard — prevent SIGABRT on invalid IR
         if (@intFromPtr(inst) == 0) return;
@@ -810,12 +839,12 @@ pub const PtrLifetimePass = struct {
         inst: c.LLVMValueRef,
         func_name: []const u8,
         bb_id: usize,
-        bb_ref: c.LLVMBasicBlockRef,
+        bb_ref: c.LLVMValueRef,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
         mem_graph: ?*memory_graph.MemoryGraph,
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
-        free_sites: *std.AutoHashMap(u64, std.ArrayList(FreeSiteRecord)),
+        free_sites: *std.AutoHashMap(u64, FreeSiteList),
     ) !void {
         const called = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called) == 0) return;
@@ -839,9 +868,9 @@ pub const PtrLifetimePass = struct {
 
         const gop = try free_sites.getOrPut(ptr_hash);
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
+            gop.value_ptr.* = FreeSiteList.init(ctx.allocator);
         }
-        try gop.value_ptr.append(ctx.allocator, record);
+        try gop.value_ptr.append(record);
 
         // Check if this pointer has been freed before
         const sites = free_sites.get(ptr_hash) orelse return;
@@ -855,7 +884,7 @@ pub const PtrLifetimePass = struct {
             return;
         }
 
-        // P0-3: Check for RC (reference count) pattern.
+        // Check for RC (reference count) pattern.
         // Pattern: load RC -> sub 1 -> cmp 0 -> br; free in RC==0 branch.
         // This is a conditional free, not a double-free.
         if (isRCPatternFree(prev_record.bb_ref) or isRCPatternFree(bb_ref)) {
@@ -864,7 +893,7 @@ pub const PtrLifetimePass = struct {
         }
 
         // Not on mutually exclusive paths — report as real double-free.
-        // v0.1.8: Also use MemoryGraph for cross-alias detection.
+        // Also use MemoryGraph for cross-alias detection.
         if (mem_graph) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(inst));
             const is_double = mg.trackFree(inst_ptr, ptr_hash) catch false;
@@ -884,32 +913,29 @@ pub const PtrLifetimePass = struct {
         }
     }
 
-    /// P0-3: Check if two basic blocks are mutually exclusive — they are
+    /// Check if two basic blocks are mutually exclusive — they are
     /// siblings (same predecessor, different branches of a conditional branch).
     /// In this case, only one of them executes at runtime.
-    fn areMutuallyExclusive(bb1: c.LLVMBasicBlockRef, bb2: c.LLVMBasicBlockRef) bool {
+    fn areMutuallyExclusive(bb1: c.LLVMValueRef, bb2: c.LLVMValueRef) bool {
         if (@intFromPtr(bb1) == 0 or @intFromPtr(bb2) == 0) return false;
         if (@intFromPtr(bb1) == @intFromPtr(bb2)) return false;
 
         // Get predecessors of both blocks
         // If they share a common predecessor that is a conditional branch
         // with exactly 2 successors (bb1 and bb2), they are mutually exclusive.
-        const pred1 = getSinglePredecessor(bb1);
-        const pred2 = getSinglePredecessor(bb2);
+        const pred1 = getSinglePredecessor(@ptrCast(bb1));
+        const pred2 = getSinglePredecessor(@ptrCast(bb2));
 
         if (@intFromPtr(pred1) == 0 or @intFromPtr(pred2) == 0) return false;
         if (@intFromPtr(pred1) != @intFromPtr(pred2)) return false;
 
-        // Common predecessor — check if its terminator is a conditional branch
-        // with exactly 2 successors (the two blocks are the true/false branches)
-        const term = c.LLVMGetBasicBlockTerminator(pred1);
-        if (@intFromPtr(term) == 0) return false;
-
-        const num_successors = c.LLVMGetNumSuccessors(term);
+        // Common predecessor — check if it's a conditional branch with
+        // exactly 2 successors (the two blocks are the true/false branches)
+        const num_successors = c.LLVMGetNumSuccessors(pred1);
         if (num_successors != 2) return false;
 
-        const succ0 = c.LLVMGetSuccessor(term, 0);
-        const succ1 = c.LLVMGetSuccessor(term, 1);
+        const succ0 = c.LLVMGetSuccessor(pred1, 0);
+        const succ1 = c.LLVMGetSuccessor(pred1, 1);
 
         // Check if the two successors are exactly bb1 and bb2
         const match = (@intFromPtr(succ0) == @intFromPtr(bb1) and @intFromPtr(succ1) == @intFromPtr(bb2)) or
@@ -919,14 +945,14 @@ pub const PtrLifetimePass = struct {
 
     /// Get the single predecessor of a basic block.
     /// Returns null if the block has 0 or more than 1 predecessor.
-    fn getSinglePredecessor(bb: c.LLVMBasicBlockRef) c.LLVMBasicBlockRef {
-        // Iterate all basic blocks in the function to find branches
+    fn getSinglePredecessor(bb: c.LLVMBasicBlockRef) c.LLVMValueRef {
+        // Iterate all instructions in the function to find branches
         // that target this block. This is O(n) but only called when
         // a potential double-free is detected (rare in practice).
         const func = c.LLVMGetBasicBlockParent(bb);
         if (@intFromPtr(func) == 0) return null;
 
-        var result: c.LLVMBasicBlockRef = null;
+        var result: c.LLVMValueRef = null;
         var cur_bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(cur_bb) != 0) : (cur_bb = c.LLVMGetNextBasicBlock(cur_bb)) {
             const term = c.LLVMGetBasicBlockTerminator(cur_bb);
@@ -942,22 +968,22 @@ pub const PtrLifetimePass = struct {
                         // More than one predecessor — return null
                         return null;
                     }
-                    result = cur_bb;
+                    result = @ptrCast(cur_bb);
                 }
             }
         }
         return result;
     }
 
-    /// P0-3: Check if a basic block contains an RC (reference count) pattern
+    /// Check if a basic block contains an RC (reference count) pattern
     /// that guards a free. Pattern: load RC -> sub 1 -> cmp eq 0 -> br.
     /// If the free is in the RC==0 branch, it's a conditional free.
-    fn isRCPatternFree(bb: c.LLVMBasicBlockRef) bool {
+    fn isRCPatternFree(bb: c.LLVMValueRef) bool {
         if (@intFromPtr(bb) == 0) return false;
 
         // Look for the pattern: sub N, 1 followed by icmp eq N-1, 0
         // This is the standard RC decrement + check pattern.
-        var inst = c.LLVMGetFirstInstruction(bb);
+        var inst = c.LLVMGetFirstInstruction(@ptrCast(bb));
         var has_sub_one: bool = false;
         var has_cmp_zero: bool = false;
 
@@ -1013,11 +1039,11 @@ pub const PtrLifetimePass = struct {
         if (isGlobalVariable(ptr_operand)) {
             if (pointer_map.get(value_operand)) |ptr_info| {
                 if (ptr_info.alloc_site == .heap and !ptr_info.escaped) {
-                    try reporting.reportHeapToGlobal(ctx, func_name, ptr_info, inst, diag);
+                    try reportHeapToGlobal(ctx, func_name, ptr_info, inst, diag);
                     stats.heap_ambiguous_found += 1;
                     if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
                 } else if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                    try reporting.reportStackToGlobal(ctx, func_name, ptr_info, inst, diag);
+                    try reportStackToGlobal(ctx, func_name, ptr_info, inst, diag);
                     stats.stack_escapes_found += 1;
                     if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
                 }
@@ -1095,9 +1121,9 @@ pub const PtrLifetimePass = struct {
                             if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                         } else if (ptr_info.freed) {
                             if (ptr_info.resource_type != .none) {
-                                try reporting.reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
                             } else {
-                                try reporting.reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
                             }
                             stats.use_after_free_found += 1;
                         }
@@ -1118,7 +1144,7 @@ pub const PtrLifetimePass = struct {
                         diag.debug("[SUPPRESSED] Stack escape in callback/hook: {s}", .{callee_name});
                         stats.stack_escapes_found += 1;
                     } else {
-                        try reporting.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
                         stats.stack_escapes_found += 1;
                     }
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
@@ -1126,14 +1152,14 @@ pub const PtrLifetimePass = struct {
                     // v0.1.6: Heap pointer escaping to FFI is also critical.
                     // A malloc'd buffer passed to an extern retaining function means
                     // the caller must know to free it — classic FFI ownership bug.
-                    try reporting.reportHeapEscapeToFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    try reportHeapEscapeToFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
                     stats.heap_ambiguous_found += 1;
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                 } else if (ptr_info.freed) {
                     if (ptr_info.resource_type != .none) {
-                        try reporting.reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
                     } else {
-                        try reporting.reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
                     }
                     stats.use_after_free_found += 1;
                 }
@@ -1270,7 +1296,7 @@ pub const PtrLifetimePass = struct {
                     diag.debug("[SUPPRESSED] Alloca return in constructor/factory: {s}", .{func_name});
                     stats.heap_intentional_transfer += 1;
                 } else {
-                    try reporting.reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
+                    try reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
                     stats.return_stack_addr_found += 1;
                 }
             } else if (ptr_info.alloc_site == .heap) {
@@ -1285,7 +1311,7 @@ pub const PtrLifetimePass = struct {
                         diag.debug("[MARKED] Lifecycle-bound return: {s} -> {s} (handle-dependent lifetime)", .{ func_name, ptr_info.source_desc });
                         stats.heap_intentional_transfer += 1;
                     } else {
-                        try reporting.reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
+                        try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
                         stats.heap_ambiguous_found += 1;
                     }
                 } else {
@@ -1613,6 +1639,309 @@ pub const PtrLifetimePass = struct {
 };
 
 // ============================================================================
+// Reporting
+// ============================================================================
+
+fn reportStackEscape(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    _: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Stack pointer passed to FFI boundary function");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = try makeTraceEntry(ctx.allocator, "Passed to {s}() which may retain pointer beyond caller scope", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Stack pointer ({s}) escapes to FFI function {s}() - pointer invalid after function returns (CWE-562)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.88,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+fn reportReturnStackAddr(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 2);
+    trace[0] = TraceEntry.init("Function returns address of stack-local variable");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Function returns stack-local address ({s}) - dangling pointer after return (CWE-562)",
+        .{ptr_info.source_desc},
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.92,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportReturnHeapPtr(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Function returns heap-allocated pointer");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (caller must free)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Returning heap pointer creates ownership transfer ambiguity - who frees?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Function returns heap-allocated pointer ({s}) - caller may not know to free (CWE-401/CWE-662)",
+        .{ptr_info.source_desc},
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.72,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportHeapToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Heap-allocated pointer stored to global variable");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (global lifetime)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage of heap pointer creates leak risk - when is it freed?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) stored to global in {s} - potential memory leak if never freed (CWE-401)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.75,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportStackToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Stack-local pointer stored to global variable");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage outlives stack frame - dangling pointer after return");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Stack pointer ({s}) stored to global in {s} - dangling pointer after function returns (CWE-562)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.90,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+}
+
+fn reportUseAfterFree(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Freed pointer passed to function call");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (already freed)", .{ptr_info.source_desc});
+    trace[2] = try makeTraceEntry(ctx.allocator, "Use in {s}() after free", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Freed pointer ({s}) passed to {s}() - potential use-after-free (CWE-416)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .use_after_free,
+        message,
+        location,
+        .high,
+        0.75,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
+}
+
+fn reportResourceUAF(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const resource_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlopen handle",
+        .mmap_region => "memory mapping",
+        .file_handle => "file handle",
+        .socket_fd => "socket descriptor",
+        .jni_ref => "JNI reference",
+        .python_obj => "Python object",
+        .none => "resource",
+    };
+
+    const violation_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlclose called while dlsym-derived pointers may still be in use",
+        .mmap_region => "munmap called while pointers to mapped region may still be in use",
+        .file_handle => "fclose called while FILE* may still be used",
+        .socket_fd => "close called while socket fd may still be used",
+        .jni_ref => "DeleteGlobalRef/DeleteLocalRef called while reference may still be in use",
+        .python_obj => "Py_DECREF/Py_XDECREF called while object may still be referenced",
+        .none => "resource released while still in use",
+    };
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Resource used after release");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Resource type: {s}, origin: {s}", .{ resource_desc, ptr_info.source_desc });
+    trace[2] = try makeTraceEntry(ctx.allocator, "{s} - passed to {s}()", .{ violation_desc, callee_name });
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Released {s} ({s}) passed to {s}() - potential use-after-release (CWE-416/CWE-908)",
+        .{ resource_desc, ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .use_after_free,
+        message,
+        location,
+        .critical,
+        0.85,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+}
+
+fn reportHeapAmbiguous(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Heap pointer passed to extern without clear ownership transfer");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = try makeTraceEntry(ctx.allocator, "Passed to {s}() - verify ownership contract", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) passed to {s}() - verify ownership transfer semantics (CWE-401)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .medium,
+        0.60,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+fn makeTraceEntry(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
+    const desc = try std.fmt.allocPrint(allocator, fmt, args);
+    return TraceEntry.initOwned(desc);
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -1638,6 +1967,45 @@ test "may_retain_pointer - retaining patterns" {
     try std.testing.expect(!may_retain_pointer("memcpy"));
     try std.testing.expect(!may_retain_pointer("printf"));
     try std.testing.expect(!may_retain_pointer("free"));
+}
+
+/// Report heap pointer escaping to FFI boundary.
+/// v0.1.6: malloc/calloc results passed to retaining extern functions
+/// are critical FFI ownership issues — caller may not know to free them.
+fn reportHeapEscapeToFFI(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 4);
+    trace[0] = TraceEntry.init("Heap-allocated pointer escapes to FFI boundary");
+    trace[1] = try makeTraceEntry(ctx.allocator, "Pointer origin: {s} (caller must manage lifetime)", .{ptr_info.source_desc});
+    trace[2] = try makeTraceEntry(ctx.allocator, "Passed to retaining FFI function {s}() - ownership transfer unclear", .{callee_name});
+    trace[3] = try makeTraceEntry(ctx.allocator, "If no matching free -> leak; if double-freed -> corruption (CWE-401/CWE-662)", .{});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) escapes to {s}() in {s} - ambiguous ownership transfer",
+        .{ ptr_info.source_desc, callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.78,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 test "PtrAllocSite - enum values" {

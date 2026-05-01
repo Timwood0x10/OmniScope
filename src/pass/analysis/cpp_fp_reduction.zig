@@ -38,22 +38,9 @@ const lifetime = @import("../../lifetime/root.zig");
 const noise_reduction = @import("noise_reduction.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isStlInternalFunction(func_name: []const u8) bool {
-    const stl_prefixes = [_][]const u8{
-        "_ZNSt3__", // std::__ (libc++ internal)
-        "_ZNSt4", // std:: (libc++ public, but template expansions are still internal)
-        "_ZNSs", // std::string
-        "_ZNSt6", // std::vector, std::map, etc.
-        "_ZNSt7", // std::allocator
-        "_ZNSt10", // std::unique_ptr, std::shared_ptr etc.
-    };
-    for (stl_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) {
-            return true;
-        }
-    }
-    if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
-    return false;
+    return @import("ffi_utils.zig").isStlInternalFunction(func_name);
 }
 
 /// Check if a function is a C++ special member function.
@@ -72,35 +59,9 @@ pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
 }
 
 /// Check if a function is Rust's drop_in_place (destructor glue).
-/// These are guaranteed safe by Rust's ownership system —
-/// UAF patterns here are normal destructor chaining, NOT bugs.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isRustDropGlue(func_name: []const u8) bool {
-    const drop_patterns = [_][]const u8{
-        "drop_in_place", // core::ptr::drop_in_place
-        "_ZN4core3ptr13drop_in_place", // mangled form
-        "<T as core::ops::drop::Drop>::drop",
-        "::drop", // generic Drop impl
-    };
-    for (drop_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return true;
-        }
-    }
-
-    // Also skip if function name contains common Rust drop glue patterns
-    // like <type as Drop>::drop or __rust_dealloc
-    const rust_drop_markers = [_][]const u8{
-        "__rust_dealloc",
-        "__rust_alloc",
-        "real_drop_in_place",
-    };
-    for (rust_drop_markers) |marker| {
-        if (std.mem.indexOf(u8, func_name, marker) != null) {
-            return true;
-        }
-    }
-
-    return false;
+    return @import("ffi_utils.zig").isRustDropGlue(func_name);
 }
 
 /// Detect as_ptr borrow escape patterns (Task 9.3c).
@@ -187,9 +148,10 @@ fn isLocalRustValue(value_name: []const u8) bool {
 }
 
 /// Check if a function is a C++ ABI runtime internal function (__cxa_*).
+/// Check if a function is a C++ ABI internal function (exception handling, TLS, etc.).
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
-    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return true;
-    return false;
+    return @import("ffi_utils.zig").isCppAbiInternalFunction(func_name);
 }
 
 /// Check if an allocation is part of a Meyers singleton pattern.
@@ -734,59 +696,9 @@ pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
     return std.mem.span(name_ptr);
 }
 
-/// Identify the language of a function based on naming conventions.
+/// Identify the language of a function (delegated to unified language_detector).
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
-    const func_name = getFunctionName(func);
-
-    if (func_name.len > 2 and
-        func_name[0] == '_' and
-        func_name[1] == 'R')
-    {
-        return .rust;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "alloc::") != null or
-        std.mem.indexOf(u8, func_name, "core::") != null or
-        std.mem.indexOf(u8, func_name, "std::") != null)
-    {
-        if (std.mem.indexOf(u8, func_name, "::boxed::") != null or
-            std.mem.indexOf(u8, func_name, "::ffi::") != null or
-            std.mem.indexOf(u8, func_name, "::cstring::") != null)
-        {
-            return .rust;
-        }
-    }
-
-    if (std.mem.eql(u8, func_name, "malloc") or
-        std.mem.eql(u8, func_name, "free") or
-        std.mem.eql(u8, func_name, "calloc") or
-        std.mem.eql(u8, func_name, "realloc") or
-        std.mem.eql(u8, func_name, "printf") or
-        std.mem.eql(u8, func_name, "strlen"))
-    {
-        return .c;
-    }
-
-    if (func_name.len > 2 and
-        func_name[0] == '_' and
-        func_name[1] == 'Z')
-    {
-        return .cpp;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "Allocator.") != null or
-        std.mem.indexOf(u8, func_name, "allocImpl") != null)
-    {
-        return .zig;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "UnsafeMutablePointer") != null or
-        std.mem.indexOf(u8, func_name, "$s") != null)
-    {
-        return .swift;
-    }
-
-    return .unknown;
+    return @import("../../semantics/language_detector.zig").identifyLanguage(func);
 }
 
 /// Check if a free is guarded by a null check.

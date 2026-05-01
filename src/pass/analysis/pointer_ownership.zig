@@ -873,7 +873,7 @@ pub const PointerOwnershipPass = struct {
         return cpp_fp.getFunctionName(func);
     }
     fn identifyLanguage(func: c.LLVMValueRef) Language {
-        return cpp_fp.identifyLanguage(func);
+        return @import("../../semantics/language_detector.zig").identifyLanguage(func);
     }
     fn isGuardedByNullCheck(free_inst: c.LLVMValueRef, ptr_value_id: u32, path_manager: *PathManager) bool {
         return cpp_fp.isGuardedByNullCheck(free_inst, ptr_value_id, path_manager);
