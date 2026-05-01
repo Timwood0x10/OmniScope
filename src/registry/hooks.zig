@@ -27,7 +27,7 @@ const types = @import("types.zig");
 threadlocal var rust_transfer_map: std.AutoHashMap(u64, void) = undefined;
 threadlocal var rust_state_initialized: bool = false;
 
-pub fn rustOwnershipStateInit(allocator: std.mem.Allocator) void {
+pub fn rustOwnershipStateInit(allocator: std.mem.Allocator) !void {
     if (!rust_state_initialized) {
         rust_transfer_map = std.AutoHashMap(u64, void).init(allocator);
         rust_state_initialized = true;
@@ -150,7 +150,7 @@ pub fn goEscapeHook(ctx: *types.HookContext) types.HookResult {
 threadlocal var python_refcount_map: std.AutoHashMap(u64, i32) = undefined;
 threadlocal var python_state_initialized: bool = false;
 
-pub fn pythonRefcountStateInit(allocator: std.mem.Allocator) void {
+pub fn pythonRefcountStateInit(allocator: std.mem.Allocator) !void {
     if (!python_state_initialized) {
         python_refcount_map = std.AutoHashMap(u64, i32).init(allocator);
         python_state_initialized = true;
@@ -246,9 +246,9 @@ pub fn pythonRefcountHook(ctx: *types.HookContext) types.HookResult {
 // ============================================================================
 
 /// Initialize all hook state machines. Call once before analysis begins.
-pub fn initHookStates(allocator: std.mem.Allocator) void {
-    rustOwnershipStateInit(allocator);
-    pythonRefcountStateInit(allocator);
+pub fn initHookStates(allocator: std.mem.Allocator) !void {
+    try rustOwnershipStateInit(allocator);
+    try pythonRefcountStateInit(allocator);
 }
 
 /// Deinitialize all hook state machines. Call after analysis completes.

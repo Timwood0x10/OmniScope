@@ -41,6 +41,12 @@ const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 
+// Phase 3.7: Integrated Hook system for semantic analysis.
+// Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
+const hooks = @import("../../registry/hooks.zig");
+const registry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+const ptr_types = @import("ptr_lifetime_types.zig");
+
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
     /// Go pointer passed to C without KeepAlive guard
@@ -112,12 +118,19 @@ const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
 };
 
 /// C standard library functions that commonly retain pointers.
+/// Phase 3.7: Now sourced from config/languages/c.json (retaining_functions)
+/// combined with ptr_types for backward compatibility.
+/// The Hook system provides additional language-specific detection beyond these patterns.
 const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    "register_callback", "set_handler",             "set_callback",         "add_observer",
-    "subscribe",         "listen_on",               "pthread_create",       "pthread_join",
-    "signal",            "sigaction",               "atexit",               "on_exit",
-    "RegisterNatives",   "PyCapsule_SetDestructor", "SDL_SetEventCallback", "glfwSetCallback",
+    // From c.json retaining_functions (source of truth)
+    "c_callback",        "register_callback",       "set_handler",
+    "pthread_create",   "signal",                  "atexit",
+    "on_exit",           "SDL_SetEventCallback",    "glfwSetCallback",
     "curl_easy_setopt",
+    // Additional patterns from original hardcoding
+    "set_callback",      "add_observer",            "subscribe",
+    "listen_on",         "pthread_join",            "sigaction",
+    "RegisterNatives",   "PyCapsule_SetDestructor",
 };
 
 /// Check if a function name indicates cgo boundary code.
@@ -312,6 +325,11 @@ pub const CallbackEscapePass = struct {
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = EscapeStats{};
 
+        // Phase 3.7: Initialize Hook system for semantic analysis.
+        // Hooks provide language-specific detection beyond pattern matching.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
+
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) {
                 const func_name_raw = c.LLVMGetValueName(func);
@@ -336,12 +354,50 @@ pub const CallbackEscapePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
+            // Phase 3.7: Reset hook state for this function scope.
+            hooks.resetHookStatesForFunction();
+
             // Function-level error isolation
             analyzeFunction(ctx, func, diag, &stats) catch |err| {
                 diag.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
                 continue;
             };
+
+            // Phase 3.7: Check hook state for end-of-function issues.
+            if (hooks.rustUnpairedTransferCount() > 0) {
+                const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
+                defer ctx.allocator.free(msg);
+                const trace = try ctx.allocator.alloc(TraceEntry, 1);
+                trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
+                const issue = Issue.initWithTrace(
+                    .cross_language_leak,
+                    msg,
+                    Location.init(func_name),
+                    .medium,
+                    0.65,
+                    trace,
+                );
+                try ctx.addIssue(&issue);
+                stats.unsafeptr_risks += 1;
+            }
+            if (hooks.pythonUnbalancedDecrefCount() > 0) {
+                const count = hooks.pythonUnbalancedDecrefCount();
+                const msg = try std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, func_name });
+                defer ctx.allocator.free(msg);
+                const trace = try ctx.allocator.alloc(TraceEntry, 1);
+                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
+                const issue = Issue.initWithTrace(
+                    .use_after_free,
+                    msg,
+                    Location.init(func_name),
+                    .high,
+                    0.80,
+                    trace,
+                );
+                try ctx.addIssue(&issue);
+                stats.unsafeptr_risks += @intCast(count);
+            }
         }
 
         diag.info("CallbackEscape: analyzed {} funcs, {} cgo boundaries, {} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +

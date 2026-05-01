@@ -81,24 +81,25 @@ pub const classify_ptr_origin = ptr_types.classify_ptr_origin;
 /// that prevent std.ArrayList from monomorphizing correctly in Zig 0.15.2).
 pub const FreeSiteList = struct {
     items: []FreeSiteRecord,
+    len: usize,
     capacity: usize,
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator) FreeSiteList {
-        return .{ .items = &.{}, .capacity = 0, .allocator = allocator };
+        return .{ .items = &.{}, .len = 0, .capacity = 0, .allocator = allocator };
     }
 
     fn append(self: *FreeSiteList, record: FreeSiteRecord) !void {
-        if (self.items.len >= self.capacity) {
+        if (self.len >= self.capacity) {
             const new_cap = if (self.capacity == 0) 4 else self.capacity * 2;
             const new_items = try self.allocator.alloc(FreeSiteRecord, new_cap);
-            @memcpy(new_items[0..self.items.len], self.items);
+            @memcpy(new_items[0..self.len], self.items);
             if (self.capacity > 0) self.allocator.free(self.items);
             self.items = new_items;
             self.capacity = new_cap;
         }
-        self.items[self.items.len] = record;
-        self.items = self.items[0 .. self.items.len + 1];
+        self.items[self.len] = record;
+        self.len += 1;
     }
 
     fn deinit(self: *FreeSiteList) void {
@@ -874,11 +875,11 @@ pub const PtrLifetimePass = struct {
 
         // Check if this pointer has been freed before
         const sites = free_sites.get(ptr_hash) orelse return;
-        if (sites.items.len <= 1) return; // First free — no double-free yet
+        if (sites.len <= 1) return; // First free — no double-free yet
 
         // P0-3: Path-sensitive check — are the two frees on mutually
         // exclusive paths? If so, this is NOT a real double-free.
-        const prev_record = sites.items[sites.items.len - 2];
+        const prev_record = sites.items[sites.len - 2];
         if (areMutuallyExclusive(prev_record.bb_ref, bb_ref)) {
             diag.debug("[SUPPRESSED] Double-free on mutually exclusive paths in {s} (bb {} vs bb {})", .{ func_name, prev_record.bb_id, bb_id });
             return;
