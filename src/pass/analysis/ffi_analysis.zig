@@ -216,6 +216,7 @@ pub const FFIAnalysisPass = struct {
                 .function_name = "python_ffi_boundary",
                 .description = std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch "Python refcount imbalance",
                 .confidence = 0.80,
+                .owns_description = true,
             });
         }
 
