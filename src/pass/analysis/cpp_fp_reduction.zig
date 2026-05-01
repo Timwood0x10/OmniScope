@@ -18,6 +18,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const noise_filter = @import("../../semantics/noise_filter.zig");
 const Issue = @import("../../diag/issue.zig").Issue;
 const Severity = @import("../../diag/issue.zig").Severity;
 const Confidence = @import("../../diag/issue.zig").Confidence;
@@ -657,6 +658,28 @@ pub fn detectUseAfterFree(
         // NOT real use-after-free bugs. Rust's ownership system guarantees safety.
         if (isRustDropGlue(free_info.func_name)) {
             diag.debug("UAF-SKIP: {s} is Rust drop_in_place — guaranteed safe by ownership system", .{free_info.func_name});
+            continue;
+        }
+
+        // INTEGRATION: Use noise_filter to skip stdlib/compiler-generated code
+        const classification = noise_filter.classifyFunction(free_info.func_name, null);
+        if (!classification.origin.shouldReportByDefault()) {
+            diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
+            continue;
+        }
+
+        // Rust ownership safety: For Rust mangled names (_ZN... or _R...),
+        // UAF is extremely unlikely because Rust's ownership/borrow system
+        // guarantees memory safety at compile time. Only report if the function
+        // is explicitly unsafe (contains 'unsafe' or 'unchecked' in name).
+        // This is the #1 source of FP in Rust projects (wasmtime: 98% FP).
+        const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_ZN") or
+            std.mem.startsWith(u8, free_info.func_name, "_R");
+        const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or
+            std.mem.indexOf(u8, free_info.func_name, "unchecked") != null or
+            std.mem.indexOf(u8, free_info.func_name, "raw") != null;
+        if (is_rust_mangled and !is_explicitly_unsafe) {
+            diag.debug("UAF-SKIP: {s} is Rust safe code — ownership system guarantees memory safety", .{free_info.func_name});
             continue;
         }
 

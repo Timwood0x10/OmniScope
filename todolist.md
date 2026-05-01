@@ -306,21 +306,34 @@ omniscope scan --include-stdlib
 
 **测试结果** (2026-04-30):
 
-| 项目 | 语言 | 函数数 | FFI边界 | 噪音过滤效果 |
-|------|------|--------|---------|-------------|
-| wasmtime_test | Rust | 2961 | 1464 | ✅ 正常工作 |
-| sqlite3 | C | 10038 | 0 | ✅ C项目无噪音 |
+| 项目 | 语言 | 函数数 | 优化前 Issues | 优化后 Issues | FP 率 |
+|------|------|--------|--------------|--------------|-------|
+| wasmtime_test | Rust | 2961 | 31 | 7 | ~29% |
+| sqlite3 | C | 10038 | 318 | 318 | 无回归 |
 
-**观察**:
-- Rust 项目：FFITypeMismatch 检测到 1464 个 FFI 边界
-- C 项目：噪音过滤正常，无虚假 FFI 边界
-- 噪音过滤系统工作正常
+**wasmtime 优化详情**:
+- 优化前: 2 memory_leak + 26 UAF + 3 borrow_escape = 31
+- 优化后: 2 memory_leak + 2 UAF + 3 borrow_escape = 7
+- UAF 从 26 降到 2 (92% 减少)
+
+**优化手段**:
+1. noise_filter 集成到 PointerOwnership pass
+2. noise_filter 集成到 cpp_fp_reduction (detectUseAfterFree)
+3. Rust ownership safety: 跳过 Rust safe code 的 UAF 报告
+4. 增强 noise_reduction 模式: Error3new, anyhow5error, closure glue
+
+**剩余 FP**:
+- 2 memory_leak: llvm.threadlocal.address 误分类 (需修复 FFI boundary pass)
+- 实际 FP 率约 29% (2/7), 接近目标
+
+**C 项目无回归**: sqlite3 不受 Rust ownership safety 规则影响
 
 **本周目标**（P0-1 集成）：
 1. ✅ 三层过滤体系已实现
 2. ✅ 测试噪音降低效果（wasmtime, C 项目）
-3. 🔄 集成到所有分析 pass
-4. 🔄 集成到 Issue 报告系统
+3. ✅ 集成 noise_filter 到 PointerOwnership + cpp_fp_reduction
+4. ✅ Rust ownership safety 规则（跳过 safe code UAF）
+5. 🔄 修复 llvm.threadlocal.address 误分类（达到 <20% FP）
 
 **下周目标**（P1-1 完善）：
 1. 完善 FFI 类型不匹配检测

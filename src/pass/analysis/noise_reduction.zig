@@ -289,6 +289,20 @@ const rust_stdlib_patterns = [_][]const u8{
     "real_drop_in_place",
     "size_hint",
     "reserve_total",
+
+    // Rust error handling (compiler-generated drop glue for error types)
+    "Error3new",
+    "Error8downcast",
+    "error5error",
+    "error6vtable",
+    "object_reallocate_boxed",
+    "object_drop",
+
+    // Rust closure glue (compiler-generated)
+    "$u7b$u7b$closure$u7d$u7d$",
+
+    // anyhow crate (third-party error handling, high FP rate)
+    "anyhow5error",
 };
 
 /// Zig standard library patterns to skip.

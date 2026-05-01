@@ -42,6 +42,7 @@ const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullC
 const alloc_classifier = @import("allocation_classifier.zig");
 const cpp_fp = @import("cpp_fp_reduction.zig");
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
+const noise_filter = @import("../../semantics/noise_filter.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -238,6 +239,13 @@ pub const PointerOwnershipPass = struct {
                     continue;
                 },
                 .unsafe, .ffi, .unknown => {},
+            }
+
+            // INTEGRATION: Use noise_filter to skip stdlib/compiler-generated code
+            const classification = noise_filter.classifyFunction(func_name, null);
+            if (!classification.origin.shouldReportByDefault()) {
+                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
+                continue;
             }
 
             if (!isRustFFIRelevantFunction(func)) continue;
