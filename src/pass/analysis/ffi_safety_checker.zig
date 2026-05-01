@@ -16,6 +16,9 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const IssueSeverity = @import("../../diag/issue.zig").Severity;
+const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
+const RegistrySeverity = @import("../../registry/semantic_registry.zig").Severity;
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
 
 /// Maximum number of instructions to scan for NULL guard patterns.
@@ -360,6 +363,85 @@ pub fn isStaticBufferFunction(func_name: []const u8) bool {
 /// Classified as static_buffer_misuse to distinguish from general FFI unsafe calls.
 pub fn staticBufferIssueKind() IssueKind {
     return .static_buffer_misuse;
+}
+
+/// Describe an LLVM type as a human-readable string.
+///
+/// Used for diagnostic messages when reporting type mismatches.
+/// Handles all common LLVM type kinds with friendly names.
+///
+/// Parameters:
+///   - ty: LLVM type reference to describe
+///
+/// Returns:
+///   - Static string slice describing the type
+pub fn describeLLVMType(ty: c.LLVMTypeRef) []const u8 {
+    const type_kind = c.LLVMGetTypeKind(ty);
+    switch (type_kind) {
+        c.LLVMVoidTypeKind => return "void",
+        c.LLVMFloatTypeKind => return "float",
+        c.LLVMDoubleTypeKind => return "double",
+        c.LLVMX86_FP80TypeKind => return "fp80",
+        c.LLVMFP128TypeKind => return "fp128",
+        c.LLVMPPC_FP128TypeKind => return "ppc_fp128",
+        c.LLVMLabelTypeKind => return "label",
+        c.LLVMIntegerTypeKind => {
+            const bits = c.LLVMGetIntTypeWidth(ty);
+            if (bits == 1) return "i1";
+            if (bits == 8) return "i8";
+            if (bits == 16) return "i16";
+            if (bits == 32) return "i32";
+            if (bits == 64) return "i64";
+            return "integer";
+        },
+        c.LLVMFunctionTypeKind => return "function",
+        c.LLVMStructTypeKind => return "struct",
+        c.LLVMArrayTypeKind => return "array",
+        c.LLVMPointerTypeKind => return "pointer",
+        else => return "unknown",
+    }
+}
+
+/// Map a SemanticRegistry RiskKind to an IssueKind for reporting.
+///
+/// This bridges the gap between the semantic registry's risk taxonomy
+/// and the diagnostic system's issue classification.
+pub fn riskKindToIssueKind(risk: RiskKind) IssueKind {
+    return switch (risk) {
+        .command_exec => .command_injection,
+        .unchecked_copy => .ffi_unsafe_call,
+        .format_string => .format_string,
+        .allocator => .memory_leak,
+        .deallocator => .invalid_free,
+        .rust_ownership => .cross_language_leak,
+        .borrow_escaped => .borrow_escape,
+        .memory_map => .memory_leak,
+        .file_io => .ffi_unsafe_call,
+        .network_io => .ffi_unsafe_call,
+        .go_cgo_alloc => .memory_leak,
+        .zig_allocator => .memory_leak,
+        .cpp_allocator => .memory_leak,
+        .dynamic_loading => .ffi_unsafe_call,
+        .jni => .ffi_unsafe_call,
+        .python_c_api => .ffi_unsafe_call,
+        .signal_handler => .ffi_unsafe_call,
+        .thread_mgmt => .ffi_unsafe_call,
+        .process_mgmt => .ffi_unsafe_call,
+        // Delegates to staticBufferIssueKind() — see P2-1
+        .static_buffer => .static_buffer_misuse,
+    };
+}
+
+/// Map a SemanticRegistry Severity to an IssueSeverity for reporting.
+///
+/// The severity values are 1:1 mapped between the two systems.
+pub fn registrySeverityToIssueSeverity(registry_severity: RegistrySeverity) IssueSeverity {
+    return switch (registry_severity) {
+        .low => .low,
+        .medium => .medium,
+        .high => .high,
+        .critical => .critical,
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════

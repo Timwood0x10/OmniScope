@@ -43,6 +43,12 @@ const Config = struct {
     output_file: ?[]const u8 = null,
     /// v0.1.8: Generate HTML visualization of memory/call graphs
     visualize: bool = false,
+    /// P2-2: Only report issues from user code (skip stdlib/compiler_generated)
+    focus_user_code: bool = false,
+    /// P2-2: Only report FFI boundary issues
+    ffi_only: bool = false,
+    /// P2-2: Include stdlib issues (normally suppressed)
+    include_stdlib: bool = false,
 
     fn init(allocator: std.mem.Allocator) Config {
         return .{
@@ -120,6 +126,12 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.output_file = try allocator.dupe(u8, output_file);
         } else if (std.mem.eql(u8, arg, "--visualize") or std.mem.eql(u8, arg, "--viz")) {
             config.visualize = true;
+        } else if (std.mem.eql(u8, arg, "--focus-user-code")) {
+            config.focus_user_code = true;
+        } else if (std.mem.eql(u8, arg, "--ffi-only")) {
+            config.ffi_only = true;
+        } else if (std.mem.eql(u8, arg, "--include-stdlib")) {
+            config.include_stdlib = true;
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -143,6 +155,9 @@ fn showHelp() void {
         \\  -d, --debug         Enable debug logging (shows DEBUG messages)
         \\  -q, --quiet         Quiet mode (only show issues)
         \\  --visualize, --viz  Generate HTML visualization of memory/call graphs
+        \\  --focus-user-code  Only report issues from user code
+        \\  --ffi-only         Only report FFI boundary issues
+        \\  --include-stdlib   Include stdlib issues (normally suppressed)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format

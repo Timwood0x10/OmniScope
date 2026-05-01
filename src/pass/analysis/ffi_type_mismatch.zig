@@ -227,7 +227,7 @@ pub const FFITypeMismatchPass = struct {
         }
 
         // Check 2: Alignment mismatch
-        if (detectAlignmentMismatch(arg_type, callee_name, param_index)) |mismatch| {
+        if (detectAlignmentMismatch(arg_type, callee_name, param_index, call_inst)) |mismatch| {
             reportTypeMismatch(ctx, caller_name, callee_name, call_inst, mismatch, diag) catch {};
             return mismatch;
         }
@@ -280,26 +280,70 @@ pub const FFITypeMismatchPass = struct {
     }
 
     /// Detects alignment mismatches.
+    /// Common pattern: Zig @alignCast to wrong alignment, or C struct
+    /// with packed attribute passed to function expecting natural alignment.
     fn detectAlignmentMismatch(
         arg_type: c.LLVMTypeRef,
         callee_name: []const u8,
         param_index: u32,
+        call_inst: c.LLVMValueRef,
     ) ?TypeMismatchInfo {
         const type_kind = c.LLVMGetTypeKind(arg_type);
 
-        // Check for pointer types
-        if (type_kind == c.LLVMPointerTypeKind) {
-            // Pattern: Zig @alignOf(T) != C alignof(T)
-            // This is common when Zig code calls C functions with aligned pointers
+        // Only check pointer types — alignment matters for pointer targets
+        if (type_kind != c.LLVMPointerTypeKind) return null;
 
-            if (std.mem.indexOf(u8, callee_name, "aligned_alloc") != null or
-                std.mem.indexOf(u8, callee_name, "posix_memalign") != null)
-            {
-                // These functions have specific alignment requirements
-                // that may not match Zig's default alignment
-                _ = param_index;
-                // For now, we just flag potential issues
-                // A more complete implementation would check actual alignment values
+        // Get the element type (what the pointer points to)
+        const elem_type = c.LLVMGetElementType(arg_type);
+        if (@intFromPtr(elem_type) == 0) return null;
+
+        const elem_kind = c.LLVMGetTypeKind(elem_type);
+
+        // Get DataLayout from module to compute type size
+        const bb = c.LLVMGetInstructionParent(call_inst);
+        if (@intFromPtr(bb) == 0) return null;
+        const func = c.LLVMGetBasicBlockParent(bb);
+        if (@intFromPtr(func) == 0) return null;
+        const module = c.LLVMGetGlobalParent(func);
+        if (@intFromPtr(module) == 0) return null;
+        const dl = c.LLVMGetModuleDataLayout(module);
+        if (@intFromPtr(dl) == 0) return null;
+        const elem_size = c.LLVMABISizeOfType(dl, elem_type);
+
+        // Pattern 1: Functions with alignment requirements in their name
+        // (aligned_alloc, posix_memalign, etc.)
+        if (std.mem.indexOf(u8, callee_name, "aligned_alloc") != null or
+            std.mem.indexOf(u8, callee_name, "posix_memalign") != null)
+        {
+            // These functions require the alignment parameter to be a power of 2
+            // and at least sizeof(void*). We can't verify the runtime value,
+            // but we can flag if the alignment type is suspicious.
+            if (elem_size > 0 and elem_size < 64) {
+                return TypeMismatchInfo{
+                    .kind = .alignment_mismatch,
+                    .caller_type = "pointer (under-aligned)",
+                    .callee_type = "pointer (requires specific alignment)",
+                    .caller_lang = "unknown",
+                    .callee_lang = "C",
+                    .param_index = param_index,
+                    .description = "Alignment-sensitive function called — verify alignment matches requirements",
+                };
+            }
+        }
+
+        // Pattern 2: SIMD/vector types passed to C functions
+        // These require strict alignment (16/32/64 bytes)
+        if (elem_kind == c.LLVMVectorTypeKind) {
+            if (elem_size >= 128) {
+                return TypeMismatchInfo{
+                    .kind = .alignment_mismatch,
+                    .caller_type = "vector pointer",
+                    .callee_type = "C function (may not guarantee SIMD alignment)",
+                    .caller_lang = "unknown",
+                    .callee_lang = "C",
+                    .param_index = param_index,
+                    .description = "SIMD vector passed across FFI — verify alignment is preserved",
+                };
             }
         }
 
@@ -307,16 +351,45 @@ pub const FFITypeMismatchPass = struct {
     }
 
     /// Detects signedness mismatches.
+    /// Common pattern: Rust i32 passed to C function expecting unsigned int,
+    /// or C ssize_t vs Rust usize.
     fn detectSignednessMismatch(
         arg_type: c.LLVMTypeRef,
         callee_name: []const u8,
         param_index: u32,
     ) ?TypeMismatchInfo {
-        _ = arg_type;
-        _ = callee_name;
-        _ = param_index;
-        // TODO: Implement signedness checking
-        // This requires analyzing the function signature and comparing with argument type
+        const type_kind = c.LLVMGetTypeKind(arg_type);
+
+        // Only check integer types
+        if (type_kind != c.LLVMIntegerTypeKind) return null;
+
+        const bit_width = c.LLVMGetIntTypeWidth(arg_type);
+
+        // Pattern 1: C functions with "unsigned" in parameter name
+        // but receiving a signed integer from the caller.
+        // We detect this by checking if the callee name suggests
+        // unsigned semantics but the argument type is a generic integer.
+        if (bit_width == 32 or bit_width == 64) {
+            // Functions with "count", "len", "size", "num" in name
+            // typically expect unsigned values, but callers may pass signed.
+            const unsigned_hint_patterns = [_][]const u8{
+                "unsigned", "uint", "size", "count", "len", "num",
+            };
+            for (unsigned_hint_patterns) |pattern| {
+                if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+                    return TypeMismatchInfo{
+                        .kind = .signedness_mismatch,
+                        .caller_type = if (bit_width == 32) "i32 (signed)" else "i64 (signed)",
+                        .callee_type = if (bit_width == 32) "unsigned int" else "unsigned long",
+                        .caller_lang = "unknown",
+                        .callee_lang = "C",
+                        .param_index = param_index,
+                        .description = "Potential signedness mismatch: callee may expect unsigned but receives signed integer",
+                    };
+                }
+            }
+        }
+
         return null;
     }
 

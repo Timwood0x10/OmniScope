@@ -342,6 +342,13 @@ pub const C_ESCAPE_PATTERNS = [_][]const u8{
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
 
+    // LLVM intrinsics (llvm.* prefix) are always runtime_internal.
+    // Check this before language-specific patterns to prevent misclassification
+    // (e.g., llvm.threadlocal.address.p0 matching "threadlocal" zig_allocator).
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .runtime_internal;
+    }
+
     // Check language-specific patterns
     if (lang) |l| {
         return switch (l) {
@@ -410,6 +417,14 @@ pub fn classifyFunctionFromLLVM(
     }
 
     // For defined functions, use string-based classification as fallback
+    // But first check for LLVM intrinsic prefix — llvm.* functions
+    // are compiler-generated intrinsics, not user code or language allocators.
+    // This prevents misclassification like llvm.threadlocal.address.p0
+    // being classified as zig_allocator (via "threadlocal" contains match).
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .runtime_internal;
+    }
+
     return classifyFunction(func_name, null);
 }
 

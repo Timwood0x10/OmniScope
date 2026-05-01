@@ -42,41 +42,14 @@ const type_checker = @import("ffi_type_checker.zig");
 const lang_classifier = @import("ffi_language_classifier.zig");
 const safety_checker = @import("ffi_safety_checker.zig");
 
-/// Error type for FFI boundary detection operations.
-pub const FFIBoundaryError = error{
-    /// Memory allocation failed.
-    OutOfMemory,
-    /// Module not available.
-    NoModule,
-};
+// New extracted modules for better code organization
+const ffi_types = @import("ffi_types.zig");
+const ffi_utils = @import("ffi_utils.zig");
 
-/// Statistics for FFI boundary analysis
-const FFIBoundaryStats = struct {
-    func_count: u32 = 0,
-    total_boundaries: u32 = 0,
-    cross_lang: u32 = 0,
-    libc: u32 = 0,
-    external_unknown: u32 = 0,
-    dangerous: u32 = 0,
-    /// Count by risk kind
-    command_exec: u32 = 0,
-    unchecked_copy: u32 = 0,
-    format_string: u32 = 0,
-    allocator: u32 = 0,
-    deallocator: u32 = 0,
-    rust_ownership: u32 = 0,
-    borrow_escaped: u32 = 0,
-};
-
-/// Result of analyzing a function for FFI boundaries
-const AnalyzeResult = struct {
-    count: u32 = 0,
-    cross_lang: u32 = 0,
-    libc: u32 = 0,
-    external_unknown: u32 = 0,
-    dangerous_count: u32 = 0,
-    suppressed_intentional: u32 = 0,
-};
+/// Re-export types for backward compatibility
+pub const FFIBoundaryError = ffi_types.FFIBoundaryError;
+pub const FFIBoundaryStats = ffi_types.FFIBoundaryStats;
+pub const AnalyzeResult = ffi_types.AnalyzeResult;
 
 /// FFI boundary detection pass.
 ///
@@ -1295,30 +1268,7 @@ pub const FFIBoundaryPass = struct {
     }
 
     fn describeLLVMType(ty: c.LLVMTypeRef) []const u8 {
-        const type_kind = c.LLVMGetTypeKind(ty);
-        switch (type_kind) {
-            c.LLVMVoidTypeKind => return "void",
-            c.LLVMFloatTypeKind => return "float",
-            c.LLVMDoubleTypeKind => return "double",
-            c.LLVMX86_FP80TypeKind => return "fp80",
-            c.LLVMFP128TypeKind => return "fp128",
-            c.LLVMPPC_FP128TypeKind => return "ppc_fp128",
-            c.LLVMLabelTypeKind => return "label",
-            c.LLVMIntegerTypeKind => {
-                const bits = c.LLVMGetIntTypeWidth(ty);
-                if (bits == 1) return "i1";
-                if (bits == 8) return "i8";
-                if (bits == 16) return "i16";
-                if (bits == 32) return "i32";
-                if (bits == 64) return "i64";
-                return "integer";
-            },
-            c.LLVMFunctionTypeKind => return "function",
-            c.LLVMStructTypeKind => return "struct",
-            c.LLVMArrayTypeKind => return "array",
-            c.LLVMPointerTypeKind => return "pointer",
-            else => return "unknown",
-        }
+        return safety_checker.describeLLVMType(ty);
     }
 
     /// Check if a Zig function is an internal/runtime function (SAFE — skip analysis).
@@ -1403,321 +1353,52 @@ pub const FFIBoundaryPass = struct {
 
     /// Identify the language of a function based on its characteristics
     fn identifyLanguage(func: c.LLVMValueRef) Language {
-        const func_name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_ptr) == 0) return .unknown;
-
-        const func_name = std.mem.span(func_name_ptr);
-
-        // Check for Rust patterns
-        for (FFIPatterns.rust_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return .rust;
-            }
-        }
-
-        // Check for Zig patterns (be more specific to avoid false positives)
-        // Only mark as zig if we see clear Zig indicators
-        var has_zig_indicator = false;
-        for (FFIPatterns.zig_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                // Check for additional Zig-specific patterns
-                if (std.mem.indexOf(u8, func_name, "zig_") != null or
-                    std.mem.indexOf(u8, func_name, "@") != null)
-                {
-                    has_zig_indicator = true;
-                    break;
-                }
-            }
-        }
-
-        if (has_zig_indicator) {
-            return .zig;
-        }
-
-        // Default to C (most common case for C ABI)
-        return .c;
+        return lang_classifier.identifyLanguage(func);
     }
 
     /// Identify the language of a called function based on its name
     fn identifyCalleeLanguage(func_name: []const u8) Language {
-        // Check for Rust patterns
-        for (FFIPatterns.rust_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return .rust;
-            }
-        }
-
-        // Check for Zig patterns (be more specific to avoid false positives)
-        for (FFIPatterns.zig_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                // Check for additional Zig-specific patterns
-                if (std.mem.indexOf(u8, func_name, "zig_") != null or
-                    std.mem.indexOf(u8, func_name, "@") != null)
-                {
-                    return .zig;
-                }
-                // If only matched "extern" or "c_" prefix without Zig indicators,
-                // it's likely a C function with extern declaration
-                if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
-                    continue;
-                }
-                return .zig;
-            }
-        }
-
-        // Check for libc functions — these are C by definition
-        for (FFIPatterns.libc_patterns) |pattern| {
-            if (std.mem.eql(u8, func_name, pattern)) {
-                return .c;
-            }
-        }
-
-        // Check for Go functions (main.* or runtime.* patterns)
-        if (std.mem.startsWith(u8, func_name, "main.") or
-            std.mem.startsWith(u8, func_name, "runtime.") or
-            std.mem.startsWith(u8, func_name, "syscall."))
-        {
-            return .go;
-        }
-
-        // Check for Objective-C functions
-        if (std.mem.startsWith(u8, func_name, "_OBJC_") or
-            std.mem.startsWith(u8, func_name, "objc_"))
-        {
-            return .unknown;
-        }
-
-        // For external declarations with C ABI naming (no Rust/Zig/Go/ObjC
-        // patterns), classify as C. This covers extern "C" functions,
-        // libc wrappers, and typical C library functions.
-        // Internal (non-external) functions default to unknown to avoid
-        // misclassifying language-specific internal helpers.
-        return .c;
+        return lang_classifier.identifyCalleeLanguage(func_name);
     }
 
     /// Demangle a Rust mangled name to a readable format.
-    /// Returns null if the name is not a Rust mangled name (caller should use the original).
-    /// Returns an allocated string on success (caller must free it).
     fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error{OutOfMemory}!?[]u8 {
-        if (mangled.len < 4 or mangled[0] != '_' or mangled[1] != 'Z' or mangled[2] != 'N') {
-            return null;
-        }
-
-        var pos: usize = 3;
-        var components: [3][]const u8 = .{ "", "", "" };
-        var comp_count: usize = 0;
-
-        while (pos < mangled.len and comp_count < 3) {
-            if (mangled[pos] == 'E') break;
-
-            var len: usize = 0;
-            while (pos < mangled.len and mangled[pos] >= '0' and mangled[pos] <= '9') {
-                const new_len = std.math.mul(usize, len, 10) catch break;
-                const digit = @as(usize, mangled[pos] - '0');
-                len = std.math.add(usize, new_len, digit) catch break;
-                pos += 1;
-            }
-
-            if (len == 0 or pos >= mangled.len or pos + len > mangled.len) break;
-            if (len > 50) break;
-
-            const slice = mangled[pos .. pos + len];
-            pos += len;
-
-            if (slice.len == 0) continue;
-            if (slice[0] == '$' or slice[0] == 'C' or slice[0] == '{' or slice[0] == '}') {
-                if (pos < mangled.len and mangled[pos] == 'E') pos += 1;
-                continue;
-            }
-
-            if (comp_count == 0) {
-                if (std.mem.eql(u8, slice, "core") or
-                    std.mem.eql(u8, slice, "alloc") or
-                    std.mem.eql(u8, slice, "std") or
-                    std.mem.eql(u8, slice, "rust_ffi_demo"))
-                {
-                    components[0] = slice;
-                    comp_count = 1;
-                    continue;
-                }
-            }
-
-            if (comp_count > 0 or
-                (!std.mem.eql(u8, slice, "core") and
-                    !std.mem.eql(u8, slice, "alloc") and
-                    !std.mem.eql(u8, slice, "std")))
-            {
-                components[comp_count] = slice;
-                comp_count += 1;
-            }
-
-            if (pos < mangled.len and mangled[pos] == 'E') {
-                pos += 1;
-                break;
-            }
-        }
-
-        if (comp_count >= 2) {
-            return (try std.fmt.allocPrint(allocator, "{s}::{s}", .{ components[0], components[1] }));
-        } else if (comp_count == 1) {
-            return (try allocator.dupe(u8, components[0]));
-        }
-
-        return (try allocator.dupe(u8, mangled));
+        return lang_classifier.demangleRustName(allocator, mangled);
     }
 
     /// Classify the boundary kind based on caller and callee languages
     fn classifyBoundaryKind(caller_lang: Language, callee_lang: Language) BoundaryKind {
-        return switch (caller_lang) {
-            .rust => switch (callee_lang) {
-                .c => .rust_to_c,
-                .zig => .external_unknown,
-                else => .external_unknown,
-            },
-            .zig => switch (callee_lang) {
-                .c => .zig_to_c,
-                .rust => .external_unknown,
-                else => .external_unknown,
-            },
-            .c => switch (callee_lang) {
-                .rust => .c_to_rust,
-                .zig => .c_to_zig,
-                else => .external_unknown,
-            },
-            else => .external_unknown,
-        };
+        return lang_classifier.classifyBoundaryKind(caller_lang, callee_lang);
     }
 
     /// Check if a function name is a libc function
     fn isLibcFunction(func_name: []const u8) bool {
-        for (FFIPatterns.libc_patterns) |pattern| {
-            if (std.mem.eql(u8, func_name, pattern)) {
-                return true;
-            }
-        }
-        return false;
+        return lang_classifier.isLibcFunction(func_name);
     }
 
     /// Classify FFI boundary with enhanced detection for dynamic loading/JNI/Python
     fn classify_boundary_kind_enhanced(caller_lang: Language, callee_lang: Language, func_name: []const u8) BoundaryKind {
-        if (isDynamicLoadingFunction(func_name)) return .dynamic_loading;
-        if (isJNIFunction(func_name)) return .jni_call;
-        if (isPythonCApiFunction(func_name)) return .python_c_api_call;
-        return classifyBoundaryKind(caller_lang, callee_lang);
+        return lang_classifier.classify_boundary_kind_enhanced(caller_lang, callee_lang, func_name);
     }
 
     fn isDynamicLoadingFunction(func_name: []const u8) bool {
-        const dl_patterns = [_][]const u8{ "dlopen", "dlsym", "dlclose" };
-        for (dl_patterns) |p| {
-            if (std.mem.indexOf(u8, func_name, p) != null) return true;
-        }
-        return false;
+        return lang_classifier.isDynamicLoadingFunction(func_name);
     }
 
     fn isJNIFunction(func_name: []const u8) bool {
-        if (std.mem.startsWith(u8, func_name, "JNI_")) return true;
-        if (std.mem.startsWith(u8, func_name, "Java_")) return true;
-        const jni_patterns = [_][]const u8{
-            "FindClass",                "GetMethodID",             "GetStaticMethodID",
-            "GetFieldID",               "GetStaticFieldID",        "NewObject",
-            "CallVoidMethod",           "CallIntMethod",           "CallObjectMethod",
-            "CallStaticVoidMethod",     "CallStaticIntMethod",     "CallStaticObjectMethod",
-            "CallNonvirtualVoidMethod", "CallNonvirtualIntMethod", "NewStringUTF",
-            "NewGlobalRef",             "NewLocalRef",             "DeleteGlobalRef",
-            "DeleteLocalRef",           "NewByteArray",            "AttachCurrentThread",
-            "DetachCurrentThread",      "GetEnv",                  "GetJavaVM",
-            "MonitorEnter",             "MonitorExit",             "ExceptionCheck",
-            "ExceptionClear",           "ExceptionDescribe",       "ExceptionOccurred",
-            "Throw",                    "ThrowNew",                "GetStringUTFChars",
-            "ReleaseStringUTFChars",    "GetObjectField",          "SetObjectField",
-            "GetIntField",              "SetIntField",             "IsSameObject",
-            "IsInstanceOf",
-        };
-        for (jni_patterns) |p| {
-            if (std.mem.indexOf(u8, func_name, p) != null) return true;
-        }
-        return false;
+        return lang_classifier.isJNIFunction(func_name);
     }
 
     fn isPythonCApiFunction(func_name: []const u8) bool {
-        if (std.mem.startsWith(u8, func_name, "Py_")) return true;
-        if (std.mem.startsWith(u8, func_name, "Py")) {
-            const py_prefixes = [_][]const u8{
-                "PyArg_",        "PyBool",        "PyBytes",          "PyCallable",
-                "PyDict",        "PyErr_",        "PyEval_",          "PyFile",
-                "PyFloat",       "PyFrame",       "PyFrozenSet",      "PyGC_",
-                "PyGetSetDescr", "PyHash",        "PyImport_",        "PyInt_",
-                "PyIter",        "PyList_",       "PyLong",           "PyMapping",
-                "PyMem_",        "PyMethodDescr", "PyModule_",        "PyObject_",
-                "PyProperty",    "PyRange",       "PySeqIter",        "PySet_",
-                "PySlice",       "PyString",      "PyStructSequence", "PySys_",
-                "PyThreadState", "PyTraceBack",   "PyTuple_",         "PyType",
-                "PyUnicode",     "PyWeakref",     "PyCapsule",
-            };
-            for (py_prefixes) |p| {
-                if (std.mem.indexOf(u8, func_name, p) != null) return true;
-            }
-        }
-        const py_gil_patterns = [_][]const u8{
-            "PyGILState_",            "PyEval_InitThreads",
-            "PyEval_RestoreThread",   "PyEval_SaveThread",
-            "Py_BEGIN_ALLOW_THREADS", "Py_END_ALLOW_THREADS",
-        };
-        for (py_gil_patterns) |p| {
-            if (std.mem.indexOf(u8, func_name, p) != null) return true;
-        }
-        return false;
+        return lang_classifier.isPythonCApiFunction(func_name);
     }
 
-    /// Check if a function is a C++ ABI runtime internal function.
-    /// These are compiler-generated functions for exception handling,
-    /// thread-local storage initialization, dynamic type info, and
-    /// Meyers singleton initialization guards. They are NOT user code
-    /// and should never be reported as FFI risks or security issues.
     fn isCppAbiInternalFunction(func_name: []const u8) bool {
-        const cxa_prefixes = [_][]const u8{
-            "__cxa_begin_catch",
-            "__cxa_end_catch",
-            "__cxa_allocate_exception",
-            "__cxa_throw",
-            "__cxa_free_exception",
-            "__cxa_get_globals",
-            "__cxa_guard_acquire",
-            "__cxa_guard_release",
-            "__cxa_guard_abort",
-            "__cxa_atexit",
-            "__cxa_demangle",
-            "__cxa_pure_virtual",
-            "__cxa_rethrow",
-            "__cxa_allocate_dependent_exception",
-            "__cxa_throw_dependent_exception",
-            "__cxa_dependent_exception",
-            "__cxa_current_exception_type",
-            "__cxa_get_exception_ptr",
-            "__cxa_exception_class",
-        };
-        for (cxa_prefixes) |prefix| {
-            if (std.mem.eql(u8, func_name, prefix)) {
-                return true;
-            }
-        }
-        // Also catch any __cxa_* function by prefix
-        if (std.mem.indexOf(u8, func_name, "__cxa_") != null) {
-            return true;
-        }
-        return false;
+        return lang_classifier.isCppAbiInternalFunction(func_name);
     }
 
-    /// Check if a function is an STL/libc++ internal template expansion.
     fn isStlInternalFunction(func_name: []const u8) bool {
-        const stl_prefixes = [_][]const u8{
-            "_ZNSt3__", "_ZNSt4", "_ZNSt6", "_ZNSt7", "_ZNSt10",
-        };
-        for (stl_prefixes) |prefix| {
-            if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
-        }
-        if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
-        return false;
+        return lang_classifier.isStlInternalFunction(func_name);
     }
 
     /// Check if a function name represents a dangerous FFI pattern.

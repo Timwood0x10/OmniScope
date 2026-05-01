@@ -106,6 +106,13 @@ pub const MemorySafetyPass = struct {
 
         var issue_count: usize = 0;
 
+        // P0-3: Track which BBs freed each pointer within this function.
+        // If the same pointer is freed in multiple BBs, they are likely in
+        // mutually exclusive branches (if/else). Only report double free
+        // if the pointer was freed in the SAME BB (sequential double free).
+        var free_bb_map = std.AutoHashMap(u64, u32).init(ctx.allocator);
+        defer free_bb_map.deinit();
+
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -137,7 +144,7 @@ pub const MemorySafetyPass = struct {
                         const ptr_arg = c.LLVMGetOperand(inst, 0);
                         const ptr_as_int = @intFromPtr(ptr_arg);
 
-                        if (try validateAndReportFree(ctx, func, called_name, ptr_as_int, freed_pointers, relations, diag)) {
+                        if (try validateAndReportFree(ctx, func, called_name, ptr_as_int, freed_pointers, &free_bb_map, relations, diag)) {
                             issue_count += 1;
                         }
                     }
@@ -155,6 +162,7 @@ pub const MemorySafetyPass = struct {
         free_func_name: []const u8,
         ptr_value: u64,
         freed_pointers: *std.ArrayList(u64),
+        free_bb_map: *std.AutoHashMap(u64, u32),
         relations: *MemoryRelations,
         diag: *DiagnosticWriter,
     ) !bool {
@@ -170,12 +178,29 @@ pub const MemorySafetyPass = struct {
             return false;
         }
 
+        // P0-3: Path-sensitive double free detection.
+        // Check if this pointer was already freed in a DIFFERENT basic block
+        // within the same function. If so, the frees are likely in mutually
+        // exclusive branches (if/else) — not a real double free.
+        if (free_bb_map.get(ptr_value)) |prev_bb_count| {
+            if (prev_bb_count >= 1) {
+                // Already freed in at least one other BB in this function.
+                // This is the mutually-exclusive-branch pattern.
+                diag.debug("[SUPPRESSED] Mutually exclusive branch free (BB #{d}, ptr=0x{x}): {s}", .{
+                    prev_bb_count + 1,
+                    ptr_value,
+                    free_func_name,
+                });
+                // Update BB count but do NOT report or add to freed_pointers.
+                _ = free_bb_map.put(ptr_value, prev_bb_count + 1) catch {};
+                return false;
+            }
+        }
+
+        // Cross-function double free check (original logic).
         for (freed_pointers.items) |freed_ptr| {
             if (freed_ptr == ptr_value) {
                 // Suppress double free in Rust panic/cleanup paths.
-                // Rust's panic handling invokes destructors in cleanup paths,
-                // which can trigger apparent double-free patterns that are
-                // actually safe (drop glue checks for already-dropped state).
                 const caller_name_ptr = c.LLVMGetValueName(caller_func);
                 if (@intFromPtr(caller_name_ptr) != 0) {
                     const caller_name = std.mem.span(caller_name_ptr);
@@ -184,12 +209,6 @@ pub const MemorySafetyPass = struct {
                         return false;
                     }
                 }
-                // Also suppress if the free target is a compiler-generated
-                // function (e.g., drop_in_place, panic_in_cleanup).
-                // Also suppress Rust stdlib panic/cleanup functions —
-                // double-free involving panic_in_cleanup is always FP.
-                // Do NOT suppress libc alloc/free (malloc, free, etc.) —
-                // those are real deallocation calls.
                 const callee_classification = noise_filter.classifyFunctionFull(free_func_name, null, null, null);
                 if (callee_classification.origin == .compiler_generated) {
                     diag.debug("[SUPPRESSED] Double free in compiler-generated function: {s} ({s})", .{ free_func_name, callee_classification.reason });
@@ -204,6 +223,8 @@ pub const MemorySafetyPass = struct {
             }
         }
 
+        // Record this free.
+        _ = free_bb_map.put(ptr_value, 1) catch {};
         try freed_pointers.append(ctx.allocator, ptr_value);
 
         if (!validation.is_valid and validation.confidence > 0.7) {

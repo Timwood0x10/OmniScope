@@ -13,7 +13,10 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
+const noise_filter = @import("../semantics/noise_filter.zig");
 const Issue = @import("../diag/issue.zig").Issue;
+const DiagSeverity = @import("../diag/issue.zig").Severity;
+const NoiseSeverity = noise_filter.Severity;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -207,6 +210,16 @@ pub const PassContext = struct {
     /// reported an issue with the same (function, kind) signature,
     /// this call is silently skipped to avoid duplicate alerts.
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
+        // P2-1: Risk weighting integration.
+        // Classify the function origin and apply risk level adjustment.
+        // Suppressed issues are silently dropped — no noise in output.
+        const func_name = issue.location.function;
+        const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
+        const risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
+        if (risk == .suppressed) {
+            return;
+        }
+
         const dedup_key = self.dedupKey(issue);
         const gop = try self.reported_keys.getOrPut(dedup_key);
         if (gop.found_existing) {
@@ -214,7 +227,22 @@ pub const PassContext = struct {
             dup.deinit(self.allocator);
             return;
         }
-        try self.data_flow_graph.addIssue(issue.*);
+
+        // Adjust severity based on risk level when downgraded.
+        var final_issue = issue.*;
+        if (@intFromEnum(risk) > @intFromEnum(issue.severity)) {
+            // Risk level is lower than original severity — downgrade.
+            // Map RiskLevel back to Severity for the issue.
+            final_issue.severity = switch (risk) {
+                .critical => .critical,
+                .high => .high,
+                .medium => .medium,
+                .low => .low,
+                .suppressed => unreachable, // handled above
+            };
+        }
+
+        try self.data_flow_graph.addIssue(final_issue);
     }
 
     /// Compute a dedup key from an issue's (func_name, kind) pair.
@@ -533,4 +561,9 @@ test "PassContext - access to components" {
     _ = ctx.fact_store;
     _ = ctx.query_engine;
     _ = ctx.allocator;
+}
+
+/// Convert diag.issue.Severity to noise_filter.Severity
+fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
+    return @enumFromInt(@intFromEnum(sev));
 }

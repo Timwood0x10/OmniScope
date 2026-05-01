@@ -5,7 +5,7 @@
 //! - Language identification (Rust, Zig, C, unknown)
 //! - Rust name demangling
 //! - Boundary kind classification
-//! - Function family detection (libc, JNI, Python C API, C++ ABI)
+//! - Function family detection (libc, JNI, Python C API, C++ ABI, STL)
 //!
 //! Design principle: Stateless utility functions with pattern matching.
 //! No internal state, all functions are pure (except demangleRustName which allocates).
@@ -19,6 +19,7 @@ const BoundaryKind = FFIBoundary.BoundaryKind;
 
 /// Pattern definitions for language detection.
 /// Shared across multiple classification functions.
+/// These patterns match the ones originally in FFIBoundaryPass.FFIPatterns.
 const FFIPatterns = struct {
     /// Known Rust FFI patterns in function names
     pub const rust_patterns = [_][]const u8{
@@ -33,6 +34,8 @@ const FFIPatterns = struct {
         "zig_", // Zig external function prefix
         "extern", // Zig extern block marker
         "c_", // Zig C interop convention
+        "@cImport", // C import macro
+        "__zig", // Zig compiler-generated FFI glue
     };
 
     /// Known libc function names (exact match)
@@ -77,40 +80,23 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
         }
     }
 
-    // Check for Zig patterns using two-tier detection to avoid false positives.
-    //
-    // Tier 1: Strong indicators (unambiguous Zig markers)
-    //   - "zig_" prefix: Zig compiler-generated extern functions
-    //   - "@": Zig-specific naming convention in LLVM IR
-    //   These always indicate Zig code, no further checks needed.
-    //
-    // Tier 2: Weak indicators (ambiguous patterns shared with C)
-    //   - "extern": Could be C extern block or Zig extern
-    //   - "c_": Could be C interop prefix or C function
-    //   These require additional context to confirm Zig origin.
-    const has_zig_strong = std.mem.indexOf(u8, func_name, "zig_") != null or
-        std.mem.indexOf(u8, func_name, "@") != null;
-
-    // Tier 1: Check strong indicators first (fast path)
-    if (has_zig_strong) {
-        return .zig;
-    }
-
-    // Tier 2: Check weak indicators with additional validation
+    // Check for Zig patterns (be more specific to avoid false positives)
+    // Only mark as zig if we see clear Zig indicators
+    var has_zig_indicator = false;
     for (FFIPatterns.zig_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            // Weak pattern matched - apply additional heuristics:
-            // Skip "extern" and "c_" unless accompanied by other Zig signals
-            if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
-                const has_zig_hint = std.mem.indexOf(u8, func_name, "Zig") != null or
-                    std.mem.indexOf(u8, func_name, "_alloc") != null or
-                    std.mem.indexOf(u8, func_name, "_init") != null;
-                if (!has_zig_hint) {
-                    continue; // Likely a pure C function, skip
-                }
+            // Check for additional Zig-specific patterns
+            if (std.mem.indexOf(u8, func_name, "zig_") != null or
+                std.mem.indexOf(u8, func_name, "@") != null)
+            {
+                has_zig_indicator = true;
+                break;
             }
-            return .zig;
         }
+    }
+
+    if (has_zig_indicator) {
+        return .zig;
     }
 
     // Default to C (most common case for C ABI)
@@ -128,6 +114,13 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
 /// Returns:
 ///   - Detected language enum value
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
+    // LLVM intrinsics (llvm.* prefix) are compiler-generated,
+    // not any language's FFI function. Skip them to prevent
+    // misclassification (e.g., llvm.threadlocal.address.p0 as Zig).
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .unknown;
+    }
+
     // Check for Rust patterns
     for (FFIPatterns.rust_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
@@ -135,46 +128,52 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         }
     }
 
-    // Check for Zig patterns using two-tier detection to avoid false positives.
-    //
-    // Tier 1: Strong indicators (unambiguous Zig markers)
-    //   - "zig_" prefix: Zig compiler-generated extern functions
-    //   - "@": Zig-specific naming convention in LLVM IR
-    //   These always indicate Zig code, no further checks needed.
-    //
-    // Tier 2: Weak indicators (ambiguous patterns shared with C)
-    //   - "extern": Could be C extern block or Zig extern
-    //   - "c_": Could be C interop prefix or C function
-    //   These require additional context to confirm Zig origin.
-    const has_zig_strong = std.mem.indexOf(u8, func_name, "zig_") != null or
-        std.mem.indexOf(u8, func_name, "@") != null;
-
-    // Tier 1: Check strong indicators first (fast path)
-    if (has_zig_strong) {
-        return .zig;
-    }
-
-    // Tier 2: Check weak indicators with additional validation
+    // Check for Zig patterns (be more specific to avoid false positives)
     for (FFIPatterns.zig_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            // Weak pattern matched - apply additional heuristics:
-            // Skip "extern" and "c_" unless accompanied by other Zig signals
+            // Check for additional Zig-specific patterns
+            if (std.mem.indexOf(u8, func_name, "zig_") != null or
+                std.mem.indexOf(u8, func_name, "@") != null)
+            {
+                return .zig;
+            }
+            // If only matched "extern" or "c_" prefix without Zig indicators,
+            // it's likely a C function with extern declaration
             if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
-                // Additional check: does the function name contain other Zig-like patterns?
-                // e.g., "extern.zig_helper" or "c_zig_callback" would pass this
-                const has_zig_hint = std.mem.indexOf(u8, func_name, "Zig") != null or
-                    std.mem.indexOf(u8, func_name, "_alloc") != null or
-                    std.mem.indexOf(u8, func_name, "_init") != null;
-                if (!has_zig_hint) {
-                    continue; // Likely a pure C function, skip
-                }
+                continue;
             }
             return .zig;
         }
     }
 
-    // Check if it's an external/unknown function
-    return .unknown;
+    // Check for libc functions — these are C by definition
+    for (FFIPatterns.libc_patterns) |pattern| {
+        if (std.mem.eql(u8, func_name, pattern)) {
+            return .c;
+        }
+    }
+
+    // Check for Go functions (main.* or runtime.* patterns)
+    if (std.mem.startsWith(u8, func_name, "main.") or
+        std.mem.startsWith(u8, func_name, "runtime.") or
+        std.mem.startsWith(u8, func_name, "syscall."))
+    {
+        return .go;
+    }
+
+    // Check for Objective-C functions
+    if (std.mem.startsWith(u8, func_name, "_OBJC_") or
+        std.mem.startsWith(u8, func_name, "objc_"))
+    {
+        return .unknown;
+    }
+
+    // For external declarations with C ABI naming (no Rust/Zig/Go/ObjC
+    // patterns), classify as C. This covers extern "C" functions,
+    // libc wrappers, and typical C library functions.
+    // Internal (non-external) functions default to unknown to avoid
+    // misclassifying language-specific internal helpers.
+    return .c;
 }
 
 /// Demangle a Rust mangled name to a readable format.
@@ -259,10 +258,10 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
 /// Classify the FFI boundary kind based on caller and callee languages.
 ///
 /// Maps language pairs to specific boundary kinds:
-/// - Rust → C: `.rust_to_c`
-/// - Zig → C: `.zig_to_c`
-/// - C → Rust: `.c_to_rust`
-/// - C → Zig: `.c_to_zig`
+/// - Rust -> C: `.rust_to_c`
+/// - Zig -> C: `.zig_to_c`
+/// - C -> Rust: `.c_to_rust`
+/// - C -> Zig: `.c_to_zig`
 /// - Other combinations: `.external_unknown`
 ///
 /// Parameters:
@@ -311,7 +310,7 @@ pub fn isLibcFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// Classify FFI boundary with enhanced detection for special function families.
+/// Classify FFI boundary with enhanced detection for dynamic loading/JNI/Python.
 ///
 /// Extends `classifyBoundaryKind()` by checking for:
 /// - Dynamic loading functions (dlopen/dlsym/dlclose)
@@ -327,12 +326,15 @@ pub fn isLibcFunction(func_name: []const u8) bool {
 ///
 /// Returns:
 ///   - Boundary kind enum value (may be special kind like .dynamic_loading)
-pub fn classifyBoundaryKindEnhanced(caller_lang: Language, callee_lang: Language, func_name: []const u8) BoundaryKind {
+pub fn classify_boundary_kind_enhanced(caller_lang: Language, callee_lang: Language, func_name: []const u8) BoundaryKind {
     if (isDynamicLoadingFunction(func_name)) return .dynamic_loading;
     if (isJNIFunction(func_name)) return .jni_call;
     if (isPythonCApiFunction(func_name)) return .python_c_api_call;
     return classifyBoundaryKind(caller_lang, callee_lang);
 }
+
+/// Alias for classify_boundary_kind_enhanced (camelCase variant).
+pub const classifyBoundaryKindEnhanced = classify_boundary_kind_enhanced;
 
 /// Check if a function is a POSIX dynamic loading function.
 ///
@@ -409,10 +411,10 @@ pub fn isPythonCApiFunction(func_name: []const u8) bool {
 }
 
 /// Check if a function is a C++ ABI runtime internal function.
-///
-/// These are compiler-generated functions for exception handling (__cxa_*),
-/// thread-local storage initialization, Meyers singleton guards, etc.
-/// They should NEVER be reported as FFI risks.
+/// These are compiler-generated functions for exception handling,
+/// thread-local storage initialization, dynamic type info, and
+/// Meyers singleton initialization guards. They are NOT user code
+/// and should never be reported as FFI risks or security issues.
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
     const cxa_prefixes = [_][]const u8{
         "__cxa_begin_catch",
@@ -447,22 +449,16 @@ pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// Check if a function is a C++ STL internal implementation function.
-///
+/// Check if a function is an STL/libc++ internal template expansion.
 /// These are template instantiation helpers and should be skipped during analysis.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
     const stl_prefixes = [_][]const u8{
-        "_ZSt", // GCC/Clang STL mangling prefix
-        "_ZNSt", // GCC/Clang STL nested name mangling
-        "std::", // MSVC namespace (unlikely but possible)
-        "__gnu_debug", // libstdc++ debug mode
-        "__gxx_personality", // Exception personality routine
+        "_ZNSt3__", "_ZNSt4", "_ZNSt6", "_ZNSt7", "_ZNSt10",
     };
     for (stl_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) {
-            return true;
-        }
+        if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
     }
+    if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
     return false;
 }
 
