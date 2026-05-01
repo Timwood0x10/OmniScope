@@ -484,14 +484,18 @@ pub const FFIBoundaryPass = struct {
 
         // Identify the language boundary
         const caller_lang = identifyLanguage(caller_func);
-        var callee_lang = identifyCalleeLanguage(called_name);
+        const callee_lang = identifyCalleeLanguage(called_name);
 
-        // If it's an external function and not clearly identified, mark as unknown
-        if (is_external and callee_lang == .unknown) {
-            // External unknown functions are potential FFI boundaries
-            callee_lang = .unknown;
+        // Classify the FFI boundary
+        // Cross-language: caller and callee are different known languages
+        // External unknown: callee is external but language couldn't be determined
+        if (caller_lang != callee_lang and callee_lang != .unknown and caller_lang != .unknown) {
+            stats.cross_lang += 1;
+        } else if (is_external and callee_lang == .unknown) {
             stats.external_unknown += 1;
-        } else if (caller_lang != callee_lang and callee_lang != .unknown) {
+        } else if (is_external and caller_lang != callee_lang) {
+            // External function with different language (e.g., Rust -> external C)
+            // This is a cross-language FFI boundary
             stats.cross_lang += 1;
         }
 
@@ -1461,9 +1465,18 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Check if it's an external/unknown function
-        // (no specific language patterns)
-        return .unknown;
+        // Check for libc functions — these are C by definition
+        for (FFIPatterns.libc_patterns) |pattern| {
+            if (std.mem.eql(u8, func_name, pattern)) {
+                return .c;
+            }
+        }
+
+        // Default: non-Rust, non-Zig functions with C ABI naming are C.
+        // This includes extern "C" declarations, libc wrappers, etc.
+        // Rust mangled names start with _ZN or _R; Zig uses zig_/c_ prefixes.
+        // Everything else in a typical LLVM IR module follows C naming conventions.
+        return .c;
     }
 
     /// Demangle a Rust mangled name to a readable format.

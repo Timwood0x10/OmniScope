@@ -661,8 +661,9 @@ pub fn detectUseAfterFree(
             continue;
         }
 
-        // INTEGRATION: Use noise_filter to skip stdlib/compiler-generated code
-        const classification = noise_filter.classifyFunction(free_info.func_name, null);
+        // INTEGRATION: Use three-layer noise filter (name-based only here,
+        // no LLVMValueRef available for path-based Layer 2)
+        const classification = noise_filter.classifyFunctionFull(free_info.func_name, null, null, null);
         if (!classification.origin.shouldReportByDefault()) {
             diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
             continue;

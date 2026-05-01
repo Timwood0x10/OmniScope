@@ -33,6 +33,7 @@ const noise_filter = @import("../../semantics/noise_filter.zig");
 const FunctionOrigin = noise_filter.FunctionOrigin;
 const RiskLevel = noise_filter.RiskLevel;
 const Language = noise_filter.Language;
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Types of FFI type mismatches detected.
 pub const TypeMismatchKind = enum(u8) {
@@ -127,9 +128,10 @@ pub const FFITypeMismatchPass = struct {
         if (@intFromPtr(func_name_ptr) == 0) return;
         const func_name = std.mem.span(func_name_ptr);
 
-        // INTEGRATION: Use existing noise_filter to classify function
-        const classification = noise_filter.classifyFunction(func_name, null);
-        
+        // INTEGRATION: Use three-layer noise filter (name + path)
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+
         // Skip stdlib and compiler-generated code
         if (!classification.origin.shouldReportByDefault()) {
             diag.debug("[SUPPRESSED] FFITypeMismatch: {s} ({s})", .{ func_name, classification.reason });
@@ -445,11 +447,11 @@ pub const FFITypeMismatchPass = struct {
 
         // Common C standard library prefixes
         const c_prefixes = [_][]const u8{
-            "malloc", "free", "calloc", "realloc",
-            "fopen", "fclose", "fread", "fwrite",
-            "pthread_", "sem_",
-            "dlopen", "dlsym", "dlclose",
-            "socket", "bind", "listen", "accept",
+            "malloc",   "free",   "calloc", "realloc",
+            "fopen",    "fclose", "fread",  "fwrite",
+            "pthread_", "sem_",   "dlopen", "dlsym",
+            "dlclose",  "socket", "bind",   "listen",
+            "accept",
         };
 
         for (c_prefixes) |prefix| {

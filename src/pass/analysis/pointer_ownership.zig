@@ -43,6 +43,7 @@ const alloc_classifier = @import("allocation_classifier.zig");
 const cpp_fp = @import("cpp_fp_reduction.zig");
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -241,8 +242,10 @@ pub const PointerOwnershipPass = struct {
                 .unsafe, .ffi, .unknown => {},
             }
 
-            // INTEGRATION: Use noise_filter to skip stdlib/compiler-generated code
-            const classification = noise_filter.classifyFunction(func_name, null);
+            // INTEGRATION: Use three-layer noise filter (name + path + behavior)
+            // Layer 2 uses debug info from the function's source location
+            const func_loc = DebugInfoUtils.getFunctionLocation(func);
+            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
             if (!classification.origin.shouldReportByDefault()) {
                 diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
                 continue;

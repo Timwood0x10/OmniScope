@@ -287,6 +287,75 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ClassificationRe
     return defaultClassification(func_name);
 }
 
+/// Unified three-layer classification combining name-based, path-based, and
+/// behavior-based filters. This is the single entry point all passes should
+/// use instead of calling classifyFunction() directly.
+///
+/// Layer 1 (name-based): Always applied — fastest, medium accuracy.
+/// Layer 2 (path-based): Applied when source_location is provided — high accuracy.
+/// Layer 3 (behavior):   Applied when behavior_result is provided — highest accuracy.
+///
+/// Priority: Layer 3 > Layer 2 > Layer 1
+/// If a higher layer classifies as stdlib/compiler_generated, that wins.
+/// If a higher layer classifies as user, we still trust it over lower layers.
+pub fn classifyFunctionFull(
+    func_name: []const u8,
+    lang: ?Language,
+    source_location: ?@import("../ir/debug_info.zig").SourceLocation,
+    behavior_result: ?@import("behavior_filter.zig").BehaviorResult,
+) ClassificationResult {
+    // Layer 1: Name-based (always available)
+    var result = classifyFunction(func_name, lang);
+
+    // Layer 2: Path-based (when debug info is available)
+    if (source_location) |loc| {
+        if (loc.valid()) {
+            const path_filter = @import("path_filter.zig");
+            const path_result = path_filter.classifyByPath(loc, func_name);
+            // Path-based classification overrides name-based for
+            // stdlib/compiler_generated because source paths are
+            // more reliable than name patterns
+            if (path_result.origin == .stdlib or path_result.origin == .compiler_generated) {
+                result = .{
+                    .origin = path_result.origin,
+                    .risk_level = path_result.risk_level,
+                    .reason = path_result.reason,
+                };
+            }
+        }
+    }
+
+    // Layer 3: Behavior-based (when instruction analysis is available)
+    if (behavior_result) |br| {
+        if (br.shouldSuppress()) {
+            // Behavior filter detected a known runtime pattern
+            const origin: FunctionOrigin = switch (br.pattern) {
+                .rust_drop_glue, .stl_reallocation => .compiler_generated,
+                .zig_allocator_wrapper => .stdlib,
+                .ffi_boundary, .user_logic, .unknown => result.origin,
+            };
+            result = .{
+                .origin = origin,
+                .risk_level = .suppressed,
+                .reason = br.reason,
+            };
+        }
+    }
+
+    return result;
+}
+
+/// Convenience: check if a function should be analyzed (not suppressed).
+/// Returns true for user/third_party/unknown, false for stdlib/compiler_generated.
+pub fn shouldAnalyze(
+    func_name: []const u8,
+    lang: ?Language,
+    source_location: ?@import("../ir/debug_info.zig").SourceLocation,
+) bool {
+    const result = classifyFunctionFull(func_name, lang, source_location, null);
+    return result.origin.shouldReportByDefault();
+}
+
 /// Get effective risk level based on origin and issue severity.
 ///
 /// This implements the risk weighting system:

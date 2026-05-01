@@ -155,16 +155,16 @@ pub const DIFile = struct {
     pub fn getDirectory(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const dir_ptr = c.LLVMDIFileGetDirectory(self.raw, &len);
-        if (dir_ptr == null or len == 0) return "";
-        return dir_ptr.?[0..len];
+        if (@intFromPtr(dir_ptr) == 0 or len == 0) return "";
+        return dir_ptr[0..len];
     }
 
     /// Get the filename (without directory) of this file.
     pub fn getFilename(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const name_ptr = c.LLVMDIFileGetFilename(self.raw, &len);
-        if (name_ptr == null or len == 0) return "";
-        return name_ptr.?[0..len];
+        if (@intFromPtr(name_ptr) == 0 or len == 0) return "";
+        return name_ptr[0..len];
     }
 
     /// Get the full path (directory + filename).
@@ -201,7 +201,7 @@ pub const DISubprogram = struct {
     }
 
     pub fn getLine(self: DISubprogram) u32 {
-        return c.LLVMGetSubprogramLine(self.raw);
+        return c.LLVMDISubprogramGetLine(self.raw);
     }
 
     pub fn getCompileUnit(self: DISubprogram) ?DICompileUnit {

@@ -489,10 +489,9 @@ fn isOutputParam(callee_name: []const u8, param_index: u32) bool {
     // Pattern 1: Known output parameter functions
     const output_param_functions = [_][]const u8{
         "sqlite3_prepare", "sqlite3_open", "sqlite3ThreadCreate",
-        "pthread_create", "pthread_join",
-        "getsockopt", "getaddrinfo", "getnameinfo",
-        "clock_gettime", "gettimeofday", "regcomp",
-        "curl_easy_getinfo",
+        "pthread_create",  "pthread_join", "getsockopt",
+        "getaddrinfo",     "getnameinfo",  "clock_gettime",
+        "gettimeofday",    "regcomp",      "curl_easy_getinfo",
     };
     for (output_param_functions) |pattern| {
         if (std.mem.startsWith(u8, callee_name, pattern)) {

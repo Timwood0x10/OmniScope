@@ -1356,11 +1356,11 @@ pub const PtrLifetimePass = struct {
                 if (ptr_info.is_param_storage) {
                     diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
                     stats.heap_intentional_transfer += 1;
-                // v0.2.0: Skip sret allocas — LLVM uses "alloca ptr" as a return
-                // value slot for functions returning pointers. The alloca itself is
-                // on the stack, but it only holds a pointer to heap-allocated memory.
-                // Returning the alloca address is the standard LLVM sret pattern,
-                // not a dangerous stack escape.
+                    // v0.2.0: Skip sret allocas — LLVM uses "alloca ptr" as a return
+                    // value slot for functions returning pointers. The alloca itself is
+                    // on the stack, but it only holds a pointer to heap-allocated memory.
+                    // Returning the alloca address is the standard LLVM sret pattern,
+                    // not a dangerous stack escape.
                 } else if (isSretAlloca(retval, inst, func)) {
                     diag.debug("[SUPPRESSED] Sret alloca (return value slot, not real stack escape): {s}", .{func_name});
                     stats.heap_intentional_transfer += 1;

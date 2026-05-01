@@ -784,7 +784,7 @@ pub const CallbackEscapePass = struct {
     /// Checks if a function is a factory/constructor that transfers ownership to caller.
     fn isFactoryFunction(func_name: []const u8) bool {
         const factory_patterns = [_][]const u8{
-            "Alloc", "Create", "New", "Init", "Open", "Dup",
+            "Alloc",  "Create", "New",     "Init", "Open", "Dup",
             "Malloc", "Calloc", "Realloc",
         };
         for (factory_patterns) |pattern| {
@@ -798,7 +798,7 @@ pub const CallbackEscapePass = struct {
     /// Checks if a function is a destructor that consumes ownership from caller.
     fn isDestructorFunction(func_name: []const u8) bool {
         const destructor_patterns = [_][]const u8{
-            "Free", "Destroy", "Delete", "Close", "Release", "Cleanup",
+            "Free",   "Destroy",  "Delete",  "Close", "Release", "Cleanup",
             "Finish", "Finalize", "Dispose",
         };
         for (destructor_patterns) |pattern| {
