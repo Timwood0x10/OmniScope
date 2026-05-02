@@ -98,6 +98,16 @@ pub const RUST_SAFE_PATTERNS = [_][]const u8{
     "clone",
     "into_iter",
     "from_iter",
+
+    // R7.0: Migrated from FPWhitelist Category 2 (Rust stdlib safe primitives)
+    // These were verified as FPs from BLST/Wasmtime audits — safe by language guarantee.
+    "sync_channel::",
+    "Waker::",
+    "RawVec::",
+
+    // R7.0: Rust global allocator shims (compiler-generated runtime glue)
+    "__rust_alloc",
+    "__rust_dealloc",
 };
 
 /// Rust escape triggers - focus analysis.
@@ -729,6 +739,21 @@ fn isCFunction(func_name: []const u8) bool {
 /// - snake_case with known FFI patterns → .ffi
 /// - pure internal C logic → .unknown (conservative)
 fn classifyCFunction(func_name: []const u8) ZoneKind {
+    // R7.0: Library internal patterns — these are runtime-internal, NOT FFI boundaries.
+    // Migrated from FPWhitelist Category 3 (project-specific contextual suppressions).
+    const C_INTERNAL_PATTERNS = [_][]const u8{
+        "uv__", // libuv internal functions (e.g., uv__socket)
+        "sqlite3Mem", // SQLite custom allocator shims
+        "__pthread", // glibc pthread internals
+    };
+    for (C_INTERNAL_PATTERNS) |pat| {
+        if (std.mem.startsWith(u8, func_name, pat) or
+            std.mem.indexOf(u8, func_name, pat) != null)
+        {
+            return .runtime_internal;
+        }
+    }
+
     const C_FFI_PATTERNS = [_][]const u8{
         // FFI boundary markers
         "FFI_",

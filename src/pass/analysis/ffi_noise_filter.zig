@@ -6,20 +6,19 @@
 
 const std = @import("std");
 
-/// Re-export language classifier for unified access.
-const lang_classifier = @import("ffi_language_classifier.zig");
+/// Re-export ffi_utils for unified STL/ABI pattern matching (single source of truth).
+const ffi_utils = @import("ffi_utils.zig");
 
 /// Check if a function is a C++ ABI internal function (__cxa_*).
-/// These are compiler-generated exception handling, TLS, guard (singleton),
-/// atexit registration, and dynamic cast support functions.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
-    return lang_classifier.isCppAbiInternalFunction(func_name);
+    return ffi_utils.isCppAbiInternalFunction(func_name);
 }
 
 /// Check if a function is an internal STL/libc++ template expansion.
-/// Delegated to unified language classifier (single source of truth).
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isStlInternalFunction(func_name: []const u8) bool {
-    return lang_classifier.isStlInternalFunction(func_name);
+    return ffi_utils.isStlInternalFunction(func_name);
 }
 
 /// Safe libc patterns that should be skipped during FFI analysis.

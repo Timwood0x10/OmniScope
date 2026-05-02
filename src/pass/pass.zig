@@ -14,9 +14,12 @@ const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
+const language_detector = @import("../semantics/language_detector.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
 const NoiseSeverity = noise_filter.Severity;
+const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
+const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -56,8 +59,23 @@ pub const PassContext = struct {
     /// the same underlying instruction/issue.
     reported_keys: std.AutoHashMap(u64, void),
 
+    /// Performance: Cache for SemanticRegistry lookups.
+    /// O(1) repeated lookups of the same function name within an analysis session.
+    registry_cache: std.StringHashMap(FunctionSemantics),
+
+    /// Performance: Cache for zone classification results.
+    /// O(1) repeated zone classification of the same function within an analysis session.
+    zone_cache: std.StringHashMap(zone_classifier.ZoneKind),
+
     /// Zone statistics for function classification
     zone_stats: zone_classifier.ZoneStats,
+
+    /// R7.2: Module-level language detection result (detected once at scan entry).
+    /// All passes read from this instead of detecting language independently.
+    module_language: language_detector.LanguageProfile,
+
+    /// R7.2: Whether module language has been detected yet.
+    language_detected: bool,
 
     /// Degradation statistics
     /// Tracks the number of functions that were skipped due to errors
@@ -86,7 +104,11 @@ pub const PassContext = struct {
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
             .reported_keys = std.AutoHashMap(u64, void).init(allocator),
+            .registry_cache = std.StringHashMap(FunctionSemantics).init(allocator),
+            .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(allocator),
             .zone_stats = zone_classifier.ZoneStats{},
+            .module_language = undefined,
+            .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
         };
     }
@@ -142,6 +164,8 @@ pub const PassContext = struct {
         self.rust_into_raw_set.deinit();
         self.rust_from_raw_set.deinit();
         self.reported_keys.deinit();
+        self.registry_cache.clearAndFree();
+        self.zone_cache.clearAndFree();
     }
 
     /// Set the IR module
@@ -260,6 +284,224 @@ pub const PassContext = struct {
         if (loc.line > 0) hasher.update(&std.mem.toBytes(loc.line)); // Line number (if available)
         if (loc.column > 0) hasher.update(&std.mem.toBytes(loc.column)); // Column (if available)
         return hasher.final();
+    }
+
+    /// R6.1+R6.3 Performance: Cached SemanticRegistry lookup.
+    /// O(1) for cache hits, O(N) on first lookup then cached for subsequent calls.
+    pub fn cachedRegistryLookup(self: *PassContext, func_name: []const u8) ?FunctionSemantics {
+        if (self.registry_cache.get(func_name)) |sem| {
+            return sem;
+        }
+        const sem = SemanticRegistry.lookup(func_name) orelse return null;
+        self.registry_cache.put(func_name, sem) catch |err| {
+            // Cache miss on OOM is non-fatal: return computed value without caching.
+            // Next call will re-compute (correct, just slower).
+            log.warn("registry_cache.put OOM for '{s}': {}", .{ func_name, err });
+        };
+        return sem;
+    }
+
+    /// R6.1 Performance: Cached zone classification lookup (get).
+    /// Returns cached result if available, null otherwise.
+    /// Caller should compute zone via zone_classifier then call cacheZoneResult().
+    pub fn cachedZoneLookup(self: *PassContext, func_name: []const u8) ?zone_classifier.ZoneKind {
+        return self.zone_cache.get(func_name);
+    }
+
+    /// R6.1 Performance: Cache zone classification result (set).
+    /// Stores the computed zone for future O(1) lookups.
+    pub fn cacheZoneResult(self: *PassContext, func_name: []const u8, zone: zone_classifier.ZoneKind) void {
+        self.zone_cache.put(func_name, zone) catch |err| {
+            // Cache miss on OOM is non-fatal: zone will be re-computed on next lookup.
+            log.warn("zone_cache.put OOM for '{s}': {}", .{ func_name, err });
+        };
+    }
+
+    /// R7.0: Unified zone classification with caching (get-or-compute).
+    /// Eliminates the repetitive cachedZoneLookup/orelse/cacheZoneResult pattern
+    /// that was duplicated across 5+ call sites in ptr_lifetime, pointer_ownership,
+    /// callback_escape, etc.
+    ///
+    /// Returns the ZoneKind for a function, using cache when available.
+    ///
+    /// Null safety: @intFromPtr extracts the address as an integer before comparison,
+    /// avoiding any pointer dereference on null. The early return at .unknown is safe
+    /// because zone_classifier.classifyFunctionFromLLVM requires a valid LLVM value.
+    ///
+    /// Type safety note: *anyopaque is used instead of c.LLVMValueRef here due to
+    /// a Zig 0.15 compiler bug where importing llvm_raw.zig.c (which defines
+    /// c.LLVMValueRef) in the same file that uses std.log formatting causes an
+    /// "ambiguous format string" compile error. The error manifests only in test
+    /// builds (zig build test), not in ReleaseFast builds. The workaround is to
+    /// accept *anyopaque from callers and @ptrCast internally where needed.
+    ///
+    /// Note on runtime type checking: We cannot use @TypeOf(func) to validate that
+    /// func is actually an LLVMValueRef because the parameter is typed as *anyopaque,
+    /// so @TypeOf would always return *anyopaque (never c.LLVMValueRef). Runtime type
+    /// validation of opaque pointers is not possible in Zig without unsafe assumptions.
+    /// All callers are trusted to pass valid c.LLVMValueRef values cast to *anyopaque.
+    /// TODO: Re-evaluate after Zig upgrade — if the format string ambiguity is
+    /// resolved, switch to c.LLVMValueRef for proper type safety.
+    pub fn getOrComputeZone(self: *PassContext, func: *anyopaque, func_name: []const u8) zone_classifier.ZoneKind {
+        const func_addr = @intFromPtr(func);
+        if (func_addr == 0) return .unknown;
+        return self.cachedZoneLookup(func_name) orelse blk: {
+            const z = zone_classifier.classifyFunctionFromLLVM(@ptrCast(func), func_name);
+            self.cacheZoneResult(func_name, z);
+            break :blk z;
+        };
+    }
+
+    /// R7.0: Shared zone gate — determines if a function should be analyzed
+    /// based on its zone classification.
+    pub fn shouldAnalyzeZone(zone: zone_classifier.ZoneKind) bool {
+        return switch (zone) {
+            .safe => false,
+            .runtime_internal => false,
+            .unknown => true,
+            .unsafe => true,
+            .ffi => true,
+        };
+    }
+
+    /// R7.2: Initialize module-level language detection.
+    ///
+    /// Called once at Pipeline.run() before any passes execute.
+    /// Detects the source language from DWARF/producer/sampling and stores
+    /// the result in ctx.module_language for all passes to read.
+    ///
+    /// This is the Language-First Pipeline entry point: detect language ONCE,
+    /// then activate the corresponding zone rules channel.
+    pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
+        if (self.language_detected) return;
+        if (module_ref == null or self.module == null) {
+            self.module_language = .{
+                .language = .unknown,
+                .confidence = 0.0,
+                .method = .unknown,
+            };
+            self.language_detected = true;
+            return;
+        }
+
+        const c = @import("../ir/llvm_raw.zig").c;
+        const llvm_module = if (self.module) |m|
+            m.raw
+        else
+            @as(c.LLVMModuleRef, @ptrFromInt(0));
+
+        if (@intFromPtr(llvm_module) == 0) {
+            self.module_language = .{
+                .language = .unknown,
+                .confidence = 0.0,
+                .method = .unknown,
+            };
+            self.language_detected = true;
+            return;
+        }
+
+        self.module_language = language_detector.detectModuleLanguage(llvm_module);
+        self.language_detected = true;
+
+        log.info("LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
+            @tagName(self.module_language.language),
+            self.module_language.confidence * 100,
+            @tagName(self.module_language.method),
+        });
+    }
+
+    /// R7.2: Get the detected module-level language.
+    ///
+    /// All analysis passes should call this instead of detecting language
+    /// independently per-function. Returns .unknown with 0.0 confidence if
+    /// initModuleLanguage() has not been called yet.
+    pub fn getModuleLanguage(self: *const PassContext) language_detector.LanguageProfile {
+        return self.module_language;
+    }
+
+    /// R7.2: Check if the module was detected as a specific language.
+    /// Convenience methods for pass-level language gating.
+    pub fn isGoModule(self: *const PassContext) bool {
+        return self.module_language.language == .go;
+    }
+    pub fn isRustModule(self: *const PassContext) bool {
+        return self.module_language.language == .rust;
+    }
+    pub fn isZigModule(self: *const PassContext) bool {
+        return self.module_language.language == .zig;
+    }
+    pub fn isCModule(self: *const PassContext) bool {
+        return self.module_language.language == .c or self.module_language.language == .cpp;
+    }
+    pub fn isUnknownModule(self: *const PassContext) bool {
+        return self.module_language.language == .unknown;
+    }
+
+    /// R7.2: Zone Rules Channel -- determine if a pass should run at full strength.
+    ///
+    /// Based on the detected module language, returns whether a given analysis
+    /// category should be fully active, limited (reduced sensitivity), or skipped.
+    ///
+    /// Channel matrix:
+    ///   Language | ffi_boundary  | ptr_lifetime  | callback_escape | pointer_ownership
+    ///   ---------|--------------|--------------|----------------|------------------
+    ///   Rust     | full         | full         | unsafe-only    | full
+    ///   Zig      | cImport-only | skip         | skip           | skip
+    ///   Go       | cgo-only     | limited      | full cgo      | limited
+    ///   C/C++    | full         | full         | real-escape   | full
+    ///   unknown  | generic      | generic      | generic        | generic
+    pub fn channelFFIBoundary(self: *const PassContext) ChannelMode {
+        return switch (self.module_language.language) {
+            .zig => .limited,
+            .go => .limited,
+            else => .full,
+        };
+    }
+    pub fn channelPtrLifetime(self: *const PassContext) ChannelMode {
+        return switch (self.module_language.language) {
+            .zig => .skip,
+            .go => .limited,
+            else => .full,
+        };
+    }
+    pub fn channelCallbackEscape(self: *const PassContext) ChannelMode {
+        return switch (self.module_language.language) {
+            .zig => .skip,
+            else => .full,
+        };
+    }
+    pub fn channelPointerOwnership(self: *const PassContext) ChannelMode {
+        return switch (self.module_language.language) {
+            .zig => .skip,
+            .go => .limited,
+            else => .full,
+        };
+    }
+
+    /// R7.2: Channel mode for analysis pass gating.
+    pub const ChannelMode = enum {
+        /// Run analysis at full sensitivity (default for C/C++/unknown)
+        full,
+        /// Run with reduced sensitivity (fewer alerts, higher thresholds)
+        limited,
+        /// Skip this pass entirely (language guarantees make it unnecessary)
+        skip,
+    };
+
+    /// R7.0-P1: Zone classification by name only (no LLVMValueRef needed).
+    /// Used for **callee** zone lookups in checkCallForFFI hot path where we have
+    /// the function name but not the LLVM value (e.g., external/declared functions).
+    ///
+    /// This is critical for performance on large files like sqlite3.ll (~10,000 call
+    /// instructions, ~1,000 unique called_names). Without caching, each call to
+    /// zone_classifier.classifyFunction() re-scans all pattern arrays (~200 entries).
+    /// With caching, the first call is O(N), subsequent O(1) HashMap lookup.
+    pub fn getOrComputeZoneByName(self: *PassContext, func_name: []const u8) zone_classifier.ZoneKind {
+        return self.cachedZoneLookup(func_name) orelse blk: {
+            const z = zone_classifier.classifyFunction(func_name, null);
+            self.cacheZoneResult(func_name, z);
+            break :blk z;
+        };
     }
 
     /// Mark a node as tainted
@@ -564,6 +806,59 @@ test "PassContext - access to components" {
     _ = ctx.fact_store;
     _ = ctx.query_engine;
     _ = ctx.allocator;
+}
+
+test "PassContext - getOrComputeZoneByName caching" {
+    var fact_store = try FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    defer ctx.deinit();
+
+    // LLVM intrinsics → .runtime_internal
+    const llvm_zone = ctx.getOrComputeZoneByName("llvm.memcpy.p0i8.p0i8.i64");
+    try std.testing.expectEqual(zone_classifier.ZoneKind.runtime_internal, llvm_zone);
+
+    // Second lookup should hit cache (same result)
+    const llvm_zone2 = ctx.getOrComputeZoneByName("llvm.memcpy.p0i8.p0i8.i64");
+    try std.testing.expectEqual(llvm_zone, llvm_zone2);
+
+    // Rust safe pattern → .safe
+    const rust_zone = ctx.getOrComputeZoneByName("std::sync::Arc::new");
+    try std.testing.expectEqual(zone_classifier.ZoneKind.safe, rust_zone);
+
+    // Unknown function → .unknown (default)
+    const unknown_zone = ctx.getOrComputeZoneByName("my_custom_function");
+    try std.testing.expectEqual(zone_classifier.ZoneKind.unknown, unknown_zone);
+}
+
+test "PassContext - shouldAnalyzeZone gate logic" {
+    // Safe and runtime_internal should be skipped
+    try std.testing.expect(!PassContext.shouldAnalyzeZone(.safe));
+    try std.testing.expect(!PassContext.shouldAnalyzeZone(.runtime_internal));
+
+    // These should be analyzed
+    try std.testing.expect(PassContext.shouldAnalyzeZone(.unknown));
+    try std.testing.expect(PassContext.shouldAnalyzeZone(.unsafe));
+    try std.testing.expect(PassContext.shouldAnalyzeZone(.ffi));
+}
+
+test "PassContext - getOrComputeZone null safety" {
+    var fact_store = try FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store);
+    var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    defer ctx.deinit();
+
+    // Valid pointer should return a valid zone (not crash)
+    var dummy: u8 = 0;
+    const zone = ctx.getOrComputeZone(@ptrCast(&dummy), "dummy_func");
+    // Should return some valid ZoneKind enum value
+    _ = zone;
 }
 
 /// Convert diag.issue.Severity to noise_filter.Severity

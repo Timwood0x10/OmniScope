@@ -14,6 +14,8 @@ const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
+const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
+const zone_classifier = @import("../semantics/zone_classifier.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
 
 /// Analysis pipeline
@@ -78,10 +80,18 @@ pub const Pipeline = struct {
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
             .reported_keys = std.AutoHashMap(u64, void).init(self.allocator),
+            .registry_cache = std.StringHashMap(FunctionSemantics).init(self.allocator),
+            .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(self.allocator),
             .zone_stats = .{},
+            .module_language = undefined,
+            .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
         };
         defer ctx.deinit();
+
+        // R7.2 Language-First: detect module language ONCE before any passes run.
+        // This activates the correct zone rules channel for all subsequent analysis.
+        ctx.initModuleLanguage(self.module);
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
 

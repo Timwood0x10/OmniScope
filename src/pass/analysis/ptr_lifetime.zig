@@ -128,6 +128,18 @@ pub const PtrLifetimePass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
+        // R7.2 Language Channel Gate
+        const lifetime_channel = ctx.channelPtrLifetime();
+        if (lifetime_channel == .skip) {
+            diag.debug("LANG-SKIP [ptr_lifetime]: module is {s}", .{
+                @tagName(ctx.getModuleLanguage().language),
+            });
+            return;
+        }
+        diag.debug("LANG-CHANNEL [ptr_lifetime/{s}]: analysis active", .{
+            @tagName(lifetime_channel),
+        });
+
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
@@ -146,7 +158,7 @@ pub const PtrLifetimePass = struct {
                 if (c.LLVMIsDeclaration(func) != 0) {
                     const func_name_raw = c.LLVMGetValueName(func);
                     const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                    const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                    const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
                     ctx.zone_stats.record(zone);
                     continue;
                 }
@@ -154,7 +166,7 @@ pub const PtrLifetimePass = struct {
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-                const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
                 ctx.zone_stats.record(zone);
 
                 const debug_file_path = extractDebugFilePath(func);
@@ -193,7 +205,7 @@ pub const PtrLifetimePass = struct {
             if (c.LLVMIsDeclaration(func) != 0) {
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
                 ctx.zone_stats.record(zone);
                 continue;
             }
@@ -201,7 +213,7 @@ pub const PtrLifetimePass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
             // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
@@ -419,6 +431,41 @@ pub const PtrLifetimePass = struct {
 
                         for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
                             if (std.mem.indexOf(u8, callee_name, alloc_fn) != null) {
+                                // R7.1-1: realloc = free(old_ptr) + alloc(new_ptr)
+                                // The old pointer (operand 0) is freed by realloc semantics.
+                                // Without this, the old ptr stays "alive" in pointer_map,
+                                // causing false double_free when the same logical pointer
+                                // is later freed (realloc returned the same or different address).
+                                if (std.mem.indexOf(u8, callee_name, "realloc") != null) {
+                                    // realloc(ptr, size) = free(old_ptr) + alloc(new_ptr)
+                                    // The return value (inst) IS the new pointer — tracked at L461.
+                                    // Here we mark old_ptr as freed so subsequent free() on the
+                                    // same logical pointer is not flagged as double_free.
+                                    //
+                                    // Design decision: We only mark old_ptr as freed if it
+                                    // already exists in pointer_map (i.e., we tracked its allocation).
+                                    // We do NOT create a synthetic freed entry for unknown pointers because:
+                                    //   (a) An untracked old_ptr likely came from outside our analysis scope
+                                    //       (e.g., malloc in an unanalyzed function, or external C library).
+                                    //   (b) Creating a synthetic entry could mask real bugs: if someone later
+                                    //       frees that address legitimately, our synthetic "already-freed"
+                                    //       marker would suppress a valid use-after-free warning.
+                                    //   (c) Address aliasing: the old address might be reused for a different
+                                    //       allocation after realloc; a stale synthetic entry could corrupt
+                                    //       tracking of the new allocation.
+                                    const old_ptr = c.LLVMGetOperand(inst, 0);
+                                    if (@intFromPtr(old_ptr) != 0) {
+                                        if (pointer_map.getPtr(old_ptr)) |old_info| {
+                                            if (!old_info.freed) {
+                                                old_info.freed = true;
+                                            }
+                                        }
+                                        // If old_ptr not found in pointer_map: silently skip.
+                                        // This is safe — it means we never saw this pointer allocated,
+                                        // so we have no business tracking its lifecycle.
+                                    }
+                                }
+
                                 const desc = try std.fmt.allocPrint(allocator, "heap via {s}()", .{callee_name});
                                 const info = PtrInfo{
                                     .alloc_site = .heap,

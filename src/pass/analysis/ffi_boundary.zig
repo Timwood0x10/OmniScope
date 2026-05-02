@@ -33,12 +33,14 @@ const zone_check = @import("ffi_zone_check.zig");
 const boundary_check = @import("ffi_boundary_check.zig");
 const noise_filter = @import("ffi_noise_filter.zig");
 
+// Zone classifier for R7.0 Zone-First architecture
+const zone_classifier = @import("../../semantics/zone_classifier.zig");
+
 // Existing extracted modules
 const type_checker = @import("ffi_type_checker.zig");
 const lang_classifier = @import("ffi_language_classifier.zig");
 const safety_checker = @import("ffi_safety_checker.zig");
 const NoiseReduction = @import("noise_reduction.zig");
-const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const ip_ffi = @import("ip_ffi.zig");
 const severity_rules = @import("severity_rules.zig");
 
@@ -108,6 +110,12 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Analyze a single function for FFI boundaries.
+    ///
+    /// R7.0 Zone-First Architecture:
+    ///   Phase 0: Classify zone → gate on .safe/.runtime_internal (skip entirely)
+    ///   Phase 1: Noise reduction (secondary filter for edge cases)
+    ///   Phase 2: FP whitelist (defense-in-depth, will be migrated into zone)
+    ///   Phase 3: Scan call instructions with zone-aware analysis
     pub fn analyze(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
         var result = AnalyzeResult{};
 
@@ -118,42 +126,56 @@ pub const FFIBoundaryPass = struct {
         else
             "unknown";
 
+        // Phase 0: Zone-First Classification (R7.0)
+        const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
+
+        if (!PassContext.shouldAnalyzeZone(zone)) {
+            diag.debug("ZONE-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
+            return result;
+        }
+        diag.debug("ZONE-ANALYZE [{s}]: {s}", .{ @tagName(zone), func_name });
+
+        // Phase 0.5: Language Channel Gate (R7.2)
+        // Activate the correct rules channel based on module-level language detection.
+        // This replaces per-pass language adaptation with a centralized channel system.
+        const lang_channel = ctx.channelFFIBoundary();
+        if (lang_channel == .skip) {
+            diag.debug("LANG-SKIP [ffi_boundary]: {s} (module is {s})", .{
+                func_name,
+                @tagName(ctx.getModuleLanguage().language),
+            });
+            return result;
+        }
+        diag.debug("LANG-CHANNEL [ffi_boundary/{s}]: {s}", .{
+            @tagName(lang_channel), func_name,
+        });
+
         // Phase 1: Quick classification using noise reduction engine.
-        // This filters out compiler-generated functions, runtime helpers,
-        // and other non-user code to reduce false positives.
         const classification = NoiseReduction.classifyFunction(
             func_name,
-            null, // debug_file_path (optional, can be null)
-            .{},   // default configuration
+            null,
+            .{},
         );
 
-        // Skip compiler-generated and ignored functions
         if (classification.weight == .ignored) {
-            diag.debug("SKIP [NOISE]: {s} ({s})",
-                .{ func_name, classification.origin.toString() });
+            diag.debug("SKIP [NOISE]: {s} ({s})", .{ func_name, classification.origin.toString() });
             return result;
         }
 
-        // Phase 2: FP whitelist check
-        if (FPWhitelist.is_known_fp(func_name)) |fp| {
-            diag.debug("FP-WHITELIST [{s}]: {s}", .{ fp.reason, func_name });
-            return result;
-        }
+        // Phase 2 (REMOVED in R7.0): FP whitelist was here.
+        // All 18 FPWhitelist patterns have been migrated into zone_classifier:
+        //   - Cat 1 (10x LLVM intrinsics) → llvm.* prefix → .runtime_internal
+        //   - Cat 2 (7x Rust stdlib)    → RUST_SAFE_PATTERNS → .safe
+        //   - Cat 3 (2x project-specific)→ C_INTERNAL_PATTERNS → .runtime_internal
+        // Zone-First gate (Phase 0) now handles all of these before reaching here.
 
-        // Log user code / third-party for visibility
-        if (classification.origin == .user) {
-            diag.debug("ANALYZE [USER]: {s}", .{func_name});
-        } else {
-            diag.debug("ANALYZE [{s}]: {s}", .{ classification.origin.toString(), func_name });
-        }
-
-        // Phase 3: Scan all call instructions for FFI boundaries
+        // Phase 3: Scan all call instructions for FFI boundaries (zone-aware)
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
-                    if (try checkCallForFFI(ctx, inst, func, diag, &result)) {
+                    if (try checkCallForFFI(ctx, inst, func, diag, &result, zone)) {
                         result.count += 1;
                     }
                 }
@@ -163,12 +185,17 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Check a call instruction for FFI boundary (delegates to boundary_check module).
+    ///
+    ///  Zone-aware — uses caller's zone to make informed decisions about
+    /// whether to report, reducing false positives from safe-zone functions
+    /// calling into runtime internals.
     fn checkCallForFFI(
         ctx: *PassContext,
         inst: c.LLVMValueRef,
         caller_func: c.LLVMValueRef,
         diag: *DiagnosticWriter,
         stats: *AnalyzeResult,
+        caller_zone: zone_classifier.ZoneKind,
     ) !bool {
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return false;
@@ -178,29 +205,47 @@ pub const FFIBoundaryPass = struct {
         if (@intFromPtr(called_name_ptr) == 0) return false;
         const called_name = std.mem.span(called_name_ptr);
 
+        // Extract caller name once (P1b: was retrieved 3 times at L199/L240/L251)
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
         // Check if it's a known risky function via Semantic Registry
-        const semantics = SemanticRegistry.lookup(called_name);
+        const semantics = ctx.cachedRegistryLookup(called_name);
         const is_dangerous = semantics != null;
 
-        // Skip safe libc patterns (noise filter)
+        // ═══ R7.0 Zone-Aware Filtering ═══
+        // Replace scattered whitelist logic with unified zone classification.
+
+        // Classify the callee's zone for zone-aware decisions (cached)
+        const callee_zone = ctx.getOrComputeZoneByName(called_name);
+
+        // If callee is safe or runtime internal → no FFI boundary risk from this call.
+        // This replaces: ffi_noise_filter.isSafeLibcPattern (15 entries),
+        //                ffi_noise_filter.isCppAbiInternalFunction,
+        //                ffi_noise_filter.isCppOperatorPattern,
+        //                and most of FPWhitelist's 18 entries.
+        switch (callee_zone) {
+            .safe => return false,
+            .runtime_internal => {
+                // Runtime internal functions are only risky if they're known-dangerous
+                // (e.g., command_exec). For normal stdlib calls, skip.
+                if (semantics) |sem| {
+                    if (sem.kind != .command_exec and sem.kind != .unchecked_copy) {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            },
+            .unknown, .ffi, .unsafe => {},
+        }
+
+        // Legacy noise filter kept for edge cases not yet covered by zone classifier.
+        // TODO(R7.1): Remove entirely once zone coverage is complete.
         if (is_dangerous) {
-            if (noise_filter.isSafeLibcPattern(called_name)) {
-                return false;
-            }
-            // Skip C++ ABI runtime internal functions
-            if (noise_filter.isCppAbiInternalFunction(called_name)) {
-                return false;
-            }
-            // Skip C++ memory management operators
-            if (noise_filter.isCppOperatorPattern(called_name)) {
-                return false;
-            }
-            // Skip calls inside STL/libc++ internal template expansion functions
-            const caller_name_ptr = c.LLVMGetValueName(caller_func);
-            const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-                std.mem.span(caller_name_ptr)
-            else
-                "unknown";
             if (noise_filter.isStlInternalFunction(caller_name)) {
                 return false;
             }
@@ -208,7 +253,7 @@ pub const FFIBoundaryPass = struct {
 
         // Report risky libc functions even if they're not FFI boundaries
         if (semantics) |sem| {
-            try reportRiskyCall(ctx, inst, caller_func, called_name, sem, diag, stats);
+            try reportRiskyCall(ctx, inst, caller_name, called_name, sem, diag);
         }
 
         // Identify languages of caller and callee
@@ -224,48 +269,58 @@ pub const FFIBoundaryPass = struct {
 
         // Classify the boundary kind
         const boundary_kind = zone_check.classifyBoundaryKindEnhanced(
-            caller_lang, callee_lang, called_name,
+            caller_lang,
+            callee_lang,
+            called_name,
         );
 
-        // Apply severity rules (simplified for now)
-        const severity: Severity = if (semantics != null) .medium else .low;
-        const confidence: f32 = if (semantics != null) 0.7 else 0.5;
+        // Apply severity and confidence rules with zone-aware adjustments
+        const base_severity: Severity = if (semantics != null) .medium else .low;
+        const base_confidence: f32 = if (semantics != null) 0.7 else 0.5;
+
+        //  Zone-aware confidence adjustment.
+        // Unknown-zone callers get lower confidence (may be auto-generated code).
+        // FFI/unsafe zone callers get full confidence (explicit escape hatch).
+        const severity = base_severity;
+        const confidence: f32 = switch (caller_zone) {
+            .unknown => base_confidence * 0.6, // Uncertain origin → lower confidence
+            .safe, .runtime_internal => 0.0, // Should have been gated in analyze()
+            .ffi, .unsafe => base_confidence, // Explicit FFI zone → full confidence
+        };
 
         // Skip low-confidence or intentional patterns
         if (confidence < 0.4) return false;
         if (zone_check.isLikelyIntentionalPattern(called_name)) return false;
 
         // For Zig callers, apply additional filtering
+        // Only apply Zig-specific filter when semantics are available
         if (caller_lang == .zig) {
-            const caller_name_ptr = c.LLVMGetValueName(caller_func);
-            const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-                std.mem.span(caller_name_ptr)
-            else
-                "unknown";
-            if (!zone_check.isZigFFIWorthReporting(caller_name, called_name, semantics orelse undefined)) {
-                return false;
+            if (semantics) |sem| {
+                if (!zone_check.isZigFFIWorthReporting(caller_name, called_name, sem)) {
+                    return false;
+                }
             }
+            // If no semantic info available, skip Zig-specific filter (fall through to normal reporting)
         }
 
         // Report the FFI boundary issue
-        const caller_name_ptr = c.LLVMGetValueName(caller_func);
-        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-            std.mem.span(caller_name_ptr)
-        else
-            "unknown";
-
         const message = try std.fmt.allocPrint(ctx.allocator,
             \\FFI Boundary: {s} ({s}) -> {s} ({s})
             \\Boundary Kind: {s}
         , .{
-            caller_name, @tagName(caller_lang),
-            called_name, @tagName(callee_lang),
+            caller_name,             @tagName(caller_lang),
+            called_name,             @tagName(callee_lang),
             @tagName(boundary_kind),
         });
         defer ctx.allocator.free(message);
 
         try boundary_check.reportFFIIssue(
-            ctx, .ffi_unsafe_call, message, caller_name, severity, confidence,
+            ctx,
+            .ffi_unsafe_call,
+            message,
+            caller_name,
+            severity,
+            confidence,
         );
         stats.count += 1;
 
@@ -287,23 +342,35 @@ pub const FFIBoundaryPass = struct {
     fn reportRiskyCall(
         ctx: *PassContext,
         inst: c.LLVMValueRef,
-        caller_func: c.LLVMValueRef,
+        caller_name: []const u8,
         called_name: []const u8,
         sem: FunctionSemantics,
         diag: *DiagnosticWriter,
-        stats: *AnalyzeResult,
     ) !void {
-        _ = inst;
-        _ = stats;
-
-        const caller_name_ptr = c.LLVMGetValueName(caller_func);
-        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-            std.mem.span(caller_name_ptr)
-        else
-            "unknown";
+        // : Format string constant detection.
+        // If the format argument (operand 0 for printf-like functions) is a
+        // compile-time string constant, the format string is NOT user-controlled
+        // and therefore NOT a vulnerability. Skip reporting.
+        if (sem.kind == .format_string) {
+            if (isFormatStringConstant(inst)) {
+                diag.debug("FORMAT-SAFE: {s} in {s} — format arg is compile-time constant", .{ called_name, caller_name });
+                return;
+            }
+        }
 
         // Map RiskKind to IssueKind
         const issue_kind = boundary_check.riskKindToIssueKind(sem.kind);
+
+        // : Format string constant detection.
+        // If the format argument (operand 0 for printf-like functions) is a
+        // compile-time string constant, the format string is NOT user-controlled
+        // and therefore NOT a vulnerability. Skip reporting.
+        if (sem.kind == .format_string) {
+            if (isFormatStringConstant(inst)) {
+                diag.debug("FORMAT-SAFE: {s} in {s} — format arg is compile-time constant", .{ called_name, caller_name });
+                return;
+            }
+        }
 
         // Determine severity based on risk kind
         const severity: Severity = switch (sem.kind) {
@@ -325,5 +392,40 @@ pub const FFIBoundaryPass = struct {
         diag.err("RISKY CALL [{s}] {s} in {s}: {s}", .{
             @tagName(severity), @tagName(sem.kind), caller_name, called_name,
         });
+    }
+
+    /// : Check if a printf-like call's format argument is a compile-time
+    /// constant string. If so, the format string is not user-controlled and
+    /// the call is safe from format string injection.
+    ///
+    /// LLVM IR patterns:
+    ///   Safe:   call printf(@.str, ...)     — GEP → GlobalVariable → constant
+    ///   Unsafe: call printf(%fmt, ...)      — format is variable
+    fn isFormatStringConstant(inst: c.LLVMValueRef) bool {
+        if (c.LLVMGetNumOperands(inst) < 1) return false;
+        const fmt_arg = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(fmt_arg) == 0) return false;
+
+        // Case 1: GEP wrapping a global constant (most common pattern)
+        //   %fmt = getelementptr [15 x i8], [15 x i8]* @.str, i32 0, i32 0
+        if (c.LLVMGetInstructionOpcode(fmt_arg) == c.LLVMGetElementPtr) {
+            const base = c.LLVMGetOperand(fmt_arg, 0);
+            if (@intFromPtr(base) != 0 and @intFromPtr(c.LLVMIsAGlobalVariable(base)) != 0) {
+                if (c.LLVMIsGlobalConstant(base) != 0) return true;
+            }
+        }
+
+        // Case 2: Direct global variable (no GEP wrapper)
+        //   call printf(@.str_direct, ...)
+        if (@intFromPtr(c.LLVMIsAGlobalVariable(fmt_arg)) != 0) {
+            if (c.LLVMIsGlobalConstant(fmt_arg) != 0) return true;
+        }
+
+        // Case 3: Bitcast of a constant (e.g., i8* bitcast from [N x i8]*)
+        if (c.LLVMIsAConstant(fmt_arg) != null) {
+            return true;
+        }
+
+        return false;
     }
 };

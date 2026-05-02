@@ -37,13 +37,15 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
-comptime { _ = FPPrecisionGuard.PrecisionMetrics; } // Force test discovery
+comptime {
+    _ = FPPrecisionGuard.PrecisionMetrics;
+} // Force test discovery
 const NoiseReduction = @import("noise_reduction.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 
-// Phase 3.7: Integrated Hook system for semantic analysis.
+// : Integrated Hook system for semantic analysis.
 // Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
 const hooks = @import("../../registry/hooks.zig");
 const registry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
@@ -120,19 +122,17 @@ const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
 };
 
 /// C standard library functions that commonly retain pointers.
-/// Phase 3.7: Now sourced from config/languages/c.json (retaining_functions)
-/// combined with ptr_types for backward compatibility.
-/// The Hook system provides additional language-specific detection beyond these patterns.
+/// Sourced from language-specific config combined with ptr_types for compatibility.
 const C_RETAINING_FUNCTIONS = &[_][]const u8{
     // From c.json retaining_functions (source of truth)
-    "c_callback",        "register_callback",       "set_handler",
-    "pthread_create",   "signal",                  "atexit",
-    "on_exit",           "SDL_SetEventCallback",    "glfwSetCallback",
+    "c_callback",       "register_callback",    "set_handler",
+    "pthread_create",   "signal",               "atexit",
+    "on_exit",          "SDL_SetEventCallback", "glfwSetCallback",
     "curl_easy_setopt",
     // Additional patterns from original hardcoding
-    "set_callback",      "add_observer",            "subscribe",
-    "listen_on",         "pthread_join",            "sigaction",
-    "RegisterNatives",   "PyCapsule_SetDestructor",
+    "set_callback",         "add_observer",
+    "subscribe",        "listen_on",            "pthread_join",
+    "sigaction",        "RegisterNatives",      "PyCapsule_SetDestructor",
 };
 
 /// Check if a function name indicates cgo boundary code.
@@ -208,6 +208,8 @@ pub fn isGoSafetyFunction(callee_name: []const u8) bool {
 }
 
 /// Check if a callee may retain its pointer argument.
+/// R7.1-3: This is the ORIGINAL version (Go-cgo semantics).
+/// For non-Go callers, use `mayRetainInCLanguageAware` instead.
 fn mayRetainInC(callee_name: []const u8) bool {
     for (C_RETAINING_FUNCTIONS) |fn_name| {
         if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
@@ -218,6 +220,57 @@ fn mayRetainInC(callee_name: []const u8) bool {
     };
     for (retaining_prefixes) |prefix| {
         if (std.mem.startsWith(u8, callee_name, prefix)) return true;
+    }
+
+    return false;
+}
+
+/// R7.1-3: Language-aware pointer retention check.
+///
+/// For **Go callers** (cgo boundary): Full detection — set_/add_/register_ prefixes
+///   indicate the callee may hold the pointer beyond the call (Go runtime can't
+///   see C memory, so KeepAlive is needed).
+///
+/// For **C callers**: Only detect REAL escapes — storing to global variables,
+///   passing to async callbacks (pthread_create, signal), etc.
+///   Plain func(&local) in C is standard borrowing — NOT an escape.
+///
+/// For **Rust callers**: Only detect escapes inside unsafe blocks.
+///
+/// For **Zig callers**: Skip entirely (compile-time lifetime guarantees).
+fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool {
+    // Always-retaining functions regardless of language
+    for (C_RETAINING_FUNCTIONS) |fn_name| {
+        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
+    }
+
+    if (caller_is_cgo) {
+        // Go cgo: full prefix matching (set_, add_, register_ may hold pointers)
+        const retaining_prefixes = [_][]const u8{
+            "register_", "set_", "add_", "subscribe_",
+        };
+        for (retaining_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, callee_name, prefix)) return true;
+        }
+    } else {
+        // C/Rust/Zig: only detect truly escaping patterns
+        const real_escape_patterns = [_][]const u8{
+            "pthread_create",    // async callback — pointer outlives call
+            "signal",             // signal handler — async
+            "sigaction",          // signal handler registration
+            "atexit",             // exit handler — pointer outlives function
+            "SDL_SetEventCallback", // event callback registration
+            "glfwSetCallback",     // GLFW callback
+            "curl_easy_setopt",    // curl callback with user data
+            "dlopen",             // handle stored globally
+            "RegisterNatives",    // JNI native method registration
+        };
+        for (real_escape_patterns) |pattern| {
+            if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
+        }
+        // NOTE: set_error(), add_data(), register_callback() are NOT
+        // real escapes in C code — they just write through a pointer parameter.
+        // The callee returns before the caller's stack frame ends.
     }
 
     return false;
@@ -327,7 +380,7 @@ pub const CallbackEscapePass = struct {
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = EscapeStats{};
 
-        // Phase 3.7: Initialize Hook system for semantic analysis.
+        // Initialize Hook system for semantic analysis.
         // Hooks provide language-specific detection beyond pattern matching.
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
@@ -336,7 +389,7 @@ pub const CallbackEscapePass = struct {
             if (c.LLVMIsDeclaration(func) != 0) {
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
                 ctx.zone_stats.record(zone);
                 continue;
             }
@@ -344,7 +397,7 @@ pub const CallbackEscapePass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
             // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
@@ -356,7 +409,7 @@ pub const CallbackEscapePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
-            // Phase 3.7: Reset hook state for this function scope.
+            // : Reset hook state for this function scope.
             hooks.resetHookStatesForFunction();
 
             // Function-level error isolation
@@ -366,7 +419,7 @@ pub const CallbackEscapePass = struct {
                 continue;
             };
 
-            // Phase 3.7: Check hook state for end-of-function issues.
+            // Check hook state for end-of-function issues.
             if (hooks.rustUnpairedTransferCount() > 0) {
                 const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
                 defer ctx.allocator.free(msg);
@@ -438,6 +491,13 @@ pub const CallbackEscapePass = struct {
         else
             "unknown";
 
+        // R7.2 Language Channel Gate
+        const escape_channel = ctx.channelCallbackEscape();
+        if (escape_channel == .skip) return;
+        diag.debug("LANG-CHANNEL [callback_escape/{s}]: {s}", .{
+            @tagName(escape_channel), func_name,
+        });
+
         stats.total_functions_analyzed += 1;
 
         // INTEGRATION: Three-layer noise filter (name + path)
@@ -445,8 +505,10 @@ pub const CallbackEscapePass = struct {
         const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
         if (!classification.origin.shouldReportByDefault()) return;
 
-        // Use LLVM metadata for more precise cgo boundary detection
-        const is_cgo_boundary = isCgoBoundaryFromLLVM(func) or isCgoBoundary(func_name);
+        // R7.2: Use module-level language detection instead of per-function cgo check.
+        // isGoModule() is set once at scan entry by Language-First Pipeline.
+        // Keep isCgoBoundaryFromLLVM as a secondary refinement for mixed-language modules.
+        const is_cgo_boundary = ctx.isGoModule() or isCgoBoundaryFromLLVM(func);
         if (is_cgo_boundary) {
             stats.go_cgo_boundaries_found += 1;
         }
@@ -472,7 +534,7 @@ pub const CallbackEscapePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls);
+                try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls, ctx.isGoModule());
             }
         }
 
@@ -482,7 +544,8 @@ pub const CallbackEscapePass = struct {
 
         if (!has_keepalive and cgo_calls.items.len > 0) {
             for (cgo_calls.items) |call| {
-                if (call.is_pointer_arg and mayRetainInC(call.callee_name)) {
+                // R7.1-3: Language-aware retention check
+                if (call.is_pointer_arg and mayRetainInCLanguageAware(call.callee_name, is_cgo_boundary)) {
                     try reportMissingKeepAlive(ctx, func_name, call, diag);
                     stats.keepalive_missing += 1;
                 }
@@ -494,8 +557,8 @@ pub const CallbackEscapePass = struct {
         // Note: True next_call tracking requires call graph analysis (see TODO below).
         for (cgo_calls.items) |call| {
             if (isCBytesPattern(call.callee_name)) {
-                // Check if this function has patterns suggesting pointer retention
-                if (mayRetainInC(func_name)) {
+                // R7.1-3: Language-aware retention check for CBytes escape
+                if (mayRetainInCLanguageAware(func_name, is_cgo_boundary)) {
                     try reportCBytesEscape(ctx, func_name, call, diag);
                     stats.cbytes_escapes += 1;
                 }
@@ -705,6 +768,7 @@ pub const CallbackEscapePass = struct {
         alloc_sites: *std.ArrayList(AllocSiteInfo),
         free_sites: *std.ArrayList(FreeSiteInfo),
         cgo_calls: *std.ArrayList(CGoCallInfo),
+        is_go_module: bool,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -719,7 +783,8 @@ pub const CallbackEscapePass = struct {
                 has_keepalive.* = true;
             }
 
-            if (isCgoBoundary(callee_name) or
+            // R7.2: Module-level language gate (passed from analyzeFunction).
+            if (is_go_module or
                 std.mem.indexOf(u8, callee_name, "malloc") != null or
                 std.mem.indexOf(u8, callee_name, "calloc") != null)
             {
@@ -736,7 +801,8 @@ pub const CallbackEscapePass = struct {
                 });
             }
 
-            if (isCgoBoundary(callee_name) or
+            // R7.2: Module-level language gate replaces isCgoBoundary name matching.
+            if (is_go_module or
                 isCBytesPattern(callee_name) or
                 isUnsafePtrConversion(callee_name))
             {

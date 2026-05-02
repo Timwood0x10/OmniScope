@@ -153,6 +153,15 @@ pub const PointerOwnershipPass = struct {
             if (_timer) |*t| t.stop() catch {};
         }
 
+        // R7.2 Language Channel Gate
+        const own_channel = ctx.channelPointerOwnership();
+        if (own_channel == .skip) {
+            diag.debug("LANG-SKIP [pointer_ownership]: module is {s}", .{
+                @tagName(ctx.getModuleLanguage().language),
+            });
+            return;
+        }
+
         if (ctx.module == null) {
             diag.warn("PointerOwnership: No module loaded, skipping", .{});
             return;
@@ -228,7 +237,7 @@ pub const PointerOwnershipPass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-            const zone = zone_classifier.classifyFunctionFromLLVM(func, func_name);
+            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
             // Skip declarations (extern functions without bodies in this module).
@@ -239,12 +248,10 @@ pub const PointerOwnershipPass = struct {
             // recorded above for accurate statistics before skipping.
             if (c.LLVMIsDeclaration(func) != 0) continue;
 
-            switch (zone) {
-                .safe, .runtime_internal => {
-                    diag.debug("ZONE-SKIP: {s} is {s} zone — language guarantees apply", .{ func_name, @tagName(zone) });
-                    continue;
-                },
-                .unsafe, .ffi, .unknown => {},
+            // R7.0: Shared zone gate (single source of truth, also used by ffi_boundary).
+            if (!PassContext.shouldAnalyzeZone(zone)) {
+                diag.debug("ZONE-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
+                continue;
             }
 
             // INTEGRATION: Use three-layer noise filter (name + path + behavior)

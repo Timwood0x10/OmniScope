@@ -13,6 +13,9 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 
+/// Re-export ffi_utils for unified STL/ABI pattern matching (single source of truth).
+const ffi_utils = @import("ffi_utils.zig");
+
 const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
 const Language = FFIBoundary.Language;
 const BoundaryKind = FFIBoundary.BoundaryKind;
@@ -424,56 +427,16 @@ pub fn isPythonCApiFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// Check if a function is a C++ ABI runtime internal function.
-/// These are compiler-generated functions for exception handling,
-/// thread-local storage initialization, dynamic type info, and
-/// Meyers singleton initialization guards. They are NOT user code
-/// and should never be reported as FFI risks or security issues.
+/// Check if a function is a C++ ABI internal function (__cxa_*).
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
-    const cxa_prefixes = [_][]const u8{
-        "__cxa_begin_catch",
-        "__cxa_end_catch",
-        "__cxa_allocate_exception",
-        "__cxa_throw",
-        "__cxa_free_exception",
-        "__cxa_get_globals",
-        "__cxa_guard_acquire",
-        "__cxa_guard_release",
-        "__cxa_guard_abort",
-        "__cxa_atexit",
-        "__cxa_demangle",
-        "__cxa_pure_virtual",
-        "__cxa_rethrow",
-        "__cxa_allocate_dependent_exception",
-        "__cxa_throw_dependent_exception",
-        "__cxa_dependent_exception",
-        "__cxa_current_exception_type",
-        "__cxa_get_exception_ptr",
-        "__cxa_exception_class",
-    };
-    for (cxa_prefixes) |prefix| {
-        if (std.mem.eql(u8, func_name, prefix)) {
-            return true;
-        }
-    }
-    // Also catch any __cxa_* function by prefix
-    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) {
-        return true;
-    }
-    return false;
+    return ffi_utils.isCppAbiInternalFunction(func_name);
 }
 
 /// Check if a function is an STL/libc++ internal template expansion.
-/// These are template instantiation helpers and should be skipped during analysis.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isStlInternalFunction(func_name: []const u8) bool {
-    const stl_prefixes = [_][]const u8{
-        "_ZNSt3__", "_ZNSt4", "_ZNSt6", "_ZNSt7", "_ZNSt10",
-    };
-    for (stl_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
-    }
-    if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
-    return false;
+    return ffi_utils.isStlInternalFunction(func_name);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -501,5 +464,42 @@ test "isDynamicLoadingFunction - dlopen family" {
 test "isCppAbiInternalFunction - __cxa_ functions" {
     try std.testing.expect(isCppAbiInternalFunction("__cxa_throw"));
     try std.testing.expect(isCppAbiInternalFunction("__cxa_begin_catch"));
+    try std.testing.expect(isCppAbiInternalFunction("__cxa_atexit"));
     try std.testing.expect(!isCppAbiInternalFunction("my_function"));
+}
+
+test "isStlInternalFunction - STL template expansions" {
+    try std.testing.expect(isStlInternalFunction("_ZNSt3__vector"));
+    try std.testing.expect(isStlInternalFunction("_ZNSt6__map"));
+    try std.testing.expect(isStlInternalFunction("_ZNSt10__deque"));
+    try std.testing.expect(isStlInternalFunction("__gnu_debug"));
+    try std.testing.expect(!isStlInternalFunction("my_function"));
+    try std.testing.expect(!isStlInternalFunction("std::vector"));
+}
+
+test "delegation equivalence - isCppAbiInternalFunction matches ffi_utils" {
+    const test_cases = [_][]const u8{
+        "__cxa_throw",              "__cxa_begin_catch",    "__cxa_end_catch",
+        "__cxa_allocate_exception", "__cxa_free_exception", "__cxa_guard_acquire",
+        "__cxa_guard_release",      "__cxa_pure_virtual",   "__cxa_demangle",
+        "my_func",                  "malloc",               "_ZNSt3__vector",
+    };
+    for (test_cases) |name| {
+        const local = isCppAbiInternalFunction(name);
+        const authority = ffi_utils.isCppAbiInternalFunction(name);
+        try std.testing.expectEqual(authority, local);
+    }
+}
+
+test "delegation equivalence - isStlInternalFunction matches ffi_utils" {
+    const test_cases = [_][]const u8{
+        "_ZNSt3__vector", "_ZNSt6__map", "_ZNSt7__set",
+        "_ZNSt10__deque", "__gnu_debug", "__gnu_parallel",
+        "my_func",        "malloc",      "__cxa_throw",
+    };
+    for (test_cases) |name| {
+        const local = isStlInternalFunction(name);
+        const authority = ffi_utils.isStlInternalFunction(name);
+        try std.testing.expectEqual(authority, local);
+    }
 }

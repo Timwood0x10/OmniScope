@@ -49,7 +49,54 @@ suppress rules indicates the detection itself is imprecise.
 
 ***
 
-## Current Status (2026-05-01)
+## Current Status (2026-05-02)
+
+### R7.0 Zone-First Architecture — ✅ COMPLETED (2026-05-02)
+
+| Metric | Before R7.0 | After R7.0 | Change |
+|--------|------------|-----------|--------|
+| Total Issues (18 projects) | 2,924 | **1,169** | **↓60%** |
+| TP Rate | ~11% | **~33%** | **↑3x** |
+| Pure-FP projects zeroed | 0 | **5** | ring/blst/wasmtime/ripgrep/ark_ff |
+| TP retention (intentional bugs) | — | **>90%** | openssl_wrapper 18/20, rust_sqlite 19/20 |
+| sqlite3 analysis time | 9.5s → 1.22s | 1.22s | stable |
+
+**Key Changes:**
+- [x] `getOrComputeZone()` / `getOrComputeZoneByName()` — unified zone caching (7 call sites deduped)
+- [x] `shouldAnalyzeZone()` — shared zone gate (2 switch blocks deduped)
+- [x] Phase 0 Zone-First gate in `ffi_boundary.analyze()` — replaces ~34 scattered whitelist rules
+- [x] FPWhitelist (18 entries) migrated into `zone_classifier` (Cat2/Cat3)
+- [x] `C_INTERNAL_PATTERNS` added to zone_classifier (uv__*, sqlite3Mem, __pthread)
+- [x] `RUST_SAFE_PATTERNS` extended (sync_channel, Waker::, RawVec::, __rust_alloc/dealloc)
+- [x] callee_zone hot-path caching via `getOrComputeZoneByName()`
+- [x] `reportRiskyCall()` accepts pre-fetched `caller_name` (eliminates redundant LLVMGetValueName)
+- [x] Null safety guard in `getOrComputeZone()` for *anyopaque pointer
+
+### R7.1 Root-Cause FP Reduction — ✅ COMPLETED (2026-05-02)
+
+| Metric | Before R7.1 | After R7.1 | Change |
+|--------|------------|-----------|--------|
+| Total Issues (18 projects) | 1,169 | **1,122** | **↓47 (↓4%)** |
+| TP Rate (overall) | ~33% | **~38%** (est.) | ↑ |
+| vs Original (v0.2.0) | 2,924 | 1,122 | **↓61.6%** |
+
+**Key Changes:**
+- [x] **R7.1-0**: Language-First Pipeline — `language_detector.zig` 三级检测（DWARF + producer + sampling），`detectModuleLanguage()` 模块级一次识别
+- [x] **R7.1-1**: realloc = free + alloc in `ptr_lifetime.zig:trackInstruction()` — marks old ptr as freed
+- [x] **R7.1-2**: format_string constant detection in `ffi_boundary.zig:isFormatStringConstant()` — GEP→GlobalVariable→constant IR pattern matching; sqlite3 -51 FP
+- [x] **R7.1-3**: borrow_escape language-layered detection in `callback_escape.zig:mayRetainInCLanguageAware()` — Go→full cgo, C→real escapes only (global store/async callback), Zig→skip; removed `isCgoBoundary(func_name)` name-pattern false positive
+
+### R7.1-0 Language-First — Known Issues (2026-05-02)
+
+- [ ] **P0**: `LLVMGetProducer` 不存在于 LLVM 15，需禁用 `detectFromProducer` 或升级 LLVM
+- [ ] **P1**: `_ZN` 前缀只归 Rust，C++ 也用 `_ZN`（应归 cpp_count）
+- [ ] **P1**: `mapDWARFLanguage` 死代码（定义了但未被调用）
+- [ ] **P1**: `detectModuleLanguage` 返回值未存入 PassContext（language_cache 未实现）
+- [ ] **P1**: pipeline.zig 未调用 `detectModuleLanguage`（预扫描未集成）
+- [ ] **P2**: C11 DWARF 值 29 与 GoogleRenderScript 冲突（当前 else→c_count 功能正确但语义不精确）
+- [ ] **P2**: Go DWARF 值 22 与 Rust 冲突（TinyGo 用 C99 所以实际不影响）
+
+### Historical Status (2026-05-01) — ARCHIVED
 
 | Project  | Language | Issues | Breakdown                                         |
 | -------- | -------- | ------ | ------------------------------------------------- |
@@ -206,15 +253,125 @@ classification in `ffi_boundary.zig`.
 
 ## Target Metrics
 
-| Metric                  | Current (v0.2.1)         | Target (v0.3.0)  |
-| ----------------------- | ------------------------ | ---------------- |
-| sqlite3 RETURN-STACK    | 97                       | <20              |
-| sqlite3 DOUBLE\_FREE    | 88                       | <30              |
-| wasmtime issues         | 2                        | 0                |
-| Detection method        | name patterns + suppress | dataflow-precise |
-| Language-specific rules | many                     | minimal          |
-| FP rate (Rust)          | \~6% (2/31)              | 0%               |
-| FP rate (C)             | high (318/10038)         | <5%              |
+| Metric | Current (v0.2.0-R7.0) | Target (v0.2.0-R7.1) |
+| ------ | --------------------- | ------------------- |
+| Total Issues (18 projects) | 1,169 | **~800** (↓32%) |
+| TP Rate (overall) | ~33% | **~45%** |
+| Pure-FP projects zeroed | 5 | 5+ (stable) |
+| double_free FP rate | 65% | **<30%** |
+| format_string FP rate | 80% | **<30%** |
+| borrow_escape FP rate | 90% | **<40%** |
+| Detection method | Zone-First + dataflow | Language-First + root-cause precise |
+| Language-specific rules | minimal (zone-based) | language × zone channel routing |
+
+### R7.1 Detailed Design Notes
+
+#### R7.1-1: realloc = free + alloc
+
+**File**: `src/pass/analysis/ptr_lifetime.zig` — `trackInstruction()` LLVMCall branch
+
+```
+IR: %new = call @realloc(i8* %old, i64 %size)
+     store i8* %new, i8** %ptr_addr
+
+Current:  %new → recorded as heap alloc ✅
+          %old → still marked alive ❌
+
+Fix: if isReallocFunction(callee_name):
+       1. Mark old_ptr (operand 0) as freed in pointer_map
+       2. Return value already handled by HEAP_ALLOC_FUNCTIONS
+```
+
+Also update `checkMallocFreePairing` in callback_escape.zig to count realloc as both malloc(+1) and free(+1).
+
+#### R7.1-2: format_string constant detection
+
+**File**: `src/pass/analysis/issue/ffi_unsafe.zig`
+
+```
+IR safe:   call printf(@.str, ...)     → GEP → GlobalVariable → constant = true
+IR unsafe: call printf(%fmt, ...)      → fmt is variable = false
+IR wrapper: call printf(%arg_fmt, ...) → arg_fmt from function param = medium confidence
+
+Fix: fn isFormatStringConstant(inst) bool:
+       fmt_arg = GetOperand(inst, 0)
+       if IsAGEPInst(fmt_arg) and IsGlobalVariable(operand) and IsConstant → safe
+       if IsGlobalVariable(fmt_arg) and IsConstant → safe
+       else → report with adjusted confidence
+```
+
+#### R7.1-3: borrow_escape language-layered detection
+
+**File**: `src/pass/analysis/callback_escape.zig`
+
+```
+Current: mayRetainInC matches set_/add_/register_ prefix for ALL languages
+        → C's set_error(&err), add_data(&node) all flagged as escape ❌
+
+Fix: Layer by caller language:
+  - Go caller  → full cgo check (KeepAlive + mayRetainInC) — unchanged
+  - C caller   → only detect REAL escapes:
+                  * pointer stored to global variable
+                  * pointer passed to async callback (pthread_create, signal())
+                  * plain func(&local) is NOT an escape in C
+  - Rust caller → only detect escapes inside unsafe blocks
+  - Zig caller  → skip entirely (compile-time guarantees)
+
+Also fix isCgoBoundary: use only linkage-type check (isCgoBoundaryFromLLVM),
+remove name-pattern match (pure C functions with "C." in name were misclassified).
+```
+
+---
+
+#### R7.2: Language-First Pipeline ✅ COMPLETED
+
+**Design**: At scan entry point, detect source language ONCE via statistical sampling
+of function names, then activate corresponding zone rules channel per language.
+No more per-pass independent language detection.
+
+**Files Modified**:
+- `src/semantics/language_detector.zig` — Added `detectModuleLanguage()`, `LanguageProfile`, `DetectionMethod`, `detectFromSampling()`
+- `src/pass/pass.zig` — Added `module_language` field, `initModuleLanguage()`, `getModuleLanguage()`, `channel*()` methods, `ChannelMode` enum
+- `src/pipeline/pipeline.zig` — Call `ctx.initModuleLanguage()` before passes run
+- `src/pass/analysis/ffi_boundary.zig` — Added `ctx.channelFFIBoundary()` gate at Phase 0.5
+- `src/pass/analysis/callback_escape.zig` — Added `ctx.channelCallbackEscape()` gate + `ctx.isGoModule()` for cgo
+- `src/pass/analysis/ptr_lifetime.zig` — Added `ctx.channelPtrLifetime()` gate (skip for Zig)
+- `src/pass/analysis/pointer_ownership.zig` — Added `ctx.channelPointerOwnership()` gate
+
+**Architecture**:
+```
+Pipeline.run()
+  └─> ctx.initModuleLanguage(module)     // Detect ONCE
+      ├─> detectFromSampling(module)     // Primary: function name patterns
+      │   ├─ _ZN prefix → Rust (92%+)
+      │   ├─ main./runtime. → Go
+      │   ├─ zig_/Allocator. → Zig
+      │   ├─ _Z prefix (non-_ZN) → C++
+      │   └─ default → C
+      └─> ctx.module_language = LanguageProfile{language, confidence, method}
+
+Each Pass:
+  ffi_boundary    → ctx.channelFFIBoundary()    // Zig/Go=.limited, else=.full
+  ptr_lifetime    → ctx.channelPtrLifetime()    // Zig=.skip, Go=.limited, else=.full
+  callback_escape → ctx.channelCallbackEscape() // Zig=.skip, else=.full
+  pointer_ownership→ ctx.channelPointerOwnership()// Zig=.skip, Go=.limited, else=.full
+```
+
+**Channel Matrix**:
+
+| Language | ffi_boundary | ptr_lifetime | callback_escape | pointer_ownership |
+|----------|-------------|--------------|-----------------|-------------------|
+| Rust     | full        | full         | full            | full              |
+| C/C++    | full        | full         | full            | full              |
+| Go       | limited     | limited      | full            | limited           |
+| Zig      | limited     | skip         | skip            | skip              |
+| unknown  | full        | full         | full            | full              |
+
+**Regression Test Results** (18 corpus files):
+- Total Issues: **1,122** (same as R7.1 — channels currently set conservative)
+- Language Detection: Rust ✅ 92%+, C ✅ 100%, Go ⚠️ needs DWARF, Zig ⚠️ needs DWARF
+- Build: ✅ ReleaseFast clean compile
+- No regressions introduced
 
 ***
 
