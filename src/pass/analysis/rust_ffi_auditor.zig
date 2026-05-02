@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const CommonTypes = @import("../../common/types.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -43,26 +44,10 @@ pub const RustFfiIssueType = enum {
 pub const RustFfiFinding = struct {
     func_name: []const u8,
     issue_type: RustFfiIssueType,
-    severity: Severity,
+    severity: CommonTypes.Severity,
     confidence: f32,
     reason: []const u8,
     location: Location,
-
-    pub const Severity = enum {
-        critical,
-        high,
-        medium,
-        low,
-
-        pub fn toString(self: Severity) []const u8 {
-            return switch (self) {
-                .critical => "CRITICAL",
-                .high => "HIGH",
-                .medium => "MEDIUM",
-                .low => "LOW",
-            };
-        }
-    };
 };
 
 /// Main Rust FFI Auditor struct

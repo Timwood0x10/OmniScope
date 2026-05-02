@@ -153,10 +153,10 @@ test "Severity: ordering" {
 }
 
 test "Severity: toString" {
-    try std.testing.expectEqualStrings("LOW", registry.Severity.low.toString());
-    try std.testing.expectEqualStrings("MEDIUM", registry.Severity.medium.toString());
-    try std.testing.expectEqualStrings("HIGH", registry.Severity.high.toString());
-    try std.testing.expectEqualStrings("CRITICAL", registry.Severity.critical.toString());
+    try std.testing.expectEqualStrings("low", registry.Severity.low.toString());
+    try std.testing.expectEqualStrings("medium", registry.Severity.medium.toString());
+    try std.testing.expectEqualStrings("high", registry.Severity.high.toString());
+    try std.testing.expectEqualStrings("critical", registry.Severity.critical.toString());
 }
 
 // ========================================
@@ -383,7 +383,7 @@ test "DynamicRegistry: loadFromJson" {
         \\}
     ;
 
-    var dynamic_registry = registry.DynamicRegistry.init(std.testing.allocator);
+    var dynamic_registry = try registry.DynamicRegistry.init(std.testing.allocator);
     defer dynamic_registry.deinit();
 
     try dynamic_registry.loadFromJson(json);
@@ -395,7 +395,7 @@ test "DynamicRegistry: loadFromJson" {
 }
 
 test "DynamicRegistry: fallback to built-in" {
-    var dynamic_registry = registry.DynamicRegistry.init(std.testing.allocator);
+    var dynamic_registry = try registry.DynamicRegistry.init(std.testing.allocator);
     defer dynamic_registry.deinit();
 
     // Should find built-in function

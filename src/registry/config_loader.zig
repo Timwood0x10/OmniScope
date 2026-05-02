@@ -24,11 +24,18 @@
 
 const std = @import("std");
 const semantic_registry = @import("semantic_registry.zig");
+const types = @import("types.zig");
 
 pub const RiskKind = semantic_registry.RiskKind;
 pub const Severity = semantic_registry.Severity;
 pub const MatchType = semantic_registry.MatchType;
 pub const FunctionSemantics = semantic_registry.FunctionSemantics;
+
+/// Re-export FunctionInfo for backward compatibility.
+/// New code should import from types.zig directly.
+pub const FunctionInfo = types.FunctionInfo;
+pub const Tag = types.Tag;
+pub const ZoneTag = types.ZoneTag;
 
 /// Error type for config loading operations.
 pub const ConfigError = error{
@@ -90,15 +97,24 @@ fn parseMatchType(str: []const u8) ConfigError!MatchType {
 
 /// A dynamic semantic registry that can be extended at runtime.
 /// Combines built-in semantics with custom loaded semantics.
+///
+/// Performance optimization:
+/// - exact_match_map: O(1) HashMap lookup for exact pattern matches
+/// - Linear scan fallback: O(N) for contains/suffix patterns
 pub const DynamicRegistry = struct {
     allocator: std.mem.Allocator,
     custom_functions: std.ArrayList(FunctionSemantics),
+    /// HashMap for O(1) exact match lookups.
+    /// Key: pattern string, Value: index into custom_functions.
+    exact_match_map: std.StringHashMap(usize),
 
     /// Create a new dynamic registry.
-    pub fn init(allocator: std.mem.Allocator) DynamicRegistry {
+    /// Returns error.OutOfMemory if HashMap initialization fails.
+    pub fn init(allocator: std.mem.Allocator) !DynamicRegistry {
         return .{
             .allocator = allocator,
             .custom_functions = .{},
+            .exact_match_map = std.StringHashMap(usize).init(allocator),
         };
     }
 
@@ -110,6 +126,7 @@ pub const DynamicRegistry = struct {
             self.allocator.free(sem.description);
         }
         self.custom_functions.deinit(self.allocator);
+        self.exact_match_map.deinit();
     }
 
     /// Load custom semantics from a JSON config file.
@@ -189,6 +206,11 @@ pub const DynamicRegistry = struct {
                 self.allocator.free(description);
                 return ConfigError.OutOfMemory;
             };
+
+            // Update HashMap for O(1) exact match lookup
+            if (match_type == .exact) {
+                self.exact_match_map.put(pattern, self.custom_functions.items.len - 1) catch {};
+            }
         }
     }
 
@@ -205,6 +227,7 @@ pub const DynamicRegistry = struct {
             return ConfigError.OutOfMemory;
         };
 
+        const idx = self.custom_functions.items.len;
         try self.custom_functions.append(self.allocator, .{
             .pattern = pattern,
             .match_type = sem.match_type,
@@ -216,12 +239,22 @@ pub const DynamicRegistry = struct {
             .requires_taint_check = sem.requires_taint_check,
             .description = description,
         });
+
+        // Update HashMap for O(1) exact match lookup
+        if (sem.match_type == .exact) {
+            self.exact_match_map.put(pattern, idx) catch {};
+        }
     }
 
-    /// Lookup function semantics by name.
+    /// Lookup function semantics by name (O(1) for exact matches, O(N) for patterns).
     /// Searches custom functions first, then built-in layers.
     pub fn lookup(self: *const DynamicRegistry, func_name: []const u8) ?FunctionSemantics {
-        // Search custom functions first (Layer 3)
+        // O(1) HashMap lookup for exact match
+        if (self.exact_match_map.get(func_name)) |idx| {
+            return self.custom_functions.items[idx];
+        }
+
+        // O(N) linear scan for contains/suffix patterns in custom functions
         for (self.custom_functions.items) |sem| {
             if (matchesPattern(func_name, sem.pattern, sem.match_type)) {
                 return sem;
@@ -230,6 +263,54 @@ pub const DynamicRegistry = struct {
 
         // Fall back to built-in registry (Layer 1 & 2)
         return semantic_registry.SemanticRegistry.lookup(func_name);
+    }
+
+    /// Query function info (simplified version with tags and zone).
+    /// Returns FunctionInfo for lightweight pass integration.
+    ///
+    /// This is the preferred method for analysis passes that only need
+    /// to check tags (alloc/free/ffi) and zone classification.
+    pub fn query(self: *const DynamicRegistry, func_name: []const u8) ?types.FunctionInfo {
+        const sem = self.lookup(func_name) orelse return null;
+
+        // Convert FunctionSemantics to FunctionInfo
+        var tags_buf: [4]Tag = undefined;
+        var tags_len: usize = 0;
+
+        // Map RiskKind to Tag
+        if (sem.kind == .allocator or sem.kind == .go_cgo_alloc or sem.kind == .zig_allocator or sem.kind == .cpp_allocator) {
+            tags_buf[tags_len] = .alloc;
+            tags_len += 1;
+        }
+        if (sem.kind == .deallocator) {
+            tags_buf[tags_len] = .free;
+            tags_len += 1;
+        }
+        if (sem.transfers_ownership) {
+            tags_buf[tags_len] = .transfer;
+            tags_len += 1;
+        }
+        if (sem.kind == .dynamic_loading or sem.kind == .jni or sem.kind == .python_c_api) {
+            tags_buf[tags_len] = .ffi;
+            tags_len += 1;
+        }
+
+        // Map kind to ZoneTag
+        const zone = switch (sem.kind) {
+            .allocator, .deallocator, .static_buffer => .c_heap,
+            .rust_ownership => .rust_owned,
+            .go_cgo_alloc => .go_pointer,
+            .zig_allocator => .ffi, // Zig allocator is FFI boundary
+            .dynamic_loading, .jni, .python_c_api => .ffi,
+            else => .unknown,
+        };
+
+        return .{
+            .tags = tags_buf[0..tags_len],
+            .zone = zone,
+            .kind = sem.kind,
+            .severity = sem.severity,
+        };
     }
 
     /// Check if a function name matches a pattern.
@@ -277,7 +358,7 @@ test "parseMatchType" {
 }
 
 test "DynamicRegistry - init and deinit" {
-    var registry = DynamicRegistry.init(std.testing.allocator);
+    var registry = try DynamicRegistry.init(std.testing.allocator);
     defer registry.deinit();
     try std.testing.expectEqual(@as(usize, 0), registry.customCount());
 }
@@ -301,7 +382,7 @@ test "DynamicRegistry - loadFromJson" {
         \\}
     ;
 
-    var registry = DynamicRegistry.init(std.testing.allocator);
+    var registry = try DynamicRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
     try registry.loadFromJson(json);
@@ -314,7 +395,7 @@ test "DynamicRegistry - loadFromJson" {
 }
 
 test "DynamicRegistry - lookup falls back to built-in" {
-    var registry = DynamicRegistry.init(std.testing.allocator);
+    var registry = try DynamicRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
     // Should find built-in function
@@ -341,7 +422,7 @@ test "DynamicRegistry - custom overrides built-in" {
         \\}
     ;
 
-    var registry = DynamicRegistry.init(std.testing.allocator);
+    var registry = try DynamicRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
     try registry.loadFromJson(json);
@@ -353,7 +434,7 @@ test "DynamicRegistry - custom overrides built-in" {
 }
 
 test "DynamicRegistry - addFunction" {
-    var registry = DynamicRegistry.init(std.testing.allocator);
+    var registry = try DynamicRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
     try registry.addFunction(.{

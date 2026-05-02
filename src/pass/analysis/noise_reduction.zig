@@ -14,6 +14,7 @@
 /// - C (SQLite): 0 → 0 (no change, already clean)
 const std = @import("std");
 const semantics = @import("../../semantics/noise_filter.zig");
+const ffi_utils = @import("ffi_utils.zig");
 
 /// Re-export canonical FunctionOrigin from semantics module.
 /// This ensures a single shared definition across all layers.
@@ -573,20 +574,9 @@ pub fn isRustDropGlueBehavior(
 }
 
 /// Quick name-based check for Rust drop glue.
+/// Delegates to unified ffi_utils.isRustDropGlue (single source of truth).
 fn isRustDropGlueName(func_name: []const u8) bool {
-    const drop_patterns = [_][]const u8{
-        "drop_in_place",
-        "_ZN4core3ptr13drop_in_place",
-        "<T as core::ops::drop::Drop>::drop",
-        "::drop",
-        "real_drop_in_place",
-    };
-
-    for (drop_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    return false;
+    return ffi_utils.isRustDropGlue(func_name);
 }
 
 /// Detect Zig allocator wrapper behavior:

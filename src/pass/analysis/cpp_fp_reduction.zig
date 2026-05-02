@@ -1043,7 +1043,7 @@ pub fn detectViolations(
             .alloc,
             alloc.func_name,
             if (alloc.debug_file) |file|
-                .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
             else
                 null,
             lang_hint,
@@ -1124,7 +1124,7 @@ pub fn detectViolations(
                         free_lang_hint,
                         .out,
                         if (alloc.debug_file) |file|
-                            .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                            .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
                         else
                             null,
                     );

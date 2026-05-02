@@ -9,6 +9,11 @@
 //! Reference: plan/lang_ffi_analysis/plan.md - Layer 1: Name-based Filter
 
 const std = @import("std");
+const CommonTypes = @import("../common/types.zig");
+
+/// Re-export Severity for backward compatibility.
+/// New code should import from common/types.zig directly.
+pub const Severity = CommonTypes.Severity;
 
 /// Origin classification for functions.
 /// Determines whether a function should be analyzed or suppressed.
@@ -405,13 +410,8 @@ pub const Language = enum(u8) {
     unknown,
 };
 
-/// Issue severity levels (before risk weighting).
-pub const Severity = enum(u8) {
-    critical,
-    high,
-    medium,
-    low,
-};
+/// Issue severity levels (re-exported from common/types.zig).
+/// Use common/types.zig.Severity directly in new code.
 
 // ============================================================================
 // Language-Specific Classification Functions

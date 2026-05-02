@@ -247,10 +247,10 @@ test "SemanticRegistry - RiskKind enum" {
 }
 
 test "SemanticRegistry - Severity enum" {
-    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(Severity.low));
-    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(Severity.medium));
-    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(Severity.high));
-    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(Severity.critical));
+    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(Severity.low));
+    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(Severity.medium));
+    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(Severity.high));
+    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(Severity.critical));
 }
 
 test "SemanticRegistry - lookup exact match" {

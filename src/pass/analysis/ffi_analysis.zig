@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const CommonTypes = @import("../../common/types.zig");
 
 const Pass = @import("../pass.zig").Pass;
 const PassContext = @import("../pass.zig").PassContext;
@@ -49,13 +50,9 @@ pub const ViolationType = enum {
     leak,
 };
 
-/// Severity level
-pub const Severity = enum {
-    critical,
-    high,
-    medium,
-    low,
-};
+/// Severity level (re-exported from common/types.zig).
+/// Use common/types.zig.Severity directly in new code.
+pub const Severity = CommonTypes.Severity;
 
 /// Ownership violation result
 pub const OwnershipViolation = struct {

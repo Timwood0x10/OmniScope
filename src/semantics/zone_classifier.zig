@@ -236,15 +236,12 @@ pub const CPP_SAFE_PATTERNS = [_][]const u8{
 
 /// C++ escape triggers - focus analysis.
 pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
-    // Extern C
-    "extern \"C\"",
-
     // Dangerous casts
     "reinterpret_cast",
     "const_cast",
     "static_cast<void*",
 
-    // Manual memory
+    // Manual memory management
     "malloc(",
     "free(",
     "new ",
@@ -256,40 +253,12 @@ pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
     "std::thread",
     "CreateThread",
 
-    // Dynamic loading
-    "dlopen",
-    "dlsym",
-    "dlclose",
-    "dlerror",
-
-    // Memory mapping
-    "mmap",
-    "munmap",
-    "mprotect",
-
-    // Python C API
-    "Py_INCREF",
-    "Py_DECREF",
-    "Py_XINCREF",
-    "Py_XDECREF",
-    "Py_BuildValue",
-    "PyArg_ParseTuple",
-
-    // JNI
-    "JNI_OnLoad",
-    "JNI_",
-    "Java_",
-
-    // Signal handling
-    "signal(",
-    "sigaction(",
-
-    // Process management
+    // Process management (C++ context)
     "fork(",
     "execvp(",
     "execve(",
 
-    // Network I/O
+    // Network I/O (C++ context)
     "getaddrinfo",
     "gethostbyname",
     "setsockopt",
@@ -630,6 +599,33 @@ fn classifyGoFunction(func_name: []const u8) ZoneKind {
 fn classifyCppFunction(func_name: []const u8) ZoneKind {
     const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
 
+    // Step 1: Check C++ unsafe patterns (highest priority)
+    for (CPP_ESCAPE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .unsafe;
+        }
+    }
+
+    // Step 2: Check C++ safe patterns (RAII, smart pointers)
+    for (CPP_SAFE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .safe;
+        }
+    }
+
+    // Step 3: Check C escape patterns (FFI-related)
+    for (C_ESCAPE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .ffi;
+        }
+    }
+
+    // Step 4: Check extern "C" declaration (FFI boundary)
+    if (std.mem.indexOf(u8, func_name, "extern \"C\"") != null) {
+        return .ffi;
+    }
+
+    // Step 5: SemanticRegistry lookup (fallback for known functions)
     if (SemanticRegistry.lookup(func_name)) |sem| {
         switch (sem.kind) {
             .command_exec,
@@ -654,28 +650,6 @@ fn classifyCppFunction(func_name: []const u8) ZoneKind {
             .static_buffer,
             => return .ffi,
         }
-    }
-
-    for (CPP_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .unsafe;
-        }
-    }
-
-    for (C_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .ffi;
-        }
-    }
-
-    for (CPP_SAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .safe;
-        }
-    }
-
-    if (std.mem.indexOf(u8, func_name, "extern \"C\"") != null) {
-        return .ffi;
     }
 
     return .unknown;
@@ -756,12 +730,21 @@ fn isCFunction(func_name: []const u8) bool {
 /// - pure internal C logic → .unknown (conservative)
 fn classifyCFunction(func_name: []const u8) ZoneKind {
     const C_FFI_PATTERNS = [_][]const u8{
+        // FFI boundary markers
         "FFI_",
+        "ffi_",
+
+        // Dynamic loading
         "dlopen",
         "dlsym",
         "dlclose",
+
+        // Memory mapping
         "mmap",
         "munmap",
+        "mprotect",
+
+        // Network I/O
         "socket",
         "connect",
         "bind",
@@ -769,6 +752,8 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "accept",
         "send",
         "recv",
+
+        // File I/O
         "close",
         "fopen",
         "fclose",
@@ -776,20 +761,28 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "write",
         "open",
         "pipe",
+
+        // Threading
         "pthread_",
         "sem_",
         "shm_",
         "msg_",
         "mkfifo",
+
+        // Process management
         "fork",
         "exec",
         "wait",
         "kill",
         "signal",
         "alarm",
+
+        // Control flow
         "setjmp",
         "longjmp",
         "exit",
+
+        // Memory allocation
         "malloc",
         "calloc",
         "realloc",
@@ -798,6 +791,8 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "memmove",
         "memset",
         "memcmp",
+
+        // String operations (buffer overflow risk)
         "strcpy",
         "strncpy",
         "strcat",
@@ -807,14 +802,22 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "strncmp",
         "sprintf",
         "snprintf",
+
+        // Conversion
         "atoi",
         "atol",
         "strtol",
         "strtod",
+
+        // Platform-specific allocators
         "malloc_zone",
+
+        // Python C API
         "Py_",
         "py_",
         "PyObject",
+
+        // JNI
         "JNI_",
         "NewGlobalRef",
         "DeleteGlobalRef",
@@ -822,6 +825,18 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "GetFieldID",
         "FindClass",
         "Call",
+
+        // Resource lifecycle patterns (common in FFI)
+        "destroy_",
+        "create_",
+        "init_",
+        "cleanup_",
+        "release_",
+        "acquire_",
+        "allocate_",
+        "deallocate_",
+        "resource_",
+        "handle_",
     };
 
     for (C_FFI_PATTERNS) |pattern| {

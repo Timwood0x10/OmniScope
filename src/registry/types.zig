@@ -1,4 +1,17 @@
 const std = @import("std");
+const CommonTypes = @import("../common/types.zig");
+
+/// Re-export Severity for backward compatibility.
+/// New code should import from common/types.zig directly.
+pub const Severity = CommonTypes.Severity;
+
+/// Re-export ZoneTag from common/types.zig.
+/// New code should import from common/types.zig directly.
+pub const ZoneTag = CommonTypes.ZoneTag;
+
+/// Re-export Tag from common/types.zig.
+/// New code should import from common/types.zig directly.
+pub const Tag = CommonTypes.Tag;
 
 /// Risk category for FFI boundary analysis.
 pub const RiskKind = enum {
@@ -25,24 +38,8 @@ pub const RiskKind = enum {
     static_buffer,
 };
 
-/// Severity level for risk assessment.
-pub const Severity = enum(u8) {
-    low = 1,
-    medium = 2,
-    high = 3,
-    critical = 4,
-
-    /// Convert severity to string for display
-    pub fn toString(self: Severity) []const u8 {
-        return switch (self) {
-            .low => "LOW",
-            .medium => "MEDIUM",
-            .high => "HIGH",
-            .critical => "CRITICAL",
-        };
-    }
-};
-
+/// Severity level for risk assessment (re-exported from common/types.zig).
+/// Use common/types.zig.Severity directly in new code.
 /// Match type for function name patterns.
 pub const MatchType = enum {
     exact,
@@ -50,7 +47,7 @@ pub const MatchType = enum {
     suffix,
 };
 
-/// Semantic rule for a function.
+/// Semantic rule for a function (detailed version with all metadata).
 pub const FunctionSemantics = struct {
     pattern: []const u8,
     match_type: MatchType,
@@ -61,6 +58,45 @@ pub const FunctionSemantics = struct {
     requires_null_check: bool,
     requires_taint_check: bool,
     description: []const u8,
+};
+
+/// Simplified function info returned by registry query.
+/// Designed for O(1) HashMap lookups and lightweight pass integration.
+///
+/// This is the preferred return type for registry queries in analysis passes.
+/// For detailed metadata, use FunctionSemantics instead.
+pub const FunctionInfo = struct {
+    /// Semantic tags (alloc, free, borrow, transfer, ffi).
+    tags: []const Tag,
+    /// Memory zone classification.
+    zone: ZoneTag,
+    /// Risk category (for backward compatibility with existing code).
+    kind: RiskKind,
+    /// Severity level.
+    severity: Severity,
+
+    /// Check if function has a specific tag.
+    pub fn hasTag(self: *const FunctionInfo, tag: Tag) bool {
+        for (self.tags) |t| {
+            if (t == tag) return true;
+        }
+        return false;
+    }
+
+    /// Check if this is an allocation function.
+    pub fn isAlloc(self: *const FunctionInfo) bool {
+        return self.hasTag(.alloc);
+    }
+
+    /// Check if this is a free/deallocation function.
+    pub fn isFree(self: *const FunctionInfo) bool {
+        return self.hasTag(.free);
+    }
+
+    /// Check if this is an FFI boundary function.
+    pub fn isFfi(self: *const FunctionInfo) bool {
+        return self.hasTag(.ffi);
+    }
 };
 
 /// Hook context passed to semantic analysis hooks.

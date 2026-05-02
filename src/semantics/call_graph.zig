@@ -10,10 +10,6 @@
 //!   CallEdge: represents a call relationship with argument mapping
 //!   ArgumentMapping: tracks which caller arg maps to which callee param
 //!
-//! TODO v0.1.9: Complete propagateMemoryGraphThroughCall() implementation
-//! TODO v0.1.9: Complete analyzeArgumentDirections() implementation
-//! TODO v0.1.9: Implement cross-function pointer tracking
-//!
 //! Usage with MemoryGraph:
 //!   1. Build CallGraph for the module
 //!   2. For each call site, use propagateMemoryGraphThroughCall()

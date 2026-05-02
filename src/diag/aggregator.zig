@@ -5,6 +5,27 @@
 //! and produces unified reports.
 
 const std = @import("std");
+const CommonTypes = @import("../common/types.zig");
+
+/// Output severity level for diagnostics (logging/display purpose).
+/// This is DIFFERENT from CommonTypes.Severity (issue severity):
+/// - OutputSeverity: info/warning/err (log level semantics)
+/// - CommonTypes.Severity: low/medium/high/critical (issue criticality)
+///
+/// aggregator.zig uses OutputSeverity for diagnostic categorization.
+/// Issue-related code should use CommonTypes.Severity instead.
+pub const OutputSeverity = enum(u8) {
+    /// Information only
+    info = 0,
+    /// Warning
+    warning = 1,
+    /// Error
+    err = 2,
+};
+
+/// Re-export for backward compatibility (deprecated).
+/// New code should use OutputSeverity for diagnostics, or CommonTypes.Severity for issues.
+pub const Severity = OutputSeverity;
 
 /// Simplified event representation (temporary until runtime/merge.zig is implemented)
 pub const MergedEvent = struct {
@@ -345,16 +366,8 @@ pub const DiagnosticKind = enum(u8) {
     security,
 };
 
-/// Severity level
-pub const Severity = enum(u8) {
-    /// Information only
-    info = 0,
-    /// Warning
-    warning = 1,
-    /// Error
-    err = 2,
-};
-
+/// Severity level (re-exported from common/types.zig)
+/// Use common/types.zig.Severity directly in new code.
 /// Diagnostic
 pub const Diagnostic = struct {
     /// Diagnostic kind

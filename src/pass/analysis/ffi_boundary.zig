@@ -1352,13 +1352,15 @@ pub const FFIBoundaryPass = struct {
     }
 
     /// Identify the language of a function based on its characteristics
+    /// Delegates to unified language_detector (single source of truth).
     fn identifyLanguage(func: c.LLVMValueRef) Language {
-        return lang_classifier.identifyLanguage(func);
+        return @import("../../semantics/language_detector.zig").identifyLanguage(func);
     }
 
     /// Identify the language of a called function based on its name
+    /// Delegates to unified language_detector (single source of truth).
     fn identifyCalleeLanguage(func_name: []const u8) Language {
-        return lang_classifier.identifyCalleeLanguage(func_name);
+        return @import("../../semantics/language_detector.zig").identifyCalleeLanguage(func_name);
     }
 
     /// Demangle a Rust mangled name to a readable format.
