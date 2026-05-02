@@ -209,7 +209,7 @@ pub const DynamicRegistry = struct {
 
             // Update HashMap for O(1) exact match lookup
             if (match_type == .exact) {
-                self.exact_match_map.put(pattern, self.custom_functions.items.len - 1) catch {};
+                try self.exact_match_map.put(pattern, self.custom_functions.items.len - 1);
             }
         }
     }
@@ -242,7 +242,7 @@ pub const DynamicRegistry = struct {
 
         // Update HashMap for O(1) exact match lookup
         if (sem.match_type == .exact) {
-            self.exact_match_map.put(pattern, idx) catch {};
+            try self.exact_match_map.put(pattern, idx);
         }
     }
 

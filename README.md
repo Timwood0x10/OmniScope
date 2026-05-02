@@ -1,5 +1,16 @@
 # OmniScope
 
+```shell
+    `....                                `.. ..                                     
+  `..    `..                         `.`..    `..                                   
+`..        `..`... `.. `.. `.. `..      `..         `...   `..    `. `..     `..    
+`..        `.. `..  `.  `.. `..  `..`..   `..     `..    `..  `.. `.  `..  `.   `.. 
+`..        `.. `..  `.  `.. `..  `..`..      `.. `..    `..    `..`.   `..`..... `..
+  `..     `..  `..  `.  `.. `..  `..`..`..    `.. `..    `..  `.. `.. `.. `.        
+    `....     `...  `.  `..`...  `..`..  `.. ..     `...   `..    `..       `....   
+                                                                  `..               
+```
+
 **Cross-Language FFI & Memory Safety Static Analyzer**
 
 **Project Focus**: Static security analysis specialized for unsafe/FFI cross-language boundaries
@@ -8,32 +19,33 @@ Supports C/C++/Rust/Zig/Go. Detects memory safety issues and FFI boundary violat
 
 English | [简体中文](./README_ZH.md)
 
----
+***
 
-## Latest Optimizations (v0.2.0)
+## Latest Optimizations&#x20;
 
-### Cross-Function Ownership Tracking
+## Cross-Function Ownership Tracking
 
 **Problem**: Previous versions analyzed functions in isolation, causing massive false positives.
 
 **Solution**: Implemented inter-procedural ownership tracking via call graph propagation.
 
 **Results on SQLite3 (3346 functions)**:
+
 - **FREE-ORPHAN warnings**: 225 → 0 (100% eliminated)
 - **Pattern suppressions**: 2000+ automatic
-- **Analysis time**: ~9.5 seconds
+- **Analysis time**: \~9.5 seconds
 - **Precision**: Significantly improved
 
 ### Pattern-Based Suppression
 
 Replaced manual whitelists with automatic pattern recognition:
 
-| Pattern Type | Examples | Handling |
-|--------------|----------|----------|
-| **Factory Functions** | `Alloc`, `Create`, `New` | Allow allocs > frees |
-| **Destructor Functions** | `Free`, `Destroy`, `Close` | Allow frees > allocs |
-| **Transfer Functions** | `Clone`, `Copy`, `Move` | Ownership flows through |
-| **Output Parameters** | `T**` parameters | Recognize ownership transfer |
+| Pattern Type             | Examples                   | Handling                     |
+| ------------------------ | -------------------------- | ---------------------------- |
+| **Factory Functions**    | `Alloc`, `Create`, `New`   | Allow allocs > frees         |
+| **Destructor Functions** | `Free`, `Destroy`, `Close` | Allow frees > allocs         |
+| **Transfer Functions**   | `Clone`, `Copy`, `Move`    | Ownership flows through      |
+| **Output Parameters**    | `T**` parameters           | Recognize ownership transfer |
 
 ### Enhanced Detection Capabilities
 
@@ -44,7 +56,7 @@ New memory graph analysis methods:
 3. **Resource Lifecycle Analysis**: Traces complete allocation→use→free paths
 4. **Dangerous Alias Detection**: Finds all aliases that could cause UAF
 
----
+***
 
 ## Core Philosophy
 
@@ -82,19 +94,20 @@ graph LR
 
 v0.1.5 introduces Zone Classification, analyzing only where language guarantees stop:
 
-| Zone Type | Meaning | Handling |
-|-----------|---------|----------|
-| **Safe Zone** | Code with language safety guarantees | Skip analysis (trust compiler) |
-| **Runtime Internal** | Language runtime/standard library | Skip analysis (trust official implementation) |
-| **Unknown Zone** | Code without language guarantees | Deep analysis (must check) |
+| Zone Type            | Meaning                              | Handling                                      |
+| -------------------- | ------------------------------------ | --------------------------------------------- |
+| **Safe Zone**        | Code with language safety guarantees | Skip analysis (trust compiler)                |
+| **Runtime Internal** | Language runtime/standard library    | Skip analysis (trust official implementation) |
+| **Unknown Zone**     | Code without language guarantees     | Deep analysis (must check)                    |
 
 **Effect**:
+
 ```
 Before: "Found 185 UAFs"  ❌ Many false positives
 Now: "Analyzed 267 functions, skipped 171 (64%), found 48 issues"  ✅ Clear and credible
 ```
 
----
+***
 
 ## Architecture
 
@@ -177,21 +190,21 @@ flowchart TD
     Skip2 --> Report
 ```
 
----
+***
 
 ## Detection Capabilities
 
-| Type | Severity | Example |
-|------|----------|---------|
-| Memory Leak | MEDIUM | malloc without free |
-| Use-After-Free | HIGH | Dereference after free |
-| Double-Free | HIGH | Same resource freed twice |
-| Null Pointer Dereference | MEDIUM | Unchecked nullable pointer |
-| Format String | MEDIUM | User-controlled format string |
-| Command Injection | CRITICAL | system with user input |
-| FFI Ownership Violation | HIGH | Rust Box freed by C |
+| Type                     | Severity | Example                       |
+| ------------------------ | -------- | ----------------------------- |
+| Memory Leak              | MEDIUM   | malloc without free           |
+| Use-After-Free           | HIGH     | Dereference after free        |
+| Double-Free              | HIGH     | Same resource freed twice     |
+| Null Pointer Dereference | MEDIUM   | Unchecked nullable pointer    |
+| Format String            | MEDIUM   | User-controlled format string |
+| Command Injection        | CRITICAL | system with user input        |
+| FFI Ownership Violation  | HIGH     | Rust Box freed by C           |
 
----
+***
 
 ## Quick Start
 
@@ -210,24 +223,24 @@ zig build
 ```
 
 | Dependency | Version |
-|------------|---------|
-| Zig | 0.15.2+ |
-| LLVM | 18+ |
+| ---------- | ------- |
+| Zig        | 0.15.2+ |
+| LLVM       | 18+     |
 
----
+***
 
 ## Real Project Testing
 
 ### Zone Classification Effectiveness
 
-| Project | Language | Functions | Safe | Runtime | Unknown | Skip % | Issues |
-|---------|----------|-----------|------|---------|---------|--------|--------|
-| ring | Rust + C | 278 | 261 | 17 | 0 | **100%** | 0 |
-| wasmtime | Rust | 619 | 239 | 221 | 159 | **74.3%** | 96 |
-| blst | Rust + C | 267 | 39 | 132 | 96 | **64.0%** | 48 |
-| zlib-binding | C | 12 | 0 | 0 | 12 | 0% | 14 |
-| openssl-wrapper | C | 12 | 0 | 0 | 12 | 0% | 7 |
-| sqlite-binding | C | 8 | 0 | 0 | 8 | 0% | 4 |
+| Project         | Language | Functions | Safe | Runtime | Unknown | Skip %    | Issues |
+| --------------- | -------- | --------- | ---- | ------- | ------- | --------- | ------ |
+| ring            | Rust + C | 278       | 261  | 17      | 0       | **100%**  | 0      |
+| wasmtime        | Rust     | 619       | 239  | 221     | 159     | **74.3%** | 96     |
+| blst            | Rust + C | 267       | 39   | 132     | 96      | **64.0%** | 48     |
+| zlib-binding    | C        | 12        | 0    | 0       | 12      | 0%        | 14     |
+| openssl-wrapper | C        | 12        | 0    | 0       | 12      | 0%        | 7      |
+| sqlite-binding  | C        | 8         | 0    | 0       | 8       | 0%        | 4      |
 
 ### wasmtime Source Code Verification
 
@@ -235,28 +248,27 @@ OmniScope detected real issues in wasmtime and performed source code verificatio
 
 **Verified Source Code Facts**:
 
-1. **fiber_start ignores array_call return value**
+1. **fiber\_start ignores array\_call return value**
    - Source location: `crates/wasmtime/src/runtime/vm/stack_switching/stack/unix.rs:326-328`
    - Developer has marked this issue with TODO comment
-
-2. **occupy_next_slots missing capacity check**
+2. **occupy\_next\_slots missing capacity check**
    - Source location: `crates/cranelift/src/func_environ/stack_switching/instructions.rs:301-320`
    - Comment claims capacity check, but actual code doesn't check
 
 See: [wasmtime Source Verification Report](./docs/investigation_reports/en/wasmtime_source.md)
 
----
+***
 
 ## Performance Improvement
 
-| Metric | 优化前 | 优化后 | Improvement |
-|--------|--------|--------|-------------|
-| Analysis Time (blst) | 3100ms | 836ms | **73%** |
-| Analysis Time (ring) | 793ms | 269ms | **66%** |
-| Function Analysis Reduction | - | - | **Up to 100%** |
-| Issue Detection Precision | 185 UAFs | 48 issues | **74% improvement** |
+| Metric                      | 优化前      | 优化后       | Improvement         |
+| --------------------------- | -------- | --------- | ------------------- |
+| Analysis Time (blst)        | 3100ms   | 836ms     | **73%**             |
+| Analysis Time (ring)        | 793ms    | 269ms     | **66%**             |
+| Function Analysis Reduction | -        | -         | **Up to 100%**      |
+| Issue Detection Precision   | 185 UAFs | 48 issues | **74% improvement** |
 
----
+***
 
 ## A Letter to Users
 
@@ -279,7 +291,7 @@ The reason: Rust handed memory to C via `Box::into_raw()`, C called `free()` on 
 
 Full content: [To Everyone Who's Been Burned by FFI](./docs/TOUSER/en.md)
 
----
+***
 
 ## Project Structure
 
@@ -302,19 +314,19 @@ docs/
 └── project_exports/         # Comprehensive test reports
 ```
 
----
+***
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Letter to Users](./docs/TOUSER/en.md) | Why this project exists |
-| [Comprehensive Report](./docs/project_exports/en/COMPREHENSIVE_REPORT.md) | 12 project test results |
-| [Performance Report](./docs/project_exports/en/PERFORMANCE_IMPROVEMENT.md) | v0.1.5 performance data |
+| Document                                                                           | Description                     |
+| ---------------------------------------------------------------------------------- | ------------------------------- |
+| [Letter to Users](./docs/TOUSER/en.md)                                             | Why this project exists         |
+| [Comprehensive Report](./docs/project_exports/en/COMPREHENSIVE_REPORT.md)          | 12 project test results         |
+| [Performance Report](./docs/project_exports/en/PERFORMANCE_IMPROVEMENT.md)         | v0.1.5 performance data         |
 | [wasmtime Source Verification](./docs/investigation_reports/en/wasmtime_source.md) | Real vulnerability verification |
-| [FFI-Dense Project Report](./docs/investigation_reports/en/ffi_dense.md) | 25 real issues |
+| [FFI-Dense Project Report](./docs/investigation_reports/en/ffi_dense.md)           | 25 real issues                  |
 
----
+***
 
 ## Limitations
 
@@ -323,13 +335,13 @@ docs/
 3. Indirect calls via function pointers are resolved heuristically
 4. Primarily intra-procedural analysis (ownership tracking supports inter-procedural)
 
----
+***
 
 ## Acknowledgements
 
 Special thanks to [@icehawk-hyb](https://github.com/icehawk-hyb) for serving as technical advisor, providing critical guidance on cross-language security analysis.
 
----
+***
 
 ## License
 

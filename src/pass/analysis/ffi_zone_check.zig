@@ -1,0 +1,268 @@
+//! FFI Zone Classification and Language Detection
+//!
+//! Extracted from ffi_boundary.zig for better code organization.
+//! Contains zone classification logic, language detection,
+//! and boundary kind classification.
+
+const std = @import("std");
+const c = @import("../../ir/llvm_raw.zig").c;
+
+const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
+const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
+const FunctionSemantics = @import("../../registry/semantic_registry.zig").FunctionSemantics;
+const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+
+/// Re-export language classifier for unified access.
+const lang_classifier = @import("ffi_language_classifier.zig");
+
+/// Known FFI patterns for language identification.
+pub const FFIPatterns = struct {
+    /// Rust FFI function name patterns.
+    pub const rust_patterns = &[_][]const u8{
+        "extern",
+        "rust_",
+        "_ZN",
+    };
+
+    /// Zig FFI function name patterns (based on zig_ffi_filter.md).
+    pub const zig_patterns = &[_][]const u8{
+        "extern",
+        "c_",
+        "@cImport",
+        "zig_",
+        "__zig",
+    };
+
+    /// Zig-specific internal/runtime functions (SAFE — not real FFI issues).
+    pub const zig_internal_patterns = &[_][]const u8{
+        "zig_assert_fail",
+        "zig_panic",
+        "zig_oq",
+        "zig_write",
+        "zig_alloc",
+        "zig_free",
+        "zig_error",
+        "zig_generic_resolve",
+        "zig_monitor_init",
+        "zig_monitor_lock",
+        "zig_monitor_unlock",
+        "zig_promote_error",
+        "zig_demote_error",
+        "zig_convert_to_error_union",
+        "zig_stack_trace",
+        "zig_debug_safe_truncate",
+        "zig_debug_safety_crash",
+        "__zig_bug",
+        "__zig_panic_handler",
+    };
+
+    /// Known-safe @cImport bindings that should not generate warnings.
+    pub const zig_cimport_safe = &[_][]const u8{
+        // Standard C library memory functions (safe wrappers)
+        "memcpy", "memmove", "memset", "memcmp",
+        "strlen", "strcpy", "strncpy", "strcat", "strncat",
+        "strcmp", "strncmp", "strchr", "strrchr",
+        "malloc", "calloc", "realloc", "free",
+        // Standard I/O
+        "fopen", "fclose", "fread", "fwrite", "fprintf", "printf",
+        "fgets", "puts", "putchar", "getc", "ungetc",
+        "sprintf", "snprintf", "vsprintf", "vsnprintf",
+        "sscanf", "fscanf", "scanf",
+        // String conversion
+        "atoi", "atol", "atof", "strtol", "strtoul", "strtod",
+        "itoa", "ltoa", "gcvt",
+        // Math functions
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh", "log", "log10", "exp", "pow", "sqrt",
+        "fabs", "floor", "ceil", "round", "trunc", "fmod", "remainder",
+        "rand", "srand",
+        // Time functions
+        "time", "clock", "difftime", "mktime", "localtime", "gmtime",
+        "strftime", "asctime", "ctime",
+        // File operations
+        "open", "close", "read", "write", "lseek", "stat", "fstat",
+        "access", "chmod", "unlink", "rename", "remove", "tmpfile",
+        "fgetc", "fputc", "fputs", "feof", "ferror", "clearerr", "rewind",
+        "ftell", "fflush", "freopen", "setbuf", "setvbuf",
+        // Error handling
+        "errno", "strerror", "perror",
+        // Process control
+        "exit", "abort", "atexit", "system", "getenv", "putenv",
+        "getpid", "getppid",
+    };
+};
+
+/// Check if a Zig function is an internal/runtime function (SAFE — skip analysis).
+/// Based on zig_ffi_filter.md: Zig compiler-generated helpers are guaranteed
+/// safe by the type system and should not generate FFI warnings.
+pub fn isZigInternalFunction(func_name: []const u8) bool {
+    for (FFIPatterns.zig_internal_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    // Check for Zig compiler-generated mangled names (safe by construction)
+    if (std.mem.indexOf(u8, func_name, "__zig") != null) {
+        return true;
+    }
+
+    // Zig anonymous function names (lambda/closure helpers)
+    if (std.mem.indexOf(u8, func_name, "(anonymous namespace)") != null) {
+        return true;
+    }
+
+    // Zig generic instantiation patterns (e.g., "foo(T).inner")
+    if (std.mem.indexOf(u8, func_name, "generic(") != null or
+        std.mem.indexOf(u8, func_name, "__anon_") != null)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/// Check if a called C function from @cImport is a known-safe binding.
+/// These are standard libc functions that Zig wraps safely.
+pub fn isZigSafeCimport(func_name: []const u8) bool {
+    for (FFIPatterns.zig_cimport_safe) |pattern| {
+        if (std.mem.eql(u8, func_name, pattern) or
+            std.mem.indexOf(u8, func_name, pattern) != null)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Identify the language of a function based on its characteristics.
+/// Delegates to unified language_detector (single source of truth).
+pub fn identifyLanguage(func: c.LLVMValueRef) Language {
+    return @import("../../semantics/language_detector.zig").identifyLanguage(func);
+}
+
+/// Identify the language of a called function based on its name.
+/// Delegates to unified language_detector (single source of truth).
+pub fn identifyCalleeLanguage(func_name: []const u8) Language {
+    return @import("../../semantics/language_detector.zig").identifyCalleeLanguage(func_name);
+}
+
+/// Classify the boundary kind based on caller and callee languages.
+pub fn classifyBoundaryKind(caller_lang: Language, callee_lang: Language) BoundaryKind {
+    return lang_classifier.classifyBoundaryKind(caller_lang, callee_lang);
+}
+
+/// Check if a function name is a libc function.
+pub fn isLibcFunction(func_name: []const u8) bool {
+    return lang_classifier.isLibcFunction(func_name);
+}
+
+/// Classify FFI boundary with enhanced detection for dynamic loading/JNI/Python.
+pub fn classifyBoundaryKindEnhanced(
+    caller_lang: Language,
+    callee_lang: Language,
+    func_name: []const u8,
+) BoundaryKind {
+    return lang_classifier.classify_boundary_kind_enhanced(caller_lang, callee_lang, func_name);
+}
+
+/// Check if a function name represents a dynamic loading function.
+pub fn isDynamicLoadingFunction(func_name: []const u8) bool {
+    return lang_classifier.isDynamicLoadingFunction(func_name);
+}
+
+/// Check if a function name represents a JNI function.
+pub fn isJNIFunction(func_name: []const u8) bool {
+    return lang_classifier.isJNIFunction(func_name);
+}
+
+/// Check if a function name represents a Python C API function.
+pub fn isPythonCApiFunction(func_name: []const u8) bool {
+    return lang_classifier.isPythonCApiFunction(func_name);
+}
+
+/// Comprehensive check: Should we analyze this FFI boundary in Zig context?
+/// Returns true if this is a REAL FFI risk worth reporting.
+pub fn isZigFFIWorthReporting(
+    caller_func_name: []const u8,
+    callee_func_name: []const u8,
+    sem: FunctionSemantics,
+) bool {
+    // Rule 1: Skip if caller is Zig internal function
+    if (isZigInternalFunction(caller_func_name)) {
+        return false;
+    }
+
+    // Rule 2: Skip if callee is known-safe @cImport binding AND not dangerous
+    if (isZigSafeCimport(callee_func_name)) {
+        // Still report if it's semantically dangerous (system, exec, etc.)
+        if (sem.kind == .command_exec or sem.kind == .unchecked_copy) {
+            return true; // Override: dangerous calls always reported
+        }
+        return false; // Safe libc bindings are OK
+    }
+
+    // Rule 3: Always report cross-language ownership issues
+    if (sem.transfers_ownership or sem.consumes_ownership) {
+        return true;
+    }
+
+    // Rule 4: Report format string vulnerabilities
+    if (sem.kind == .format_string) {
+        return true;
+    }
+
+    // Default: report for analysis
+    return true;
+}
+
+/// Check if a function name represents a dangerous FFI pattern.
+/// Uses Semantic Registry for comprehensive risk assessment.
+pub fn isDangerousPattern(func_name: []const u8) bool {
+    return SemanticRegistry.isKnown(func_name);
+}
+
+/// Check if a caller function name suggests intentional/safe/test code.
+///
+/// Functions with these naming patterns are likely:
+/// - Reference implementations ("safe_*", "correct_*", "example_*")
+/// - Test fixtures ("test_*", "*_test")
+/// - Demo code ("demo_*", "sample_*")
+/// - Benchmarking ("bench_*", "*_bench")
+///
+/// These functions should have their FFI warnings suppressed or
+/// downgraded to INFO level, as they are not production code
+/// where real vulnerabilities would matter.
+pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+    const intentional_prefixes = [_][]const u8{
+        "safe_",     // safe_example, safe_usage
+        "correct_",  // correct_usage, correct_pattern
+        "example_",  // example_basic, example_advanced
+        "test_",     // test_malloc, test_free
+        "_test",     // malloc_test, free_test
+        "demo_",     // demo_ffi, demo_binding
+        "sample_",   // sample_code, sample_api
+        "bench_",    // benchmark_alloc
+        "fixture_",  // fixture_data
+        "mock_",     // mock_database
+        "stub_",     // stub_network
+        "reference_",// reference_impl
+    };
+
+    for (intentional_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) return true;
+    }
+
+    const intentional_contains = [_][]const u8{
+        "intentional",
+        "known_safe",
+        "expected",
+        "deliberate",
+    };
+
+    for (intentional_contains) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
+    }
+
+    return false;
+}

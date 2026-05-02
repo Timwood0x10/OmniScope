@@ -826,17 +826,20 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "FindClass",
         "Call",
 
-        // Resource lifecycle patterns (common in FFI)
-        "destroy_",
-        "create_",
-        "init_",
-        "cleanup_",
-        "release_",
-        "acquire_",
-        "allocate_",
-        "deallocate_",
-        "resource_",
-        "handle_",
+        // Resource lifecycle patterns (common in FFI boundaries)
+        // NOTE: These are broad patterns that may produce false positives.
+        // However, downstream FP guards will filter out non-FFI cases.
+        // Trade-off: Better recall (catch real FFI) at cost of some precision.
+        "destroy_", // Common in FFI resource cleanup
+        "create_", // Common in FFI factory functions
+        "init_", // Initialization (may be broad - FP guarded)
+        "cleanup_", // Cleanup routines (often FFI-related)
+        "release_", // Reference counting release
+        "acquire_", // Reference counting acquire
+        "allocate_", // Memory allocation wrappers
+        "deallocate_", // Memory deallocation wrappers
+        "resource_", // Resource management (broad - FP guarded)
+        "handle_", // Handle operations (very broad - FP guarded)
     };
 
     for (C_FFI_PATTERNS) |pattern| {
