@@ -212,7 +212,7 @@ pub const FuzzyMatcher = struct {
         if (fn_name.len == 0) return "";
 
         var end: usize = 0;
-        while (end < fn_name.len and fn_name[end] != '_' and fn_name[end] != '_' and fn_name[end] != '_' and fn_name[end] != 0) {
+        while (end < fn_name.len and fn_name[end] != '_' and fn_name[end] != 0) {
             if (fn_name[end] >= 'A' and fn_name[end] <= 'Z') {
                 end += 1;
             } else if (fn_name[end] >= 'a' and fn_name[end] <= 'z') {

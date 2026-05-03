@@ -363,13 +363,14 @@ pub const SemanticRegistry = struct {
     /// Check if a function name is a C deallocator (free, etc.)
     fn isCFree(name: []const u8) bool {
         const free_patterns = [_][]const u8{
-            "free",   "dealloc", "destroy", "release",
+            "dealloc", "destroy", "release",
             "_ZdlPv", "_ZdaPv",  "munmap",
         };
+        // Check specific patterns first (no false positive risk)
         for (free_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;
         }
-        // Exclude compound words like "after_free" or "before_free"
+        // Check "free" with compound word exclusion
         const idx = std.mem.indexOf(u8, name, "free") orelse return false;
         if (idx > 0 and isAlphaNum(name[idx - 1])) return false;
         const after = idx + 4;

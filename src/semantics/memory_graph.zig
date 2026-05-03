@@ -919,6 +919,5 @@ fn hashValues(values: []const u64) u64 {
 pub const FuzzyMatcher = @import("memory_graph_fuzzy.zig").FuzzyMatcher;
 pub const FnClass = @import("memory_graph_fuzzy.zig").FnClass;
 
-
 // Tests are in memory_graph_test.zig (imported to run tests)
 const _tests = @import("memory_graph_test.zig");

@@ -235,14 +235,34 @@ pub const CallGraph = struct {
     }
 
     /// Gets all edges where this node is the caller.
-    pub fn getOutgoingEdges(graph: *CallGraph, node_id: u64) []CallEdge {
-        const node = graph.getNode(node_id) orelse return &.{};
-        var result: []CallEdge = &.{};
+    /// Returns an ArrayList of outgoing edges. Caller must call result.deinit().
+    pub fn getOutgoingEdges(graph: *CallGraph, allocator: std.mem.Allocator, node_id: u64) !std.ArrayList(CallEdge) {
+        const node = graph.getNode(node_id) orelse return std.ArrayList(CallEdge).init(allocator);
+        var result = std.ArrayList(CallEdge).init(allocator);
         for (node.outgoing_edges.items) |edge_id| {
             const edge = graph.getEdge(edge_id) orelse continue;
-            result = result ++ &.{edge.*};
+            try result.append(edge.*);
         }
         return result;
+    }
+
+    /// Zero-allocation iterator over outgoing edges. Preferred for performance-critical paths.
+    /// Callback receives each edge; iteration stops if callback returns false.
+    pub fn forEachOutgoingEdge(graph: *CallGraph, node_id: u64, ctx: anytype, comptime callback: fn (@TypeOf(ctx), CallEdge) bool) bool {
+        const node = graph.getNode(node_id) orelse return true;
+        for (node.outgoing_edges.items) |edge_id| {
+            const edge = graph.getEdge(edge_id) orelse continue;
+            if (!callback(ctx, edge.*)) return false;
+        }
+        return true;
+    }
+
+    /// Convenience wrapper: returns owned slice (caller must free via allocator.free()).
+    /// Prefer forEachOutgoingEdge() or getOutgoingEdges() for better control.
+    pub fn getOutgoingEdgesSlice(graph: *CallGraph, allocator: std.mem.Allocator, node_id: u64) ![]CallEdge {
+        var list = try graph.getOutgoingEdges(allocator, node_id);
+        errdefer list.deinit();
+        return list.toOwnedSlice();
     }
 };
 
@@ -637,8 +657,9 @@ test "call_graph - get outgoing edges" {
     _ = try graph.addEdge(main_id, foo_id, call_inst1, "foo");
     _ = try graph.addEdge(main_id, bar_id, call_inst2, "bar");
 
-    const edges = graph.getOutgoingEdges(main_id);
-    try std.testing.expect(edges.len == 2);
+    const edges = try graph.getOutgoingEdges(allocator, main_id);
+    defer edges.deinit();
+    try std.testing.expect(edges.items.len == 2);
 }
 
 test "call_graph - external and ffi flags" {

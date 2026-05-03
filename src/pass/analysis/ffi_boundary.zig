@@ -93,7 +93,7 @@ pub const registrySeverityToIssueSeverity = safety_checker.registrySeverityToIss
 pub const FFIBoundaryPass = struct {
     pub const name = "ffi-boundary";
     pub const kind = PassKind.foundation;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{"danger-surface"};
 
     /// Run the FFI boundary detection pass (Pass interface requirement).
     /// Delegates to analyze() for actual implementation.
