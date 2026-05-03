@@ -350,9 +350,9 @@ pub const SemanticRegistry = struct {
     /// Check if a function name is a C allocator (malloc, calloc, realloc, etc.)
     fn isCAllocator(name: []const u8) bool {
         const alloc_patterns = [_][]const u8{
-            "malloc",  "calloc",  "realloc", "reallocarray",
-            "aligned_alloc", "posix_memalign", "memalign",
-            "_Znwm",   "_Znam",    "mmap",    "mmap64",
+            "malloc",        "calloc",         "realloc",  "reallocarray",
+            "aligned_alloc", "posix_memalign", "memalign", "_Znwm",
+            "_Znam",         "mmap",           "mmap64",
         };
         for (alloc_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;
@@ -363,8 +363,8 @@ pub const SemanticRegistry = struct {
     /// Check if a function name is a C deallocator (free, etc.)
     fn isCFree(name: []const u8) bool {
         const free_patterns = [_][]const u8{
-            "free", "dealloc", "destroy", "release",
-            "_ZdlPv", "_ZdaPv", "munmap",
+            "free",   "dealloc", "destroy", "release",
+            "_ZdlPv", "_ZdaPv",  "munmap",
         };
         for (free_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;
@@ -380,8 +380,8 @@ pub const SemanticRegistry = struct {
     /// Check if a function is a C string operation (strcpy, strlen, etc.)
     fn isCStringFunc(name: []const u8) bool {
         const str_patterns = [_][]const u8{
-            "strcpy",  "strncpy", "strcat",  "strncat",
-            "sprintf", "snprintf", "strlen",  "strcmp",
+            "strcpy",  "strncpy",  "strcat", "strncat",
+            "sprintf", "snprintf", "strlen", "strcmp",
             "strncpy", "strndup",
         };
         for (str_patterns) |pat| {

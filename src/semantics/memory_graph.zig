@@ -965,8 +965,7 @@ pub const FuzzyMatcher = struct {
             return .free;
         }
 
-        if (endsWithLower(fn_name, "_init"))
-        {
+        if (endsWithLower(fn_name, "_init")) {
             return .init;
         }
 
@@ -1675,14 +1674,14 @@ test "memory_graph - resolveContentSource multi-level fallback" {
 
     try std.testing.expectEqual(SourceKind.heap_alloc, graph.resolveContentSource(0xA001));
 
-    try graph.recordContentSource(0xB001, .alloca);
+    graph.recordContentSource(0xB001, .alloca);
     try std.testing.expectEqual(SourceKind.alloca, graph.getContentSource(0xB001));
     try std.testing.expectEqual(SourceKind.alloca, graph.resolveContentSource(0xB001));
 
     try std.testing.expectEqual(SourceKind.unknown, graph.getContentSource(0xC001));
     try std.testing.expectEqual(SourceKind.unknown, graph.resolveContentSource(0xC001));
 
-    _ = try graph.trackCallRet(0x2000, 0xD001, "malloc_wrapper", 0);
+    _ = try graph.trackCallRet(0x2000, "malloc_wrapper", 0xD001);
     try std.testing.expectEqual(SourceKind.call_result, graph.resolveContentSource(0xD001));
 }
 

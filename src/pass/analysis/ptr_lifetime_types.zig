@@ -205,6 +205,125 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
 };
 
 // ============================================================================
+// Project-Level Allocator Pair Detection (P2-2)
+// ============================================================================
+
+/// Check if a function name follows common project-level allocator naming patterns.
+/// This implements automatic allocator/free pairing to reduce false positives
+/// in leak detection for projects using custom allocators (e.g., sqlite3Malloc).
+///
+/// Patterns detected (case-insensitive prefix/suffix matching):
+///   - xxxMalloc, xxxAlloc, xxxCalloc, xxxRealloc (allocation)
+///   - xxxCreate, xxxNew, xxxMake, xxxBuild (factory functions)
+///   - xxxAllocate, xxxAllocateArray (verbose forms)
+///
+/// Returns true if the function is likely a project-level allocator.
+pub fn isProjectAllocFunction(func_name: []const u8) bool {
+    if (func_name.len < 4) return false; // Minimum: "Xxx" + "Malloc"
+
+    // Suffix patterns: function must END with these (avoids false positives on
+    // names like "malloc_safe", "allocator_info" etc.)
+    const alloc_suffixes = [_][]const u8{
+        "Malloc", "malloc", "Alloc",   "alloc",
+        "Calloc", "calloc", "Realloc", "realloc",
+        "Create", "create", "New",     "new",
+        "Make",   "make",   "Build",   "build",
+        "Allocate", // Verbose form (10+ chars)
+    };
+
+    for (alloc_suffixes) |suffix| {
+        if (func_name.len > suffix.len and // Ensure has prefix (project name)
+            std.mem.endsWith(u8, func_name, suffix))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Check if a function name follows common project-level deallocator naming patterns.
+/// Pairs with isProjectAllocFunction to form complete allocator/deallocator pairs.
+///
+/// Patterns detected:
+///   - xxxFree, xxxDealloc, xxxDestroy, xxxRelease (deallocation)
+///   - xxxDelete, xxxDrop, xxxClose (resource cleanup)
+///   - xxxDispose, xxxFinalize (verbose forms)
+///
+/// Returns true if the function is likely a project-level deallocator.
+pub fn isProjectFreeFunction(func_name: []const u8) bool {
+    if (func_name.len < 4) return false; // Minimum: "Xxx" + "Free"
+
+    // Suffix patterns: function must END with these
+    const free_suffixes = [_][]const u8{
+        "Free",    "free",    "Dealloc", "dealloc",
+        "Destroy", "destroy", "Release", "release",
+        "Delete",  "delete",  "Drop",    "drop",
+        "Close",   "close",   "Dispose", "dispose",
+        "Finalize", // Verbose form (8+ chars)
+    };
+
+    for (free_suffixes) |suffix| {
+        if (func_name.len > suffix.len and // Ensure has prefix (project name)
+            std.mem.endsWith(u8, func_name, suffix))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Check if two function names form a likely allocator/deallocator pair based on
+/// naming conventions. Used for project-level pair validation and debugging.
+///
+/// Examples of matched pairs:
+///   - sqlite3Malloc ↔ sqlite3Free
+///   - myObj_Create ↔ myObj_Destroy
+///   - CustomAlloc ↔ CustomDealloc
+///
+/// Returns true if alloc_name and free_name share a common prefix and have
+/// matching alloc/free suffixes.
+pub fn areAllocatorPair(alloc_name: []const u8, free_name: []const u8) bool {
+    if (alloc_name.len < 4 or free_name.len < 4) return false;
+
+    // Extract common prefix (before the alloc/free suffix)
+    const alloc_prefix = extractFunctionPrefix(alloc_name);
+    const free_prefix = extractFunctionPrefix(free_name);
+
+    // Must share the same base name (project/module prefix)
+    if (alloc_prefix.len == 0 or free_prefix.len == 0) return false;
+    if (!std.mem.eql(u8, alloc_prefix, free_prefix)) return false;
+
+    // Verify one is alloc-pattern and other is free-pattern
+    return isProjectAllocFunction(alloc_name) and isProjectFreeFunction(free_name);
+}
+
+/// Extract the base function name prefix before the alloc/free suffix.
+/// Used by areAllocatorPair to match pairs like sqlite3Malloc → sqlite3.
+fn extractFunctionPrefix(func_name: []const u8) []const u8 {
+    const suffixes = [_][]const u8{
+        "Malloc",   "malloc",   "Alloc",   "alloc",
+        "Calloc",   "calloc",   "Realloc", "realloc",
+        "Create",   "create",   "New",     "new",
+        "Make",     "make",     "Build",   "build",
+        "Allocate", "Free",     "free",    "Dealloc",
+        "dealloc",  "Destroy",  "destroy", "Release",
+        "release",  "Delete",   "delete",  "Drop",
+        "drop",     "Close",    "close",   "Dispose",
+        "dispose",  "Finalize",
+    };
+
+    for (suffixes) |suffix| {
+        if (func_name.len > suffix.len and std.mem.endsWith(u8, func_name, suffix)) {
+            return func_name[0 .. func_name.len - suffix.len];
+        }
+    }
+
+    return func_name; // No known suffix found, return full name
+}
+
+// ============================================================================
 // Extern Function Detection
 // ============================================================================
 

@@ -59,36 +59,47 @@ pub const FFIPatterns = struct {
     /// Known-safe @cImport bindings that should not generate warnings.
     pub const zig_cimport_safe = &[_][]const u8{
         // Standard C library memory functions (safe wrappers)
-        "memcpy", "memmove", "memset", "memcmp",
-        "strlen", "strcpy", "strncpy", "strcat", "strncat",
-        "strcmp", "strncmp", "strchr", "strrchr",
-        "malloc", "calloc", "realloc", "free",
+        "memcpy",    "memmove",   "memset",   "memcmp",
+        "strlen",    "strcpy",    "strncpy",  "strcat",
+        "strncat",   "strcmp",    "strncmp",  "strchr",
+        "strrchr",   "malloc",    "calloc",   "realloc",
+        "free",
         // Standard I/O
-        "fopen", "fclose", "fread", "fwrite", "fprintf", "printf",
-        "fgets", "puts", "putchar", "getc", "ungetc",
-        "sprintf", "snprintf", "vsprintf", "vsnprintf",
-        "sscanf", "fscanf", "scanf",
+             "fopen",     "fclose",   "fread",
+        "fwrite",    "fprintf",   "printf",   "fgets",
+        "puts",      "putchar",   "getc",     "ungetc",
+        "sprintf",   "snprintf",  "vsprintf", "vsnprintf",
+        "sscanf",    "fscanf",    "scanf",
         // String conversion
-        "atoi", "atol", "atof", "strtol", "strtoul", "strtod",
-        "itoa", "ltoa", "gcvt",
+           "atoi",
+        "atol",      "atof",      "strtol",   "strtoul",
+        "strtod",    "itoa",      "ltoa",     "gcvt",
         // Math functions
-        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-        "sinh", "cosh", "tanh", "log", "log10", "exp", "pow", "sqrt",
-        "fabs", "floor", "ceil", "round", "trunc", "fmod", "remainder",
-        "rand", "srand",
+        "sin",       "cos",       "tan",      "asin",
+        "acos",      "atan",      "atan2",    "sinh",
+        "cosh",      "tanh",      "log",      "log10",
+        "exp",       "pow",       "sqrt",     "fabs",
+        "floor",     "ceil",      "round",    "trunc",
+        "fmod",      "remainder", "rand",     "srand",
         // Time functions
-        "time", "clock", "difftime", "mktime", "localtime", "gmtime",
-        "strftime", "asctime", "ctime",
+        "time",      "clock",     "difftime", "mktime",
+        "localtime", "gmtime",    "strftime", "asctime",
+        "ctime",
         // File operations
-        "open", "close", "read", "write", "lseek", "stat", "fstat",
-        "access", "chmod", "unlink", "rename", "remove", "tmpfile",
-        "fgetc", "fputc", "fputs", "feof", "ferror", "clearerr", "rewind",
-        "ftell", "fflush", "freopen", "setbuf", "setvbuf",
+            "open",      "close",    "read",
+        "write",     "lseek",     "stat",     "fstat",
+        "access",    "chmod",     "unlink",   "rename",
+        "remove",    "tmpfile",   "fgetc",    "fputc",
+        "fputs",     "feof",      "ferror",   "clearerr",
+        "rewind",    "ftell",     "fflush",   "freopen",
+        "setbuf",    "setvbuf",
         // Error handling
-        "errno", "strerror", "perror",
+          "errno",    "strerror",
+        "perror",
         // Process control
-        "exit", "abort", "atexit", "system", "getenv", "putenv",
-        "getpid", "getppid",
+           "exit",      "abort",    "atexit",
+        "system",    "getenv",    "putenv",   "getpid",
+        "getppid",
     };
 };
 
@@ -235,18 +246,18 @@ pub fn isDangerousPattern(func_name: []const u8) bool {
 /// where real vulnerabilities would matter.
 pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
     const intentional_prefixes = [_][]const u8{
-        "safe_",     // safe_example, safe_usage
-        "correct_",  // correct_usage, correct_pattern
-        "example_",  // example_basic, example_advanced
-        "test_",     // test_malloc, test_free
-        "_test",     // malloc_test, free_test
-        "demo_",     // demo_ffi, demo_binding
-        "sample_",   // sample_code, sample_api
-        "bench_",    // benchmark_alloc
-        "fixture_",  // fixture_data
-        "mock_",     // mock_database
-        "stub_",     // stub_network
-        "reference_",// reference_impl
+        "safe_", // safe_example, safe_usage
+        "correct_", // correct_usage, correct_pattern
+        "example_", // example_basic, example_advanced
+        "test_", // test_malloc, test_free
+        "_test", // malloc_test, free_test
+        "demo_", // demo_ffi, demo_binding
+        "sample_", // sample_code, sample_api
+        "bench_", // benchmark_alloc
+        "fixture_", // fixture_data
+        "mock_", // mock_database
+        "stub_", // stub_network
+        "reference_", // reference_impl
     };
 
     for (intentional_prefixes) |prefix| {

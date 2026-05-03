@@ -6,6 +6,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const log = @import("../common/log.zig");
+const c = @import("../ir/llvm_raw.zig").c;
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -258,9 +259,10 @@ pub const PassContext = struct {
     /// Eliminates O(F) linear search per call instruction.
     CallSiteIndex: CallSiteIndex,
 
-    /// P0-2: callee_name → index into cross_lang_edges for O(1) FFI boundary lookup.
+    /// P0-2: callee_name → indices into cross_lang_edges for O(1) FFI boundary lookup.
+    /// Uses ArrayList to support multiple call sites to the same FFI function.
     /// Populated by addCrossLangEdge(). Used by ffi_boundary.checkCallForFFI.
-    cross_edge_by_callee: std.StringHashMap(u32),
+    cross_edge_by_callee: std.StringHashMap(std.ArrayList(u32)),
 
     /// Create a new pass context
     pub fn init(
@@ -297,7 +299,7 @@ pub const PassContext = struct {
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
             .CallSiteIndex = CallSiteIndex.init(allocator),
-            .cross_edge_by_callee = std.StringHashMap(u32).init(allocator),
+            .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
         };
     }
 
@@ -364,6 +366,11 @@ pub const PassContext = struct {
         self.danger_surface_relevant.deinit();
         self.relevant_functions.deinit();
         self.CallSiteIndex.deinit();
+        // P2-2 fix: Deinitialize all ArrayLists in the HashMap before HashMap itself
+        var edge_iter = self.cross_edge_by_callee.valueIterator();
+        while (edge_iter.next()) |list| {
+            list.deinit(self.allocator);
+        }
         self.cross_edge_by_callee.deinit();
     }
 
@@ -583,7 +590,6 @@ pub const PassContext = struct {
             return;
         }
 
-        const c = @import("../ir/llvm_raw.zig").c;
         const llvm_module = if (self.module) |m|
             m.raw
         else
@@ -731,7 +737,12 @@ pub const PassContext = struct {
     pub fn addCrossLangEdge(self: *PassContext, edge: CrossLangEdge) !void {
         const idx = @as(u32, @intCast(self.cross_lang_edges.items.len));
         try self.cross_lang_edges.append(self.allocator, edge);
-        try self.cross_edge_by_callee.put(edge.callee_name, idx);
+        // P2-2 fix: Append to ArrayList instead of overwriting (supports multiple call sites)
+        const gop = try self.cross_edge_by_callee.getOrPut(edge.callee_name);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = std.ArrayList(u32).initCapacity(self.allocator, 4) catch std.ArrayList(u32){};
+        }
+        try gop.value_ptr.*.append(self.allocator, idx);
     }
 
     /// R8.2: Get read-only access to cross-language edges.
@@ -741,10 +752,23 @@ pub const PassContext = struct {
     }
 
     /// P0-2: O(1) lookup for FFI boundary by callee name.
-    /// Returns pointer to the matching CrossLangEdge, or null if not found.
+    /// Returns pointer to the FIRST matching CrossLangEdge, or null if not found.
+    /// Use getAllCrossEdgesByCallee() to get all call sites for a given callee.
     pub fn getCrossEdgeByCallee(self: *const PassContext, callee_name: []const u8) ?*const CrossLangEdge {
-        if (self.cross_edge_by_callee.get(callee_name)) |idx| {
-            return &self.cross_lang_edges.items[idx];
+        if (self.cross_edge_by_callee.get(callee_name)) |indices| {
+            if (indices.items.len > 0) {
+                return &self.cross_lang_edges.items[indices.items[0]];
+            }
+        }
+        return null;
+    }
+
+    /// Get ALL CrossLangEdges for a given callee name.
+    /// Supports multiple call sites to the same FFI function.
+    /// Returns null if no edges found for this callee.
+    pub fn getAllCrossEdgesByCallee(self: *const PassContext, callee_name: []const u8) ?[]const u32 {
+        if (self.cross_edge_by_callee.get(callee_name)) |indices| {
+            return indices.items;
         }
         return null;
     }
@@ -773,6 +797,38 @@ pub const PassContext = struct {
     /// Called by DangerSurfacePass during surface tracing.
     pub fn markRelevantFunction(self: *PassContext, func_ptr: u64) !void {
         try self.relevant_functions.put(func_ptr, {});
+    }
+
+    /// P0-1 fix: Mark a function as relevant given an instruction pointer from that function.
+    /// This bridges the gap between DangerSurfacePass (which has caller_inst) and
+    /// downstream passes (which query isRelevantFunction with func_ptr).
+    ///
+    /// LLVM hierarchy: Instruction → BasicBlock → Function
+    /// We traverse up this hierarchy to extract the function pointer.
+    ///
+    /// Parameters:
+    ///   - inst_ptr: Raw pointer to an LLVM instruction (u64)
+    ///
+    /// Errors:
+    ///   - Propagates from markRelevantFunction if HashMap insertion fails
+    ///   - Silently returns if inst_ptr is null or cannot be resolved
+    pub fn markFunctionFromInst(self: *PassContext, inst_ptr: u64) void {
+        if (inst_ptr == 0) return;
+
+        const inst = @as(c.LLVMValueRef, @ptrFromInt(inst_ptr));
+        if (@intFromPtr(inst) == 0) return;
+
+        // Step 1: Get parent basic block from instruction
+        const bb = c.LLVMGetInstructionParent(inst);
+        if (@intFromPtr(bb) == 0) return;
+
+        // Step 2: Get parent function from basic block
+        const func = c.LLVMGetBasicBlockParent(bb);
+        if (@intFromPtr(func) == 0) return;
+
+        // Step 3: Convert function pointer to u64 and mark as relevant
+        const func_ptr = @as(u64, @intFromPtr(func));
+        self.relevant_functions.put(func_ptr, {}) catch {};
     }
 };
 

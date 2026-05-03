@@ -96,7 +96,7 @@ pub const Pipeline = struct {
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
             .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
-            .cross_edge_by_callee = std.StringHashMap(u32).init(self.allocator),
+            .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
         };
         defer ctx.deinit();
 

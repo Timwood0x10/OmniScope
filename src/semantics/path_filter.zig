@@ -727,5 +727,3 @@ test "isZigStdlibPath - various patterns" {
     try std.testing.expect(!isZigStdlibPath("/home/user/project/src/main.zig"));
     try std.testing.expect(!isZigStdlibPath("/workspace/myapp/app.zig"));
 }
-
-

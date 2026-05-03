@@ -73,10 +73,7 @@ pub const DangerSurfacePass = struct {
                 total_args += 1;
                 const arg_ptr_val = mg.call_args.items[arg_idx].arg_ptr;
                 try ctx.markRelevantAlloc(arg_ptr_val);
-                ctx.markRelevantFunction(mg.call_args.items[arg_idx].caller_inst) catch |err| {
-                    diag.warn("[P1-1] markRelevantFunction FAILED for arg — function gating may be incomplete: {}", .{err});
-                    ctx.recordDegradedFunction();
-                };
+                ctx.markFunctionFromInst(mg.call_args.items[arg_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
                 traceAliasClosure(mg, arg_ptr_val, ctx, diag, &visited) catch |err| {
@@ -91,10 +88,7 @@ pub const DangerSurfacePass = struct {
                 total_rets += 1;
                 const ret_ptr_val = mg.call_rets.items[ret_idx].ret_ptr;
                 try ctx.markRelevantAlloc(ret_ptr_val);
-                ctx.markRelevantFunction(mg.call_rets.items[ret_idx].caller_inst) catch |err| {
-                    diag.warn("[P1-1] markRelevantFunction FAILED for ret — function gating may be incomplete: {}", .{err});
-                    ctx.recordDegradedFunction();
-                };
+                ctx.markFunctionFromInst(mg.call_rets.items[ret_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
                 traceAliasClosure(mg, ret_ptr_val, ctx, diag, &visited) catch |err| {

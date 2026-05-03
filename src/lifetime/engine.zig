@@ -152,7 +152,6 @@ pub const ResourceFact = struct {
 
 /// Source location for diagnostics (re-exported from common/types.zig).
 /// Use common/types.zig.Location directly in new code.
-
 /// Language hint for better diagnostics.
 pub const LanguageHint = enum(u8) {
     unknown,

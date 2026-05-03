@@ -3,7 +3,6 @@
 //! Extracted from ffi_boundary.zig for better code organization.
 //! Contains core FFI boundary detection, null guard checking,
 /// ownership chain analysis, and specialized boundary checks.
-
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 
@@ -258,7 +257,7 @@ fn checkPythonCApiSafety(
     _ = ctx;
 
     const refcount_risky = [_][]const u8{
-        "Py_DECREF",   "Py_XDECREF", "Py_XINCREF", "Py_INCREF",
+        "Py_DECREF", "Py_XDECREF", "Py_XINCREF", "Py_INCREF",
     };
     for (refcount_risky) |py_fn| {
         if (std.mem.indexOf(u8, called_name, py_fn) != null) {

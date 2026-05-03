@@ -1,6 +1,6 @@
 //! Raw Pointer Lifetime Tracker
 //!
-//! Phase 4.1: Tracks raw pointer lifecycle in escape zone functions to detect:
+//!  Tracks raw pointer lifecycle in escape zone functions to detect:
 //! - Stack pointer escapes to FFI callback (dangling pointer after return)
 //! - Use-after-scope (pointer used after its allocation scope ends)
 //! - Return of stack-local address (undefined behavior)
@@ -96,6 +96,11 @@ pub const getAllocatorKB = ptr_types.getAllocatorKB;
 pub const isHeapAllocFunction = ptr_types.isHeapAllocFunction;
 pub const isKnownDeallocFunction = ptr_types.isKnownDeallocFunction;
 pub const classify_ptr_origin = ptr_types.classify_ptr_origin;
+
+// P2-2: Project-level allocator pair detection (auto-pairing for custom allocators)
+pub const isProjectAllocFunction = ptr_types.isProjectAllocFunction;
+pub const isProjectFreeFunction = ptr_types.isProjectFreeFunction;
+pub const areAllocatorPair = ptr_types.areAllocatorPair;
 
 /// Lightweight growable list for FreeSiteRecord (contains opaque C types
 /// that prevent std.ArrayList from monomorphizing correctly in Zig 0.15.2).
@@ -872,6 +877,27 @@ pub const PtrLifetimePass = struct {
 
             c.LLVMGetElementPtr => {
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
+            },
+
+            // P2-1 fix: Pointer identity conversion instructions must propagate origin
+            // to maintain alias chains. Without this:
+            //   %p2 = bitcast %p1 → %p2 is NOT tracked as alias of %p1
+            //   free(%p2) → double-free detection FAILS (origin lost)
+            //
+            // These instructions are semantically "no-op" for pointer identity:
+            // - LLVMBitCast: %p2 = bitcast i8* %p1 to i32* (type change only)
+            // - LLVMPtrToInt: %i = ptrtoint i8* %p1 to i64 (pointer → integer)
+            // - LLVMIntToPtr: %p2 = inttoptr i64 %i to i8* (integer → pointer)
+            // - LLVMAddrSpaceCast: %p2 = addrspacecast i8* %p1 to i8 addrspace(1)
+            c.LLVMBitCast,
+            c.LLVMPtrToInt,
+            c.LLVMIntToPtr,
+            c.LLVMAddrSpaceCast,
+            => {
+                const src = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(src) != 0) {
+                    try propagateOrigin(inst, src, pointer_map, allocator, bb_id, mem_graph);
+                }
             },
 
             // Phi node tracking — merge all incoming values' origins.
