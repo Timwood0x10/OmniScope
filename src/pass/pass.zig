@@ -828,7 +828,10 @@ pub const PassContext = struct {
 
         // Step 3: Convert function pointer to u64 and mark as relevant
         const func_ptr = @as(u64, @intFromPtr(func));
-        self.relevant_functions.put(func_ptr, {}) catch {};
+        self.relevant_functions.put(func_ptr, {}) catch |err| {
+            // Log failure but don't crash — function gating degradation is acceptable
+            log.warn("[P0-1] markFunctionFromInst: failed to mark function (ptr=0x{x}): {}", .{ func_ptr, err });
+        };
     }
 };
 
