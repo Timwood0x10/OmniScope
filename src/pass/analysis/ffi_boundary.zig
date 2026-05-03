@@ -257,11 +257,6 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Report risky libc functions even if they're not FFI boundaries
-        if (semantics) |sem| {
-            try reportRiskyCall(ctx, inst, caller_name, called_name, sem, diag);
-        }
-
         // Identify languages of caller and callee
         const caller_lang = zone_check.identifyLanguage(caller_func);
         var callee_lang = zone_check.identifyCalleeLanguage(called_name);
@@ -287,6 +282,13 @@ pub const FFIBoundaryPass = struct {
             caller_lang == callee_lang)
         {
             return false;
+        }
+
+        // Report risky libc functions only after same-language check passes.
+        // This prevents POSIX API (pthread_*, setsockopt, etc.) in pure C code
+        // from being flagged as risky when they're not on an FFI boundary.
+        if (semantics) |sem| {
+            try reportRiskyCall(ctx, inst, caller_name, called_name, sem, diag);
         }
 
         // Classify the boundary kind

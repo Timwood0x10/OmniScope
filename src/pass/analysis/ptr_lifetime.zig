@@ -28,6 +28,10 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 
+const zone_cls = @import("../../semantics/zone_classifier.zig");
+const ZoneKind = zone_cls.ZoneKind;
+const Lang = zone_cls.Language;
+
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -353,7 +357,8 @@ pub const PtrLifetimePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker);
+                const conv_lang: Lang = @enumFromInt(@intFromEnum(ctx.module_language.language));
+                try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, ctx.getOrComputeZone(@ptrCast(func), func_name));
             }
             bb_id += 1;
         }
@@ -379,6 +384,8 @@ pub const PtrLifetimePass = struct {
         mem_graph: ?*memory_graph.MemoryGraph,
         stats: *LifetimeStats,
         global_tracker: *@import("../pass.zig").GlobalAllocTracker,
+        lang: Lang,
+        zone: ZoneKind,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
         const func_ptr = @as(u64, @intFromPtr(func));
@@ -399,7 +406,7 @@ pub const PtrLifetimePass = struct {
                 // v0.1.9: Sync alloca with MemoryGraph — mark as stack allocation.
                 if (mem_graph) |mg| {
                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca) catch {};
+                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, zone, lang) catch {};
                 }
             },
 
@@ -464,7 +471,7 @@ pub const PtrLifetimePass = struct {
                                 // v0.1.9: Sync with MemoryGraph — mark as heap allocation.
                                 if (mem_graph) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc) catch {};
+                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
                                     mg.recordFuncAlloc(func_ptr);
                                 }
 
@@ -495,7 +502,7 @@ pub const PtrLifetimePass = struct {
 
                                 if (mem_graph) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc) catch {};
+                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
                                     mg.recordFuncAlloc(func_ptr);
                                 }
                             }
@@ -517,7 +524,7 @@ pub const PtrLifetimePass = struct {
                             // v0.1.9: Sync resource allocation with MemoryGraph.
                             if (mem_graph) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
-                                _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc) catch {};
+                                _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, zone, lang) catch {};
                                 mg.recordFuncAlloc(func_ptr);
                             }
                         }
@@ -699,7 +706,7 @@ pub const PtrLifetimePass = struct {
                     const content_kind = mg.getContentSource(src_ptr);
                     if (content_kind != .unknown) {
                         const inst_ptr = @as(u64, @intFromPtr(inst));
-                        _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind) catch {};
+                        _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang) catch {};
                         // Note: load does NOT call recordFuncAlloc — it reads
                         // memory, not allocates it. The alloc was already counted
                         // when the original allocation instruction was processed.
@@ -1053,7 +1060,8 @@ pub const PtrLifetimePass = struct {
         // Also use MemoryGraph for cross-alias detection.
         if (mem_graph) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(inst));
-            const is_double = mg.trackFree(inst_ptr, ptr_hash) catch false;
+            const free_lang: Lang = std.meta.intToEnum(Lang, @intFromEnum(ctx.module_language.language)) catch .unknown;
+            const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang) catch false;
             if (is_double) {
                 diag.warn("[DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
                 stats.use_after_free_found += 1;

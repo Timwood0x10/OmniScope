@@ -12,6 +12,10 @@
 
 const std = @import("std");
 
+const zone = @import("zone_classifier.zig");
+pub const ZoneKind = zone.ZoneKind;
+pub const Language = zone.Language;
+
 /// Error set for memory graph operations.
 pub const MemoryGraphError = error{
     OutOfMemory,
@@ -124,6 +128,26 @@ const AllocNode = struct {
     freed_by: ?u64,
     /// How this allocation was created.
     source_kind: SourceKind,
+    /// Zone where this allocation occurred (.safe/.ffi/.unsafe/.runtime_internal).
+    zone: ZoneKind = .unknown,
+    /// Language of the module/function where this allocation was made.
+    alloc_lang: Language = .unknown,
+    /// Language of the module/function where this was freed (? = not yet freed).
+    free_lang: ?Language = null,
+};
+
+/// Result of isOnDangerPath — why a pointer matters (or doesn't).
+pub const DangerPathKind = enum {
+    /// Not on any danger path → Tier 1, pass through (statistics only).
+    none,
+    /// Allocated inside an .unsafe block → Tier 2, strict analysis.
+    unsafe_alloc,
+    /// Alloc and free happened in different languages → Tier 2.
+    cross_lang_lifecycle,
+    /// Pointer flows into an FFI boundary call as argument → Tier 2.
+    ffi_arg,
+    /// Pointer returns from an FFI boundary call → Tier 2.
+    ffi_ret,
 };
 
 /// Main memory graph structure.
@@ -220,6 +244,8 @@ pub const MemoryGraph = struct {
         alloc_inst_ptr: u64,
         ret_value_ptr: u64,
         kind: SourceKind,
+        alloc_zone: ZoneKind,
+        alloc_lang: Language,
     ) MemoryGraphError!u64 {
         const id = graph.next_id;
         graph.next_id += 1;
@@ -241,6 +267,8 @@ pub const MemoryGraph = struct {
             .freed = false,
             .freed_by = null,
             .source_kind = kind,
+            .zone = alloc_zone,
+            .alloc_lang = alloc_lang,
         };
         errdefer node.aliases.deinit();
 
@@ -271,6 +299,7 @@ pub const MemoryGraph = struct {
         graph: *MemoryGraph,
         free_inst_ptr: u64,
         ptr_val: u64,
+        free_lang: Language,
     ) MemoryGraphError!bool {
         const node = graph.nodes.get(ptr_val) orelse {
             return false;
@@ -282,6 +311,7 @@ pub const MemoryGraph = struct {
 
         node.freed = true;
         node.freed_by = free_inst_ptr;
+        node.free_lang = free_lang;
         return false;
     }
 
@@ -729,6 +759,82 @@ pub const MemoryGraph = struct {
 
         return false;
     }
+
+    /// Descriptor for an FFI/unsafe boundary call. Used by isOnDangerPath without
+    /// depending on pass.zig's CrossLangEdge type (avoids circular import).
+    pub const DangerSurface = struct {
+        callee_name: []const u8,
+        is_ffi_boundary: bool,
+    };
+
+    /// The ONE question that determines whether we care about a pointer.
+    ///
+    /// Returns a DangerPathKind describing WHY this pointer matters (or .none if it
+    /// doesn't). This is the sole gate between Tier 1 (pass-through / statistics)
+    /// and Tier 2 (strict analysis with issue reporting).
+    ///
+    /// Detection order matters — check call edges FIRST (covers function parameter
+    /// pointers that have no AllocNode), then AllocNode fields:
+    ///   (b) ptr flows into FFI boundary as argument → .ffi_arg
+    ///   (c) ptr returns from FFI boundary → .ffi_ret
+    ///   (e) allocated in .unsafe zone → .unsafe_alloc
+    ///   (a) alloc_lang != free_lang → .cross_lang_lifecycle
+    ///   (d) alias closure (with cycle detection via visited set)
+    pub fn isOnDangerPath(
+        graph: *MemoryGraph,
+        ptr_val: u64,
+        ffi_boundaries: []const MemoryGraph.DangerSurface,
+        visited: *std.AutoHashMap(u64, void),
+    ) DangerPathKind {
+        // (b): Check if ptr flows into any FFI boundary call as argument.
+        // This catches function-parameter pointers (no AllocNode) that enter FFI.
+        const arg_indices = graph.getCallArgsForPtr(ptr_val);
+        for (arg_indices) |idx| {
+            const arg_edge = &graph.call_args.items[idx];
+            for (ffi_boundaries) |b| {
+                if (b.is_ffi_boundary and std.mem.eql(u8, b.callee_name, arg_edge.callee_name)) {
+                    return .ffi_arg;
+                }
+            }
+        }
+
+        // (c): Check if ptr returns from any FFI boundary call.
+        for (graph.call_rets.items) |ret_edge| {
+            if (ret_edge.ret_ptr == ptr_val) {
+                for (ffi_boundaries) |b| {
+                    if (b.is_ffi_boundary and std.mem.eql(u8, b.callee_name, ret_edge.callee_name)) {
+                        return .ffi_ret;
+                    }
+                }
+            }
+        }
+
+        // (a)/(e): AllocNode-based checks (only for pointers with allocation info).
+        const node = graph.nodes.get(ptr_val) orelse return .none;
+
+        if (node.zone == .unsafe) {
+            return .unsafe_alloc;
+        }
+
+        if (node.freed) {
+            const fl = node.free_lang orelse return .none;
+            if (node.alloc_lang != fl) {
+                return .cross_lang_lifecycle;
+            }
+        }
+
+        // (d): Alias closure — if any alias is on danger path, so are we.
+        var alias_iter = node.aliases.iterator();
+        while (alias_iter.next()) |entry| {
+            const alias_ptr = entry.key_ptr.*;
+            if (visited.contains(alias_ptr)) continue;
+            visited.put(alias_ptr, {}) catch {};
+            const kind = isOnDangerPath(graph, alias_ptr, ffi_boundaries, visited);
+            if (kind != .none) return kind;
+        }
+
+        return .none;
+    }
 };
 
 /// FNV-1a hash with wrapping multiplication.
@@ -999,7 +1105,7 @@ test "memory_graph - basic alloc tracking" {
     const fake_malloc: u64 = 0x1000;
     const fake_ret: u64 = 0x2000;
 
-    const alloc_id = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc);
+    const alloc_id = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc, .safe, .c);
     try std.testing.expectEqual(@as(u64, 1), alloc_id);
 
     const node = graph.nodes.get(fake_ret);
@@ -1021,7 +1127,7 @@ test "memory_graph - alias tracking" {
     const fake_ret1: u64 = 0x2000;
     const fake_ret2: u64 = 0x3000;
 
-    _ = try graph.trackAlloc(fake_malloc, fake_ret1, .heap_alloc);
+    _ = try graph.trackAlloc(fake_malloc, fake_ret1, .heap_alloc, .safe, .c);
     try graph.trackAlias(fake_ret2, fake_ret1);
 
     const node1 = graph.nodes.get(fake_ret1);
@@ -1044,12 +1150,12 @@ test "memory_graph - double free detection" {
     const fake_free1: u64 = 0x3000;
     const fake_free2: u64 = 0x4000;
 
-    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc);
+    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc, .safe, .c);
 
-    const first_free = try graph.trackFree(fake_free1, fake_ret);
+    const first_free = try graph.trackFree(fake_free1, fake_ret, .c);
     try std.testing.expect(!first_free);
 
-    const second_free = try graph.trackFree(fake_free2, fake_ret);
+    const second_free = try graph.trackFree(fake_free2, fake_ret, .c);
     try std.testing.expect(second_free);
 }
 
@@ -1067,12 +1173,12 @@ test "memory_graph - alias double free" {
     const fake_free1: u64 = 0x4000;
     const fake_free2: u64 = 0x5000;
 
-    _ = try graph.trackAlloc(fake_malloc, fake_ret1, .heap_alloc);
+    _ = try graph.trackAlloc(fake_malloc, fake_ret1, .heap_alloc, .safe, .c);
     try graph.trackAlias(fake_ret2, fake_ret1);
 
-    _ = try graph.trackFree(fake_free1, fake_ret2);
+    _ = try graph.trackFree(fake_free1, fake_ret2, .c);
 
-    const is_double = try graph.trackFree(fake_free2, fake_ret1);
+    const is_double = try graph.trackFree(fake_free2, fake_ret1, .c);
     try std.testing.expect(is_double);
 }
 
@@ -1088,11 +1194,11 @@ test "memory_graph - is_freed" {
     const fake_ret: u64 = 0x2000;
     const fake_free: u64 = 0x3000;
 
-    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc);
+    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc, .safe, .c);
 
     try std.testing.expect(!graph.isFreed(fake_ret));
 
-    _ = try graph.trackFree(fake_free, fake_ret);
+    _ = try graph.trackFree(fake_free, fake_ret, .c);
     try std.testing.expect(graph.isFreed(fake_ret));
 }
 
@@ -1108,10 +1214,10 @@ test "memory_graph - source_kind tracking" {
     const fake_ret: u64 = 0x2000;
     const fake_alloca: u64 = 0x3000;
 
-    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc);
+    _ = try graph.trackAlloc(fake_malloc, fake_ret, .heap_alloc, .safe, .c);
     try std.testing.expectEqual(SourceKind.heap_alloc, graph.getSourceKind(fake_ret));
 
-    _ = try graph.trackAlloc(fake_alloca, fake_alloca, .alloca);
+    _ = try graph.trackAlloc(fake_alloca, fake_alloca, .alloca, .safe, .c);
     try std.testing.expectEqual(SourceKind.alloca, graph.getSourceKind(fake_alloca));
 
     try std.testing.expectEqual(SourceKind.unknown, graph.getSourceKind(0xDEAD));
@@ -1167,7 +1273,7 @@ test "memory_graph - content_source tracking" {
     graph.recordContentSource(alloca_ptr, .heap_alloc);
 
     // Direct source of alloca is .alloca.
-    _ = try graph.trackAlloc(alloca_ptr, alloca_ptr, .alloca);
+    _ = try graph.trackAlloc(alloca_ptr, alloca_ptr, .alloca, .safe, .c);
     try std.testing.expectEqual(SourceKind.alloca, graph.getSourceKind(alloca_ptr));
 
     // Direct source of alloca is .alloca — this doesn't change even though
@@ -1194,7 +1300,7 @@ test "memory_graph - no memory leaks" {
 
     var i: u64 = 0;
     while (i < 100) : (i += 1) {
-        _ = try graph.trackAlloc(i * 0x1000, i * 0x1000 + 1, .heap_alloc);
+        _ = try graph.trackAlloc(i * 0x1000, i * 0x1000 + 1, .heap_alloc, .safe, .c);
         if (i > 0) {
             try graph.trackAlias(i * 0x1000 + 1, (i - 1) * 0x1000 + 1);
         }
@@ -1204,7 +1310,7 @@ test "memory_graph - no memory leaks" {
 
     i = 0;
     while (i < 50) : (i += 1) {
-        _ = try graph.trackFree(i * 0x1000 + 2, i * 0x1000 + 1);
+        _ = try graph.trackFree(i * 0x1000 + 2, i * 0x1000 + 1, .c);
         graph.recordFuncFree(0xA000);
     }
 }
@@ -1327,13 +1433,13 @@ test "memory_graph - call edges coexist with alloc/free tracking" {
     defer graph.deinit();
 
     // Track allocation
-    _ = try graph.trackAlloc(0x1000, 0x1001, .heap_alloc);
+    _ = try graph.trackAlloc(0x1000, 0x1001, .heap_alloc, .safe, .c);
 
     // Track call_arg with the allocated pointer
     try graph.trackCallArg(0x2000, "process_data", 0x1001, 0);
 
     // Track free
-    _ = try graph.trackFree(0x3000, 0x1001);
+    _ = try graph.trackFree(0x3000, 0x1001, .c);
 
     // All data should coexist
     try std.testing.expect(graph.nodes.contains(0x1001));
@@ -1353,7 +1459,7 @@ test "memory_graph - isLeaked cross-function propagation" {
     var graph = try MemoryGraph.init(allocator);
     defer graph.deinit();
 
-    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc);
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
 
     try std.testing.expect(!graph.isLeaked(0xA001));
     try std.testing.expect(!graph.isLeaked(0x9999));
@@ -1366,7 +1472,7 @@ test "memory_graph - isLeaked cross-function propagation" {
 
     try std.testing.expect(!graph.isLeaked(0xA001));
 
-    _ = try graph.trackFree(0x3000, 0xA001);
+    _ = try graph.trackFree(0x3000, 0xA001, .c);
     try std.testing.expect(!graph.isLeaked(0xA001));
 }
 
@@ -1381,27 +1487,132 @@ test "memory_graph - isDoubleFreed alias closure + call chain" {
     var graph = try MemoryGraph.init(allocator);
     defer graph.deinit();
 
-    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc);
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
     try std.testing.expect(!graph.isDoubleFreed(0xA001));
 
-    _ = try graph.trackFree(0x3000, 0xA001);
+    _ = try graph.trackFree(0x3000, 0xA001, .c);
     try std.testing.expect(graph.isDoubleFreed(0xA001));
 
     var graph2 = try MemoryGraph.init(allocator);
     defer graph2.deinit();
 
-    _ = try graph2.trackAlloc(0x1000, 0xA002, .heap_alloc);
+    _ = try graph2.trackAlloc(0x1000, 0xA002, .heap_alloc, .safe, .c);
     try graph2.trackAlias(0xB002, 0xA002);
-    _ = try graph2.trackFree(0x3000, 0xB002);
+    _ = try graph2.trackFree(0x3000, 0xB002, .c);
     try std.testing.expect(graph2.isDoubleFreed(0xA002));
 
     var graph3 = try MemoryGraph.init(allocator);
     defer graph3.deinit();
 
-    _ = try graph3.trackAlloc(0x1000, 0xA003, .heap_alloc);
+    _ = try graph3.trackAlloc(0x1000, 0xA003, .heap_alloc, .safe, .c);
     try graph3.trackCallArg(0x2000, "free_it", 0xA003, 0);
     try graph3.trackCallRet(0x2000, "free_it", 0xB003);
     try graph3.trackAlias(0xB003, 0xA003);
-    _ = try graph3.trackFree(0x4000, 0xB003);
+    _ = try graph3.trackFree(0x4000, 0xB003, .c);
     try std.testing.expect(graph3.isDoubleFreed(0xA003));
+}
+
+test "memory_graph - isOnDangerPath pure internal returns none" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    _ = try graph.trackFree(0x3000, 0xA001, .c);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{};
+    try std.testing.expectEqual(DangerPathKind.none, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - isOnDangerPath cross-lang lifecycle" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .rust);
+    _ = try graph.trackFree(0x3000, 0xA001, .c);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{};
+    try std.testing.expectEqual(DangerPathKind.cross_lang_lifecycle, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - isOnDangerPath FFI arg flow" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    try graph.trackCallArg(0x2000, "C.malloc", 0xA001, 0);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{
+        .{ .callee_name = "C.malloc", .is_ffi_boundary = true },
+    };
+    try std.testing.expectEqual(DangerPathKind.ffi_arg, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - isOnDangerPath unsafe zone alloc" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .unsafe, .rust);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{};
+    try std.testing.expectEqual(DangerPathKind.unsafe_alloc, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - isOnDangerPath alias propagation" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    try graph.trackAlias(0xB001, 0xA001);
+    try graph.trackCallArg(0x2000, "ffi_callback", 0xB001, 0);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{
+        .{ .callee_name = "ffi_callback", .is_ffi_boundary = true },
+    };
+    // 0xA001 itself doesn't have call_arg, but its alias 0xB001 does
+    try std.testing.expectEqual(DangerPathKind.ffi_arg, graph.isOnDangerPath(0xA001, &boundaries, &visited));
 }

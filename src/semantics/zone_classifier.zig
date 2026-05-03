@@ -332,6 +332,14 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         return .runtime_internal;
     }
 
+    // Compiler FORTIFY_SOURCE functions (__*_chk suffix) are runtime-internal.
+    // These are auto-inserted by -D_FORTIFY_SOURCE=2 and indicate the code is
+    // MORE safe (bounds-checked), not less. Examples: __memcpy_chk, __strcpy_chk,
+    // __snprintf_chk, __memmove_chk, __printf_chk, __fprintf_chk.
+    if (std.mem.endsWith(u8, func_name, "_chk")) {
+        return .runtime_internal;
+    }
+
     // Check language-specific patterns
     if (lang) |l| {
         return switch (l) {
