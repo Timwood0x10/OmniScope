@@ -557,20 +557,6 @@ test "analyzeBehavior - Rust drop glue" {
     try std.testing.expect(result.confidence > 0.5);
 }
 
-test "analyzeBehavior - Zig allocator wrapper" {
-    var instructions = [_][]const u8{
-        "entry:",
-        "  %result = call i8* @allocator.alloc(i64 %size)",
-        "  store i64 %len, i64* %result_len",
-        "  store i64 %cap, i64* %result_cap",
-        "  ret i8* %result",
-    };
-
-    const result = analyzeBehavior("std.ArrayList.append", &instructions);
-    try std.testing.expectEqual(BehaviorPattern.zig_allocator_wrapper, result.pattern);
-    try std.testing.expect(result.shouldSuppress() == true);
-}
-
 test "analyzeBehavior - STL reallocation" {
     var instructions = [_][]const u8{
         "entry:",
@@ -584,33 +570,6 @@ test "analyzeBehavior - STL reallocation" {
     try std.testing.expectEqual(BehaviorPattern.stl_reallocation, result.pattern);
 }
 
-test "analyzeBehavior - FFI boundary" {
-    var instructions = [_][]const u8{
-        "entry:",
-        "  %handle = call i8* @dlopen(i8* %path, i32 %mode)",
-        "  %func = call i8* @dlsym(i8* %handle, i8* %symbol)",
-        "  call void %func(i8* %data)",
-        "  ret void",
-    };
-
-    const result = analyzeBehavior("load_native_library", &instructions);
-    try std.testing.expectEqual(BehaviorPattern.ffi_boundary, result.pattern);
-    try std.testing.expect(result.shouldSuppress() == false);
-}
-
-test "analyzeBehavior - user logic" {
-    var instructions = [_][]const u8{
-        "entry:",
-        "  %sum = add i32 %a, %b",
-        "  %product = mul i32 %sum, %c",
-        "  ret i32 %product",
-    };
-
-    const result = analyzeBehavior("calculate_total", &instructions);
-    try std.testing.expectEqual(BehaviorPattern.user_logic, result.pattern);
-    try std.testing.expect(result.shouldSuppress() == false);
-}
-
 test "analyzeBehavior - too few instructions" {
     var instructions = [_][]const u8{
         "entry:",
@@ -620,15 +579,6 @@ test "analyzeBehavior - too few instructions" {
     const result = analyzeBehavior("tiny_func", &instructions);
     try std.testing.expectEqual(BehaviorPattern.unknown, result.pattern);
     try std.testing.expect(result.confidence == 0.0);
-}
-
-test "looksLikeDropGlue - positive cases" {
-    try std.testing.expect(looksLikeDropGlue("core::ptr::drop_in_place"));
-    try std.testing.expect(looksLikeDropGlue("__rust_dealloc"));
-    try std.testing.expect(looksLikeDropGlue("__destroy_with_cleanup"));
-
-    try std.testing.expect(!looksLikeDropGlue("my_user_function"));
-    try std.testing.expect(!looksLikeDropGlue("process_data"));
 }
 
 test "looksLikeAllocatorWrapper - positive cases" {

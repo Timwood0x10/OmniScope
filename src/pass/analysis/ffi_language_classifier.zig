@@ -25,8 +25,10 @@ const BoundaryKind = FFIBoundary.BoundaryKind;
 /// These patterns match the ones originally in FFIBoundaryPass.FFIPatterns.
 const FFIPatterns = struct {
     /// Known Rust FFI patterns in function names
+    /// NOTE: "_ZN" is NOT included here because it is ambiguous — both Rust and C++
+    /// use Itanium-style _ZN mangling for nested names. Disambiguation requires
+    /// isRustMangledName() multi-layer detection (see below, after C++ check).
     pub const rust_patterns = [_][]const u8{
-        "_ZN", // Rust mangled name prefix
         "_rust_", // Rust extern function prefix
         "rs2py_", // Rust-to-Python bridge
         "rust_", // Generic Rust prefix
@@ -61,7 +63,7 @@ const FFIPatterns = struct {
 /// Identify the language of a function based on its LLVM value.
 ///
 /// Uses pattern matching on the function name to detect:
-/// - **Rust**: `_ZN` (mangled), `_rust_`, `rs2py_`, `rust_`
+/// - **Rust**: `_rust_`, `rs2py_`, `rust_` (_ZN handled separately via isRustMangledName)
 /// - **Zig**: `zig_` prefix with additional indicators (`@`, `zig_`)
 /// - **C**: Default fallback (most common for C ABI code)
 ///
@@ -139,8 +141,20 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         if (std.mem.indexOf(u8, func_name, p) != null) return .rust;
     }
 
-    // C++ Itanium mangling (_Z prefix)
-    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z') return .cpp;
+    // C++ Itanium mangling (_Z prefix) — but NOT _ZN which is ambiguous
+    // between C++ nested names and Rust mangled names.
+    // _ZN is handled below with isRustMangledName() disambiguation.
+    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z' and
+        !(func_name.len > 3 and func_name[2] == 'N')) return .cpp;
+
+    // _ZN ambiguity resolution: could be Rust or C++ Itanium nested name.
+    // Use multi-layer detection to distinguish:
+    //   - Rust: contains '$', has hash suffix (h<hex>E), or known Rust namespace
+    //   - C++: std::, STL patterns, no Rust-specific markers
+    if (func_name.len > 3 and func_name[0] == '_' and func_name[1] == 'Z' and func_name[2] == 'N') {
+        if (isRustMangledName(func_name)) return .rust;
+        return .cpp; // Default _ZN without Rust markers → C++
+    }
 
     // Check for Zig patterns (be more specific to avoid false positives)
     for (FFIPatterns.zig_patterns) |pattern| {
@@ -437,6 +451,48 @@ pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
 /// Delegated to unified ffi_utils (single source of truth).
 pub fn isStlInternalFunction(func_name: []const u8) bool {
     return ffi_utils.isStlInternalFunction(func_name);
+}
+
+/// Multi-layer Rust mangled name detector for _ZN disambiguation.
+/// Returns true if the _ZN* symbol is a Rust-mangled name, false for C++ Itanium.
+///
+/// Detection layers (ordered by reliability):
+///   1. '$' presence — Rust uses $LT$, $GT$, $u20$, $RF$ etc.
+///   2. Hash suffix — <digits>h<hex_digits>E (Rust v0 symbol versioning)
+///   3. Known Rust crate prefixes in _ZN path (e.g., _ZN4core, _ZN3std)
+fn isRustMangledName(name: []const u8) bool {
+    // Layer 1: '$' separator (fastest check)
+    if (std.mem.indexOf(u8, name, "$") != null) return true;
+
+    // Layer 2: Hash suffix pattern — <digits>h<hex_digits>E
+    var i: usize = name.len;
+    if (i == 0) return false;
+    if (name[i - 1] != 'E' and name[i - 1] != 'e') return false;
+    i -= 1;
+    if (i == 0) return false;
+    var hex_len: usize = 0;
+    while (i > 0) : (i -= 1) {
+        const ch = name[i - 1];
+        if ((ch >= '0' and ch <= '9') or
+            (ch >= 'a' and ch <= 'f') or (ch >= 'A' and ch <= 'F'))
+        {
+            hex_len += 1;
+        } else if (ch == 'h') {
+            if (i > 1 and name[i - 2] >= '0' and name[i - 2] <= '9') return true;
+            return false;
+        } else break;
+    }
+
+    // Layer 3: Known Rust namespace prefixes in Itanium encoding
+    const rust_namespaces = [_][]const u8{
+        "_ZN4core",      "_ZN3std",       "_ZN3alloc", "_ZN5macro",
+        "_ZN9backtrace", "_ZN7panicking",
+    };
+    for (rust_namespaces) |ns| {
+        if (std.mem.startsWith(u8, name, ns)) return true;
+    }
+
+    return false;
 }
 
 // ═══════════════════════════════════════════════════════════════

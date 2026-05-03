@@ -285,6 +285,10 @@ pub const PassContext = struct {
         self.reported_keys.deinit();
         self.registry_cache.clearAndFree();
         self.zone_cache.clearAndFree();
+        for (self.cross_lang_edges.items) |edge| {
+            self.allocator.free(edge.caller_name);
+            self.allocator.free(edge.callee_name);
+        }
         self.cross_lang_edges.deinit(self.allocator);
         self.global_alloc_tracker.deinit();
         self.memory_graph.deinit();

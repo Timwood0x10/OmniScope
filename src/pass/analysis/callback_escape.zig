@@ -124,11 +124,10 @@ const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
 /// C standard library functions that unconditionally retain pointers (escape analysis).
 /// These functions store pointers for later use beyond the caller's lifetime.
 const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    "pthread_create",   "signal",               "sigaction",
-    "atexit",           "on_exit",
-    "SDL_SetEventCallback", "glfwSetCallback",
-    "curl_easy_setopt", "RegisterNatives",      "PyCapsule_SetDestructor",
-    "dlopen",
+    "pthread_create",          "signal",           "sigaction",
+    "atexit",                  "on_exit",          "SDL_SetEventCallback",
+    "glfwSetCallback",         "curl_easy_setopt", "RegisterNatives",
+    "PyCapsule_SetDestructor", "dlopen",
 };
 
 /// Check if a function name indicates cgo boundary code.
@@ -208,24 +207,6 @@ pub fn isGoSafetyFunction(callee_name: []const u8) bool {
     for (GO_RUNTIME_SAFETY_FUNCTIONS) |fn_name| {
         if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
     }
-    return false;
-}
-
-/// Check if a callee may retain its pointer argument.
-/// R7.1-3: This is the ORIGINAL version (Go-cgo semantics).
-/// For non-Go callers, use `mayRetainInCLanguageAware` instead.
-fn mayRetainInC(callee_name: []const u8) bool {
-    for (C_RETAINING_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-
-    const retaining_prefixes = [_][]const u8{
-        "register_", "set_", "add_", "subscribe_",
-    };
-    for (retaining_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, callee_name, prefix)) return true;
-    }
-
     return false;
 }
 
@@ -578,8 +559,22 @@ pub const CallbackEscapePass = struct {
             if (isCBytesPattern(call.callee_name)) {
                 // R7.1-3: Language-aware retention check for CBytes escape
                 if (mayRetainInCLanguageAware(func_name, is_cgo_boundary)) {
-                    try reportCBytesEscape(ctx, func_name, call, diag);
-                    stats.cbytes_escapes += 1;
+                    // R8.0 consume: Cross-verify with MemoryGraph — only report
+                    // if the CBytes call's pointer arg is tracked as passed to an FFI call.
+                    const mg = &ctx.memory_graph;
+                    var cgo_ptr_val: u64 = 0;
+                    var arg_i: u32 = 1;
+                    while (arg_i < c.LLVMGetNumOperands(call.inst)) : (arg_i += 1) {
+                        const arg = c.LLVMGetOperand(call.inst, arg_i);
+                        if (@intFromPtr(arg) != 0 and mg.isPassedAsArg(@as(u64, @intFromPtr(arg)))) {
+                            cgo_ptr_val = @as(u64, @intFromPtr(arg));
+                            break;
+                        }
+                    }
+                    if (cgo_ptr_val != 0) {
+                        try reportCBytesEscape(ctx, func_name, call, diag);
+                        stats.cbytes_escapes += 1;
+                    }
                 }
             }
 
@@ -921,14 +916,46 @@ pub const CallbackEscapePass = struct {
         }
 
         // Report actual issues only if no pattern matches
+        // R8.0 consume: Cross-verify with unified MemoryGraph call edges
+        // before reporting leaks. If pointers are tracked as transferred via
+        // call_ret edges, suppress false-positive leak reports.
+        const mg = &ctx.memory_graph;
         if (malloc_count > free_count) {
-            try reportMallocLeak(ctx, func_name, malloc_count, free_count, diag);
-            stats.malloc_leaks += @as(u32, @intCast(malloc_count - free_count));
+            // Check if any allocation result is recorded as a call return
+            // (ownership transferred to caller via FFI boundary)
+            var has_call_ret_transfer = false;
+            for (alloc_sites.items) |site| {
+                const ptr_val = @as(u64, @intFromPtr(site.inst_id));
+                if (mg.isReturnedFromCall(ptr_val)) {
+                    has_call_ret_transfer = true;
+                    break;
+                }
+            }
+            if (!has_call_ret_transfer) {
+                try reportMallocLeak(ctx, func_name, malloc_count, free_count, diag);
+                stats.malloc_leaks += @as(u32, @intCast(malloc_count - free_count));
+            } else {
+                diag.debug("[R8.0-SUPPRESSED] {s}: {d} allocs > {d} frees but ptr returned from call (ownership transferred)", .{ func_name, malloc_count, free_count });
+            }
         }
 
         if (free_count > malloc_count) {
-            try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
-            stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
+            // Check if any free() argument was received as a call arg
+            // (pointer came from caller via FFI boundary)
+            var has_call_arg_source = false;
+            for (free_sites.items) |site| {
+                const ptr_val = @as(u64, @intFromPtr(site.inst_id));
+                if (mg.isPassedAsArg(ptr_val)) {
+                    has_call_arg_source = true;
+                    break;
+                }
+            }
+            if (!has_call_arg_source) {
+                try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
+                stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
+            } else {
+                diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but ptr came from call arg (external source)", .{ func_name, free_count, malloc_count });
+            }
         }
     }
 
@@ -1337,14 +1364,14 @@ test "EscapeStats - tracking" {
         stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans);
 }
 
-test "mayRetainInC - extended C callback patterns" {
-    try std.testing.expect(mayRetainInC("pthread_create"));
-    try std.testing.expect(mayRetainInC("RegisterNatives"));
-    try std.testing.expect(mayRetainInC("PyCapsule_SetDestructor"));
-    try std.testing.expect(mayRetainInC("signal"));
-    try std.testing.expect(mayRetainInC("SDL_SetEventCallback"));
-    try std.testing.expect(!mayRetainInC("malloc"));
-    try std.testing.expect(!mayRetainInC("free"));
+test "mayRetainInCLanguageAware - C_RETAINING_FUNCTIONS always match" {
+    try std.testing.expect(mayRetainInCLanguageAware("pthread_create", true));
+    try std.testing.expect(mayRetainInCLanguageAware("RegisterNatives", true));
+    try std.testing.expect(mayRetainInCLanguageAware("PyCapsule_SetDestructor", true));
+    try std.testing.expect(mayRetainInCLanguageAware("signal", true));
+    try std.testing.expect(mayRetainInCLanguageAware("SDL_SetCallback", true));
+    try std.testing.expect(!mayRetainInCLanguageAware("malloc", true));
+    try std.testing.expect(!mayRetainInCLanguageAware("free", true));
 }
 
 test "isRegisterNativesPattern - JNI callback" {
@@ -1410,14 +1437,14 @@ test "validate_callback_signature - boundary cases" {
 // R8.0-P1-8: isCgoBoundary strict "C." prefix matching (no FP on AC.BMethod etc.)
 test "isCgoBoundary - strict C. prefix matching" {
     // Valid cgo patterns: C. at start or after package separator
-    try std.testing.expect(isCgoBoundary("C.add"));           // direct C. prefix
-    try std.testing.expect(isCgoBoundary("C.malloc"));        // standard cgo
+    try std.testing.expect(isCgoBoundary("C.add")); // direct C. prefix
+    try std.testing.expect(isCgoBoundary("C.malloc")); // standard cgo
     try std.testing.expect(isCgoBoundary("main.C.function")); // package.C. pattern
 
     // Invalid: C. in middle of name (NOT cgo boundary)
-    try std.testing.expect(!isCgoBoundary("AC.BMethod"));     // A + C.BMethod
-    try std.testing.expect(!isCgoBoundary("MC.function"));     // M + C.function
-    try std.testing.expect(!isCgoBoundary("OCSocket"));        // OC + Socket
-    try std.testing.expect(!isCgoBoundary("MAC.address"));     // MAC + address
+    try std.testing.expect(!isCgoBoundary("AC.BMethod")); // A + C.BMethod
+    try std.testing.expect(!isCgoBoundary("MC.function")); // M + C.function
+    try std.testing.expect(!isCgoBoundary("OCSocket")); // OC + Socket
+    try std.testing.expect(!isCgoBoundary("MAC.address")); // MAC + address
     try std.testing.expect(!isCgoBoundary("myFunction_C_helper")); // trailing _C_
 }

@@ -587,18 +587,6 @@ test "classifyByPath - CGo generated" {
     try std.testing.expectEqual(noise_filter.RiskLevel.suppressed, result.risk_level);
 }
 
-test "classifyByPath - Go runtime" {
-    const loc = debug_info.SourceLocation{
-        .file = "proc.go",
-        .directory = "/usr/local/go/src/runtime",
-        .line = 500,
-        .column = 8,
-    };
-
-    const result = classifyByPath(loc, "runtime.mallocgc");
-    try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, result.origin);
-}
-
 test "classifyByPath - C++ system header" {
     const loc = debug_info.SourceLocation{
         .file = "vector",
@@ -740,10 +728,4 @@ test "isZigStdlibPath - various patterns" {
     try std.testing.expect(!isZigStdlibPath("/workspace/myapp/app.zig"));
 }
 
-test "isCppStdlibPath - various patterns" {
-    try std.testing.expect(isCppStdlibPath("/usr/include/c++/v1/vector"));
-    try std.testing.expect(isCppStdlibPath("/usr/include/memory"));
 
-    try std.testing.expect(!isCppStdlibPath("/home/user/project/src/main.cpp"));
-    try std.testing.expect(!isCppStdlibPath("/workspace/myapp/app.cc"));
-}

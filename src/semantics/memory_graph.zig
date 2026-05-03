@@ -395,6 +395,9 @@ pub const MemoryGraph = struct {
             .ret_ptr = ret_ptr,
         });
         // Index by callee for fast lookup: "what does this function return?"
+        // Note: StringHashMap.getOrPut() manages key ownership internally.
+        // When found_existing=true, the existing key is kept as-is (no leak).
+        // When found_existing=false, a copy of callee_name is stored by the map.
         const gop = try graph.call_ret_by_callee.getOrPut(callee_name);
         if (!gop.found_existing) {
             gop.value_ptr.* = &.{};
@@ -485,6 +488,28 @@ pub const MemoryGraph = struct {
         graph.nodes.clearRetainingCapacity();
         graph.func_counters.clearRetainingCapacity();
         graph.content_sources.clearRetainingCapacity();
+
+        for (graph.call_args.items) |*edge| {
+            graph.allocator.free(edge.callee_name);
+        }
+        graph.call_args.clearRetainingCapacity();
+        for (graph.call_rets.items) |*edge| {
+            graph.allocator.free(edge.callee_name);
+        }
+        graph.call_rets.clearRetainingCapacity();
+
+        var arg_iter = graph.call_arg_by_ptr.iterator();
+        while (arg_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_arg_by_ptr.clearRetainingCapacity();
+
+        var ret_iter = graph.call_ret_by_callee.iterator();
+        while (ret_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_ret_by_callee.clearRetainingCapacity();
+
         graph.next_id = 1;
     }
 
@@ -629,6 +654,81 @@ pub const MemoryGraph = struct {
             .free_site = node.freed_by,
         };
     }
+
+    /// R8.0: Check if a pointer is leaked by tracing cross-function propagation.
+    ///
+    /// A pointer is considered leaked when:
+    ///   1. It was allocated (has an AllocNode) and NOT freed
+    ///   2. It escaped the current function via a call_arg edge
+    ///   3. No corresponding call_ret edge returns ownership to the caller
+    ///
+    /// This detects patterns like:
+    ///   ```c
+    ///   void caller() {
+    ///       void* p = malloc(100);
+    ///       process(p);   // p escapes via call_arg, never comes back
+    ///       // no free(p) → leak across function boundary
+    ///   }
+    ///   ```
+    ///
+    /// Returns true if the pointer appears to be leaked across a function boundary.
+    pub fn isLeaked(graph: *MemoryGraph, ptr_val: u64) bool {
+        const node = graph.nodes.get(ptr_val) orelse return false;
+        if (node.freed) return false;
+
+        const arg_indices = graph.getCallArgsForPtr(ptr_val);
+        if (arg_indices.len == 0) return false;
+
+        for (arg_indices) |idx| {
+            const arg_edge = &graph.call_args.items[idx];
+            var returned = false;
+            for (graph.call_rets.items) |ret_edge| {
+                if (ret_edge.caller_inst == arg_edge.caller_inst) {
+                    returned = true;
+                    break;
+                }
+            }
+            if (!returned) return true;
+        }
+
+        return false;
+    }
+
+    /// R8.0: Check if a pointer is double-freed, including through alias closure
+    /// and cross-function call chains.
+    ///
+    /// Detection layers:
+    ///   1. Direct: the AllocNode for ptr_val is already marked freed
+    ///   2. Alias closure: any alias of ptr_val shares the same AllocNode which is freed,
+    ///      and ptr_val itself is being freed again
+    ///   3. Call chain: ptr_val was passed as arg to a function call, and within that
+    ///      call's context, a free operation targets the same or an aliased pointer
+    ///
+    /// Returns true if this free operation would be a double-free.
+    pub fn isDoubleFreed(graph: *MemoryGraph, ptr_val: u64) bool {
+        const node = graph.nodes.get(ptr_val) orelse return false;
+
+        if (node.freed) return true;
+
+        var alias_iter = node.aliases.iterator();
+        while (alias_iter.next()) |entry| {
+            const alias_node = graph.nodes.get(entry.key_ptr.*) orelse continue;
+            if (alias_node.freed and alias_node.id == node.id) return true;
+        }
+
+        const arg_indices = graph.getCallArgsForPtr(ptr_val);
+        for (arg_indices) |idx| {
+            const arg_edge = &graph.call_args.items[idx];
+            for (graph.call_rets.items) |ret_edge| {
+                if (ret_edge.caller_inst == arg_edge.caller_inst) {
+                    const ret_node = graph.nodes.get(ret_edge.ret_ptr) orelse continue;
+                    if (ret_node.freed and ret_node.id == node.id) return true;
+                }
+            }
+        }
+
+        return false;
+    }
 };
 
 /// FNV-1a hash with wrapping multiplication.
@@ -662,6 +762,14 @@ pub const FnClass = enum {
 
 pub const FuzzyMatcher = struct {
     pub fn classify(fn_name: []const u8) FnClass {
+        if (endsWithLower(fn_name, "free") or
+            endsWithLower(fn_name, "_free") or
+            endsWithLower(fn_name, "dealloc") or
+            indexOfLower(fn_name, "dealloc") != null)
+        {
+            return .free;
+        }
+
         if (endsWithLower(fn_name, "malloc") or
             endsWithLower(fn_name, "calloc") or
             endsWithLower(fn_name, "realloc") or
@@ -670,13 +778,6 @@ pub const FuzzyMatcher = struct {
             indexOfLower(fn_name, "alloc") != null)
         {
             return .alloc;
-        }
-
-        if (endsWithLower(fn_name, "free") or
-            endsWithLower(fn_name, "_free") or
-            indexOfLower(fn_name, "dealloc") != null)
-        {
-            return .free;
         }
 
         if (endsWithLower(fn_name, "_new") or
@@ -691,8 +792,7 @@ pub const FuzzyMatcher = struct {
             return .free;
         }
 
-        if (endsWithLower(fn_name, "_init") or
-            endsWithLower(fn_name, "init"))
+        if (endsWithLower(fn_name, "_init"))
         {
             return .init;
         }
@@ -1240,4 +1340,68 @@ test "memory_graph - call edges coexist with alloc/free tracking" {
     try std.testing.expectEqual(@as(usize, 1), graph.call_args.items.len);
     const node = graph.nodes.get(0x1001).?;
     try std.testing.expect(node.freed);
+}
+
+test "memory_graph - isLeaked cross-function propagation" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc);
+
+    try std.testing.expect(!graph.isLeaked(0xA001));
+    try std.testing.expect(!graph.isLeaked(0x9999));
+
+    try graph.trackCallArg(0x2000, "sink", 0xA001, 0);
+
+    try std.testing.expect(graph.isLeaked(0xA001));
+
+    try graph.trackCallRet(0x2000, "sink", 0xB001);
+
+    try std.testing.expect(!graph.isLeaked(0xA001));
+
+    _ = try graph.trackFree(0x3000, 0xA001);
+    try std.testing.expect(!graph.isLeaked(0xA001));
+}
+
+test "memory_graph - isDoubleFreed alias closure + call chain" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc);
+    try std.testing.expect(!graph.isDoubleFreed(0xA001));
+
+    _ = try graph.trackFree(0x3000, 0xA001);
+    try std.testing.expect(graph.isDoubleFreed(0xA001));
+
+    var graph2 = try MemoryGraph.init(allocator);
+    defer graph2.deinit();
+
+    _ = try graph2.trackAlloc(0x1000, 0xA002, .heap_alloc);
+    try graph2.trackAlias(0xB002, 0xA002);
+    _ = try graph2.trackFree(0x3000, 0xB002);
+    try std.testing.expect(graph2.isDoubleFreed(0xA002));
+
+    var graph3 = try MemoryGraph.init(allocator);
+    defer graph3.deinit();
+
+    _ = try graph3.trackAlloc(0x1000, 0xA003, .heap_alloc);
+    try graph3.trackCallArg(0x2000, "free_it", 0xA003, 0);
+    try graph3.trackCallRet(0x2000, "free_it", 0xB003);
+    try graph3.trackAlias(0xB003, 0xA003);
+    _ = try graph3.trackFree(0x4000, 0xB003);
+    try std.testing.expect(graph3.isDoubleFreed(0xA003));
 }

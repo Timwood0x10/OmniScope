@@ -37,6 +37,13 @@ pub const QueryEngine = struct {
         };
     }
 
+    /// Destroy the query engine and free all index memory.
+    /// Must be called when QueryEngine is no longer needed.
+    /// Safe to call even if buildIndex() was never called (empty maps are no-ops).
+    pub fn deinit(self: *QueryEngine) void {
+        self.deinitIndex();
+    }
+
     /// R8.4-a: Build inverted indices from fact store.
     /// Call this after all facts have been inserted, before any indexed queries.
     /// After building, queryByKindIndexed/queryBySubjectIndexed are O(1) amortized.
@@ -90,20 +97,20 @@ pub const QueryEngine = struct {
         }
         self.kind_index.deinit();
 
-        iter = self.subj_index.iterator();
-        while (iter.next()) |entry| {
+        var iter2 = self.subj_index.iterator();
+        while (iter2.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);
         }
         self.subj_index.deinit();
 
-        iter = self.obj_index.iterator();
-        while (iter.next()) |entry| {
+        var iter3 = self.obj_index.iterator();
+        while (iter3.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);
         }
         self.obj_index.deinit();
 
-        iter = self.ctx_index.iterator();
-        while (iter.next()) |entry| {
+        var iter4 = self.ctx_index.iterator();
+        while (iter4.next()) |entry| {
             entry.value_ptr.deinit(self.allocator);
         }
         self.ctx_index.deinit();

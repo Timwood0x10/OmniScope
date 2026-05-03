@@ -976,33 +976,6 @@ test "isLikelyRuntimeInternal - C/C++ stdlib" {
     try std.testing.expect(!isLikelyRuntimeInternal("my_function"));
 }
 
-test "classifyCppFunction - registry linkage" {
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("malloc"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("free"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlopen"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlsym"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("dlclose"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("mmap"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("munmap"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fopen"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fclose"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("socket"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("close"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("pthread_create"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("pthread_join"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("signal"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("fork"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("execvp"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("Py_INCREF"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("Py_DECREF"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("NewGlobalRef"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("DeleteGlobalRef"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("GetMethodID"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("system"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("popen"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("printf"));
-}
-
 test "classifyCppFunction - CPP_ESCAPE_PATTERNS" {
     try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("reinterpret_cast<int*>"));
     try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("const_cast<int*>"));

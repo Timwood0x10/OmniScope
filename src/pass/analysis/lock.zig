@@ -61,6 +61,7 @@ pub const LockPass = struct {
 
     /// Deinitialize the pass
     pub fn deinit(self: *LockPass, allocator: std.mem.Allocator) void {
+        self.query.deinit();
         self.lock_ops.deinit(allocator);
         self.lock_id_map.deinit(allocator);
     }

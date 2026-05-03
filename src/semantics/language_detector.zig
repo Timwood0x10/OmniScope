@@ -68,7 +68,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     const PERSONALITY_WEIGHT: f32 = 0.8;
     const GLOBALS_WEIGHT: f32 = 0.6;
 
-    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c]
+    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, swift, unknown]
 
     if (sampling_result) |r| {
         const lang_idx = langToIndex(r.language);
@@ -120,7 +120,8 @@ fn langToIndex(lang: Language) usize {
         .zig => 2,
         .cpp => 3,
         .c => 4,
-        .swift, .unknown => 4,
+        .swift => 5,
+        .unknown => 6,
     };
 }
 
@@ -130,7 +131,9 @@ fn indexToLang(idx: usize) Language {
         1 => .go,
         2 => .zig,
         3 => .cpp,
-        else => .c,
+        4 => .c,
+        5 => .swift,
+        else => .unknown,
     };
 }
 

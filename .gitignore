@@ -1,6 +1,10 @@
 # IDE and Editor
 .vscode/
 .idea/
+.claude/
+Claude.md
+AGENTS.md
+
 *.swp
 *.swo
 *~
@@ -76,3 +80,4 @@ corpus/real_world/libuv-*/
 *.tar.gz
 *.tar.xz
 *.tar.bz2
+.gitnexus

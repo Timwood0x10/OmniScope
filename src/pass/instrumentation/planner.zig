@@ -68,6 +68,12 @@ pub const InstrumentationPlanner = struct {
         };
     }
 
+    /// Deinitialize the planner and free all resources
+    pub fn deinit(self: *InstrumentationPlanner) void {
+        self.query.deinit();
+        self.plan.deinit();
+    }
+
     /// Run the instrumentation planner
     pub fn run(
         self: *InstrumentationPlanner,

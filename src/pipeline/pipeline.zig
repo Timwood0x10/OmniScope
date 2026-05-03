@@ -52,6 +52,7 @@ pub const Pipeline = struct {
     /// Deinitialize the pipeline
     pub fn deinit(self: *Pipeline) void {
         self.data_flow_graph.deinit();
+        self.query_engine.deinit();
         self.fact_store.deinit();
         self.allocator.destroy(self.fact_store);
         self.allocator.destroy(self.query_engine);
@@ -85,7 +86,7 @@ pub const Pipeline = struct {
             .registry_cache = std.StringHashMap(FunctionSemantics).init(self.allocator),
             .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(self.allocator),
             .zone_stats = .{},
-            .module_language = undefined,
+            .module_language = .{ .language = .unknown, .confidence = 0.0, .method = .unknown },
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
@@ -112,10 +113,9 @@ pub const Pipeline = struct {
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
-                    defer self.allocator.free(msg);
                     const trace = try self.allocator.alloc(TraceEntry, 1);
                     trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
-                    const issue = Issue.initWithTrace(
+                    var issue = Issue.initWithTrace(
                         .memory_leak,
                         msg,
                         Location.init(rec.alloc_func),

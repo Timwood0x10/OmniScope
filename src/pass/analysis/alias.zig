@@ -65,6 +65,7 @@ pub const AliasPass = struct {
 
     /// Deinitialize the pass
     pub fn deinit(self: *AliasPass, allocator: std.mem.Allocator) void {
+        self.query.deinit();
         self.type_cache.deinit(allocator);
         self.ptr_info_map.deinit(allocator);
     }
