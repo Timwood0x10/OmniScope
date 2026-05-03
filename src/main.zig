@@ -219,6 +219,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     }
 
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
     try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);

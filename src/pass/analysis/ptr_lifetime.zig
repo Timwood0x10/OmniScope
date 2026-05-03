@@ -32,6 +32,20 @@ const zone_cls = @import("../../semantics/zone_classifier.zig");
 const ZoneKind = zone_cls.ZoneKind;
 const Lang = zone_cls.Language;
 
+const FfiLang = @import("../../diag/issue.zig").FFIBoundary.Language;
+
+fn toZoneLanguage(lang: FfiLang) Lang {
+    return switch (lang) {
+        .c => .c,
+        .cpp => .cpp,
+        .rust => .rust,
+        .zig => .zig,
+        .go => .go,
+        .swift => .unknown,
+        else => .unknown,
+    };
+}
+
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -357,7 +371,7 @@ pub const PtrLifetimePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const conv_lang: Lang = @enumFromInt(@intFromEnum(ctx.module_language.language));
+                const conv_lang: Lang = toZoneLanguage(ctx.module_language.language);
                 try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, ctx.getOrComputeZone(@ptrCast(func), func_name));
             }
             bb_id += 1;
@@ -574,18 +588,17 @@ pub const PtrLifetimePass = struct {
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (pointer_map.getPtr(ptr_arg)) |ptr_info| {
                                 if (ptr_info.freed and !ptr_info.double_free_detected) {
-                                    // Double-free detected! Mark it.
-                                    ptr_info.double_free_detected = true;
-                                    // Free old source_desc before allocating new one.
-                                    if (ptr_info.needs_free) {
-                                        allocator.free(ptr_info.source_desc);
-                                    }
-                                    ptr_info.source_desc = try std.fmt.allocPrint(
+                                    const new_desc = try std.fmt.allocPrint(
                                         allocator,
                                         "DOUBLE_FREE: {s}",
                                         .{ptr_info.source_desc},
                                     );
+                                    if (ptr_info.needs_free) {
+                                        allocator.free(ptr_info.source_desc);
+                                    }
+                                    ptr_info.source_desc = new_desc;
                                     ptr_info.needs_free = true;
+                                    ptr_info.double_free_detected = true;
                                 } else {
                                     ptr_info.freed = true;
                                 }
@@ -1060,9 +1073,10 @@ pub const PtrLifetimePass = struct {
         // Also use MemoryGraph for cross-alias detection.
         if (mem_graph) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(inst));
-            const free_lang: Lang = std.meta.intToEnum(Lang, @intFromEnum(ctx.module_language.language)) catch .unknown;
+            const free_lang: Lang = toZoneLanguage(ctx.module_language.language);
             const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang) catch false;
             if (is_double) {
+                if (!ctx.isRelevantAlloc(ptr_hash)) return;
                 diag.warn("[DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
                 stats.use_after_free_found += 1;
                 return;
@@ -1072,6 +1086,7 @@ pub const PtrLifetimePass = struct {
         // Fallback: pointer_map based detection (same-value double-free only).
         if (pointer_map.get(ptr_arg)) |ptr_info| {
             if (ptr_info.double_free_detected) {
+                if (!ctx.isRelevantAlloc(ptr_hash)) return;
                 diag.warn("[DOUBLE_FREE] {s} freed twice in {s}", .{ ptr_info.source_desc, func_name });
                 stats.use_after_free_found += 1;
             }
@@ -1285,6 +1300,7 @@ pub const PtrLifetimePass = struct {
                             stats.stack_escapes_found += 1;
                             if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                         } else if (ptr_info.freed) {
+                            if (!ctx.isRelevantAlloc(@as(u64, @intFromPtr(arg)))) continue;
                             if (ptr_info.resource_type != .none) {
                                 try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
                             } else {
@@ -1321,6 +1337,7 @@ pub const PtrLifetimePass = struct {
                     stats.heap_ambiguous_found += 1;
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                 } else if (ptr_info.freed) {
+                    if (!ctx.isRelevantAlloc(@as(u64, @intFromPtr(arg)))) continue;
                     if (ptr_info.resource_type != .none) {
                         try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
                     } else {
@@ -2404,4 +2421,13 @@ test "is_intentional_free - resource close" {
 test "is_intentional_free - negative" {
     try std.testing.expect(!PtrLifetimePass.is_intentional_free("malloc"));
     try std.testing.expect(!PtrLifetimePass.is_intentional_free("dlopen"));
+}
+
+test "toZoneLanguage - explicit mapping correctness" {
+    try std.testing.expectEqual(Lang.c, toZoneLanguage(FfiLang.c));
+    try std.testing.expectEqual(Lang.cpp, toZoneLanguage(FfiLang.cpp));
+    try std.testing.expectEqual(Lang.rust, toZoneLanguage(FfiLang.rust));
+    try std.testing.expectEqual(Lang.zig, toZoneLanguage(FfiLang.zig));
+    try std.testing.expectEqual(Lang.go, toZoneLanguage(FfiLang.go));
+    try std.testing.expectEqual(Lang.unknown, toZoneLanguage(FfiLang.swift));
 }

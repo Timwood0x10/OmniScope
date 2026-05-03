@@ -197,6 +197,11 @@ pub const PassContext = struct {
     /// Created by pipeline before any pass runs; owned by PassContext.
     memory_graph: memory_graph_mod.MemoryGraph,
 
+    /// P1-1: Set of pointer values that are on a danger path (FFI/unsafe boundary).
+    /// Populated by DangerSurfacePass. Downstream passes gate on this set:
+    ///   if (!ctx.isRelevantAlloc(ptr_val)) { return; }  // Tier 1 pass-through
+    danger_surface_relevant: std.AutoHashMap(u64, void),
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -229,6 +234,7 @@ pub const PassContext = struct {
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
             .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
+            .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
         };
     }
 
@@ -292,6 +298,7 @@ pub const PassContext = struct {
         self.cross_lang_edges.deinit(self.allocator);
         self.global_alloc_tracker.deinit();
         self.memory_graph.deinit();
+        self.danger_surface_relevant.deinit();
     }
 
     /// Set the IR module
@@ -663,6 +670,19 @@ pub const PassContext = struct {
     /// Called by ffi_boundary and callback_escape passes.
     pub fn getCrossLangEdges(self: *const PassContext) []const CrossLangEdge {
         return self.cross_lang_edges.items;
+    }
+
+    /// P1-1: Check if a pointer value is on a danger path (FFI/unsafe boundary).
+    /// Returns true if the pointer should be analyzed (Tier 2 strict mode).
+    /// Returns false for Tier 1 pass-through (general memory, no issue reported).
+    pub fn isRelevantAlloc(self: *const PassContext, ptr_val: u64) bool {
+        return self.danger_surface_relevant.contains(ptr_val);
+    }
+
+    /// P1-1: Mark a pointer value as being on a danger path.
+    /// Called by DangerSurfacePass during surface tracing.
+    pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {
+        try self.danger_surface_relevant.put(ptr_val, {});
     }
 };
 

@@ -92,6 +92,7 @@ pub const Pipeline = struct {
             .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
             .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
             .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
+            .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
         };
         defer ctx.deinit();
 

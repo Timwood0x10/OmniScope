@@ -178,6 +178,7 @@ pub const MemoryGraph = struct {
     call_args: std.ArrayList(CallArgEdge),
     call_rets: std.ArrayList(CallRetEdge),
     call_arg_by_ptr: std.AutoHashMap(u64, []const u32),
+    call_arg_by_callee: std.StringHashMap([]const u32),
     call_ret_by_callee: std.StringHashMap([]const u32),
 
     /// Initializes a new memory graph.
@@ -192,6 +193,7 @@ pub const MemoryGraph = struct {
             .call_args = std.ArrayList(CallArgEdge).empty,
             .call_rets = std.ArrayList(CallRetEdge).empty,
             .call_arg_by_ptr = std.AutoHashMap(u64, []const u32).init(allocator),
+            .call_arg_by_callee = std.StringHashMap([]const u32).init(allocator),
             .call_ret_by_callee = std.StringHashMap([]const u32).init(allocator),
         };
     }
@@ -222,6 +224,12 @@ pub const MemoryGraph = struct {
             graph.allocator.free(entry.value_ptr.*);
         }
         graph.call_arg_by_ptr.deinit();
+
+        var arg_callee_iter = graph.call_arg_by_callee.iterator();
+        while (arg_callee_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_arg_by_callee.deinit();
 
         var ret_iter = graph.call_ret_by_callee.iterator();
         while (ret_iter.next()) |entry| {
@@ -408,6 +416,19 @@ pub const MemoryGraph = struct {
             graph.allocator.free(gop.value_ptr.*);
         }
         gop.value_ptr.* = new_list;
+
+        // Index by callee for fast lookup: "what args does this function receive?"
+        const callee_gop = try graph.call_arg_by_callee.getOrPut(callee_name);
+        if (!callee_gop.found_existing) {
+            callee_gop.value_ptr.* = &.{};
+        }
+        const callee_new_list = try graph.allocator.alloc(u32, callee_gop.value_ptr.*.len + 1);
+        @memcpy(callee_new_list[0..callee_gop.value_ptr.*.len], callee_gop.value_ptr.*);
+        callee_new_list[callee_gop.value_ptr.*.len] = edge_idx;
+        if (callee_gop.value_ptr.*.len > 0) {
+            graph.allocator.free(callee_gop.value_ptr.*);
+        }
+        callee_gop.value_ptr.* = callee_new_list;
     }
 
     /// Records a call_ret edge: a pointer value returned from a function call.
@@ -451,6 +472,12 @@ pub const MemoryGraph = struct {
     /// Returns slice of indices into call_rets (caller owns nothing).
     pub fn getCallRetsFromCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
         return graph.call_ret_by_callee.get(callee_name) orelse &.{};
+    }
+
+    /// Query: Get all call_arg edges for arguments to `callee_name`.
+    /// Returns slice of indices into call_args (caller owns nothing).
+    pub fn getCallArgsForCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
+        return graph.call_arg_by_callee.get(callee_name) orelse &.{};
     }
 
     /// Query: Check if a pointer flows into any function call as an argument.
@@ -533,6 +560,12 @@ pub const MemoryGraph = struct {
             graph.allocator.free(entry.value_ptr.*);
         }
         graph.call_arg_by_ptr.clearRetainingCapacity();
+
+        var arg_callee_iter = graph.call_arg_by_callee.iterator();
+        while (arg_callee_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_arg_by_callee.clearRetainingCapacity();
 
         var ret_iter = graph.call_ret_by_callee.iterator();
         while (ret_iter.next()) |entry| {
@@ -1615,4 +1648,29 @@ test "memory_graph - isOnDangerPath alias propagation" {
     };
     // 0xA001 itself doesn't have call_arg, but its alias 0xB001 does
     try std.testing.expectEqual(DangerPathKind.ffi_arg, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - isOnDangerPath cycle detection A<->B no infinite loop" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    _ = try graph.trackAlloc(0x1001, 0xB001, .heap_alloc, .safe, .c);
+
+    try graph.trackAlias(0xA001, 0xB001);
+    try graph.trackAlias(0xB001, 0xA001);
+
+    var visited = std.AutoHashMap(u64, void).init(allocator);
+    defer visited.deinit();
+    const boundaries = [_]MemoryGraph.DangerSurface{};
+
+    const result = graph.isOnDangerPath(0xA001, &boundaries, &visited);
+    try std.testing.expectEqual(DangerPathKind.none, result);
 }

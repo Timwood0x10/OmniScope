@@ -534,6 +534,7 @@ pub const CallbackEscapePass = struct {
                     // Only report if the pointer is confirmed to flow into a call edge.
                     const mg = &ctx.memory_graph;
                     var confirmed_by_graph = false;
+                    var detected_ptr_val: u64 = 0;
                     var arg_k: u32 = 1;
                     while (arg_k < c.LLVMGetNumOperands(call.inst)) : (arg_k += 1) {
                         const arg = c.LLVMGetOperand(call.inst, arg_k);
@@ -541,10 +542,12 @@ pub const CallbackEscapePass = struct {
                         const arg_ptr_val = @as(u64, @intFromPtr(arg));
                         if (mg.isPassedAsArg(arg_ptr_val)) {
                             confirmed_by_graph = true;
+                            detected_ptr_val = arg_ptr_val;
                             break;
                         }
                     }
                     if (confirmed_by_graph) {
+                        if (!ctx.isRelevantAlloc(detected_ptr_val)) continue;
                         try reportMissingKeepAlive(ctx, func_name, call, diag);
                         stats.keepalive_missing += 1;
                     }
@@ -572,6 +575,7 @@ pub const CallbackEscapePass = struct {
                         }
                     }
                     if (cgo_ptr_val != 0) {
+                        if (!ctx.isRelevantAlloc(cgo_ptr_val)) continue;
                         try reportCBytesEscape(ctx, func_name, call, diag);
                         stats.cbytes_escapes += 1;
                     }
