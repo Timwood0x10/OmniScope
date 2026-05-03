@@ -177,9 +177,14 @@ pub const MemoryGraph = struct {
     // R8.0: Call edges — cross-function pointer flow tracking
     call_args: std.ArrayList(CallArgEdge),
     call_rets: std.ArrayList(CallRetEdge),
-    call_arg_by_ptr: std.AutoHashMap(u64, []const u32),
-    call_arg_by_callee: std.StringHashMap([]const u32),
-    call_ret_by_callee: std.StringHashMap([]const u32),
+    call_arg_by_ptr: std.AutoHashMap(u64, std.ArrayList(u32)),
+    call_arg_by_callee: std.StringHashMap(std.ArrayList(u32)),
+    call_ret_by_callee: std.StringHashMap(std.ArrayList(u32)),
+    call_ret_by_ptr: std.AutoHashMap(u64, std.ArrayList(u32)),
+
+    /// Reverse index: alias pointer → canonical alloc pointer.
+    /// Built by trackAlias. Enables O(1) reverse lookup instead of O(N) node scan.
+    alias_to_canonical: std.AutoHashMap(u64, u64),
 
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
@@ -192,9 +197,11 @@ pub const MemoryGraph = struct {
             .content_sources = std.AutoHashMap(u64, SourceKind).init(allocator),
             .call_args = std.ArrayList(CallArgEdge).empty,
             .call_rets = std.ArrayList(CallRetEdge).empty,
-            .call_arg_by_ptr = std.AutoHashMap(u64, []const u32).init(allocator),
-            .call_arg_by_callee = std.StringHashMap([]const u32).init(allocator),
-            .call_ret_by_callee = std.StringHashMap([]const u32).init(allocator),
+            .call_arg_by_ptr = std.AutoHashMap(u64, std.ArrayList(u32)).init(allocator),
+            .call_arg_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
+            .call_ret_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
+            .call_ret_by_ptr = std.AutoHashMap(u64, std.ArrayList(u32)).init(allocator),
+            .alias_to_canonical = std.AutoHashMap(u64, u64).init(allocator),
         };
     }
 
@@ -221,21 +228,29 @@ pub const MemoryGraph = struct {
 
         var arg_iter = graph.call_arg_by_ptr.iterator();
         while (arg_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_arg_by_ptr.deinit();
 
         var arg_callee_iter = graph.call_arg_by_callee.iterator();
         while (arg_callee_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_arg_by_callee.deinit();
 
         var ret_iter = graph.call_ret_by_callee.iterator();
         while (ret_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_ret_by_callee.deinit();
+
+        var ret_ptr_iter = graph.call_ret_by_ptr.iterator();
+        while (ret_ptr_iter.next()) |entry| {
+            entry.value_ptr.deinit(graph.allocator);
+        }
+        graph.call_ret_by_ptr.deinit();
+
+        graph.alias_to_canonical.deinit();
 
         graph.* = undefined;
     }
@@ -299,6 +314,8 @@ pub const MemoryGraph = struct {
 
         try target_node.aliases.put(from_val, {});
         try graph.nodes.put(from_val, target_node);
+        // Build reverse index for O(1) alias→canonical lookup
+        try graph.alias_to_canonical.put(from_val, to_val);
     }
 
     /// Records a free operation and checks for double-free.
@@ -383,6 +400,22 @@ pub const MemoryGraph = struct {
         return graph.content_sources.get(dest_ptr) orelse .unknown;
     }
 
+    /// Enhanced content source resolution with multi-level fallback:
+    /// 1. content_sources map (explicitly recorded)
+    /// 2. AllocNode.source_kind (how pointer was created: alloca/heap/etc.)
+    /// 3. call_ret edges (returned from a function call)
+    /// 4. .unknown if none match
+    pub fn resolveContentSource(graph: *MemoryGraph, ptr_val: u64) SourceKind {
+        const content = graph.content_sources.get(ptr_val);
+        if (content) |kind| return kind;
+        const node = graph.nodes.get(ptr_val);
+        if (node) |n| return n.source_kind;
+        if (graph.call_ret_by_ptr.get(ptr_val)) |indices| {
+            if (indices.items.len > 0) return .call_result;
+        }
+        return .unknown;
+    }
+
     // =====================================================================
     // R8.0: Call edge tracking
     // =====================================================================
@@ -407,28 +440,16 @@ pub const MemoryGraph = struct {
         // Index by ptr for fast lookup: "which calls receive this pointer?"
         const gop = try graph.call_arg_by_ptr.getOrPut(arg_ptr);
         if (!gop.found_existing) {
-            gop.value_ptr.* = &.{};
+            gop.value_ptr.* = try std.ArrayList(u32).initCapacity(graph.allocator, 4);
         }
-        const new_list = try graph.allocator.alloc(u32, gop.value_ptr.*.len + 1);
-        @memcpy(new_list[0..gop.value_ptr.*.len], gop.value_ptr.*);
-        new_list[gop.value_ptr.*.len] = edge_idx;
-        if (gop.value_ptr.*.len > 0) {
-            graph.allocator.free(gop.value_ptr.*);
-        }
-        gop.value_ptr.* = new_list;
+        try gop.value_ptr.append(graph.allocator, edge_idx);
 
         // Index by callee for fast lookup: "what args does this function receive?"
         const callee_gop = try graph.call_arg_by_callee.getOrPut(callee_name);
         if (!callee_gop.found_existing) {
-            callee_gop.value_ptr.* = &.{};
+            callee_gop.value_ptr.* = try std.ArrayList(u32).initCapacity(graph.allocator, 4);
         }
-        const callee_new_list = try graph.allocator.alloc(u32, callee_gop.value_ptr.*.len + 1);
-        @memcpy(callee_new_list[0..callee_gop.value_ptr.*.len], callee_gop.value_ptr.*);
-        callee_new_list[callee_gop.value_ptr.*.len] = edge_idx;
-        if (callee_gop.value_ptr.*.len > 0) {
-            graph.allocator.free(callee_gop.value_ptr.*);
-        }
-        callee_gop.value_ptr.* = callee_new_list;
+        try callee_gop.value_ptr.append(graph.allocator, edge_idx);
     }
 
     /// Records a call_ret edge: a pointer value returned from a function call.
@@ -451,33 +472,37 @@ pub const MemoryGraph = struct {
         // When found_existing=false, a copy of callee_name is stored by the map.
         const gop = try graph.call_ret_by_callee.getOrPut(callee_name);
         if (!gop.found_existing) {
-            gop.value_ptr.* = &.{};
+            gop.value_ptr.* = try std.ArrayList(u32).initCapacity(graph.allocator, 4);
         }
-        const new_list = try graph.allocator.alloc(u32, gop.value_ptr.*.len + 1);
-        @memcpy(new_list[0..gop.value_ptr.*.len], gop.value_ptr.*);
-        new_list[gop.value_ptr.*.len] = edge_idx;
-        if (gop.value_ptr.*.len > 0) {
-            graph.allocator.free(gop.value_ptr.*);
+        try gop.value_ptr.append(graph.allocator, edge_idx);
+
+        const ret_ptr_gop = try graph.call_ret_by_ptr.getOrPut(ret_ptr);
+        if (!ret_ptr_gop.found_existing) {
+            ret_ptr_gop.value_ptr.* = try std.ArrayList(u32).initCapacity(graph.allocator, 4);
         }
-        gop.value_ptr.* = new_list;
+        try ret_ptr_gop.value_ptr.append(graph.allocator, edge_idx);
     }
 
     /// Query: Get all call_arg edges where `ptr_val` is passed as an argument.
     /// Returns slice of indices into call_args (caller owns nothing).
     pub fn getCallArgsForPtr(graph: *MemoryGraph, ptr_val: u64) []const u32 {
-        return graph.call_arg_by_ptr.get(ptr_val) orelse &.{};
+        if (graph.call_arg_by_ptr.get(ptr_val)) |list| return list.items;
+        return &.{};
     }
 
-    /// Query: Get all call_ret edges for returns from `callee_name`.
-    /// Returns slice of indices into call_rets (caller owns nothing).
     pub fn getCallRetsFromCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
-        return graph.call_ret_by_callee.get(callee_name) orelse &.{};
+        if (graph.call_ret_by_callee.get(callee_name)) |list| return list.items;
+        return &.{};
     }
 
-    /// Query: Get all call_arg edges for arguments to `callee_name`.
-    /// Returns slice of indices into call_args (caller owns nothing).
+    pub fn getCallRetsForPtr(graph: *MemoryGraph, ptr_val: u64) []const u32 {
+        if (graph.call_ret_by_ptr.get(ptr_val)) |list| return list.items;
+        return &.{};
+    }
+
     pub fn getCallArgsForCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
-        return graph.call_arg_by_callee.get(callee_name) orelse &.{};
+        if (graph.call_arg_by_callee.get(callee_name)) |list| return list.items;
+        return &.{};
     }
 
     /// Query: Check if a pointer flows into any function call as an argument.
@@ -487,10 +512,7 @@ pub const MemoryGraph = struct {
 
     /// Query: Check if a pointer is returned from any function call.
     pub fn isReturnedFromCall(graph: *MemoryGraph, ptr_val: u64) bool {
-        for (graph.call_rets.items) |edge| {
-            if (edge.ret_ptr == ptr_val) return true;
-        }
-        return false;
+        return graph.call_ret_by_ptr.contains(ptr_val);
     }
 
     // =====================================================================
@@ -557,21 +579,29 @@ pub const MemoryGraph = struct {
 
         var arg_iter = graph.call_arg_by_ptr.iterator();
         while (arg_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_arg_by_ptr.clearRetainingCapacity();
 
         var arg_callee_iter = graph.call_arg_by_callee.iterator();
         while (arg_callee_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_arg_by_callee.clearRetainingCapacity();
 
         var ret_iter = graph.call_ret_by_callee.iterator();
         while (ret_iter.next()) |entry| {
-            graph.allocator.free(entry.value_ptr.*);
+            entry.value_ptr.deinit(graph.allocator);
         }
         graph.call_ret_by_callee.clearRetainingCapacity();
+
+        var ret_ptr_iter = graph.call_ret_by_ptr.iterator();
+        while (ret_ptr_iter.next()) |entry| {
+            entry.value_ptr.deinit(graph.allocator);
+        }
+        graph.call_ret_by_ptr.clearRetainingCapacity();
+
+        graph.alias_to_canonical.clearRetainingCapacity();
 
         graph.next_id = 1;
     }
@@ -819,26 +849,30 @@ pub const MemoryGraph = struct {
         ffi_boundaries: []const MemoryGraph.DangerSurface,
         visited: *std.AutoHashMap(u64, void),
     ) DangerPathKind {
+        // Build callee_name set for O(1) lookup instead of O(N) linear scan.
+        var ffi_set = std.StringHashMap(void).init(graph.allocator);
+        defer ffi_set.deinit();
+        for (ffi_boundaries) |b| {
+            if (b.is_ffi_boundary) {
+                ffi_set.put(b.callee_name, {}) catch {};
+            }
+        }
+
         // (b): Check if ptr flows into any FFI boundary call as argument.
-        // This catches function-parameter pointers (no AllocNode) that enter FFI.
         const arg_indices = graph.getCallArgsForPtr(ptr_val);
         for (arg_indices) |idx| {
             const arg_edge = &graph.call_args.items[idx];
-            for (ffi_boundaries) |b| {
-                if (b.is_ffi_boundary and std.mem.eql(u8, b.callee_name, arg_edge.callee_name)) {
-                    return .ffi_arg;
-                }
+            if (ffi_set.contains(arg_edge.callee_name)) {
+                return .ffi_arg;
             }
         }
 
         // (c): Check if ptr returns from any FFI boundary call.
-        for (graph.call_rets.items) |ret_edge| {
-            if (ret_edge.ret_ptr == ptr_val) {
-                for (ffi_boundaries) |b| {
-                    if (b.is_ffi_boundary and std.mem.eql(u8, b.callee_name, ret_edge.callee_name)) {
-                        return .ffi_ret;
-                    }
-                }
+        const ret_indices = graph.getCallRetsForPtr(ptr_val);
+        for (ret_indices) |idx| {
+            const ret_edge = &graph.call_rets.items[idx];
+            if (ffi_set.contains(ret_edge.callee_name)) {
+                return .ffi_ret;
             }
         }
 
@@ -1624,6 +1658,32 @@ test "memory_graph - isOnDangerPath unsafe zone alloc" {
     defer visited.deinit();
     const boundaries = [_]MemoryGraph.DangerSurface{};
     try std.testing.expectEqual(DangerPathKind.unsafe_alloc, graph.isOnDangerPath(0xA001, &boundaries, &visited));
+}
+
+test "memory_graph - resolveContentSource multi-level fallback" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+
+    try std.testing.expectEqual(SourceKind.heap_alloc, graph.resolveContentSource(0xA001));
+
+    try graph.recordContentSource(0xB001, .alloca);
+    try std.testing.expectEqual(SourceKind.alloca, graph.getContentSource(0xB001));
+    try std.testing.expectEqual(SourceKind.alloca, graph.resolveContentSource(0xB001));
+
+    try std.testing.expectEqual(SourceKind.unknown, graph.getContentSource(0xC001));
+    try std.testing.expectEqual(SourceKind.unknown, graph.resolveContentSource(0xC001));
+
+    _ = try graph.trackCallRet(0x2000, 0xD001, "malloc_wrapper", 0);
+    try std.testing.expectEqual(SourceKind.call_result, graph.resolveContentSource(0xD001));
 }
 
 test "memory_graph - isOnDangerPath alias propagation" {

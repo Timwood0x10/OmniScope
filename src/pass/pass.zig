@@ -50,6 +50,52 @@ pub const CrossLangEdge = struct {
     ptr_args: []const u32,
 };
 
+///Shared callee → call_sites index for O(1) lookup.
+/// Built once in Pipeline.run() by scanning all call instructions.
+/// Eliminates O(F) linear search in call_graph.findCallsInFunction (L269)
+/// and ffi_boundary.checkCallForFFI (L268).
+pub const CallSiteIndex = struct {
+    map: std.StringHashMap(std.ArrayList(CallSite)),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) CallSiteIndex {
+        return .{ .map = std.StringHashMap(std.ArrayList(CallSite)).init(allocator), .allocator = allocator };
+    }
+
+    pub fn deinit(self: *CallSiteIndex) void {
+        var iter = self.map.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.map.deinit();
+    }
+
+    /// Record a call site: caller_func called callee_name at inst.
+    pub fn addCall(self: *CallSiteIndex, allocator: Allocator, callee_name: []const u8, caller_func: u64, inst: u64) !void {
+        const gop = try self.map.getOrPut(callee_name);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = try std.ArrayList(CallSite).initCapacity(allocator, 4);
+        }
+        try gop.value_ptr.append(self.allocator, .{ .caller_func = caller_func, .inst = inst });
+    }
+
+    /// Get all call sites that call the given callee name. Returns null if none.
+    pub fn getCallSites(self: *const CallSiteIndex, callee_name: []const u8) ?[]const CallSite {
+        if (self.map.get(callee_name)) |sites| {
+            return sites.items;
+        }
+        return null;
+    }
+};
+
+/// A single call site record in the shared index.
+pub const CallSite = struct {
+    /// Function pointer of the caller (u64 from LLVMValueRef).
+    caller_func: u64,
+    /// Instruction pointer of the call instruction (u64 from LLVMValueRef).
+    inst: u64,
+};
+
 /// R8.3: Global allocation tracker for cross-function leak detection.
 ///
 /// Tracks malloc/calloc/realloc/free operations across function boundaries
@@ -202,6 +248,20 @@ pub const PassContext = struct {
     ///   if (!ctx.isRelevantAlloc(ptr_val)) { return; }  // Tier 1 pass-through
     danger_surface_relevant: std.AutoHashMap(u64, void),
 
+    /// P0-1: Set of function pointers that contain danger-surface-relevant pointers.
+    /// Populated by DangerSurfacePass. Downstream passes gate at FUNCTION level:
+    ///   if (!ctx.isRelevantFunction(func_ptr)) { return; }  // Skip entire function scan
+    relevant_functions: std.AutoHashMap(u64, void),
+
+    /// P0-2: Shared callee → call_sites index. Built once in Pipeline.run(),
+    /// consumed by call_graph (findCallsInFunction) and ffi_boundary (checkCallForFFI).
+    /// Eliminates O(F) linear search per call instruction.
+    CallSiteIndex: CallSiteIndex,
+
+    /// P0-2: callee_name → index into cross_lang_edges for O(1) FFI boundary lookup.
+    /// Populated by addCrossLangEdge(). Used by ffi_boundary.checkCallForFFI.
+    cross_edge_by_callee: std.StringHashMap(u32),
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -235,6 +295,9 @@ pub const PassContext = struct {
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
             .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
+            .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
+            .CallSiteIndex = CallSiteIndex.init(allocator),
+            .cross_edge_by_callee = std.StringHashMap(u32).init(allocator),
         };
     }
 
@@ -299,6 +362,9 @@ pub const PassContext = struct {
         self.global_alloc_tracker.deinit();
         self.memory_graph.deinit();
         self.danger_surface_relevant.deinit();
+        self.relevant_functions.deinit();
+        self.CallSiteIndex.deinit();
+        self.cross_edge_by_callee.deinit();
     }
 
     /// Set the IR module
@@ -663,13 +729,24 @@ pub const PassContext = struct {
     /// R8.2: Add a cross-language call edge to the context.
     /// Called by CallGraphPass after building the call graph.
     pub fn addCrossLangEdge(self: *PassContext, edge: CrossLangEdge) !void {
+        const idx = @as(u32, @intCast(self.cross_lang_edges.items.len));
         try self.cross_lang_edges.append(self.allocator, edge);
+        try self.cross_edge_by_callee.put(edge.callee_name, idx);
     }
 
     /// R8.2: Get read-only access to cross-language edges.
     /// Called by ffi_boundary and callback_escape passes.
     pub fn getCrossLangEdges(self: *const PassContext) []const CrossLangEdge {
         return self.cross_lang_edges.items;
+    }
+
+    /// P0-2: O(1) lookup for FFI boundary by callee name.
+    /// Returns pointer to the matching CrossLangEdge, or null if not found.
+    pub fn getCrossEdgeByCallee(self: *const PassContext, callee_name: []const u8) ?*const CrossLangEdge {
+        if (self.cross_edge_by_callee.get(callee_name)) |idx| {
+            return &self.cross_lang_edges.items[idx];
+        }
+        return null;
     }
 
     /// P1-1: Check if a pointer value is on a danger path (FFI/unsafe boundary).
@@ -683,6 +760,19 @@ pub const PassContext = struct {
     /// Called by DangerSurfacePass during surface tracing.
     pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {
         try self.danger_surface_relevant.put(ptr_val, {});
+    }
+
+    /// P0-1: Check if a function contains any danger-surface-relevant pointers.
+    /// Returns true if the function should be analyzed (Tier 2 strict mode).
+    /// Returns false for Tier 1 pass-through (skip entire function scan).
+    pub fn isRelevantFunction(self: *const PassContext, func_ptr: u64) bool {
+        return self.relevant_functions.contains(func_ptr);
+    }
+
+    /// P0-1: Mark a function as containing danger-surface-relevant pointers.
+    /// Called by DangerSurfacePass during surface tracing.
+    pub fn markRelevantFunction(self: *PassContext, func_ptr: u64) !void {
+        try self.relevant_functions.put(func_ptr, {});
     }
 };
 

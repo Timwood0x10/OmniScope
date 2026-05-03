@@ -119,6 +119,7 @@ pub const LifetimeAnalysisResult = struct {
 pub const LifetimeStats = struct {
     total_functions_analyzed: u32 = 0,
     total_pointers_tracked: u32 = 0,
+    functions_skipped_by_gate: u32 = 0,
     stack_escapes_found: u32 = 0,
     return_stack_addr_found: u32 = 0,
     use_after_free_found: u32 = 0,
@@ -130,6 +131,7 @@ pub const LifetimeStats = struct {
         try writer.writeAll("║   POINTER LIFETIME TRACKER SUMMARY   ║\n");
         try writer.writeAll("╠══════════════════════════════════════╣\n");
         try writer.print("║  Functions analyzed:     {d:>8}      ║\n", .{self.total_functions_analyzed});
+        try writer.print("║  Functions skipped(gate):{d:>8}      ║\n", .{self.functions_skipped_by_gate});
         try writer.print("║  Pointers tracked:       {d:>8}      ║\n", .{self.total_pointers_tracked});
         try writer.print("║  Stack-FFI escapes:      {d:>8}      ║\n", .{self.stack_escapes_found});
         try writer.print("║  Return-stack-address:   {d:>8}      ║\n", .{self.return_stack_addr_found});

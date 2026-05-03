@@ -67,6 +67,7 @@ pub const MemorySafetyPass = struct {
         defer freed_pointers.deinit(ctx.allocator);
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
             func_count += 1;
             //  Function-level error isolation
             const count = scanAndAnalyzeFunction(ctx, func, &relations, &freed_pointers, diag) catch |err| {

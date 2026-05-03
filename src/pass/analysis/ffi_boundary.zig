@@ -110,6 +110,10 @@ pub const FFIBoundaryPass = struct {
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) == 0) {
+                // P0-2: Function-level gate — skip functions with no danger-surface-relevant pointers.
+                if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
+                    continue;
+                }
                 _ = try @This().analyze(ctx, func, diag);
             }
         }
@@ -265,14 +269,11 @@ pub const FFIBoundaryPass = struct {
         // CallGraphPass may have detected language differences that our per-call
         // heuristics missed (e.g., external functions with ambiguous names).
         var cross_edge_matched = false;
-        for (ctx.getCrossLangEdges()) |cross| {
-            if (std.mem.eql(u8, cross.callee_name, called_name) and cross.is_ffi_boundary) {
+        if (ctx.getCrossEdgeByCallee(called_name)) |cross| {
+            if (cross.is_ffi_boundary) {
                 cross_edge_matched = true;
-                // Use the CallGraphPass-detected languages if they're more specific
                 if (cross.callee_lang != .unknown and callee_lang == .unknown) {
-                    // callee_lang was unknown but CallGraphPass knows it — trust CallGraph
                     callee_lang = cross.callee_lang;
-                    break;
                 }
             }
         }

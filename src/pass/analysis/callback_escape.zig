@@ -393,6 +393,14 @@ pub const CallbackEscapePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
+            // P0-1: Function-level gate — skip functions without danger-surface-relevant
+            // pointers to optimize analysis. DangerSurfacePass (upstream) populates
+            // relevant_functions HashSet; functions not involved in FFI boundary
+            // pointer flow can safely be skipped.
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
+                continue;
+            }
+
             // : Reset hook state for this function scope.
             hooks.resetHookStatesForFunction();
 
@@ -513,12 +521,62 @@ pub const CallbackEscapePass = struct {
             for (cgo_calls.items) |call| ctx.allocator.free(call.callee_name);
             cgo_calls.deinit(ctx.allocator);
         }
+        var callback_escapes: std.ArrayList(CallbackEscapeInfo) = .{};
+        defer callback_escapes.deinit(ctx.allocator);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls, ctx.isGoModule());
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                    const called = c.LLVMGetCalledValue(inst);
+                    if (@intFromPtr(called) == 0) continue;
+                    const name_ptr = c.LLVMGetValueName(called);
+                    if (@intFromPtr(name_ptr) == 0) continue;
+                    const callee_name = std.mem.span(name_ptr);
+                    if (isGenericCallbackReceiver(callee_name)) {
+                        const num_ops = c.LLVMGetNumOperands(inst);
+                        var i: u32 = 0;
+                        while (i < num_ops) : (i += 1) {
+                            const arg = c.LLVMGetOperand(inst, i);
+                            if (@intFromPtr(arg) == 0) continue;
+                            const arg_type = c.LLVMTypeOf(arg);
+                            if (@intFromPtr(arg_type) == 0) continue;
+                            if (c.LLVMGetTypeKind(arg_type) != c.LLVMPointerTypeKind) continue;
+                            const elem_type = c.LLVMGetElementType(arg_type);
+                            if (@intFromPtr(elem_type) == 0) continue;
+                            if (c.LLVMGetTypeKind(elem_type) != c.LLVMFunctionTypeKind) continue;
+                            if (isLikelyCallbackFunction(elem_type, callee_name)) {
+                                try callback_escapes.append(ctx.allocator, .{
+                                    .inst = inst,
+                                    .receiver_name = callee_name,
+                                    .callback_arg = arg,
+                                });
+                            }
+                        }
+                    }
+                }
+                if (opcode == c.LLVMStore) {
+                    const value_op = c.LLVMGetOperand(inst, 0);
+                    if (@intFromPtr(value_op) == 0) continue;
+                    const value_type = c.LLVMTypeOf(value_op);
+                    if (@intFromPtr(value_type) == 0) continue;
+                    if (c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind) continue;
+                    const elem_type = c.LLVMGetElementType(value_type);
+                    if (@intFromPtr(elem_type) == 0) continue;
+                    if (c.LLVMGetTypeKind(elem_type) != c.LLVMFunctionTypeKind) continue;
+                    const ptr_op = c.LLVMGetOperand(inst, 1);
+                    if (@intFromPtr(ptr_op) == 0) continue;
+                    if (isGlobalVariable(ptr_op)) {
+                        try callback_escapes.append(ctx.allocator, .{
+                            .inst = inst,
+                            .receiver_name = "global_store",
+                            .callback_arg = value_op,
+                        });
+                    }
+                }
             }
         }
 
@@ -589,7 +647,69 @@ pub const CallbackEscapePass = struct {
         }
 
         try checkMallocFreePairing(ctx, func_name, &alloc_sites, &free_sites, diag, stats);
-        try checkCallbackEscape(ctx, func_name, func, diag, stats);
+
+        for (callback_escapes.items) |escape| {
+            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
+                const called_val = c.LLVMGetCalledValue(escape.inst);
+                if (@intFromPtr(called_val) != 0) {
+                    const callee_name_ptr = c.LLVMGetValueName(called_val);
+                    const callee_name = if (@intFromPtr(callee_name_ptr) != 0)
+                        std.mem.span(callee_name_ptr)
+                    else
+                        "unknown";
+                    const cb_arg_hash = @as(u64, @intFromPtr(escape.callback_arg));
+                    var is_borrowed = false;
+                    const num_ops = c.LLVMGetNumOperands(escape.inst);
+                    var j: u32 = 0;
+                    while (j < num_ops) : (j += 1) {
+                        const arg = c.LLVMGetOperand(escape.inst, j);
+                        if (@intFromPtr(arg) == 0) continue;
+                        const arg_hash = @as(u64, @intFromPtr(arg));
+                        if (arg_hash != cb_arg_hash) continue;
+                        const arg_type = c.LLVMTypeOf(arg);
+                        if (@intFromPtr(arg_type) != 0 and
+                            c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
+                        {
+                            const elem_type = c.LLVMGetElementType(arg_type);
+                            if (@intFromPtr(elem_type) != 0 and
+                                c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
+                            {
+                                is_borrowed = true;
+                            }
+                        }
+                        break;
+                    }
+                    if (is_borrowed) {
+                        diag.debug("[SUPPRESSED] Callback arg is borrowed_only: {s} -> {s}", .{ func_name, callee_name });
+                        continue;
+                    }
+                }
+            }
+
+            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
+                const cb_type = c.LLVMGetElementType(c.LLVMTypeOf(escape.callback_arg));
+                if (@intFromPtr(cb_type) != 0) {
+                    const num_params = c.LLVMCountParamTypes(cb_type);
+                    if (num_params > 3) {
+                        diag.debug("[SUPPRESSED] Callback has >3 params: {s}", .{func_name});
+                        continue;
+                    }
+                    const type_str = c.LLVMGetStructName(cb_type);
+                    const type_name = if (@intFromPtr(type_str) != 0)
+                        std.mem.span(type_str)
+                    else
+                        "";
+                    if (!validate_callback_signature(escape.receiver_name, type_name)) {
+                        try reportSignatureMismatch(ctx, func_name, escape, diag);
+                        stats.callback_escapes += 1;
+                        continue;
+                    }
+                }
+            }
+
+            try reportGenericCallbackEscape(ctx, func_name, escape, diag);
+            stats.callback_escapes += 1;
+        }
     }
 
     fn checkCallbackEscape(

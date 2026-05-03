@@ -114,6 +114,7 @@ pub const TaintPropagationPass = struct {
         var inst_count: u32 = 0;
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
             try propagateThroughFunction(ctx, taint_ctx, sanitizer_registry, func, &inst_count, diag);
         }
 

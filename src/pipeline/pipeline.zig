@@ -19,6 +19,7 @@ const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
+const c = @import("../ir/llvm_raw.zig").c;
 
 /// Analysis pipeline
 pub const Pipeline = struct {
@@ -93,12 +94,45 @@ pub const Pipeline = struct {
             .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
             .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
+            .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
+            .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
+            .cross_edge_by_callee = std.StringHashMap(u32).init(self.allocator),
         };
         defer ctx.deinit();
 
         // R7.2 Language-First: detect module language ONCE before any passes run.
         // This activates the correct zone rules channel for all subsequent analysis.
         ctx.initModuleLanguage(self.module);
+
+        // P0-2: Build shared callee→call_sites index ONCE before any passes run.
+        // All call_graph and ffi_boundary lookups become O(1) instead of O(F).
+        {
+            const t_idx = std.time.nanoTimestamp();
+            if (self.module) |mod| {
+                const raw_mod = mod.raw;
+                var func = c.LLVMGetFirstFunction(raw_mod);
+                while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+                    if (c.LLVMIsDeclaration(func) != 0) continue;
+                    const func_ptr = @as(u64, @intFromPtr(func));
+                    var bb = c.LLVMGetFirstBasicBlock(func);
+                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                        var inst = c.LLVMGetFirstInstruction(bb);
+                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                            if (@intFromPtr(c.LLVMIsACallInst(inst)) == 0) continue;
+                            const called_val = c.LLVMGetCalledValue(inst);
+                            if (@intFromPtr(called_val) == 0) continue;
+                            const called_name_ptr = c.LLVMGetValueName(called_val);
+                            if (@intFromPtr(called_name_ptr) == 0) continue;
+                            const called_name = std.mem.span(called_name_ptr);
+                            const inst_ptr = @as(u64, @intFromPtr(inst));
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch {};
+                        }
+                    }
+                }
+            }
+            const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
+            if (idx_ms > 10) std.debug.print("[PERF] CallSiteIndex build: {d:.1} ms\n", .{@as(u32, @intFromFloat(idx_ms))});
+        }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
 

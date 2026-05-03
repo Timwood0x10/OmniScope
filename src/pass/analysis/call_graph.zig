@@ -249,12 +249,18 @@ pub const CallGraphPass = struct {
     }
 
     fn buildEdges(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+        var name_to_idx = std.StringHashMap(u32).init(allocator);
+        defer name_to_idx.deinit();
+        try name_to_idx.ensureTotalCapacity(@as(u32, @intCast(nodes.items.len)));
+        for (nodes.items, 0..) |*node, idx| {
+            try name_to_idx.put(node.name, @as(u32, @intCast(idx)));
+        }
         for (nodes.items, 0..) |*caller_node, caller_idx| {
-            try findCallsInFunction(allocator, caller_node, @as(u32, @intCast(caller_idx)), nodes, edges);
+            try findCallsInFunction(allocator, caller_node, @as(u32, @intCast(caller_idx)), edges, &name_to_idx);
         }
     }
 
-    fn findCallsInFunction(allocator: std.mem.Allocator, caller_node: *Node, caller_idx: u32, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+    fn findCallsInFunction(allocator: std.mem.Allocator, caller_node: *Node, caller_idx: u32, edges: *std.ArrayList(Edge), name_to_idx: *std.StringHashMap(u32)) !void {
         var bb = c.LLVMGetFirstBasicBlock(caller_node.func_ref);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -266,11 +272,8 @@ pub const CallGraphPass = struct {
                     const called_name_ptr = c.LLVMGetValueName(called_val);
                     if (@intFromPtr(called_name_ptr) != 0) {
                         const called_name = std.mem.span(called_name_ptr);
-                        for (nodes.items, 0..) |*callee_node, callee_idx| {
-                            if (std.mem.eql(u8, callee_node.name, called_name)) {
-                                try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
-                                break;
-                            }
+                        if (name_to_idx.get(called_name)) |callee_idx| {
+                            try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
                         }
                     } else {
                         const module = c.LLVMGetGlobalParent(caller_node.func_ref);
@@ -282,12 +285,8 @@ pub const CallGraphPass = struct {
                             const candidate_name_ptr = c.LLVMGetValueName(candidate_val);
                             if (@intFromPtr(candidate_name_ptr) == 0) continue;
                             const candidate_name = std.mem.span(candidate_name_ptr);
-
-                            for (nodes.items, 0..) |*callee_node, callee_idx| {
-                                if (std.mem.eql(u8, callee_node.name, candidate_name)) {
-                                    try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
-                                    break;
-                                }
+                            if (name_to_idx.get(candidate_name)) |callee_idx| {
+                                try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
                             }
                         }
                     }

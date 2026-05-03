@@ -197,11 +197,17 @@ pub const PassManager = struct {
         var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;
+            const t0 = std.time.nanoTimestamp();
             self.passes.items[idx].run_fn(ctx, diag) catch |err| {
                 diag.warn("PassManager: pass '{s}' failed with error: {any}, degrading gracefully", .{ pass_name, err });
                 pass_failures += 1;
                 // Continue running remaining passes
             };
+            const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
+            const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
+            if (elapsed_ms > 10) {
+                diag.info("[PERF] Pass '{s}: {d} ms", .{ pass_name, @as(u32, @intFromFloat(elapsed_ms)) });
+            }
         }
 
         if (pass_failures > 0) {

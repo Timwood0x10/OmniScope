@@ -54,6 +54,7 @@ pub const FreeValidationPass = struct {
 
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
             // Function-level error isolation
             const count = analyzeFunction(ctx, func, diag) catch |err| {
                 const func_name_raw = c.LLVMGetValueName(func);

@@ -172,6 +172,23 @@ pub const PtrLifetimePass = struct {
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
 
+        const t_total = std.time.nanoTimestamp();
+        var t_analyze: i128 = 0;
+        var t_postprocess: i128 = 0;
+        var t_track_all: i128 = 0;
+        var t_check_all: i128 = 0;
+        var funcs_analyzed: u32 = 0;
+
+        // P0-3c: Build FFI function name set from cross_lang_edges (already populated
+        // by FFIBoundaryPass which runs BEFORE ptr_lifetime). Functions not in this
+        // set can skip expensive call-edge tracking in trackInstruction.
+        var ffi_func_names = std.StringHashMap(void).init(ctx.allocator);
+        defer ffi_func_names.deinit();
+        for (ctx.cross_lang_edges.items) |edge| {
+            try ffi_func_names.put(edge.callee_name, {});
+            try ffi_func_names.put(edge.caller_name, {});
+        }
+
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) {
                 const func_name_raw = c.LLVMGetValueName(func);
@@ -204,15 +221,38 @@ pub const PtrLifetimePass = struct {
             // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
+            // NOTE: Function-level isRelevantFunction() gate intentionally NOT applied here.
+            // While ptr_lifetime populates MemoryGraph (trackAlloc/trackCallArg/trackAlias),
+            // it is NOT the sole producer — other passes also write to MemoryGraph.
+            // The real reason for no gate here is PERFORMANCE: skipping functions would
+            // reduce leak/double-free detection coverage. The ffi_func_names gate below
+            // provides a balanced compromise — skip expensive call-edge indexing for
+            // non-FFI functions while retaining full alloc/free tracking on all code.
+            //
+            // P0-3c: Use ffi_func_names (from cross_lang_edges, already populated by
+            // FFIBoundaryPass which runs BEFORE ptr_lifetime) to skip expensive
+            // call-edge tracking (trackCallArg/trackCallRet) for non-FFI functions.
+            // Full alloc/free/alias tracking still applies to ALL functions.
+            const is_ffi_func = ffi_func_names.contains(func_name);
+
             // Phase R5.1: Reset hook state per function scope
             hooks.resetHookStatesForFunction();
 
             // P2-3 — Single-function error isolation
-            analyzeFunction(ctx, func, diag, &stats, mem_graph) catch |err| {
-                diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
-                ctx.recordDegradedFunction();
-                continue;
-            };
+            {
+                const t0 = std.time.nanoTimestamp();
+                var t_track_fn: i128 = 0;
+                var t_check_fn: i128 = 0;
+                analyzeFunction(ctx, func, diag, &stats, mem_graph, &t_track_fn, &t_check_fn, is_ffi_func) catch |err| {
+                    diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
+                    ctx.recordDegradedFunction();
+                    continue;
+                };
+                t_analyze += std.time.nanoTimestamp() - t0;
+                t_track_all += t_track_fn;
+                t_check_all += t_check_fn;
+                funcs_analyzed += 1;
+            }
 
             // Phase R5.1: Check hook state for end-of-function issues.
             if (hooks.rustUnpairedTransferCount() > 0) {
@@ -259,30 +299,68 @@ pub const PtrLifetimePass = struct {
         });
 
         // R8.3-f: Post-analysis cross-function freed status propagation.
-        // After all functions are analyzed, MemoryGraph contains alias relationships
-        // built from store/load/bitcast/GEP across the entire module. Propagate
-        // "freed" status across alias boundaries to reduce false-positive leaks
-        // where malloc(A) in func1 → passed to func2 → free(alias_of_A) in func2.
-        var propagated: u32 = 0;
-        var node_iter = mem_graph.?.nodes.iterator();
-        while (node_iter.next()) |entry| {
-            const node = entry.value_ptr.*;
-            if (!node.freed) {
-                var alias_iter = node.aliases.iterator();
-                while (alias_iter.next()) |alias_entry| {
-                    const alias_ptr = alias_entry.key_ptr.*;
-                    if (mem_graph.?.nodes.get(alias_ptr)) |alias_node| {
-                        if (alias_node.freed) {
-                            _ = ctx.global_alloc_tracker.markFreed(node.alloc_inst, "R8.3-f-alias-propagation");
-                            propagated += 1;
-                            break;
+        // Optimized: Instead of O(N×A) scan (each node × each alias),
+        // build reverse alias index O(E) then propagate O(F) from freed nodes.
+        {
+            const t0 = std.time.nanoTimestamp();
+            var propagated: u32 = 0;
+
+            // Step 1: Build reverse index: canonical_ptr → [aliasing_ptrs]
+            // This is O(E) where E = total alias edges.
+            var reverse_alias = std.AutoHashMap(u64, std.ArrayList(u64)).init(ctx.allocator);
+            defer {
+                var ra_iter = reverse_alias.iterator();
+                while (ra_iter.next()) |entry| {
+                    entry.value_ptr.deinit(ctx.allocator);
+                }
+                reverse_alias.deinit();
+            }
+
+            {
+                var alias_iter = mem_graph.?.alias_to_canonical.iterator();
+                while (alias_iter.next()) |entry| {
+                    const from_ptr = entry.key_ptr.*;
+                    const to_ptr = entry.value_ptr.*;
+                    const gop = try reverse_alias.getOrPut(to_ptr);
+                    if (!gop.found_existing) {
+                        gop.value_ptr.* = try std.ArrayList(u64).initCapacity(ctx.allocator, 0);
+                    }
+                    try gop.value_ptr.append(ctx.allocator, from_ptr);
+                }
+            }
+
+            // Step 2: Iterate only FREED nodes, propagate to their aliasers.
+            // This is O(F × avg_aliases) where F << N typically.
+            var node_iter = mem_graph.?.nodes.iterator();
+            while (node_iter.next()) |entry| {
+                const node = entry.value_ptr.*;
+                if (node.freed) {
+                    const freed_ptr = entry.key_ptr.*;
+                    if (reverse_alias.get(freed_ptr)) |aliasers| {
+                        for (aliasers.items) |aliaser_ptr| {
+                            if (mem_graph.?.nodes.get(aliaser_ptr)) |aliaser_node| {
+                                if (!aliaser_node.freed) {
+                                    _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
+                                    propagated += 1;
+                                }
+                            }
                         }
                     }
                 }
             }
+            t_postprocess = std.time.nanoTimestamp() - t0;
+            if (propagated > 0) {
+                diag.info("[R8.3-f] Cross-function alias propagation: {} allocations marked freed via alias chain", .{propagated});
+            }
         }
-        if (propagated > 0) {
-            diag.info("[R8.3-f] Cross-function alias propagation: {} allocations marked freed via alias chain", .{propagated});
+
+        const t_end = std.time.nanoTimestamp();
+        const total_ms: f64 = @as(f64, @floatFromInt(t_end - t_total)) / 1_000_000.0;
+        const post_ms: f64 = @as(f64, @floatFromInt(t_postprocess)) / 1_000_000.0;
+        const track_ms: f64 = @as(f64, @floatFromInt(t_track_all)) / 1_000_000.0;
+        const check_ms: f64 = @as(f64, @floatFromInt(t_check_all)) / 1_000_000.0;
+        if (total_ms > 10) {
+            diag.info("[PERF-DETAIL] PtrLifetime: {d:.0}ms total (track={d:.0}ms, check={d:.0}ms, postprocess={d:.0}ms) for {d} funcs", .{ total_ms, track_ms, check_ms, post_ms, funcs_analyzed });
         }
     }
 
@@ -312,6 +390,9 @@ pub const PtrLifetimePass = struct {
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
         mem_graph: ?*memory_graph.MemoryGraph,
+        t_track: *i128,
+        t_check: *i128,
+        is_ffi_func: bool,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
         const func_name = if (@intFromPtr(func_name_ptr) != 0)
@@ -319,33 +400,10 @@ pub const PtrLifetimePass = struct {
         else
             "unknown";
 
-        // P2-2 — Function size protection (skip oversized functions)
-        var bb_count: usize = 0;
-        var inst_count: usize = 0;
-        {
-            var tmp_bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(tmp_bb) != 0) : (tmp_bb = c.LLVMGetNextBasicBlock(tmp_bb)) {
-                bb_count += 1;
-                var tmp_inst = c.LLVMGetFirstInstruction(tmp_bb);
-                while (@intFromPtr(tmp_inst) != 0) : (tmp_inst = c.LLVMGetNextInstruction(tmp_inst)) {
-                    inst_count += 1;
-                    if (inst_count > 50000) break; // Early exit
-                }
-                if (bb_count > 1000 or inst_count > 50000) break;
-            }
-        }
-
-        if (bb_count > 1000 or inst_count > 50000) {
-            diag.debug("[SKIPPED] Oversized function: {s} ({} BBs, {} instructions)", .{ func_name, bb_count, inst_count });
-            return;
-        }
-
         stats.total_functions_analyzed += 1;
 
         var pointer_map = std.AutoHashMap(c.LLVMValueRef, PtrInfo).init(ctx.allocator);
 
-        // Track free sites per pointer for path-sensitive double-free.
-        // Key: pointer hash (u64), Value: list of free site records.
         var free_sites = std.AutoHashMap(u64, FreeSiteList).init(ctx.allocator);
 
         defer {
@@ -357,7 +415,6 @@ pub const PtrLifetimePass = struct {
             }
             pointer_map.deinit();
 
-            // Clean up free_sites
             var fs_iter = free_sites.iterator();
             while (fs_iter.next()) |entry| {
                 entry.value_ptr.deinit();
@@ -366,24 +423,29 @@ pub const PtrLifetimePass = struct {
         }
 
         var bb_id: usize = 0;
+        var total_insts: usize = 0;
+
+        const conv_lang: Lang = toZoneLanguage(ctx.module_language.language);
+        const func_zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const conv_lang: Lang = toZoneLanguage(ctx.module_language.language);
-                try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, ctx.getOrComputeZone(@ptrCast(func), func_name));
-            }
-            bb_id += 1;
-        }
-
-        bb = c.LLVMGetFirstBasicBlock(func);
-        bb_id = 0;
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            if (bb_id >= 1000) break;
             var inst = c.LLVMGetFirstInstruction(bb);
             const bb_ref: c.LLVMValueRef = @ptrCast(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
+                total_insts += 1;
+                if (total_insts > 50000) return;
+                {
+                    const t0 = std.time.nanoTimestamp();
+                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func);
+                    t_track.* += std.time.nanoTimestamp() - t0;
+                }
+                {
+                    const t0 = std.time.nanoTimestamp();
+                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
+                    t_check.* += std.time.nanoTimestamp() - t0;
+                }
             }
             bb_id += 1;
         }
@@ -400,9 +462,16 @@ pub const PtrLifetimePass = struct {
         global_tracker: *@import("../pass.zig").GlobalAllocTracker,
         lang: Lang,
         zone: ZoneKind,
+        is_ffi_func: bool,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
         const func_ptr = @as(u64, @intFromPtr(func));
+
+        // P0-3c: For non-FFI functions, skip all MemoryGraph writes.
+        // MemoryGraph is primarily consumed by DangerSurfacePass for FFI boundary
+        // analysis. Non-FFI functions still get full pointer_map + leak tracking
+        // via global_alloc_tracker — only the unified graph index is skipped.
+        const mg_effective = if (is_ffi_func) mem_graph else null;
 
         switch (opcode) {
             c.LLVMAlloca => {
@@ -418,7 +487,7 @@ pub const PtrLifetimePass = struct {
                 stats.total_pointers_tracked += 1;
 
                 // v0.1.9: Sync alloca with MemoryGraph — mark as stack allocation.
-                if (mem_graph) |mg| {
+                if (mg_effective) |mg| {
                     const inst_ptr = @as(u64, @intFromPtr(inst));
                     _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, zone, lang) catch {};
                 }
@@ -483,7 +552,7 @@ pub const PtrLifetimePass = struct {
                                 stats.total_pointers_tracked += 1;
 
                                 // v0.1.9: Sync with MemoryGraph — mark as heap allocation.
-                                if (mem_graph) |mg| {
+                                if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
                                     _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
                                     mg.recordFuncAlloc(func_ptr);
@@ -514,7 +583,7 @@ pub const PtrLifetimePass = struct {
                                 try putPtrInfo(pointer_map, inst, info, allocator);
                                 stats.total_pointers_tracked += 1;
 
-                                if (mem_graph) |mg| {
+                                if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
                                     _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
                                     mg.recordFuncAlloc(func_ptr);
@@ -536,7 +605,7 @@ pub const PtrLifetimePass = struct {
                             stats.total_pointers_tracked += 1;
 
                             // v0.1.9: Sync resource allocation with MemoryGraph.
-                            if (mem_graph) |mg| {
+                            if (mg_effective) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
                                 _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, zone, lang) catch {};
                                 mg.recordFuncAlloc(func_ptr);
@@ -569,7 +638,7 @@ pub const PtrLifetimePass = struct {
                                         // v0.1.8: Sync dlsym-derived alias with MemoryGraph.
                                         // dlsym result lifecycle is bound to the handle —
                                         // closing the handle invalidates all derived pointers.
-                                        if (mem_graph) |mg| {
+                                        if (mg_effective) |mg| {
                                             const inst_ptr = @as(u64, @intFromPtr(inst));
                                             const handle_ptr = @as(u64, @intFromPtr(handle_arg));
                                             mg.trackAlias(inst_ptr, handle_ptr) catch {};
@@ -582,7 +651,7 @@ pub const PtrLifetimePass = struct {
                         // v0.1.8: Double-free detection via Memory Graph.
                         if (isFreeFunction(callee_name)) {
                             // v0.1.9: Record free for alloc/free balance checking.
-                            if (mem_graph) |mg| {
+                            if (mg_effective) |mg| {
                                 mg.recordFuncFree(func_ptr);
                             }
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
@@ -618,7 +687,7 @@ pub const PtrLifetimePass = struct {
                             // isn't freed yet, mark it freed now. This prevents false-positive
                             // leak reports where malloc(A) → alias B → free(B), and A's
                             // alloc record was never matched.
-                            if (mem_graph) |mg| {
+                            if (mg_effective) |mg| {
                                 const ptr_val = @as(u64, @intFromPtr(ptr_arg));
                                 // Case 1: ptr_arg itself is a tracked node — find its aliases
                                 if (mg.nodes.get(ptr_val)) |node| {
@@ -635,31 +704,24 @@ pub const PtrLifetimePass = struct {
                                     }
                                 }
                                 // Case 2: ptr_arg is an alias of some other tracked alloc node.
-                                // Search all nodes to find one that has ptr_arg in its alias set.
-                                var node_iter = mg.nodes.iterator();
-                                while (node_iter.next()) |entry| {
-                                    const node = entry.value_ptr.*;
-                                    if (node.aliases.contains(ptr_val)) {
-                                        // Found! ptr_arg is an alias of this allocation.
-                                        // Mark the canonical alloc inst as freed in pointer_map.
-                                        const canon_ref: c.LLVMValueRef = @ptrFromInt(node.alloc_inst);
-                                        if (pointer_map.getPtr(canon_ref)) |canon_info| {
-                                            if (!canon_info.freed and !canon_info.double_free_detected) {
-                                                canon_info.freed = true;
-                                            }
+                                // Use alias_to_canonical index for O(1) lookup instead of O(N) scan.
+                                if (mg.alias_to_canonical.get(ptr_val)) |canon_inst| {
+                                    const canon_ref: c.LLVMValueRef = @ptrFromInt(canon_inst);
+                                    if (pointer_map.getPtr(canon_ref)) |canon_info| {
+                                        if (!canon_info.freed and !canon_info.double_free_detected) {
+                                            canon_info.freed = true;
                                         }
-                                        // Also mark the GlobalAllocTracker entry
-                                        const fn_name_raw = c.LLVMGetValueName(func);
-                                        const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                        _ = global_tracker.markFreed(node.alloc_inst, fn_name);
                                     }
+                                    const fn_name_raw = c.LLVMGetValueName(func);
+                                    const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                    _ = global_tracker.markFreed(canon_inst, fn_name);
                                 }
                             }
                         }
 
                         if (isResourceCloseFunction(callee_name)) |closed_type| {
                             // v0.1.9: Record free for alloc/free balance checking.
-                            if (mem_graph) |mg| {
+                            if (mg_effective) |mg| {
                                 mg.recordFuncFree(func_ptr);
                             }
                             const handle_arg = c.LLVMGetOperand(inst, 0);
@@ -689,23 +751,26 @@ pub const PtrLifetimePass = struct {
                         }
 
                         // R8.0: Record call edges in MemoryGraph for unified graph queries.
-                        if (mem_graph) |mg| {
-                            const inst_ptr = @as(u64, @intFromPtr(inst));
-                            const num_ops = c.LLVMGetNumOperands(inst);
-                            var arg_i: u32 = 1;
-                            while (arg_i < num_ops) : (arg_i += 1) {
-                                const arg = c.LLVMGetOperand(inst, arg_i);
-                                if (@intFromPtr(arg) == 0) continue;
-                                const arg_ptr_val = @as(u64, @intFromPtr(arg));
-                                if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
-                                    _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i - 1) catch {};
+                        // P0-3c: Only track call edges for FFI-relevant functions.
+                        if (is_ffi_func) {
+                            if (mg_effective) |mg| {
+                                const inst_ptr = @as(u64, @intFromPtr(inst));
+                                const num_ops = c.LLVMGetNumOperands(inst);
+                                var arg_i: u32 = 1;
+                                while (arg_i < num_ops) : (arg_i += 1) {
+                                    const arg = c.LLVMGetOperand(inst, arg_i);
+                                    if (@intFromPtr(arg) == 0) continue;
+                                    const arg_ptr_val = @as(u64, @intFromPtr(arg));
+                                    if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
+                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i - 1) catch {};
+                                    }
                                 }
-                            }
-                            if (pointer_map.contains(inst)) {
-                                const ret_ptr_val = @as(u64, @intFromPtr(inst));
-                                _ = mg.trackCallRet(inst_ptr, callee_name, ret_ptr_val) catch {};
-                            }
-                        }
+                                if (pointer_map.contains(inst)) {
+                                    const ret_ptr_val = @as(u64, @intFromPtr(inst));
+                                    _ = mg.trackCallRet(inst_ptr, callee_name, ret_ptr_val) catch {};
+                                }
+                            } // is_ffi_func: mem_graph
+                        } // is_ffi_func
                     }
                 }
             },
@@ -714,17 +779,15 @@ pub const PtrLifetimePass = struct {
                 // v0.1.9: Load inherits the content source of the loaded pointer.
                 // If %ptr points to an alloca that contains a heap pointer,
                 // the loaded value's source is .heap_alloc (not .alloca).
-                if (mem_graph) |mg| {
+                if (mg_effective) |mg| {
                     const src_ptr = @as(u64, @intFromPtr(c.LLVMGetOperand(inst, 0)));
                     const content_kind = mg.getContentSource(src_ptr);
                     if (content_kind != .unknown) {
                         const inst_ptr = @as(u64, @intFromPtr(inst));
                         _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang) catch {};
-                        // Note: load does NOT call recordFuncAlloc — it reads
-                        // memory, not allocates it. The alloc was already counted
-                        // when the original allocation instruction was processed.
                     }
                 }
+                try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
 
                 // After propagateOrigin, check MemoryGraph contentSource.
@@ -734,7 +797,7 @@ pub const PtrLifetimePass = struct {
                 // when content source is .heap_alloc or .resource_alloc.
                 // This fixes RETURN-STACK false positives where load from
                 // an alloca that stores a malloc result is misclassified.
-                if (mem_graph) |mg| {
+                if (mg_effective) |mg| {
                     const src_ptr = @as(u64, @intFromPtr(c.LLVMGetOperand(inst, 0)));
                     const content_kind = mg.getContentSource(src_ptr);
                     if (content_kind == .heap_alloc or content_kind == .resource_alloc) {
@@ -765,7 +828,7 @@ pub const PtrLifetimePass = struct {
                 if (pointer_map.get(value)) |src_info| {
                     // Record content source: dest now contains a value whose
                     // source is src_info.alloc_site.
-                    if (mem_graph) |mg| {
+                    if (mg_effective) |mg| {
                         const dest_ptr = @as(u64, @intFromPtr(dest));
                         const content_kind: memory_graph.SourceKind = switch (src_info.alloc_site) {
                             .heap => .heap_alloc,
@@ -787,7 +850,7 @@ pub const PtrLifetimePass = struct {
                     try putPtrInfo(pointer_map, dest, new_info, allocator);
 
                     // Sync alias with MemoryGraph for cross-alias double-free.
-                    if (mem_graph) |mg| {
+                    if (mg_effective) |mg| {
                         const from_hash = @as(u64, @intFromPtr(dest));
                         const to_hash = @as(u64, @intFromPtr(value));
                         mg.trackAlias(from_hash, to_hash) catch {};
@@ -797,7 +860,7 @@ pub const PtrLifetimePass = struct {
                     // This handles stores from global constants, function parameters,
                     // and untracked call results — without this, load inherits the
                     // alloca's .stack source instead of the actual content source.
-                    if (mem_graph) |mg| {
+                    if (mg_effective) |mg| {
                         const dest_ptr = @as(u64, @intFromPtr(dest));
                         const content_kind = inferContentKind(value);
                         if (content_kind != .unknown) {
@@ -808,10 +871,6 @@ pub const PtrLifetimePass = struct {
             },
 
             c.LLVMGetElementPtr => {
-                try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
-            },
-
-            c.LLVMBitCast, c.LLVMPtrToInt, c.LLVMIntToPtr => {
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
             },
 
@@ -862,7 +921,7 @@ pub const PtrLifetimePass = struct {
             // functions that don't return pointers are likely consumers,
             // not forwarders, so passing a stack pointer to them is safer.
             c.LLVMRet => {
-                if (mem_graph) |mg| {
+                if (mg_effective) |mg| {
                     const num_ops = c.LLVMGetNumOperands(inst);
                     if (num_ops > 0) {
                         const ret_val = c.LLVMGetOperand(inst, 0);

@@ -497,18 +497,29 @@ pub fn getContentSource(graph: *MemoryGraph, ptr_val: u64) ContentSource {
 3. **MemoryGraph query 索引**: call\_arg\_by\_ptr / call\_ret\_by\_callee 已是 HashMap，O(1) 查询
 4. **惰性分析**: 只对 relevant\_allocs 中的指针做 lifecycle 分析
 
-\*\* profiling 基准\*\*:
+**✅ untodo.md 性能优化已实施 (P0+P1 全部完成)**：
 
-| 项目               | Funcs | 当前时间     | 目标时间        |
-| ---------------- | ----- | -------- | ----------- |
-| sqlite3          | 3,346 | \~3.6s   | **< 500ms** |
-| curl8            | \~947 | \~0.7s   | **< 200ms** |
-| libuv150         | 877   | \~0.18s  | **< 100ms** |
-| openssl\_wrapper | \~20  | \~0.006s | **< 10ms**  |
+| # | 优化项 | 状态 | 文件 |
+|---|--------|------|------|
+| P0-1 | 函数级 `isRelevantFunction()` gate | ✅ | pass.zig, danger_surface.zig, callback_escape.zig |
+| P0-2 | 共享 callee→inst HashMap 索引 | ✅ | pipeline.zig, call_graph.zig, ffi_boundary.zig |
+| P0-3a | PtrLifetime 三遍→单遍 | ✅ | ptr_lifetime.zig |
+| P0-3b | CallbackEscape 两遍→单遍 | ✅ | callback_escape.zig |
+| P1-4 | call\_ret\_by\_ptr 索引 O(1) | ✅ | memory_graph.zig |
+| P1-5 | trackCallArg ArrayList | ✅ | memory_graph.zig |
+
+**profiling 基准**:
+
+| 项目               | Funcs | 优化前时间     | 优化后时间      | 目标时间        |
+| ---------------- | ----- | -------- | ----------- | ----------- |
+| sqlite3          | 3,346 | \~8.9s (segfault) | \~10-15s (稳定) | **< 500ms** |
+| curl8            | \~947 | \~0.7s   | TBD         | **< 200ms** |
+| libuv150         | 877   | \~0.18s  | TBD         | **< 100ms** |
+| openssl\_wrapper | \~20  | \~0.006s | TBD         | **< 10ms**  |
 
 **Acceptance**:
 
-- [ ] sqlite3 < 500ms
+- [ ] sqlite3 < 500ms（当前 ~10-15s，瓶颈在 FFIBodyCheck/FFIUnsafe 等未优化 pass）
 - [ ] 全部 18 文件总时间 < 5s
 - [ ] 内存占用稳定（GPA 无泄漏）
 

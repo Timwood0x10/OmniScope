@@ -265,6 +265,8 @@ pub const PointerOwnershipPass = struct {
 
             if (!isRustFFIRelevantFunction(func)) continue;
 
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
+
             // Phase R5.3: Reset hook state per function scope
             hooks.resetHookStatesForFunction();
 
