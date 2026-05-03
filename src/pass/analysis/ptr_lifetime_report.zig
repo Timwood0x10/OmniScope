@@ -1,19 +1,15 @@
-//! Pointer Lifetime Reporting Functions
+//! Reporting functions for PtrLifetimePass.
 //!
-//! Contains all reporting functions for the PtrLifetimePass.
-//! Extracted from ptr_lifetime.zig to reduce file size and improve modularity.
+//! Contains all violation reporting functions that generate Issue objects
+//! and diagnostic messages for detected pointer lifetime violations.
 //!
-//! This module provides:
-//! - Stack escape reporting
-//! - Return stack address reporting
-//! - Heap pointer reporting (escape, return, global storage)
-//! - Use-after-free reporting (regular and resource)
-//! - Utility functions for trace entry creation
+//! Extracted from ptr_lifetime.zig to comply with the 1000-line limit.
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 
 const PassContext = @import("../pass.zig").PassContext;
+const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Location = @import("../../diag/issue.zig").Location;
 const Issue = @import("../../diag/issue.zig").Issue;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
@@ -21,18 +17,18 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 
-// ============================================================================
-// Reporting Functions
-// ============================================================================
+pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
+    const desc = try std.fmt.allocPrint(allocator, fmt, args);
+    return TraceEntry.initOwned(desc);
+}
 
-/// Report stack pointer escaping to FFI boundary function.
 pub fn reportStackEscape(
     ctx: *PassContext,
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
     _: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     const location = Location.init(func_name);
 
@@ -60,13 +56,12 @@ pub fn reportStackEscape(
     diag.warn("[STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
-/// Report return of stack-local address (dangling pointer).
 pub fn reportReturnStackAddr(
     ctx: *PassContext,
     func_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -94,13 +89,12 @@ pub fn reportReturnStackAddr(
     diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
 }
 
-/// Report return of heap-allocated pointer (ownership transfer ambiguity).
 pub fn reportReturnHeapPtr(
     ctx: *PassContext,
     func_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -129,13 +123,12 @@ pub fn reportReturnHeapPtr(
     diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
 }
 
-/// Report heap pointer stored to global variable (potential leak).
 pub fn reportHeapToGlobal(
     ctx: *PassContext,
     func_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -164,13 +157,12 @@ pub fn reportHeapToGlobal(
     diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
-/// Report stack pointer stored to global variable (dangling pointer risk).
 pub fn reportStackToGlobal(
     ctx: *PassContext,
     func_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -199,14 +191,13 @@ pub fn reportStackToGlobal(
     diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
-/// Report use-after-free (freed pointer passed to function call).
 pub fn reportUseAfterFree(
     ctx: *PassContext,
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -235,14 +226,13 @@ pub fn reportUseAfterFree(
     diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
 }
 
-/// Report resource use-after-free (resource used after release).
 pub fn reportResourceUAF(
     ctx: *PassContext,
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -291,14 +281,13 @@ pub fn reportResourceUAF(
     diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
 }
 
-/// Report heap pointer escaping to FFI boundary with ambiguous ownership.
 pub fn reportHeapAmbiguous(
     ctx: *PassContext,
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -327,14 +316,16 @@ pub fn reportHeapAmbiguous(
     diag.warn("[HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
-/// Report heap pointer escaping to FFI boundary (ownership transfer critical).
+/// Report heap pointer escaping to FFI boundary.
+/// v0.1.6: malloc/calloc results passed to retaining extern functions
+/// are critical FFI ownership issues — caller may not know to free them.
 pub fn reportHeapEscapeToFFI(
     ctx: *PassContext,
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
     inst: c.LLVMValueRef,
-    diag: anytype,
+    diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
     const location = Location.init(func_name);
@@ -343,7 +334,7 @@ pub fn reportHeapEscapeToFFI(
     trace[0] = TraceEntry.init("Heap-allocated pointer escapes to FFI boundary");
     trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} (caller must manage lifetime)", .{ptr_info.source_desc});
     trace[2] = try makeTrace(ctx.allocator, "Passed to retaining FFI function {s}() - ownership transfer unclear", .{callee_name});
-    trace[3] = TraceEntry.init("If no matching free -> leak; if double-freed -> corruption (CWE-401/CWE-662)");
+    trace[3] = try makeTrace(ctx.allocator, "If no matching free -> leak; if double-freed -> corruption (CWE-401/CWE-662)", .{});
 
     const message = try std.fmt.allocPrint(
         ctx.allocator,
@@ -362,14 +353,4 @@ pub fn reportHeapEscapeToFFI(
 
     try ctx.addIssue(&issue);
     diag.warn("[HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
-}
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/// Create a trace entry with formatted message.
-pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
-    const desc = try std.fmt.allocPrint(allocator, fmt, args);
-    return TraceEntry.initOwned(desc);
 }
