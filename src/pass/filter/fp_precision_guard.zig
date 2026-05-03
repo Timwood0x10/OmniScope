@@ -97,16 +97,16 @@ pub const PrecisionMetrics = struct {
         try writer.writeAll("\n╔══════════════════════════════════════╗\n");
         try writer.writeAll("║     FP Precision Metrics              ║\n");
         try writer.writeAll("╠══════════════════════════════════════╣\n");
-        try writer.print("║  Total issues:     {:>8}            ║\n", .{self.total_issues});
-        try writer.print("║  True Positives:   {:>8}            ║\n", .{self.true_positives});
-        try writer.print("║  False Positives:  {:>8}            ║\n", .{self.false_positives});
-        try writer.print("║  False Negatives:  {:>8}            ║\n", .{self.false_negatives});
-        try writer.print("║  FFI-Precision:    {:>8.1}%          ║\n", .{self.ffiPrecision() * 100});
-        try writer.print("║  Recall:           {:>8.1}%          ║\n", .{self.recall() * 100});
-        try writer.print("║  F1 Score:         {:>8.2}           ║\n", .{self.f1Score()});
-        try writer.print("║  FP Rate:          {:>8.1}%          ║\n", .{self.fpRate() * 100});
-        try writer.print("║  Funcs analyzed:   {:>8}            ║\n", .{self.functions_analyzed});
-        try writer.print("║  Funcs skipped:    {:>8}            ║\n", .{self.functions_skipped});
+        try writer.print("║  Total issues:     {d:>8}            ║\n", .{self.total_issues});
+        try writer.print("║  True Positives:   {d:>8}            ║\n", .{self.true_positives});
+        try writer.print("║  False Positives:  {d:>8}            ║\n", .{self.false_positives});
+        try writer.print("║  False Negatives:  {d:>8}            ║\n", .{self.false_negatives});
+        try writer.print("║  FFI-Precision:    {d:>8.1}%          ║\n", .{self.ffiPrecision() * 100});
+        try writer.print("║  Recall:           {d:>8.1}%          ║\n", .{self.recall() * 100});
+        try writer.print("║  F1 Score:         {d:>8.2}           ║\n", .{self.f1Score()});
+        try writer.print("║  FP Rate:          {d:>8.1}%          ║\n", .{self.fpRate() * 100});
+        try writer.print("║  Funcs analyzed:   {d:>8}            ║\n", .{self.functions_analyzed});
+        try writer.print("║  Funcs skipped:    {d:>8}            ║\n", .{self.functions_skipped});
         try writer.writeAll("╚══════════════════════════════════════╝\n");
     }
 };
@@ -134,10 +134,10 @@ pub const GateThresholds = struct {
         try writer.writeAll("\n┌──────────────────────────────────────┐\n");
         try writer.writeAll("│  FP Precision Gate Thresholds        │\n");
         try writer.writeAll("├──────────────────────────────────────┤\n");
-        try writer.print("│  Min FFI-Precision:  {:.0}%           │\n", .{self.min_ffi_precision * 100});
-        try writer.print("│  Max FP count:        {}               │\n", .{self.max_fp_count});
-        try writer.print("│  Min noise reduction: {:.0}%           │\n", .{self.min_noise_reduction * 100});
-        try writer.print("│  Max precision drop:  {.1}%            │\n", .{self.max_precision_drop * 100});
+        try writer.print("│  Min FFI-Precision:  {d:.0}%           │\n", .{self.min_ffi_precision * 100});
+        try writer.print("│  Max FP count:        {d}               │\n", .{self.max_fp_count});
+        try writer.print("│  Min noise reduction: {d:.0}%           │\n", .{self.min_noise_reduction * 100});
+        try writer.print("│  Max precision drop:  {d:.1}%            │\n", .{self.max_precision_drop * 100});
         try writer.writeAll("└──────────────────────────────────────┘\n");
     }
 };
@@ -165,9 +165,9 @@ pub const GateResult = struct {
         try writer.writeAll("\n╔══════════════════════════════════════╗\n");
         try writer.print("║  Gate Result: {s:<24}    ║\n", .{status});
         try writer.writeAll("╠══════════════════════════════════════╣\n");
-        try writer.print("│  Precision delta: {:+.1}%               │\n", .{self.precision_delta * 100});
+        try writer.print("│  Precision delta: {d:+.1}%               │\n", .{self.precision_delta * 100});
         try writer.print("│  FP count delta:  {:+d}                 │\n", .{self.fp_count_delta});
-        try writer.print("│  Noise reduction: {:.1}%                │\n", .{self.noise_reduction_ratio * 100});
+        try writer.print("│  Noise reduction: {d:.1}%                │\n", .{self.noise_reduction_ratio * 100});
         if (self.violations.len > 0) {
             try writer.writeAll("│  Violations:                            │\n");
             for (self.violations) |v| {

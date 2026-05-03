@@ -118,8 +118,8 @@ pub const VulnerabilityReport = struct {
         try writer.print("Severity: {s}\n", .{@tagName(self.risk_level)});
         try writer.print("Source: {s}\n", .{self.source_func});
         try writer.print("Sink: {s}\n", .{self.sink_func});
-        try writer.print("Cross-language: {}\n", .{self.flow_path.is_cross_language});
-        try writer.print("Path length: {} steps\n", .{self.flow_path.length()});
+        try writer.print("Cross-language: {any}\n", .{self.flow_path.is_cross_language});
+        try writer.print("Path length: {d} steps\n", .{self.flow_path.length()});
 
         return buffer.toOwnedSlice();
     }

@@ -157,7 +157,7 @@ pub const ExecutionPath = struct {
     pub fn init(allocator: Allocator, id: u32) ExecutionPath {
         return .{
             .id = id,
-            .conditions = std.ArrayList(PathCondition).init(allocator),
+            .conditions = std.ArrayList(PathCondition).empty,
             .parent = null,
             .is_feasible = true,
             .allocator = allocator,
@@ -166,7 +166,7 @@ pub const ExecutionPath = struct {
 
     /// Free resources
     pub fn deinit(self: *ExecutionPath) void {
-        self.conditions.deinit();
+        self.conditions.deinit(self.allocator);
     }
 
     /// Add a condition to this path
@@ -178,7 +178,7 @@ pub const ExecutionPath = struct {
                 return;
             }
         }
-        try self.conditions.append(cond);
+        try self.conditions.append(self.allocator, cond);
     }
 
     /// Check if a condition holds on this path

@@ -318,6 +318,10 @@ pub const C_ESCAPE_PATTERNS = [_][]const u8{
 ///
 /// Returns:
 ///   ZoneKind classification
+fn isAlphaNumeric(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9');
+}
+
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
 
@@ -778,14 +782,9 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "send",
         "recv",
 
-        // File I/O
-        "close",
+        // File I/O (specific variants with prefixes)
         "fopen",
         "fclose",
-        "read",
-        "write",
-        "open",
-        "pipe",
 
         // Threading
         "pthread_",
@@ -851,25 +850,42 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
         "FindClass",
         "Call",
 
-        // Resource lifecycle patterns (common in FFI boundaries)
-        // NOTE: These are broad patterns that may produce false positives.
-        // However, downstream FP guards will filter out non-FFI cases.
-        // Trade-off: Better recall (catch real FFI) at cost of some precision.
-        "destroy_", // Common in FFI resource cleanup
-        "create_", // Common in FFI factory functions
-        "init_", // Initialization (may be broad - FP guarded)
-        "cleanup_", // Cleanup routines (often FFI-related)
-        "release_", // Reference counting release
-        "acquire_", // Reference counting acquire
-        "allocate_", // Memory allocation wrappers
-        "deallocate_", // Memory deallocation wrappers
-        "resource_", // Resource management (broad - FP guarded)
-        "handle_", // Handle operations (very broad - FP guarded)
+        // Resource lifecycle patterns with word-boundary matching
+        // to avoid false positives (e.g., "get_handle_count", "handle_event")
     };
 
     for (C_FFI_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .ffi;
+        }
+    }
+
+    // Broad prefix patterns that need word-boundary matching to reduce FP.
+    // Without boundary checks, "handle_" matches "get_handle_count",
+    // "init_" matches "reinitialize", etc.
+    const C_FFI_BROAD_PREFIXES = [_][]const u8{
+        "destroy_",  "create_",  "init_",     "cleanup_",
+        "release_",  "acquire_", "allocate_", "deallocate_",
+        "resource_", "handle_",
+        // Also include the previously ambiguous short words
+         "close",     "open",
+        "read",      "write",    "pipe",
+    };
+    for (C_FFI_BROAD_PREFIXES) |word| {
+        const idx = std.mem.indexOf(u8, func_name, word);
+        if (idx) |i| {
+            const is_component = std.mem.endsWith(u8, word, "_");
+            // Component prefixes (ending in _): must be at name start
+            // e.g., "cleanup_" matches "cleanup_init" but NOT "my_cleanup_func"
+            // Bare words (no _): must be at name start AND followed by boundary
+            // e.g., "close" matches "close_file" but NOT "disclose"
+            if (is_component and i == 0) return .ffi;
+            const is_bare_word = !is_component;
+            if (is_bare_word and i == 0) {
+                const after_idx = i + word.len;
+                const after_ok = after_idx >= func_name.len or !isAlphaNumeric(func_name[after_idx]);
+                if (after_ok) return .ffi;
+            }
         }
     }
 
@@ -1053,4 +1069,27 @@ test "classifyCFunction - non-FFI returns unknown" {
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("my_internal_func"));
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("calculate_value"));
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("process_data_internal"));
+}
+
+// R8.0-P1-13: Word-boundary matching for broad C_FFI patterns (no FP)
+test "classifyCFunction - word boundary prevents FP" {
+    // Valid FFI: broad patterns at word start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("close_file")); // close at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("open_socket")); // open at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("read_data")); // read at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("write_buffer")); // write at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pipe_create")); // pipe at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_handle")); // destroy_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("create_resource")); // create_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("init_module")); // init_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("handle_event")); // handle_ prefix
+
+    // Invalid (FP): broad pattern as substring
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("disclose")); // contains "close"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reopen")); // contains "open"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("threadsafe")); // contains "read"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("overwrite")); // contains "write"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipeline")); // "pipe" followed by alpha → not a word boundary
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("get_handle_count")); // contains "handle"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reinitialize")); // contains "init"
 }

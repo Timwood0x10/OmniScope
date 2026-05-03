@@ -121,18 +121,14 @@ const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
     "runtime_cgocall",
 };
 
-/// C standard library functions that commonly retain pointers.
-/// Sourced from language-specific config combined with ptr_types for compatibility.
+/// C standard library functions that unconditionally retain pointers (escape analysis).
+/// These functions store pointers for later use beyond the caller's lifetime.
 const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    // From c.json retaining_functions (source of truth)
-    "c_callback",       "register_callback",    "set_handler",
-    "pthread_create",   "signal",               "atexit",
-    "on_exit",          "SDL_SetEventCallback", "glfwSetCallback",
-    "curl_easy_setopt",
-    // Additional patterns from original hardcoding
-    "set_callback",         "add_observer",
-    "subscribe",        "listen_on",            "pthread_join",
-    "sigaction",        "RegisterNatives",      "PyCapsule_SetDestructor",
+    "pthread_create",   "signal",               "sigaction",
+    "atexit",           "on_exit",
+    "SDL_SetEventCallback", "glfwSetCallback",
+    "curl_easy_setopt", "RegisterNatives",      "PyCapsule_SetDestructor",
+    "dlopen",
 };
 
 /// Check if a function name indicates cgo boundary code.
@@ -141,7 +137,15 @@ pub fn isCgoBoundary(func_name: []const u8) bool {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
     }
 
-    if (std.mem.indexOf(u8, func_name, "C.") != null) return true;
+    // Cgo "C." prefix matching with stricter rules to avoid false positives:
+    // - Must be at start of function name OR preceded by a package path (e.g., "main.C.")
+    // - NOT in the middle of a name like "AC.BMethod" or "MC.function"
+    const c_dot_idx = std.mem.indexOf(u8, func_name, "C.");
+    if (c_dot_idx) |idx| {
+        const valid = idx == 0 or
+            (idx >= 2 and func_name[idx - 1] == '.');
+        if (valid) return true;
+    }
 
     return false;
 }
@@ -245,33 +249,19 @@ fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool 
     }
 
     if (caller_is_cgo) {
-        // Go cgo: full prefix matching (set_, add_, register_ may hold pointers)
+        // Go cgo: broader prefix matching (set_, add_, register_ may hold pointers)
         const retaining_prefixes = [_][]const u8{
             "register_", "set_", "add_", "subscribe_",
         };
         for (retaining_prefixes) |prefix| {
             if (std.mem.startsWith(u8, callee_name, prefix)) return true;
         }
-    } else {
-        // C/Rust/Zig: only detect truly escaping patterns
-        const real_escape_patterns = [_][]const u8{
-            "pthread_create",    // async callback — pointer outlives call
-            "signal",             // signal handler — async
-            "sigaction",          // signal handler registration
-            "atexit",             // exit handler — pointer outlives function
-            "SDL_SetEventCallback", // event callback registration
-            "glfwSetCallback",     // GLFW callback
-            "curl_easy_setopt",    // curl callback with user data
-            "dlopen",             // handle stored globally
-            "RegisterNatives",    // JNI native method registration
-        };
-        for (real_escape_patterns) |pattern| {
-            if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
-        }
-        // NOTE: set_error(), add_data(), register_callback() are NOT
-        // real escapes in C code — they just write through a pointer parameter.
-        // The callee returns before the caller's stack frame ends.
     }
+    // NOTE: For C/Rust/Zig callers, C_RETAINING_FUNCTIONS above already covers
+    // all truly escaping patterns (pthread_create, signal, atexit, etc.).
+    // Functions like set_error(), add_data(), register_callback() are NOT
+    // real escapes — they just write through a pointer parameter and return
+    // before the caller's stack frame ends.
 
     return false;
 }
@@ -373,6 +363,19 @@ pub const CallbackEscapePass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
+        // R8.2-d: Consume cross-language edges from CallGraphPass.
+        // Cross-lang edges help identify Go→C cgo boundaries for callback escape detection.
+        const cross_edges = ctx.getCrossLangEdges();
+        var go_cgo_edge_count: u32 = 0;
+        for (cross_edges) |edge| {
+            if (edge.caller_lang == .go and (edge.callee_lang == .c or edge.callee_lang == .cpp)) {
+                go_cgo_edge_count += 1;
+            }
+        }
+        if (go_cgo_edge_count > 0) {
+            diag.info("CallbackEscape: {d} Go→C/C++ cross-language edges available", .{go_cgo_edge_count});
+        }
+
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
@@ -414,7 +417,7 @@ pub const CallbackEscapePass = struct {
 
             // Function-level error isolation
             analyzeFunction(ctx, func, diag, &stats) catch |err| {
-                diag.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, func_name });
+                diag.warn("CallbackEscape: skipped function due to error: {any} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
                 continue;
             };
@@ -438,7 +441,7 @@ pub const CallbackEscapePass = struct {
             }
             if (hooks.pythonUnbalancedDecrefCount() > 0) {
                 const count = hooks.pythonUnbalancedDecrefCount();
-                const msg = try std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, func_name });
+                const msg = try std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, func_name });
                 defer ctx.allocator.free(msg);
                 const trace = try ctx.allocator.alloc(TraceEntry, 1);
                 trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
@@ -455,7 +458,7 @@ pub const CallbackEscapePass = struct {
             }
         }
 
-        diag.info("CallbackEscape: analyzed {} funcs, {} cgo boundaries, {} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +
+        diag.info("CallbackEscape: analyzed {d} funcs, {d} cgo boundaries, {d} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +
             stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans });
     }
 
@@ -546,8 +549,24 @@ pub const CallbackEscapePass = struct {
             for (cgo_calls.items) |call| {
                 // R7.1-3: Language-aware retention check
                 if (call.is_pointer_arg and mayRetainInCLanguageAware(call.callee_name, is_cgo_boundary)) {
-                    try reportMissingKeepAlive(ctx, func_name, call, diag);
-                    stats.keepalive_missing += 1;
+                    // R8.0: Cross-verify with unified MemoryGraph before reporting.
+                    // Only report if the pointer is confirmed to flow into a call edge.
+                    const mg = &ctx.memory_graph;
+                    var confirmed_by_graph = false;
+                    var arg_k: u32 = 1;
+                    while (arg_k < c.LLVMGetNumOperands(call.inst)) : (arg_k += 1) {
+                        const arg = c.LLVMGetOperand(call.inst, arg_k);
+                        if (@intFromPtr(arg) == 0) continue;
+                        const arg_ptr_val = @as(u64, @intFromPtr(arg));
+                        if (mg.isPassedAsArg(arg_ptr_val)) {
+                            confirmed_by_graph = true;
+                            break;
+                        }
+                    }
+                    if (confirmed_by_graph) {
+                        try reportMissingKeepAlive(ctx, func_name, call, diag);
+                        stats.keepalive_missing += 1;
+                    }
                 }
             }
         }
@@ -777,6 +796,7 @@ pub const CallbackEscapePass = struct {
             if (@intFromPtr(called) == 0) return;
 
             const name_ptr = c.LLVMGetValueName(called);
+            if (@intFromPtr(name_ptr) == 0) return;
             const callee_name = std.mem.span(name_ptr);
 
             if (isGoSafetyFunction(callee_name)) {
@@ -876,7 +896,7 @@ pub const CallbackEscapePass = struct {
         if (isFactoryFunction(func_name)) {
             if (malloc_count > free_count) {
                 // This is expected for factory functions
-                diag.debug("[SUPPRESSED] Factory function {s}: {} allocs > {} frees (ownership transferred to caller)", .{ func_name, malloc_count, free_count });
+                diag.debug("[SUPPRESSED] Factory function {s}: {d} allocs > {d} frees (ownership transferred to caller)", .{ func_name, malloc_count, free_count });
                 return;
             }
         }
@@ -887,7 +907,7 @@ pub const CallbackEscapePass = struct {
         if (isDestructorFunction(func_name)) {
             if (free_count > malloc_count) {
                 // This is expected for destructor functions
-                diag.debug("[SUPPRESSED] Destructor function {s}: {} frees > {} allocs (ownership consumed from caller)", .{ func_name, free_count, malloc_count });
+                diag.debug("[SUPPRESSED] Destructor function {s}: {d} frees > {d} allocs (ownership consumed from caller)", .{ func_name, free_count, malloc_count });
                 return;
             }
         }
@@ -896,7 +916,7 @@ pub const CallbackEscapePass = struct {
         // These may have unbalanced counts but are correct because they receive
         // ownership via parameters and pass it on via return values.
         if (isTransferFunction(func_name)) {
-            diag.debug("[SUPPRESSED] Transfer function {s}: {} allocs, {} frees (ownership flows through)", .{ func_name, malloc_count, free_count });
+            diag.debug("[SUPPRESSED] Transfer function {s}: {d} allocs, {d} frees (ownership flows through)", .{ func_name, malloc_count, free_count });
             return;
         }
 
@@ -1161,12 +1181,12 @@ fn reportMallocLeak(
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 2);
-    trace[0] = try makeTrace(ctx.allocator, "{} malloc/calloc calls found", .{malloc_count});
-    trace[1] = try makeTrace(ctx.allocator, "{} free() calls found - {} allocations never freed", .{ free_count, malloc_count - free_count });
+    trace[0] = try makeTrace(ctx.allocator, "{d} malloc/calloc calls found", .{malloc_count});
+    trace[1] = try makeTrace(ctx.allocator, "{d} free() calls found - {d} allocations never freed", .{ free_count, malloc_count - free_count });
 
     const message = try std.fmt.allocPrint(
         ctx.allocator,
-        "Memory leak: {} malloc/calloc without matching free in {s} (CWE-401)",
+        "Memory leak: {d} malloc/calloc without matching free in {s} (CWE-401)",
         .{ malloc_count - free_count, func_name },
     );
 
@@ -1180,7 +1200,7 @@ fn reportMallocLeak(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[MALLOC-LEAK] {} allocs vs {} frees in {s}", .{ malloc_count, free_count, func_name });
+    diag.warn("[MALLOC-LEAK] {d} allocs vs {d} frees in {s}", .{ malloc_count, free_count, func_name });
 }
 
 fn reportFreeOrphan(
@@ -1193,12 +1213,12 @@ fn reportFreeOrphan(
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 2);
-    trace[0] = try makeTrace(ctx.allocator, "{} free() calls found", .{free_count});
-    trace[1] = try makeTrace(ctx.allocator, "{} malloc/calloc calls - {} frees may operate on unallocated memory", .{ malloc_count, free_count - malloc_count });
+    trace[0] = try makeTrace(ctx.allocator, "{d} free() calls found", .{free_count});
+    trace[1] = try makeTrace(ctx.allocator, "{d} malloc/calloc calls - {d} frees may operate on unallocated memory", .{ malloc_count, free_count - malloc_count });
 
     const message = try std.fmt.allocPrint(
         ctx.allocator,
-        "Potential double-free or invalid free: {} free() vs {} malloc in {s} (CWE-415)",
+        "Potential double-free or invalid free: {d} free() vs {d} malloc in {s} (CWE-415)",
         .{ free_count - malloc_count, malloc_count, func_name },
     );
 
@@ -1212,7 +1232,7 @@ fn reportFreeOrphan(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[FREE-ORPHAN] {} frees vs {} allocs in {s}", .{ free_count, malloc_count, func_name });
+    diag.warn("[FREE-ORPHAN] {d} frees vs {d} allocs in {s}", .{ free_count, malloc_count, func_name });
 }
 
 fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
@@ -1385,4 +1405,19 @@ test "validate_callback_signature - boundary cases" {
     try std.testing.expect(validate_callback_signature("sigaction", "void, int"));
     // on_exit accepts void(*)(int, void*)
     try std.testing.expect(validate_callback_signature("on_exit", "void, int"));
+}
+
+// R8.0-P1-8: isCgoBoundary strict "C." prefix matching (no FP on AC.BMethod etc.)
+test "isCgoBoundary - strict C. prefix matching" {
+    // Valid cgo patterns: C. at start or after package separator
+    try std.testing.expect(isCgoBoundary("C.add"));           // direct C. prefix
+    try std.testing.expect(isCgoBoundary("C.malloc"));        // standard cgo
+    try std.testing.expect(isCgoBoundary("main.C.function")); // package.C. pattern
+
+    // Invalid: C. in middle of name (NOT cgo boundary)
+    try std.testing.expect(!isCgoBoundary("AC.BMethod"));     // A + C.BMethod
+    try std.testing.expect(!isCgoBoundary("MC.function"));     // M + C.function
+    try std.testing.expect(!isCgoBoundary("OCSocket"));        // OC + Socket
+    try std.testing.expect(!isCgoBoundary("MAC.address"));     // MAC + address
+    try std.testing.expect(!isCgoBoundary("myFunction_C_helper")); // trailing _C_
 }

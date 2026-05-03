@@ -9,6 +9,8 @@ const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
+const Location = @import("../diag/issue.zig").Location;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
@@ -33,7 +35,7 @@ pub const Pipeline = struct {
         fact_store.* = try FactStore.init(allocator);
 
         const query_engine = try allocator.create(QueryEngine);
-        query_engine.* = QueryEngine.init(fact_store);
+        query_engine.* = QueryEngine.init(fact_store, allocator);
 
         const data_flow_graph = try DataFlowGraph.init(allocator, fact_store, query_engine);
 
@@ -86,6 +88,9 @@ pub const Pipeline = struct {
             .module_language = undefined,
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
+            .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
+            .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
+            .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
         };
         defer ctx.deinit();
 
@@ -97,6 +102,34 @@ pub const Pipeline = struct {
 
         // Run passes
         try self.pass_manager.run(&ctx, &diag);
+
+        // R8.3-d: Post-pass leak report — scan GlobalAllocTracker for unfreed allocations.
+        // After all passes have run, any allocation that was never freed is a leak candidate.
+        // Skip global/static variables (intentionally never freed) and already-matched pairs.
+        const leak_count = ctx.global_alloc_tracker.leakCount();
+        if (leak_count > 0) {
+            const tracker = &ctx.global_alloc_tracker;
+            for (tracker.records.items) |rec| {
+                if (!rec.freed and !rec.is_global_or_static) {
+                    const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
+                    defer self.allocator.free(msg);
+                    const trace = try self.allocator.alloc(TraceEntry, 1);
+                    trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
+                    const issue = Issue.initWithTrace(
+                        .memory_leak,
+                        msg,
+                        Location.init(rec.alloc_func),
+                        .low,
+                        0.50,
+                        trace,
+                    );
+                    try ctx.addIssue(&issue);
+                }
+            }
+            diag.info("[R8.3-d] GlobalAllocTracker: {d} leak candidates reported from {d} tracked allocations", .{
+                leak_count, tracker.size(),
+            });
+        }
     }
 
     /// Run static analysis stage

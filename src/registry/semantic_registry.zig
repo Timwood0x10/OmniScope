@@ -240,6 +240,159 @@ pub const SemanticRegistry = struct {
     pub fn hookCount() usize {
         return hook_count;
     }
+
+    // ========================================================================
+    // R9.1: Hierarchical (Context-Sensitive) Risk Inference
+    // ========================================================================
+
+    /// Result of context-sensitive risk inference.
+    pub const InferredRisk = struct {
+        kind: RiskKind,
+        severity: Severity,
+        confidence: f32,
+        consumes_ownership: bool,
+        transfers_ownership: bool,
+        reason: []const u8,
+    };
+
+    /// Known language identifiers for cross-language inference.
+    pub const Language = enum { go, rust, c, cpp, python, swift, zig, unknown };
+
+    /// Parse a language identifier string to Language enum.
+    pub fn parseLanguage(lang_str: []const u8) Language {
+        var buf: [64]u8 = undefined;
+        var len: usize = 0;
+        for (lang_str) |c| {
+            if (len >= buf.len) break;
+            buf[len] = if (c >= 'A' and c <= 'Z') c + 32 else c;
+            len += 1;
+        }
+        const lower = buf[0..len];
+        if (std.mem.eql(u8, lower, "go")) return .go;
+        if (std.mem.eql(u8, lower, "rust") or std.mem.eql(u8, lower, "rs")) return .rust;
+        if (std.mem.eql(u8, lower, "c")) return .c;
+        if (std.mem.eql(u8, lower, "cpp") or std.mem.eql(u8, lower, "c++")) return .cpp;
+        if (std.mem.eql(u8, lower, "python") or std.mem.eql(u8, lower, "py")) return .python;
+        if (std.mem.eql(u8, lower, "swift")) return .swift;
+        if (std.mem.eql(u8, lower, "zig")) return .zig;
+        return .unknown;
+    }
+
+    /// R9.1 core: Infer risk from caller language + callee function name.
+    ///
+    /// This implements hierarchical reasoning that goes beyond simple pattern matching:
+    /// - `caller=Go ∧ callee=C.malloc ⇒ {risk: go_cgo_alloc, conf: 0.95}`
+    /// - `caller=Rust ∧ callee=C.strcpy ⇒ {risk: unchecked_copy, conf: 0.90}`
+    /// - Falls back to registry lookup if no cross-language rule matches.
+    pub fn inferCrossLangRisk(caller_lang: []const u8, callee_name: []const u8) ?InferredRisk {
+        const lang = parseLanguage(caller_lang);
+        const sem = lookup(callee_name) orelse return null;
+
+        // Rule: Go → C allocator functions get elevated to go_cgo_alloc with high confidence
+        if (lang == .go and isCAllocator(callee_name)) {
+            return InferredRisk{
+                .kind = .go_cgo_alloc,
+                .severity = .high,
+                .confidence = 0.95,
+                .consumes_ownership = false,
+                .transfers_ownership = true,
+                .reason = "Go caller invoking C allocator — memory not managed by Go GC",
+            };
+        }
+
+        // Rule: Go → C.free is especially dangerous (double-free / GC race)
+        if (lang == .go and isCFree(callee_name)) {
+            return InferredRisk{
+                .kind = .go_cgo_alloc,
+                .severity = .critical,
+                .confidence = 0.97,
+                .consumes_ownership = true,
+                .transfers_ownership = false,
+                .reason = "Go caller invoking C.free — may free GC-managed or already-freed memory",
+            };
+        }
+
+        // Rule: Rust → C string functions elevate risk (no length info crossing FFI)
+        if (lang == .rust and isCStringFunc(callee_name)) {
+            return InferredRisk{
+                .kind = .unchecked_copy,
+                .severity = .high,
+                .confidence = 0.90,
+                .consumes_ownership = false,
+                .transfers_ownership = false,
+                .reason = "Rust→C string op — length guarantee lost at FFI boundary",
+            };
+        }
+
+        // Rule: Rust → C allocator needs from_raw pairing
+        if (lang == .rust and isCAllocator(callee_name)) {
+            return InferredRisk{
+                .kind = .rust_ownership,
+                .severity = .high,
+                .confidence = 0.92,
+                .consumes_ownership = false,
+                .transfers_ownership = true,
+                .reason = "Rust caller allocating via C malloc — must pair with from_raw",
+            };
+        }
+
+        // Default: return registry semantics as-is (no elevation)
+        return InferredRisk{
+            .kind = sem.kind,
+            .severity = sem.severity,
+            .confidence = 0.70,
+            .consumes_ownership = sem.consumes_ownership,
+            .transfers_ownership = sem.transfers_ownership,
+            .reason = "Registry pattern match (no cross-language elevation)",
+        };
+    }
+
+    /// Check if a function name is a C allocator (malloc, calloc, realloc, etc.)
+    fn isCAllocator(name: []const u8) bool {
+        const alloc_patterns = [_][]const u8{
+            "malloc",  "calloc",  "realloc", "reallocarray",
+            "aligned_alloc", "posix_memalign", "memalign",
+            "_Znwm",   "_Znam",    "mmap",    "mmap64",
+        };
+        for (alloc_patterns) |pat| {
+            if (std.mem.indexOf(u8, name, pat) != null) return true;
+        }
+        return false;
+    }
+
+    /// Check if a function name is a C deallocator (free, etc.)
+    fn isCFree(name: []const u8) bool {
+        const free_patterns = [_][]const u8{
+            "free", "dealloc", "destroy", "release",
+            "_ZdlPv", "_ZdaPv", "munmap",
+        };
+        for (free_patterns) |pat| {
+            if (std.mem.indexOf(u8, name, pat) != null) return true;
+        }
+        // Exclude compound words like "after_free" or "before_free"
+        const idx = std.mem.indexOf(u8, name, "free") orelse return false;
+        if (idx > 0 and isAlphaNum(name[idx - 1])) return false;
+        const after = idx + 4;
+        if (after < name.len and isAlphaNum(name[after])) return false;
+        return true;
+    }
+
+    /// Check if a function is a C string operation (strcpy, strlen, etc.)
+    fn isCStringFunc(name: []const u8) bool {
+        const str_patterns = [_][]const u8{
+            "strcpy",  "strncpy", "strcat",  "strncat",
+            "sprintf", "snprintf", "strlen",  "strcmp",
+            "strncpy", "strndup",
+        };
+        for (str_patterns) |pat| {
+            if (std.mem.indexOf(u8, name, pat) != null) return true;
+        }
+        return false;
+    }
+
+    fn isAlphaNum(c: u8) bool {
+        return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9');
+    }
 };
 
 test "SemanticRegistry - RiskKind enum" {
@@ -281,4 +434,42 @@ test "SemanticRegistry - getSeverity" {
 
 test "SemanticRegistry - totalCount" {
     try std.testing.expect(SemanticRegistry.totalCount() > 0);
+}
+
+test "R9.1 inferCrossLangRisk - Go to C.malloc" {
+    const result = SemanticRegistry.inferCrossLangRisk("go", "malloc") orelse
+        @panic("expected inference result");
+    try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
+    try std.testing.expectEqual(Severity.high, result.severity);
+    try std.testing.expect(result.confidence >= 0.90);
+    try std.testing.expect(result.transfers_ownership);
+}
+
+test "R9.1 inferCrossLangRisk - Go to C.free is critical" {
+    const result = SemanticRegistry.inferCrossLangRisk("go", "free") orelse
+        @panic("expected inference result");
+    try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
+    try std.testing.expectEqual(Severity.critical, result.severity);
+    try std.testing.expect(result.confidence >= 0.95);
+    try std.testing.expect(result.consumes_ownership);
+}
+
+test "R9.1 inferCrossLangRisk - Rust to C.strcpy" {
+    const result = SemanticRegistry.inferCrossLangRisk("rust", "strcpy") orelse
+        @panic("expected inference result");
+    try std.testing.expectEqual(RiskKind.unchecked_copy, result.kind);
+    try std.testing.expect(result.confidence >= 0.85);
+}
+
+test "R9.1 inferCrossLangRisk - unknown function returns null" {
+    const result = SemanticRegistry.inferCrossLangRisk("go", "xyz_nonexistent_func_12345");
+    try std.testing.expect(result == null);
+}
+
+test "R9.1 parseLanguage" {
+    try std.testing.expectEqual(SemanticRegistry.Language.go, SemanticRegistry.parseLanguage("Go"));
+    try std.testing.expectEqual(SemanticRegistry.Language.rust, SemanticRegistry.parseLanguage("RUST"));
+    try std.testing.expectEqual(SemanticRegistry.Language.c, SemanticRegistry.parseLanguage("c"));
+    try std.testing.expectEqual(SemanticRegistry.Language.python, SemanticRegistry.parseLanguage("Python"));
+    try std.testing.expectEqual(SemanticRegistry.Language.unknown, SemanticRegistry.parseLanguage("Java"));
 }

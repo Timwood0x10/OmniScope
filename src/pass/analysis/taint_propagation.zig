@@ -68,7 +68,7 @@ pub const TaintPropagationPass = struct {
     pub const kind = PassKind.foundation;
     pub const deps = &[_][]const u8{"call-graph"};
 
-    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) TaintError!void {
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
         var taint_ctx = TaintContext.init(ctx.allocator);
@@ -171,8 +171,11 @@ pub const TaintPropagationPass = struct {
         _ = next_id;
 
         if (opcode == c.LLVMBr) {
-            const is_conditional = c.LLVMIsConditionalBr(inst);
-            if (is_conditional != 0) {
+            // Conditional branch has 2 successors (true/false).
+            // Unconditional branch has 1 successor.
+            const num_succ = c.LLVMGetNumSuccessors(inst);
+            const is_conditional = num_succ >= 2;
+            if (is_conditional) {
                 const condition = c.LLVMGetCondition(inst);
                 if (@intFromPtr(condition) != 0) {
                     const condition_opcode = c.LLVMGetInstructionOpcode(condition);
@@ -351,8 +354,11 @@ pub const TaintPropagationPass = struct {
             return;
         }
 
-        // Check if this is a dangerous sink
-        if (called_func_name.len > 0 and SemanticRegistry.isDangerousSink(called_func_name)) {
+        // Check if this is a dangerous sink (known risky function in registry)
+        if (called_func_name.len > 0) {
+            const sem = SemanticRegistry.lookup(called_func_name) orelse return;
+            const is_dangerous = sem.severity == .critical or sem.severity == .high;
+            if (!is_dangerous) return;
             var confidence: f32 = 1.0;
 
             // Reduce confidence if path conditions indicate safety
@@ -408,11 +414,8 @@ pub const TaintPropagationPass = struct {
         }
 
         if (has_tainted_arg) {
-            // Use semantic-aware confidence decay
-            const decay_factor = if (called_func_name.len > 0)
-                SemanticRegistry.getConfidenceDecay(called_func_name)
-            else
-                CONFIDENCE_DECAY;
+            // Use semantic-aware confidence decay (default to CONFIDENCE_DECAY)
+            const decay_factor = CONFIDENCE_DECAY;
 
             const new_info = TaintInfo{
                 .id = next_id,
@@ -658,7 +661,7 @@ test "TaintPropagationPass - handles null module gracefully" {
     var fact_store = FactStore.init(allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../../dataflow/graph.zig").DataFlowGraph.init(allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 

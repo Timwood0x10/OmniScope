@@ -147,55 +147,8 @@ pub const PtrLifetimePass = struct {
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = LifetimeStats{};
 
-        // v0.1.8: Global MemoryGraph — one per module, shared across all functions.
-        // Each function is a node; alloca/malloc within are sub-nodes.
-        // This eliminates per-function init/deinit overhead and enables
-        // cross-function alias tracking in the future.
-        var mem_graph = memory_graph.MemoryGraph.init(ctx.allocator) catch |err| {
-            diag.debug("[WARN] MemoryGraph init failed: {}, continuing without graph", .{err});
-            // Fallback: run without memory graph
-            while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-                if (c.LLVMIsDeclaration(func) != 0) {
-                    const func_name_raw = c.LLVMGetValueName(func);
-                    const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                    const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-                    ctx.zone_stats.record(zone);
-                    continue;
-                }
-
-                const func_name_raw = c.LLVMGetValueName(func);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-
-                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-                ctx.zone_stats.record(zone);
-
-                const debug_file_path = extractDebugFilePath(func);
-                const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
-                if (classification.origin == .compiler_generated) continue;
-                if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
-
-                // INTEGRATION: Three-layer noise filter (name + path + behavior)
-                // Layer 2 uses debug info from the function's source location
-                const func_loc = DebugInfoUtils.getFunctionLocation(func);
-                const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
-                if (!full_classification.origin.shouldReportByDefault()) {
-                    diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, full_classification.origin.toString(), full_classification.reason });
-                    continue;
-                }
-
-                if (FPWhitelist.is_known_fp(func_name) != null) continue;
-
-                try analyzeFunction(ctx, func, diag, &stats, null);
-            }
-
-            diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
-                stats.total_functions_analyzed,
-                stats.total_pointers_tracked,
-                stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
-            });
-            return;
-        };
-        defer mem_graph.deinit();
+        // R8.0: Use shared MemoryGraph from PassContext (unified pointer state).
+        var mem_graph: ?*memory_graph.MemoryGraph = &ctx.memory_graph;
 
         // Phase R5.1: Initialize Hook system for Rust ownership tracking.
         try hooks.initHookStates(ctx.allocator);
@@ -237,7 +190,7 @@ pub const PtrLifetimePass = struct {
             hooks.resetHookStatesForFunction();
 
             // P2-3 — Single-function error isolation
-            analyzeFunction(ctx, func, diag, &stats, &mem_graph) catch |err| {
+            analyzeFunction(ctx, func, diag, &stats, mem_graph) catch |err| {
                 diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
                 continue;
@@ -263,7 +216,7 @@ pub const PtrLifetimePass = struct {
             {
                 const count = hooks.pythonUnbalancedDecrefCount();
                 if (count > 0) {
-                    const msg = try std.fmt.allocPrint(ctx.allocator, "{} unbalanced Py_DECREF(s) in {s}", .{ count, func_name });
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) in {s}", .{ count, func_name });
                     defer ctx.allocator.free(msg);
                     const trace = try ctx.allocator.alloc(TraceEntry, 1);
                     errdefer ctx.allocator.free(trace);
@@ -286,6 +239,33 @@ pub const PtrLifetimePass = struct {
             stats.total_pointers_tracked,
             stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
         });
+
+        // R8.3-f: Post-analysis cross-function freed status propagation.
+        // After all functions are analyzed, MemoryGraph contains alias relationships
+        // built from store/load/bitcast/GEP across the entire module. Propagate
+        // "freed" status across alias boundaries to reduce false-positive leaks
+        // where malloc(A) in func1 → passed to func2 → free(alias_of_A) in func2.
+        var propagated: u32 = 0;
+        var node_iter = mem_graph.?.nodes.iterator();
+        while (node_iter.next()) |entry| {
+            const node = entry.value_ptr.*;
+            if (!node.freed) {
+                var alias_iter = node.aliases.iterator();
+                while (alias_iter.next()) |alias_entry| {
+                    const alias_ptr = alias_entry.key_ptr.*;
+                    if (mem_graph.?.nodes.get(alias_ptr)) |alias_node| {
+                        if (alias_node.freed) {
+                            _ = ctx.global_alloc_tracker.markFreed(node.alloc_inst, "R8.3-f-alias-propagation");
+                            propagated += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (propagated > 0) {
+            diag.info("[R8.3-f] Cross-function alias propagation: {} allocations marked freed via alias chain", .{propagated});
+        }
     }
 
     /// Extract debug file path from LLVM subprogram metadata.
@@ -373,7 +353,7 @@ pub const PtrLifetimePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats);
+                try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker);
             }
             bb_id += 1;
         }
@@ -398,6 +378,7 @@ pub const PtrLifetimePass = struct {
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
         mem_graph: ?*memory_graph.MemoryGraph,
         stats: *LifetimeStats,
+        global_tracker: *@import("../pass.zig").GlobalAllocTracker,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
         const func_ptr = @as(u64, @intFromPtr(func));
@@ -438,31 +419,34 @@ pub const PtrLifetimePass = struct {
                                 // is later freed (realloc returned the same or different address).
                                 if (std.mem.indexOf(u8, callee_name, "realloc") != null) {
                                     // realloc(ptr, size) = free(old_ptr) + alloc(new_ptr)
-                                    // The return value (inst) IS the new pointer — tracked at L461.
-                                    // Here we mark old_ptr as freed so subsequent free() on the
-                                    // same logical pointer is not flagged as double_free.
                                     //
-                                    // Design decision: We only mark old_ptr as freed if it
-                                    // already exists in pointer_map (i.e., we tracked its allocation).
-                                    // We do NOT create a synthetic freed entry for unknown pointers because:
-                                    //   (a) An untracked old_ptr likely came from outside our analysis scope
-                                    //       (e.g., malloc in an unanalyzed function, or external C library).
-                                    //   (b) Creating a synthetic entry could mask real bugs: if someone later
-                                    //       frees that address legitimately, our synthetic "already-freed"
-                                    //       marker would suppress a valid use-after-free warning.
-                                    //   (c) Address aliasing: the old address might be reused for a different
-                                    //       allocation after realloc; a stale synthetic entry could corrupt
-                                    //       tracking of the new allocation.
+                                    // LLVM IR semantics: old_ptr (operand 0) and inst (the call
+                                    // instruction / return value) are ALWAYS different LLVMValueRefs,
+                                    // even when realloc returns the same runtime address. Comparing them
+                                    // with == compares compiler-internal pointers, not runtime values,
+                                    // so `if (old_ptr == inst) return` would never trigger.
+                                    //
+                                    // Two-entry strategy (intentional):
+                                    //   pointer_map[old_ptr] → marked freed (invalidated by realloc)
+                                    //   pointer_map[inst]    → tracked as new allocation (what code uses next)
+                                    //
+                                    // This is correct because:
+                                    //   - C standard requires using realloc's RETURN VALUE for subsequent ops
+                                    //   - free(realloc_result) matches pointer_map[inst] entry → normal free
+                                    //   - If code frees old_ptr directly, that's a REAL bug (double-free)
                                     const old_ptr = c.LLVMGetOperand(inst, 0);
                                     if (@intFromPtr(old_ptr) != 0) {
                                         if (pointer_map.getPtr(old_ptr)) |old_info| {
                                             if (!old_info.freed) {
                                                 old_info.freed = true;
+                                                const old_ptr_int = @as(u64, @intFromPtr(old_ptr));
+                                                const func_name_raw = c.LLVMGetValueName(func);
+                                                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                                                _ = global_tracker.markFreed(old_ptr_int, func_name);
+                                                _ = &old_info;
                                             }
                                         }
-                                        // If old_ptr not found in pointer_map: silently skip.
-                                        // This is safe — it means we never saw this pointer allocated,
-                                        // so we have no business tracking its lifecycle.
+                                        // If old_ptr not found: silently skip (see Design decision above).
                                     }
                                 }
 
@@ -482,6 +466,14 @@ pub const PtrLifetimePass = struct {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
                                     _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc) catch {};
                                     mg.recordFuncAlloc(func_ptr);
+                                }
+
+                                // R8.3-b: Sync to GlobalAllocTracker for cross-function leak detection.
+                                {
+                                    const inst_ptr_val = @as(u64, @intFromPtr(inst));
+                                    const fn_name_raw = c.LLVMGetValueName(func);
+                                    const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                    global_tracker.insertAlloc(inst_ptr_val, fn_name, false) catch {};
                                 }
                                 break;
                             }
@@ -591,6 +583,58 @@ pub const PtrLifetimePass = struct {
                                     ptr_info.freed = true;
                                 }
                             }
+
+                            // R8.3-c: Sync to GlobalAllocTracker — mark allocation as freed.
+                            {
+                                const ptr_val = @as(u64, @intFromPtr(ptr_arg));
+                                const fn_name_raw = c.LLVMGetValueName(func);
+                                const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                _ = global_tracker.markFreed(ptr_val, fn_name);
+                            }
+
+                            // R8.4-d: Alias-aware free matching — when free(ptr) is called,
+                            // check MemoryGraph for aliases of ptr that correspond to tracked
+                            // allocations. If an alias was allocated but the alloc record
+                            // isn't freed yet, mark it freed now. This prevents false-positive
+                            // leak reports where malloc(A) → alias B → free(B), and A's
+                            // alloc record was never matched.
+                            if (mem_graph) |mg| {
+                                const ptr_val = @as(u64, @intFromPtr(ptr_arg));
+                                // Case 1: ptr_arg itself is a tracked node — find its aliases
+                                if (mg.nodes.get(ptr_val)) |node| {
+                                    var alias_iter = node.aliases.iterator();
+                                    while (alias_iter.next()) |alias_entry| {
+                                        const alias_ptr = alias_entry.key_ptr.*;
+                                        // Convert back to LLVMValueRef for pointer_map lookup
+                                        const alias_ref: c.LLVMValueRef = @ptrFromInt(alias_ptr);
+                                        if (pointer_map.getPtr(alias_ref)) |alias_info| {
+                                            if (!alias_info.freed and !alias_info.double_free_detected) {
+                                                alias_info.freed = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                // Case 2: ptr_arg is an alias of some other tracked alloc node.
+                                // Search all nodes to find one that has ptr_arg in its alias set.
+                                var node_iter = mg.nodes.iterator();
+                                while (node_iter.next()) |entry| {
+                                    const node = entry.value_ptr.*;
+                                    if (node.aliases.contains(ptr_val)) {
+                                        // Found! ptr_arg is an alias of this allocation.
+                                        // Mark the canonical alloc inst as freed in pointer_map.
+                                        const canon_ref: c.LLVMValueRef = @ptrFromInt(node.alloc_inst);
+                                        if (pointer_map.getPtr(canon_ref)) |canon_info| {
+                                            if (!canon_info.freed and !canon_info.double_free_detected) {
+                                                canon_info.freed = true;
+                                            }
+                                        }
+                                        // Also mark the GlobalAllocTracker entry
+                                        const fn_name_raw = c.LLVMGetValueName(func);
+                                        const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                        _ = global_tracker.markFreed(node.alloc_inst, fn_name);
+                                    }
+                                }
+                            }
                         }
 
                         if (isResourceCloseFunction(callee_name)) |closed_type| {
@@ -621,6 +665,25 @@ pub const PtrLifetimePass = struct {
                                         entry.value_ptr.freed = true;
                                     }
                                 }
+                            }
+                        }
+
+                        // R8.0: Record call edges in MemoryGraph for unified graph queries.
+                        if (mem_graph) |mg| {
+                            const inst_ptr = @as(u64, @intFromPtr(inst));
+                            const num_ops = c.LLVMGetNumOperands(inst);
+                            var arg_i: u32 = 1;
+                            while (arg_i < num_ops) : (arg_i += 1) {
+                                const arg = c.LLVMGetOperand(inst, arg_i);
+                                if (@intFromPtr(arg) == 0) continue;
+                                const arg_ptr_val = @as(u64, @intFromPtr(arg));
+                                if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
+                                    _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i - 1) catch {};
+                                }
+                            }
+                            if (pointer_map.contains(inst)) {
+                                const ret_ptr_val = @as(u64, @intFromPtr(inst));
+                                _ = mg.trackCallRet(inst_ptr, callee_name, ret_ptr_val) catch {};
                             }
                         }
                     }
@@ -1620,10 +1683,28 @@ pub const PtrLifetimePass = struct {
     }
 
     fn isFreeFunction(fn_name: []const u8) bool {
-        const free_fns = [_][]const u8{ "free", "dealloc", "deallocate", "operator delete" };
-        for (free_fns) |free_fn| {
-            if (std.mem.indexOf(u8, fn_name, free_fn) != null) return true;
+        // Exact matches for well-known free/dealloc functions
+        const exact_fns = [_][]const u8{ "free", "realloc", "kfree", "vfree", "g_free", "cfree" };
+        for (exact_fns) |exact| {
+            if (std.mem.eql(u8, fn_name, exact)) return true;
         }
+        // Suffix patterns: function must END with these to avoid false positives
+        // on names like "free_size", "freestyle", "set_freedom" etc.
+        const suffixes = [_][]const u8{
+            "_free",      "_dealloc", "_deallocate",
+            "_release",   "_destroy", "_drop",
+            "delete",     "Delete",   "deallocate",
+            "Deallocate",
+        };
+        for (suffixes) |suffix| {
+            if (fn_name.len >= suffix.len and
+                std.mem.eql(u8, fn_name[fn_name.len - suffix.len ..], suffix))
+            {
+                return true;
+            }
+        }
+        // C++ operator delete (contains space)
+        if (std.mem.indexOf(u8, fn_name, "operator delete") != null) return true;
         return false;
     }
 

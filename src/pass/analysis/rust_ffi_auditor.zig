@@ -163,7 +163,7 @@ pub const RustFfiAuditor = struct {
                     0.8,
                     "as_ptr() on local String/Vec passed to extern C - pointer may dangle after drop",
                 )) catch |err| {
-                    diag.warn("Failed to register borrow_escape issue: {}", .{err});
+                    diag.warn("Failed to register borrow_escape issue: {any}", .{err});
                 };
                 diag.err("VULNERABILITY OMI-{d:0>3} [high] [Confidence: medium]", .{vuln_id});
                 diag.err("Type: borrow_escape", .{});
@@ -213,7 +213,7 @@ pub const RustFfiAuditor = struct {
                     0.85,
                     "Rust _Znwm allocation freed by C free() - heap mismatch",
                 )) catch |err| {
-                    diag.warn("Failed to register cross_language_leak issue: {}", .{err});
+                    diag.warn("Failed to register cross_language_leak issue: {any}", .{err});
                 };
                 diag.err("CROSS-LANG MISMATCH OMI-{d:0>3} [high] [Confidence: high]", .{vuln_id});
                 diag.err("Type: cross_language_alloc_mismatch", .{});
@@ -284,11 +284,11 @@ pub const RustFfiAuditor = struct {
 
         for (self.findings.items, 0..) |finding, i| {
             try writer.writeAll("┌─────────────────────────────────────────\n");
-            try writer.print("│ Finding #{}: {}\n", .{ i + 1, @tagName(finding.issue_type) });
-            try writer.print("│ Function: {}\n", .{finding.func_name});
-            try writer.print("│ Severity: [{}]\n", .{finding.severity.toString()});
+            try writer.print("│ Finding #{d}: {s}\n", .{ i + 1, @tagName(finding.issue_type) });
+            try writer.print("│ Function: {s}\n", .{finding.func_name});
+            try writer.print("│ Severity: [{s}]\n", .{finding.severity.toString()});
             try writer.print("│ Confidence: {d:.0%}\n", .{finding.confidence});
-            try writer.print("│ Reason: {}\n", .{finding.reason});
+            try writer.print("│ Reason: {s}\n", .{finding.reason});
             try writer.writeAll("└─────────────────────────────────────────\n");
         }
     }

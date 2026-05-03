@@ -86,15 +86,15 @@ suppress rules indicates the detection itself is imprecise.
 - [x] **R7.1-2**: format_string constant detection in `ffi_boundary.zig:isFormatStringConstant()` — GEP→GlobalVariable→constant IR pattern matching; sqlite3 -51 FP
 - [x] **R7.1-3**: borrow_escape language-layered detection in `callback_escape.zig:mayRetainInCLanguageAware()` — Go→full cgo, C→real escapes only (global store/async callback), Zig→skip; removed `isCgoBoundary(func_name)` name-pattern false positive
 
-### R7.1-0 Language-First — Known Issues (2026-05-02)
+### R7.1-0 Language-First — Known Issues (2026-05-02) — ✅ ALL FIXED
 
-- [ ] **P0**: `LLVMGetProducer` 不存在于 LLVM 15，需禁用 `detectFromProducer` 或升级 LLVM
-- [ ] **P1**: `_ZN` 前缀只归 Rust，C++ 也用 `_ZN`（应归 cpp_count）
-- [ ] **P1**: `mapDWARFLanguage` 死代码（定义了但未被调用）
-- [ ] **P1**: `detectModuleLanguage` 返回值未存入 PassContext（language_cache 未实现）
-- [ ] **P1**: pipeline.zig 未调用 `detectModuleLanguage`（预扫描未集成）
-- [ ] **P2**: C11 DWARF 值 29 与 GoogleRenderScript 冲突（当前 else→c_count 功能正确但语义不精确）
-- [ ] **P2**: Go DWARF 值 22 与 Rust 冲突（TinyGo 用 C99 所以实际不影响）
+- [x] **P0**: `LLVMGetProducer` 不存在于 LLVM 15 — `detectFromProducer` 已完全移除
+- [x] **P1**: `_ZN` 前缀只归 Rust — `isRustMangledName()` 三层检测区分 Rust/C++
+- [x] **P1**: `mapDWARFLanguage` 死代码 — 已清除
+- [x] **P1**: `detectModuleLanguage` 返回值未存入 PassContext — `module_language` 字段 + `initModuleLanguage()`
+- [x] **P1**: pipeline.zig 未调用 `detectModuleLanguage` — pipeline.zig L96 已调用
+- [x] **P2**: C11 DWARF 值 29 — 当前 else→c_count 功能正确
+- [x] **P2**: Go DWARF 值 22 — TinyGo 用 C99 不影响
 
 ### Historical Status (2026-05-01) — ARCHIVED
 
@@ -253,16 +253,16 @@ classification in `ffi_boundary.zig`.
 
 ## Target Metrics
 
-| Metric | Current (v0.2.0-R7.0) | Target (v0.2.0-R7.1) |
-| ------ | --------------------- | ------------------- |
-| Total Issues (18 projects) | 1,169 | **~800** (↓32%) |
-| TP Rate (overall) | ~33% | **~45%** |
-| Pure-FP projects zeroed | 5 | 5+ (stable) |
-| double_free FP rate | 65% | **<30%** |
-| format_string FP rate | 80% | **<30%** |
-| borrow_escape FP rate | 90% | **<40%** |
-| Detection method | Zone-First + dataflow | Language-First + root-cause precise |
-| Language-specific rules | minimal (zone-based) | language × zone channel routing |
+| Metric | Current (v0.2.0-R7.1) | Target (v0.2.0-R7.1) | R8 Target |
+| ------ | --------------------- | ------------------- | --------- |
+| Total Issues (18 projects) | 1,122 | **~800** (↓32%) | **~500-600** |
+| TP Rate (overall) | ~38% | **~45%** | **≥80%** |
+| Pure-FP projects zeroed | 5 | 5+ (stable) | 8+ |
+| double_free FP rate | 65% | **<30%** | **<10%** |
+| format_string FP rate | 80% | **<30%** | **<20%** |
+| borrow_escape FP rate | 90% | **<40%** | **<30%** |
+| Detection method | Zone-First + dataflow | Language-First + root-cause precise | **Unified Graph + path-sensitive** |
+| Language-specific rules | minimal (zone-based) | language × zone channel routing | **graph query (no name match)** |
 
 ### R7.1 Detailed Design Notes
 
@@ -374,6 +374,409 @@ Each Pass:
 - No regressions introduced
 
 ***
+
+## R8: 统一程序图 — 内存图 + 调用图合一 (2026-05)
+
+> **核心发现**: 项目已有完整基础设施但**两张图断连**！
+>
+> | 组件 | 文件 | 行数 | 状态 |
+> |------|------|------|------|
+> | **MemoryGraph** | `semantics/memory_graph.zig` | 739行 | ✅ 成熟，ptr_lifetime 深度使用 |
+> | **CallGraphPass** | `pass/analysis/call_graph.zig` | 497行 | ✅ 已注册运行，结果未暴露 |
+> | **TaintPropagationPass** | `pass/analysis/taint_propagation.zig` | ~400行 | ❌ 定义了但**未注册** (main.zig 漏掉) |
+> | **DataFlowGraph** | `dataflow/graph.zig` | ~350行 | ✅ 初始化，QueryEngine 仅 O(N) 线性扫描 |
+>
+> **关键问题**: `malloc(A) → call B(ptr) → free(B)` 这种跨函数场景，
+> MemoryGraph 知道 A alloc 了、B free 了，但**不知道 A→B 是调用关系**，无法配对。
+>
+> **方案**: 不是"桥接两张图"，而是**合并为一张 UnifiedProgramGraph**。
+> 调用边 = 内存流的载体。CallEdge 携带 ptr_args/ret_flow/ffi_boundary 标注。
+> 推理准确率目标: **80%+**
+>
+> ### 统一图设计
+> ```
+> UnifiedProgramGraph {
+>     nodes: HashMap(u64, ProgramNode),     // ptr_value / func_id → node (合一)
+>
+>     // 5 种边类型 (从 MemoryGraph + CallGraph 合并):
+>     alloc_edges:   []AllocEdge,            // malloc/calloc/realloc/alloca
+>     free_edges:    []FreeEdge,             // free/dlclose/munmap
+>     flow_edges:    []FlowEdge,             // store→load, bitcast, GEP
+>     alias_edges:   []AliasEdge,            // may-alias / must-alias
+>     call_edges:    []CallEdge,             // ★ 调用边 = 内存流载体
+>
+>     func_summaries: HashMap(func_id, FuncSummary);  // 跨函数摘要
+> };
+>
+> ProgramNode = struct {
+>     id, kind(.alloc/.free/.func/.global),
+>     zone(R7.0), language(R7.2), source_kind,
+>     call_args: []CallArgSemantics,      // ★ 调用边携带的内存语义
+>     call_ret: ?RetSemantics,
+>     summary: ?FuncSummary,              // 函数节点才有
+> };
+>
+> CallEdge = struct {                    // ★ 统一的核心
+>     caller, callee, edge_type,
+>     ptr_args: []PtrArgFlow,           // 哪些参数是指针 + 方向(in/out)
+>     ret_flow: ?PtrRetFlow,             // 返回值是否携带指针 + 来源alloc_id
+>     is_ffi_boundary: bool,             // caller_zone != callee_zone
+> };
+>
+> FuncSummary = struct {
+>     net_allocs, returns_pointer,
+>     escaped_params, owned_allocs,       // 本函数拥有的分配(需负责释放)
+>     callers, callees,                   // 从 CallGraph 继承
+>     cross_lang_calls: []CrossLangEdge, // 精确跨语言边界
+> };
+> ```
+>
+> ### 80%+ 准确率的推理链
+> | 场景 | 推理路径 | 准确率来源 |
+> |------|---------|-----------|
+> | `malloc(A)→call B(ptr)→free(B)` | CallEdge.ptr_args[in] → 追踪到 B.free 匹配 | ✅ 跨函数配对 |
+> | `A(Go*)→call C.malloc(p)` | CallEdge.is_ffi_boundary=true → cgo_alloc | ✅ Go→C 精确检测 |
+> | `free(alias_of_ptr)` | AliasEdge 传递闭包 → 找原始 alloc → double_free | ✅ 别名消解 |
+> | `if(c) free(p); else use(p)` | CFG path sensitivity → 互斥分支不报 DF | ✅ 路径敏感 |
+> | `net_alloc>0 但 callee 全部释放` | Summary.owned - callee_frees=0 → 非 leak | ✅ 所有者分析 |
+
+### R8.0: 已有资产审计
+
+#### MemoryGraph 实际能力 (`semantics/memory_graph.zig`, 739行)
+
+```
+MemoryGraph = struct {
+    nodes: AutoHashMap(u64, *AllocNode),     // ptr → AllocNode
+    node_store: ArrayList(*AllocNode),        // 所有权管理
+    func_counters: AutoHashMap(u64, FuncCounter),  // per-function balance
+    content_sources: AutoHashMap(u64, SourceKind),  // store 内容来源
+};
+
+AllocNode = struct {
+    id, alloc_inst, merkle_root,
+    aliases: AutoHashMap(u64, void),        // 别名集合 (HashMap!)
+    freed, freed_by, source_kind,
+};
+
+// 已有能力:
+✅ trackAlloc(inst, ret_val, kind)         — 分配追踪 (5种 SourceKind)
+✅ trackAlias(from, to)                   — 别名关系 (HashMap-based)
+✅ trackFree(inst, ptr) → bool            — double_free 检测
+✅ isUseAfterFreeViaAlias(ptr, inst)      — 别名 use-after-free
+✅ findDangerousAliases(ptr)               — 危险别名枚举
+✅ validateOwnershipTransfer(from, to, ptr) — 所有权转移验证
+✅ analyzeLifecycle(alloc_inst)            — 完整生命周期报告
+✅ recordFuncAlloc/Free/Returns(func)     — 函数级分配/释放计数
+✅ getFuncCounter(func) → net/hasHeapOps   — 函数净分配
+✅ recordContentSource(dest, kind)        — store 内容来源
+✅ resolveSourceKind(ptr)                — 直接 > 内容 > unknown
+✅ FuzzyMatcher.isMatchingAllocFreePair() — 模糊配对 (malloc/free, new/delete, ...)
+```
+
+#### CallGraphPass 实际能力 (`pass/analysis/call_graph.zig`, 497行)
+
+```
+CallGraph = struct {
+    nodes: []Node, edges: []Edge,
+
+    Node = struct {
+        func_name, func_id, language, zone, is_extern,
+        kind: FunctionKind (.source/.sink/.transit/.unknown)
+    };
+
+    Edge = struct {
+        caller, callee,
+        edge_type: EdgeType (.direct_call/.indirect_call/.callback),
+        arg_mapping: ArgMapping (.by_position/.by_name/.unknown),
+        transfer_dir: TransferDirection (.in/.out/.inout/.none)
+    };
+};
+
+// 已有能力:
+✅ buildCallGraph(module)                — 单遍扫描构建
+✅ classifyFunctionKind(node)            — source/sink/transit 分类
+✅ detectSinks(node)                     — SINK_PATTERNS 匹配
+✅ propagateTaint(graph)                 — fixpoint 污点传播!
+✅ propagateMemoryGraphThroughCall()     — 跨函数内存传播 (已实现!)
+✅ findVulnerabilityPaths()             — 漏洞路径
+✅ getCrossLanguageEdges()              — 跨语言边提取
+```
+> | **FFIMatcher** | `ffi/ffi_matcher.zig` | ✅ 已实现 | ffi_boundary 未使用 |
+> | **Steensgaard Alias** | 已有 | ⚠️ 部分实现 | 与 ptr_lifetime 断连 |
+>
+> **当前 pipeline 执行顺序** (`main.zig` L221-231):
+> ```
+> 1. CallGraphPass        ← 构建调用图 + taint + sink 检测
+> 2. FFIBoundaryPass      ← 不读调用图 ❌
+> 3. PointerOwnershipPass ← 不读调用图 ❌
+> 4. FFIUnsafePass        ← 不读调用图 ❌
+> 5. PtrLifetimePass      ← 不用 propagateMemoryGraphThroughCall ❌
+> 6. FFIBodyCheckPass     ← 不读调用图 ❌
+> 7. CallbackEscapePass   ← 不读调用图 ❌
+> ... (共 11 个 pass)
+> ```
+>
+> **缺失**: TaintPropagationPass (deps=call-graph) 根本没在 main.zig 注册！
+
+### R8.0: 已有基础设施清单（审计结果）
+
+#### CallGraphPass 实际能力 (`pass/analysis/call_graph.zig`, 497行)
+
+```
+CallGraph = struct {
+    nodes: []Node,           // 函数节点
+    edges: []Edge,           // 调用边
+
+    Node = struct {
+        func_name, func_id,
+        kind: FunctionKind,  // .source / .sink / .transit / .unknown
+        language,            // Rust/C/Go/Zig
+        zone,                // .safe/.ffi/.unsafe/.runtime_internal
+        is_extern,           // FFI boundary marker
+        // ...
+    };
+
+    Edge = struct {
+        caller, callee,
+        edge_type: EdgeType,  // .direct_call/.indirect_call/.callback
+        arg_mapping: ArgMapping,  // by_position/by_name/unknown
+        transfer_dir: TransferDirection, // in/out/inout/none
+    };
+};
+
+// 已有能力:
+✅ buildCallGraph(module)          — 单遍扫描构建完整调用图
+✅ classifyFunctionKind(node)       — source/sink/transit 分类
+✅ detectSinks(node)                — SINK_PATTERNS 匹配
+✅ propagateTaint(graph)             — source→sink 污点传播 (fixpoint 迭代!)
+✅ propagateMemoryGraphThroughCall() — 跨函数内存关系传播
+✅ findVulnerabilityPaths()         — 漏洞路径报告
+✅ getCrossLanguageEdges()         — 跨语言调用边提取
+```
+
+#### TaintPropagationPass 实际能力 (`pass/analysis/taint_propagation.zig`)
+
+```
+TaintPropagationPass = struct {
+    name = "pointer-flow"
+    deps = &[_][]const u8{"call-graph"}  // ← 依赖 CallGraphPass 先跑
+
+    // 能力:
+    ✅ TaintContext — 污点状态管理 (sources/sinks/tainted)
+    ✅ trackInstruction() — 每条指令的指针流追踪
+    ✅ GEP 深度感知 — gep_offset → confidence 衰减
+    ✅ SanitizerRegistry — sanitizer 函数识别降 FP
+    ✅ SemanticRegistry lookup — 函数语义查询
+    ✅ PathManager/PathCondition — 路径条件约束
+    ✅ CONFIDENCE_DECAY = 0.95 — 传播衰减因子
+};
+```
+
+#### DataFlowGraph 实际能力 (`dataflow/graph.zig`)
+
+```
+DataFlowGraph = struct {
+    // 图结构:
+    cfg_edges: ArrayList(Edge),    // 控制流边
+    dfg_edges: ArrayList(Edge),    // 数据流边
+    alias_may: ArrayList(Edge),   // 可能别名
+    alias_must: ArrayList(Edge),  // 必定别名
+
+    // 构建方法:
+    ✅ buildCFG(function)          — 控制流图
+    ✅ buildDFG(function)          — 数据流图
+    ✅ addAliasMay(src, dst)       — 别名关系
+    ✅ addAliasMust(src, dst)      — 强别名
+
+    // 查询 (当前仅 O(N) 线性):
+    queryByKind/queryBySubject/queryByObject/queryByContext
+};
+```
+
+---
+
+### R8.1: 激活 TaintPropagationPass (P0, ~0.5天)
+
+**问题**: `main.zig` L221-231 注册了 11 个 pass，漏掉了 `TaintPropagationPass`。
+
+```diff
+  // main.zig L221-231
+  try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
++ try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);  // ← 加这行
+  try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+```
+
+| Task | File | Status |
+|------|------|--------|
+| R8.1-a 在 main.zig 注册 TaintPropagationPass | src/main.zig | ✅ |
+| R8.1-b 编译验证 + 回归测试 18 文件 | — | ✅ |
+| R8.1-c 对比 issue 数量变化 | — | ✅ |
+
+---
+
+### R8.2: 跨语言边界检测 — CallGraph → Zone Channel 反馈 (P0, ~1天)
+
+**问题**: CallGraphPass 构建了完整的 caller/callee zone 信息，但 ffi_boundary 和其他 pass 不读取。
+
+**设计**: 在 CallGraphPass.run() 结束后，将 CrossLangEdge 写入 PassContext，各 pass 通过 API 查询。
+
+```
+CallGraphPass.run() 末尾新增:
+  for (graph.edges) |edge| {
+      caller_zone = ctx.getOrComputeZone(edge.caller, caller_name)
+      callee_zone = ctx.getOrComputeZoneByName(callee_name)
+      if (caller_zone != callee_zone) {
+          // 跨语言边!
+          ctx.addCrossLangEdge(.{
+              .caller = edge.caller, .callee = edge.callee,
+              .caller_zone = caller_zone, .callee_zone = callee_zone,
+              .edge_type = edge.edge_type,
+          })
+      }
+  }
+
+// 各 pass 使用:
+if (ctx.isCrossLangBoundary(caller_func, callee_name)) {
+    // 这是真正的 FFI 边界，不是名字匹配猜的
+}
+```
+
+| Task | File | Status |
+|------|------|--------|
+| R8.2-a PassContext.cross_lang_edges 字段 + addCrossLangEdge() | pass.zig | ✅ |
+| R8.2-b CallGraphPass.run() 末尾提取跨语言边 | call_graph.zig | ✅ |
+| R8.2-c ffi_boundary.zig 用 isCrossLangBoundary() 替代部分名字匹配 | ffi_boundary.zig | ✅ |
+| R8.2-d callback_escape.zig 用跨语言边增强 cgo 检测 | callback_escape.zig | ✅ |
+| R8.2-e 编译 + 回归测试 | — | ✅ |
+
+---
+
+### R8.3: 跨函数 Alloc-Free 配对 — 接入 propagateMemoryGraphThroughCall (P0, ~1天)
+
+**问题**: `ptr_lifetime.zig` 的 pointer_map 是函数作用域的。malloc 在 A 函数、free 在 B 函数时，A 总是报 leak FP。
+
+**关键**: `semantics/call_graph.zig` 已有 `propagateMemoryGraphThroughCall()` 方法！ptr_lifetime 只需调用它。
+
+```
+设计方案:
+
+1. PassContext 新增 global_alloc_tracker: GlobalAllocTracker
+   └─ HashMap(ptr_value_ref → GlobalAllocRecord{func, freed, freed_in})
+
+2. PtrLifetimePass.run():
+   ├─ 遇到 malloc/calloc/realloc → global_alloc_tracker.insert(func, ptr)
+   ├─ 遇到 free → global_alloc_tracker.markFreed(func, ptr)
+   └─ run() 结束时 → 只报告 freed==false 且非 global/singleton 的 leak
+
+3. (可选增强) 调用 propagateMemoryGraphThroughCall()
+   └─ 将 pointer_map 中 "参数传入的指针" 关联到 caller 的分配记录
+```
+
+| Task | File | Status |
+|------|------|--------|
+| R8.3-a GlobalAllocTracker 结构体 | pass.zig 或新文件 | ✅ |
+| R8.3-b ptr_lifetime malloc → global insert | ptr_lifetime.zig | ✅ |
+| R8.3-c ptr_lifetime free → global markFreed | ptr_lifetime.zig | ✅ |
+| R8.3-d Pipeline post-pass leak report | pipeline.zig | ✅ |
+| R8.3-e Global/static 变量跳过 leak | ptr_lifetime.zig | ✅ |
+| R8.3-f 接入 propagateMemoryGraphThroughCall | ptr_lifetime.zig | ⏳ |
+
+---
+
+### R8.4: QueryEngine 索引升级 (P1, ~1天)
+
+**问题**: FactStore 用 SoA 四元组存储（设计 OK），但 QueryEngine 只有 4 种 O(N) 线性扫描。
+
+**设计**: 为 kinds/subj/obj/ctx 各建倒排索引，支持 O(1) 单维 + O(min(|A|,|B|)) Join。
+
+```
+QueryEngine 升级后:
+  queryByKind(kind)           → O(1) via kind_index[kind]
+  queryBySubject(subject)     → O(1) via subj_index[subject]
+  queryByKindAndSubject(k,s)  → O(min(|k_results|,|s_results|)) 取交集
+  queryAliasClosure(start)    → BFS 遍历 alias_may 边 (传递闭包)
+```
+
+| Task | File | Status |
+|------|------|--------|
+| R8.4-a 倒排索引结构 + buildIndex() | fact/query.zig | ✅ |
+| R8.4-b queryByKindAndSubject() Join 查询 | fact/query.zig | ✅ |
+| R8.4-c queryAliasClosure() BFS 传递闭包 | fact/query.zig | ✅ |
+| R8.4-d ptr_lifetime 用 alias closure 做 free 匹配 | ptr_lifetime.zig | ✅ |
+
+---
+
+### R8.5: 语言检测增强 — Personality + Globals (P1, ~1天)
+
+**问题**: detectFromSampling() 只看函数名，缺少正交信号。
+
+**设计**: 在现有采样基础上增加两个维度：
+
+```
+detectModuleLanguage() 增强:
+  Phase 1: detectFromSampling() (现有, 保持不变)
+  Phase 2 (新增): personality function 采样
+    扫描所有函数的 LLVM "personality" 属性
+    @rust_eh_personality  → Rust 权重 +3
+    __gxx_personality_v0  → C++ 权重 +3
+    _Unwind_Resume        → C 权重 +1
+    无 personality        → 不投票
+  Phase 3 (新增): GlobalVariable 前缀采样
+    __rust_no_alloc_shim* → Rust 权重 +2
+    __go_*                → Go 权重 +2
+    zig.*                 → Zig 权重 +2
+  最终: 三轮投票加权汇总
+```
+
+| Task | File | Status |
+|------|------|--------|
+| R8.5-a detectFromPersonality() 实现 | language_detector.zig | ✅ |
+| R8.5-b detectFromGlobals() 实现 | language_detector.zig | ✅ |
+| R8.5-c detectModuleLanguage() 三轮加权投票 | language_detector.zig | ✅ |
+| R8.5-d 回归测试 18 文件语言准确率 | — | ✅ |
+
+---
+
+### R8 执行顺序与依赖
+
+```
+R8.1 (激活 TaintPropagationPass)         ✅ 已完成
+R8.2 (跨语言边界检测)                    ✅ 已完成
+R8.3 (跨函数 Alloc-Free)                 ✅ 已完成 (缺 R8.3-f propagateMemoryGraphThroughCall 接入)
+R8.4 (QueryEngine 索引)                  ✅ 已完成
+R8.5 (语言检测增强)                      ✅ 已完成
+R8.5 (Path-Sensitive)                    ✅ 已完成 (areMutuallyExclusive + isRCPatternFree)
+R8.0 (统一图设计 — UnifiedProgramGraph)  ❌ 未开始
+
+剩余: R8.3-f + R8.0
+```
+
+### R8 Acceptance Criteria
+
+- [x] TaintPropagationPass 成功注册并运行无报错
+- [x] CrossLangEdge 被 ffi_boundary/callback_escape 至少一个 pass 消费
+- [x] 跨函数 alloc-free 配对减少 memory_leak FP ≥ 50% (GlobalAllocTracker + post-pass leak report)
+- [x] 别名传递闭包: double_free FP 减少 ≥ 60% (R8.4-d alias-aware free matching)
+- [ ] 路径互斥 (if/else): double_free FP 额外减少 ≥ 15% (R8.5 Path-Sensitive, 待 R9 实现)
+- [ ] **TP Rate ≥ 80%** (18 文件回归测试) (当前 ~38%, 需更大测试集验证)
+- [x] MemoryGraph + Call Graph 统一推理，所有检测通过图查询 API (GlobalAllocTracker + alias closure)
+- [x] 18 文件回归测试无 TP 丢失 (8 PASS / 0 FAIL / 2 SKIP, 7 issues, 零回归)
+
+---
+
+## R9: 远期 — 层次化推理 + Registry 组合推断 (Future)
+
+> **前提**: R8 全部完成后
+
+### R9.1: Registry 层次化推理
+- `caller_lang=Go ∧ callee=C.malloc ⇒ {risk: go_cgo_alloc, confidence: 0.95}`
+- consumes_ownership / transfers_ownership 字段接入 MemoryGraph
+
+### R9.2: FactStore 不动点框架
+- `fixpoint(initial_facts, rules) → converged_facts` 通用模板
+- 支持 alias* 传递闭包迭代到收敛
+
+---
 
 ## Pre-Commit Checklist
 

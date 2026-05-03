@@ -614,7 +614,7 @@ test "DataFlowGraph - init and deinit" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -627,7 +627,7 @@ test "DataFlowGraph - addNode" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -645,7 +645,7 @@ test "DataFlowGraph - addNode duplicate" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -663,7 +663,7 @@ test "DataFlowGraph - addEdge" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -687,7 +687,7 @@ test "DataFlowGraph - addEdge invalid node" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -707,7 +707,7 @@ test "DataFlowGraph - markTainted" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -731,7 +731,7 @@ test "DataFlowGraph - addIssue" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -754,7 +754,7 @@ test "DataFlowGraph - getStats" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -802,7 +802,7 @@ test "DataFlowGraph - clear" {
     var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();

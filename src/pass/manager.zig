@@ -198,7 +198,7 @@ pub const PassManager = struct {
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;
             self.passes.items[idx].run_fn(ctx, diag) catch |err| {
-                diag.warn("PassManager: pass '{s}' failed with error: {}, degrading gracefully", .{ pass_name, err });
+                diag.warn("PassManager: pass '{s}' failed with error: {any}, degrading gracefully", .{ pass_name, err });
                 pass_failures += 1;
                 // Continue running remaining passes
             };
@@ -246,7 +246,7 @@ test "PassManager - run passes" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 

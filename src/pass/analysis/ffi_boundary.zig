@@ -100,6 +100,12 @@ pub const FFIBoundaryPass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
+        // R8.2-c: Consume cross-language edges from CallGraphPass.
+        const cross_edges = ctx.getCrossLangEdges();
+        if (cross_edges.len > 0) {
+            diag.info("FFIBoundary: consuming {} cross-language edges from CallGraph", .{cross_edges.len});
+        }
+
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
@@ -258,10 +264,26 @@ pub const FFIBoundaryPass = struct {
 
         // Identify languages of caller and callee
         const caller_lang = zone_check.identifyLanguage(caller_func);
-        const callee_lang = zone_check.identifyCalleeLanguage(called_name);
+        var callee_lang = zone_check.identifyCalleeLanguage(called_name);
+
+        // R8.2-c: Check if this call matches a pre-computed cross-language edge.
+        // CallGraphPass may have detected language differences that our per-call
+        // heuristics missed (e.g., external functions with ambiguous names).
+        var cross_edge_matched = false;
+        for (ctx.getCrossLangEdges()) |cross| {
+            if (std.mem.eql(u8, cross.callee_name, called_name) and cross.is_ffi_boundary) {
+                cross_edge_matched = true;
+                // Use the CallGraphPass-detected languages if they're more specific
+                if (cross.callee_lang != .unknown and callee_lang == .unknown) {
+                    // callee_lang was unknown but CallGraphPass knows it — trust CallGraph
+                    callee_lang = cross.callee_lang;
+                    break;
+                }
+            }
+        }
 
         // Skip same-language calls (not FFI boundaries)
-        if (caller_lang != .unknown and callee_lang != .unknown and
+        if (!cross_edge_matched and caller_lang != .unknown and callee_lang != .unknown and
             caller_lang == callee_lang)
         {
             return false;
@@ -361,17 +383,6 @@ pub const FFIBoundaryPass = struct {
         // Map RiskKind to IssueKind
         const issue_kind = boundary_check.riskKindToIssueKind(sem.kind);
 
-        // : Format string constant detection.
-        // If the format argument (operand 0 for printf-like functions) is a
-        // compile-time string constant, the format string is NOT user-controlled
-        // and therefore NOT a vulnerability. Skip reporting.
-        if (sem.kind == .format_string) {
-            if (isFormatStringConstant(inst)) {
-                diag.debug("FORMAT-SAFE: {s} in {s} — format arg is compile-time constant", .{ called_name, caller_name });
-                return;
-            }
-        }
-
         // Determine severity based on risk kind
         const severity: Severity = switch (sem.kind) {
             .command_exec => .critical,
@@ -402,8 +413,8 @@ pub const FFIBoundaryPass = struct {
     ///   Safe:   call printf(@.str, ...)     — GEP → GlobalVariable → constant
     ///   Unsafe: call printf(%fmt, ...)      — format is variable
     fn isFormatStringConstant(inst: c.LLVMValueRef) bool {
-        if (c.LLVMGetNumOperands(inst) < 1) return false;
-        const fmt_arg = c.LLVMGetOperand(inst, 0);
+        if (c.LLVMGetNumOperands(inst) < 2) return false;
+        const fmt_arg = c.LLVMGetOperand(inst, 1);
         if (@intFromPtr(fmt_arg) == 0) return false;
 
         // Case 1: GEP wrapping a global constant (most common pattern)

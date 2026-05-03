@@ -458,7 +458,7 @@ test "SourceLocation - format" {
     };
 
     var buf: [100]u8 = undefined;
-    const result = try std.fmt.bufPrint(&buf, "{}", .{loc});
+    const result = try std.fmt.bufPrint(&buf, "{f}", .{loc});
     try std.testing.expectEqualStrings("/src/test.zig:10:5", result);
 
     const loc_no_dir = SourceLocation{
@@ -467,7 +467,7 @@ test "SourceLocation - format" {
         .line = 10,
         .column = 5,
     };
-    const result2 = try std.fmt.bufPrint(&buf, "{}", .{loc_no_dir});
+    const result2 = try std.fmt.bufPrint(&buf, "{f}", .{loc_no_dir});
     try std.testing.expectEqualStrings("test.zig:10:5", result2);
 }
 

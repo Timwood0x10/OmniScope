@@ -457,7 +457,7 @@ pub const PointerOwnershipPass = struct {
         }
 
         const pool_stats = alloc_pool.stats();
-        diag.info("PointerOwnership: Memory pool stats - allocated: {}, reused: {}, in_use: {}", .{
+        diag.info("PointerOwnership: Memory pool stats - allocated: {d}, reused: {d}, in_use: {d}", .{
             pool_stats.allocated,
             pool_stats.reused,
             pool_stats.in_use,

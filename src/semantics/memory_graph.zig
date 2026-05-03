@@ -84,6 +84,30 @@ pub const ResourceLifecycle = struct {
     free_site: ?u64,
 };
 
+// R8.0: Call edge types for cross-function pointer flow tracking.
+
+/// A call_arg edge: pointer passed as argument to a function.
+pub const CallArgEdge = struct {
+    /// The call instruction (raw pointer as u64).
+    caller_inst: u64,
+    /// Callee function name (owned by the containing MemoryGraph).
+    callee_name: []const u8,
+    /// The pointer value passed as argument.
+    arg_ptr: u64,
+    /// Argument index (0-based).
+    arg_index: u32,
+};
+
+/// A call_ret edge: pointer returned from a function call.
+pub const CallRetEdge = struct {
+    /// The call instruction (raw pointer as u64).
+    caller_inst: u64,
+    /// Callee function name (owned by the containing MemoryGraph).
+    callee_name: []const u8,
+    /// The returned pointer value.
+    ret_ptr: u64,
+};
+
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
 const AllocNode = struct {
     /// Unique identifier for this allocation.
@@ -103,6 +127,12 @@ const AllocNode = struct {
 };
 
 /// Main memory graph structure.
+///
+/// R8.0: Unified pointer state graph. Tracks:
+///   - Allocation nodes (alloc/alias/free) — pointer identity
+///   - Call edges (call_arg/call_ret) — cross-function pointer flow
+///   - Per-function alloc/free balance
+///   - Content source tracking
 pub const MemoryGraph = struct {
     /// Map from pointer value → AllocNode pointer.
     nodes: std.AutoHashMap(u64, *AllocNode),
@@ -114,15 +144,17 @@ pub const MemoryGraph = struct {
     next_id: u64,
 
     /// Per-function alloc/free counters for balance checking.
-    /// Key: function pointer value (u64), Value: FuncCounter.
     func_counters: std.AutoHashMap(u64, FuncCounter),
 
     /// Content source tracking: maps a storage location (alloca/heap) to
     /// the SourceKind of the pointer value stored in it.
-    /// When `store ptr %heap_ptr, ptr %alloca`, we record:
-    ///   content_sources[%alloca] = .heap_alloc
-    /// This lets load instructions inherit the stored content's source kind.
     content_sources: std.AutoHashMap(u64, SourceKind),
+
+    // R8.0: Call edges — cross-function pointer flow tracking
+    call_args: std.ArrayList(CallArgEdge),
+    call_rets: std.ArrayList(CallRetEdge),
+    call_arg_by_ptr: std.AutoHashMap(u64, []const u32),
+    call_ret_by_callee: std.StringHashMap([]const u32),
 
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
@@ -133,6 +165,10 @@ pub const MemoryGraph = struct {
             .next_id = 1,
             .func_counters = std.AutoHashMap(u64, FuncCounter).init(allocator),
             .content_sources = std.AutoHashMap(u64, SourceKind).init(allocator),
+            .call_args = std.ArrayList(CallArgEdge).empty,
+            .call_rets = std.ArrayList(CallRetEdge).empty,
+            .call_arg_by_ptr = std.AutoHashMap(u64, []const u32).init(allocator),
+            .call_ret_by_callee = std.StringHashMap([]const u32).init(allocator),
         };
     }
 
@@ -146,6 +182,29 @@ pub const MemoryGraph = struct {
         graph.nodes.deinit();
         graph.func_counters.deinit();
         graph.content_sources.deinit();
+
+        // R8.0: Free call edge data
+        for (graph.call_args.items) |*edge| {
+            graph.allocator.free(edge.callee_name);
+        }
+        graph.call_args.deinit(graph.allocator);
+        for (graph.call_rets.items) |*edge| {
+            graph.allocator.free(edge.callee_name);
+        }
+        graph.call_rets.deinit(graph.allocator);
+
+        var arg_iter = graph.call_arg_by_ptr.iterator();
+        while (arg_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_arg_by_ptr.deinit();
+
+        var ret_iter = graph.call_ret_by_callee.iterator();
+        while (ret_iter.next()) |entry| {
+            graph.allocator.free(entry.value_ptr.*);
+        }
+        graph.call_ret_by_callee.deinit();
+
         graph.* = undefined;
     }
 
@@ -284,6 +343,94 @@ pub const MemoryGraph = struct {
     /// Returns .unknown if the location has no recorded content source.
     pub fn getContentSource(graph: *MemoryGraph, dest_ptr: u64) SourceKind {
         return graph.content_sources.get(dest_ptr) orelse .unknown;
+    }
+
+    // =====================================================================
+    // R8.0: Call edge tracking
+    // =====================================================================
+
+    /// Records a call_arg edge: a pointer value passed as argument to a function.
+    /// Used by ptr_lifetime when analyzing call/invoke instructions.
+    pub fn trackCallArg(
+        graph: *MemoryGraph,
+        caller_inst: u64,
+        callee_name: []const u8,
+        arg_ptr: u64,
+        arg_index: u32,
+    ) !void {
+        const name_owned = try graph.allocator.dupe(u8, callee_name);
+        const edge_idx: u32 = @intCast(graph.call_args.items.len);
+        try graph.call_args.append(graph.allocator, .{
+            .caller_inst = caller_inst,
+            .callee_name = name_owned,
+            .arg_ptr = arg_ptr,
+            .arg_index = arg_index,
+        });
+        // Index by ptr for fast lookup: "which calls receive this pointer?"
+        const gop = try graph.call_arg_by_ptr.getOrPut(arg_ptr);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = &.{};
+        }
+        const new_list = try graph.allocator.alloc(u32, gop.value_ptr.*.len + 1);
+        @memcpy(new_list[0..gop.value_ptr.*.len], gop.value_ptr.*);
+        new_list[gop.value_ptr.*.len] = edge_idx;
+        if (gop.value_ptr.*.len > 0) {
+            graph.allocator.free(gop.value_ptr.*);
+        }
+        gop.value_ptr.* = new_list;
+    }
+
+    /// Records a call_ret edge: a pointer value returned from a function call.
+    pub fn trackCallRet(
+        graph: *MemoryGraph,
+        caller_inst: u64,
+        callee_name: []const u8,
+        ret_ptr: u64,
+    ) !void {
+        const name_owned = try graph.allocator.dupe(u8, callee_name);
+        const edge_idx: u32 = @intCast(graph.call_rets.items.len);
+        try graph.call_rets.append(graph.allocator, .{
+            .caller_inst = caller_inst,
+            .callee_name = name_owned,
+            .ret_ptr = ret_ptr,
+        });
+        // Index by callee for fast lookup: "what does this function return?"
+        const gop = try graph.call_ret_by_callee.getOrPut(callee_name);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = &.{};
+        }
+        const new_list = try graph.allocator.alloc(u32, gop.value_ptr.*.len + 1);
+        @memcpy(new_list[0..gop.value_ptr.*.len], gop.value_ptr.*);
+        new_list[gop.value_ptr.*.len] = edge_idx;
+        if (gop.value_ptr.*.len > 0) {
+            graph.allocator.free(gop.value_ptr.*);
+        }
+        gop.value_ptr.* = new_list;
+    }
+
+    /// Query: Get all call_arg edges where `ptr_val` is passed as an argument.
+    /// Returns slice of indices into call_args (caller owns nothing).
+    pub fn getCallArgsForPtr(graph: *MemoryGraph, ptr_val: u64) []const u32 {
+        return graph.call_arg_by_ptr.get(ptr_val) orelse &.{};
+    }
+
+    /// Query: Get all call_ret edges for returns from `callee_name`.
+    /// Returns slice of indices into call_rets (caller owns nothing).
+    pub fn getCallRetsFromCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
+        return graph.call_ret_by_callee.get(callee_name) orelse &.{};
+    }
+
+    /// Query: Check if a pointer flows into any function call as an argument.
+    pub fn isPassedAsArg(graph: *MemoryGraph, ptr_val: u64) bool {
+        return graph.call_arg_by_ptr.contains(ptr_val);
+    }
+
+    /// Query: Check if a pointer is returned from any function call.
+    pub fn isReturnedFromCall(graph: *MemoryGraph, ptr_val: u64) bool {
+        for (graph.call_rets.items) |edge| {
+            if (edge.ret_ptr == ptr_val) return true;
+        }
+        return false;
     }
 
     // =====================================================================
@@ -960,4 +1107,137 @@ test "memory_graph - no memory leaks" {
         _ = try graph.trackFree(i * 0x1000 + 2, i * 0x1000 + 1);
         graph.recordFuncFree(0xA000);
     }
+}
+
+// =====================================================================
+// R8.0: Call edge tracking tests
+// =====================================================================
+
+test "memory_graph - trackCallArg basic" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    // Track a call_arg: ptr 0x1000 passed as arg 0 to "malloc"
+    try graph.trackCallArg(0x2000, "malloc", 0x1000, 0);
+
+    // Verify call_args list has 1 entry
+    try std.testing.expectEqual(@as(usize, 1), graph.call_args.items.len);
+
+    const edge = graph.call_args.items[0];
+    try std.testing.expectEqual(@as(u64, 0x2000), edge.caller_inst);
+    try std.testing.expectEqualStrings("malloc", edge.callee_name);
+    try std.testing.expectEqual(@as(u64, 0x1000), edge.arg_ptr);
+    try std.testing.expectEqual(@as(u32, 0), edge.arg_index);
+
+    // Query by ptr should find this edge
+    const args_for_ptr = graph.getCallArgsForPtr(0x1000);
+    try std.testing.expectEqual(@as(usize, 1), args_for_ptr.len);
+}
+
+test "memory_graph - trackCallRet basic" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    // Track a call_ret: ptr 0x2000 returned from "malloc"
+    try graph.trackCallRet(0x3000, "malloc", 0x2000);
+
+    // Verify call_rets list has 1 entry
+    try std.testing.expectEqual(@as(usize, 1), graph.call_rets.items.len);
+
+    const edge = graph.call_rets.items[0];
+    try std.testing.expectEqual(@as(u64, 0x3000), edge.caller_inst);
+    try std.testing.expectEqualStrings("malloc", edge.callee_name);
+    try std.testing.expectEqual(@as(u64, 0x2000), edge.ret_ptr);
+
+    // Query by callee should find this edge
+    const rets_from_callee = graph.getCallRetsFromCallee("malloc");
+    try std.testing.expectEqual(@as(usize, 1), rets_from_callee.len);
+}
+
+test "memory_graph - isPassedAsArg and isReturnedFromCall" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    // Initially nothing is passed or returned
+    try std.testing.expect(!graph.isPassedAsArg(0x1000));
+    try std.testing.expect(!graph.isReturnedFromCall(0x2000));
+
+    // Add a call_arg
+    try graph.trackCallArg(0x5000, "free", 0x1000, 0);
+    try std.testing.expect(graph.isPassedAsArg(0x1000));
+    try std.testing.expect(!graph.isReturnedFromCall(0x1000));
+
+    // Add a call_ret
+    try graph.trackCallRet(0x6000, "malloc", 0x2000);
+    try std.testing.expect(graph.isReturnedFromCall(0x2000));
+    try std.testing.expect(!graph.isPassedAsArg(0x2000));
+}
+
+test "memory_graph - multiple call edges for same pointer" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    // Same ptr passed to different functions
+    try graph.trackCallArg(0x1000, "free", 0x5000, 0);
+    try graph.trackCallArg(0x2000, "fclose", 0x5000, 0);
+    try graph.trackCallArg(0x3000, "pthread_create", 0x5000, 2);
+
+    // Should find all 3 edges
+    const args = graph.getCallArgsForPtr(0x5000);
+    try std.testing.expectEqual(@as(usize, 3), args.len);
+}
+
+test "memory_graph - call edges coexist with alloc/free tracking" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer {
+        const leaked = gpa.deinit();
+        if (leaked != .ok) @panic("memory leak detected");
+    }
+    const allocator = gpa.allocator();
+
+    var graph = try MemoryGraph.init(allocator);
+    defer graph.deinit();
+
+    // Track allocation
+    _ = try graph.trackAlloc(0x1000, 0x1001, .heap_alloc);
+
+    // Track call_arg with the allocated pointer
+    try graph.trackCallArg(0x2000, "process_data", 0x1001, 0);
+
+    // Track free
+    _ = try graph.trackFree(0x3000, 0x1001);
+
+    // All data should coexist
+    try std.testing.expect(graph.nodes.contains(0x1001));
+    try std.testing.expectEqual(@as(usize, 1), graph.call_args.items.len);
+    const node = graph.nodes.get(0x1001).?;
+    try std.testing.expect(node.freed);
 }

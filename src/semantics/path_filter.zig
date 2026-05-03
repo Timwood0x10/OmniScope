@@ -527,7 +527,7 @@ test "classifyByPath - Rust stdlib" {
         .column = 5,
     };
 
-    const result = classifyByPath(&loc, "_ZN4core3ptr13drop_in_placeE");
+    const result = classifyByPath(loc, "_ZN4core3ptr13drop_in_placeE");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, result.origin);
     try std.testing.expectEqual(noise_filter.RiskLevel.low, result.risk_level);
 }
@@ -540,7 +540,7 @@ test "classifyByPath - Zig stdlib" {
         .column = 3,
     };
 
-    const result = classifyByPath(&loc, "std.ArrayList.init");
+    const result = classifyByPath(loc, "std.ArrayList.init");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, result.origin);
 }
 
@@ -552,7 +552,7 @@ test "classifyByPath - user code" {
         .column = 4,
     };
 
-    const result = classifyByPath(&loc, "main.main");
+    const result = classifyByPath(loc, "main.main");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.user, result.origin);
 }
 
@@ -570,7 +570,7 @@ test "classifyByPath - invalid location fallback" {
         .column = 0,
     };
 
-    const result = classifyByPath(&loc, "some_function");
+    const result = classifyByPath(loc, "some_function");
     try std.testing.expect(std.mem.indexOf(u8, result.reason, "fallback") != null);
 }
 
@@ -582,7 +582,7 @@ test "classifyByPath - CGo generated" {
         .column = 2,
     };
 
-    const result = classifyByPath(&loc, "_cgo_cfunction_wrapper");
+    const result = classifyByPath(loc, "_cgo_cfunction_wrapper");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.compiler_generated, result.origin);
     try std.testing.expectEqual(noise_filter.RiskLevel.suppressed, result.risk_level);
 }
@@ -595,7 +595,7 @@ test "classifyByPath - Go runtime" {
         .column = 8,
     };
 
-    const result = classifyByPath(&loc, "runtime.mallocgc");
+    const result = classifyByPath(loc, "runtime.mallocgc");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, result.origin);
 }
 
@@ -607,7 +607,7 @@ test "classifyByPath - C++ system header" {
         .column = 12,
     };
 
-    const result = classifyByPath(&loc, "_ZNSt6vectorIiE");
+    const result = classifyByPath(loc, "_ZNSt6vectorIiE");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, result.origin);
 }
 
@@ -619,7 +619,7 @@ test "classifyByPath - FFI directory gets high risk" {
         .column = 5,
     };
 
-    const result = classifyByPath(&loc, "my_binding_func");
+    const result = classifyByPath(loc, "my_binding_func");
     try std.testing.expectEqual(noise_filter.FunctionOrigin.user, result.origin);
     try std.testing.expectEqual(noise_filter.RiskLevel.high, result.risk_level);
 }
@@ -654,7 +654,7 @@ test "combinedClassify - path takes priority" {
         .reason = "Rust extern C boundary",
     };
 
-    const combined = combinedClassify(&path_result, name_result);
+    const combined = combinedClassify(path_result, name_result);
     try std.testing.expectEqual(noise_filter.FunctionOrigin.stdlib, combined.origin);
 }
 
@@ -673,7 +673,7 @@ test "combinedClassify - falls back to name when path is user" {
         .reason = "Rust extern C boundary",
     };
 
-    const combined = combinedClassify(&path_result, name_result);
+    const combined = combinedClassify(path_result, name_result);
     // When both say user, use name result which may have better FFI detection
     try std.testing.expectEqual(noise_filter.FunctionOrigin.user, combined.origin);
 }

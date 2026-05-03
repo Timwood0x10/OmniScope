@@ -12,6 +12,7 @@ const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
+const memory_graph_mod = @import("../semantics/memory_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const language_detector = @import("../semantics/language_detector.zig");
@@ -28,16 +29,117 @@ pub const PassKind = enum {
     plugin, // User-defined plugin passes
 };
 
-/// Pass context passed to each pass during execution
+/// R8.2: Cross-language call edge extracted by CallGraphPass.
 ///
-/// This struct provides all necessary context for pass execution:
-/// - Memory allocation
-/// - Access to IR module
-/// - Access to fact store for reading/writing facts
-/// - Access to query engine for querying facts
-/// - Access to data flow graph for high-level data flow operations
-/// - ID allocation for unique identifiers
-/// - Zone statistics for Safe/Escape zone classification
+/// Captures a call site where the caller and callee may be written in
+/// different languages (e.g., Rust calling C via FFI, Go calling C via cgo).
+/// Downstream passes (ffi_boundary, callback_escape) consume these edges
+/// for language-aware boundary detection.
+pub const CrossLangEdge = struct {
+    /// Caller function name.
+    caller_name: []const u8,
+    /// Callee function name.
+    callee_name: []const u8,
+    /// Detected language of the caller function.
+    caller_lang: @import("../diag/issue.zig").FFIBoundary.Language,
+    /// Detected language of the callee function.
+    callee_lang: @import("../diag/issue.zig").FFIBoundary.Language,
+    /// Whether this call crosses an FFI boundary (languages differ or callee is external).
+    is_ffi_boundary: bool,
+    /// Indices of pointer-typed arguments at this call site.
+    ptr_args: []const u32,
+};
+
+/// R8.3: Global allocation tracker for cross-function leak detection.
+///
+/// Tracks malloc/calloc/realloc/free operations across function boundaries
+/// to reduce false-positive "memory leak" reports when a pointer is allocated
+/// in one function and freed in another.
+pub const GlobalAllocTracker = struct {
+    /// Record for a single heap allocation.
+    pub const AllocRecord = struct {
+        /// Value ID of the allocated pointer (from ValueIdMap).
+        ptr_id: u32,
+        /// Name of the function where allocation occurred.
+        alloc_func: []const u8,
+        /// Whether this allocation has been freed (anywhere in the module).
+        freed: bool,
+        /// Name of the function where free occurred (if freed).
+        free_func: ?[]const u8,
+        /// Whether this is a global/static variable (should not be reported as leak).
+        is_global_or_static: bool,
+    };
+
+    allocator: Allocator,
+    /// Map from raw pointer value (usize) → AllocRecord index in store.
+    records_by_ptr: std.AutoHashMap(u64, u32),
+    /// All allocation records (owned).
+    records: std.ArrayList(AllocRecord),
+
+    pub fn init(allocator: Allocator) GlobalAllocTracker {
+        return .{
+            .allocator = allocator,
+            .records_by_ptr = std.AutoHashMap(u64, u32).init(allocator),
+            .records = std.ArrayList(AllocRecord).empty,
+        };
+    }
+
+    pub fn deinit(self: *GlobalAllocTracker) void {
+        // Free owned func name strings
+        for (self.records.items) |*rec| {
+            self.allocator.free(rec.alloc_func);
+            if (rec.free_func) |f| self.allocator.free(f);
+        }
+        self.records.deinit(self.allocator);
+        self.records_by_ptr.deinit();
+    }
+
+    /// Record a heap allocation (malloc/calloc/realloc).
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, is_global: bool) !void {
+        const name_owned = try self.allocator.dupe(u8, func_name);
+        const idx = @as(u32, @intCast(self.records.items.len));
+        try self.records.append(self.allocator, .{
+            .ptr_id = 0, // Will be filled by caller if needed
+            .alloc_func = name_owned,
+            .freed = false,
+            .free_func = null,
+            .is_global_or_static = is_global,
+        });
+        try self.records_by_ptr.put(ptr_val, idx);
+    }
+
+    /// Mark an allocation as freed.
+    /// Returns true if the allocation was found and marked, false otherwise.
+    pub fn markFreed(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8) bool {
+        const idx = self.records_by_ptr.get(ptr_val) orelse return false;
+        var rec = &self.records.items[idx];
+        if (rec.freed) return true; // Already freed (double-free case)
+        rec.freed = true;
+        const free_name_owned = self.allocator.dupe(u8, func_name) catch return true;
+        rec.free_func = free_name_owned;
+        return true;
+    }
+
+    /// Get all unfreed allocations (leak candidates).
+    /// Caller should use leakCount() for count and iterate records directly.
+    pub fn getLeakCount(self: *const GlobalAllocTracker) u32 {
+        return self.leakCount();
+    }
+
+    /// Get total number of tracked allocations.
+    pub fn size(self: *const GlobalAllocTracker) usize {
+        return self.records.items.len;
+    }
+
+    /// Get number of leak candidates (unfreed non-global allocations).
+    pub fn leakCount(self: *const GlobalAllocTracker) u32 {
+        var count: u32 = 0;
+        for (self.records.items) |rec| {
+            if (!rec.freed and !rec.is_global_or_static) count += 1;
+        }
+        return count;
+    }
+};
 pub const PassContext = struct {
     allocator: Allocator,
     module: ?ModuleRef,
@@ -81,6 +183,20 @@ pub const PassContext = struct {
     /// Tracks the number of functions that were skipped due to errors
     degraded_functions: std.atomic.Value(u32),
 
+    /// R8.2: Cross-language call edges extracted by CallGraphPass.
+    /// Consumed by ffi_boundary and callback_escape passes for precise
+    /// FFI boundary detection with language-aware context.
+    cross_lang_edges: std.ArrayList(CrossLangEdge),
+
+    /// R8.3: Global allocation tracker for cross-function leak detection.
+    /// Tracks malloc/free across function boundaries to reduce FP leaks.
+    global_alloc_tracker: GlobalAllocTracker,
+
+    /// R8.0: Unified MemoryGraph — single source of truth for pointer state.
+    /// Tracks allocations, aliases, frees, AND call_arg/call_ret edges.
+    /// Created by pipeline before any pass runs; owned by PassContext.
+    memory_graph: memory_graph_mod.MemoryGraph,
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -107,9 +223,12 @@ pub const PassContext = struct {
             .registry_cache = std.StringHashMap(FunctionSemantics).init(allocator),
             .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(allocator),
             .zone_stats = zone_classifier.ZoneStats{},
-            .module_language = undefined,
+            .module_language = .{ .language = .unknown, .confidence = 0.0, .method = .unknown },
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
+            .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
+            .global_alloc_tracker = GlobalAllocTracker.init(allocator),
+            .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
         };
     }
 
@@ -166,6 +285,9 @@ pub const PassContext = struct {
         self.reported_keys.deinit();
         self.registry_cache.clearAndFree();
         self.zone_cache.clearAndFree();
+        self.cross_lang_edges.deinit(self.allocator);
+        self.global_alloc_tracker.deinit();
+        self.memory_graph.deinit();
     }
 
     /// Set the IR module
@@ -526,6 +648,18 @@ pub const PassContext = struct {
     pub fn isTainted(self: *const PassContext, node_id: u32) bool {
         return self.data_flow_graph.isTainted(node_id);
     }
+
+    /// R8.2: Add a cross-language call edge to the context.
+    /// Called by CallGraphPass after building the call graph.
+    pub fn addCrossLangEdge(self: *PassContext, edge: CrossLangEdge) !void {
+        try self.cross_lang_edges.append(self.allocator, edge);
+    }
+
+    /// R8.2: Get read-only access to cross-language edges.
+    /// Called by ffi_boundary and callback_escape passes.
+    pub fn getCrossLangEdges(self: *const PassContext) []const CrossLangEdge {
+        return self.cross_lang_edges.items;
+    }
 };
 
 /// ANSI color codes for terminal output
@@ -718,7 +852,7 @@ test "PassContext - init and deinit" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
@@ -738,7 +872,7 @@ test "PassContext - getNextId" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
@@ -764,7 +898,7 @@ test "PassContext - setModule and hasModule" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
@@ -789,7 +923,7 @@ test "PassContext - access to components" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
@@ -811,7 +945,7 @@ test "PassContext - access to components" {
 test "PassContext - getOrComputeZoneByName caching" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
     var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
@@ -848,7 +982,7 @@ test "PassContext - shouldAnalyzeZone gate logic" {
 test "PassContext - getOrComputeZone null safety" {
     var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
     var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);

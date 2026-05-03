@@ -86,6 +86,21 @@ pub const FactStore = struct {
         return self.kinds.items.len;
     }
 
+    /// Return a snapshot (copy) of all facts as an allocated slice.
+    /// Caller must free with allocator.free().
+    pub fn snapshot(self: *FactStore, allocator: std.mem.Allocator) ![]Fact {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        const n = self.kinds.items.len;
+        if (n == 0) return &.{};
+        var result = try allocator.alloc(Fact, n);
+        errdefer allocator.free(result);
+        for (self.kinds.items, 0..) |kind, i| {
+            result[i] = Fact.init(kind, self.subj.items[i], self.obj.items[i], self.ctx.items[i]);
+        }
+        return result;
+    }
+
     /// Get a fact by index
     pub fn get(self: *FactStore, index: usize) ?Fact {
         self.mutex.lock();

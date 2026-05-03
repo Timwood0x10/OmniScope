@@ -318,7 +318,7 @@ pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
     if (g_allocator_kb != null) return &g_allocator_kb.?;
 
     g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
-        std.debug.print("[WARN] AllocatorKB init failed: {}, falling back to legacy detection\n", .{err});
+        std.debug.print("[WARN] AllocatorKB init failed: {any}, falling back to legacy detection\n", .{err});
         g_allocator_kb_init_failed = true;
         return null;
     };

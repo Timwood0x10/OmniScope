@@ -196,7 +196,7 @@ pub const AttributionSummary = struct {
 
             const total_in_group = @as(u32, @intCast(group.issues.items.len)) + group.suppressed_count;
 
-            try writer.print("║  {:>16}: {d:>4} ({d:>2} shown, {d:>2} suppressed)       \n", .{
+            try writer.print("║  {s:>16}: {d:>4} ({d:>2} shown, {d:>2} suppressed)       \n", .{
                 group.origin.toString(),
                 total_in_group,
                 visible_count,
