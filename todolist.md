@@ -582,3 +582,256 @@ Phase 3 (性能, ~1天):
 | Public API  | All pub functions have doc comments                |
 | Pre-commit  | `zig fmt` + `zig build test` + line count          |
 
+***
+
+## Emergency Optimization: Rust FFI Blindness Fix
+
+> **日期**: 2026-05-04
+> **基于**: [ROOT_CAUSE_DIAGNOSIS.md](corpus/red_team_test/ROOT_CAUSE_DIAGNOSIS.md) + [RED_TEAM_V3_REPORT](corpus/red_team_test/RED_TEAM_V3_REPORT.md)
+> **基准**: subtle_unsafe_rs.rs (20 FFI bugs) → 当前 0 Zone issues
+> **目标**: Rust FFI TP ≥ 60% (≥12/20 bugs detected)
+> **遵循编码规范**: L574-583
+
+---
+
+### P0-1: Rust Allocator Registration in SemanticRegistry
+
+**文件**: `src/registry/layer2_reg.zig`, `src/pass/analysis/allocation_classifier.zig`
+**改动量**: ~25 行 (layer2_reg: +20, allocation_classifier: +5)
+**依赖**: 无
+
+**具体改动**:
+
+1. 在 `layer2_reg.zig` 的 `registerLayer2()` 中添加 8 个 Rust 分配器注册项:
+   - `__rust_alloc` (.allocator), `__rust_dealloc` (.deallocator), `__rust_realloc` (.reallocator)
+   - `__rdl_alloc` (.allocator), `__rdl_dealloc` (.deallocator)
+   - `__rg_alloc` (.allocator), `__rg_dealloc` (.deallocator)
+   - `exchange_malloc` (.allocator)
+
+2. 在 `allocation_classifier.zig` 的 `isAllocationInstruction()` 中添加 mangled name 子串匹配:
+   - 遍历 RUST_ALLOC_PATTERNS，对 callee_name 做 `std.mem.indexOf` 匹配
+   - 匹配成功即返回 true（在 SemanticRegistry.lookup 和 HEAP_ALLOC_FUNCTIONS 之后）
+
+3. 在 `ptr_lifetime_types.zig` 的 `HEAP_ALLOC_FUNCTIONS` 数组末尾添加:
+   - `"__rust_alloc"`, `"__rust_dealloc"`, `"__rust_realloc"`
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0 (无回归)
+- [ ] `zig fmt` 通过 (代码风格合规)
+- [ ] 对 `subtle_unsafe_rs.ll` 运行 OmniScope，PointerOwnership 报告 allocations ≥ 5 (当前为 0)
+- [ ] 对 `subtle_unsafe_rs.ll` 运行 OmniScope，RS-FFI-01 (Box into_raw DF) 被检出为 PointerOwnership 或 FreeValidation issue
+- [ ] 新增代码行数 ≤ 30 行 (surgical change 原则)
+- [ ] 所有新增 pub 函数有 doc comment (Public API 规范)
+
+---
+
+### P0-2: FREE_FUNCTIONS Extension for Rust Deallocators
+
+**文件**: `src/pass/analysis/issue/free_validation.zig`
+**改动量**: ~8 行
+**依赖**: P0-1
+
+**具体改动**:
+
+1. 在 `FREE_FUNCTIONS` 白名单中添加:
+   - `"__rust_dealloc"`, `"__rdl_dealloc"`, `"__rg_dealloc"`
+   - `"__rust_alloc_zeroed"` (calloc 等价物)
+
+2. 添加子串匹配逻辑 (同 P0-1 的 mangled name 策略):
+   - 对 free call 的 callee name 检查是否包含上述 Rust dealloc 子串
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] 对 `subtle_unsafe_rs.ll` 运行 OmniScope，FreeValidation 能识别 `__rust_dealloc` 调用
+- [ ] RS-FFI-14 (ref from raw then freed) 或 RS-FFI-18 (alloc mismatch) 至少被检出 1 个
+- [ ] 新增代码行数 ≤ 10 行
+
+---
+
+### P1-1: isFreeSafe() — Remove False Safety for Global/FFI Call Origins
+
+**文件**: `src/pass/analysis/issue/free_validation.zig`
+**改动量**: ~30 行
+**依赖**: 无 (可与 P0 并行)
+
+**具体改动**:
+
+1. 修改 `isFreeSafe()` switch 分支:
+   - `.from_global`: 改为调用 `isPossibleIntoRawOutput(freed_ptr)` — 如果全局变量曾被写入 extractvalue (into_raw 结果) → 返回 false (不安全)
+   - `.from_ffi_call`: 改为调用 `isCrossAllocatorFree(free_inst)` — 如果是 libc::free 作用于 FFI 来源指针 → 返回 false
+
+2. 新增 `isPossibleIntoRawOutput(ptr)` 函数 (~12 行):
+   - 用 `findStoresToPointer(ptr)` 找到所有 store 指令
+   - 检查 stored_value 是否来自 `extractvalue` (struct field extraction)
+   - 是 → 说明可能来自 into_raw/from_raw → 返回 true
+
+3. 新增 `isCrossAllocatorFree(free_inst)` 函数 (~8 行):
+   - 获取 free_callee 名字
+   - 如果是 "free" 且 freed_ptr 来自 FFI call → 返回 true (潜在跨分配器)
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] C corpus 回归: `subtle_ffi_bugs.ll` FP 不增加 (原有 C 检出不受影响)
+- [ ] RS-FFI-01 (Box::into_raw double-free) 或 RS-FFI-02 (CString into_raw UAF) 被检出为 FreeValidation issue
+- [ ] 新增代码行数 ≤ 35 行
+- [ ] 所有新增 pub 函数有 doc comment
+
+---
+
+### P1-2: CallbackEscape — Rust Stack Escape Detection
+
+**文件**: `src/pass/analysis/callback_escape.zig`
+**改动量**: ~45 行
+**依赖**: 无 (可与 P0/P1-1 并行)
+
+**具体改动**:
+
+1. 新增 `isRustMangledName(name)` 辅助函数 (~8 行):
+   - 检查 `_ZN` / `_RNv` / `_R` 前缀
+
+2. 新增 `detectStackEscapeToFFI(inst)` 函数 (~25 行):
+   - Step 1: 确认是 call inst
+   - Step 2: callee 不是 Rust mangled name (→ 是 FFI boundary)
+   - Step 3: 遍历参数，检查是否源自 alloca (用 `isDerivedFromAlloca`)
+   - Step 4: 如果是且 `mayStorePointer(callee_name)` → 报告 STACK_ESCAPE
+
+3. 新增 `mayStorePointer(callee_name)` 启发式函数 (~10 行):
+   - 匹配 `_store_`, `_save_`, `_set_`, `_register_`, `_retain_`, callback/register 关键词
+
+4. 排除安全模式 (~5 行):
+   - memcpy/memmove/printf/fputs/strlen 等纯消费函数不报
+
+5. 在 `analyzeFunction()` 主循环中集成调用
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] Go-cgo 回归: 现有 Go 测试用例检出率不下降
+- [ ] RS-FFI-03 (&str escape to C) 或 RS-FFI-11 (stack ref to C) 或 RS-FFI-07 (expose &mut via FFI) 至少被检出 1 个 STACK_ESCAPE issue
+- [ ] RS-FFI-17 (OOB write to FFI — 栈上 buf) 被检出
+- [ ] 新增代码行数 ≤ 50 行
+- [ ] memcpy/printf 等 safe case 不产生误报 (对 subtle_ffi_bugs.c 验证 FP=0)
+
+---
+
+### P1-3: FFITypeMismatch — Truncation Heuristic for Size Parameters
+
+**文件**: `src/pass/analysis/ffi_type_mismatch.zig`
+**改动量**: ~32 行
+**依赖**: 无 (可并行)
+
+**具体改动**:
+
+1. 新增 `detectTruncationMismatch(arg, callee_name, param_index)` 函数 (~22 行):
+   - 获取 arg 的定义指令 (via `getDefiningInstruction`)
+   - 如果定义是 `trunc` 指令:
+     - 获取 src_type 和 dst_type 的 bit_width
+     - 如果 src_bit_width > dst_bit_width (narrowing) 且都是整数类型:
+       - 进一步检查: 参数位置是否像 size/length (param_index ≥ 1, 通常第 2+ 参数)
+       - 排除: 显式 flags packing 场景 (dst_bit_width ≤ 16 且函数名含 flag/mask/pack)
+       - → 返回 POTENTIAL_SIZE_TRUNCATION issue
+
+2. 在 `checkTypeMismatch()` 的现有 detectSizeMismatch/detectAlignmentMismatch 之后调用
+
+3. 新增 IssueKind `.potential_size_truncation` (如需要)
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] 现有 C corpus FP 不增加 (subtle_ffi_bugs.c 的 size_truncation bug 如已有检出则不重复报告)
+- [ ] RS-FFI-05 (oversliced from FFI — len 截断场景) 被检出为 potential_size_truncation
+- [ ] RS-FFI-19 (incomplete error check — 返回值截断) 被检出或合理排除并记录原因
+- [ ] 新增代码行数 ≤ 38 行
+- [ ] 对不含 trunc 的正常 FFI 调用 FP = 0 (用 subtle_ffi_bugs.c 中非 size bug 验证)
+
+---
+
+### P2-1: Ownership Transfer Protocol Tracker (into_raw / from_raw)
+
+**文件**: `src/pass/analysis/pointer_ownership.zig` (主要), `src/pass/analysis/issue/free_validation.zig` (联动)
+**改动量**: ~85 行
+**依赖**: P0-1, P1-1
+
+**具体改动**:
+
+1. 新增 `OwnershipTransferTracker` 结构体 (~30 行):
+   - `transfers: ArrayList(TransferRecord)` — 记录所有 into_raw / from_raw 操作
+   - `TransferRecord = { ptr_value, operation (enum { into_raw, from_raw }), location }`
+
+2. 新增 `scanForOwnershipTransfers(func)` 函数 (~25 行):
+   - 扫描函数内所有 `extractvalue` 指令 (into_raw 的 IR 特征)
+   - 扫描所有 `insertvalue` + 后续 drop/dealloc (from_raw 的 IR 特征)
+   - 记录到 transfers 列表
+
+3. 新增 `validateTransferProtocol(transfers, free_calls)` 函数 (~20 行):
+   - 对每个 into_raw 记录: 检查该 ptr 是否 (a) 曾传入 FFI call AND (b) 也被 free → DOUBLE_FREE
+   - 对每个 from_raw 记录: 检查该 ptr 是否来自 FFI call return AND alloc source ≠ Rust → CROSS_ALLOCATOR
+
+4. 在 pointer_ownership.zig 的 analyze() 末尾调用 validateTransferProtocol()
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] RS-FFI-01 (Box into_raw double-free) 被精确检出为 ownership_violation / double_free
+- [ ] RS-FFI-02 (CString into_raw UAF) 被检出
+- [ ] RS-FFI-15 (free before fire — into_raw 后立即 free) 被检出
+- [ ] 对 subtle_ffi_bugs.c (C 代码) 无 FP (C 不使用 into_raw/from_raw 模式)
+- [ ] 新增代码行数 ≤ 95 行
+- [ ] OwnershipTransferTracker 为内部结构体 (不需 pub)
+
+---
+
+### P2-2: as_ptr Dangling Detection (Vec/String/CString lifetime)
+
+**文件**: `src/pass/analysis/callback_escape.zig` (或新建 `dangling_ref.zig`)
+**改动量**: ~65 行
+**依赖**: P0-1 (需先识别 __rust_alloc 以追踪 Vec 分配)
+
+**具体改动**:
+
+1. 新增 `DanglingRefDetector` (~50 行):
+   - 扫描所有 `getelementptr` + `bitcast` 组合 (as_ptr 的 IR 特征)
+   - 追踪 parent 对象 (Vec/String/CString) 的生命周期:
+     - parent 是否在 as_ptr 结果最后一次使用之前被 drop/dealloc?
+     - 用 def-use chain 或 dominance 分析判断时序
+   - 如果 parent death < last use of as_ptr result → DANGLING_REF
+
+2. 特殊检测: as_ptr 结果传入 callback ctx (~15 行):
+   - 如果 as_ptr 结果作为参数传给 callback registration 函数
+   - 且 parent (Vec) 在回调可能被触发之前 drop → CALLBACK_DANGLING
+
+**验收标准 (Acceptance Criteria)**:
+- [ ] `zig build test` EXIT: 0
+- [ ] `zig fmt` 通过
+- [ ] RS-FFI-04 (Vec as_ptr dangling — data.drop() 后使用 ptr) 被检出为 dangling_ref
+- [ ] RS-FFI-12 (stale between calls — 两次调用间 Vec 可能被 realloc) 被检出或合理排除
+- [ ] 正常的 as_ptr 用法 (parent 活着的时候用) 不报 FP
+- [ ] 新增代码行数 ≤ 75 行
+
+---
+
+## Emergency Optimization Summary
+
+| Task ID | Priority | Title | Files | LOC | Deps | Target Bugs |
+|---------|----------|-------|-------|-----|------|-------------|
+| P0-1 | **P0** | Rust Allocator Registration | layer2_reg.zig, allocation_classifier.zig, ptr_lifetime_types.zig | ~25 | none | RS-01,02,14,18 |
+| P0-2 | **P0** | FREE_FUNCTIONS Extension | free_validation.zig | ~8 | P0-1 | RS-14,18 |
+| P1-1 | **P1** | isFreeSafe() Fix | free_validation.zig | ~30 | none | RS-01,02 |
+| P1-2 | **P1** | CallbackEscape Rust Stack Escape | callback_escape.zig | ~45 | none | RS-03,07,11,17 |
+| P1-3 | **P1** | Trunc Heuristic for Type Mismatch | ffi_type_mismatch.zig | ~32 | none | RS-05,19 |
+| P2-1 | **P2** | Ownership Transfer Protocol | pointer_ownership.zig, free_validation.zig | ~85 | P0-1,P1-1 | RS-01,02,15 |
+| P2-2 | **P2** | as_ptr Dangling Detection | callback_escape.zig or new file | ~65 | P0-1 | RS-04,12 |
+
+### 总体验收标准 (Overall Acceptance Criteria)
+
+- [ ] **Rust TP ≥ 60%**: subtle_unsafe_rs.rs (20 bugs) → Zone issues ≥ 12
+- [ ] **C TP 不退化**: subtle_ffi_bugs.c (20 bugs) → Zone issues ≥ 15 (当前 17，允许 ±2 波动)
+- [ ] **FP 控制在 ≤ 15%**: 两个测试文件的 FP/total_issues ≤ 15%
+- [ ] **`zig build test` EXIT: 0**: 全部回归通过
+- [ ] **`zig fmt` 无 diff**: 代码风格合规
+- [ ] **总新增代码 ≤ 320 行**: 全部 7 个 task 合计 (surgical change)
+- [ ] **每个文件增量 ≤ 100 行**: 符合 File size ≤ 1000 规范
+- [ ] **所有 pub 函数有 doc comment**: Public API 规范
+
