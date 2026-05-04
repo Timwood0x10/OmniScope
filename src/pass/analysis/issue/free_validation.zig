@@ -404,7 +404,6 @@ pub const FreeValidationPass = struct {
         origin_info: ?PointerInfo,
         diag: *DiagnosticWriter,
     ) !void {
-        _ = ptr_arg;
         const caller_name_ptr = c.LLVMGetValueName(caller_func);
         const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
             std.mem.span(caller_name_ptr)
@@ -412,6 +411,13 @@ pub const FreeValidationPass = struct {
             "unknown";
 
         const location = Location.init(caller_name);
+
+        // E2-2a: Alias closure severity upgrade — if the freed pointer reaches
+        // FFI boundaries through alias chains, this is a cross-language memory error.
+        const ptr_val: u64 = @intFromPtr(ptr_arg);
+        const reaches_ffi = ctx.isOnDangerPathFull(ptr_val);
+        const base_confidence: f32 = if (reaches_ffi) 0.85 else 0.75;
+        const severity: Severity = if (reaches_ffi) .critical else .high;
 
         // Build trace for reasoning path
         const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -427,24 +433,26 @@ pub const FreeValidationPass = struct {
             else => "non-heap source",
         };
 
+        const ffi_note = if (reaches_ffi) " [cross-FFI alias detected]" else "";
+
         const message = try std.fmt.allocPrint(
             ctx.allocator,
-            "{s}() called on {s} pointer (confidence: {d:.2}%)",
-            .{ free_func_name, origin_str, 75.0 },
+            "{s}() called on {s} pointer (confidence: {d:.2}%{s})",
+            .{ free_func_name, origin_str, base_confidence, ffi_note },
         );
 
         const issue = Issue.initWithTrace(
             .invalid_free,
             message,
             location,
-            .high,
-            0.75,
+            severity,
+            base_confidence,
             trace,
         );
 
         try ctx.addIssue(&issue);
 
-        diag.warn("Invalid {s} on {s} pointer in function: {s}", .{ free_func_name, origin_str, caller_name });
+        diag.warn("Invalid {s} on {s} pointer in function: {s}{s}", .{ free_func_name, origin_str, caller_name, ffi_note });
     }
 
     /// Create trace entry for pointer origin

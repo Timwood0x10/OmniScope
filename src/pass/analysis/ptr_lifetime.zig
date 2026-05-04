@@ -216,7 +216,10 @@ pub const PtrLifetimePass = struct {
 
             // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
             const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            var classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            // E2-2e: Stdl functions on FFI danger path should not be suppressed
+            const func_ptr_val: u64 = @intFromPtr(func);
+            classification = NoiseReduction.reevaluateWithDangerPath(classification, ctx.isRelevantFunction(func_ptr_val));
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 

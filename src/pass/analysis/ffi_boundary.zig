@@ -349,6 +349,23 @@ pub const FFIBoundaryPass = struct {
         );
         stats.count += 1;
 
+        // E2-2d: Feedback loop — mark pointer args of FFI boundary calls as
+        // ffi_auto_relevant so downstream passes (free_validation, memory_safety)
+        // can correlate issues with FFI context.
+        {
+            var arg_i: u32 = 0;
+            const num_ops = c.LLVMGetNumOperands(inst);
+            while (arg_i < num_ops) : (arg_i += 1) {
+                const arg = c.LLVMGetOperand(inst, arg_i);
+                if (@intFromPtr(arg) == 0) continue;
+                const arg_type = c.LLVMTypeOf(arg);
+                if (@intFromPtr(arg_type) == 0) continue;
+                if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
+                    ctx.markFfiRelevant(@as(u64, @intFromPtr(arg))) catch {};
+                }
+            }
+        }
+
         // Run specialized boundary checks (delegates to boundary_check module)
         try boundary_check.checkSpecializedBoundary(ctx, diag, inst, caller_func, called_name);
 

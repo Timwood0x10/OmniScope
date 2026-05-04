@@ -302,8 +302,37 @@ fn isZigStdlib(name: []const u8) bool {
     return false;
 }
 
+const ZIG_EXTERN_PREFIXES = &[_][]const u8{
+    "zig_",   // Zig runtime FFI bridges (e.g., zig_write, zig_alloc)
+    "__zig_", // Zig compiler-generated FFI glue code
+};
+
+const ZIG_EXTERN_EXCLUDES = &[_][]const u8{
+    "zig_assert_fail",
+    "zig_panic",
+    "zig_oq",
+    "zig_generic_resolve",
+    "zig_error_name",
+    "__zig_switch_target",
+    "__zig_error_name",
+    "__zig_resolve_enum_name",
+    "__zig_bug",
+    "__zig_panic_handler",
+};
+
 fn isZigExtern(name: []const u8) bool {
-    _ = name;
+    for (ZIG_EXTERN_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, name, prefix)) {
+            var is_excluded = false;
+            for (ZIG_EXTERN_EXCLUDES) |exc| {
+                if (std.mem.eql(u8, name, exc)) {
+                    is_excluded = true;
+                    break;
+                }
+            }
+            if (!is_excluded) return true;
+        }
+    }
     return false;
 }
 

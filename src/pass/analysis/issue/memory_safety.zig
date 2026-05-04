@@ -227,7 +227,7 @@ pub const MemorySafetyPass = struct {
                     diag.debug("[SUPPRESSED] Double free in Rust stdlib panic/cleanup: {s}", .{free_func_name});
                     return false;
                 }
-                try reportDoubleFree(ctx, caller_func, free_func_name, diag);
+                try reportDoubleFree(ctx, caller_func, free_func_name, ptr_value, diag);
                 return true;
             }
         }
@@ -237,7 +237,7 @@ pub const MemorySafetyPass = struct {
         try freed_pointers.append(ctx.allocator, ptr_value);
 
         if (!validation.is_valid and validation.confidence > 0.7) {
-            try reportSuspiciousFree(ctx, caller_func, free_func_name, validation.confidence, diag);
+            try reportSuspiciousFree(ctx, caller_func, free_func_name, validation.confidence, ptr_value, diag);
             return true;
         }
 
@@ -248,6 +248,7 @@ pub const MemorySafetyPass = struct {
         ctx: *PassContext,
         caller_func: c.LLVMValueRef,
         func_name: []const u8,
+        ptr_value: u64,
         diag: *DiagnosticWriter,
     ) !void {
         const caller_name_ptr = c.LLVMGetValueName(caller_func);
@@ -257,26 +258,34 @@ pub const MemorySafetyPass = struct {
             "unknown";
 
         const location = Location.init(caller_name);
-        const confidence: f32 = 0.85;
+
+        // E2-2b: UAF + FFI edge correlation — if the double-freed pointer
+        // reaches FFI boundaries through alias chains, this is a cross-language
+        // use-after-free which is far more dangerous.
+        const reaches_ffi = ctx.isOnDangerPathFull(ptr_value);
+        const confidence: f32 = if (reaches_ffi) 0.92 else 0.85;
+        const severity: Severity = if (reaches_ffi) .critical else .high;
+
+        const ffi_note = if (reaches_ffi) " [cross-FFI alias detected]" else "";
 
         const message = try std.fmt.allocPrint(
             ctx.allocator,
-            "Potential double free via '{s}' (confidence: {d:.1}%)",
-            .{ func_name, confidence * 100.0 },
+            "Potential double free via '{s}' (confidence: {d:.1}%{s})",
+            .{ func_name, confidence * 100.0, ffi_note },
         );
 
         const issue = Issue.init(
             .double_free,
             message,
             location,
-            .high,
+            severity,
             confidence,
         );
 
         try ctx.addIssue(&issue);
         ctx.allocator.free(message);
 
-        diag.warn("Double free: {s} → {s}", .{ caller_name, func_name });
+        diag.warn("Double free: {s} → {s}{s}", .{ caller_name, func_name, ffi_note });
     }
 
     fn reportSuspiciousFree(
@@ -284,6 +293,7 @@ pub const MemorySafetyPass = struct {
         caller_func: c.LLVMValueRef,
         func_name: []const u8,
         confidence: f32,
+        ptr_value: u64,
         diag: *DiagnosticWriter,
     ) !void {
         const caller_name_ptr = c.LLVMGetValueName(caller_func);
@@ -296,29 +306,36 @@ pub const MemorySafetyPass = struct {
 
         const location = Location.init(caller_name);
 
+        // E2-2b: UAF + FFI edge correlation
+        const reaches_ffi = ctx.isOnDangerPathFull(ptr_value);
+        const adj_confidence = if (reaches_ffi) @min(confidence + 0.10, 0.95) else confidence;
+        const severity: Severity = if (reaches_ffi and adj_confidence > 0.8) .high else
+            if (adj_confidence > 0.8) .medium else .low;
+
+        const ffi_note = if (reaches_ffi) " [cross-FFI alias]" else "";
+
         const message = try std.fmt.allocPrint(
             ctx.allocator,
-            "Suspicious free via '{s}' without matching alloc (confidence: {d:.1}%)",
-            .{ func_name, confidence * 100.0 },
+            "Suspicious free via '{s}' without matching alloc (confidence: {d:.1}%{s})",
+            .{ func_name, adj_confidence * 100.0, ffi_note },
         );
-
-        const severity: Severity = if (confidence > 0.8) .medium else .low;
 
         const issue = Issue.init(
             .use_after_free,
             message,
             location,
             severity,
-            confidence,
+            adj_confidence,
         );
 
         try ctx.addIssue(&issue);
         ctx.allocator.free(message);
 
-        diag.warn("Suspicious free: {s} → {s} ({d:.1}%)", .{
+        diag.warn("Suspicious free: {s} → {s} ({d:.1}%){s}", .{
             caller_name,
             func_name,
-            confidence * 100.0,
+            adj_confidence * 100.0,
+            ffi_note,
         });
     }
 

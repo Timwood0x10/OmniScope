@@ -721,9 +721,25 @@ pub const CallbackEscapePass = struct {
                 }
             }
 
-            try reportGenericCallbackEscape(ctx, func_name, escape, diag);
+            // E2-2c: Indirect escape via alias closure — check if the callback
+            // argument's aliases reach FFI boundaries through memory graph.
+            try reportCallbackWithAliasCheck(ctx, func_name, escape, diag);
             stats.callback_escapes += 1;
         }
+    }
+
+    /// E2-2c: Report callback escape with alias-closure FFI detection.
+    /// Extracted from two identical call sites (analyzeFunction + checkCallbackEscape)
+    /// to eliminate code duplication. Null-safe: null callback_arg reports with
+    /// base confidence (no FFI boost).
+    fn reportCallbackWithAliasCheck(
+        ctx: *PassContext,
+        func_name: []const u8,
+        escape: CallbackEscapeInfo,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const indirect_escape = if (@intFromPtr(escape.callback_arg) == 0) false else ctx.isOnDangerPathFull(@intFromPtr(escape.callback_arg));
+        try reportGenericCallbackEscape(ctx, func_name, escape, diag, indirect_escape);
     }
 
     fn checkCallbackEscape(
@@ -869,7 +885,7 @@ pub const CallbackEscapePass = struct {
                     }
                 }
             }
-            try reportGenericCallbackEscape(ctx, func_name, escape, diag);
+            try reportCallbackWithAliasCheck(ctx, func_name, escape, diag);
             stats.callback_escapes += 1;
         }
     }

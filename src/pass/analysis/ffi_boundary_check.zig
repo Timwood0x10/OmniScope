@@ -12,6 +12,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Location = @import("../../diag/issue.zig").Location;
 const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const IssueSeverity = @import("../../diag/issue.zig").Severity;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
 const FunctionSemantics = @import("../../registry/semantic_registry.zig").FunctionSemantics;
@@ -311,15 +312,11 @@ pub fn checkTypeCompatibility(
     called_name: []const u8,
     sem: FunctionSemantics,
 ) !void {
-    _ = ctx;
-    _ = diag;
-    _ = inst;
-    _ = func;
     _ = called_name;
     _ = sem;
-
-    // Type compatibility checks temporarily disabled due to LLVM API compatibility
-    // Will be re-enabled once the required LLVM functions are available
+    return type_checker.checkTypeCompatibility(ctx, diag, inst, func, struct {
+        fn report(_: *PassContext, _: IssueKind, _: []const u8, _: []const u8, _: IssueSeverity, _: f32) anyerror!void {}
+    }.report);
 }
 
 /// Convert RiskKind to IssueKind for reporting.

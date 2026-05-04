@@ -46,6 +46,13 @@ pub const RiskWeight = enum(u8) {
     }
 };
 
+/// Result of function classification for noise filtering.
+pub const ClassificationResult = struct {
+    origin: FunctionOrigin,
+    weight: RiskWeight,
+    reason: ?[]const u8,
+};
+
 /// Configuration for noise reduction behavior.
 pub const NoiseReductionConfig = struct {
     /// Focus on user code only (suppress stdlib/compiler-generated)
@@ -69,7 +76,7 @@ pub fn classifyFunction(
     func_name: []const u8,
     debug_file_path: ?[]const u8,
     config: NoiseReductionConfig,
-) struct { origin: FunctionOrigin, weight: RiskWeight, reason: ?[]const u8 } {
+) ClassificationResult {
     // Layer 1: Name-based filter (fastest)
     if (layer1_NameBasedFilter(func_name)) |reason| {
         return .{
@@ -93,6 +100,27 @@ pub fn classifyFunction(
         .weight = .critical,
         .reason = null,
     };
+}
+
+/// E2-2e: Re-evaluate stdlib classification with MemoryGraph danger-path context.
+///
+/// Stdlib functions whose pointers flow into FFI boundaries should NOT be
+/// suppressed — they are part of a cross-language data path and may carry
+/// real risks. This function upgrades stdlib→user when the function is
+/// confirmed to be on an FFI danger path.
+pub fn reevaluateWithDangerPath(
+    classification: ClassificationResult,
+    is_on_danger_path: bool,
+) ClassificationResult {
+    if (!is_on_danger_path) return classification;
+    if (classification.origin == .stdlib) {
+        return .{
+            .origin = .user,
+            .weight = .medium,
+            .reason = "stdlib-on-danger-path",
+        };
+    }
+    return classification;
 }
 
 // ═══════════════════════════════════════════════════════════════
