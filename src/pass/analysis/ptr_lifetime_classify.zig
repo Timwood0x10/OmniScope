@@ -12,7 +12,6 @@ const KNOWN_DEALLOCATORS = pt.KNOWN_DEALLOCATORS;
 /// This module contains pure functions that classify LLVM function names
 /// into categories (alloc/free/resource) based on naming conventions.
 /// No state is maintained — all functions are deterministic lookups.
-
 pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
     const factory_prefixes = [_][]const u8{
         "create", "Create", "CREATE",

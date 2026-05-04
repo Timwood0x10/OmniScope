@@ -28,7 +28,6 @@ const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 /// - Call violations (stack escape, use-after-free, heap escape)
 /// - Return violations (borrow escape, stack address return)
 /// - Store-to-global violations
-
 pub fn checkViolations(
     ctx: *PassContext,
     inst: c.LLVMValueRef,
@@ -539,11 +538,9 @@ fn isAllocaReturnSuppressed(func_name: []const u8, ptr_info: PtrInfo) bool {
 
     const factory_substrings = [_][]const u8{
         "Expr",     "Select",   "Token",        "SrcList",     "Name",
-        "Trigger",  "CollSeq",  "Vtab",         "Module",
-                 "Malloc",
+        "Trigger",  "CollSeq",  "Vtab",         "Module",      "Malloc",
         "Alloc",    "Realloc",  "Hash",         "List",        "Table",
-        "Cache",    "Pool",
-                "Hook",         "Callback",    "Handler",
+        "Cache",    "Pool",     "Hook",         "Callback",    "Handler",
         "Notifier", "Observer", "busy_handler", "commit_hook", "rollback_hook",
         "wal_hook",
     };
@@ -551,10 +548,9 @@ fn isAllocaReturnSuppressed(func_name: []const u8, ptr_info: PtrInfo) bool {
         if (std.mem.indexOf(u8, func_name, sub) != null) {
             const factory_prefixes = [_][]const u8{
                 "sqlite3",  "rowSet",    "alloc", "create",
-                "vtab",     "attach",    "token",
-                    "curl_",
-                    "uv_",      "json_",     "xml_",  "ldap_",
-                    "avcodec_", "avformat_",
+                "vtab",     "attach",    "token", "curl_",
+                "uv_",      "json_",     "xml_",  "ldap_",
+                "avcodec_", "avformat_",
             };
             for (factory_prefixes) |prefix| {
                 if (std.mem.startsWith(u8, func_name, prefix)) return true;

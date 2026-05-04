@@ -701,15 +701,22 @@ pub const CallbackEscapePass = struct {
                         diag.debug("[SUPPRESSED] Callback has >3 params: {s}", .{func_name});
                         continue;
                     }
+                    // BUG-FIX-8: LLVMGetStructName returns null for function types.
+                    // When type_name is empty, skip signature mismatch check
+                    // and proceed to generic callback escape detection.
                     const type_str = c.LLVMGetStructName(cb_type);
                     const type_name = if (@intFromPtr(type_str) != 0)
                         std.mem.span(type_str)
                     else
                         "";
-                    if (!validate_callback_signature(escape.receiver_name, type_name)) {
+                    if (type_name.len > 0 and !validate_callback_signature(escape.receiver_name, type_name)) {
                         try reportSignatureMismatch(ctx, func_name, escape, diag);
                         stats.callback_escapes += 1;
                         continue;
+                    }
+                    // Issue1 fix: Debug log when type_name is empty (function type)
+                    if (type_name.len == 0) {
+                        diag.debug("[CALLBACK] Skipping signature check for function type: {s}", .{func_name});
                     }
                 }
             }

@@ -15,7 +15,6 @@ const getAllocatorKB = @import("ptr_lifetime_types.zig").getAllocatorKB;
 /// - putPtrInfo: HashMap insertion with cleanup
 /// - mergeAllocSite: Phi node merging
 /// - propagateOrigin: Alias chain propagation
-
 pub fn inferContentKind(value: c.LLVMValueRef) memory_graph.SourceKind {
     if (c.LLVMIsAGlobalValue(value) != null) return .resource_alloc;
     if (c.LLVMIsAFunction(value) != null) return .resource_alloc;

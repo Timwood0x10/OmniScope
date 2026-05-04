@@ -28,7 +28,10 @@ const DangerSurface = MemoryGraph.DangerSurface;
 pub const DangerSurfacePass = struct {
     pub const name = "danger-surface";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "call-graph", "ptr-lifetime" };
+    // NOTE: MemoryGraph is initialized in pipeline.zig:L95 (not in ptr-lifetime pass),
+    // so we only need call-graph for CrossLangEdges.
+    // ptr-lifetime POPULATES MemoryGraph but doesn't CREATE it.
+    pub const deps = &[_][]const u8{"call-graph"};
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;

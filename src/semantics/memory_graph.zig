@@ -776,7 +776,12 @@ pub const MemoryGraph = struct {
             const arg_edge = &graph.call_args.items[idx];
             var returned = false;
             for (graph.call_rets.items) |ret_edge| {
-                if (ret_edge.caller_inst == arg_edge.caller_inst) {
+                // FIX-4 (CTX-2): Also match ret_ptr to reduce false positives
+                // Issue2 fix: Add null check for ret_ptr to avoid false matches
+                if (ret_edge.caller_inst == arg_edge.caller_inst and
+                    ret_edge.ret_ptr != 0 and
+                    ret_edge.ret_ptr == ptr_val)
+                {
                     returned = true;
                     break;
                 }

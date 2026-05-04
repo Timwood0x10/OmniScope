@@ -739,9 +739,14 @@ fn isZigFunction(name: []const u8) bool {
 
 /// Check if this is a Go function (by naming convention).
 fn isGoFunction(name: []const u8) bool {
+    // BUG-FIX-6: Removed overly broad "." match that incorrectly
+    // classified C++ (std.vector.push_back) and Rust (core.ptr.drop_in_place)
+    // functions as Go. Now only matches known Go-specific patterns.
     if (std.mem.startsWith(u8, name, "runtime.")) return true;
     if (std.mem.startsWith(u8, name, "main.")) return true;
-    if (std.mem.indexOf(u8, name, ".") != null) return true; // package.function
+    if (std.mem.startsWith(u8, name, "go.")) return true; // go.* prefix
+    if (std.mem.indexOf(u8, name, "cgocall") != null) return true; // cgo glue
+    if (std.mem.indexOf(u8, name, "crosscall") != null) return true; // crosscall2
     return false;
 }
 

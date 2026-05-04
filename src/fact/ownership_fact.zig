@@ -1,5 +1,8 @@
 //! Ownership Fact for Cross-Language Ownership Analysis
 //!
+//! **DEPRECATED (2026-05-04):** This module is unused — no @import references found.
+//! Retained for potential future use. See todolist.md DEAD-1 for details.
+//!
 //! This module defines the ownership tracking fact used to detect
 //! ownership mismatches across Rust-C FFI boundaries.
 
