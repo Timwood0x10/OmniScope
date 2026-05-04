@@ -30,7 +30,9 @@ const ptr_types = @import("../ptr_lifetime_types.zig");
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
 /// covers library-specific cleanup (sqlite3_free, curl_easy_cleanup, etc.).
 pub const FREE_FUNCTIONS = &[_][]const u8{
-    "free", "dealloc", "deallocate", "operator delete", "operator delete[]",
+    "free",           "dealloc",       "deallocate",   "operator delete", "operator delete[]",
+    // Rust global deallocator intrinsics (substring-matched via isFreeFunction)
+    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
 };
 
 /// Memory allocation functions — delegated to ptr_types (single source of truth).
@@ -164,13 +166,24 @@ pub const FreeValidationPass = struct {
 
                         if (isAllocFunction(func_name)) {
                             const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
-                            // Use getOrPut to check if key exists and free old desc if needed
                             const gop = try pointer_origins.getOrPut(inst);
                             if (gop.found_existing) {
                                 allocator.free(gop.value_ptr.source_desc);
                             }
                             gop.value_ptr.* = .{
                                 .origin = .from_malloc,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                            };
+                        } else if (isFFIBoundaryCall(func_name)) {
+                            // FFI boundary call returning a pointer — cross-allocator risk
+                            const desc = try std.fmt.allocPrint(allocator, "from FFI call {s}()", .{func_name});
+                            const gop = try pointer_origins.getOrPut(inst);
+                            if (gop.found_existing) {
+                                allocator.free(gop.value_ptr.source_desc);
+                            }
+                            gop.value_ptr.* = .{
+                                .origin = .from_ffi_call,
                                 .source_inst = inst,
                                 .source_desc = desc,
                             };
@@ -288,6 +301,20 @@ pub const FreeValidationPass = struct {
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
+            .from_ffi_call => {
+                // Pointer from FFI boundary call being freed by a different allocator.
+                // Risk: C-allocated pointer freed by __rust_dealloc, or vice versa.
+                // Report with reduced confidence since cross-allocator free is
+                // sometimes legitimate (e.g., C's malloc + Rust's free wrapper).
+                if (!isRustDeallocFunction(callee_name) and
+                    !std.mem.eql(u8, callee_name, "free"))
+                {
+                    // Non-standard free on FFI-sourced ptr — less confident
+                    return false;
+                }
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
             .from_malloc => {},
             .unknown => {},
         }
@@ -309,23 +336,50 @@ pub const FreeValidationPass = struct {
         return false;
     }
 
-    /// Check if function is a free function
+    /// Check if callee is an FFI boundary function (non-Rust-mangled name).
+    /// Used to detect pointers returned from C/external functions, which carry
+    /// cross-allocator free risk when passed to libc::free or __rust_dealloc.
+    fn isFFIBoundaryCall(func_name: []const u8) bool {
+        if (func_name.len < 2) return false;
+        // Rust-internal functions use _ZN / _RNv / _R mangled prefixes.
+        // LLVM intrinsics start with "llvm.".
+        // Anything else that doesn't start with these is likely an extern "C" FFI call.
+        const rust_prefixes = [_][]const u8{ "_ZN", "_RNv", "_R" };
+        for (rust_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) return false;
+        }
+        if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
+        return true;
+    }
+
+    /// Check if function is a free function.
+    /// Uses exact match + endsWith to avoid FP like 'my_custom_free' matching 'free'.
     fn isFreeFunction(func_name: []const u8) bool {
         for (FREE_FUNCTIONS) |free_func| {
-            if (std.mem.indexOf(u8, func_name, free_func) != null) {
+            if (functionNameMatches(func_name, free_func)) {
                 return true;
             }
         }
         return false;
     }
 
-    /// Check if function is an allocation function
+    /// Check if function is an allocation function.
+    /// Uses exact match + endsWith to avoid FP like 'my_custom_allocator' matching 'alloc'.
     fn isAllocFunction(func_name: []const u8) bool {
         for (ALLOC_FUNCTIONS) |alloc_func| {
-            if (std.mem.eql(u8, func_name, alloc_func)) {
+            if (functionNameMatches(func_name, alloc_func)) {
                 return true;
             }
         }
+        return false;
+    }
+
+    /// Match strategy: exact equality OR suffix match.
+    /// Prevents substring FP (e.g., 'my_custom_free' ≠ 'free')
+    /// while still catching mangled names like '_ZN...freeEv'.
+    fn functionNameMatches(func_name: []const u8, pattern: []const u8) bool {
+        if (std.mem.eql(u8, func_name, pattern)) return true;
+        if (std.mem.endsWith(u8, func_name, pattern)) return true;
         return false;
     }
 

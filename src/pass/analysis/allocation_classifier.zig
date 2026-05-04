@@ -45,7 +45,24 @@ pub fn isAllocationInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
     }
 
     // Fallback: delegate to centralized allocator detection (ptr_types + AllocatorKB).
-    return ptr_types.isHeapAllocFunction(callee_name);
+    if (ptr_types.isHeapAllocFunction(callee_name)) return true;
+
+    // Safety net: Rust mangled allocators (e.g. _RNv...__rust_alloc) that may not
+    // be caught by exact-match fallback above. Uses substring match since Rust
+    // compiler emits mangled names containing the intrinsic base name.
+    return isRustMangledAllocator(callee_name);
+}
+
+/// Check if callee_name contains a Rust allocator intrinsic substring.
+/// Handles mangled names like _RNvCsfLfy6EI15iL_7___rustc12___rust_alloc
+/// where the base name "__rust_alloc" appears as a contiguous substring.
+///
+/// Uses canonical pattern list from ptr_types.RUST_ALLOC_INTRINSICS.all (single source of truth).
+fn isRustMangledAllocator(callee_name: []const u8) bool {
+    for (ptr_types.RUST_ALLOC_INTRINSICS.all) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
+    }
+    return false;
 }
 
 /// Classify the type of allocation.

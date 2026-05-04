@@ -13,6 +13,7 @@
 /// - Zig (avg): 191 → ~40 issues (FP rate <30%)
 /// - C (SQLite): 0 → 0 (no change, already clean)
 const std = @import("std");
+const ptr_types = @import("ptr_lifetime_types.zig");
 const semantics = @import("../../semantics/noise_filter.zig");
 const ffi_utils = @import("ffi_utils.zig");
 
@@ -189,6 +190,7 @@ const llvm_intrinsic_prefixes = [_][]const u8{
 /// as part of standard library operations that are guaranteed safe.
 const rust_synthetic_patterns = [_][]const u8{
     // Global allocator shims (safe by design — just wraps system alloc)
+    // Canonical source: ptr_types.RUST_ALLOC_INTRINSICS.alloc_only (subset below)
     "__rust_alloc",
     "__rust_dealloc",
     "__rust_realloc",

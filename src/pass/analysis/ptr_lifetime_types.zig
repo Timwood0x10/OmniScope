@@ -194,14 +194,42 @@ pub const KNOWN_DEALLOCATORS = struct {
     };
 };
 
+/// Canonical Rust global allocator intrinsic patterns — single source of truth.
+///
+/// These appear in mangled LLVM IR names like:
+///   _RNvCsfLfy6EI15iL_7___rustc12___rust_alloc
+///   _ZN5alloc9alloc18alloc_global17h...
+///
+/// All consumers MUST import from here — never hardcode these patterns elsewhere.
+pub const RUST_ALLOC_INTRINSICS = struct {
+    /// All 8 Rust allocator/deallocator intrinsics (alloc + dealloc combined)
+    pub const all = [_][]const u8{
+        "__rust_alloc", "__rust_dealloc", "__rust_realloc",
+        "__rdl_alloc", "__rdl_dealloc", "__rg_alloc",
+        "__rg_dealloc", "exchange_malloc",
+    };
+    /// Allocator-only subset (no deallocators)
+    pub const alloc_only = [_][]const u8{
+        "__rust_alloc", "__rust_realloc", "__rdl_alloc",
+        "__rg_alloc", "exchange_malloc",
+    };
+    /// Deallocator-only subset
+    pub const dealloc_only = [_][]const u8{
+        "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+    };
+};
+
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",         "calloc",        "realloc",      "aligned_alloc",
-    "valloc",         "pvalloc",       "memalign",     "operator new",
-    "operator new[]", "into_raw",      "allocImpl",    "mmap",
-    "dlopen",         "fopen",         "socket",       "JNI_OnLoad",
-    "Py_Initialize",  "Py_BuildValue", "PyTuple_New",  "PyList_New",
-    "PyDict_New",     "NewStringUTF",  "NewByteArray", "NewGlobalRef",
+    "malloc",          "calloc",         "realloc",      "aligned_alloc",
+    "valloc",          "pvalloc",        "memalign",     "operator new",
+    "operator new[]",  "into_raw",       "allocImpl",    "mmap",
+    "dlopen",          "fopen",          "socket",       "JNI_OnLoad",
+    "Py_Initialize",   "Py_BuildValue",  "PyTuple_New",  "PyList_New",
+    "PyDict_New",      "NewStringUTF",   "NewByteArray", "NewGlobalRef",
+    // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
+    "__rust_alloc",    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",
+    "exchange_malloc",
 };
 
 // ============================================================================

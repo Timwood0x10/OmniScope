@@ -12,6 +12,7 @@ AGENTS.md
 
 # Zig build artifacts
 .zig-cache/
+.zig-out-local/
 zig-out/
 zig-build-*.log
 

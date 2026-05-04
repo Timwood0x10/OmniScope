@@ -8,7 +8,7 @@
 //! - C function retaining Go-allocated pointer beyond call scope
 //! - Missing C.free / C.malloc pairs in cgo code
 //!
-//! Reference: plan/lang_ffi_analysis/go_ffi_fliter.md
+//! Reference: /lang_ffi_analysis/go_ffi_fliter.md
 //!
 //! Example bugs detected:
 //!

@@ -52,7 +52,9 @@ pub const TypeMismatchKind = enum(u8) {
     /// C++ ABI mismatch: different name mangling or calling convention
     cpp_abi_mismatch,
     /// Zig alignment mismatch: @alignOf != C alignof
-    zig_alignment_mismatch,
+    zig_align_mismatch,
+    /// Size truncation: narrowing integer conversion at FFI boundary (trunc i64→i32)
+    size_truncation,
 };
 
 /// Information about a detected type mismatch.
@@ -238,6 +240,13 @@ pub const FFITypeMismatchPass = struct {
             return mismatch;
         }
 
+        // Check 4: Truncation heuristic — narrowing int conversion at FFI boundary
+        // Detects patterns like: trunc i64 %len → i32 passed to FFI call (Rust usize→i32)
+        if (detectTruncationMismatch(arg, callee_name, param_index, call_inst)) |mismatch| {
+            reportTypeMismatch(ctx, caller_name, callee_name, call_inst, mismatch, diag) catch {};
+            return mismatch;
+        }
+
         return null;
     }
 
@@ -391,6 +400,104 @@ pub const FFITypeMismatchPass = struct {
         }
 
         return null;
+    }
+
+    /// Detects narrowing integer truncation at FFI boundary.
+    ///
+    /// When Rust code calls an extern "C" function with a truncated value
+    /// (e.g., `len as i32` where len is usize/64-bit), the truncation has
+    /// already happened in the IR. This heuristic detects the pattern:
+    ///   %t = trunc i64 %src to i32
+    ///   call @ffi_func(..., i32 %t, ...)
+    ///
+    /// Only flags when:
+    /// 1. The argument's defining instruction is a `trunc`
+    /// 2. Source type is wider than destination (narrowing)
+    /// 3. Both are integer types
+    /// 4. Not a known safe bit-packing pattern (dst ≤ 16 with flag/mask/pack name)
+    fn detectTruncationMismatch(
+        arg: c.LLVMValueRef,
+        callee_name: []const u8,
+        param_index: u32,
+        call_inst: c.LLVMValueRef,
+    ) ?TypeMismatchInfo {
+        _ = call_inst; // Available for future location reporting
+        // Get the defining instruction of this argument
+        const def_inst = getDefiningInstruction(arg) orelse return null;
+
+        const opcode = c.LLVMGetInstructionOpcode(def_inst);
+        if (opcode != c.LLVMTrunc) return null;
+
+        // Get source and destination types of the trunc
+        const src_val = c.LLVMGetOperand(def_inst, 0);
+        if (@intFromPtr(src_val) == 0) return null;
+
+        const src_type = c.LLVMTypeOf(src_val);
+        const dst_type = c.LLVMTypeOf(arg);
+        if (@intFromPtr(src_type) == 0 or @intFromPtr(dst_type) == 0) return null;
+
+        const src_kind = c.LLVMGetTypeKind(src_type);
+        const dst_kind = c.LLVMGetTypeKind(dst_type);
+
+        // Both must be integers
+        if (src_kind != c.LLVMIntegerTypeKind or dst_kind != c.LLVMIntegerTypeKind) {
+            return null;
+        }
+
+        const src_width = c.LLVMGetIntTypeWidth(src_type);
+        const dst_width = c.LLVMGetIntTypeWidth(dst_type);
+
+        // Must be narrowing (source wider than destination)
+        if (src_width <= dst_width) return null;
+
+        // Exclude safe bit-packing patterns: small destinations (≤16 bits)
+        // with flag/mask/pack keywords in callee name
+        if (dst_width <= 16) {
+            const safe_patterns = [_][]const u8{
+                "flag",
+                "mask",
+                "pack",
+                "options",
+            };
+            for (safe_patterns) |pat| {
+                if (std.mem.indexOf(u8, callee_name, pat) != null) return null;
+            }
+        }
+
+        const src_name = intWidthName(src_width);
+        const dst_name = intWidthName(dst_width);
+
+        return TypeMismatchInfo{
+            .kind = .size_truncation,
+            .caller_type = src_name,
+            .callee_type = dst_name,
+            .caller_lang = "Rust",
+            .callee_lang = "C",
+            .param_index = param_index,
+            .description = "Potential size truncation at FFI boundary",
+        };
+    }
+
+    /// Try to get the defining instruction of a value.
+    /// Returns null if the value is not an instruction (e.g., constant, parameter).
+    fn getDefiningInstruction(val: c.LLVMValueRef) ?c.LLVMValueRef {
+        if (@intFromPtr(val) == 0) return null;
+        const val_kind = c.LLVMGetValueKind(val);
+        if (val_kind != c.LLVMInstructionValueKind) return null;
+        return val;
+    }
+
+    /// Convert integer bit width to human-readable name.
+    /// Returns a static string suitable for diagnostic messages.
+    fn intWidthName(width: c_uint) []const u8 {
+        return switch (width) {
+            8 => "i8",
+            16 => "i16",
+            32 => "i32",
+            64 => "i64",
+            128 => "i128",
+            else => "integer",
+        };
     }
 
     /// Checks for Go pointer escape (Go pointer passed to C without KeepAlive).

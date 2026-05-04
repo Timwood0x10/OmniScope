@@ -20,7 +20,7 @@ pub const FunctionRiskLevel = enum {
 pub const ValueOrigin = enum {
     /// Unknown origin
     unknown,
-    /// Returned from malloc/calloc/realloc
+    /// Returned from malloc/calloc/realloc / __rust_alloc
     from_malloc,
     /// Function parameter
     from_param,
@@ -28,6 +28,9 @@ pub const ValueOrigin = enum {
     from_global,
     /// Constant value
     from_constant,
+    /// Returned from an FFI boundary call (non-Rust-mangled callee)
+    /// Indicates potential cross-allocator ownership risk.
+    from_ffi_call,
 };
 
 /// Memory ownership semantics

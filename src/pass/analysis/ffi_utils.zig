@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const ptr_types = @import("ptr_lifetime_types.zig");
 
 const ffi_types = @import("ffi_types.zig");
 
@@ -216,6 +217,7 @@ pub fn isRustDropGlue(func_name: []const u8) bool {
         "real_drop_in_place",
         "drop_and_deallocate",
         // Dealloc intrinsics (compiler-inserted)
+        // Canonical source: ptr_types.RUST_ALLOC_INTRINSICS (subset below + __rustc__rustc_dealloc extension)
         "__rust_dealloc",
         "__rust_alloc",
         "__rustc__rustc_dealloc",
