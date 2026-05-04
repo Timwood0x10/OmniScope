@@ -364,7 +364,7 @@ pub const SemanticRegistry = struct {
     fn isCFree(name: []const u8) bool {
         const free_patterns = [_][]const u8{
             "dealloc", "destroy", "release",
-            "_ZdlPv", "_ZdaPv",  "munmap",
+            "_ZdlPv",  "_ZdaPv",  "munmap",
         };
         // Check specific patterns first (no false positive risk)
         for (free_patterns) |pat| {

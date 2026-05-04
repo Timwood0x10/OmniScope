@@ -58,6 +58,16 @@ pub fn rustUnpairedTransferCount() usize {
 ///   IDLE ──into_raw(ptr)──→ TRANSFERRED_OUT(ptr)
 ///   TRANSFERRED_OUT ──from_raw(same_ptr)──→ IDLE (paired ✅)
 ///   TRANSFERRED_OUT at EOF → report potential leak ⚠️
+/// Check if a pattern appears at a method boundary (after :: or .) in the function name.
+/// This prevents false positives like "not_into_raw_helper" matching "into_raw".
+fn isOwnershipMethodBoundary(name: []const u8, pat: []const u8) bool {
+    const idx = std.mem.indexOf(u8, name, pat) orelse return false;
+    if (idx == 0) return true; // Pattern at start is OK
+    // Check character before pattern: must be :: or . (method boundary)
+    const prev_char = name[idx - 1];
+    return prev_char == ':' or prev_char == '.';
+}
+
 pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
     const callee_name = ctx.callee_name;
     const ptr_key = ctx.first_arg_ptr_val;
@@ -80,7 +90,14 @@ pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
     };
 
     for (transfer_out_patterns) |pat| {
-        if (std.mem.indexOf(u8, callee_name, pat) != null) {
+        // BUGFIX: Use precise matching instead of bare indexOf.
+        // Old: indexOf matched "not_into_raw_helper" → false positive.
+        // New: require exact match OR suffix match (ownership methods end with pattern).
+        const is_match = std.mem.eql(u8, callee_name, pat) or
+            std.mem.endsWith(u8, callee_name, pat) or
+            (std.mem.indexOf(u8, callee_name, pat) != null and
+                isOwnershipMethodBoundary(callee_name, pat));
+        if (is_match) {
             if (rust_state_initialized) {
                 rust_transfer_map.put(ptr_key, {}) catch {};
             }
@@ -89,7 +106,12 @@ pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
     }
 
     for (transfer_in_patterns) |pat| {
-        if (std.mem.indexOf(u8, callee_name, pat) != null) {
+        // BUGFIX: Same precise matching as transfer_out_patterns.
+        const is_match = std.mem.eql(u8, callee_name, pat) or
+            std.mem.endsWith(u8, callee_name, pat) or
+            (std.mem.indexOf(u8, callee_name, pat) != null and
+                isOwnershipMethodBoundary(callee_name, pat));
+        if (is_match) {
             // from_raw pairs with a prior into_raw — remove from tracked set
             if (rust_state_initialized) {
                 _ = rust_transfer_map.remove(ptr_key);

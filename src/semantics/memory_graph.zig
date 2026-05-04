@@ -818,7 +818,8 @@ pub const MemoryGraph = struct {
         for (arg_indices) |idx| {
             const arg_edge = &graph.call_args.items[idx];
             for (graph.call_rets.items) |ret_edge| {
-                if (ret_edge.caller_inst == arg_edge.caller_inst) {
+                // BUGFIX: Add null check for consistency with isLeaked.
+                if (ret_edge.ret_ptr == 0 or ret_edge.caller_inst == arg_edge.caller_inst) {
                     const ret_node = graph.nodes.get(ret_edge.ret_ptr) orelse continue;
                     if (ret_node.freed and ret_node.id == node.id) return true;
                 }

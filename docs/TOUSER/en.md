@@ -182,3 +182,86 @@ And if you have your own FFI horror stories, I'd love to hear them. In this spac
 
 *OmniScope — Cross-Language FFI Safety Analyzer*
 *Because the boundaries compilers ignore — someone has to watch.*
+
+---
+
+## Chapter 5: The Refactoring (Or: How We Learned to Stop Worrying and Love the Debugger)
+
+So here's what happened after I wrote the letter above.
+
+We kept building. We kept testing. And then we ran OmniScope against our own Rust FFI test suite — 20 carefully crafted bugs designed to test every detection path.
+
+**Result: Zero.**
+
+Not zero false positives. Zero detections. Our tool, built specifically to find cross-language memory bugs, couldn't find a single one.
+
+The irony was so thick you could cut it with a `free()`.
+
+### The Root Cause
+
+It turned out we'd put `__rust_alloc` — the exact function that Rust uses to allocate memory — into our noise filter. We were literally filtering out the thing we were trying to detect. It's like installing a security camera and then putting tape over the lens because "the lens is too shiny."
+
+Three lines of code. That's all it took to kill our entire Rust detection capability.
+
+### The Fix Journey
+
+What followed was a three-phase deep dive:
+
+**Phase 1 — "Stop the Bleeding"** (4 fixes, ~27 lines):
+- Removed the noise filter entries (5 lines deleted)
+- Connected ffi_type_mismatch to the call graph (1 line)
+- Fixed the ownership pairing key from instruction address to pointer value (15 lines)
+- Declared pipeline dependencies properly (4 lines)
+
+**Phase 2 — "Clean Up the Mess"** (8 fixes):
+- Fixed Go function classification (was matching C++ functions with dots in names)
+- Fixed LLVMInvoke classification (it's a call, not control flow)
+- Fixed callback escape detection (GetStructName returns null for function types)
+- Improved leak detection precision with return pointer validation
+
+**Phase 3 — "Burn the Dead Wood"** (-700 lines):
+- Deleted 2 dead files
+- Removed 13 dead test files
+- Cleaned up documentation
+
+### The Results
+
+After all this:
+
+- Rust FFI TP rate: 0% → 20%
+- Total issues detected: 0 → 4 (on subtle_unsafe_rs)
+- FFI boundaries found: 0 → 123
+- Test coverage: 70% → 92%
+
+Is 20% impressive? Honestly? It's a start. The remaining 80% needs capabilities we haven't built yet — MIR-level analysis for size truncation, data flow tracking for uninitialized memory, bounds checking for buffer overflows.
+
+But here's the thing: those 4 bugs we found? They're real. Double-free, use-after-free, borrow escape, memory leak. All confirmed true positives. Zero false positives.
+
+**Precision: 100%. Recall: 20%. We'd rather be right than noisy.**
+
+### What's Left
+
+We still have bugs. Of course we do:
+
+- `allocator_kb.zig` stores deallocators in the wrong HashMap (1-line fix, sitting there for weeks)
+- `noise_filter.zig` has a duplicate line — the same check, twice, like a nervous tic
+- 3 passes still have empty dependency arrays, held together by registration order and hope
+- `ptr_lifetime.zig` has its own copy of `isFreeFunction` instead of importing the shared one
+
+These aren't showstoppers. The tool works correctly today because of how passes happen to be registered. But "works by coincidence" isn't a design principle.
+
+### The Lesson
+
+If there's one thing I learned from this refactoring, it's this:
+
+**The bugs you're most proud of finding in other people's code are the ones you're least likely to find in your own.**
+
+We built a tool to find cross-language memory bugs. Then we proceeded to introduce a cross-language memory bug into our own tool (filtering out the exact allocations we needed to track).
+
+The debugger giveth, and the debugger taketh away.
+
+---
+
+*If you've made it this far, you're exactly the kind of person who should be using OmniScope. Or contributing to it. Or both.*
+
+*Get started: `zig build && ./zig-out/bin/omniscope your_file.ll`*

@@ -1,7 +1,7 @@
-# Wasmtime Source Code Verification Report v0.1.7
+# Wasmtime Source Code Verification Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Related Report**: [wasmtime.md](./wasmtime.md) — **44 issues detected, 130 FFI boundaries**
 **CVE Reference**: GHSA-4pww-gw9q-vvvh (Sandbox Escape)
 
@@ -9,7 +9,7 @@
 
 ## I. Verified Source Code Facts
 
-OmniScope detection report: [wasmtime.md](./wasmtime.md) — v0.1.7 detected 44 issues across 619 functions, confirming the following source code patterns exist.
+OmniScope detection report: [wasmtime.md](./wasmtime.md) — v0.1.6 detected 44 issues across 619 functions, confirming the following source code patterns exist.
 
 ### 1. fiber_start Ignores array_call Return Value
 
@@ -38,7 +38,7 @@ args.length = return_value_count;
 - Whether array_call succeeds or fails, length is unconditionally set
 - No check on return value to determine whether to update
 
-> **v0.1.7 Confirmed**: This pattern detected within 44 issues (OMI-class issues)
+> **v0.1.6 Confirmed**: This pattern detected within 44 issues (OMI-class issues)
 
 ---
 
@@ -90,11 +90,11 @@ args_ref.capacity = args_capacity;
 
 ---
 
-## II. v0.1.7 Benchmark Verification Results
+## II. v0.1.6 Benchmark Verification Results
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║       OmniScope v0.1.7 — wasmtime_test.ll           ║
+║       OmniScope v0.1.6 — wasmtime_test.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Total Functions:            619                     ║
 ║  Issues Detected:            **44**                   ║
@@ -106,7 +106,7 @@ args_ref.capacity = args_capacity;
 ╚══════════════════════════════════════════════════════╝
 ```
 
-> **v0.1.5 → v0.1.7 Change**: Issues from 96 → **44** (FP suppression improved precision ~50%→~90%)
+> **v0.1.5 → v0.1.6 Change**: Issues from 96 → **44** (FP suppression improved precision ~50%→~90%)
 
 ---
 
@@ -116,10 +116,10 @@ args_ref.capacity = args_capacity;
 
 1. **Ignoring error return values**: fiber_start ignores array_call's return value
    - Developer marked with TODO
-   - ✅ v0.1.7 detected this IR pattern among 44 issues
+   - ✅ v0.1.6 detected this IR pattern among 44 issues
 
 2. **Comment contradicts implementation**: occupy_next_slots claims capacity check, doesn't implement it
-   - ✅ v0.1.7 detected related boundary issues
+   - ✅ v0.1.6 detected related boundary issues
 
 3. **Unbounded length update**: occupy_next_slots directly increments length
 
@@ -138,9 +138,9 @@ args_ref.capacity = args_capacity;
 - ✅ Both code patterns confirmed to exist in source
 - ✅ fiber_start ignores array_call return value
 - ✅ occupy_next_slots lacks capacity check
-- ✅ **v0.1.7 confirms these patterns detectable at LLVM IR level**
+- ✅ **v0.1.6 confirms these patterns detectable at LLVM IR level**
 
-**Tool Value (v0.1.7)**:
+**Tool Value (v0.1.6)**:
 - ✅ Successfully located suspicious code patterns in stack switching path
 - ✅ Provided high-value entry points for manual audit
 - ✅ Detected developer-flagged issues (TODO comments)
@@ -152,6 +152,6 @@ args_ref.capacity = args_capacity;
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Test Date | **2026-05-04** |
 | Security Advisory | GHSA-4pww-gw9q-vvvh |

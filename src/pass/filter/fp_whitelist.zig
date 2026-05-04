@@ -1,7 +1,7 @@
 //! Known False-Positive Suppression Whitelist
 //!
 //! Maintains patterns that are known to produce false positives
-//! from real-world audits (v0.1.7: BLST, Wasmtime, SQLite3, libuv, etc.).
+//! from real-world audits (v0.1.6: BLST, Wasmtime, SQLite3, libuv, etc.).
 //!
 //! Design principles (plan/rules/skills.md §2):
 //! - Minimum code that solves the problem
@@ -41,7 +41,7 @@ pub const KnownFPPattern = struct {
     }
 };
 
-/// Top 20 known false-positive patterns from v0.1.7 audit.
+/// Top 20 known false-positive patterns from v0.1.6 audit.
 ///
 /// Organized by category for maintainability.
 /// Each entry includes source project and reason for suppression.

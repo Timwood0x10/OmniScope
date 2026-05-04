@@ -170,6 +170,27 @@ pub const AllocatorKB = struct {
         try kb.addBuiltinPair("realloc", "free", "libc");
         try kb.addBuiltinPair("strdup", "free", "libc");
         try kb.addBuiltinPair("getdelim", "free", "libc");
+
+        // Static buffer functions: return pointer to internal static storage.
+        // These must NOT be freed and are NOT thread-safe.
+        // Registered ONCE here (not inside addBuiltinPair to avoid 28x duplication).
+        const static_buf_funcs = [_][]const u8{
+            "ctime",     "asctime",  "strerror", "strsignal",
+            "inet_ntoa", "getgrgid", "getgrnam", "getpwuid",
+            "getpwnam",  "getpwent", "grent",    "tmpnam",
+            "gcvt",      "ecvt",     "fcvt",     "crypt",
+        };
+        for (static_buf_funcs) |fname| {
+            const info = AllocatorInfo{
+                .name = fname,
+                .kind = .static_buffer,
+                .matching_free = null,
+                .source = "posix",
+                .is_heuristic = false,
+                .confidence = 100,
+            };
+            try kb.allocators.put(fname, info);
+        }
     }
 
     /// Adds a builtin allocator pair.
@@ -207,28 +228,6 @@ pub const AllocatorKB = struct {
                 .is_confirmed = true,
             };
             try kb.pairs.append(kb.arena.allocator(), pair);
-        }
-
-        // Static buffer functions: return pointer to internal static storage.
-        // These must NOT be freed and are NOT thread-safe.
-        // The _r variants (ctime_r, asctime_r, etc.) use caller-provided
-        // buffers and are safe — they are NOT listed here.
-        const static_buf_funcs = [_][]const u8{
-            "ctime",     "asctime",  "strerror", "strsignal",
-            "inet_ntoa", "getgrgid", "getgrnam", "getpwuid",
-            "getpwnam",  "getpwent", "grent",    "tmpnam",
-            "gcvt",      "ecvt",     "fcvt",     "crypt",
-        };
-        for (static_buf_funcs) |fname| {
-            const info = AllocatorInfo{
-                .name = fname,
-                .kind = .static_buffer,
-                .matching_free = null, // Must NOT be freed!
-                .source = "posix",
-                .is_heuristic = false,
-                .confidence = 100,
-            };
-            try kb.allocators.put(fname, info);
         }
     }
 
@@ -333,7 +332,8 @@ pub const AllocatorKB = struct {
                     .confidence = 60,
                 };
                 // PERSIST: Store discovered deallocator in hash table.
-                kb.allocators.put(name, info) catch return info;
+                // Verified: kb.deallocators declared L95, initialized L110 via ArenaAllocator.
+                kb.deallocators.put(name, info) catch return info;
                 return info;
             }
         }

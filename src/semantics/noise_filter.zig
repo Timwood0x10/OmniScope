@@ -690,7 +690,6 @@ fn defaultClassification(func_name: []const u8) ClassificationResult {
 /// Check if name matches LLVM intrinsic pattern.
 fn isLLVMIntrinsic(name: []const u8) bool {
     if (std.mem.startsWith(u8, name, "llvm.")) return true;
-    if (std.mem.startsWith(u8, name, "llvm.")) return true;
     return false;
 }
 

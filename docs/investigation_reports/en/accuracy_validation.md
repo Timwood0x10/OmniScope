@@ -1,14 +1,14 @@
-# OmniScope v0.1.7 Accuracy Validation Report (FFI/Unsafe Perspective)
+# OmniScope v0.1.6 Accuracy Validation Report (FFI/Unsafe Perspective)
 
 **Update Date**: 2026-05-04
-**Version**: **v0.1.7 (Post Phase 1+2+3 Fixes)**
+**Version**: **v0.1.6 (Post Phase 1+2+3 Fixes)**
 **Core Positioning**: **unsafe/FFI boundary safety analyzer** — Only cares whether data safely crosses FFI/Unsafe boundaries
 - **80%+ focus**: FFI boundary safety (cross-language ownership transfer, escape detection, ABI mismatch)
 - **~20% general**: General memory safety (as auxiliary)
 
 ---
 
-## v0.1.7 Improvement Summary (Phase 1+2+3)
+## v0.1.6 Improvement Summary (Phase 1+2+3)
 
 ### Core Achievement: Rust FFI Detection Restored
 
@@ -22,9 +22,9 @@
 | **Dead Code cleanup** | 2 files + 13 tests | ✅ | -700 lines dead code |
 | **Test enhancement** | 8 new test files | ✅ | Coverage 70% → **92%** |
 
-### v0.1.6 vs v0.1.7 Key Metrics Comparison
+### v0.1.6 vs v0.1.6 Key Metrics Comparison
 
-| Metric | v0.1.6 | v0.1.7 (Current) | Change |
+| Metric | v0.1.6 | v0.1.6 (Current) | Change |
 |--------|--------|------------------|--------|
 | **Rust FFI TP Rate** | ~11% | **20% (4/20)** | **+82%** |
 | **Test Coverage** | ~70% | **92% (191 tests)** | **+31%** |
@@ -46,7 +46,7 @@
 
 ```
 ╔════════════════════════════════════════════════════════════════╗
-║           OmniScope v0.1.7 Full Test Results                   ║
+║           OmniScope v0.1.6 Full Test Results                   ║
 ╠════════════════════════════════════════════════════════════════╣
 ║                                                                ║
 ║  📊 Red Team Tests (8 files)                                   ║
@@ -124,9 +124,9 @@
 - Buffer overflow: 3 (requires bounds checking)
 - Type confusion: 1 (requires type system cross-reference)
 
-**v0.1.7 vs v0.1.6 Comparison**:
+**v0.1.6 vs v0.1.6 Comparison**:
 - v0.1.6: **0 issues detected**, 0 ptrs tracked (noise filter false positive)
-- v0.1.7: **4 issues detected**, 38 ptrs tracked (✅ FIX-1 restored)
+- v0.1.6: **4 issues detected**, 38 ptrs tracked (✅ FIX-1 restored)
 
 ---
 
@@ -323,7 +323,7 @@
 |---------|-----------|-------------|-----------------|----------|
 | v0.1.5 | ~10 | ~120 | ~12 | ~60% |
 | v0.1.6 | ~15 | ~350 | ~23 | ~75% |
-| **v0.1.7** | **17** | **548** | **~32** | **92%** |
+| **v0.1.6** | **17** | **548** | **~32** | **92%** |
 
 **Trend**: Issue detection capability continuously improving; coverage from 60% → **92%**
 
@@ -352,7 +352,7 @@ Main FP sources:
 3. **Library internal** (~20%): Internal library functions over-analyzed
 4. **False path** (~10%): Error handling path alloc/free
 
-### 3.3 v0.1.7 FP Suppression Measures
+### 3.3 v0.1.6 FP Suppression Measures
 
 | Measure | Status | Effect |
 |---------|--------|--------|
@@ -397,7 +397,7 @@ Main FP sources:
 
 ## V. Performance Baseline
 
-### 5.1 Execution Time (v0.1.7)
+### 5.1 Execution Time (v0.1.6)
 
 | File Category | Files | Avg Time | Max Time | Target |
 |---------------|-------|----------|----------|--------|
@@ -414,9 +414,9 @@ Main FP sources:
 | curl8 | ~180MB | <250MB ✅ |
 | sqlite3 | ~320MB | <500MB ✅ |
 
-### 5.3 Performance Comparison (v0.1.6 vs v0.1.7)
+### 5.3 Performance Comparison (v0.1.6 vs v0.1.6)
 
-| Metric | v0.1.6 | v0.1.7 | Change |
+| Metric | v0.1.6 | v0.1.6 | Change |
 |--------|--------|--------|--------|
 | Avg execution time | ~40ms | ~36ms | **-10%** ✅ faster |
 | Peak memory (large file) | ~350MB | ~320MB | **-9%** ✅ less |
@@ -533,7 +533,7 @@ grep -r "^test " src --include="*_test.zig" tests | wc -l
 |---------|------|--------------|-------------------|
 | v0.1.5 | 2026-04-15 | Initial release | ~12 |
 | v0.1.6 | 2026-04-27 | FP suppression + Zone Classifier | ~23 |
-| **v0.1.7** | **2026-05-04** | **Phase 1+2+3 Fixes + Dead Code Cleanup** | **~32** |
+| **v0.1.6** | **2026-05-04** | **Phase 1+2+3 Fixes + Dead Code Cleanup** | **~32** |
 
 ---
 

@@ -4,26 +4,27 @@
 //! Test categories: regression prevention, language boundaries, error handling
 
 const std = @import("std");
-
-// We test the behavior indirectly through the public API
-// The actual isGoFunction is private, but we can verify the effect
+const noise_filter = @import("noise_filter.zig");
 
 // ============================================================================
 // Regression: Verify BUG-FIX-6 (isGoFunction no longer misclassifies C++/Rust)
 // ============================================================================
 
 test "NoiseFilter integration - C++ functions should not be classified as Go (regression)" {
-    // After BUG-FIX-6, C++ namespaced functions should NOT be treated as Go
-    // This is verified by ensuring noise_reduction doesn't filter them as Go-specific
+    // After BUG-FIX-6, C++ namespaced functions should NOT be treated as Go.
+    // They must be classified as third_party or user code, NOT stdlib/compiler_generated via Go path.
     const cpp_functions = [_][]const u8{
         "std::vector::push_back",
         "std::string::c_str",
-        "_ZNSt6vectorIiE9push_backERKi",  // mangled C++
+        "_ZNSt6vectorIiE9push_backERKi",
     };
 
     for (cpp_functions) |func| {
-        // Verify these don't crash the system (regression test)
-        _ = func.len;  // Use func to suppress unused warning
+        const result = noise_filter.classifyFunction(func, .cpp);
+        // C++ stdlib names like std::* should be third_party or stdlib,
+        // but crucially the reason must NOT mention "Go"
+        const reason_has_go = std.mem.indexOf(u8, result.reason, "Go") != null;
+        try std.testing.expect(!reason_has_go, "C++ function '{s}' was incorrectly classified as Go: {s}", .{ func, result.reason });
     }
 }
 
@@ -32,11 +33,14 @@ test "NoiseFilter integration - Rust functions should not be classified as Go (r
     const rust_functions = [_][]const u8{
         "core::ptr::drop_in_place",
         "alloc::alloc::exchange",
-        "_RNvCsfLfy6EI15iL_7___rustc",  // mangled Rust
+        "_RNvCsfLfy6EI15iL_7___rustc",
     };
 
     for (rust_functions) |func| {
-        _ = func;
+        // Auto-detect without language hint — must not classify as Go
+        const result = noise_filter.classifyFunction(func, null);
+        const reason_has_go = std.mem.indexOf(u8, result.reason, "Go") != null;
+        try std.testing.expect(!reason_has_go, "Rust function '{s}' was incorrectly classified as Go: {s}", .{ func, result.reason });
     }
 }
 
@@ -45,17 +49,27 @@ test "NoiseFilter integration - Rust functions should not be classified as Go (r
 // ============================================================================
 
 test "NoiseFilter integration - Real Go functions are still recognized (boundary)" {
-    // These SHOULD still be recognized as Go
-    const go_functions = [_][]const u8{
-        "runtime.main",
-        "main.main",
-        "go.func1",
-        "cgocall",
-        "crosscall2",
+    // These SHOULD still be recognized as Go runtime / compiler-generated
+    const go_expectations = struct {
+        name: []const u8,
+        expected_origin: noise_filter.FunctionOrigin,
+    };
+    const cases = [_]go_expectations{
+        .{ .name = "runtime.main", .expected_origin = .stdlib },
+        .{ .name = "main.main", .expected_origin = .stdlib },
+        .{ .name = "go.func1", .expected_origin = .compiler_generated },
+        .{ .name = "cgocall", .expected_origin = .compiler_generated },
+        .{ .name = "crosscall2", .expected_origin = .compiler_generated },
     };
 
-    for (go_functions) |func| {
-        _ = func;
+    for (cases) |case| {
+        const result = noise_filter.classifyFunction(case.name, .go);
+        try std.testing.expectEqual(case.expected_origin, result.origin, "Go function '{s}': expected origin {s}, got {s} (reason: {s})", .{
+            case.name,
+            case.expected_origin.toString(),
+            result.origin.toString(),
+            result.reason,
+        });
     }
 }
 
@@ -64,16 +78,23 @@ test "NoiseFilter integration - Real Go functions are still recognized (boundary
 // ============================================================================
 
 test "NoiseFilter integration - handles special characters (error case)" {
-    const edge_cases = [_][]const u8{
-        "",
-        ".",
-        "..",
-        "...",
-        "a",
-        "_",  // underscore only
-    };
+    // Empty string → unknown origin (handled gracefully)
+    const empty_result = noise_filter.classifyFunction("", null);
+    try std.testing.expectEqual(noise_filter.FunctionOrigin.unknown, empty_result.origin);
 
-    for (edge_cases) |name| {
-        _ = name;
-    }
+    // Single dot → should not crash, return some valid classification
+    const dot_result = noise_filter.classifyFunction(".", null);
+    _ = dot_result.origin; // just verify no crash
+
+    // Double dot → same
+    const double_dot = noise_filter.classifyFunction("..", null);
+    _ = double_dot.origin;
+
+    // Underscore-only → should not crash
+    const underscore = noise_filter.classifyFunction("_", null);
+    _ = underscore.origin;
+
+    // Single char → user code (default fallback)
+    const single_char = noise_filter.classifyFunction("a", null);
+    try std.testing.expectEqual(noise_filter.FunctionOrigin.user, single_char.origin);
 }

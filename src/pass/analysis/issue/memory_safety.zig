@@ -48,11 +48,14 @@ fn hashString(s: []const u8) u64 {
 pub const MemorySafetyPass = struct {
     pub const name = "memory-safety";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{ "danger-surface", "ptr-lifetime" };
 
     /// Main entry point: single-pass scan with inline analysis
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
+        // Runtime dependency validation: both danger_surface and FFI auto-relevant sets
+        // must be populated by prior passes. If both empty, skip analysis.
+        if (ctx.danger_surface_relevant.count() == 0 and ctx.ffi_auto_relevant.count() == 0) return;
 
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);

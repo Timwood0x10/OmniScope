@@ -1,7 +1,7 @@
-# 其他开源项目调查报告 v0.1.7
+# 其他开源项目调查报告 v0.1.6
 
 **测试日期**: 2026-05-04
-**测试版本**: v0.1.7 (Phase 1+2+3 修复后)
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
 **测试项目**: curl, sqlite3, openssl
 
 ---
@@ -16,17 +16,17 @@
 | sqlite3 | C | C-only (no FFI) | 120M | 3250 | **226** |
 | openssl_wrapper | C | C-only (no FFI) | 2.5M | 38 | **1** |
 
-> **v0.1.7 更新**: 所有数据来自实际 benchmark 运行，新增 Ptrs Tracked、FFI Bounds、Violations 指标
+> **v0.1.6 更新**: 所有数据来自实际 benchmark 运行，新增 Ptrs Tracked、FFI Bounds、Violations 指标
 
 ---
 
-## 2. v0.1.7 全量 Benchmark 结果
+## 2. v0.1.6 全量 Benchmark 结果
 
 ### 2.1 curl8.ll (大型真实项目)
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — curl8.ll                 ║
+║         OmniScope v0.1.6 — curl8.ll                 ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **114**                  ║
 ║  Functions Analyzed:        944                       ║
@@ -45,7 +45,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — sqlite3.ll               ║
+║         OmniScope v0.1.6 — sqlite3.ll               ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **226** (最大!)          ║
 ║  Functions Analyzed:        **3250**                   ║
@@ -64,7 +64,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║     OmniScope v0.1.7 — openssl_wrapper.ll           ║
+║     OmniScope v0.1.6 — openssl_wrapper.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            1                        ║
 ║  PtrLifetime Tracked:        45                       ║
@@ -91,9 +91,9 @@
 
 ---
 
-## 4. v0.1.7 改进总结
+## 4. v0.1.6 改进总结
 
-| 指标 | v0.1.5/6 | v0.1.7 (当前) |
+| 指标 | v0.1.5/6 | v0.1.6 (当前) |
 |------|----------|---------------|
 | **总 Issues** | ~250 | **341** (+36%) |
 | **Ptrs Tracked** | N/A | **25185** (新指标) |
@@ -107,6 +107,6 @@
 
 | 项目 | 值 |
 |------|-----|
-| OmniScope 版本 | **v0.1.7** |
+| OmniScope 版本 | **v0.1.6** |
 | 测试日期 | **2026-05-04** |
 | IR 文件位置 | corpus/real_world/**/*.ll |

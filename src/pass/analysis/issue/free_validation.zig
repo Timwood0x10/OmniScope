@@ -45,10 +45,13 @@ pub const ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
 pub const FreeValidationPass = struct {
     pub const name = "free-validation";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{ "danger-surface", "ptr-lifetime" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
+        // Runtime dependency validation: danger_surface must have populated relevant set.
+        // If empty, DangerSurfacePass didn't run or found nothing — skip to avoid false positives.
+        if (ctx.danger_surface_relevant.count() == 0) return;
 
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);

@@ -40,7 +40,7 @@ test "isUseAfterFreeViaAlias - returns null when pointer not freed (boundary)" {
 
     try graph.nodes.put(ptr_val, .{
         .ptr_val = ptr_val,
-        .freed = false,  // Not freed
+        .freed = false, // Not freed
         .alloc_inst = 0x111,
         .free_inst = 0,
         .lang = .c,
@@ -97,7 +97,7 @@ test "findDangerousAliases - returns empty for non-freed pointer (boundary)" {
 
     try graph.nodes.put(ptr_val, .{
         .ptr_val = ptr_val,
-        .freed = false,  // Not freed
+        .freed = false, // Not freed
         .alloc_inst = 0x1,
         .free_inst = 0,
         .lang = .c,
@@ -128,5 +128,5 @@ test "MemoryGraph - handles empty graph gracefully (error case)" {
     defer graph.deinit();
 
     // Should not crash on operations with empty graph
-    _ = &graph;  // Just verify initialization works
+    _ = &graph; // Just verify initialization works
 }

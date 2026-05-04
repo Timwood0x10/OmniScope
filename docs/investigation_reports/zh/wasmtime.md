@@ -1,7 +1,7 @@
-# wasmtime 项目调查报告 v0.1.7
+# wasmtime 项目调查报告 v0.1.6
 
 **测试日期**: 2026-05-04
-**测试版本**: v0.1.7 (Phase 1+2+3 修复后)
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
 **测试项目**: wasmtime (Rust WebAssembly 运行时)
 **测试文件**: corpus/real_world/other/wasmtime_test.ll
 
@@ -17,11 +17,11 @@
 
 **开源地址**: https://github.com/bytecodealliance/wasmtime
 
-### 1.2 v0.1.7 Benchmark 结果
+### 1.2 v0.1.6 Benchmark 结果
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║       OmniScope v0.1.7 — wasmtime_test.ll           ║
+║       OmniScope v0.1.6 — wasmtime_test.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **44**                  ║
 ║  PtrLifetime Tracked:        **31**                   ║
@@ -39,10 +39,10 @@
   Runtime internal (skipped):  221
   Unknown zone:                159
 
-  Issues found:                44 (v0.1.7 更新)
+  Issues found:                44 (v0.1.6 更新)
 ```
 
-> **v0.1.5 → v0.1.7 变化**: Issues 从 96 → **44**（FP 抑制提升，精度从 ~50% → ~90%）
+> **v0.1.5 → v0.1.6 变化**: Issues 从 96 → **44**（FP 抑制提升，精度从 ~50% → ~90%）
 
 ---
 
@@ -60,7 +60,7 @@
 1. Trap/Return 混淆: `VMFuncRef::array_call` 返回值被忽略
 2. 边界检查缺失: `cont.bind` 可写入超过容量
 
-**OmniScope v0.1.7 检测情况**: ✅ 在 44 个 issues 中包含相关 IR 模式检测
+**OmniScope v0.1.6 检测情况**: ✅ 在 44 个 issues 中包含相关 IR 模式检测
 
 ---
 
@@ -72,9 +72,9 @@
 
 ---
 
-## 3. v0.1.7 vs 历史版本对比
+## 3. v0.1.6 vs 历史版本对比
 
-| 指标 | v0.1.5 | v0.1.6 | v0.1.7 (当前) |
+| 指标 | v0.1.5 | v0.1.6 | v0.1.6 (当前) |
 |------|--------|--------|---------------|
 | **Issues** | 96 | ~70 | **44** |
 | **Precision** | ~50% | ~65% | **~90%** |
@@ -88,12 +88,12 @@
 
 ## 4. 结论
 
-### 4.1 v0.1.7 检测效果
+### 4.1 v0.1.6 检测效果
 
 | 维度 | 结果 |
 |------|------|
 | 跳过率 | **74.3%** |
-| Issue 数 | **44** (v0.1.7 精修后) |
+| Issue 数 | **44** (v0.1.6 精修后) |
 | Precision | **~90%** (vs v0.1.5 的 ~50%) |
 | FFI Boundaries | **130** |
 | 真实漏洞覆盖 | ✅ GHSA-4pww-gw9q-vvvh 可检测 |
@@ -103,7 +103,7 @@
 | 方面 | 评价 |
 |------|------|
 | Zone Classification | ✅ 正确跳过 74.3% Safe Zone |
-| FP 抑制 | ✅ v0.1.7 提升 40pp |
+| FP 抑制 | ✅ v0.1.6 提升 40pp |
 | FFI 边界检测 | ✅ 130 个边界发现 |
 | 真实漏洞验证 | ✅ CVE 可复现 |
 
@@ -113,7 +113,7 @@
 
 | 项目 | 值 |
 |------|-----|
-| OmniScope 版本 | **v0.1.7** |
+| OmniScope 版本 | **v0.1.6** |
 | Zig 版本 | 0.15.2 |
 | LLVM 版本 | 22 |
 | 测试日期 | **2026-05-04** |

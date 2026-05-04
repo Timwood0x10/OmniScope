@@ -21,7 +21,7 @@ test "isFreeFunction - contains standard C free functions (happy path)" {
         "PyObject_Free",
         "PyMem_Free",
         "munmap",
-        "close",  // fd close can release resources
+        "close", // fd close can release resources
     };
 
     for (free_functions) |func_name| {
@@ -74,7 +74,7 @@ test "isFreeFunction - no duplicate patterns in implementation" {
     // (which would indicate copy-paste from another module)
 
     // Call multiple times with same input — should return same result
-    const test_funcs = [_][]const u8{"free", "malloc", "realloc"};
+    const test_funcs = [_][]const u8{ "free", "malloc", "realloc" };
 
     for (test_funcs) |func| {
         const r1 = ptr_lifetime_classify.isFreeFunction(func);

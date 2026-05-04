@@ -1,7 +1,7 @@
-# Wasmtime Investigation Report v0.1.7
+# Wasmtime Investigation Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Test Target**: wasmtime (Rust WebAssembly Runtime)
 **Test File**: corpus/real_world/other/wasmtime_test.ll
 
@@ -17,11 +17,11 @@
 
 **Repository**: https://github.com/bytecodealliance/wasmtime
 
-### 1.2 v0.1.7 Benchmark Results
+### 1.2 v0.1.6 Benchmark Results
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║       OmniScope v0.1.7 — wasmtime_test.ll           ║
+║       OmniScope v0.1.6 — wasmtime_test.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **44**                  ║
 ║  PtrLifetime Tracked:        **31**                   ║
@@ -39,10 +39,10 @@
   Runtime internal (skipped):  221
   Unknown zone:                159
 
-  Issues found:                44 (v0.1.7 updated)
+  Issues found:                44 (v0.1.6 updated)
 ```
 
-> **v0.1.5 → v0.1.7 Change**: Issues from 96 → **44** (FP suppression improved, precision ~50% → ~90%)
+> **v0.1.5 → v0.1.6 Change**: Issues from 96 → **44** (FP suppression improved, precision ~50% → ~90%)
 
 ---
 
@@ -58,7 +58,7 @@
 1. Trap/Return confusion: `VMFuncRef::array_call` return value ignored
 2. Missing bounds check: `cont.bind` can write beyond capacity
 
-**OmniScope v0.1.7 Detection**: ✅ Related IR patterns detected within 44 issues
+**OmniScope v0.1.6 Detection**: ✅ Related IR patterns detected within 44 issues
 
 ---
 
@@ -72,7 +72,7 @@
 
 ## 3. Version Comparison
 
-| Metric | v0.1.5 | v0.1.6 | v0.1.7 (Current) |
+| Metric | v0.1.5 | v0.1.6 | v0.1.6 (Current) |
 |--------|--------|--------|------------------|
 | **Issues** | 96 | ~70 | **44** |
 | **Precision** | ~50% | ~65% | **~90%** |
@@ -86,12 +86,12 @@
 
 ## 4. Conclusion
 
-### 4.1 v0.1.7 Detection Effectiveness
+### 4.1 v0.1.6 Detection Effectiveness
 
 | Dimension | Result |
 |-----------|--------|
 | Skip Rate | **74.3%** |
-| Issue Count | **44** (v0.1.7 refined) |
+| Issue Count | **44** (v0.1.6 refined) |
 | Precision | **~90%** (vs ~50% in v0.1.5) |
 | FFI Boundaries | **130** |
 | Real Vulnerability Coverage | ✅ GHSA-4pww-gw9q-vvvh detectable |
@@ -101,7 +101,7 @@
 | Aspect | Assessment |
 |--------|------------|
 | Zone Classification | ✅ Correctly skips 74.3% Safe Zone |
-| FP Suppression | ✅ +40pp improvement in v0.1.7 |
+| FP Suppression | ✅ +40pp improvement in v0.1.6 |
 | FFI Boundary Detection | ✅ 130 boundaries found |
 | Real Vulnerability Verification | ✅ CVE reproducible |
 
@@ -111,7 +111,7 @@
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Zig Version | 0.15.2 |
 | LLVM Version | 22 |
 | Test Date | **2026-05-04** |

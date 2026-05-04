@@ -94,6 +94,7 @@ pub const Pipeline = struct {
             .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
             .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
+            .ffi_auto_relevant = std.AutoHashMap(u64, void).init(self.allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
             .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),

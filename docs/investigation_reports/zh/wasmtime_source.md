@@ -1,7 +1,7 @@
-# Wasmtime 源码验证报告 v0.1.7
+# Wasmtime 源码验证报告 v0.1.6
 
 **测试日期**: 2026-05-04
-**测试版本**: v0.1.7 (Phase 1+2+3 修复后)
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
 **关联报告**: [wasmtime.md](./wasmtime.md) — **44 issues detected, 130 FFI boundaries**
 **CVE 关联**: GHSA-4pww-gw9q-vvvh (沙箱逃逸)
 
@@ -9,7 +9,7 @@
 
 ## 一、已验证的源码事实
 
-OmniScope 检测报告: [wasmtime.md](./wasmtime.md) — v0.1.7 在 619 个函数中检出 44 个 issues，确认以下源码模式存在。
+OmniScope 检测报告: [wasmtime.md](./wasmtime.md) — v0.1.6 在 619 个函数中检出 44 个 issues，确认以下源码模式存在。
 
 #### 1. fiber_start 忽略 array_call 返回值
 
@@ -38,7 +38,7 @@ args.length = return_value_count;
 - 无论 array_call 成功或失败，都无条件设置 length
 - 没有检查返回值来决定是否更新
 
-> **v0.1.7 确认**: 此模式在 v0.1.7 的 44 个 issues 中被检测到（OMI 类 issue）
+> **v0.1.6 确认**: 此模式在 v0.1.6 的 44 个 issues 中被检测到（OMI 类 issue）
 
 ---
 
@@ -99,11 +99,11 @@ args_ref.capacity = args_capacity;
 
 ---
 
-## 二、v0.1.7 Benchmark 验证结果
+## 二、v0.1.6 Benchmark 验证结果
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║       OmniScope v0.1.7 — wasmtime_test.ll           ║
+║       OmniScope v0.1.6 — wasmtime_test.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Total Functions:            619                     ║
 ║  Issues Detected:            **44**                   ║
@@ -115,7 +115,7 @@ args_ref.capacity = args_capacity;
 ╚══════════════════════════════════════════════════════╝
 ```
 
-> **v0.1.5 → v0.1.7 变化**: Issues 从 96 → **44**（FP 抑制提升精度 ~50%→~90%）
+> **v0.1.5 → v0.1.6 变化**: Issues 从 96 → **44**（FP 抑制提升精度 ~50%→~90%）
 
 ---
 
@@ -125,11 +125,11 @@ args_ref.capacity = args_capacity;
 
 1. **忽略错误返回值**：fiber_start 忽略 array_call 的返回值
    - 开发者已标记为 TODO
-   - ✅ v0.1.7 在 44 issues 中检测到此 IR 模式
+   - ✅ v0.1.6 在 44 issues 中检测到此 IR 模式
 
 2. **注释与实现不符**：occupy_next_slots 注释声称检查容量，实际不检查
    - 可能是遗留注释或实现遗漏
-   - ✅ v0.1.7 检测到相关边界问题
+   - ✅ v0.1.6 检测到相关边界问题
 
 3. **无边界检查的长度更新**：occupy_next_slots 直接增加 length
    - 如果调用者未保证容量充足，可能导致逻辑错误
@@ -149,9 +149,9 @@ args_ref.capacity = args_capacity;
 - ✅ 报告中提到的两个代码模式确实存在于源码中
 - ✅ fiber_start 确实忽略 array_call 返回值
 - ✅ occupy_next_slots 确实没有检查 capacity
-- ✅ **v0.1.7 确认这些模式在 LLVM IR 层面可被检测**
+- ✅ **v0.1.6 确认这些模式在 LLVM IR 层面可被检测**
 
-**工具价值 (v0.1.7)**:
+**工具价值 (v0.1.6)**:
 - ✅ 成功定位到 wasmtime 栈切换路径中的可疑代码模式
 - ✅ 提供了高价值的人工审计入口
 - ✅ 检测到了开发者已标记的问题（TODO 注释）
@@ -161,6 +161,6 @@ args_ref.capacity = args_capacity;
 
 | 项目 | 值 |
 |------|-----|
-| OmniScope 版本 | **v0.1.7** |
+| OmniScope 版本 | **v0.1.6** |
 | 测试日期 | **2026-05-04** |
 | 安全公告 | GHSA-4pww-gw9q-vvvh |

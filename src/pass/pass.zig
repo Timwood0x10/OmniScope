@@ -249,6 +249,11 @@ pub const PassContext = struct {
     ///   if (!ctx.isRelevantAlloc(ptr_val)) { return; }  // Tier 1 pass-through
     danger_surface_relevant: std.AutoHashMap(u64, void),
 
+    /// P2-8: Set of pointer values at FFI zone boundaries (auto-detected).
+    /// Populated when cross-lang edges involve pointer arguments/returns.
+    /// Complements danger_surface_relevant for FFI-specific relevance.
+    ffi_auto_relevant: std.AutoHashMap(u64, void),
+
     /// P0-1: Set of function pointers that contain danger-surface-relevant pointers.
     /// Populated by DangerSurfacePass. Downstream passes gate at FUNCTION level:
     ///   if (!ctx.isRelevantFunction(func_ptr)) { return; }  // Skip entire function scan
@@ -297,6 +302,7 @@ pub const PassContext = struct {
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
             .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
+            .ffi_auto_relevant = std.AutoHashMap(u64, void).init(allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
             .CallSiteIndex = CallSiteIndex.init(allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
@@ -364,6 +370,7 @@ pub const PassContext = struct {
         self.global_alloc_tracker.deinit();
         self.memory_graph.deinit();
         self.danger_surface_relevant.deinit();
+        self.ffi_auto_relevant.deinit();
         self.relevant_functions.deinit();
         self.CallSiteIndex.deinit();
         // P2-2 fix: Deinitialize all ArrayLists in the HashMap before HashMap itself
@@ -740,7 +747,9 @@ pub const PassContext = struct {
         // P2-2 fix: Append to ArrayList instead of overwriting (supports multiple call sites)
         const gop = try self.cross_edge_by_callee.getOrPut(edge.callee_name);
         if (!gop.found_existing) {
-            gop.value_ptr.* = std.ArrayList(u32).initCapacity(self.allocator, 4) catch std.ArrayList(u32){};
+            // BUGFIX: Propagate OOM instead of creating undefined-allocator fallback.
+            // Old code: initCapacity catch {} left allocator=undefined → deinit() crash.
+            gop.value_ptr.* = try std.ArrayList(u32).initCapacity(self.allocator, 4);
         }
         try gop.value_ptr.*.append(self.allocator, idx);
     }
@@ -776,14 +785,24 @@ pub const PassContext = struct {
     /// P1-1: Check if a pointer value is on a danger path (FFI/unsafe boundary).
     /// Returns true if the pointer should be analyzed (Tier 2 strict mode).
     /// Returns false for Tier 1 pass-through (general memory, no issue reported).
+    /// P2-8: Also auto-relevant if pointer crosses FFI zone boundary.
     pub fn isRelevantAlloc(self: *const PassContext, ptr_val: u64) bool {
-        return self.danger_surface_relevant.contains(ptr_val);
+        if (self.danger_surface_relevant.contains(ptr_val)) return true;
+        // Defensive: skip ffi_auto_relevant lookup when empty (FFI detection not yet run).
+        if (self.ffi_auto_relevant.count() == 0) return false;
+        return self.ffi_auto_relevant.contains(ptr_val);
     }
 
     /// P1-1: Mark a pointer value as being on a danger path.
     /// Called by DangerSurfacePass during surface tracing.
     pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {
         try self.danger_surface_relevant.put(ptr_val, {});
+    }
+
+    /// P2-8: Mark a pointer as FFI-zone-relevant (auto-detected at cross-lang boundary).
+    /// Called by FFI boundary passes when pointer crosses language boundary.
+    pub fn markFfiRelevant(self: *PassContext, ptr_val: u64) !void {
+        try self.ffi_auto_relevant.put(ptr_val, {});
     }
 
     /// P0-1: Check if a function contains any danger-surface-relevant pointers.

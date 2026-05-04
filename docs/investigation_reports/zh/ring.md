@@ -1,7 +1,7 @@
-# ring 项目调查报告 v0.1.7
+# ring 项目调查报告 v0.1.6
 
 **测试日期**: 2026-05-04
-**测试版本**: v0.1.7 (Phase 1+2+3 修复后)
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
 **测试项目**: ring (Rust 密码学库)
 **测试文件**: corpus/real_world/crypto/ring.ll
 
@@ -15,11 +15,11 @@
 |------|------|----------|---------|--------|
 | ring | Rust + C/asm | C/asm 核心 + Rust 封装 | 3.1M | 278 |
 
-### 1.2 v0.1.7 Benchmark 结果
+### 1.2 v0.1.6 Benchmark 结果
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — ring.ll                  ║
+║         OmniScope v0.1.6 — ring.ll                  ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **19**                  ║
 ║  PtrLifetime Tracked:        **841**                  ║
@@ -37,14 +37,14 @@
   Runtime internal (skipped):  17
   Unknown zone:                0
 
-  Issues found:                19 (v0.1.7 全量分析)
+  Issues found:                19 (v0.1.6 全量分析)
 ```
 
-> **v0.1.5 → v0.1.7 变化**: v0.1.5 因 Zone Classification 跳过了所有函数(0 issues)，v0.1.7 在全量分析模式下检出 19 个 issues，**4266 个 FFI 边界**。
+> **v0.1.5 → v0.1.6 变化**: v0.1.5 因 Zone Classification 跳过了所有函数(0 issues)，v0.1.6 在全量分析模式下检出 19 个 issues，**4266 个 FFI 边界**。
 
 ---
 
-## 2. 为什么 v0.1.5 是 0 而 v0.1.7 是 19？
+## 2. 为什么 v0.1.5 是 0 而 v0.1.6 是 19？
 
 ### 2.1 v0.1.5 的行为 (正确但保守)
 
@@ -53,9 +53,9 @@ ring 项目 100% 被跳过是 Zone Classification 的预期结果：
 - 17 个 Runtime Internal = Rust 标准库
 - 0 个 Unknown 函数 = 无需分析
 
-### 2.2 v0.1.7 的行为 (更全面)
+### 2.2 v0.1.6 的行为 (更全面)
 
-v0.1.7 在全量 benchmark 中启用了 Tier 2 分析：
+v0.1.6 在全量 benchmark 中启用了 Tier 2 分析：
 - 即使是 Safe Zone 也进行 FFI 边界统计
 - **4266 个 FFI 边界**说明 ring 内部有大量跨语言调用
 - 19 个 issues 主要来自 asm/C 边界的指针操作
@@ -92,9 +92,9 @@ where A: Algorithm,
 
 ## 4. 结论
 
-### 4.1 v0.1.7 效果
+### 4.1 v0.1.6 效果
 
-| 指标 | v0.1.5 | v0.1.7 (当前) |
+| 指标 | v0.1.5 | v0.1.6 (当前) |
 |------|--------|---------------|
 | Issues | 0 | **19** |
 | FFI Boundaries | 未统计 | **4266** |
@@ -118,7 +118,7 @@ where A: Algorithm,
 
 | 项目 | 值 |
 |------|-----|
-| OmniScope 版本 | **v0.1.7** |
+| OmniScope 版本 | **v0.1.6** |
 | Zig 版本 | 0.15.2 |
 | LLVM 版本 | 22 |
 | ring 版本 | 0.17.8 |

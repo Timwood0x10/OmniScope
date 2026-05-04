@@ -9,7 +9,6 @@ const zone = @import("zone_classifier.zig");
 /// - SourceKind, FuncCounter, OwnershipTransferStatus
 /// - ResourceLifecycle, CallArgEdge, CallRetEdge
 /// - DangerPathKind, AllocNode (internal)
-
 pub const ZoneKind = zone.ZoneKind;
 pub const Language = zone.Language;
 

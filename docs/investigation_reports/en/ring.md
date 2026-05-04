@@ -1,7 +1,7 @@
-# ring Project Investigation Report v0.1.7
+# ring Project Investigation Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Test Project**: ring (Rust Cryptography Library)
 **Test File**: corpus/real_world/crypto/ring.ll
 
@@ -15,11 +15,11 @@
 |---------|----------|----------|---------|-----------|
 | ring | Rust + C/asm | C/asm Core + Rust Wrapper | 3.1M | 278 |
 
-### 1.2 v0.1.7 Benchmark Results
+### 1.2 v0.1.6 Benchmark Results
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — ring.ll                  ║
+║         OmniScope v0.1.6 — ring.ll                  ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **19**                  ║
 ║  PtrLifetime Tracked:        **841**                  ║
@@ -37,14 +37,14 @@
   Runtime internal (skipped):  17
   Unknown zone:                0
 
-  Issues found:                19 (v0.1.7 full analysis)
+  Issues found:                19 (v0.1.6 full analysis)
 ```
 
-> **v0.1.5 → v0.1.7 Change**: v0.1.5 reported 0 issues (all skipped via Zone Classification). v0.1.7 in full benchmark mode detects **19 issues** with **4266 FFI boundaries**.
+> **v0.1.5 → v0.1.6 Change**: v0.1.5 reported 0 issues (all skipped via Zone Classification). v0.1.6 in full benchmark mode detects **19 issues** with **4266 FFI boundaries**.
 
 ---
 
-## 2. Why 0 in v0.1.5 vs 19 in v0.1.7?
+## 2. Why 0 in v0.1.5 vs 19 in v0.1.6?
 
 ### 2.1 v0.1.5 Behavior (Correct but Conservative)
 
@@ -53,9 +53,9 @@ ring's 100% skip rate is the expected result of Zone Classification:
 - 17 Runtime Internal = Rust stdlib
 - 0 Unknown functions = No analysis needed
 
-### 2.2 v0.1.7 Behavior (More Comprehensive)
+### 2.2 v0.1.6 Behavior (More Comprehensive)
 
-v0.1.7 enables Tier 2 analysis in full benchmark mode:
+v0.1.6 enables Tier 2 analysis in full benchmark mode:
 - Even Safe Zones get FFI boundary statistics
 - **4266 FFI boundaries** indicate massive cross-language calls inside ring
 - 19 issues mainly from asm/C boundary pointer operations
@@ -76,9 +76,9 @@ v0.1.7 enables Tier 2 analysis in full benchmark mode:
 
 ## 4. Conclusion
 
-### 4.1 v0.1.7 Effectiveness
+### 4.1 v0.1.6 Effectiveness
 
-| Metric | v0.1.5 | v0.1.7 (Current) |
+| Metric | v0.1.5 | v0.1.6 (Current) |
 |--------|--------|------------------|
 | Issues | 0 | **19** |
 | FFI Boundaries | Not counted | **4266** |
@@ -102,7 +102,7 @@ v0.1.7 enables Tier 2 analysis in full benchmark mode:
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Zig Version | 0.15.2 |
 | LLVM Version | 22 |
 | ring Version | 0.17.8 |

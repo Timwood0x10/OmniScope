@@ -193,7 +193,7 @@ pub const PassManager = struct {
             _ = try self.resolveDependencies();
         }
 
-        // Execute in resolved order with graceful degradation (v0.2.0)
+        // Execute in resolved order with graceful degradation (v0.1.6)
         var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;

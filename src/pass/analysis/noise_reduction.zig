@@ -105,7 +105,7 @@ pub fn classifyFunction(
 /// code generation. They represent optimization hints, debug metadata,
 /// lifetime markers, and runtime support — NOT user code.
 ///
-/// Source of FPs (v0.1.7 audit):
+/// Source of FPs (v0.1.6 audit):
 ///   - BLST: 3/3 top findings = llvm.threadlocal.address (100% FP)
 ///   - Wasmtime: majority of findings = intrinsics (coro, gc, expect)
 ///   - All projects: llvm.lifetime.* and llvm.dbg.* create noise volume
@@ -858,9 +858,11 @@ test "is_llvm_intrinsic_noise - real FFI functions NOT suppressed" {
 }
 
 test "is_llvm_intrinsic_noise - Rust synthetic patterns" {
-    // Rust stdlib safe primitives that look like real code but aren't FFI risks
-    try std.testing.expect(is_llvm_intrinsic_noise("__rust_alloc"));
-    try std.testing.expect(is_llvm_intrinsic_noise("__rust_dealloc"));
+    // After FIX-1 (v0.1.6): __rust_alloc/dealloc/realloc REMOVED from noise patterns.
+    // They must now be tracked by ptr_lifetime for FFI boundary detection.
+    try std.testing.expect(!is_llvm_intrinsic_noise("__rust_alloc"));
+    try std.testing.expect(!is_llvm_intrinsic_noise("__rust_dealloc"));
+    // These Rust stdlib safe primitives ARE still correctly classified as noise
     try std.testing.expect(is_llvm_intrinsic_noise("sync_channel::channel"));
     try std.testing.expect(is_llvm_intrinsic_noise("mpsc::channel::new"));
     try std.testing.expect(is_llvm_intrinsic_noise("Waker::wake"));

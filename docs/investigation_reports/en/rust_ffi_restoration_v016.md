@@ -1,7 +1,7 @@
-# OmniScope v0.1.7 Post-Fix Investigation Report (Rust FFI Focus)
+# OmniScope v0.1.6 Post-Fix Investigation Report (Rust FFI Focus)
 
 **Report Date**: 2026-05-04
-**Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Focus**: Rust FFI Boundary Detection Restoration & Validation
 **Test Scope**: **17 .ll files** (Red Team 8 + FFI-Dense 3 + Real-World 6)
 
@@ -13,7 +13,7 @@
 
 After comprehensive bug fixes in **Phase 1+2+3**, OmniScope has **successfully restored Rust FFI boundary detection capability** with TP rate from **0% → 20%**.
 
-| Metric | Pre-Fix (v0.1.6) | Post-Fix (v0.1.7) | Improvement |
+| Metric | Pre-Fix (v0.1.6) | Post-Fix (v0.1.6) | Improvement |
 |--------|-------------------|-------------------|------------|
 | **Rust FFI TP Rate** | **0%** | **20% (4/20)** | ✅ **∞ improvement** |
 | **Total Issues Detected** | ~350 | **548** | ✅ **+57%** |
@@ -161,7 +161,7 @@ danger_surface.zig:31       → ["call-graph"]  // circular dep fixed
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — Rust FFI Focus Results           ║
+║         OmniScope v0.1.6 — Rust FFI Focus Results           ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Total Bugs (in-scope):      20                             ║
 ║  Issues Detected:            4  (TP: 4, FP: 0)             ║
@@ -242,9 +242,9 @@ danger_surface.zig:31       → ["call-graph"]  // circular dep fixed
 
 ## V. Version Comparison
 
-### 5.1 v0.1.6 vs v0.1.7
+### 5.1 v0.1.6 vs v0.1.6
 
-| Capability | v0.1.6 (Pre-Fix) | v0.1.7 (Post-Fix) | Δ |
+| Capability | v0.1.6 (Pre-Fix) | v0.1.6 (Post-Fix) | Δ |
 |-----------|------------------|-------------------|---|
 | **Rust alloc tracking** | ❌ Broken | ✅ Working | ✅ **RESTORED** |
 | **FFI boundary detection** | ⚠️ Limited | ✅ Comprehensive (+123) | +∞ |

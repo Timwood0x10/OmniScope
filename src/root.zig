@@ -198,12 +198,6 @@ pub const semantics = struct {
     pub const analyzeBehavior = @import("semantics/behavior_filter.zig").analyzeBehavior;
     pub const looksLikeDropGlue = @import("semantics/behavior_filter.zig").looksLikeDropGlue;
     pub const looksLikeAllocatorWrapper = @import("semantics/behavior_filter.zig").looksLikeAllocatorWrapper;
-
-    pub const AttributionConfig = @import("semantics/attribution.zig").AttributionConfig;
-    pub const AttributionSummary = @import("semantics/attribution.zig").AttributionSummary;
-    pub const AttributedIssue = @import("semantics/attribution.zig").AttributedIssue;
-    pub const OriginGroup = @import("semantics/attribution.zig").OriginGroup;
-    pub const CombinedStats = @import("semantics/attribution.zig").CombinedStats;
 };
 
 // Export registry system

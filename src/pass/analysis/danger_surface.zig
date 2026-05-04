@@ -4,9 +4,10 @@
 //! "trace from danger surfaces outward". It is the sole entry point for Tier 2
 //! (strict) analysis in the Graph-Driven architecture.
 //!
-//! **Execution order**: Must run AFTER ptr_lifetime (needs populated MemoryGraph)
-//!                       and AFTER call-graph (needs CrossLangEdge)
-//!                       and BEFORE callback_escape and other reporting passes
+//! **Execution order**: Must run AFTER call-graph (needs CrossLangEdge)
+//!                       and BEFORE callback_escape and other reporting passes.
+//! NOTE: MemoryGraph is initialized in pipeline.zig:L95 (not by ptr-lifetime pass),
+//!       so no explicit ptr-lifetime dependency needed.
 //!
 //! **Algorithm (optimized O(E × avg_args) instead of O(N × B))**:
 //!   1. Collect all danger surfaces (FFI boundary CrossLangEdge)
@@ -76,6 +77,7 @@ pub const DangerSurfacePass = struct {
                 total_args += 1;
                 const arg_ptr_val = mg.call_args.items[arg_idx].arg_ptr;
                 try ctx.markRelevantAlloc(arg_ptr_val);
+                ctx.markFfiRelevant(arg_ptr_val) catch {}; // BUGFIX: wire up P2-8 infrastructure
                 ctx.markFunctionFromInst(mg.call_args.items[arg_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
@@ -91,6 +93,7 @@ pub const DangerSurfacePass = struct {
                 total_rets += 1;
                 const ret_ptr_val = mg.call_rets.items[ret_idx].ret_ptr;
                 try ctx.markRelevantAlloc(ret_ptr_val);
+                ctx.markFfiRelevant(ret_ptr_val) catch {}; // BUGFIX: wire up P2-8 infrastructure
                 ctx.markFunctionFromInst(mg.call_rets.items[ret_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
@@ -117,6 +120,7 @@ pub const DangerSurfacePass = struct {
                 const fl = node.free_lang orelse continue;
                 if (node.alloc_lang != fl) {
                     try ctx.markRelevantAlloc(ptr_val);
+                    ctx.markFfiRelevant(ptr_val) catch {}; // BUGFIX: cross-lang free is FFI-relevant
                     try markFunctionFromInst(ctx, node.alloc_inst);
                     traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
                         diag.debug("[P1-1] Alias propagation error for cross-lang ptr 0x{x}: {}", .{ ptr_val, err });
@@ -153,6 +157,7 @@ fn traceAliasClosure(
         if (visited.contains(alias_ptr)) continue;
         try visited.put(alias_ptr, {});
         try ctx.markRelevantAlloc(alias_ptr);
+        ctx.markFfiRelevant(alias_ptr) catch {}; // BUGFIX: aliases of FFI ptrs are also FFI-relevant
         traceAliasClosure(mg, alias_ptr, ctx, diag, visited) catch |err| {
             diag.debug("[P1-1] Recursive alias error for 0x{x} -> 0x{x}: {}", .{ ptr_val, alias_ptr, err });
         };

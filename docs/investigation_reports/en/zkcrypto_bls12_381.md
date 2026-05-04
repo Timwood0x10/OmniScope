@@ -1,7 +1,7 @@
-# zkcrypto-bls12-381 Investigation Report v0.1.7
+# zkcrypto-bls12-381 Investigation Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Test Project**: zkcrypto-bls12-381 (Pure-Rust BLS12-381 Crypto Library)
 
 ---
@@ -16,11 +16,11 @@
 
 **Repository**: https://github.com/zkcrypto/bls12_381
 
-### 1.2 v0.1.7 Benchmark Results
+### 1.2 v0.1.6 Benchmark Results
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║    OmniScope v0.1.7 — zkcrypto_bls12_381 (Pure Rust)        ║
+║    OmniScope v0.1.6 — zkcrypto_bls12_381 (Pure Rust)        ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Zone Classification:                                        ║
 ║    Safe zone (skipped):         273 (100%)                    ║
@@ -33,7 +33,7 @@
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-> **v0.1.7 Verification**: Identical to v0.1.5 — **0 issues, 100% skip rate, 100% precision**
+> **v0.1.6 Verification**: Identical to v0.1.5 — **0 issues, 100% skip rate, 100% precision**
 
 ---
 
@@ -76,9 +76,9 @@ For pure Rust projects:
 
 ## 4. Conclusion
 
-### 4.1 v0.1.7 Verification
+### 4.1 v0.1.6 Verification
 
-| Metric | v0.1.5 | v0.1.7 | Change |
+| Metric | v0.1.5 | v0.1.6 | Change |
 |--------|--------|--------|--------|
 | Issues | 0 | **0** | No change |
 | Skip Rate | 100% | **100%** | No change |
@@ -100,7 +100,7 @@ For pure Rust projects:
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Zig Version | 0.15.2 |
 | LLVM Version | 22 |
 | zkcrypto Version | 0.1.0 |

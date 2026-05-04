@@ -1,7 +1,7 @@
-# blst Project Investigation Report v0.1.7
+# blst Project Investigation Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Test Project**: blst (BLS12-381 Signature Library)
 **Test File**: corpus/real_world/crypto/blst.dll
 
@@ -15,11 +15,11 @@
 |---------|----------|----------|---------|-----------|
 | blst | Rust + C | C Core + Rust FFI Bindings | 3.6M | 267 |
 
-### 1.2 v0.1.7 Benchmark Results
+### 1.2 v0.1.6 Benchmark Results
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — blst.dll                 ║
+║         OmniScope v0.1.6 — blst.dll                 ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **35**                  ║
 ║  PtrLifetime Tracked:        **269**                  ║
@@ -37,18 +37,18 @@
   Runtime internal (skipped):  132
   Unknown zone:                96
 
-  Issues found:                35 (v0.1.7 updated)
+  Issues found:                35 (v0.1.6 updated)
 ```
 
-> **v0.1.5 → v0.1.7 Change**: Issues from 48 → **35** (FP suppression + precision gain), FFI Bounds from uncounted → **1382**
+> **v0.1.5 → v0.1.6 Change**: Issues from 48 → **35** (FP suppression + precision gain), FFI Bounds from uncounted → **1382**
 
 ---
 
-## 2. v0.1.7 Improvements
+## 2. v0.1.6 Improvements
 
 ### 2.1 Precision Gain
 
-| Metric | v0.1.5 | v0.1.7 |
+| Metric | v0.1.5 | v0.1.6 |
 |--------|--------|--------|
 | Issues | 48 | **35** (-27%) |
 | Estimated FP | ~20 | **~5** |
@@ -79,13 +79,13 @@
 blst's FFI boundary design is solid:
 - C side functions declared via `extern "C"`
 - Rust side uses `Box::into_raw` / `Box::from_raw` for ownership transfer
-- v0.1.7 detected 2 ownership mismatches (v0.1.5: 0, due to FIX-3 pairing fix)
+- v0.1.6 detected 2 ownership mismatches (v0.1.5: 0, due to FIX-3 pairing fix)
 
 ---
 
 ## 4. Conclusion
 
-### 4.1 v0.1.7 Effectiveness
+### 4.1 v0.1.6 Effectiveness
 
 | Metric | Result |
 |--------|--------|
@@ -102,7 +102,7 @@ blst's FFI boundary design is solid:
 | FFI Design | ✅ Standard, clear ownership boundaries |
 | Rust Wrapper | ✅ Safe, 100% trusted |
 | C Core | ⚠️ 28 issues need manual review |
-| v0.1.7 New Value | ✅ Ownership pairing + FFI boundary stats |
+| v0.1.6 New Value | ✅ Ownership pairing + FFI boundary stats |
 
 ---
 
@@ -110,7 +110,7 @@ blst's FFI boundary design is solid:
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Zig Version | 0.15.2 |
 | LLVM Version | 22 |
 | blst Version | 0.3.16 |

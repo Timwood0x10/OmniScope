@@ -9,7 +9,6 @@ const c = @import("../../ir/llvm_raw.zig").c;
 /// - Go runtime safety function detection
 /// - Callback receiver and signature validation
 /// - Language-aware pointer retention checks
-
 pub fn isCgoBoundary(func_name: []const u8) bool {
     const CGO_GLUE_PATTERNS = [_][]const u8{
         "_cgo_",
@@ -98,9 +97,9 @@ pub fn isGoSafetyFunction(callee_name: []const u8) bool {
 
 pub fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool {
     const C_RETAINING_FUNCTIONS = [_][]const u8{
-        "pthread_create", "signal", "sigaction",
-        "atexit", "on_exit", "qsort", "bsearch",
-        "pthread_key_create", "SDL_SetEventCallback",
+        "pthread_create",  "signal",             "sigaction",
+        "atexit",          "on_exit",            "qsort",
+        "bsearch",         "pthread_key_create", "SDL_SetEventCallback",
         "glfwSetCallback", "curl_easy_setopt",
     };
 

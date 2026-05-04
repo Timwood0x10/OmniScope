@@ -1,13 +1,13 @@
-# OmniScope Investigation Report Index v0.1.7
+# OmniScope Investigation Report Index v0.1.6
 
 **Last Updated**: 2026-05-04
-**Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 
 ---
 
 ## Report List
 
-All reports have been updated to **v0.1.7** with latest 17-file benchmark data.
+All reports have been updated to **v0.1.6** with latest 17-file benchmark data.
 
 ### 📊 Core Reports (Must Read)
 
@@ -15,8 +15,8 @@ All reports have been updated to **v0.1.7** with latest 17-file benchmark data.
 |--------|----------|---------|
 | [accuracy_validation](./accuracy_validation.md) | EN | **Accuracy Validation** — 17-file full validation, 548 issues, 27076 ptrs, 92% coverage |
 | [accuracy_validation](../zh/accuracy_validation.md) | ZH | 准确性验证报告 |
-| [rust_ffi_restoration_v017](./rust_ffi_restoration_v017.md) | EN | **Rust FFI Restoration** — Phase 1+2+3 fix details, TP 0%→20% |
-| [rust_ffi_restoration_v017](../zh/rust_ffi_restoration_v017.md) | ZH | Rust FFI 恢复调查报告 |
+| [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md) | EN | **Rust FFI Restoration** — Phase 1+2+3 fix details, TP 0%→20% |
+| [rust_ffi_restoration_v016](../zh/rust_ffi_restoration_v016.md) | ZH | Rust FFI 恢复调查报告 |
 
 ### 🔬 Project-Specific Reports
 
@@ -32,11 +32,11 @@ All reports have been updated to **v0.1.7** with latest 17-file benchmark data.
 
 ---
 
-## v0.1.7 Key Metrics Summary
+## v0.1.6 Key Metrics Summary
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║              OmniScope v0.1.7 — Final Summary               ║
+║              OmniScope v0.1.6 — Final Summary               ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                                ║
 ║  📁 Test Files:        17 (Red Team 8 + FFI-Dense 3 + RW 6)   ║
@@ -65,13 +65,13 @@ All reports have been updated to **v0.1.7** with latest 17-file benchmark data.
 |---------|------|--------------|
 | v0.1.5 | 2026-04-15 | Initial release |
 | v0.1.6 | 2026-04-27 | FP suppression + Zone Classifier |
-| **v0.1.7** | **2026-05-04** | **Phase 1+2+3 comprehensive fixes + dead code cleanup + full benchmark** |
+| **v0.1.6** | **2026-05-04** | **Phase 1+2+3 comprehensive fixes + dead code cleanup + full benchmark** |
 
 ---
 
 ## Quick Navigation
 
 - **Overall effectiveness?** → [accuracy_validation](./accuracy_validation.md)
-- **Rust FFI fix details?** → [rust_ffi_restoration_v017](./rust_ffi_restoration_v017.md)
+- **Rust FFI fix details?** → [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md)
 - **Specific project data?** → Select project report above
 - **Raw benchmark data?** → `benchmark-output/benchmark-results.json`

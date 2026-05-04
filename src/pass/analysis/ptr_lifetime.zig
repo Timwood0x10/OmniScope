@@ -26,6 +26,7 @@
 //!   }
 
 const std = @import("std");
+const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const c = @import("../../ir/llvm_raw.zig").c;
 
 const zone_cls = @import("../../semantics/zone_classifier.zig");
@@ -864,7 +865,7 @@ pub const PtrLifetimePass = struct {
                         mg.trackAlias(from_hash, to_hash) catch {};
                     }
                 } else {
-                    // v0.2.0: Record content source even when value is not in pointer_map.
+                    // v0.1.6: Record content source even when value is not in pointer_map.
                     // This handles stores from global constants, function parameters,
                     // and untracked call results — without this, load inherits the
                     // alloca's .stack source instead of the actual content source.
@@ -945,7 +946,7 @@ pub const PtrLifetimePass = struct {
                 }
             },
 
-            // v0.2.0: Track whether this function returns a pointer.
+            // v0.1.6: Track whether this function returns a pointer.
             // Used by checkCallViolation to identify sink functions:
             // functions that don't return pointers are likely consumers,
             // not forwarders, so passing a stack pointer to them is safer.
@@ -1346,7 +1347,7 @@ pub const PtrLifetimePass = struct {
 
         if (!may_retain_pointer(callee_name)) return;
 
-        // v0.2.0: Cross-function sink detection via MemoryGraph.
+        // v0.1.6: Cross-function sink detection via MemoryGraph.
         // If the callee function never returns a pointer, it's likely a sink
         // that consumes its arguments rather than forwarding them.
         // Passing a stack pointer to a sink is much safer than passing to
@@ -1494,7 +1495,7 @@ pub const PtrLifetimePass = struct {
                 return;
             }
 
-            // v0.2.0: Check callee's alloc/free balance.
+            // v0.1.6: Check callee's alloc/free balance.
             // Wrapper functions like sqlite3_malloc() delegate to sqlite3Malloc()
             // and return the result. The wrapper itself has net()=0, but the callee
             // has net()>0. This catches the pattern without project-specific whitelists.
@@ -1554,7 +1555,7 @@ pub const PtrLifetimePass = struct {
                 if (ptr_info.is_param_storage) {
                     diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
                     stats.heap_intentional_transfer += 1;
-                    // v0.2.0: Skip sret allocas — LLVM uses "alloca ptr" as a return
+                    // v0.1.6: Skip sret allocas — LLVM uses "alloca ptr" as a return
                     // value slot for functions returning pointers. The alloca itself is
                     // on the stack, but it only holds a pointer to heap-allocated memory.
                     // Returning the alloca address is the standard LLVM sret pattern,
@@ -1792,32 +1793,6 @@ pub const PtrLifetimePass = struct {
         for (factory_suffixes) |suffix| {
             if (std.mem.endsWith(u8, func_name, suffix)) return true;
         }
-        return false;
-    }
-
-    fn isFreeFunction(fn_name: []const u8) bool {
-        // Exact matches for well-known free/dealloc functions
-        const exact_fns = [_][]const u8{ "free", "realloc", "kfree", "vfree", "g_free", "cfree" };
-        for (exact_fns) |exact| {
-            if (std.mem.eql(u8, fn_name, exact)) return true;
-        }
-        // Suffix patterns: function must END with these to avoid false positives
-        // on names like "free_size", "freestyle", "set_freedom" etc.
-        const suffixes = [_][]const u8{
-            "_free",      "_dealloc", "_deallocate",
-            "_release",   "_destroy", "_drop",
-            "delete",     "Delete",   "deallocate",
-            "Deallocate",
-        };
-        for (suffixes) |suffix| {
-            if (fn_name.len >= suffix.len and
-                std.mem.eql(u8, fn_name[fn_name.len - suffix.len ..], suffix))
-            {
-                return true;
-            }
-        }
-        // C++ operator delete (contains space)
-        if (std.mem.indexOf(u8, fn_name, "operator delete") != null) return true;
         return false;
     }
 

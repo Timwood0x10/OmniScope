@@ -1,7 +1,7 @@
-# Other Open Source Projects Investigation Report v0.1.7
+# Other Open Source Projects Investigation Report v0.1.6
 
 **Test Date**: 2026-05-04
-**Test Version**: v0.1.7 (Post Phase 1+2+3 Fixes)
+**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
 **Test Projects**: curl, sqlite3, openssl
 
 ---
@@ -16,17 +16,17 @@
 | sqlite3 | C | C-only (no FFI) | 120M | 3250 | **226** |
 | openssl_wrapper | C | C-only (no FFI) | 2.5M | 38 | **1** |
 
-> **v0.1.7 Update**: All data from actual benchmark runs; added Ptrs Tracked, FFI Bounds, Violations metrics.
+> **v0.1.6 Update**: All data from actual benchmark runs; added Ptrs Tracked, FFI Bounds, Violations metrics.
 
 ---
 
-## 2. v0.1.7 Full Benchmark Results
+## 2. v0.1.6 Full Benchmark Results
 
 ### 2.1 curl8.ll (Large Real-World Project)
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — curl8.ll                 ║
+║         OmniScope v0.1.6 — curl8.ll                 ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **114**                  ║
 ║  Functions Analyzed:        944                       ║
@@ -45,7 +45,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║         OmniScope v0.1.7 — sqlite3.ll               ║
+║         OmniScope v0.1.6 — sqlite3.ll               ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            **226** (highest!)       ║
 ║  Functions Analyzed:        **3250**                   ║
@@ -64,7 +64,7 @@
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║     OmniScope v0.1.7 — openssl_wrapper.ll           ║
+║     OmniScope v0.1.6 — openssl_wrapper.ll           ║
 ╠══════════════════════════════════════════════════════╣
 ║  Issues Detected:            1                        ║
 ║  PtrLifetime Tracked:        45                       ║
@@ -91,9 +91,9 @@
 
 ---
 
-## 4. v0.1.7 Improvement Summary
+## 4. v0.1.6 Improvement Summary
 
-| Metric | v0.1.5/6 | v0.1.7 (Current) |
+| Metric | v0.1.5/6 | v0.1.6 (Current) |
 |--------|----------|------------------|
 | **Total Issues** | ~250 | **341** (+36%) |
 | **Ptrs Tracked** | N/A | **25185** (new metric) |
@@ -107,6 +107,6 @@
 
 | Item | Value |
 |------|-------|
-| OmniScope Version | **v0.1.7** |
+| OmniScope Version | **v0.1.6** |
 | Test Date | **2026-05-04** |
 | IR File Location | corpus/real_world/**/*.ll |

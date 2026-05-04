@@ -13,7 +13,7 @@
 //! 3. No path-sensitive analysis
 //! 4. Higher false positive rate on FFI boundaries
 //!
-//! **Status**: Kept for backward compatibility. Will be removed in v0.2.0.
+//! **Status**: Kept for backward compatibility. Will be removed in v0.1.6.
 //! **All dependencies have been migrated to `pointer-flow` pass.**
 
 const std = @import("std");

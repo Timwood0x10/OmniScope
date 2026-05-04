@@ -1,7 +1,7 @@
-# FFI 密集型项目调查报告 v0.1.7
+# FFI 密集型项目调查报告 v0.1.6
 
 **测试日期**: 2026-05-04
-**测试版本**: v0.1.7 (Phase 1+2+3 修复后)
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
 **测试项目**: zlib-binding, openssl-wrapper, sqlite-binding
 
 ---
@@ -16,11 +16,11 @@
 | openssl-wrapper | C | corpus/ffi-dense/openssl_wrapper.c | openssl_wrapper.ll | **1** | **45** | **37** |
 | sqlite-binding | C | corpus/ffi-dense/sqlite_binding.c | sqlite_binding.ll | **2** | **35** | **17** |
 
-> **v0.1.5 → v0.1.7 变化**: Issues 从 25 → **7**（FP 抑制提升精度），新增 Ptrs Tracked 和 FFI Bounds 统计
+> **v0.1.5 → v0.1.6 变化**: Issues 从 25 → **7**（FP 抑制提升精度），新增 Ptrs Tracked 和 FFI Bounds 统计
 
 ---
 
-## 2. v0.1.7 全量 Benchmark 结果
+## 2. v0.1.6 全量 Benchmark 结果
 
 ### 2.1 zlib_binding.ll
 
@@ -38,7 +38,7 @@
 - use_after_free: 1
 - gzopen/gzclose 泄漏: 1
 
-> v0.1.5 报告 14 issues，v0.1.7 为 **4 issues**（FP 抑制后精度 ~90%）
+> v0.1.5 报告 14 issues，v0.1.6 为 **4 issues**（FP 抑制后精度 ~90%）
 
 ---
 
@@ -55,7 +55,7 @@
 
 **检测到的 Issue**: EVP_CIPHER_CTX 泄漏 (encrypt_leak_ctx)
 
-> v0.1.5 报告 7 issues，v0.1.7 为 **1 issue**（大部分为 defensive coding FP）
+> v0.1.5 报告 7 issues，v0.1.6 为 **1 issue**（大部分为 defensive coding FP）
 
 ---
 
@@ -74,7 +74,7 @@
 - 数据库泄漏 (sqlite3_open 无 close): 1
 - 语句泄漏 (prepare 无 finalize): 1
 
-> v0.1.5 报告 4 issues，v0.1.7 为 **2 issues**
+> v0.1.5 报告 4 issues，v0.1.6 为 **2 issues**
 
 ---
 
@@ -94,9 +94,9 @@
 
 ---
 
-## 4. v0.1.7 vs v0.1.5 对比
+## 4. v0.1.6 vs v0.1.5 对比
 
-| 指标 | v0.1.5 | v0.1.7 (当前) | 变化 |
+| 指标 | v0.1.5 | v0.1.6 (当前) | 变化 |
 |------|--------|---------------|------|
 | **Total Issues** | 25 | **7** | **-72%** (FP 抑制) |
 | **Estimated FP** | ~15 | **~1** | **-93%** |
@@ -108,7 +108,7 @@
 
 ## 5. 结论
 
-### 5.1 v0.1.7 改进效果
+### 5.1 v0.1.6 改进效果
 
 | 维度 | 结果 |
 |------|------|
@@ -122,7 +122,7 @@
 ✅ **所有代码片段均来自真实源码**
 - 源码文件存在于 `corpus/ffi-dense/` 目录
 - IR 文件由 clang 生成
-- OmniScope 检测日志来自 v0.1.7 实际运行
+- OmniScope 检测日志来自 v0.1.6 实际运行
 
 ---
 
@@ -130,7 +130,7 @@
 
 | 项目 | 值 |
 |------|-----|
-| OmniScope 版本 | **v0.1.7** |
+| OmniScope 版本 | **v0.1.6** |
 | 测试日期 | **2026-05-04** |
 | 源码位置 | corpus/ffi-dense/*.c |
 | IR 文件 | corpus/ffi-dense/*.ll |

@@ -204,14 +204,14 @@ pub const KNOWN_DEALLOCATORS = struct {
 pub const RUST_ALLOC_INTRINSICS = struct {
     /// All 8 Rust allocator/deallocator intrinsics (alloc + dealloc combined)
     pub const all = [_][]const u8{
-        "__rust_alloc", "__rust_dealloc", "__rust_realloc",
-        "__rdl_alloc", "__rdl_dealloc", "__rg_alloc",
+        "__rust_alloc", "__rust_dealloc",  "__rust_realloc",
+        "__rdl_alloc",  "__rdl_dealloc",   "__rg_alloc",
         "__rg_dealloc", "exchange_malloc",
     };
     /// Allocator-only subset (no deallocators)
     pub const alloc_only = [_][]const u8{
-        "__rust_alloc", "__rust_realloc", "__rdl_alloc",
-        "__rg_alloc", "exchange_malloc",
+        "__rust_alloc", "__rust_realloc",  "__rdl_alloc",
+        "__rg_alloc",   "exchange_malloc",
     };
     /// Deallocator-only subset
     pub const dealloc_only = [_][]const u8{

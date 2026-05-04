@@ -237,17 +237,17 @@ test "benchmark: registry known functions respond correctly" {
         "malloc",   "free",     "calloc", "realloc",
         "fopen",    "fclose",   "mmap",   "munmap",
         "into_raw", "from_raw",
-        // v0.1.7: dynamic loading
+        // v0.1.6: dynamic loading
         "dlopen",   "dlsym",    "dlclose",
-        // v0.1.7: JNI
+        // v0.1.6: JNI
         "JNI_OnLoad", "FindClass", "GetMethodID", "NewStringUTF",
-        // v0.1.7: Python C API
+        // v0.1.6: Python C API
         "Py_INCREF", "Py_DECREF", "Py_BuildValue",
-        // v0.1.7: thread management
+        // v0.1.6: thread management
         "pthread_create", "pthread_join", "pthread_mutex_lock",
-        // v0.1.7: signal handling
+        // v0.1.6: signal handling
         "signal",    "sigaction",
-        // v0.1.7: process management
+        // v0.1.6: process management
         "fork",      "execve",   "waitpid",
     };
 
@@ -261,7 +261,7 @@ test "benchmark: registry RiskKind count matches expected" {
     try testing.expect(registry.SemanticRegistry.isKnown("malloc"));
     try testing.expect(registry.SemanticRegistry.isKnown("into_raw"));
     try testing.expect(registry.SemanticRegistry.isKnown("operator new"));
-    // v0.1.7: new RiskKind functions
+    // v0.1.6: new RiskKind functions
     try testing.expect(registry.SemanticRegistry.isKnown("dlopen"));
     try testing.expect(registry.SemanticRegistry.isKnown("JNI_OnLoad"));
     try testing.expect(registry.SemanticRegistry.isKnown("Py_INCREF"));
