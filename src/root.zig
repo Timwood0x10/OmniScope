@@ -229,11 +229,8 @@ pub const lifetime = struct {
     pub const EngineStats = @import("lifetime/engine.zig").EngineStats;
     pub const TransitionRule = @import("lifetime/engine.zig").TransitionRule;
     pub const TRANSITION_RULES = @import("lifetime/engine.zig").TRANSITION_RULES;
-    pub const SemanticMapper = @import("lifetime/mapper.zig").SemanticMapper;
-    pub const MappedAction = @import("lifetime/mapper.zig").MappedAction;
-    pub const Rule = @import("lifetime/mapper.zig").Rule;
-    pub const RULES = @import("lifetime/mapper.zig").RULES;
-    pub const MatchType = @import("lifetime/mapper.zig").MatchType;
+    // NOTE: SemanticMapper types removed (dead code, 2026-05-04)
+    // See untodo.md DEAD-13 for details
     pub const LanguageHint = @import("lifetime/engine.zig").LanguageHint;
     pub const SourceLocation = @import("lifetime/engine.zig").SourceLocation;
     pub const BoundaryAnalyzer = @import("lifetime/boundary.zig").BoundaryAnalyzer;
