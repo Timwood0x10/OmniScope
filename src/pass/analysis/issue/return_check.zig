@@ -35,6 +35,27 @@ pub const ReturnCheckPass = struct {
         "fclose", // return value rarely needs checking
     };
 
+    /// Internal/library helper functions whose return values are often intentionally unchecked
+    /// These are common in C libraries like sqlite3, pthread, etc.
+    const InternalHelperFunctions = &[_][]const u8{
+        // pthread internal functions - return values often ignored in library code
+        "pthread_mutex_",
+        "pthread_mutexattr_",
+        // sqlite3 internal helpers
+        "readCoord",
+        "writeInt16",
+        "nodeGetCell",
+        "nodeOverwriteCell",
+        "pager_write_",
+        "vdbeSorter",
+        "vdbeIncr",
+        "selectWindow",
+        "propagateConstant",
+        // General utility patterns (suffixes/prefixes that indicate internal use)
+        "Coord",
+        "MergerSet",
+    };
+
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
@@ -43,7 +64,15 @@ pub const ReturnCheckPass = struct {
 
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            issue_count += try analyzeFunction(ctx, func, diag);
+            // Function-level error isolation
+            const count = analyzeFunction(ctx, func, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("ReturnCheck: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
+            issue_count += count;
         }
 
         diag.info("ReturnCheck: Analyzed functions, found {} unchecked return values", .{issue_count});
@@ -132,7 +161,7 @@ pub const ReturnCheckPass = struct {
             confidence,
         );
 
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
         ctx.allocator.free(issue_message);
 
         diag.warn("Unchecked return value: {s} -> {s}", .{ caller_name, clean_name });
@@ -147,12 +176,43 @@ pub const ReturnCheckPass = struct {
             }
         }
 
-        // Then check if it's a dangerous function
+        // Check if it's an internal helper function (library-internal, often unchecked)
+        for (InternalHelperFunctions) |helper| {
+            if (std.mem.indexOf(u8, func_name, helper) != null) {
+                return false; // Internal helper, skip
+            }
+        }
+
+        // Then check if it's a dangerous function (exact match preferred, then prefix)
         for (DangerousFunctions) |dangerous_func| {
-            if (std.mem.indexOf(u8, func_name, dangerous_func) != null) {
+            // Prefer exact match to avoid false positives like readCoord matching "read"
+            if (std.mem.eql(u8, func_name, dangerous_func)) {
                 return true;
             }
         }
+
+        // Only do substring match for well-known prefixes that are unlikely to be internal
+        const safe_prefixes = &[_][]const u8{ "malloc", "calloc", "realloc", "open", "read", "write" };
+        for (safe_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) {
+                // But exclude known internal variants
+                const known_safe = &[_][]const u8{
+                    "mallocWithAlarm",  "malloc_size",        "malloc_usable_size",
+                    "malloc_zone_free", "malloc_zone_malloc", "malloc_set_zone_name",
+                    "readCoord",        "readData",           "openStatTable",
+                    "openDatabase",
+                };
+                var is_known_safe = false;
+                for (known_safe) |safe| {
+                    if (std.mem.eql(u8, func_name, safe)) {
+                        is_known_safe = true;
+                        break;
+                    }
+                }
+                if (!is_known_safe) return true;
+            }
+        }
+
         return false;
     }
 

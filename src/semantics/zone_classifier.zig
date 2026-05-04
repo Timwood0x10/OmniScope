@@ -15,6 +15,8 @@
 //! - C++: extern C, reinterpret_cast, manual malloc/free
 
 const std = @import("std");
+const c = @import("../ir/llvm_raw.zig").c;
+const debug_info = @import("../ir/debug_info.zig");
 
 /// Zone classification for code regions.
 pub const ZoneKind = enum(u8) {
@@ -96,6 +98,16 @@ pub const RUST_SAFE_PATTERNS = [_][]const u8{
     "clone",
     "into_iter",
     "from_iter",
+
+    // R7.0: Migrated from FPWhitelist Category 2 (Rust stdlib safe primitives)
+    // These were verified as FPs from BLST/Wasmtime audits — safe by language guarantee.
+    "sync_channel::",
+    "Waker::",
+    "RawVec::",
+
+    // R7.0: Rust global allocator shims (compiler-generated runtime glue)
+    "__rust_alloc",
+    "__rust_dealloc",
 };
 
 /// Rust escape triggers - focus analysis.
@@ -234,15 +246,12 @@ pub const CPP_SAFE_PATTERNS = [_][]const u8{
 
 /// C++ escape triggers - focus analysis.
 pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
-    // Extern C
-    "extern \"C\"",
-
     // Dangerous casts
     "reinterpret_cast",
     "const_cast",
     "static_cast<void*",
 
-    // Manual memory
+    // Manual memory management
     "malloc(",
     "free(",
     "new ",
@@ -253,6 +262,52 @@ pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
     "pthread_create",
     "std::thread",
     "CreateThread",
+
+    // Process management (C++ context)
+    "fork(",
+    "execvp(",
+    "execve(",
+
+    // Network I/O (C++ context)
+    "getaddrinfo",
+    "gethostbyname",
+    "setsockopt",
+    "getsockopt",
+};
+
+/// C escape triggers - focus analysis (C-specific, more precise than C++).
+pub const C_ESCAPE_PATTERNS = [_][]const u8{
+    // Dynamic loading
+    "dlopen",
+    "dlsym",
+    "dlclose",
+
+    // Memory mapping
+    "mmap",
+    "munmap",
+    "mprotect",
+
+    // Python C API prefix
+    "Py_",
+
+    // JNI prefix
+    "JNI_",
+
+    // Thread management
+    "pthread_create",
+    "pthread_join",
+
+    // Signal handling
+    "signal(",
+    "sigaction(",
+
+    // Process management
+    "fork(",
+    "exec",
+
+    // Network I/O
+    "getaddrinfo",
+    "gethostbyname",
 };
 
 /// Classify a function name into zone kind.
@@ -263,8 +318,27 @@ pub const CPP_ESCAPE_PATTERNS = [_][]const u8{
 ///
 /// Returns:
 ///   ZoneKind classification
+fn isAlphaNumeric(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9');
+}
+
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
+
+    // LLVM intrinsics (llvm.* prefix) are always runtime_internal.
+    // Check this before language-specific patterns to prevent misclassification
+    // (e.g., llvm.threadlocal.address.p0 matching "threadlocal" zig_allocator).
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .runtime_internal;
+    }
+
+    // Compiler FORTIFY_SOURCE functions (__*_chk suffix) are runtime-internal.
+    // These are auto-inserted by -D_FORTIFY_SOURCE=2 and indicate the code is
+    // MORE safe (bounds-checked), not less. Examples: __memcpy_chk, __strcpy_chk,
+    // __snprintf_chk, __memmove_chk, __printf_chk, __fprintf_chk.
+    if (std.mem.endsWith(u8, func_name, "_chk")) {
+        return .runtime_internal;
+    }
 
     // Check language-specific patterns
     if (lang) |l| {
@@ -282,8 +356,174 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (isZigFunction(func_name)) return classifyZigFunction(func_name);
     if (isGoFunction(func_name)) return classifyGoFunction(func_name);
     if (isCppFunction(func_name)) return classifyCppFunction(func_name);
+    if (isCFunction(func_name)) return classifyCFunction(func_name);
 
     return .unknown;
+}
+
+/// Classify a function using LLVM metadata (more precise than string matching).
+///
+/// Uses LLVM API to check (in priority order):
+///   1. IsDeclaration: external declarations are typically library/runtime code
+///   2. Linkage type: internal linkage = user code, external = library
+///   3. IntrinsicID: compiler intrinsics should be skipped
+///   4. Subprogram debug info path: source file location for stdlib detection
+///   5. String-based fallback: name pattern matching
+pub fn classifyFunctionFromLLVM(
+    func: c.LLVMValueRef,
+    func_name: []const u8,
+) ZoneKind {
+    // Check if it's a declaration (external, no definition)
+    if (c.LLVMIsDeclaration(func) != 0) {
+        // Declarations are typically runtime/library functions
+        // But some may be user-defined extern functions
+        const linkage = c.LLVMGetLinkage(func);
+
+        // External linkage + declaration = likely runtime/library
+        if (linkage == c.LLVMExternalLinkage or
+            linkage == c.LLVMExternalWeakLinkage or
+            linkage == c.LLVMCommonLinkage)
+        {
+            // Further check if it looks like user FFI vs stdlib
+            if (isLikelyRuntimeInternal(func_name)) {
+                return .runtime_internal;
+            }
+            return .ffi; // External declarations are FFI boundaries
+        }
+
+        // Internal/private declarations = likely user code
+        return .unknown;
+    }
+
+    // Check for compiler intrinsics using intrinsic ID
+    const intrinsic_id = c.LLVMGetIntrinsicID(func);
+    if (intrinsic_id != 0) {
+        return .runtime_internal; // All intrinsics are safe
+    }
+
+    // Layer 4: Use LLVM subprogram debug metadata for source-path-based classification
+    // This is more accurate than string matching because it uses actual source locations
+    if (classifyBySubprogramPath(func)) |zone| {
+        return zone;
+    }
+
+    // For defined functions, use string-based classification as fallback
+    // But first check for LLVM intrinsic prefix — llvm.* functions
+    // are compiler-generated intrinsics, not user code or language allocators.
+    // This prevents misclassification like llvm.threadlocal.address.p0
+    // being classified as zig_allocator (via "threadlocal" contains match).
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .runtime_internal;
+    }
+
+    return classifyFunction(func_name, null);
+}
+
+/// Classify a function by its LLVM DISubprogram debug metadata source path.
+///
+/// Checks the source file location from debug info to determine if the function
+/// comes from standard library vs user code. This is significantly more accurate
+/// than name-based heuristics, especially for mangled names (Rust _ZN*, C++ _Z*).
+///
+/// Returns:
+///   ZoneKind if classification succeeded via debug path, null otherwise
+fn classifyBySubprogramPath(func: c.LLVMValueRef) ?ZoneKind {
+    const subprogram = debug_info.DebugInfoUtils.getFunctionSubprogram(func) orelse return null;
+
+    // Use the same approach as ffi_boundary.extractDebugFilePath (verified working)
+    const file_ref = c.LLVMDIScopeGetFile(subprogram.raw);
+    if (@intFromPtr(file_ref) == 0) return null;
+
+    var filename_len: c_uint = undefined;
+    const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+    if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+    const max_path_len: c_uint = 4096;
+    if (filename_len > max_path_len) return null;
+    if (filename_ptr[0] == 0) return null;
+
+    const filename = filename_ptr[0..filename_len];
+
+    // Rust standard library paths → runtime_internal (skip analysis)
+    const rust_stdlib_paths = [_][]const u8{
+        "/rustc/",         "/.rustup/",        "/rustlib/",
+        "library/core/",   "library/alloc/",   "library/std/",
+        "/src/libcore/",   "/src/liballoc/",   "/src/libstd/",
+        "cargo/registry/", ".cargo/registry/",
+    };
+    for (rust_stdlib_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // Zig standard library paths → runtime_internal
+    const zig_stdlib_paths = [_][]const u8{
+        "/zig/lib/std/", "/zig/lib/builtin/",
+        "lib/std/",      "lib/builtin/",
+    };
+    for (zig_stdlib_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // Go runtime paths → runtime_internal
+    const go_runtime_paths = [_][]const u8{
+        "/usr/local/go/src/runtime/", "/go/src/runtime/",
+        "go/src/runtime/",            "_cgo_gotypes.go",
+    };
+    for (go_runtime_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
+    }
+
+    // C/C++ system header paths → safe
+    const system_paths = [_][]const u8{
+        "/usr/include/",  "/usr/local/include/",
+        "/include/",      "/sysroot/",
+        "/llvm-project/", "/libcxx/",
+    };
+    for (system_paths) |pat| {
+        if (std.mem.indexOf(u8, filename, pat) != null) return .safe;
+    }
+
+    // CGo generated files → runtime_internal (compiler-generated glue)
+    if (std.mem.indexOf(u8, filename, "_cgo_") != null) return .runtime_internal;
+
+    return null; // No match — fall through to string-based classification
+}
+
+/// Check if function name looks like runtime internal code.
+fn isLikelyRuntimeInternal(name: []const u8) bool {
+    // Rust standard library patterns
+    const rust_stdlib_patterns = [_][]const u8{
+        "_ZN4core",      "_ZN5alloc", "_ZN3std",
+        "llvm.",         "__rust_",   "__cg",
+        // Drop glue, panic, etc.
+        "drop_in_place", "panic_",
+    };
+
+    for (rust_stdlib_patterns) |pat| {
+        if (std.mem.startsWith(u8, name, pat)) return true;
+    }
+
+    // Go runtime patterns
+    const go_runtime_patterns = [_][]const u8{
+        "runtime.", "_cgo_",  "crosscall2",
+        "__go_",    "__gcc_",
+    };
+
+    for (go_runtime_patterns) |pat| {
+        if (std.mem.startsWith(u8, name, pat)) return true;
+    }
+
+    // C/C++ standard library patterns
+    const cc_stdlib_patterns = [_][]const u8{
+        "__gnu_cxx",              "__cxa_",
+        "__clang_call_terminate", "llvm.",
+    };
+
+    for (cc_stdlib_patterns) |pat| {
+        if (std.mem.indexOf(u8, name, pat) != null) return true;
+    }
+
+    return false;
 }
 
 /// Source language for classification.
@@ -379,20 +619,59 @@ fn classifyGoFunction(func_name: []const u8) ZoneKind {
 
 /// Classify a C++ function.
 fn classifyCppFunction(func_name: []const u8) ZoneKind {
+    const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
+
+    // Step 1: Check C++ unsafe patterns (highest priority)
     for (CPP_ESCAPE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .unsafe;
         }
     }
 
+    // Step 2: Check C++ safe patterns (RAII, smart pointers)
     for (CPP_SAFE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .safe;
         }
     }
 
+    // Step 3: Check C escape patterns (FFI-related)
+    for (C_ESCAPE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .ffi;
+        }
+    }
+
+    // Step 4: Check extern "C" declaration (FFI boundary)
     if (std.mem.indexOf(u8, func_name, "extern \"C\"") != null) {
         return .ffi;
+    }
+
+    // Step 5: SemanticRegistry lookup (fallback for known functions)
+    if (SemanticRegistry.lookup(func_name)) |sem| {
+        switch (sem.kind) {
+            .command_exec,
+            .unchecked_copy,
+            .format_string,
+            .memory_map,
+            .dynamic_loading,
+            .jni,
+            .python_c_api,
+            .allocator,
+            .deallocator,
+            .network_io,
+            .file_io,
+            .signal_handler,
+            .thread_mgmt,
+            .process_mgmt,
+            .rust_ownership,
+            .borrow_escaped,
+            .go_cgo_alloc,
+            .zig_allocator,
+            .cpp_allocator,
+            .static_buffer,
+            => return .ffi,
+        }
     }
 
     return .unknown;
@@ -442,6 +721,192 @@ fn isCppFunction(func_name: []const u8) bool {
     if (std.mem.startsWith(u8, func_name, "_Z")) return true;
     if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
     return false;
+}
+
+/// Detect if function is C using name-based heuristics.
+///
+/// C functions typically use snake_case naming and don't have
+/// Rust/Zig/Go/C++ specific prefixes.
+fn isCFunction(func_name: []const u8) bool {
+    if (func_name.len == 0) return false;
+
+    if (isRustFunction(func_name)) return false;
+    if (isZigFunction(func_name)) return false;
+    if (isGoFunction(func_name)) return false;
+    if (isCppFunction(func_name)) return false;
+
+    if (std.mem.startsWith(u8, func_name, "_")) return false;
+    if (std.mem.indexOf(u8, func_name, "$") != null) return false;
+
+    if (std.mem.indexOf(u8, func_name, "llvm.") != null) return false;
+    if (std.mem.indexOf(u8, func_name, "__gnu_cxx") != null) return false;
+    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return false;
+
+    return true;
+}
+
+/// Classify a C function based on name patterns.
+///
+/// For pure C code, we use name heuristics to detect FFI relevance:
+/// - snake_case with known FFI patterns → .ffi
+/// - pure internal C logic → .unknown (conservative)
+fn classifyCFunction(func_name: []const u8) ZoneKind {
+    // R7.0: Library internal patterns — these are runtime-internal, NOT FFI boundaries.
+    // Migrated from FPWhitelist Category 3 (project-specific contextual suppressions).
+    const C_INTERNAL_PATTERNS = [_][]const u8{
+        "uv__", // libuv internal functions (e.g., uv__socket)
+        "sqlite3Mem", // SQLite custom allocator shims
+        "__pthread", // glibc pthread internals
+    };
+    for (C_INTERNAL_PATTERNS) |pat| {
+        if (std.mem.startsWith(u8, func_name, pat) or
+            std.mem.indexOf(u8, func_name, pat) != null)
+        {
+            return .runtime_internal;
+        }
+    }
+
+    const C_FFI_PATTERNS = [_][]const u8{
+        // FFI boundary markers
+        "FFI_",
+        "ffi_",
+
+        // Dynamic loading
+        "dlopen",
+        "dlsym",
+        "dlclose",
+
+        // Memory mapping
+        "mmap",
+        "munmap",
+        "mprotect",
+
+        // Network I/O
+        "socket",
+        "connect",
+        "bind",
+        "listen",
+        "accept",
+        "send",
+        "recv",
+
+        // File I/O (specific variants with prefixes)
+        "fopen",
+        "fclose",
+
+        // Threading
+        "pthread_",
+        "sem_",
+        "shm_",
+        "msg_",
+        "mkfifo",
+
+        // Process management
+        "fork",
+        "exec",
+        "wait",
+        "kill",
+        "signal",
+        "alarm",
+
+        // Control flow
+        "setjmp",
+        "longjmp",
+        "exit",
+
+        // Memory allocation
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+        "memcpy",
+        "memmove",
+        "memset",
+        "memcmp",
+
+        // String operations (buffer overflow risk)
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "strlen",
+        "strcmp",
+        "strncmp",
+        "sprintf",
+        "snprintf",
+
+        // Conversion
+        "atoi",
+        "atol",
+        "strtol",
+        "strtod",
+
+        // Platform-specific allocators
+        "malloc_zone",
+
+        // Python C API
+        "Py_",
+        "py_",
+        "PyObject",
+
+        // JNI
+        "JNI_",
+        "NewGlobalRef",
+        "DeleteGlobalRef",
+        "GetMethodID",
+        "GetFieldID",
+        "FindClass",
+        "Call",
+
+        // Resource lifecycle patterns with word-boundary matching
+        // to avoid false positives (e.g., "get_handle_count", "handle_event")
+    };
+
+    for (C_FFI_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .ffi;
+        }
+    }
+
+    // Broad prefix patterns that need word-boundary matching to reduce FP.
+    // Without boundary checks, "handle_" matches "get_handle_count",
+    // "init_" matches "reinitialize", etc.
+    const C_FFI_BROAD_PREFIXES = [_][]const u8{
+        "destroy_",  "create_",  "init_",     "cleanup_",
+        "release_",  "acquire_", "allocate_", "deallocate_",
+        "resource_", "handle_",
+        // Also include the previously ambiguous short words
+         "close",     "open",
+        "read",      "write",    "pipe",
+    };
+    for (C_FFI_BROAD_PREFIXES) |word| {
+        const idx = std.mem.indexOf(u8, func_name, word);
+        if (idx) |i| {
+            const is_component = std.mem.endsWith(u8, word, "_");
+            // Component prefixes (ending in _): must be at name start
+            // e.g., "cleanup_" matches "cleanup_init" but NOT "my_cleanup_func"
+            // Bare words (no _): must be at name start AND followed by boundary
+            // e.g., "close" matches "close_file" but NOT "disclose"
+            if (is_component and i == 0) return .ffi;
+            const is_bare_word = !is_component;
+            if (is_bare_word and i == 0) {
+                const after_idx = i + word.len;
+                const after_ok = after_idx >= func_name.len or !isAlphaNumeric(func_name[after_idx]);
+                if (after_ok) return .ffi;
+            }
+        }
+    }
+
+    if (std.mem.indexOf(u8, func_name, "_cb") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_callback") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_handler") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_hook") != null) return .ffi;
+
+    if (std.mem.indexOf(u8, func_name, "_init") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_cleanup") != null) return .ffi;
+    if (std.mem.indexOf(u8, func_name, "_destroy") != null) return .ffi;
+
+    return .unknown;
 }
 
 /// Statistics for zone classification.
@@ -495,4 +960,117 @@ test "ZoneStats" {
     try std.testing.expectEqual(@as(u32, 4), stats.total());
     try std.testing.expectEqual(@as(u32, 2), stats.safe_count);
     try std.testing.expectEqual(@as(f64, 0.75), stats.skipRatio());
+}
+
+test "isLikelyRuntimeInternal - Rust stdlib" {
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN4core3ptr13drop_in_place"));
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN5alloc6raw_vec17RawVec"));
+    try std.testing.expect(isLikelyRuntimeInternal("_ZN3std3fmt9Arguments"));
+    try std.testing.expect(isLikelyRuntimeInternal("llvm.memcpy.p0i8.p0i8.i64"));
+    try std.testing.expect(!isLikelyRuntimeInternal("_ZN4my_crate3foo3bar"));
+}
+
+test "isLikelyRuntimeInternal - Go runtime" {
+    try std.testing.expect(isLikelyRuntimeInternal("runtime.mallocgc"));
+    try std.testing.expect(isLikelyRuntimeInternal("_cgo_12345"));
+    try std.testing.expect(isLikelyRuntimeInternal("crosscall2"));
+    try std.testing.expect(!isLikelyRuntimeInternal("main.main"));
+}
+
+test "isLikelyRuntimeInternal - C/C++ stdlib" {
+    try std.testing.expect(isLikelyRuntimeInternal("__gnu_cxx::__enable_if"));
+    try std.testing.expect(isLikelyRuntimeInternal("__cxa_begin_catch"));
+    try std.testing.expect(isLikelyRuntimeInternal("__clang_call_terminate"));
+    try std.testing.expect(!isLikelyRuntimeInternal("my_function"));
+}
+
+test "classifyCppFunction - CPP_ESCAPE_PATTERNS" {
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("reinterpret_cast<int*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("const_cast<int*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("static_cast<void*>"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("std::thread"));
+    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("CreateThread"));
+}
+
+test "classifyCppFunction - CPP_SAFE_PATTERNS" {
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::vector<int>::push_back"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::string::c_str"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::unique_ptr::get"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::shared_ptr::clone"));
+    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::map::insert"));
+}
+
+test "classifyCppFunction - extern C" {
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" my_func"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" void foo()"));
+}
+
+test "classifyCppFunction - unknown" {
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("my_custom_function"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("some_internal_func"));
+}
+
+test "isCFunction - positive detection" {
+    try std.testing.expect(isCFunction("my_c_function"));
+    try std.testing.expect(isCFunction("process_data"));
+    try std.testing.expect(isCFunction("handle_request"));
+    try std.testing.expect(isCFunction("init_server"));
+    try std.testing.expect(isCFunction("cleanup_resources"));
+}
+
+test "isCFunction - negative detection (not C)" {
+    try std.testing.expect(!isCFunction("_ZN4core3ptr"));
+    try std.testing.expect(!isCFunction("std::vector"));
+    try std.testing.expect(!isCFunction("runtime.main"));
+    try std.testing.expect(!isCFunction("llvm.memcpy"));
+    try std.testing.expect(!isCFunction("__gnu_cxx::"));
+    try std.testing.expect(!isCFunction("_ZN3std"));
+    try std.testing.expect(!isCFunction("my_func$u20$name"));
+}
+
+test "classifyCFunction - FFI patterns" {
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("FFI_01_dlopen_null_check"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_dlopen_wrapper"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("dlopen_handle"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pthread_create_cb"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("signal_handler"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("malloc_wrapper"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("free_memory"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_mmap_handler"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("socket_create"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("fopen_file"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("cleanup_init"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_resource"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("PyObject_Call"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("JNI_OnLoad"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("NewGlobalRef"));
+}
+
+test "classifyCFunction - non-FFI returns unknown" {
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("my_internal_func"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("calculate_value"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("process_data_internal"));
+}
+
+// R8.0-P1-13: Word-boundary matching for broad C_FFI patterns (no FP)
+test "classifyCFunction - word boundary prevents FP" {
+    // Valid FFI: broad patterns at word start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("close_file")); // close at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("open_socket")); // open at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("read_data")); // read at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("write_buffer")); // write at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pipe_create")); // pipe at start
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_handle")); // destroy_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("create_resource")); // create_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("init_module")); // init_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("handle_event")); // handle_ prefix
+
+    // Invalid (FP): broad pattern as substring
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("disclose")); // contains "close"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reopen")); // contains "open"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("threadsafe")); // contains "read"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("overwrite")); // contains "write"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipeline")); // "pipe" followed by alpha → not a word boundary
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("get_handle_count")); // contains "handle"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reinitialize")); // contains "init"
 }

@@ -11,6 +11,9 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const CrossLangEdge = @import("../pass.zig").CrossLangEdge;
+const ptr_types = @import("ptr_lifetime_types.zig");
+const language_detector = @import("../../semantics/language_detector.zig");
 
 /// Classification of function origin in the call graph.
 /// Used to determine trust boundaries and FFI transitions.
@@ -23,10 +26,8 @@ pub const FunctionKind = enum {
     external_unknown,
 };
 
-/// List of known libc functions that are considered trusted.
-/// These are NOT treated as FFI boundaries even if external.
-/// Note: Dangerous functions like system, exec, popen are NOT included here
-/// because they should be treated as potential FFI boundaries for security analysis.
+/// Trusted libc functions (source: config/languages/c.json).
+/// Dangerous functions (system, exec, popen) are NOT included — see DANGEROUS_FUNCTIONS.
 pub const LIBC_FUNCTIONS = &[_][]const u8{
     "malloc",
     "free",
@@ -79,10 +80,10 @@ pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
 
 pub fn isLibC(func_name: []const u8) bool {
     for (LIBC_FUNCTIONS) |libc_name| {
-        if (std.mem.eql(u8, func_name, libc_name)) {
-            return true;
-        }
+        if (std.mem.eql(u8, func_name, libc_name)) return true;
     }
+    if (ptr_types.isHeapAllocFunction(func_name)) return true;
+    if (ptr_types.isKnownDeallocFunction(func_name)) return true;
     return false;
 }
 
@@ -207,7 +208,6 @@ pub const CallGraphPass = struct {
 
         var nodes: std.ArrayList(Node) = .{};
         defer {
-            // Free owned name memory before deinit
             for (nodes.items) |*node| {
                 node.deinit(ctx.allocator);
             }
@@ -223,6 +223,9 @@ pub const CallGraphPass = struct {
         markSources(&nodes);
         try propagateTaint(ctx.allocator, &nodes, &edges);
         try detectAndReportSinks(ctx, &nodes, &edges, diag);
+
+        // R8.2-b: Extract cross-language call edges for downstream passes.
+        try extractCrossLangEdges(ctx, &nodes, &edges, diag);
     }
 
     fn buildNodes(allocator: std.mem.Allocator, mod: c.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
@@ -246,12 +249,18 @@ pub const CallGraphPass = struct {
     }
 
     fn buildEdges(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+        var name_to_idx = std.StringHashMap(u32).init(allocator);
+        defer name_to_idx.deinit();
+        try name_to_idx.ensureTotalCapacity(@as(u32, @intCast(nodes.items.len)));
+        for (nodes.items, 0..) |*node, idx| {
+            try name_to_idx.put(node.name, @as(u32, @intCast(idx)));
+        }
         for (nodes.items, 0..) |*caller_node, caller_idx| {
-            try findCallsInFunction(allocator, caller_node, @as(u32, @intCast(caller_idx)), nodes, edges);
+            try findCallsInFunction(allocator, caller_node, @as(u32, @intCast(caller_idx)), edges, &name_to_idx);
         }
     }
 
-    fn findCallsInFunction(allocator: std.mem.Allocator, caller_node: *Node, caller_idx: u32, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+    fn findCallsInFunction(allocator: std.mem.Allocator, caller_node: *Node, caller_idx: u32, edges: *std.ArrayList(Edge), name_to_idx: *std.StringHashMap(u32)) !void {
         var bb = c.LLVMGetFirstBasicBlock(caller_node.func_ref);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -263,11 +272,8 @@ pub const CallGraphPass = struct {
                     const called_name_ptr = c.LLVMGetValueName(called_val);
                     if (@intFromPtr(called_name_ptr) != 0) {
                         const called_name = std.mem.span(called_name_ptr);
-                        for (nodes.items, 0..) |*callee_node, callee_idx| {
-                            if (std.mem.eql(u8, callee_node.name, called_name)) {
-                                try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
-                                break;
-                            }
+                        if (name_to_idx.get(called_name)) |callee_idx| {
+                            try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
                         }
                     } else {
                         const module = c.LLVMGetGlobalParent(caller_node.func_ref);
@@ -279,12 +285,8 @@ pub const CallGraphPass = struct {
                             const candidate_name_ptr = c.LLVMGetValueName(candidate_val);
                             if (@intFromPtr(candidate_name_ptr) == 0) continue;
                             const candidate_name = std.mem.span(candidate_name_ptr);
-
-                            for (nodes.items, 0..) |*callee_node, callee_idx| {
-                                if (std.mem.eql(u8, callee_node.name, candidate_name)) {
-                                    try edges.append(allocator, .{ .caller = caller_idx, .callee = @as(u32, @intCast(callee_idx)) });
-                                    break;
-                                }
+                            if (name_to_idx.get(candidate_name)) |callee_idx| {
+                                try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
                             }
                         }
                     }
@@ -431,6 +433,58 @@ pub const CallGraphPass = struct {
             }
         }
         return false;
+    }
+
+    /// R8.2-b: Extract cross-language call edges from the built call graph.
+    /// For each edge where caller and callee have different detected languages
+    /// (or the callee is external), emit a CrossLangEdge to PassContext for
+    /// downstream consumption by ffi_boundary and callback_escape passes.
+    fn extractCrossLangEdges(
+        ctx: *PassContext,
+        nodes: *const std.ArrayList(Node),
+        edges: *const std.ArrayList(Edge),
+        diag: *DiagnosticWriter,
+    ) !void {
+        var cross_count: u32 = 0;
+
+        for (edges.items) |edge| {
+            if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
+
+            const caller_node = nodes.items[edge.caller];
+            const callee_node = nodes.items[edge.callee];
+
+            // Detect language of caller (has LLVM function ref)
+            const caller_lang = language_detector.identifyLanguage(caller_node.func_ref);
+
+            // Detect language of callee (may be external — use name-based detection)
+            const callee_lang = if (callee_node.is_external)
+                language_detector.identifyCalleeLanguage(callee_node.name)
+            else
+                language_detector.identifyLanguage(callee_node.func_ref);
+
+            // Cross-language condition: languages differ OR callee is external unknown
+            const is_cross = caller_lang != callee_lang or callee_node.kind == .external_unknown;
+            if (!is_cross) continue;
+
+            // Duplicate names into ctx.allocator so they outlive CallGraphPass's local nodes.
+            const caller_name_owned = try ctx.allocator.dupe(u8, caller_node.name);
+            const callee_name_owned = try ctx.allocator.dupe(u8, callee_node.name);
+
+            const cross_edge = CrossLangEdge{
+                .caller_name = caller_name_owned,
+                .callee_name = callee_name_owned,
+                .caller_lang = caller_lang,
+                .callee_lang = callee_lang,
+                .is_ffi_boundary = is_cross,
+                .ptr_args = &.{},
+            };
+            try ctx.addCrossLangEdge(cross_edge);
+            cross_count += 1;
+        }
+
+        if (cross_count > 0) {
+            diag.info("CallGraph: extracted {} cross-language edges", .{cross_count});
+        }
     }
 };
 

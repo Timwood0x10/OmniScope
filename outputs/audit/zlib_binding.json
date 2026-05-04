@@ -1,0 +1,15 @@
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.5","timestamp":1777340565,"summary":{"functions":29,"issues":13,"time_ms":7},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"double_free_example"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"error_path_leak"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"deflate_leak"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"gzfile_leak"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"inflate_leak"}},
+  {"id":"OMI-006","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unchecked_gzread"}},
+  {"id":"OMI-007","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"use_after_free_example"}},
+  {"id":"OMI-008","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uninit_stream_example"}},
+  {"id":"OMI-009","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"error_path_leak"}},
+  {"id":"OMI-010","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"invalid_compression_level"}},
+  {"id":"OMI-011","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"correct_compress"}},
+  {"id":"OMI-012","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"double_free_example"}},
+  {"id":"OMI-013","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"uninit_stream_example"}}
+]}

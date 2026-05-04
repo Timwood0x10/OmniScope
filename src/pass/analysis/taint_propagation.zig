@@ -68,7 +68,7 @@ pub const TaintPropagationPass = struct {
     pub const kind = PassKind.foundation;
     pub const deps = &[_][]const u8{"call-graph"};
 
-    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) TaintError!void {
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
         var taint_ctx = TaintContext.init(ctx.allocator);
@@ -114,6 +114,7 @@ pub const TaintPropagationPass = struct {
         var inst_count: u32 = 0;
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
             try propagateThroughFunction(ctx, taint_ctx, sanitizer_registry, func, &inst_count, diag);
         }
 
@@ -171,8 +172,11 @@ pub const TaintPropagationPass = struct {
         _ = next_id;
 
         if (opcode == c.LLVMBr) {
-            const is_conditional = c.LLVMIsConditionalBr(inst);
-            if (is_conditional != 0) {
+            // Conditional branch has 2 successors (true/false).
+            // Unconditional branch has 1 successor.
+            const num_succ = c.LLVMGetNumSuccessors(inst);
+            const is_conditional = num_succ >= 2;
+            if (is_conditional) {
                 const condition = c.LLVMGetCondition(inst);
                 if (@intFromPtr(condition) != 0) {
                     const condition_opcode = c.LLVMGetInstructionOpcode(condition);
@@ -201,7 +205,9 @@ pub const TaintPropagationPass = struct {
 
     fn classifyOpcode(opcode: c_uint) OpcodeClass {
         return switch (opcode) {
-            c.LLVMBr, c.LLVMSwitch, c.LLVMRet, c.LLVMUnreachable, c.LLVMInvoke, c.LLVMResume => .control_flow,
+            c.LLVMBr, c.LLVMSwitch, c.LLVMRet, c.LLVMUnreachable, c.LLVMResume => .control_flow,
+            // BUG-FIX-7: LLVMInvoke is a call (with exception handling), not control_flow
+            c.LLVMInvoke => .call,
             c.LLVMTrunc, c.LLVMZExt, c.LLVMSExt, c.LLVMBitCast, c.LLVMPtrToInt, c.LLVMIntToPtr, c.LLVMFPTrunc, c.LLVMFPExt, c.LLVMFPToUI, c.LLVMFPToSI, c.LLVMUIToFP, c.LLVMSIToFP, c.LLVMAddrSpaceCast => .cast,
             c.LLVMAdd, c.LLVMFAdd, c.LLVMSub, c.LLVMFSub, c.LLVMMul, c.LLVMFMul, c.LLVMUDiv, c.LLVMSDiv, c.LLVMFDiv, c.LLVMURem, c.LLVMSRem, c.LLVMFRem, c.LLVMShl, c.LLVMLShr, c.LLVMAShr, c.LLVMAnd, c.LLVMOr, c.LLVMXor => .arithmetic,
             c.LLVMLoad, c.LLVMStore => .memory,
@@ -351,8 +357,11 @@ pub const TaintPropagationPass = struct {
             return;
         }
 
-        // Check if this is a dangerous sink
-        if (called_func_name.len > 0 and SemanticRegistry.isDangerousSink(called_func_name)) {
+        // Check if this is a dangerous sink (known risky function in registry)
+        if (called_func_name.len > 0) {
+            const sem = SemanticRegistry.lookup(called_func_name) orelse return;
+            const is_dangerous = sem.severity == .critical or sem.severity == .high;
+            if (!is_dangerous) return;
             var confidence: f32 = 1.0;
 
             // Reduce confidence if path conditions indicate safety
@@ -408,11 +417,8 @@ pub const TaintPropagationPass = struct {
         }
 
         if (has_tainted_arg) {
-            // Use semantic-aware confidence decay
-            const decay_factor = if (called_func_name.len > 0)
-                SemanticRegistry.getConfidenceDecay(called_func_name)
-            else
-                CONFIDENCE_DECAY;
+            // Use semantic-aware confidence decay (default to CONFIDENCE_DECAY)
+            const decay_factor = CONFIDENCE_DECAY;
 
             const new_info = TaintInfo{
                 .id = next_id,
@@ -658,7 +664,7 @@ test "TaintPropagationPass - handles null module gracefully" {
     var fact_store = FactStore.init(allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../../dataflow/graph.zig").DataFlowGraph.init(allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 

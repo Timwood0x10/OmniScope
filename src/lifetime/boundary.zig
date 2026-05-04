@@ -21,7 +21,8 @@
 
 const std = @import("std");
 const engine = @import("engine.zig");
-const mapper = @import("mapper.zig");
+// NOTE: mapper module removed (dead code, 2026-05-04)
+// See untodo.md DEAD-13 for details
 
 pub const SemanticAction = engine.SemanticAction;
 pub const LifetimeState = engine.LifetimeState;

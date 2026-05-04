@@ -1,8 +1,8 @@
 //! Memory tracking module for performance measurement and leak detection
 //!
-//! This module provides utilities for tracking memory allocations and
-//! collecting statistics for performance analysis.
-
-pub const allocator = @import("allocator.zig");
-pub const MemoryStats = allocator.MemoryStats;
-pub const TrackedAllocator = allocator.TrackedAllocator;
+//! **DEPRECATED (2026-05-04):** This module is deprecated.
+//! The `TrackedAllocator` and `MemoryStats` types have been removed
+//! as they were unused dead code. See untodo.md DEAD-14 for details.
+//!
+//! Retained for potential future use. If memory tracking is re-implemented,
+//! add the allocator module back here.

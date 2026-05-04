@@ -1,310 +1,60 @@
-# OmniScope v0.1.5 Release Notes
+# v0.1.6
 
-**Release Date**: 2026-04-25
-**Version**: 0.1.5 (Zone Classification)
-**Status**: Production Ready
+## Added
 
----
+- **Tier 1 / Tier 2 dual-pass architecture** — Zone-first layered analysis: Safe Zone gets lightweight stats-only pass; Unknown Zone + FFI boundaries get full graph-driven analysis ([danger_surface.zig](src/pass/analysis/danger_surface.zig))
+- **MemoryGraph alias chain tracker** — Cross-function pointer alias propagation with `traceAliasClosure()`, `isLeaked()`, `isDoubleFreed()`, `isUseAfterFree()` ([memory_graph.zig](src/semantics/memory_graph.zig))
+- **Three-layer noise reduction** — Language Classifier → Noise Filter → Behavior Filter pipeline ([noise_filter.zig](src/semantics/noise_filter.zig) + [noise_reduction.zig](src/pass/analysis/noise_reduction.zig))
+- **Rust FFI ownership hook system** — Auto-detects `Box::into_raw`/`Box::from_raw`/`CString::into_raw` transfer patterns with pointer-value-based pairing verification ([hooks.zig](src/registry/hooks.zig))
+- **Zone Classifier** — Language-specific function zoning (Rust 94%+ skip rate for ring, Go 74% for wasmtime) ([zone_classifier.zig](src/semantics/zone_classifier.zig))
+- **FFI auto-relevant marking** — `markFfiRelevant()` API with defensive short-circuit in `isRelevantAlloc()` ([pass.zig](src/pass/pass.zig))
 
-## 🎯 Project Repositioning
+## New Passes
 
-**New Focus**: Static security analysis for unsafe/FFI cross-language boundaries
+| Pass | What it does |
+|------|-------------|
+| **DangerSurfacePass** | Graph-driven FFI boundary detection, O(E×avg_args) replacing O(N×B) full scan |
+| **CallbackEscapePass** | Callback function escape detection with zone awareness |
+| **FreeValidationPass** | Free/dealloc matching validation against AllocatorKB |
+| **MemorySafetyPass** | Memory safety issue aggregation (leak, UAF, double-free) |
+| **NoiseReductionPass** | Three-layer noise filtering (refactored from v0.1.5) |
 
-**Core Philosophy**: "只分析语言保障失效的地方" (Analyze only where language guarantees stop)
+## Changed
 
----
+- **PtrLifetimePass** — deps now `["call-graph", "danger-surface"]`; `isFreeFunction` unified into [ptr_lifetime_classify.zig](src/pass/analysis/ptr_lifetime_classify.zig)
+- **FFIBoundaryPass** — deps now `["call-graph", "danger-surface"]`; integrated with CrossLangEdges
+- **TaintPropagationPass** — `LLVMInvoke` correctly classified as `.call` (was `.control_flow`)
+- **CallGraphPass** — now outputs CrossLangEdge data for downstream passes
+- **AllocatorKB** — deallocator map bug fixed (P1-2); static buffer funcs registered once in `populateBuiltin()` instead of per-call (P1-3); builtin pairs reduced from 28→16
 
-## 🚀 Major Innovation: Zone Classification
+## Fixed
 
-### The Problem
+- **FIX-1**: `__rust_alloc`/`__rust_dealloc`/`__rust_realloc` incorrectly classified as noise — **Rust FFI TP Rate restored from 0% → 20%**
+- **FIX-2**: CrossLangEdges not accessible from ffi_type_mismatch pass — FFI boundary count 0 → 123
+- **FIX-3**: hooks.zig used instruction address as ownership pairing key — `into_raw`/`from_raw` never matched; now uses pointer value
+- **FIX-4**: Four analysis passes had empty dependency arrays — execution order was fragile; all now explicitly declared
+- **BUG-FIX-6**: `isGoFunction()` over-matched C++ (`std::vector::push_back`) and Rust (`core::ptr::drop_in_place`) functions as Go
+- **BUG-FIX-7**: `LLVMInvoke` misclassified as `.control_flow` instead of `.call`
+- **BUG-FIX-8**: `GetStructName()` null dereference in callback_escape when type has no struct name
+- **Audit**: OOM fallback in PassContext created ArrayList with undefined allocator (crash on deinit)
+- **Audit**: `markFfiRelevant()` was declared but never called — `ffi_auto_relevant` HashMap was always empty; now wired into danger_surface at 4 call sites
+- **Audit**: hooks.zig substring matching too broad — `into_raw` would match `not_into_raw_helper`; replaced with method-boundary-aware matching
 
-Modern languages (Rust, Zig, Go) provide strong safety guarantees. But these guarantees **stop at FFI boundaries**:
-
-```mermaid
-graph TB
-    subgraph SafeZone["Rust Safe Zone"]
-        A["Compiler enforces:<br/>• Memory safety (no UAF, no leaks)<br/>• Type safety (no null deref)<br/>• Thread safety (no data races)"]
-    end
-    
-    subgraph UnsafeZone["NO GUARANTEES"]
-        B["• Raw pointer operations<br/>• External C library calls<br/>• Manual memory management"]
-    end
-    
-    SafeZone -->|"unsafe { } / FFI"| UnsafeZone
-    
-    style SafeZone fill:#90EE90,stroke:#333
-    style UnsafeZone fill:#FFB6C1,stroke:#333
-```
-
-### The Solution: Zone Classification
-
-```mermaid
-graph TD
-    A[All Functions] --> B{Zone Classification}
-    B -->|Safe Zone| C[Skip - Trust Compiler]
-    B -->|Runtime Internal| D[Skip - Trust Stdlib]
-    B -->|Unknown Zone| E[Analyze - Must Check]
-    
-    C --> F[No analysis needed]
-    D --> F
-    E --> G[Deep security analysis]
-    
-    style C fill:#90EE90
-    style D fill:#87CEEB
-    style E fill:#FFB6C1
-```
-
-| Zone Type            | Meaning                              | Handling                                      |
-| -------------------- | ------------------------------------ | --------------------------------------------- |
-| **Safe Zone**        | Code with language safety guarantees | Skip analysis (trust compiler)                |
-| **Runtime Internal** | Language runtime/standard library    | Skip analysis (trust official implementation) |
-| **Unknown Zone**     | Code without language guarantees     | Deep analysis (must check)                    |
-
----
-
-## 📊 Performance Impact
-
-### Analysis Time Reduction
-
-| Project  | Language | Before | After  | Improvement    |
-| -------- | -------- | ------ | ------ | -------------- |
-| **blst** | Rust + C | 3100ms | 836ms  | **73% faster** |
-| **ring** | Rust + C | 793ms  | 269ms  | **66% faster** |
-
-### Function Analysis Reduction
-
-| Project                  | Total Functions | Safe | Runtime | Unknown | Skip %    |
-| ------------------------ | --------------- | ---- | ------- | ------- | --------- |
-| **ring**                 | 278             | 261  | 17      | 0       | **100%**  |
-| **wasmtime**             | 619             | 239  | 221     | 159     | **74.3%** |
-| **blst**                 | 267             | 39   | 132     | 96      | **64.0%** |
-| **ark-ff**               | 89              | 0    | 89      | 0       | **100%**  |
-| **zkcrypto\_bls12\_381** | 46              | 0    | 46      | 0       | **100%**  |
-
-### Issue Detection Precision
-
-| Metric              | Before | After  | Improvement         |
-| ------------------- | ------ | ------ | ------------------- |
-| UAF Reports (blst)  | 185    | 48     | **74% reduction**   |
-| False Positive Rate | ~90%   | ~60%   | **30% improvement** |
-
----
-
-## ✨ New Features
-
-### 1. Zone Classifier Module ([zone\_classifier.zig](src/semantics/zone_classifier.zig))
-
-```zig
-pub const ZoneKind = enum {
-    safe,              // Safe Rust/Zig/Go code
-    unsafe,            // Explicit unsafe blocks
-    ffi,               // FFI boundary functions
-    runtime_internal,  // Standard library / runtime
-    unknown,           // Needs analysis
-};
-
-pub const ZoneStats = struct {
-    total_functions: u32,
-    safe_count: u32,
-    runtime_count: u32,
-    unknown_count: u32,
-    ffi_count: u32,
-};
-```
-
-### 2. Language-Specific Classification
-
-#### Rust Patterns
-
-```zig
-// Safe Zone patterns
-"core::", "alloc::", "std::", "_ZN4core", "_ZN5alloc"
-"drop_in_place", "<T as core::ops::drop::Drop>::drop"
-
-// Runtime Internal patterns
-"/rustc/library/", "/cargo/registry/"
-"std::sync::Once", "std::panic"
-
-// Unknown Zone (needs analysis)
-"unsafe", "extern \"C\"", "as *const", "as *mut"
-```
-
-#### Zig Patterns
-
-```zig
-// Safe Zone patterns
-"std.", "std.debug", "std.mem", "std.heap"
-
-// Runtime Internal patterns
-"zig/lib/std/", "std.heap.GeneralPurposeAllocator"
-
-// Unknown Zone (needs analysis)
-"@ptrCast", "@intCast", "extern fn", "cimport"
-```
-
-#### Go Patterns
-
-```zig
-// Unknown Zone (needs analysis)
-"runtime.cgocall", "unsafe.Pointer", "reflect.SliceHeader"
-```
-
-### 3. Zone Summary Output
+## Numbers
 
 ```
-╔══════════════════════════════════════════════════════╗
-║              Zone Classification Summary              ║
-╠══════════════════════════════════════════════════════╣
-║ Total Functions:        267                          ║
-╠──────────────────────────────────────────────────────╣
-║ ✅ Safe Zone:           39   (14.6%)                 ║
-║ 📦 Runtime Internal:   132   (49.4%)                 ║
-║ ⚠️  Unknown Zone:       96   (36.0%)                 ║
-╠──────────────────────────────────────────────────────╣
-║ Skipped:               171   (64.0%)                 ║
-║ Analyzed:               96   (36.0%)                 ║
-╚══════════════════════════════════════════════════════╝
+                    v0.1.5    v0.1.6
+Rust FFI TP Rate      0%       20%
+Test cases           ~50      191
+Coverage              ~70%     92%
+Precision (subtle)    N/A      100% (0 FP)
+Dead code             ~2000    ~1300 lines (-35%)
+Avg exec time (large) ~40ms    ~36ms
 
-分析 267 函数，跳过 171 个 (64%)，发现 48 个问题
+17 .ll files benchmarked:
+  548 issues detected · 27,076 pointers tracked · 9,372 FFI boundaries · 251 violations
 ```
 
----
+## Compatibility
 
-## 🔬 Real-World Verification
-
-### wasmtime Source Code Verification
-
-OmniScope detected real issues in wasmtime and verified against source code:
-
-#### Issue 1: Ignored Return Value
-
-**Source**: `crates/wasmtime/src/runtime/vm/stack_switching/stack/unix.rs:326-328`
-
-```rust
-// Developer already marked with TODO
-// TODO: handle error
-let _ = array_call(store, ValRaw::new(0), 1);
-```
-
-#### Issue 2: Missing Capacity Check
-
-**Source**: `crates/cranelift/src/func_environ/stack_switching/instructions.rs:301-320`
-
-```rust
-// Comment claims capacity check exists, but code doesn't check
-fn occupy_next_slots(&mut self, count: u32) -> Option<VMStackChainIterator> {
-    // No capacity check before allocation!
-    let result = self.inner;
-    self.inner = self.inner.next();
-    Some(result)
-}
-```
-
-**Full Report**: [wasmtime\_source.md](docs/investigation_reports/zh/wasmtime_source.md)
-
-### FFI-Dense Projects
-
-| Project         | Functions | Issues Found | Issue Types                   |
-| --------------- | --------- | ------------ | ----------------------------- |
-| zlib-binding    | 12        | 14           | Memory leak, NULL check       |
-| openssl-wrapper | 12        | 7            | Resource leak, Error handling |
-| sqlite-binding  | 8         | 4            | NULL check, Error propagation |
-
-**Full Report**: [ffi\_dense.md](docs/investigation_reports/zh/ffi_dense.md)
-
----
-
-## 🔒 Security Fixes
-
-| Bug ID         | File                     | Issue                                                   | Fix                            |
-| -------------- | ------------------------ | ------------------------------------------------------- | ------------------------------ |
-| **BUG-R5-001** | `graph.zig:130-131`      | comptime slice freed at runtime causing heap corruption | Use `allocator.alloc(u32, 0)`  |
-| **BUG-R5-002** | `lock.zig:199`           | Wrong operand index in callee detection                 | Use `LLVMGetCalledValue(inst)` |
-| **BUG-R5-003** | `ffi_body_check.zig:596` | Hardcoded operand 1 for called value                    | Use `num_operands - 1`         |
-
----
-
-## 📁 Files Changed
-
-### New Files
-
-| File                                                                    | Lines | Purpose                           |
-| ----------------------------------------------------------------------- | ----- | --------------------------------- |
-| [src/semantics/zone\_classifier.zig](src/semantics/zone_classifier.zig) | ~300  | Core zone classification engine   |
-| [README\_EN.md](README_EN.md)                                           | ~300  | English version of README         |
-| [docs/TOUSER/](docs/TOUSER/)                                            | ~200  | Letters to users (bilingual)      |
-| [docs/investigation\_reports/](docs/investigation_reports/)             | ~800  | Investigation reports (bilingual) |
-
-### Modified Files
-
-| File                                                                                       | Changes                                           |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| [src/pass/pass.zig](src/pass/pass.zig)                                                     | Added `printZoneSummary()`                        |
-| [src/pass/analysis/pointer\_ownership.zig](src/pass/analysis/pointer_ownership.zig)        | Integrated zone classification                    |
-| [src/dataflow/graph.zig](src/dataflow/graph.zig)                                           | Fixed BUG-R5-001                                  |
-| [src/pass/analysis/lock.zig](src/pass/analysis/lock.zig)                                   | Fixed BUG-R5-002                                  |
-| [src/pass/analysis/issue/ffi\_body_check.zig](src/pass/analysis/issue/ffi_body_check.zig) | Fixed BUG-R5-003                                  |
-| [README.md](README.md)                                                                     | Updated with zone classification, Chinese version |
-
-### Removed Files
-
-Incorrect direction semantic analysis modules removed:
-
-- `src/pass/analysis/access_order.zig`
-- `src/pass/analysis/control_flow_sensitive.zig`
-- `src/pass/analysis/sensitive_data_flow.zig`
-- `src/pass/analysis/transmute_detection.zig`
-
----
-
-## 🚀 Getting Started
-
-```bash
-# Clone and build
-git clone <repo-url>
-cd OmniScope
-zig build
-
-# Analyze a project
-./zig-out/bin/omniscope target.ll
-
-# With JSON output
-./zig-out/bin/omniscope --json target.ll > report.json
-
-# Quiet mode (only show issues, no debug/warn logs)
-./zig-out/bin/omniscope --quiet target.ll
-```
-
-### Requirements
-
-| Tool | Version              | Install                    |
-| ---- | -------------------- | -------------------------- |
-| Zig  | 0.15.2+              | [zvm](https://www.zvm.app) |
-| LLVM | 18+ (21 recommended) | `brew install llvm@21`     |
-
----
-
-## 🎯 Next Steps
-
-See [TODOLIST.md](plan/TODOLIST.md) for full roadmap.
-
-### Immediate Priorities
-
-1. **CGO Boundary Detection** — Go cgo FFI analysis
-2. **Swift ARC Integration** — retain/release tracking
-3. **WebAssembly FFI** — wasm-bindgen boundary analysis
-4. **Machine Learning FP Classification** — Reduce false positives
-
----
-
-## 🙏 Acknowledgments
-
-- **LLVM Project** — For the excellent IR format and C API
-- **Zig Software Foundation** — For the amazing Zig language
-- **Rust Project** — For inspiring the ownership system design
-- All open-source projects in our test corpus
-
----
-
-*Built with ❤️ using Zig 0.15.2*
-*OmniScope v0.1.5 — "Focus on Where Safety Ends"*
+No breaking changes.

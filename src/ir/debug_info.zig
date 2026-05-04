@@ -155,16 +155,18 @@ pub const DIFile = struct {
     pub fn getDirectory(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const dir_ptr = c.LLVMDIFileGetDirectory(self.raw, &len);
-        if (dir_ptr == null or len == 0) return "";
-        return dir_ptr.?[0..len];
+        const max_path_len: c_uint = 4096;
+        if (@intFromPtr(dir_ptr) == 0 or len == 0 or len > max_path_len) return "";
+        return dir_ptr[0..len];
     }
 
     /// Get the filename (without directory) of this file.
     pub fn getFilename(self: DIFile) []const u8 {
         var len: c_uint = 0;
         const name_ptr = c.LLVMDIFileGetFilename(self.raw, &len);
-        if (name_ptr == null or len == 0) return "";
-        return name_ptr.?[0..len];
+        const max_path_len: c_uint = 4096;
+        if (@intFromPtr(name_ptr) == 0 or len == 0 or len > max_path_len) return "";
+        return name_ptr[0..len];
     }
 
     /// Get the full path (directory + filename).
@@ -201,7 +203,7 @@ pub const DISubprogram = struct {
     }
 
     pub fn getLine(self: DISubprogram) u32 {
-        return c.LLVMGetSubprogramLine(self.raw);
+        return c.LLVMDISubprogramGetLine(self.raw);
     }
 
     pub fn getCompileUnit(self: DISubprogram) ?DICompileUnit {
@@ -456,7 +458,7 @@ test "SourceLocation - format" {
     };
 
     var buf: [100]u8 = undefined;
-    const result = try std.fmt.bufPrint(&buf, "{}", .{loc});
+    const result = try std.fmt.bufPrint(&buf, "{f}", .{loc});
     try std.testing.expectEqualStrings("/src/test.zig:10:5", result);
 
     const loc_no_dir = SourceLocation{
@@ -465,7 +467,7 @@ test "SourceLocation - format" {
         .line = 10,
         .column = 5,
     };
-    const result2 = try std.fmt.bufPrint(&buf, "{}", .{loc_no_dir});
+    const result2 = try std.fmt.bufPrint(&buf, "{f}", .{loc_no_dir});
     try std.testing.expectEqualStrings("test.zig:10:5", result2);
 }
 

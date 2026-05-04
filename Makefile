@@ -53,7 +53,9 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         corpus corpus-ir corpus-analyze corpus-check \
         real-world real-world-ir real-world-run \
         baseline-check \
-        install-deps release benchmark benchmark-full
+        install-deps release benchmark benchmark-full \
+        regression-test bench-perf stability-test e2e-test test-all-phase7 \
+        viz visualize
 
 # ========================================
 # Default Target - Run All Tests
@@ -448,15 +450,15 @@ red-team-test: build
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	@grep "Issues detected" /tmp/red_team_output.txt || echo "No issues found!"
 	@echo ""
-	@echo "Expected detections (v0.2.0):"
+	@echo "Expected detections (v0.1.6):"
 	@echo "  ✅ Memory Leak (bug_memory_leak)"
 	@echo "  ✅ Use-After-Free (bug_use_after_free, bug_realloc_mishandle)"
-	@echo "  ✅ Double-Free (bug_double_free) [NEW in v0.2.0]"
+	@echo "  ✅ Double-Free (bug_double_free) [NEW in v0.1.6]"
 	@echo "  ✅ NULL Dereference (bug_null_deref)"
-	@echo "  ✅ FFI RISK CRITICAL: system(), popen() [ENHANCED in v0.2.0]"
-	@echo "  ✅ FFI RISK CRITICAL: execvp() [NEW in v0.2.0]"
-	@echo "  ✅ Format String (bug_format_string) [CLASSIFIED in v0.2.0]"
-	@echo "  ✅ Loop Leak (bug_loop_leak) [NEW in v0.2.0]"
+	@echo "  ✅ FFI RISK CRITICAL: system(), popen() [ENHANCED in v0.1.6]"
+	@echo "  ✅ FFI RISK CRITICAL: execvp() [NEW in v0.1.6]"
+	@echo "  ✅ Format String (bug_format_string) [CLASSIFIED in v0.1.6]"
+	@echo "  ✅ Loop Leak (bug_loop_leak) [NEW in v0.1.6]"
 	@echo ""
 	@echo "Total issues should be ≥10 (target: 12)"
 
@@ -487,7 +489,7 @@ clean:
 	rm -rf $(REAL_WORLD_IR)
 	rm -f $(EXAMPLES_DIR)/zig_cffi/main.ll $(EXAMPLES_DIR)/zig_cffi/main.o
 	rm -rf zig-out .zig-cache
-	rm -rf corpus/*/output
+	rm -rf corpus/*/output output
 	@echo "Clean complete."
 
 # ========================================
@@ -603,6 +605,61 @@ corpus-check: corpus
 # ========================================
 
 # ========================================
+# Phase 7: Regression Testing & Quality Gate (v0.1.6)
+# ========================================
+
+regression-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           REGRESSION TEST SUITE (v0.1.6)                      ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/regression_test.sh all
+
+bench-perf: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           PERFORMANCE BENCHMARK (v0.1.6)                      ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/bench_perf.sh all
+
+stability-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           STABILITY TEST SUITE (v0.1.6)                       ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/stability_test.sh all
+
+e2e-test: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           END-TO-END PIPELINE TEST                            ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	./scripts/stability_test.sh e2e
+
+test-all-phase7: test regression-test bench-perf stability-test
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║           PHASE 7 QUALITY GATE COMPLETE                        ║"
+	@echo "╠════════════════════════════════════════════════════════════════╣"
+	@echo "║  ✓ Unit Tests          (make test)                           ║"
+	@echo "║  ✓ Regression Tests    (make regression-test)                ║"
+	@echo "║  ✓ Performance Bench   (make bench-perf)                     ║"
+	@echo "║  ✓ Stability Tests     (make stability-test)                 ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+
+# ========================================
+# Visualization Commands
+# ========================================
+
+VIZ_INPUT ?= corpus/real_world/other/sqlite3.ll
+
+viz visualize: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              MEMORY GRAPH VISUALIZATION                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@mkdir -p output
+	$(ZIG) build run -- --visualize $(VIZ_INPUT)
+	@echo ""
+	@echo "Output: output/$(shell basename $(VIZ_INPUT) .ll)/memory.html"
+	@open output/$(shell basename $(VIZ_INPUT) .ll)/memory.html 2>/dev/null || true
+
+# ========================================
 # Help
 # ========================================
 
@@ -671,6 +728,11 @@ help:
 	@echo ""
 	@echo "Regression Guard:"
 	@echo "  make baseline-check  Run baseline regression test (SQLite + curl + libuv)"
+	@echo ""
+	@echo "Visualization Commands:"
+	@echo "  make viz             Generate & open memory graph HTML (default: sqlite3.ll)"
+	@echo "  make visualize       Alias for 'make viz'"
+	@echo "  make viz VIZ_INPUT=foo.ll  Analyze specific .ll file"
 	@echo ""
 	@echo "Report Commands (JSON/SARIF):"
 	@echo "  make rust-json           Generate Rust JSON report"

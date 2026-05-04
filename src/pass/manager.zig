@@ -193,9 +193,25 @@ pub const PassManager = struct {
             _ = try self.resolveDependencies();
         }
 
-        // Execute in resolved order
+        // Execute in resolved order with graceful degradation (v0.1.6)
+        var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
-            try self.passes.items[idx].run_fn(ctx, diag);
+            const pass_name = self.passes.items[idx].name;
+            const t0 = std.time.nanoTimestamp();
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                diag.warn("PassManager: pass '{s}' failed with error: {any}, degrading gracefully", .{ pass_name, err });
+                pass_failures += 1;
+                // Continue running remaining passes
+            };
+            const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
+            const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
+            if (elapsed_ms > 10) {
+                diag.info("[PERF] Pass '{s}: {d} ms", .{ pass_name, @as(u32, @intFromFloat(elapsed_ms)) });
+            }
+        }
+
+        if (pass_failures > 0) {
+            diag.info("PassManager: completed with {} degraded passes out of {}", .{ pass_failures, self.resolved_order.?.len });
         }
     }
 
@@ -233,10 +249,10 @@ test "PassManager - run passes" {
     var manager = PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
-    var fact_store = FactStore.init(std.testing.allocator);
+    var fact_store = try FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = QueryEngine.init(&fact_store);
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 

@@ -32,6 +32,15 @@ pub const FFIUnsafePass = struct {
         "realloc",     "calloc",
         "strcpy",      "strcat",
         "gets",        "sprintf",
+        // C setjmp/longjmp — control flow violation at FFI boundary
+        "setjmp",      "longjmp",
+        "sigsetjmp",   "siglongjmp",
+        // Variadic function abuse across FFI boundary
+        "vprintf",     "vfprintf",
+        "vsprintf",    "vsnprintf",
+        "vsscanf",     "vfscanf",
+        "execl",       "execle",
+        "execlp",      "execvp",
     };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
@@ -64,7 +73,7 @@ pub const FFIUnsafePass = struct {
             if (isLikelySafeContext(boundary, vuln_type)) {
                 diag.debug("FFIUnsafe-SKIP: {s} in caller={s} — safe context", .{
                     cleanFunctionName(boundary.function_name),
-                    boundary.location.function,
+                    boundary.location.func,
                 });
                 return 0;
             }
@@ -89,7 +98,7 @@ pub const FFIUnsafePass = struct {
                 confidence,
             );
 
-            try ctx.addIssue(issue);
+            try ctx.addIssue(&issue);
             ctx.allocator.free(issue_message);
             issue_count += 1;
         }
@@ -108,20 +117,40 @@ pub const FFIUnsafePass = struct {
     }
 
     pub fn classifyVulnerability(func_name: []const u8) IssueKind {
+        // P1-2: setjmp/longjmp — control flow violation (C99 §7.13.2)
+        // Variables modified between setjmp/longjmp have indeterminate values.
+        // At FFI boundary, this bypasses Rust/Zig destructors and unwind cleanup.
+        if (std.mem.indexOf(u8, func_name, "setjmp") != null or
+            std.mem.indexOf(u8, func_name, "sigsetjmp") != null or
+            std.mem.indexOf(u8, func_name, "longjmp") != null or
+            std.mem.indexOf(u8, func_name, "siglongjmp") != null)
+        {
+            return .ffi_unsafe_call;
+        }
         if (std.mem.indexOf(u8, func_name, "system") != null or
             std.mem.indexOf(u8, func_name, "exec") != null)
         {
             return .command_injection;
         }
-        if (std.mem.eql(u8, func_name, "printf") or
-            std.mem.eql(u8, func_name, "fprintf") or
-            std.mem.eql(u8, func_name, "sprintf") or
-            std.mem.eql(u8, func_name, "snprintf") or
-            std.mem.eql(u8, func_name, "vprintf") or
-            std.mem.eql(u8, func_name, "vfprintf") or
+        // P1-2: Variadic function abuse at FFI boundary
+        // v*printf/v*scanf with user-controlled format args = format string / injection
+        if (std.mem.indexOf(u8, func_name, "printf") != null or
+            std.mem.indexOf(u8, func_name, "fprintf") != null or
+            std.mem.indexOf(u8, func_name, "sprintf") != null or
+            std.mem.indexOf(u8, func_name, "snprintf") != null or
+            std.mem.indexOf(u8, func_name, "vprintf") != null or
+            std.mem.indexOf(u8, func_name, "vfprintf") != null or
+            std.mem.indexOf(u8, func_name, "vsprintf") != null or
+            std.mem.indexOf(u8, func_name, "vsnprintf") != null or
             std.mem.eql(u8, func_name, "syslog"))
         {
             return .format_string;
+        }
+        // vsscanf/vfscanf — input validation via uncontrolled variadic args
+        if (std.mem.indexOf(u8, func_name, "vsscanf") != null or
+            std.mem.indexOf(u8, func_name, "vfscanf") != null)
+        {
+            return .ffi_unsafe_call;
         }
         if (std.mem.indexOf(u8, func_name, "strcpy") != null or
             std.mem.indexOf(u8, func_name, "gets") != null)
@@ -136,6 +165,7 @@ pub const FFIUnsafePass = struct {
             .command_injection => "Command injection vulnerability",
             .format_string => "Format string vulnerability - user-controlled format string",
             .buffer_overflow => "Buffer overflow vulnerability",
+            .ffi_unsafe_call => "FFI safety violation - dangerous pattern at language boundary",
             else => "General FFI safety issue",
         };
     }
@@ -212,10 +242,10 @@ pub const FFIUnsafePass = struct {
         if (vuln_type != .format_string) return false;
 
         const func_name = boundary.function_name;
-        const caller_name = boundary.location.function;
+        const caller_name = boundary.location.func;
 
         // Primary: check file path from debug info
-        const context_str = boundary.location.file orelse caller_name;
+        const context_str = if (boundary.location.file) |f| f else caller_name;
 
         const safe_patterns = [_][]const u8{
             "sqlite3.c", "sqlite3", "sqlite",
@@ -264,7 +294,7 @@ pub const FFIUnsafePass = struct {
     fn adjustConfidenceForContext(boundary: *const FFIBoundary, vuln_type: IssueKind, base_confidence: f32) f32 {
         var confidence = base_confidence;
 
-        const context_str = boundary.location.file orelse boundary.location.function;
+        const context_str = if (boundary.location.file) |f| f else boundary.function_name;
 
         // Reduce confidence for format-string issues in source files that are
         // known to be well-maintained C libraries (not user-facing input handlers)
@@ -304,4 +334,31 @@ test "FFIUnsafePass - dangerous detection" {
 test "FFIUnsafePass - vulnerability classification" {
     try std.testing.expectEqual(IssueKind.command_injection, FFIUnsafePass.classifyVulnerability("system"));
     try std.testing.expectEqual(IssueKind.buffer_overflow, FFIUnsafePass.classifyVulnerability("strcpy"));
+}
+
+test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
+    // P1-2: C control flow violation at FFI boundary
+    try std.testing.expect(FFIUnsafePass.isDangerous("setjmp"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("longjmp"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("sigsetjmp"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("siglongjmp"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("setjmp"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("longjmp"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("sigsetjmp"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("siglongjmp"));
+}
+
+test "FFIUnsafePass - P1-2 variadic function detection" {
+    // P1-2: Variadic functions across FFI boundary
+    try std.testing.expect(FFIUnsafePass.isDangerous("vprintf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vfprintf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsprintf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsnprintf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsscanf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vfscanf"));
+    // Classification
+    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vprintf"));
+    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vsprintf"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vsscanf"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vfscanf"));
 }

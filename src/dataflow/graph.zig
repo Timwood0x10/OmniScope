@@ -86,7 +86,6 @@ pub const DataFlowGraph = struct {
         self.ffi_boundaries.deinit(self.allocator);
 
         for (self.issues.items) |*issue| {
-            self.allocator.free(issue.message);
             issue.deinit(self.allocator);
         }
         self.issues.deinit(self.allocator);
@@ -357,12 +356,30 @@ pub const DataFlowGraph = struct {
     /// Parameters:
     ///   - issue: The issue to add
     pub fn addIssue(self: *DataFlowGraph, issue: Issue) !void {
-        // Copy message to ensure we own the memory
         const message_copy = try self.allocator.dupe(u8, issue.message);
+        errdefer self.allocator.free(message_copy);
+
+        var func_copy: ?[]u8 = null;
+        errdefer {
+            if (func_copy) |f| self.allocator.free(f);
+        }
+
         var issue_copy = issue;
         issue_copy.message = message_copy;
 
+        if (issue.location.func.len > 0) {
+            func_copy = try self.allocator.dupe(u8, issue.location.func);
+            issue_copy.location.func = func_copy.?;
+            issue_copy.function_owned = true;
+        }
+
+        issue_copy.owned = true;
         try self.issues.append(self.allocator, issue_copy);
+
+        // Transfer ownership of original message (trace is shared via shallow copy).
+        if (issue.owned and issue.message.len > 0) {
+            self.allocator.free(issue.message);
+        }
     }
 
     /// Get all issues
@@ -412,9 +429,11 @@ pub const DataFlowGraph = struct {
                     .severity = issue.severity,
                     .confidence = issue.confidence,
                     .confidence_level = issue.confidence_level,
+                    .reason = issue.reason,
                     .ffi_boundary = issue.ffi_boundary,
-                    .trace = issue.trace,
+                    .trace = null,
                     .owned = true,
+                    .function_owned = false,
                 };
                 index += 1;
             }
@@ -480,6 +499,71 @@ pub const DataFlowGraph = struct {
         };
     }
 
+    pub const IssueStats = struct {
+        total: usize,
+        memory_leak: usize,
+        use_after_free: usize,
+        double_free: usize,
+        ffi_unsafe: usize,
+        command_injection: usize,
+        buffer_overflow: usize,
+        format_string: usize,
+        type_mismatch: usize,
+        borrow_escape: usize,
+        null_dereference: usize,
+        invalid_free: usize,
+        unchecked_return: usize,
+        malloc_unchecked: usize,
+        callback_mismatch: usize,
+        cross_language_leak: usize,
+        static_buffer_misuse: usize,
+        unknown: usize,
+    };
+
+    pub fn getIssueStats(self: *const DataFlowGraph) IssueStats {
+        var stats = IssueStats{
+            .total = self.issues.items.len,
+            .memory_leak = 0,
+            .use_after_free = 0,
+            .double_free = 0,
+            .ffi_unsafe = 0,
+            .command_injection = 0,
+            .buffer_overflow = 0,
+            .format_string = 0,
+            .type_mismatch = 0,
+            .borrow_escape = 0,
+            .null_dereference = 0,
+            .invalid_free = 0,
+            .unchecked_return = 0,
+            .malloc_unchecked = 0,
+            .callback_mismatch = 0,
+            .cross_language_leak = 0,
+            .static_buffer_misuse = 0,
+            .unknown = 0,
+        };
+        for (self.issues.items) |issue| {
+            switch (issue.kind) {
+                .memory_leak, .cross_language_leak => stats.memory_leak += 1,
+                .use_after_free => stats.use_after_free += 1,
+                .double_free => stats.double_free += 1,
+                .ffi_unsafe_call => stats.ffi_unsafe += 1,
+                .command_injection => stats.command_injection += 1,
+                .buffer_overflow => stats.buffer_overflow += 1,
+                .format_string => stats.format_string += 1,
+                .type_mismatch, .ffi_type_mismatch => stats.type_mismatch += 1,
+                .borrow_escape => stats.borrow_escape += 1,
+                .null_dereference => stats.null_dereference += 1,
+                .invalid_free => stats.invalid_free += 1,
+                .unchecked_return => stats.unchecked_return += 1,
+                .malloc_unchecked => stats.malloc_unchecked += 1,
+                .callback_signature_mismatch => stats.callback_mismatch += 1,
+                .static_buffer_misuse => stats.static_buffer_misuse += 1,
+                .unknown => stats.unknown += 1,
+            }
+        }
+        return stats;
+    }
+
     /// Graph statistics
     pub const GraphStats = struct {
         /// Total number of nodes
@@ -501,7 +585,6 @@ pub const DataFlowGraph = struct {
         self.ffi_boundaries.clearRetainingCapacity();
 
         for (self.issues.items) |*issue| {
-            self.allocator.free(issue.message);
             issue.deinit(self.allocator);
         }
         self.issues.clearRetainingCapacity();
@@ -528,10 +611,10 @@ pub const DataFlowGraph = struct {
 // Unit tests
 
 test "DataFlowGraph - init and deinit" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -541,10 +624,10 @@ test "DataFlowGraph - init and deinit" {
 }
 
 test "DataFlowGraph - addNode" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -559,10 +642,10 @@ test "DataFlowGraph - addNode" {
 }
 
 test "DataFlowGraph - addNode duplicate" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -577,10 +660,10 @@ test "DataFlowGraph - addNode duplicate" {
 }
 
 test "DataFlowGraph - addEdge" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -601,10 +684,10 @@ test "DataFlowGraph - addEdge" {
 }
 
 test "DataFlowGraph - addEdge invalid node" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -621,10 +704,10 @@ test "DataFlowGraph - addEdge invalid node" {
 }
 
 test "DataFlowGraph - markTainted" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -645,10 +728,10 @@ test "DataFlowGraph - markTainted" {
 }
 
 test "DataFlowGraph - addIssue" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -668,10 +751,10 @@ test "DataFlowGraph - addIssue" {
 }
 
 test "DataFlowGraph - getStats" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();
@@ -716,10 +799,10 @@ test "DataFlowGraph - getStats" {
 }
 
 test "DataFlowGraph - clear" {
-    var fact_store = @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
     defer fact_store.deinit();
 
-    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store);
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
 
     var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer dfg.deinit();

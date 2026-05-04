@@ -145,18 +145,21 @@ pub const ConstraintGen = struct {
 
     fn handleCall(self: *ConstraintGen, inst: c.LLVMValueRef, id_map: *ValueIdMap) !void {
         const called_func = c.LLVMGetCalledFunction(inst);
-        if (called_func == null) return;
+        // Note: called_func may be null for indirect calls (function pointers)
+        // We still process the call constraints below for indirect calls
+        _ = called_func;
 
         const num_args = c.LLVMGetNumOperands(inst);
+        if (num_args == 0) return;
         const result_id = try id_map.getOrPutId(@intFromPtr(inst));
 
         const callee = c.LLVMGetOperand(inst, num_args - 1);
-        if (callee == null) return;
+        if (@intFromPtr(callee) == 0) return;
         const callee_id = try id_map.getOrPutId(@intFromPtr(callee));
 
         for (0..num_args - 1) |i| {
             const arg = c.LLVMGetOperand(inst, @intCast(i));
-            if (arg == null) continue;
+            if (@intFromPtr(arg) == 0) continue;
             const arg_id = try id_map.getOrPutId(@intFromPtr(arg));
             try self.constraints.append(.{ .lhs = callee_id, .rhs = arg_id, .kind = .indirect });
         }

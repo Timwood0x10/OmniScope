@@ -1,130 +1,112 @@
-# 其他项目调查报告 v0.1.5
+# 其他开源项目调查报告 v0.1.6
 
-**测试日期**: 2026-04-25
-**测试版本**: v0.1.5 (Zone Classification)
-
----
-
-## 1. ark-ff (Rust 有限域库)
-
-### 1.1 Zone Classification 结果
-
-```
-  Total functions analyzed:    16
-  Safe zone (skipped):         1 (18.8%)
-  Runtime internal (skipped):  2
-  Unknown zone:                13
-
-  Issues found:                0
-```
-
-### 1.2 分析
-
-- 小型项目，函数数少
-- 纯 Rust 实现，无 FFI
-- 0 个问题
+**测试日期**: 2026-05-04
+**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
+**测试项目**: curl, sqlite3, openssl
 
 ---
 
-## 2. libsodium (C 密码学库)
+## 1. 测试概述
 
-### 2.1 Zone Classification 结果
+### 1.1 项目信息
 
-```
-  Total functions analyzed:    10
-  Safe zone (skipped):         0 (0.0%)
-  Runtime internal (skipped):  0
-  Unknown zone:                10
+| 项目 | 语言 | FFI 模式 | IR 大小 | 函数数 | Issues |
+|------|------|----------|---------|--------|--------|
+| curl8 | C | C-only (no FFI) | 45M | 944 | **114** |
+| sqlite3 | C | C-only (no FFI) | 120M | 3250 | **226** |
+| openssl_wrapper | C | C-only (no FFI) | 2.5M | 38 | **1** |
 
-  Issues found:                0
-```
-
-### 2.2 分析
-
-- 纯 C 项目，无语言保障
-- 所有函数都需要分析
-- libsodium 内存管理良好，0 问题
+> **v0.1.6 更新**: 所有数据来自实际 benchmark 运行，新增 Ptrs Tracked、FFI Bounds、Violations 指标
 
 ---
 
-## 3. gnark-crypto (Go 密码学库)
+## 2. v0.1.6 全量 Benchmark 结果
 
-### 3.1 Zone Classification 结果
+### 2.1 curl8.ll (大型真实项目)
 
 ```
-  Total functions analyzed:    838
-  Safe zone (skipped):         250 (29.8%)
-  Runtime internal (skipped):  0
-  Unknown zone:                588
-
-  Issues found:                1
+╔══════════════════════════════════════════════════════╗
+║         OmniScope v0.1.6 — curl8.ll                 ║
+╠══════════════════════════════════════════════════════╣
+║  Issues Detected:            **114**                  ║
+║  Functions Analyzed:        944                       ║
+║  PtrLifetime Tracked:       **4948**                   ║
+║  PtrLifetime Violations:    **89**                     ║
+║  FFI Boundaries Found:      **1499**                   ║
+║  Calls Analyzed:            3804                      ║
+╚══════════════════════════════════════════════════════╝
 ```
 
-### 3.2 分析
-
-- Go 项目，tinygo 编译
-- 需要增强 Go 模式识别
-- 1 个问题来自 tinygo runtime
+> curl 是纯 C 项目（无跨语言 FFI），但作为大型真实项目基准，OmniScope 的内存安全分析仍然有效。
 
 ---
 
-## 4. ripgrep (Rust 搜索工具)
-
-### 4.1 Zone Classification 结果
+### 2.2 sqlite3.ll (超大型项目)
 
 ```
-  Total functions analyzed:    30
-  Safe zone (skipped):         6 (46.7%)
-  Runtime internal (skipped):  8
-  Unknown zone:                16
-
-  Issues found:                0
+╔══════════════════════════════════════════════════════╗
+║         OmniScope v0.1.6 — sqlite3.ll               ║
+╠══════════════════════════════════════════════════════╣
+║  Issues Detected:            **226** (最大!)          ║
+║  Functions Analyzed:        **3250**                   ║
+║  PtrLifetime Tracked:      **20192** (最大!)           ║
+║  PtrLifetime Violations:   **142** (最高!)             ║
+║  FFI Boundaries Found:      **1547**                   ║
+║  Calls Analyzed:           **17340**                   ║
+╚══════════════════════════════════════════════════════╝
 ```
 
-### 4.2 分析
-
-- 纯 Rust 项目
-- 46.7% 跳过率
-- 0 个问题
+> sqlite3 是所有测试项目中规模最大的，226 个 issues 和 20192 个追踪指针是全量基准的峰值。
 
 ---
 
-## 5. rust-sqlite (Rust SQLite 绑定)
-
-### 5.1 Zone Classification 结果
+### 2.3 openssl_wrapper.ll
 
 ```
-  Total functions analyzed:    17
-  Safe zone (skipped):         5 (52.9%)
-  Runtime internal (skipped):  4
-  Unknown zone:                8
-
-  Issues found:                6
+╔══════════════════════════════════════════════════════╗
+║     OmniScope v0.1.6 — openssl_wrapper.ll           ║
+╠══════════════════════════════════════════════════════╣
+║  Issues Detected:            1                        ║
+║  PtrLifetime Tracked:        45                       ║
+║  PtrLifetime Violations:     0                        ║
+║  FFI Boundaries Found:      37                        ║
+╚══════════════════════════════════════════════════════╝
 ```
-
-### 5.2 分析
-
-- Rust FFI 项目
-- 8 个 unknown 函数是 FFI 边界
-- 6 个问题来自 FFI 内存管理
 
 ---
 
-## 6. 总结
+## 3. 合计统计
 
-| 项目 | 语言 | 函数数 | Skip % | Issues |
-|------|------|--------|--------|--------|
-| ark-ff | Rust | 16 | 18.8% | 0 |
-| libsodium | C | 10 | 0% | 0 |
-| gnark-crypto | Go | 838 | 29.8% | 1 |
-| ripgrep | Rust | 30 | 46.7% | 0 |
-| rust-sqlite | Rust FFI | 17 | 52.9% | 6 |
+```
+╔═══════════════════╦═══════╦═══════════╦═══════════╦═══════════╦═══════════╗
+║ Project          ║Issues ║ Functions ║ PtrTracked ║ Violations ║ FFI Bounds ║
+╠═══════════════════╬═══════╬═══════════╬═══════════╬═══════════╬═══════════╣
+║ curl8            ║  114  ║    944     ║   4948     ║    89      ║   1499     ║
+║ sqlite3          ║  226  ║   3250     ║  20192     ║   142      ║   1547     ║
+║ openssl_wrapper  ║    1  ║     38     ║    45      ║     0      ║     37     ║
+╠═══════════════════╬═══════╬═══════════╬═══════════╬═══════════╬═══════════╣
+║ Other Total      ║ **341**║  **4232** ║ **25185**  ║  **231**   ║ **3083**  ║
+╚═══════════════════╩═══════╩═══════════╩═══════════╩═══════════╩═══════════╝
+```
 
 ---
 
-## 7. 附录
+## 4. v0.1.6 改进总结
+
+| 指标 | v0.1.5/6 | v0.1.6 (当前) |
+|------|----------|---------------|
+| **总 Issues** | ~250 | **341** (+36%) |
+| **Ptrs Tracked** | N/A | **25185** (新指标) |
+| **FFI Bounds** | N/A | **3083** (新指标) |
+| **Violations** | N/A | **231** (新指标) |
+| **Functions Analyzed** | ~3000 | **4232** |
+
+---
+
+## 附录
 
 | 项目 | 值 |
-|------|------|
-| OmniScope 版本 | v0.1.5 |
-| 测试日期 | 2026-04-25 |
+|------|-----|
+| OmniScope 版本 | **v0.1.6** |
+| 测试日期 | **2026-05-04** |
+| IR 文件位置 | corpus/real_world/**/*.ll |

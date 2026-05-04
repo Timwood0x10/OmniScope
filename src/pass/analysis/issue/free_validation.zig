@@ -21,26 +21,22 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
+const noise_filter = @import("../../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
+const ffi_utils = @import("../ffi_utils.zig");
+const ptr_types = @import("../ptr_lifetime_types.zig");
 
-/// Memory deallocation functions
-const FREE_FUNCTIONS = &[_][]const u8{
-    "free",
-    "dealloc",
-    "deallocate",
-    "operator delete",
-    "operator delete[]",
+/// Memory deallocation functions — basic memory deallocators for free validation.
+/// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
+/// covers library-specific cleanup (sqlite3_free, curl_easy_cleanup, etc.).
+pub const FREE_FUNCTIONS = &[_][]const u8{
+    "free",           "dealloc",       "deallocate",   "operator delete", "operator delete[]",
+    // Rust global deallocator intrinsics (substring-matched via isFreeFunction)
+    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
 };
 
-/// Memory allocation functions
-const ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",
-    "calloc",
-    "realloc",
-    "aligned_alloc",
-    "valloc",
-    "pvalloc",
-    "memalign",
-};
+/// Memory allocation functions — delegated to ptr_types (single source of truth).
+pub const ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
 
 /// Free validation detection pass
 ///
@@ -49,10 +45,13 @@ const ALLOC_FUNCTIONS = &[_][]const u8{
 pub const FreeValidationPass = struct {
     pub const name = "free-validation";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{ "danger-surface", "ptr-lifetime" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
+        // Runtime dependency validation: danger_surface must have populated relevant set.
+        // If empty, DangerSurfacePass didn't run or found nothing — skip to avoid false positives.
+        if (ctx.danger_surface_relevant.count() == 0) return;
 
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -60,7 +59,16 @@ pub const FreeValidationPass = struct {
 
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            issue_count += try analyzeFunction(ctx, func, diag);
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
+            // Function-level error isolation
+            const count = analyzeFunction(ctx, func, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
+            issue_count += count;
         }
 
         diag.info("FreeValidation: Analyzed functions, found {} invalid free calls", .{issue_count});
@@ -68,6 +76,14 @@ pub const FreeValidationPass = struct {
 
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
         var issue_count: usize = 0;
+
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_ptr) == 0) return 0;
+        const func_name = std.mem.span(func_name_ptr);
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        if (!classification.origin.shouldReportByDefault()) return 0;
 
         // Track pointer origins within this function
         var pointer_origins = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(ctx.allocator);
@@ -83,11 +99,6 @@ pub const FreeValidationPass = struct {
         // First pass: track function parameters as from_param
         {
             var param = c.LLVMGetFirstParam(func);
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
 
             var param_index: u32 = 0;
             while (@intFromPtr(param) != 0) : (param = c.LLVMGetNextParam(param)) {
@@ -158,13 +169,24 @@ pub const FreeValidationPass = struct {
 
                         if (isAllocFunction(func_name)) {
                             const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
-                            // Use getOrPut to check if key exists and free old desc if needed
                             const gop = try pointer_origins.getOrPut(inst);
                             if (gop.found_existing) {
                                 allocator.free(gop.value_ptr.source_desc);
                             }
                             gop.value_ptr.* = .{
                                 .origin = .from_malloc,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                            };
+                        } else if (isFFIBoundaryCall(func_name)) {
+                            // FFI boundary call returning a pointer — cross-allocator risk
+                            const desc = try std.fmt.allocPrint(allocator, "from FFI call {s}()", .{func_name});
+                            const gop = try pointer_origins.getOrPut(inst);
+                            if (gop.found_existing) {
+                                allocator.free(gop.value_ptr.source_desc);
+                            }
+                            gop.value_ptr.* = .{
+                                .origin = .from_ffi_call,
                                 .source_inst = inst,
                                 .source_desc = desc,
                             };
@@ -257,32 +279,114 @@ pub const FreeValidationPass = struct {
         const origin_info = pointer_origins.get(ptr_arg);
         const origin = if (origin_info) |info| info.origin else .unknown;
 
-        // Only from_malloc is valid for free
-        if (origin != .from_malloc) {
-            try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
-            return true;
+        // Only report for clearly invalid origins (not unknown - may be cross-function alloc)
+        // unknown origin is skipped because allocation may have happened in another function
+        //
+        // ValueOrigin enum coverage (ffi_semantics.zig):
+        //   - .from_param / .from_global / .from_constant → invalid free (report)
+        //   - .from_malloc → valid (skip)
+        //   - .unknown → cross-function alloc (skip to avoid false positives)
+        //
+        // NOTE: This switch is exhaustive for all ValueOrigin variants.
+        // The Zig compiler will emit a compile error if new enum values are added
+        // without updating this switch, ensuring completeness at compile time.
+        switch (origin) {
+            .from_param => {
+                // Skip from_param when the free function is a Rust dealloc.
+                // Rust's ownership model transfers allocation responsibility to callees,
+                // so __rustc__rustc_dealloc on function parameters is normal behavior.
+                // This avoids false positives for cross-function memory management.
+                if (isRustDeallocFunction(callee_name)) return false;
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
+            .from_global, .from_constant => {
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
+            .from_ffi_call => {
+                // Pointer from FFI boundary call being freed by a different allocator.
+                // Risk: C-allocated pointer freed by __rust_dealloc, or vice versa.
+                // Report with reduced confidence since cross-allocator free is
+                // sometimes legitimate (e.g., C's malloc + Rust's free wrapper).
+                if (!isRustDeallocFunction(callee_name) and
+                    !std.mem.eql(u8, callee_name, "free"))
+                {
+                    // Non-standard free on FFI-sourced ptr — less confident
+                    return false;
+                }
+                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                return true;
+            },
+            .from_malloc => {},
+            .unknown => {},
         }
 
         return false;
     }
 
-    /// Check if function is a free function
+    /// Check if function is a Rust deallocation function.
+    /// Only matches actual Rust dealloc intrinsics (NOT general drop glue).
+    /// Drop glue includes destructors that don't necessarily deallocate memory.
+    fn isRustDeallocFunction(func_name: []const u8) bool {
+        const rust_dealloc_patterns = [_][]const u8{
+            "__rustc__rustc_dealloc",
+            "__rust_dealloc",
+        };
+        for (rust_dealloc_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
+        return false;
+    }
+
+    /// Check if callee is an FFI boundary function (non-Rust-mangled name).
+    /// Used to detect pointers returned from C/external functions, which carry
+    /// cross-allocator free risk when passed to libc::free or __rust_dealloc.
+    ///
+    /// TODO (CTX-3): Enhance with ctx.getCrossEdgeByCallee(callee) != null
+    /// to cover unmangled Rust wrappers (e.g., test_double_free_box).
+    /// Requires refactoring this fn to accept PassContext parameter.
+    fn isFFIBoundaryCall(func_name: []const u8) bool {
+        if (func_name.len < 2) return false;
+        // Rust-internal functions use _ZN / _RNv / _R mangled prefixes.
+        // LLVM intrinsics start with "llvm.".
+        // Anything else that doesn't start with these is likely an extern "C" FFI call.
+        const rust_prefixes = [_][]const u8{ "_ZN", "_RNv", "_R" };
+        for (rust_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) return false;
+        }
+        if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
+        return true;
+    }
+
+    /// Check if function is a free function.
+    /// Uses exact match + endsWith to avoid FP like 'my_custom_free' matching 'free'.
     fn isFreeFunction(func_name: []const u8) bool {
         for (FREE_FUNCTIONS) |free_func| {
-            if (std.mem.indexOf(u8, func_name, free_func) != null) {
+            if (functionNameMatches(func_name, free_func)) {
                 return true;
             }
         }
         return false;
     }
 
-    /// Check if function is an allocation function
+    /// Check if function is an allocation function.
+    /// Uses exact match + endsWith to avoid FP like 'my_custom_allocator' matching 'alloc'.
     fn isAllocFunction(func_name: []const u8) bool {
         for (ALLOC_FUNCTIONS) |alloc_func| {
-            if (std.mem.eql(u8, func_name, alloc_func)) {
+            if (functionNameMatches(func_name, alloc_func)) {
                 return true;
             }
         }
+        return false;
+    }
+
+    /// Match strategy: exact equality OR suffix match.
+    /// Prevents substring FP (e.g., 'my_custom_free' ≠ 'free')
+    /// while still catching mangled names like '_ZN...freeEv'.
+    fn functionNameMatches(func_name: []const u8, pattern: []const u8) bool {
+        if (std.mem.eql(u8, func_name, pattern)) return true;
+        if (std.mem.endsWith(u8, func_name, pattern)) return true;
         return false;
     }
 
@@ -334,7 +438,7 @@ pub const FreeValidationPass = struct {
             trace,
         );
 
-        try ctx.addIssue(issue);
+        try ctx.addIssue(&issue);
 
         diag.warn("Invalid {s} on {s} pointer in function: {s}", .{ free_func_name, origin_str, caller_name });
     }

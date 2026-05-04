@@ -90,7 +90,7 @@ pub fn MemoryPool(comptime T: type) type {
 
         /// Return an item to the pool
         pub fn free(self: *Self, item: *T) !void {
-            const node = try self.free_node_pool.addOne();
+            const node = try self.free_node_pool.addOne(self.allocator);
             node.* = .{
                 .next = self.free_list,
                 .item = item,

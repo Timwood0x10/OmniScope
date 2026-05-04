@@ -5,6 +5,27 @@
 //! and produces unified reports.
 
 const std = @import("std");
+const CommonTypes = @import("../common/types.zig");
+
+/// Output severity level for diagnostics (logging/display purpose).
+/// This is DIFFERENT from CommonTypes.Severity (issue severity):
+/// - OutputSeverity: info/warning/err (log level semantics)
+/// - CommonTypes.Severity: low/medium/high/critical (issue criticality)
+///
+/// aggregator.zig uses OutputSeverity for diagnostic categorization.
+/// Issue-related code should use CommonTypes.Severity instead.
+pub const OutputSeverity = enum(u8) {
+    /// Information only
+    info = 0,
+    /// Warning
+    warning = 1,
+    /// Error
+    err = 2,
+};
+
+/// Re-export for backward compatibility (deprecated).
+/// New code should use OutputSeverity for diagnostics, or CommonTypes.Severity for issues.
+pub const Severity = OutputSeverity;
 
 /// Simplified event representation (temporary until runtime/merge.zig is implemented)
 pub const MergedEvent = struct {
@@ -41,12 +62,14 @@ fn freeDiagnosticsSlice(allocator: std.mem.Allocator, diags: []Diagnostic) void 
 pub const DiagnosticAggregator = struct {
     allocator: std.mem.Allocator,
     diagnostics: std.ArrayList(Diagnostic),
+    seen_keys: std.AutoHashMap(u64, void),
 
     /// Create a new diagnostic aggregator
     pub fn init(allocator: std.mem.Allocator) DiagnosticAggregator {
         return .{
             .allocator = allocator,
             .diagnostics = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable,
+            .seen_keys = std.AutoHashMap(u64, void).init(allocator),
         };
     }
 
@@ -54,9 +77,13 @@ pub const DiagnosticAggregator = struct {
     pub fn deinit(self: *DiagnosticAggregator) void {
         self.clear();
         self.diagnostics.deinit(self.allocator);
+        self.seen_keys.deinit();
     }
 
-    /// Add a diagnostic
+    /// Add a diagnostic with cross-pass deduplication
+    ///
+    /// Uses (function_name + issue_kind) as dedup key to prevent
+    /// duplicate reports from different passes detecting the same issue.
     pub fn add(self: *DiagnosticAggregator, diag: Diagnostic) !void {
         const owned_message = try self.allocator.dupe(u8, diag.message);
         try self.diagnostics.append(self.allocator, .{
@@ -66,6 +93,120 @@ pub const DiagnosticAggregator = struct {
             .message = owned_message,
             .confidence = diag.confidence,
         });
+    }
+
+    /// Add an Issue with cross-pass deduplication and storage.
+    ///
+    /// Returns `true` if the issue was newly added (not a duplicate), `false` if skipped.
+    /// May return error on allocation failure.
+    ///
+    /// Accepts any struct with at least `.location` and `.kind` fields.
+    /// Validates required fields at **compile time** via comptime assertions.
+    pub fn addIssue(self: *DiagnosticAggregator, issue: anytype) !bool {
+        const T = @TypeOf(issue);
+
+        // Compile-time validation: ensure required fields exist with correct types
+        comptime {
+            if (!@hasField(T, "location")) {
+                @compileError("addIssue requires .location field (struct)");
+            }
+            if (!@hasField(T, "kind")) {
+                @compileError("addIssue requires .kind field (enum)");
+            }
+
+            // Validate .kind is an enum type
+            const KindType = std.meta.FieldType(T, .kind);
+            if (@typeInfo(KindType) != .Enum) {
+                @compileError(".kind must be an enum type");
+            }
+
+            // Validate .location is a struct type
+            const LocType = std.meta.FieldType(T, .location);
+            if (@typeInfo(LocType) != .Struct) {
+                @compileError(".location must be a struct type");
+            }
+
+            // If location has a .function field, validate its type
+            if (@hasField(LocType, "function")) {
+                const FuncType = std.meta.FieldType(LocType, .function);
+                if (FuncType != []const u8) {
+                    @compileError(".location.function must be []const u8");
+                }
+            }
+        }
+
+        const LocType = std.meta.FieldType(T, .location);
+        const func_name = if (@hasField(LocType, "function"))
+            @field(@field(issue, "location"), "function")
+        else
+            "(unknown)";
+
+        const kind_tag = @tagName(@field(issue, "kind"));
+
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(func_name);
+        hasher.update(kind_tag);
+        const loc = @field(issue, "location");
+        if (@hasField(LocType, "file")) {
+            if (@field(loc, "file")) |file| hasher.update(file);
+        }
+        if (@hasField(LocType, "line")) {
+            if (@field(loc, "line")) |line| {
+                hasher.update(&std.mem.toBytes(line));
+            }
+        }
+        const dedup_key = hasher.final();
+
+        const gop = try self.seen_keys.getOrPut(dedup_key);
+        if (gop.found_existing) return false;
+
+        const msg = if (@hasField(T, "message"))
+            @field(issue, "message")
+        else if (@hasField(T, "description"))
+            @field(issue, "description")
+        else
+            "(no message)";
+
+        const conf: f32 = if (@hasField(T, "confidence"))
+            @field(issue, "confidence")
+        else
+            0.5;
+
+        // Map issue kind to diagnostic kind (preserve semantic info)
+        const diag_kind = mapKindToDiagnostic(kind_tag);
+
+        // Preserve location info when available
+        const loc_id: u64 = if (@hasField(@TypeOf(loc), "line"))
+            if (@field(loc, "line")) |line| @as(u64, line) else 0
+        else
+            0;
+
+        try self.add(.{
+            .kind = diag_kind,
+            .severity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info,
+            .loc = loc_id,
+            .message = msg,
+            .confidence = conf,
+        });
+
+        return true;
+    }
+
+    fn mapKindToDiagnostic(kind_str: []const u8) DiagnosticKind {
+        const security_kinds = [_][]const u8{
+            "use_after_free",    "double_free",       "null_dereference",
+            "buffer_overflow",   "memory_leak",       "borrow_escape",
+            "command_injection", "ffi_unsafe_call",   "integer_overflow",
+            "race_condition",    "uninitialized_mem",
+        };
+        for (security_kinds) |sk| {
+            if (std.mem.eql(u8, kind_str, sk)) return .security;
+        }
+        const perf_kinds = [_][]const u8{ "inefficient_copy", "redundant_alloc" };
+        for (perf_kinds) |pk| {
+            if (std.mem.eql(u8, kind_str, pk)) return .performance;
+        }
+        return .static_issue;
     }
 
     /// Get all diagnostics
@@ -207,6 +348,7 @@ pub const DiagnosticAggregator = struct {
             self.allocator.free(diag.message);
         }
         self.diagnostics.clearRetainingCapacity();
+        self.seen_keys.clearRetainingCapacity();
     }
 };
 
@@ -224,16 +366,8 @@ pub const DiagnosticKind = enum(u8) {
     security,
 };
 
-/// Severity level
-pub const Severity = enum(u8) {
-    /// Information only
-    info = 0,
-    /// Warning
-    warning = 1,
-    /// Error
-    err = 2,
-};
-
+/// Severity level (re-exported from common/types.zig)
+/// Use common/types.zig.Severity directly in new code.
 /// Diagnostic
 pub const Diagnostic = struct {
     /// Diagnostic kind
@@ -462,4 +596,126 @@ test "DiagnosticAggregator - empty aggregation" {
     try std.testing.expectEqual(@as(usize, 0), summary.error_count);
     try std.testing.expectEqual(@as(usize, 0), summary.warning_count);
     try std.testing.expectEqual(@as(usize, 0), summary.info_count);
+}
+
+test "DiagnosticAggregator - cross-pass deduplication" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    // Create mock issue with location and kind
+    const TestIssue = struct {
+        location: struct {
+            function: []const u8,
+            file: ?[]const u8,
+            line: ?u32,
+            column: ?u32,
+        },
+        kind: enum { memory_leak, double_free },
+    };
+
+    // First issue should be accepted
+    const issue1 = TestIssue{
+        .location = .{
+            .function = "test_func",
+            .file = "test.zig",
+            .line = 42,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result1 = try aggregator.addIssue(issue1);
+    try std.testing.expect(result1);
+
+    // Same issue should be rejected (duplicate)
+    const issue2 = TestIssue{
+        .location = .{
+            .function = "test_func",
+            .file = "test.zig",
+            .line = 42,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result2 = try aggregator.addIssue(issue2);
+    try std.testing.expect(!result2);
+
+    // Different kind should be accepted
+    const issue3 = TestIssue{
+        .location = .{
+            .function = "test_func",
+            .file = "test.zig",
+            .line = 42,
+            .column = null,
+        },
+        .kind = .double_free,
+    };
+    const result3 = try aggregator.addIssue(issue3);
+    try std.testing.expect(result3);
+
+    // Different function should be accepted
+    const issue4 = TestIssue{
+        .location = .{
+            .function = "other_func",
+            .file = "test.zig",
+            .line = 42,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result4 = try aggregator.addIssue(issue4);
+    try std.testing.expect(result4);
+
+    // Different line should be accepted
+    const issue5 = TestIssue{
+        .location = .{
+            .function = "test_func",
+            .file = "test.zig",
+            .line = 100,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result5 = try aggregator.addIssue(issue5);
+    try std.testing.expect(result5);
+}
+
+test "DiagnosticAggregator - dedup with null fields" {
+    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    const TestIssue = struct {
+        location: struct {
+            function: []const u8,
+            file: ?[]const u8,
+            line: ?u32,
+            column: ?u32,
+        },
+        kind: enum { memory_leak },
+    };
+
+    // Issue without file/line should still work
+    const issue1 = TestIssue{
+        .location = .{
+            .function = "func_no_loc",
+            .file = null,
+            .line = null,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result1 = try aggregator.addIssue(issue1);
+    try std.testing.expect(result1);
+
+    // Duplicate without file/line should be rejected
+    const issue2 = TestIssue{
+        .location = .{
+            .function = "func_no_loc",
+            .file = null,
+            .line = null,
+            .column = null,
+        },
+        .kind = .memory_leak,
+    };
+    const result2 = try aggregator.addIssue(issue2);
+    try std.testing.expect(!result2);
 }

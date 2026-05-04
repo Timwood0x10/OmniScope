@@ -8,7 +8,10 @@ const IRLoader = OmniScope.engine.IRLoader;
 const FunctionRef = OmniScope.ir.view.FunctionRef;
 const SarifOutput = OmniScope.output.SarifOutput;
 const Issue = OmniScope.diag.Issue;
+const IssueKind = OmniScope.diag.IssueKind;
 const log = OmniScope.log;
+
+const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
 fn logInfo(comptime fmt: []const u8, args: anytype) void {
     log.info(fmt, args);
@@ -38,6 +41,14 @@ const Config = struct {
     input_files: std.ArrayList([]const u8),
     output_format: OutputFormat = .text,
     output_file: ?[]const u8 = null,
+    /// v0.1.8: Generate HTML visualization of memory/call graphs
+    visualize: bool = false,
+    /// P2-2: Only report issues from user code (skip stdlib/compiler_generated)
+    focus_user_code: bool = false,
+    /// P2-2: Only report FFI boundary issues
+    ffi_only: bool = false,
+    /// P2-2: Include stdlib issues (normally suppressed)
+    include_stdlib: bool = false,
 
     fn init(allocator: std.mem.Allocator) Config {
         return .{
@@ -113,6 +124,14 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);
+        } else if (std.mem.eql(u8, arg, "--visualize") or std.mem.eql(u8, arg, "--viz")) {
+            config.visualize = true;
+        } else if (std.mem.eql(u8, arg, "--focus-user-code")) {
+            config.focus_user_code = true;
+        } else if (std.mem.eql(u8, arg, "--ffi-only")) {
+            config.ffi_only = true;
+        } else if (std.mem.eql(u8, arg, "--include-stdlib")) {
+            config.include_stdlib = true;
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -132,13 +151,23 @@ fn showHelp() void {
         \\
         \\Options:
         \\  -h, --help          Show this help message
-        \\  -v, --verbose       Enable verbose logging
-        \\  -d, --debug         Enable debug logging
+        \\  -v, --verbose       Enable verbose logging (shows WARN messages)
+        \\  -d, --debug         Enable debug logging (shows DEBUG messages)
         \\  -q, --quiet         Quiet mode (only show issues)
+        \\  --visualize, --viz  Generate HTML visualization of memory/call graphs
+        \\  --focus-user-code  Only report issues from user code
+        \\  --ffi-only         Only report FFI boundary issues
+        \\  --include-stdlib   Include stdlib issues (normally suppressed)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format
         \\  -o, --output <file>  Write output to file
+        \\
+        \\Log Levels:
+        \\  quiet    → Only final results and issues [WARN/INFO suppressed]
+        \\  normal   → INFO + issues only [DEBUG/WARN suppressed]
+        \\  verbose  → INFO + WARN + issues [DEBUG suppressed] (recommended)
+        \\  debug    → All messages including DEBUG traces
         \\
         \\Analysis Types:
         \\  Cross-Language Data Flow (default)
@@ -190,9 +219,19 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     }
 
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
-    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+    try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
 
     const analysis_start = std.time.milliTimestamp();
     const result = try pipeline.runStaticAnalysis();
@@ -205,7 +244,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
 
     const issues = pipeline.getIssues();
 
-    if (issues.len > 0 or config.output_format == .json) {
+    if (issues.len > 0 or config.output_format == .json or config.output_format == .sarif) {
         if (config.output_format == .json) {
             const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
                 std.log.err("Failed to format JSON output: {}", .{err});
@@ -228,7 +267,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.5");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.6");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;
@@ -253,6 +292,69 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
             logInfo("Issues detected: {d}\n", .{issues.len});
         }
     }
+
+    // v0.1.8: Export HTML visualization if requested
+    if (config.visualize) {
+        const graph_visualizer = @import("./visual/graph_visualizer.zig");
+        const GraphIssue = graph_visualizer.GraphIssue;
+
+        var viz = try graph_visualizer.GraphVisualizer.init(allocator);
+        defer viz.deinit();
+
+        // Convert Issue[] → GraphIssue[] (dynamic data, no mock)
+        var graph_issues = try allocator.alloc(GraphIssue, issues.len);
+        defer allocator.free(graph_issues);
+        for (issues, 0..) |issue, i| {
+            graph_issues[i] = .{
+                .kind = issueToGraphKind(issue.kind),
+                .message = issue.message,
+                .function = issue.location.func,
+                .severity = @tagName(issue.severity),
+                .confidence = issue.confidence,
+                .line = issue.location.line,
+            };
+        }
+
+        const base_name = std.fs.path.stem(path);
+        const out_dir = try std.fmt.allocPrint(allocator, "output/{s}", .{base_name});
+        defer allocator.free(out_dir);
+
+        std.fs.cwd().makePath(out_dir) catch |err| {
+            log.err("Failed to create {s}: {s}", .{ out_dir, @errorName(err) });
+            return;
+        };
+        const mem_json = try std.fmt.allocPrint(allocator, "{s}/memory.json", .{out_dir});
+        defer allocator.free(mem_json);
+        const mem_html = try std.fmt.allocPrint(allocator, "{s}/memory.html", .{out_dir});
+        defer allocator.free(mem_html);
+
+        logInfo("Generating memory graph: {s}\n", .{mem_html});
+        viz.exportIssuesHtml(graph_issues, mem_json, mem_html) catch |err| {
+            logInfo("Warning: Failed to generate visualization: {s}\n", .{@errorName(err)});
+        };
+    }
+}
+
+fn issueToGraphKind(kind: IssueKind) GraphKind {
+    return switch (kind) {
+        .memory_leak => .memory_leak,
+        .use_after_free => .use_after_free,
+        .double_free => .double_free,
+        .cross_language_leak => .cross_language_leak,
+        .malloc_unchecked => .malloc_unchecked,
+        .null_dereference => .null_dereference,
+        .invalid_free => .invalid_free,
+        .borrow_escape => .borrow_escape,
+        .ffi_unsafe_call => .ffi_unsafe_call,
+        .unchecked_return => .unchecked_return,
+        .type_mismatch, .ffi_type_mismatch => .type_mismatch,
+        .command_injection => .command_injection,
+        .buffer_overflow => .buffer_overflow,
+        .format_string => .format_string,
+        .callback_signature_mismatch => .callback_signature_mismatch,
+        .static_buffer_misuse => .static_buffer_misuse,
+        .unknown => .other,
+    };
 }
 
 fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, analysis_time_ms: u64) ![]u8 {
@@ -262,7 +364,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     const timestamp = std.time.timestamp();
     const writer = output.writer();
 
-    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.5\",\"timestamp\":");
+    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.6\",\"timestamp\":");
     try writer.print("{d}", .{timestamp});
     try writer.writeAll(",\"summary\":{");
     try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });
@@ -274,9 +376,8 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         const id_str = try std.fmt.allocPrint(allocator, "OMI-{d:0>3}", .{idx + 1});
         defer allocator.free(id_str);
 
-        const file_str = issue.location.file orelse null;
-        const line_num = issue.location.line orelse null;
-        const col_num = issue.location.column orelse null;
+        const line_num = if (issue.location.line > 0) issue.location.line else null;
+        const col_num = if (issue.location.column > 0) issue.location.column else null;
         const cwe_id = issue.kind.toCweId();
 
         try writer.writeAll("  {\"id\":\"");
@@ -303,10 +404,10 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         try writer.writeAll("\",\"location\":{");
 
         try writer.writeAll("\"function\":\"");
-        try writeJsonEscaped(writer, issue.location.function);
+        try writeJsonEscaped(writer, issue.location.func);
         try writer.writeAll("\"");
 
-        if (file_str) |f| {
+        if (issue.location.file) |f| {
             try writer.writeAll(",\"file\":\"");
             try writeJsonEscaped(writer, f);
             try writer.writeAll("\"");
@@ -539,7 +640,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v0.1.5\n", .{});
+        std.debug.print("OmniScope v0.1.6\n", .{});
         return;
     }
 

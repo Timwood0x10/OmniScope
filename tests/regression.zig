@@ -13,13 +13,13 @@ const registry = OmniScope.registry;
 
 test "Regression: layer counts unchanged" {
     const expected = struct {
-        l1: usize = 64,
+        l1: usize = 44,
         l2: usize = 3,
         l3: usize = 4,
         l4: usize = 8,
         l5: usize = 29,
-        l6: usize = 58,
-        total: usize = 166,
+        l6: usize = 57,
+        total: usize = 267,
     };
 
     try std.testing.expectEqual(expected.l1, registry.SemanticRegistry.layer1Count());

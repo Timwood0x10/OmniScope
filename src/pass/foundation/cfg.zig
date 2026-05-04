@@ -77,8 +77,14 @@ pub const CFGPass = struct {
                 // Assign function ID
                 self.func_id = ctx.getNextId();
 
-                // Analyze function
-                try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+                // Function-level error isolation
+                self.analyzeFunction(FunctionRef{ .raw = func_ref }) catch |err| {
+                    const func_name_raw = c.LLVMGetValueName(func_ref);
+                    const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                    diag.warn("CFG: skipped function due to error: {} ({s})", .{ err, func_name });
+                    func = c.LLVMGetNextFunction(func);
+                    continue;
+                };
             }
             func = c.LLVMGetNextFunction(func);
         }

@@ -9,12 +9,17 @@ const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
+const Location = @import("../diag/issue.zig").Location;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
+const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
+const zone_classifier = @import("../semantics/zone_classifier.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
+const c = @import("../ir/llvm_raw.zig").c;
 
 /// Analysis pipeline
 pub const Pipeline = struct {
@@ -31,7 +36,7 @@ pub const Pipeline = struct {
         fact_store.* = try FactStore.init(allocator);
 
         const query_engine = try allocator.create(QueryEngine);
-        query_engine.* = QueryEngine.init(fact_store);
+        query_engine.* = QueryEngine.init(fact_store, allocator);
 
         const data_flow_graph = try DataFlowGraph.init(allocator, fact_store, query_engine);
 
@@ -48,6 +53,7 @@ pub const Pipeline = struct {
     /// Deinitialize the pipeline
     pub fn deinit(self: *Pipeline) void {
         self.data_flow_graph.deinit();
+        self.query_engine.deinit();
         self.fact_store.deinit();
         self.allocator.destroy(self.fact_store);
         self.allocator.destroy(self.query_engine);
@@ -77,14 +83,89 @@ pub const Pipeline = struct {
             .rc_container_func_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rust_into_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
             .rust_from_raw_set = std.AutoHashMap(usize, void).init(self.allocator),
+            .reported_keys = std.AutoHashMap(u64, void).init(self.allocator),
+            .registry_cache = std.StringHashMap(FunctionSemantics).init(self.allocator),
+            .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(self.allocator),
             .zone_stats = .{},
+            .module_language = .{ .language = .unknown, .confidence = 0.0, .method = .unknown },
+            .language_detected = false,
+            .degraded_functions = std.atomic.Value(u32).init(0),
+            .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
+            .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
+            .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
+            .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
+            .ffi_auto_relevant = std.AutoHashMap(u64, void).init(self.allocator),
+            .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
+            .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
+            .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
         };
         defer ctx.deinit();
+
+        // R7.2 Language-First: detect module language ONCE before any passes run.
+        // This activates the correct zone rules channel for all subsequent analysis.
+        ctx.initModuleLanguage(self.module);
+
+        // P0-2: Build shared callee→call_sites index ONCE before any passes run.
+        // All call_graph and ffi_boundary lookups become O(1) instead of O(F).
+        {
+            const t_idx = std.time.nanoTimestamp();
+            if (self.module) |mod| {
+                const raw_mod = mod.raw;
+                var func = c.LLVMGetFirstFunction(raw_mod);
+                while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+                    if (c.LLVMIsDeclaration(func) != 0) continue;
+                    const func_ptr = @as(u64, @intFromPtr(func));
+                    var bb = c.LLVMGetFirstBasicBlock(func);
+                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                        var inst = c.LLVMGetFirstInstruction(bb);
+                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                            if (@intFromPtr(c.LLVMIsACallInst(inst)) == 0) continue;
+                            const called_val = c.LLVMGetCalledValue(inst);
+                            if (@intFromPtr(called_val) == 0) continue;
+                            const called_name_ptr = c.LLVMGetValueName(called_val);
+                            if (@intFromPtr(called_name_ptr) == 0) continue;
+                            const called_name = std.mem.span(called_name_ptr);
+                            const inst_ptr = @as(u64, @intFromPtr(inst));
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch {};
+                        }
+                    }
+                }
+            }
+            const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
+            if (idx_ms > 10) std.debug.print("[PERF] CallSiteIndex build: {d:.1} ms\n", .{@as(u32, @intFromFloat(idx_ms))});
+        }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
 
         // Run passes
         try self.pass_manager.run(&ctx, &diag);
+
+        // R8.3-d: Post-pass leak report — scan GlobalAllocTracker for unfreed allocations.
+        // After all passes have run, any allocation that was never freed is a leak candidate.
+        // Skip global/static variables (intentionally never freed) and already-matched pairs.
+        const leak_count = ctx.global_alloc_tracker.leakCount();
+        if (leak_count > 0) {
+            const tracker = &ctx.global_alloc_tracker;
+            for (tracker.records.items) |rec| {
+                if (!rec.freed and !rec.is_global_or_static) {
+                    const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
+                    const trace = try self.allocator.alloc(TraceEntry, 1);
+                    trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
+                    var issue = Issue.initWithTrace(
+                        .memory_leak,
+                        msg,
+                        Location.init(rec.alloc_func),
+                        .low,
+                        0.50,
+                        trace,
+                    );
+                    try ctx.addIssue(&issue);
+                }
+            }
+            diag.info("[R8.3-d] GlobalAllocTracker: {d} leak candidates reported from {d} tracked allocations", .{
+                leak_count, tracker.size(),
+            });
+        }
     }
 
     /// Run static analysis stage

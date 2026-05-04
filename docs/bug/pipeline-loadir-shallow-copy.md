@@ -171,17 +171,17 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
 
 ```
 [STEP] Test 2: Single file analysis (Rust)
-[INFO] Analyzing Rust IR: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.bc
+[INFO] Analyzing Rust IR: ～/OmniSope/examples/ffi_command_injection/lib.rs.bc
 ./test_rust_ffi.sh: line 80: 50058 Illegal instruction: 4  "$BINARY" "$RUST_BC"
 [ERROR] Failed to analyze Rust IR
 
 [STEP] Test 3: Single file analysis (C)
-[INFO] Analyzing C IR: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
+[INFO] Analyzing C IR: ～/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
 ./test_rust_ffi.sh: line 90: 50059 Illegal instruction: 4  "$BINARY" "$C_BC"
 [ERROR] Failed to analyze C IR
 
 [STEP] Test 5: .ll file support
-[INFO] Analyzing Rust .ll file: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.ll
+[INFO] Analyzing Rust .ll file: ～/OmniSope/examples/ffi_command_injection/lib.rs.ll
 ./test_rust_ffi.sh: line 111: 50062 Illegal instruction: 4  "$BINARY" "$RUST_LL"
 [ERROR] Failed to analyze .ll file
 ```
@@ -190,25 +190,25 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8) !void {
 
 ```
 [STEP] Test 2: Single file analysis (Rust)
-[INFO] Analyzing Rust IR: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.bc
+[INFO] Analyzing Rust IR: ～/OmniSope/examples/ffi_command_injection/lib.rs.bc
 info: === OmniScope IR Analysis ===
-info: File: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.bc
+info: File: ～/OmniSope/examples/ffi_command_injection/lib.rs.bc
 info: Loaded: 224 functions
 info: Analysis complete
 info: Functions processed: 224
 
 [STEP] Test 3: Single file analysis (C)
-[INFO] Analyzing C IR: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
+[INFO] Analyzing C IR: ～/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
 info: === OmniScope IR Analysis ===
-info: File: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
+info: File: ～/OmniSope/examples/ffi_command_injection/src/c_crypto_lib.bc
 info: Loaded: 12 functions
 info: Analysis complete
 info: Functions processed: 12
 
 [STEP] Test 5: .ll file support
-[INFO] Analyzing Rust .ll file: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.ll
+[INFO] Analyzing Rust .ll file: ～/OmniSope/examples/ffi_command_injection/lib.rs.ll
 info: === OmniScope IR Analysis ===
-info: File: /Users/scc/code/zigcode/OmniSope/examples/ffi_command_injection/lib.rs.ll
+info: File: ～/OmniSope/examples/ffi_command_injection/lib.rs.ll
 info: Loaded: 224 functions
 info: Analysis complete
 info: Functions processed: 224

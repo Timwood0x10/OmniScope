@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const CommonTypes = @import("../../common/types.zig");
 
 const Pass = @import("../pass.zig").Pass;
 const PassContext = @import("../pass.zig").PassContext;
@@ -30,6 +31,10 @@ const FactKind = @import("../../fact/fact.zig").FactKind;
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 
+const NoiseReduction = @import("noise_reduction.zig");
+const FPWhitelist = @import("../filter/fp_whitelist.zig");
+const hooks = @import("../../registry/hooks.zig");
+
 /// Error type for ownership analysis operations
 pub const FFIAnalysisError = error{
     NoModule,
@@ -45,13 +50,9 @@ pub const ViolationType = enum {
     leak,
 };
 
-/// Severity level
-pub const Severity = enum {
-    critical,
-    high,
-    medium,
-    low,
-};
+/// Severity level (re-exported from common/types.zig).
+/// Use common/types.zig.Severity directly in new code.
+pub const Severity = CommonTypes.Severity;
 
 /// Ownership violation result
 pub const OwnershipViolation = struct {
@@ -94,6 +95,10 @@ pub const FFIAnalysisPass = struct {
     /// Track free sites: ptr_value_id -> list of free info (allows tracking multiple frees per pointer)
     free_sites: std.AutoHashMap(u64, std.ArrayList(FreeInfo)),
 
+    /// v0.1.6: Track which basic block each allocation/free is in (for path analysis)
+    alloc_bb_map: std.AutoHashMap(u64, c.LLVMBasicBlockRef),
+    free_bb_map: std.AutoHashMap(u64, std.ArrayList(c.LLVMBasicBlockRef)),
+
     const AllocationInfo = struct {
         func_name: []const u8,
         language: Language,
@@ -126,6 +131,8 @@ pub const FFIAnalysisPass = struct {
             .violations = std.ArrayList(OwnershipViolation).init(allocator),
             .allocation_sites = std.AutoHashMap(u64, AllocationInfo).init(allocator),
             .free_sites = std.AutoHashMap(u64, std.ArrayList(FreeInfo)).init(allocator),
+            .alloc_bb_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(allocator),
+            .free_bb_map = std.AutoHashMap(u64, std.ArrayList(c.LLVMBasicBlockRef)).init(allocator),
         };
     }
 
@@ -144,6 +151,14 @@ pub const FFIAnalysisPass = struct {
                 entry.value_ptr.*.deinit();
             }
             self.free_sites.deinit();
+        }
+        self.alloc_bb_map.deinit();
+        {
+            var iter = self.free_bb_map.iterator();
+            while (iter.next()) |entry| {
+                entry.value_ptr.*.deinit();
+            }
+            self.free_bb_map.deinit();
         }
     }
 
@@ -168,6 +183,11 @@ pub const FFIAnalysisPass = struct {
         ctx.data_flow_graph.setFFIMatcher(&matcher);
         try ctx.data_flow_graph.createFFIBoundariesFromMatcher();
 
+        // Phase R5.2: Initialize Hook system for cross-language ownership tracking.
+        // Hooks detect Rust into_raw/from_raw pairing, Python refcount balance, Go escapes.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
+
         // Step 3: Collect allocation and free sites
         try self.collectAllocationSites(mod, diag);
         try self.collectFreeSites(mod, diag);
@@ -175,6 +195,27 @@ pub const FFIAnalysisPass = struct {
         // Step 4: Detect ownership violations
         try self.detectDoubleFree(diag);
         try self.detectOwnershipMismatch(diag);
+
+        // v0.1.6: Enhanced detection
+        try self.detectErrorPathLeaks(diag);
+        try self.detectCrossPathDoubleFree(diag);
+
+        // Phase R5.2: Check hook state for module-level ownership issues.
+        // Rust unpaired transfers indicate potential cross-language leaks.
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            diag.warn("OwnershipViolation: {} unpaired Rust ownership transfer(s) detected — potential cross-language leak", .{hooks.rustUnpairedTransferCount()});
+        }
+        if (hooks.pythonUnbalancedDecrefCount() > 0) {
+            const count = hooks.pythonUnbalancedDecrefCount();
+            try self.violations.append(.{
+                .violation_type = .use_after_free,
+                .severity = .high,
+                .function_name = "python_ffi_boundary",
+                .description = std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch "Python refcount imbalance",
+                .confidence = 0.80,
+                .owns_description = true,
+            });
+        }
 
         // Step 5: Store results
         try self.storeResults(ctx);
@@ -187,11 +228,22 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn collectAllocationSites(self: *FFIAnalysisPass, mod: c.LLVMModuleRef, diag: *DiagnosticWriter) !void {
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
+
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
+
+            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+
+            // Defense-in-depth: known FP whitelist
+            if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             const language = self.detectLanguageWithDwarf(func, func_name);
 
@@ -211,7 +263,7 @@ pub const FFIAnalysisPass = struct {
 
                     // Check if this is an allocation function
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .allocator) {
+                        if (sem.transfers_ownership) {
                             // Get the return value (the allocated pointer)
                             const ptr_value: c.LLVMValueRef = inst;
                             const ptr_value_id: u64 = @intFromPtr(ptr_value);
@@ -221,6 +273,8 @@ pub const FFIAnalysisPass = struct {
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
                             });
+                            // v0.1.6: Track which BB this alloc is in
+                            try self.alloc_bb_map.put(ptr_value_id, bb);
                         }
                     }
                 }
@@ -233,11 +287,22 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn collectFreeSites(self: *FFIAnalysisPass, mod: c.LLVMModuleRef, diag: *DiagnosticWriter) !void {
+        const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
+
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_ptr = c.LLVMGetValueName(func);
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
+
+            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            const debug_file_path = extractDebugFilePath(func);
+            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            if (classification.origin == .compiler_generated) continue;
+            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+
+            // Defense-in-depth: known FP whitelist
+            if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             const language = self.detectLanguageWithDwarf(func, func_name);
 
@@ -255,7 +320,7 @@ pub const FFIAnalysisPass = struct {
                     const called_name = std.mem.span(called_name_ptr);
 
                     if (SemanticRegistry.lookup(called_name)) |sem| {
-                        if (sem.kind == .deallocator) {
+                        if (sem.consumes_ownership) {
                             const ptr_arg = c.LLVMGetOperand(inst, 0);
                             if (ptr_arg == null) {
                                 diag.warn("Free operation missing pointer argument at {s}", .{func_name});
@@ -275,6 +340,15 @@ pub const FFIAnalysisPass = struct {
                                 errdefer list.deinit();
                                 try list.append(free_info);
                                 try self.free_sites.put(ptr_value_id, list);
+                            }
+                            // v0.1.6: Track which BB this free is in
+                            if (self.free_bb_map.get(ptr_value_id)) |bb_list| {
+                                try bb_list.append(bb);
+                            } else {
+                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).init(self.allocator);
+                                errdefer bb_list.deinit();
+                                try bb_list.append(bb);
+                                try self.free_bb_map.put(ptr_value_id, bb_list);
                             }
                         }
                     }
@@ -342,6 +416,149 @@ pub const FFIAnalysisPass = struct {
         }
     }
 
+    /// v0.1.6: Detect error path leaks — allocations that can reach a function
+    /// return without passing through a matching free.
+    ///
+    /// This is a lightweight path-sensitive check using basic block tracking:
+    /// - If an allocation's BB has no successor BB containing a free of the same pointer
+    ///   AND the function has a ret instruction → potential error path leak
+    /// - This catches patterns like:
+    ///   ```
+    ///   ptr = malloc(size);
+    ///   if (error_condition) return;  // ← leak! (error path)
+    ///   free(ptr);
+    ///   ```
+    fn detectErrorPathLeaks(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
+        var alloc_iter = self.allocation_sites.iterator();
+        while (alloc_iter.next()) |entry| {
+            const alloc_info = entry.value_ptr.*;
+            const ptr_id = alloc_info.value_id;
+
+            const has_any_free = self.free_sites.contains(ptr_id);
+
+            if (!has_any_free) {
+                try self.violations.append(.{
+                    .violation_type = .leak,
+                    .severity = .high,
+                    .function_name = alloc_info.func_name,
+                    .description = try std.fmt.allocPrint(
+                        self.allocator,
+                        "Potential memory leak: allocated pointer ({d}) never freed in {s}",
+                        .{ ptr_id, alloc_info.func_name },
+                    ),
+                    .confidence = 0.72,
+                    .owns_description = true,
+                });
+                continue;
+            }
+
+            if (self.alloc_bb_map.get(ptr_id)) |alloc_bb| {
+                const terminator = c.LLVMGetBasicBlockTerminator(alloc_bb);
+                if (terminator != null) {
+                    const opcode = c.LLVMGetInstructionOpcode(terminator);
+                    if (opcode == c.LLVMBr) {
+                        const num_successors = c.LLVMGetNumSuccessors(terminator);
+                        var succ_idx: c_uint = 0;
+                        while (succ_idx < num_successors) : (succ_idx += 1) {
+                            const succ_bb = c.LLVMGetSuccessor(terminator, succ_idx);
+                            if (self.bbHasReturnWithoutFree(succ_bb, ptr_id)) {
+                                try self.violations.append(.{
+                                    .violation_type = .leak,
+                                    .severity = .medium,
+                                    .function_name = alloc_info.func_name,
+                                    .description = try std.fmt.allocPrint(
+                                        self.allocator,
+                                        "Error path leak: pointer ({d}) may leak on error path in {s}",
+                                        .{ ptr_id, alloc_info.func_name },
+                                    ),
+                                    .confidence = 0.65,
+                                    .owns_description = true,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn bbHasReturnWithoutFree(self: *FFIAnalysisPass, bb: c.LLVMBasicBlockRef, ptr_id: u64) bool {
+        const terminator = c.LLVMGetBasicBlockTerminator(bb);
+        if (terminator == null) return false;
+
+        const opcode = c.LLVMGetInstructionOpcode(terminator);
+        const has_return = (opcode == c.LLVMRet);
+
+        if (!has_return) return false;
+
+        if (self.free_bb_map.get(ptr_id)) |free_bb_list| {
+            for (free_bb_list.items) |free_bb| {
+                if (@intFromPtr(free_bb) == @intFromPtr(bb)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// v0.1.6: Detect cross-path double free — when frees of the same pointer
+    /// occur in different basic blocks (different control flow paths).
+    ///
+    /// Current detectDoubleFree only checks value identity. This enhancement adds
+    /// BB-level analysis to catch:
+    ///   ```
+    ///   if (condition_a) {
+    ///       free(ptr);  // BB_1
+    ///   } else {
+    ///       free(ptr);  // BB_2 — same pointer, different control flow!
+    ///   }
+    ///   ```
+    fn detectCrossPathDoubleFree(self: *FFIAnalysisPass, diag: *DiagnosticWriter) !void {
+        var iter = self.free_bb_map.iterator();
+        while (iter.next()) |entry| {
+            const bb_list = entry.value_ptr.*;
+
+            // If frees happen in multiple distinct basic blocks → cross-path double free
+            if (bb_list.items.len > 1) {
+                // Deduplicate: check if all frees are in the SAME BB
+                // (that would be normal sequential code like free(x); free(y);)
+                var unique_bbs = std.AutoHashMap(c.LLVMBasicBlockRef, void).init(self.allocator);
+                defer unique_bbs.deinit();
+
+                for (bb_list.items) |bb_ref| {
+                    _ = try unique_bbs.put(bb_ref, {});
+                }
+
+                // Only report if frees are in 2+ DIFFERENT basic blocks
+                if (unique_bbs.count() > 1) {
+                    // Get first free info for reporting
+                    const ptr_id = entry.key_ptr.*;
+                    if (self.free_sites.get(ptr_id)) |free_list| {
+                        if (free_list.items.len > 0) {
+                            const first_free = free_list.items[0];
+                            try self.violations.append(.{
+                                .violation_type = .double_free,
+                                .severity = .critical,
+                                .function_name = first_free.func_name,
+                                .description = try std.fmt.allocPrint(
+                                    self.allocator,
+                                    "Cross-path double free detected: pointer freed in {} different basic blocks (potential conditional double-free)",
+                                    .{unique_bbs.count()},
+                                ),
+                                .confidence = 0.82,
+                                .owns_description = true,
+                            });
+                        }
+                    }
+
+                    diag.warn("[CROSS-PATH-DOUBLE-FREE] pointer freed in {} different BBs", .{unique_bbs.count()});
+                }
+            }
+        }
+    }
+
     fn detectLanguageFromDwarf(func: c.LLVMValueRef) ?Language {
         if (@intFromPtr(func) == 0) return null;
         const subprogram = debug_info.getFunctionSubprogram(func) orelse return null;
@@ -386,6 +603,27 @@ pub const FFIAnalysisPass = struct {
         }
 
         return .c;
+    }
+
+    /// Extract debug file path from LLVM subprogram metadata.
+    /// Used by NoiseReduction Layer 2 (path-based filter).
+    fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
+        const subprogram = c.LLVMGetSubprogram(func);
+        if (@intFromPtr(subprogram) == 0) return null;
+
+        const file_ref = c.LLVMDIScopeGetFile(subprogram);
+        if (@intFromPtr(file_ref) == 0) return null;
+
+        var filename_len: c_uint = undefined;
+        const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
+        if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
+
+        // Sanity check on path length
+        const max_path_len: c_uint = 4096;
+        if (filename_len > max_path_len) return null;
+        if (filename_ptr[0] == 0) return null;
+
+        return filename_ptr[0..filename_len];
     }
 
     fn detectLanguageWithDwarf(_: *FFIAnalysisPass, func: c.LLVMValueRef, func_name: []const u8) Language {

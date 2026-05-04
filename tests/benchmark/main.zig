@@ -216,12 +216,12 @@ test "benchmark: memory stability across multiple runs" {
 // ========================================
 
 test "benchmark: registry layer counts match expected" {
-    try testing.expectEqual(@as(usize, 64), registry.SemanticRegistry.layer1Count());
+    try testing.expectEqual(@as(usize, 44), registry.SemanticRegistry.layer1Count());
     try testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
     try testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
-    try testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
+    try testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
 
     const total = registry.SemanticRegistry.layer1Count() +
         registry.SemanticRegistry.layer2Count() +
@@ -229,7 +229,7 @@ test "benchmark: registry layer counts match expected" {
         registry.SemanticRegistry.layer4Count() +
         registry.SemanticRegistry.layer5Count() +
         registry.SemanticRegistry.layer6Count();
-    try testing.expectEqual(@as(usize, 166), total);
+    try testing.expectEqual(@as(usize, 145), total);
 }
 
 test "benchmark: registry known functions respond correctly" {
@@ -237,6 +237,18 @@ test "benchmark: registry known functions respond correctly" {
         "malloc",   "free",     "calloc", "realloc",
         "fopen",    "fclose",   "mmap",   "munmap",
         "into_raw", "from_raw",
+        // v0.1.6: dynamic loading
+        "dlopen",   "dlsym",    "dlclose",
+        // v0.1.6: JNI
+        "JNI_OnLoad", "FindClass", "GetMethodID", "NewStringUTF",
+        // v0.1.6: Python C API
+        "Py_INCREF", "Py_DECREF", "Py_BuildValue",
+        // v0.1.6: thread management
+        "pthread_create", "pthread_join", "pthread_mutex_lock",
+        // v0.1.6: signal handling
+        "signal",    "sigaction",
+        // v0.1.6: process management
+        "fork",      "execve",   "waitpid",
     };
 
     for (known_funcs) |func| {
@@ -249,6 +261,13 @@ test "benchmark: registry RiskKind count matches expected" {
     try testing.expect(registry.SemanticRegistry.isKnown("malloc"));
     try testing.expect(registry.SemanticRegistry.isKnown("into_raw"));
     try testing.expect(registry.SemanticRegistry.isKnown("operator new"));
+    // v0.1.6: new RiskKind functions
+    try testing.expect(registry.SemanticRegistry.isKnown("dlopen"));
+    try testing.expect(registry.SemanticRegistry.isKnown("JNI_OnLoad"));
+    try testing.expect(registry.SemanticRegistry.isKnown("Py_INCREF"));
+    try testing.expect(registry.SemanticRegistry.isKnown("pthread_create"));
+    try testing.expect(registry.SemanticRegistry.isKnown("signal"));
+    try testing.expect(registry.SemanticRegistry.isKnown("fork"));
 }
 
 // ========================================

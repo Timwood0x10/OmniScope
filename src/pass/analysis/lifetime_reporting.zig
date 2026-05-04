@@ -1,0 +1,375 @@
+//! Pointer Lifetime Reporting Functions
+//!
+//! Contains all reporting functions for the PtrLifetimePass.
+//! Extracted from ptr_lifetime.zig to reduce file size and improve modularity.
+//!
+//! This module provides:
+//! - Stack escape reporting
+//! - Return stack address reporting
+//! - Heap pointer reporting (escape, return, global storage)
+//! - Use-after-free reporting (regular and resource)
+//! - Utility functions for trace entry creation
+
+const std = @import("std");
+const c = @import("../../ir/llvm_raw.zig").c;
+
+const PassContext = @import("../pass.zig").PassContext;
+const Location = @import("../../diag/issue.zig").Location;
+const Issue = @import("../../diag/issue.zig").Issue;
+const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
+
+const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
+const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
+
+// ============================================================================
+// Reporting Functions
+// ============================================================================
+
+/// Report stack pointer escaping to FFI boundary function.
+pub fn reportStackEscape(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    _: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Stack pointer passed to FFI boundary function");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Passed to {s}() which may retain pointer beyond caller scope", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Stack pointer ({s}) escapes to FFI function {s}() - pointer invalid after function returns (CWE-562)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.88,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+/// Report return of stack-local address (dangling pointer).
+pub fn reportReturnStackAddr(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 2);
+    trace[0] = TraceEntry.init("Function returns address of stack-local variable");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Function returns stack-local address ({s}) - dangling pointer after return (CWE-562)",
+        .{ptr_info.source_desc},
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.92,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+}
+
+/// Report return of heap-allocated pointer (ownership transfer ambiguity).
+pub fn reportReturnHeapPtr(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Function returns heap-allocated pointer");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} (caller must free)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Returning heap pointer creates ownership transfer ambiguity - who frees?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Function returns heap-allocated pointer ({s}) - caller may not know to free (CWE-401/CWE-662)",
+        .{ptr_info.source_desc},
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.72,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
+}
+
+/// Report heap pointer stored to global variable (potential leak).
+pub fn reportHeapToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Heap-allocated pointer stored to global variable");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} (global lifetime)", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage of heap pointer creates leak risk - when is it freed?");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) stored to global in {s} - potential memory leak if never freed (CWE-401)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.75,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+}
+
+/// Report stack pointer stored to global variable (dangling pointer risk).
+pub fn reportStackToGlobal(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Stack-local pointer stored to global variable");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = TraceEntry.init("Global storage outlives stack frame - dangling pointer after return");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Stack pointer ({s}) stored to global in {s} - dangling pointer after function returns (CWE-562)",
+        .{ ptr_info.source_desc, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .critical,
+        0.90,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+}
+
+/// Report use-after-free (freed pointer passed to function call).
+pub fn reportUseAfterFree(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Freed pointer passed to function call");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} (already freed)", .{ptr_info.source_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Use in {s}() after free", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Freed pointer ({s}) passed to {s}() - potential use-after-free (CWE-416)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .use_after_free,
+        message,
+        location,
+        .high,
+        0.75,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
+}
+
+/// Report resource use-after-free (resource used after release).
+pub fn reportResourceUAF(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const resource_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlopen handle",
+        .mmap_region => "memory mapping",
+        .file_handle => "file handle",
+        .socket_fd => "socket descriptor",
+        .jni_ref => "JNI reference",
+        .python_obj => "Python object",
+        .none => "resource",
+    };
+
+    const violation_desc = switch (ptr_info.resource_type) {
+        .dlopen_handle => "dlclose called while dlsym-derived pointers may still be in use",
+        .mmap_region => "munmap called while pointers to mapped region may still be in use",
+        .file_handle => "fclose called while FILE* may still be used",
+        .socket_fd => "close called while socket fd may still be used",
+        .jni_ref => "DeleteGlobalRef/DeleteLocalRef called while reference may still be in use",
+        .python_obj => "Py_DECREF/Py_XDECREF called while object may still be referenced",
+        .none => "resource released while still in use",
+    };
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Resource used after release");
+    trace[1] = try makeTrace(ctx.allocator, "Resource type: {s}, origin: {s}", .{ resource_desc, ptr_info.source_desc });
+    trace[2] = try makeTrace(ctx.allocator, "{s} - passed to {s}()", .{ violation_desc, callee_name });
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Released {s} ({s}) passed to {s}() - potential use-after-release (CWE-416/CWE-908)",
+        .{ resource_desc, ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .use_after_free,
+        message,
+        location,
+        .critical,
+        0.85,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+}
+
+/// Report heap pointer escaping to FFI boundary with ambiguous ownership.
+pub fn reportHeapAmbiguous(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Heap pointer passed to extern without clear ownership transfer");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Passed to {s}() - verify ownership contract", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) passed to {s}() - verify ownership transfer semantics (CWE-401)",
+        .{ ptr_info.source_desc, callee_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .medium,
+        0.60,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+/// Report heap pointer escaping to FFI boundary (ownership transfer critical).
+pub fn reportHeapEscapeToFFI(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: anytype,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 4);
+    trace[0] = TraceEntry.init("Heap-allocated pointer escapes to FFI boundary");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} (caller must manage lifetime)", .{ptr_info.source_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Passed to retaining FFI function {s}() - ownership transfer unclear", .{callee_name});
+    trace[3] = TraceEntry.init("If no matching free -> leak; if double-freed -> corruption (CWE-401/CWE-662)");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Heap pointer ({s}) escapes to {s}() in {s} - ambiguous ownership transfer",
+        .{ ptr_info.source_desc, callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .memory_leak,
+        message,
+        location,
+        .high,
+        0.78,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/// Create a trace entry with formatted message.
+pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
+    const desc = try std.fmt.allocPrint(allocator, fmt, args);
+    return TraceEntry.initOwned(desc);
+}

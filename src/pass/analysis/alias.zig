@@ -55,7 +55,7 @@ pub const AliasPass = struct {
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .query = QueryEngine.init(store),
+            .query = QueryEngine.init(store, allocator),
             .type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator),
             .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator),
             .func_id = 0,
@@ -65,6 +65,7 @@ pub const AliasPass = struct {
 
     /// Deinitialize the pass
     pub fn deinit(self: *AliasPass, allocator: std.mem.Allocator) void {
+        self.query.deinit();
         self.type_cache.deinit(allocator);
         self.ptr_info_map.deinit(allocator);
     }
@@ -161,6 +162,7 @@ pub const AliasPass = struct {
     fn collectPointer(self: *AliasPass, inst: c.LLVMValueRef) !void {
         // Get type
         const inst_type = c.LLVMTypeOf(inst);
+        if (@intFromPtr(inst_type) == 0) return;
         const type_kind = c.LLVMGetTypeKind(inst_type);
 
         // Check if this is a pointer type

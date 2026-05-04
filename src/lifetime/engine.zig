@@ -28,6 +28,11 @@
 //! ```
 
 const std = @import("std");
+const CommonTypes = @import("../common/types.zig");
+
+/// Re-export Location for backward compatibility.
+/// SourceLocation is now an alias for common/types.zig.Location.
+pub const SourceLocation = CommonTypes.Location;
 
 /// Resource owner classification.
 /// Who is responsible for this resource's lifetime?
@@ -145,13 +150,8 @@ pub const ResourceFact = struct {
     lang_hint: ?LanguageHint,
 };
 
-/// Source location for diagnostics.
-pub const SourceLocation = struct {
-    file: []const u8,
-    line: u32,
-    column: u32,
-};
-
+/// Source location for diagnostics (re-exported from common/types.zig).
+/// Use common/types.zig.Location directly in new code.
 /// Language hint for better diagnostics.
 pub const LanguageHint = enum(u8) {
     unknown,

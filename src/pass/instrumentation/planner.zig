@@ -60,12 +60,18 @@ pub const InstrumentationPlanner = struct {
     plan: InstrumentationPlan,
 
     /// Create a new instrumentation planner
-    pub fn init(store: *FactStore) InstrumentationPlanner {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) InstrumentationPlanner {
         return .{
             .store = store,
-            .query = QueryEngine.init(store),
+            .query = QueryEngine.init(store, allocator),
             .plan = InstrumentationPlan.init(std.heap.page_allocator),
         };
+    }
+
+    /// Deinitialize the planner and free all resources
+    pub fn deinit(self: *InstrumentationPlanner) void {
+        self.query.deinit();
+        self.plan.deinit();
     }
 
     /// Run the instrumentation planner
@@ -542,7 +548,7 @@ test "InstrumentationPlanner - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const planner = InstrumentationPlanner.init(&store);
+    const planner = InstrumentationPlanner.init(std.testing.allocator, &store);
     _ = planner;
 }
 

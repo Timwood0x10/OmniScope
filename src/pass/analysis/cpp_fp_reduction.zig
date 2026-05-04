@@ -18,6 +18,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const noise_filter = @import("../../semantics/noise_filter.zig");
 const Issue = @import("../../diag/issue.zig").Issue;
 const Severity = @import("../../diag/issue.zig").Severity;
 const Confidence = @import("../../diag/issue.zig").Confidence;
@@ -37,22 +38,9 @@ const lifetime = @import("../../lifetime/root.zig");
 const noise_reduction = @import("noise_reduction.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isStlInternalFunction(func_name: []const u8) bool {
-    const stl_prefixes = [_][]const u8{
-        "_ZNSt3__", // std::__ (libc++ internal)
-        "_ZNSt4", // std:: (libc++ public, but template expansions are still internal)
-        "_ZNSs", // std::string
-        "_ZNSt6", // std::vector, std::map, etc.
-        "_ZNSt7", // std::allocator
-        "_ZNSt10", // std::unique_ptr, std::shared_ptr etc.
-    };
-    for (stl_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) {
-            return true;
-        }
-    }
-    if (std.mem.indexOf(u8, func_name, "__gnu") != null) return true;
-    return false;
+    return @import("ffi_utils.zig").isStlInternalFunction(func_name);
 }
 
 /// Check if a function is a C++ special member function.
@@ -71,35 +59,9 @@ pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
 }
 
 /// Check if a function is Rust's drop_in_place (destructor glue).
-/// These are guaranteed safe by Rust's ownership system —
-/// UAF patterns here are normal destructor chaining, NOT bugs.
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isRustDropGlue(func_name: []const u8) bool {
-    const drop_patterns = [_][]const u8{
-        "drop_in_place", // core::ptr::drop_in_place
-        "_ZN4core3ptr13drop_in_place", // mangled form
-        "<T as core::ops::drop::Drop>::drop",
-        "::drop", // generic Drop impl
-    };
-    for (drop_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return true;
-        }
-    }
-
-    // Also skip if function name contains common Rust drop glue patterns
-    // like <type as Drop>::drop or __rust_dealloc
-    const rust_drop_markers = [_][]const u8{
-        "__rust_dealloc",
-        "__rust_alloc",
-        "real_drop_in_place",
-    };
-    for (rust_drop_markers) |marker| {
-        if (std.mem.indexOf(u8, func_name, marker) != null) {
-            return true;
-        }
-    }
-
-    return false;
+    return @import("ffi_utils.zig").isRustDropGlue(func_name);
 }
 
 /// Detect as_ptr borrow escape patterns (Task 9.3c).
@@ -149,7 +111,7 @@ pub fn detectAsPtrBorrowEscape(
 
                 const vuln_id = ctx.getNextVulnId();
                 const func_name = getFunctionName(func);
-                ctx.addIssue(Issue.initWithReason(
+                ctx.addIssue(&Issue.initWithReason(
                     .borrow_escape,
                     "Potential as_ptr borrow escape: local Rust value pointer passed to FFI",
                     Location.init(func_name),
@@ -186,9 +148,10 @@ fn isLocalRustValue(value_name: []const u8) bool {
 }
 
 /// Check if a function is a C++ ABI runtime internal function (__cxa_*).
+/// Check if a function is a C++ ABI internal function (exception handling, TLS, etc.).
+/// Delegated to unified ffi_utils (single source of truth).
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
-    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return true;
-    return false;
+    return @import("ffi_utils.zig").isCppAbiInternalFunction(func_name);
 }
 
 /// Check if an allocation is part of a Meyers singleton pattern.
@@ -200,7 +163,7 @@ pub fn isMeyersSingletonPattern(func_name: []const u8) bool {
 }
 
 /// Check if a function name matches known intentional test patterns.
-pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
+pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
     if (std.mem.eql(u8, func_name, "main")) return true;
     const intentional_prefixes = [_][]const u8{
         "correct_", "valid_",  "example_", "good_",
@@ -389,9 +352,14 @@ pub fn isAllocationByName(callee_name: []const u8) bool {
 
 pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
     const rc_class_patterns = [_][]const u8{
+        // Abseil (existing) — C++ mangled names with length prefixes
         "4Cord",             "7CordRep",      "10CordRepBtree",    "11CordRepRing",
         "12CordRepExternal", "13CordRepFlat", "14SubstringHolder", "16RefcountAndFlags",
         "RefCounted",        "RefPtr",        "shared_count",      "weak_count",
+        // SQLite — use longer, more specific substrings to avoid FP
+        "sqlite3_value",     "sqlite3_str",   "VdbeCursor",        "BtCursor",
+        "sqlite3Btree",      "Schema",        "sqlite3_table",     "sqlite3_index",
+        "sqlite3_trigger",   "sqlite3_view",  "sqlite3_expr",
     };
     for (rc_class_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -401,10 +369,14 @@ pub fn isKnownRcContainerFunction(func_name: []const u8) bool {
 
 pub fn isRefCountOperation(func_name: []const u8) bool {
     const rc_patterns = [_][]const u8{
-        "CordRep3Ref", "CordRep5Unref", "RefcountAndFlags",
-        "AddRef",      "Release",       "Retain",
-        "ref_count",   "RefCount",      "Unref",
-        "decrement",   "increment",
+        // Abseil (existing)
+        "CordRep3Ref",       "CordRep5Unref",     "RefcountAndFlags",
+        "AddRef",            "Release",           "Retain",
+        "ref_count",         "RefCount",          "Unref",
+        "decrement",         "increment",
+        // SQLite reference counting operations (Ref/Unref only)
+                "sqlite3ValueRef",
+        "sqlite3BtreeEnter", "sqlite3BtreeLeave",
     };
     for (rc_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
@@ -429,13 +401,22 @@ pub fn detectNullDereferences(
 
         if (!isNullableAllocation(alloc_info)) continue;
 
+        // Skip if the pointer is never used (no aliases in flow graph).
+        // A pointer that is allocated but never dereferenced cannot cause a null deref.
+        if (flow_graph.get(alloc_info.ptr_value_id)) |aliases| {
+            if (aliases.count() == 0) continue;
+        } else {
+            // No entry in flow graph means the pointer was never used at all.
+            continue;
+        }
+
         const is_guarded = isFunctionLevelNullGuarded(recognizer, alloc_info.ptr_value_id, flow_graph) catch continue;
         if (!is_guarded) {
             const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
             if (reported_funcs.contains(func_ptr_key)) continue;
 
             const vulnerability_id = ctx.getNextVulnId();
-            ctx.addIssue(Issue.init(
+            ctx.addIssue(&Issue.init(
                 .null_dereference,
                 "Potential null dereference: pointer used without null check",
                 Location.init(alloc_info.func_name),
@@ -498,9 +479,7 @@ pub fn isNullableAllocation(alloc: *const AllocSite) bool {
         "deflateInit",   "gzopen",
     };
     for (nullable_patterns) |pattern| {
-        if (std.mem.indexOf(u8, alloc.func_name, pattern) != null or
-            std.mem.indexOf(u8, alloc.debug_file orelse "", pattern) != null)
-        {
+        if (std.mem.indexOf(u8, alloc.func_name, pattern) != null) {
             return true;
         }
     }
@@ -613,7 +592,7 @@ pub fn detectDoubleFree(
             const confidence: f32 = 0.92;
             const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
 
-            ctx.addIssue(Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
+            ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
             ctx.allocator.free(msg);
 
             diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
@@ -644,6 +623,29 @@ pub fn detectUseAfterFree(
             continue;
         }
 
+        // INTEGRATION: Use three-layer noise filter (name-based only here,
+        // no LLVMValueRef available for path-based Layer 2)
+        const classification = noise_filter.classifyFunctionFull(free_info.func_name, null, null, null);
+        if (!classification.origin.shouldReportByDefault()) {
+            diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
+            continue;
+        }
+
+        // Rust ownership safety: For Rust mangled names (_ZN... or _R...),
+        // UAF is extremely unlikely because Rust's ownership/borrow system
+        // guarantees memory safety at compile time. Only report if the function
+        // is explicitly unsafe (contains 'unsafe' or 'unchecked' in name).
+        // This is the #1 source of FP in Rust projects (wasmtime: 98% FP).
+        const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_ZN") or
+            std.mem.startsWith(u8, free_info.func_name, "_R");
+        const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or
+            std.mem.indexOf(u8, free_info.func_name, "unchecked") != null or
+            std.mem.indexOf(u8, free_info.func_name, "raw") != null;
+        if (is_rust_mangled and !is_explicitly_unsafe) {
+            diag.debug("UAF-SKIP: {s} is Rust safe code — ownership system guarantees memory safety", .{free_info.func_name});
+            continue;
+        }
+
         var flow_iter = flow_graph.iterator();
         while (flow_iter.next()) |flow_entry| {
             const from_id = flow_entry.key_ptr.*;
@@ -656,7 +658,7 @@ pub fn detectUseAfterFree(
 
                     if (!free_map.contains(to_id)) {
                         stats.use_after_frees += 1;
-                        ctx.addIssue(Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
+                        ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
                             diag.warn("Failed to register use_after_free issue", .{});
                         };
                         diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
@@ -694,59 +696,9 @@ pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
     return std.mem.span(name_ptr);
 }
 
-/// Identify the language of a function based on naming conventions.
+/// Identify the language of a function (delegated to unified language_detector).
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
-    const func_name = getFunctionName(func);
-
-    if (func_name.len > 2 and
-        func_name[0] == '_' and
-        func_name[1] == 'R')
-    {
-        return .rust;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "alloc::") != null or
-        std.mem.indexOf(u8, func_name, "core::") != null or
-        std.mem.indexOf(u8, func_name, "std::") != null)
-    {
-        if (std.mem.indexOf(u8, func_name, "::boxed::") != null or
-            std.mem.indexOf(u8, func_name, "::ffi::") != null or
-            std.mem.indexOf(u8, func_name, "::cstring::") != null)
-        {
-            return .rust;
-        }
-    }
-
-    if (std.mem.eql(u8, func_name, "malloc") or
-        std.mem.eql(u8, func_name, "free") or
-        std.mem.eql(u8, func_name, "calloc") or
-        std.mem.eql(u8, func_name, "realloc") or
-        std.mem.eql(u8, func_name, "printf") or
-        std.mem.eql(u8, func_name, "strlen"))
-    {
-        return .c;
-    }
-
-    if (func_name.len > 2 and
-        func_name[0] == '_' and
-        func_name[1] == 'Z')
-    {
-        return .cpp;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "Allocator.") != null or
-        std.mem.indexOf(u8, func_name, "allocImpl") != null)
-    {
-        return .zig;
-    }
-
-    if (std.mem.indexOf(u8, func_name, "UnsafeMutablePointer") != null or
-        std.mem.indexOf(u8, func_name, "$s") != null)
-    {
-        return .swift;
-    }
-
-    return .unknown;
+    return @import("../../semantics/language_detector.zig").identifyLanguage(func);
 }
 
 /// Check if a free is guarded by a null check.
@@ -823,7 +775,7 @@ pub fn detectLoopLeaks(
     for (leak_candidates.items) |candidate| {
         const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch "Loop memory leak detected";
         defer ctx.allocator.free(msg);
-        ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
+        ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
         diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
     }
 }
@@ -862,10 +814,12 @@ pub fn detectResourceLeaks(
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
 
-                const callee = c.LLVMGetOperand(inst, @intCast(c.LLVMGetNumOperands(inst) - 1));
+                const num_operands = c.LLVMGetNumOperands(inst);
+                if (num_operands == 0) continue;
+                const callee = c.LLVMGetOperand(inst, @intCast(num_operands - 1));
                 if (@intFromPtr(callee) == 0) continue;
                 const callee_name = c.LLVMGetValueName(callee);
-                if (callee_name == null) continue;
+                if (@intFromPtr(callee_name) == 0) continue;
                 const name_slice = std.mem.span(callee_name);
 
                 var res_iter = resource_funcs.iterator();
@@ -895,7 +849,10 @@ pub fn detectResourceLeaks(
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
                 const msg = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch "Resource leak detected";
-                ctx.addIssue(Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
+                ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
+                if (!std.mem.eql(u8, msg, "Resource leak detected")) {
+                    ctx.allocator.free(msg);
+                }
                 diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
             }
         }
@@ -950,7 +907,7 @@ pub fn detectMemoryLeaks(
 
         const has_free_path = findFreePath(alloc_info.inst_id, free_map, flow_graph) catch false;
         if (!has_free_path) {
-            if (isLikelyIntentionalPattern(alloc_info.func_name)) {
+            if (is_likely_intentional_pattern(alloc_info.func_name)) {
                 continue;
             }
             if (isLikelyStructMemberOwnership(alloc_info.func_name)) {
@@ -963,7 +920,7 @@ pub fn detectMemoryLeaks(
             const already_reported = reported_func_ptrs.contains(func_ptr_key);
             if (!already_reported) {
                 stats.memory_leaks += 1;
-                ctx.addIssue(Issue.init(
+                ctx.addIssue(&Issue.init(
                     .memory_leak,
                     "Memory allocated but never freed",
                     Location.init(alloc_info.func_name),
@@ -1086,7 +1043,7 @@ pub fn detectViolations(
             .alloc,
             alloc.func_name,
             if (alloc.debug_file) |file|
-                .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
             else
                 null,
             lang_hint,
@@ -1167,7 +1124,7 @@ pub fn detectViolations(
                         free_lang_hint,
                         .out,
                         if (alloc.debug_file) |file|
-                            .{ .file = file, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                            .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
                         else
                             null,
                     );
@@ -1193,12 +1150,12 @@ pub fn detectViolations(
                         diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
                         diag.warn("  Type: {s}", .{@tagName(violation.kind)});
                         diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.function,
+                            alloc_loc.func,
                             @tagName(alloc.lang),
                             alloc.inst_id,
                         });
                         diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.function,
+                            free_loc.func,
                             @tagName(free_site.lang),
                             free_site.inst_id,
                         });
@@ -1206,12 +1163,12 @@ pub fn detectViolations(
                     } else {
                         diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
                         diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.function,
+                            alloc_loc.func,
                             @tagName(alloc.lang),
                             alloc.inst_id,
                         });
                         diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.function,
+                            free_loc.func,
                             @tagName(free_site.lang),
                             free_site.inst_id,
                         });
@@ -1412,7 +1369,7 @@ pub fn detectCrossLangAllocMismatch(
             if (!flows_to_free) continue;
 
             const vuln_id = ctx.getNextVulnId();
-            ctx.addIssue(Issue.initWithReason(
+            ctx.addIssue(&Issue.initWithReason(
                 .cross_language_leak,
                 "Cross-language alloc mismatch: Rust-alloc freed by C free()",
                 Location.init(alloc.func_name),

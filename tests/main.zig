@@ -135,7 +135,11 @@ test "IssueType: all variants" {
 // ========================================
 
 test "RiskKind: all variants" {
-    try std.testing.expectEqual(@as(usize, 13), @typeInfo(registry.RiskKind).@"enum".fields.len);
+    // P2-1: Added .static_buffer variant (14 POSIX static buffer functions)
+    // v0.1.8: Added .static_buffer_misuse IssueKind for precise classification
+    // Total RiskKind variants: 20
+    // Total IssueKind variants: 17 (was 16 before .static_buffer_misuse)
+    try std.testing.expectEqual(@as(usize, 20), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================
@@ -149,10 +153,10 @@ test "Severity: ordering" {
 }
 
 test "Severity: toString" {
-    try std.testing.expectEqualStrings("LOW", registry.Severity.low.toString());
-    try std.testing.expectEqualStrings("MEDIUM", registry.Severity.medium.toString());
-    try std.testing.expectEqualStrings("HIGH", registry.Severity.high.toString());
-    try std.testing.expectEqualStrings("CRITICAL", registry.Severity.critical.toString());
+    try std.testing.expectEqualStrings("low", registry.Severity.low.toString());
+    try std.testing.expectEqualStrings("medium", registry.Severity.medium.toString());
+    try std.testing.expectEqualStrings("high", registry.Severity.high.toString());
+    try std.testing.expectEqualStrings("critical", registry.Severity.critical.toString());
 }
 
 // ========================================
@@ -160,13 +164,13 @@ test "Severity: toString" {
 // ========================================
 
 test "SemanticRegistry: layer counts" {
-    try std.testing.expectEqual(@as(usize, 64), registry.SemanticRegistry.layer1Count());
-    try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
+    try std.testing.expectEqual(@as(usize, 43), registry.SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 11), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
-    try std.testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 166), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
+    try std.testing.expectEqual(@as(usize, 274), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {
@@ -292,13 +296,13 @@ test "SemanticRegistry: Linux variants" {
 // ========================================
 
 test "Regression: layer counts unchanged" {
-    try std.testing.expectEqual(@as(usize, 64), registry.SemanticRegistry.layer1Count());
-    try std.testing.expectEqual(@as(usize, 3), registry.SemanticRegistry.layer2Count());
+    try std.testing.expectEqual(@as(usize, 43), registry.SemanticRegistry.layer1Count());
+    try std.testing.expectEqual(@as(usize, 11), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
-    try std.testing.expectEqual(@as(usize, 58), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 166), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
+    try std.testing.expectEqual(@as(usize, 274), registry.SemanticRegistry.totalCount());
 }
 
 test "Regression: critical functions always detected" {
@@ -379,7 +383,7 @@ test "DynamicRegistry: loadFromJson" {
         \\}
     ;
 
-    var dynamic_registry = registry.DynamicRegistry.init(std.testing.allocator);
+    var dynamic_registry = try registry.DynamicRegistry.init(std.testing.allocator);
     defer dynamic_registry.deinit();
 
     try dynamic_registry.loadFromJson(json);
@@ -391,7 +395,7 @@ test "DynamicRegistry: loadFromJson" {
 }
 
 test "DynamicRegistry: fallback to built-in" {
-    var dynamic_registry = registry.DynamicRegistry.init(std.testing.allocator);
+    var dynamic_registry = try registry.DynamicRegistry.init(std.testing.allocator);
     defer dynamic_registry.deinit();
 
     // Should find built-in function
@@ -456,84 +460,10 @@ test "integration: ownership transfer" {
 }
 
 // ========================================
-// Semantic Mapper Tests
+// NOTE: Semantic Mapper Tests removed (2026-05-04)
+// SemanticMapper was dead code (untodo.md DEAD-13)
+// If re-implemented, restore tests here
 // ========================================
-
-test "SemanticMapper: C functions" {
-    const malloc = lifetime.SemanticMapper.mapFunction("malloc").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, malloc.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.c, malloc.lang_hint);
-    try std.testing.expect(malloc.returns_resource);
-
-    const free = lifetime.SemanticMapper.mapFunction("free").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.free, free.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.c, free.lang_hint);
-    try std.testing.expect(!free.returns_resource);
-}
-
-test "SemanticMapper: Rust functions" {
-    const into_raw = lifetime.SemanticMapper.mapFunction("std::boxed::Box<T>::into_raw").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.transfer, into_raw.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.rust, into_raw.lang_hint);
-
-    const from_raw = lifetime.SemanticMapper.mapFunction("std::ffi::CString::from_raw").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.reclaim, from_raw.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.rust, from_raw.lang_hint);
-
-    const as_ptr = lifetime.SemanticMapper.mapFunction("slice.as_ptr").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.borrow, as_ptr.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.rust, as_ptr.lang_hint);
-}
-
-test "SemanticMapper: Zig functions" {
-    const alloc = lifetime.SemanticMapper.mapFunction("Allocator.alloc").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, alloc.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.zig, alloc.lang_hint);
-
-    const destroy = lifetime.SemanticMapper.mapFunction("Allocator.destroy").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.free, destroy.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.zig, destroy.lang_hint);
-}
-
-test "SemanticMapper: Swift functions" {
-    // Note: Swift's "allocate" and "deallocate" patterns are matched by
-    // Zig's "alloc" rule first due to contains matching order.
-    // This is expected behavior - the mapper uses first-match-wins.
-    // We verify the rule exists by checking ruleCount includes Swift rules.
-    try std.testing.expect(lifetime.SemanticMapper.ruleCount() >= 14);
-}
-
-test "SemanticMapper: C++ functions" {
-    const new_op = lifetime.SemanticMapper.mapFunction("operator new").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, new_op.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.cpp, new_op.lang_hint);
-
-    const delete_op = lifetime.SemanticMapper.mapFunction("operator delete").?;
-    try std.testing.expectEqual(lifetime.SemanticAction.free, delete_op.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.cpp, delete_op.lang_hint);
-}
-
-test "SemanticMapper: unknown function" {
-    const result = lifetime.SemanticMapper.mapFunction("unknown_function_xyz");
-    try std.testing.expect(result == null);
-}
-
-test "SemanticMapper: helper functions" {
-    try std.testing.expect(lifetime.SemanticMapper.isAllocation("malloc"));
-    try std.testing.expect(lifetime.SemanticMapper.isAllocation("calloc"));
-    try std.testing.expect(!lifetime.SemanticMapper.isAllocation("free"));
-
-    try std.testing.expect(lifetime.SemanticMapper.isDeallocation("free"));
-    try std.testing.expect(!lifetime.SemanticMapper.isDeallocation("malloc"));
-
-    try std.testing.expect(lifetime.SemanticMapper.isTransfer("into_raw"));
-    try std.testing.expect(lifetime.SemanticMapper.isReclaim("from_raw"));
-    try std.testing.expect(lifetime.SemanticMapper.isBorrow("as_ptr"));
-}
-
-test "SemanticMapper: rule count" {
-    try std.testing.expect(lifetime.SemanticMapper.ruleCount() >= 14);
-}
 
 // ========================================
 // Lifetime Engine - Edge Cases
@@ -621,34 +551,10 @@ test "LifetimeEngine: ownership conflict" {
 }
 
 // ========================================
-// RULES Array Tests
+// NOTE: RULES Array Tests removed (2026-05-04)
+// SemanticMapper was dead code (untodo.md DEAD-13)
+// If re-implemented, restore tests here
 // ========================================
-
-test "RULES: count" {
-    try std.testing.expectEqual(@as(usize, 22), lifetime.RULES.len);
-}
-
-test "RULES: C malloc rule" {
-    const rule = lifetime.RULES[0];
-    try std.testing.expectEqualStrings("malloc", rule.symbol_pattern);
-    try std.testing.expectEqual(lifetime.MatchType.exact, rule.match_type);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, rule.action);
-    try std.testing.expectEqual(lifetime.LanguageHint.c, rule.lang_hint);
-}
-
-test "RULES: Rust into_raw rule" {
-    var found = false;
-    for (lifetime.RULES) |rule| {
-        if (std.mem.eql(u8, rule.symbol_pattern, "into_raw")) {
-            try std.testing.expectEqual(lifetime.MatchType.contains, rule.match_type);
-            try std.testing.expectEqual(lifetime.SemanticAction.transfer, rule.action);
-            try std.testing.expectEqual(lifetime.LanguageHint.rust, rule.lang_hint);
-            found = true;
-            break;
-        }
-    }
-    try std.testing.expect(found);
-}
 
 // ========================================
 // LanguageHint Tests
@@ -665,50 +571,10 @@ test "LanguageHint: all variants" {
 }
 
 // ========================================
-// Language Isolation Tests
+// NOTE: Language Isolation + Adapter Tests removed (2026-05-04)
+// SemanticMapper was dead code (untodo.md DEAD-13)
+// If re-implemented, restore tests here
 // ========================================
-
-test "Language Isolation: Zig rules do not match C functions" {
-    const c_func = "malloc";
-    const mapped = lifetime.SemanticMapper.mapFunction(c_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.c, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
-}
-
-test "Language Isolation: Go rules do not match C functions" {
-    const c_func = "free";
-    const mapped = lifetime.SemanticMapper.mapFunction(c_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.c, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.free, mapped.action);
-}
-
-test "Language Isolation: Zig toOwnedSlice is transfer not alloc" {
-    const zig_func = "ArrayList.toOwnedSlice";
-    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
-}
-
-test "Language Isolation: Go C.CString is alloc" {
-    const go_func = "C.CString";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
-}
-
-test "Language Isolation: Go C.GoString is borrow" {
-    const go_func = "C.GoString";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.borrow, mapped.action);
-}
-
-test "Language Isolation: Rust rules isolated from Zig" {
-    const rust_func = "std::boxed::Box<T>::into_raw";
-    const mapped = lifetime.SemanticMapper.mapFunction(rust_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.rust, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
-}
 
 test "BoundaryAnalyzer: detectLanguage for Go" {
     try std.testing.expectEqual(lifetime.LanguageHint.go, lifetime.detectLanguage("C.malloc"));
@@ -913,55 +779,7 @@ test "BoundaryAnalyzer: no violation for same language" {
 }
 
 // ========================================
-// Language Adapter Tests
+// NOTE: Language Adapter + MatchType Tests removed (2026-05-04)
+// SemanticMapper was dead code (untodo.md DEAD-13)
+// If re-implemented, restore tests here
 // ========================================
-
-test "Language Adapter: Zig toOwnedSlice is transfer" {
-    const zig_func = "ArrayList.toOwnedSlice";
-    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.transfer, mapped.action);
-}
-
-test "Language Adapter: Zig dupe is alloc" {
-    const zig_func = "allocator.dupe";
-    const mapped = lifetime.SemanticMapper.mapFunction(zig_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.zig, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
-}
-
-test "Language Adapter: Go C.CString is alloc" {
-    const go_func = "C.CString";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
-}
-
-test "Language Adapter: Go C.GoString is borrow" {
-    const go_func = "C.GoString";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.borrow, mapped.action);
-}
-
-test "Language Adapter: Go C.malloc is alloc" {
-    const go_func = "C.malloc";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.alloc, mapped.action);
-}
-
-test "Language Adapter: Go C.free is free" {
-    const go_func = "C.free";
-    const mapped = lifetime.SemanticMapper.mapFunction(go_func).?;
-    try std.testing.expectEqual(lifetime.LanguageHint.go, mapped.lang_hint);
-    try std.testing.expectEqual(lifetime.SemanticAction.free, mapped.action);
-}
-
-// ========================================
-// MatchType Tests
-// ========================================
-
-test "MatchType: all variants" {
-    try std.testing.expectEqual(@as(usize, 3), @typeInfo(lifetime.MatchType).@"enum".fields.len);
-}

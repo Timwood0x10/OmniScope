@@ -20,6 +20,8 @@ const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 
 const ffi_semantics = @import("../ffi_semantics.zig");
+const noise_filter = @import("../../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
 /// Value origin tracking information
 const ValueInfo = struct {
@@ -311,7 +313,7 @@ fn checkUnknownFFIPointerUsage(args: []c.LLVMValueRef, func_name: []const u8, ct
             if (info.origin == .from_malloc) {
                 // malloc'd pointer passed to unknown FFI without validation
                 const trace = try ctx.allocator.alloc([]const u8, 2);
-                trace[0] = try std.fmt.allocPrint(ctx.allocator, "Pointer from malloc in function {s}", .{info.location.function});
+                trace[0] = try std.fmt.allocPrint(ctx.allocator, "Pointer from malloc in function {s}", .{info.location.func});
                 trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to unknown FFI function {s}", .{func_name});
 
                 return VulnerabilityInfo{
@@ -363,7 +365,7 @@ fn checkFormatStringVulnerability(
         if (info.origin == .from_param or info.origin == .from_malloc) {
             // Format string from parameter - potential vulnerability
             const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Format string argument in function {s}", .{info.location.function});
+            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Format string argument in function {s}", .{info.location.func});
             trace[1] = try std.fmt.allocPrint(ctx.allocator, "Used as format string in {s} call", .{func_name});
 
             return VulnerabilityInfo{
@@ -413,7 +415,7 @@ fn checkCommandInjectionVulnerability(
         if (info.origin == .from_param) {
             // Command from parameter - potential injection
             const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.function});
+            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.func});
             trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without validation", .{func_name});
 
             return VulnerabilityInfo{
@@ -520,8 +522,14 @@ pub const FFIBodyCheckPass = struct {
             const func = c.LLVMGetNamedFunction(module, null_terminated_name.ptr);
             if (func == null) continue;
 
-            // Check if this function contains dangerous calls
-            const found_issues = try analyzeFunction(ctx, func, &boundary, diag);
+            // Function-level error isolation
+            const found_issues = analyzeFunction(ctx, func, &boundary, diag) catch |err| {
+                const func_name_raw = c.LLVMGetValueName(func);
+                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                diag.warn("FFIBodyCheck: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
             issue_count += found_issues;
         }
 
@@ -548,6 +556,14 @@ pub const FFIBodyCheckPass = struct {
         boundary: *const FFIBoundary,
         diag: *DiagnosticWriter,
     ) !usize {
+        // INTEGRATION: Three-layer noise filter (name + path)
+        const func_name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(func_name_ptr) != 0) {
+            const func_name = std.mem.span(func_name_ptr);
+            const func_loc = DebugInfoUtils.getFunctionLocation(func);
+            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            if (!classification.origin.shouldReportByDefault()) return 0;
+        }
         // Initialize analysis context
         var analysis_ctx = AnalysisContext{
             .allocator = ctx.allocator,
@@ -591,12 +607,12 @@ pub const FFIBodyCheckPass = struct {
                 // Check if this is a call instruction
                 if (opcode == c.LLVMCall) {
                     // Get the called function - callee is at num_operands - 1
-                    const num_operands = c.LLVMGetNumOperands(inst);
+                    const num_operands = @as(c_uint, @bitCast(c.LLVMGetNumOperands(inst)));
                     if (num_operands >= 1) {
                         const called_value = c.LLVMGetOperand(inst, num_operands - 1);
-                        if (called_value != null) {
+                        if (@intFromPtr(called_value) != 0) {
                             const func_name = c.LLVMGetValueName(called_value);
-                            if (func_name != null) {
+                            if (@intFromPtr(func_name) != 0) {
                                 const func_name_slice = std.mem.span(func_name);
 
                                 // Noise reduction: skip truly low risk functions
@@ -612,7 +628,7 @@ pub const FFIBodyCheckPass = struct {
                                 var args = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, @as(usize, @intCast(num_operands)) - 1) catch return error.OutOfMemory;
                                 defer args.deinit(ctx.allocator);
 
-                                var arg_idx: u32 = 0;
+                                var arg_idx: c_uint = 0;
                                 while (arg_idx < num_operands - 1) : (arg_idx += 1) {
                                     const arg = c.LLVMGetOperand(inst, arg_idx);
                                     if (arg != null) {
@@ -660,7 +676,7 @@ pub const FFIBodyCheckPass = struct {
                                             0.8,
                                         );
 
-                                        try ctx.addIssue(issue);
+                                        try ctx.addIssue(&issue);
                                         issue_count += 1;
 
                                         diag.warn("FFIBodyCheck: malloc result not checked in function '{s}'", .{boundary.function_name});
@@ -693,7 +709,7 @@ pub const FFIBodyCheckPass = struct {
                                                 0.9,
                                             );
 
-                                            try ctx.addIssue(issue);
+                                            try ctx.addIssue(&issue);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: double free detected in function '{s}'", .{boundary.function_name});
@@ -717,7 +733,7 @@ pub const FFIBodyCheckPass = struct {
                                                 0.7,
                                             );
 
-                                            try ctx.addIssue(issue);
+                                            try ctx.addIssue(&issue);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: free called on non-malloc pointer in function '{s}'", .{boundary.function_name});
@@ -744,7 +760,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
@@ -766,7 +782,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
@@ -788,7 +804,7 @@ pub const FFIBodyCheckPass = struct {
                                         vuln.confidence,
                                     );
 
-                                    try ctx.addIssue(issue);
+                                    try ctx.addIssue(&issue);
                                     issue_count += 1;
 
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });

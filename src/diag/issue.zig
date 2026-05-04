@@ -1,182 +1,22 @@
 //! Issue Types and Definitions
 //!
-//! This module defines the core issue types used throughout the analysis.
+//! This module provides the core issue types used throughout the analysis.
 //! Issues represent security problems or code quality issues detected during analysis.
+//!
+//! Type definitions (Location, Severity, IssueKind, Confidence) are now imported
+//! from common/types.zig for consistency across all modules.
 
 const std = @import("std");
 
-/// Issue type enumeration
-///
-/// Defines the categories of security issues that can be detected.
-pub const IssueKind = enum {
-    /// FFI call without proper safety validation
-    ffi_unsafe_call,
-    /// Function return value not checked after call
-    unchecked_return,
-    /// Type mismatch across FFI boundary
-    type_mismatch,
-    /// Memory leak across language boundary
-    cross_language_leak,
-    /// General memory leak (not necessarily cross-language)
-    memory_leak,
-    /// Use after free across language boundary
-    use_after_free,
-    /// Command injection vulnerability
-    command_injection,
-    /// Buffer overflow vulnerability
-    buffer_overflow,
-    /// Double free across language boundary
-    double_free,
-    /// Format string vulnerability
-    format_string,
-    /// Malloc result used without null check
-    malloc_unchecked,
-    /// Null pointer dereference (nullable allocation used without guard)
-    null_dereference,
-    /// Rust borrow escape: as_ptr result passed to FFI may dangle
-    borrow_escape,
-    /// Free called on non-malloc pointer
-    invalid_free,
-    /// Unknown issue type
-    unknown,
+// Import unified type definitions from common/types.zig
+const CommonTypes = @import("../common/types.zig");
 
-    /// Convert issue kind to string representation
-    pub fn toString(self: IssueKind) []const u8 {
-        return switch (self) {
-            .ffi_unsafe_call => "ffi_unsafe_call",
-            .unchecked_return => "unchecked_return",
-            .type_mismatch => "type_mismatch",
-            .cross_language_leak => "cross_language_leak",
-            .memory_leak => "memory_leak",
-            .use_after_free => "use_after_free",
-            .command_injection => "command_injection",
-            .buffer_overflow => "buffer_overflow",
-            .double_free => "double_free",
-            .format_string => "format_string",
-            .malloc_unchecked => "malloc_unchecked",
-            .null_dereference => "null_dereference",
-            .invalid_free => "invalid_free",
-            .unknown => "unknown",
-        };
-    }
-
-    /// Get CWE (Common Weakness Enumeration) ID for this issue kind
-    ///
-    /// Returns the CWE ID associated with this issue type.
-    pub fn toCweId(self: IssueKind) u32 {
-        return switch (self) {
-            .ffi_unsafe_call => 668, // CWE-668: Exposure of Resource to Wrong Sphere
-            .unchecked_return => 252, // CWE-252: Unchecked Return Value
-            .type_mismatch => 704, // CWE-704: Incorrect Type Conversion or Cast
-            .cross_language_leak => 401, // CWE-401: Memory Leak
-            .memory_leak => 401, // CWE-401: Memory Leak
-            .use_after_free => 416, // CWE-416: Use After Free
-            .command_injection => 78, // CWE-78: OS Command Injection
-            .buffer_overflow => 120, // CWE-120: Buffer Overflow
-            .double_free => 415, // CWE-415: Double Free
-            .format_string => 134, // CWE-134: Format String Vulnerability
-            .malloc_unchecked => 252, // CWE-252: Unchecked Return Value
-            .null_dereference => 476, // CWE-476: NULL Pointer Dereference
-            .borrow_escape => 704, // CWE-704: Incorrect Type Conversion or Cast
-            .invalid_free => 590, // CWE-590: Free of Memory Not on Heap
-            .unknown => 0,
-        };
-    }
-
-    /// Get human-readable description for this issue kind
-    pub fn toDescription(self: IssueKind) []const u8 {
-        return switch (self) {
-            .ffi_unsafe_call => "FFI call without proper safety validation",
-            .unchecked_return => "Function return value not checked after call",
-            .type_mismatch => "Type mismatch across FFI boundary",
-            .cross_language_leak => "Memory leak across language boundary",
-            .memory_leak => "Memory allocated but never freed",
-            .use_after_free => "Use after free across language boundary",
-            .command_injection => "Command injection vulnerability",
-            .buffer_overflow => "Buffer overflow vulnerability",
-            .double_free => "Double free across language boundary",
-            .format_string => "Format string vulnerability",
-            .malloc_unchecked => "Malloc result used without null check",
-            .null_dereference => "Null pointer dereference - nullable allocation used without guard",
-            .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
-            .invalid_free => "Free called on non-malloc pointer",
-            .unknown => "Unknown issue type",
-        };
-    }
-};
-
-/// Confidence level enumeration
-///
-/// Defines how trustworthy a detected issue is, based on evidence strength.
-pub const Confidence = enum(u8) {
-    /// Multiple cross-validated signals (e.g., alloc + no free + no transfer + no escape)
-    high = 0,
-    /// Single strong signal but may have exceptions (e.g., intra-procedural leak)
-    medium = 1,
-    /// Heuristic pattern match (e.g., function name convention, naming inference)
-    heuristic = 2,
-    /// Experimental detection, likely to have many FPs
-    experimental = 3,
-
-    pub fn toString(self: Confidence) []const u8 {
-        return switch (self) {
-            .high => "HIGH",
-            .medium => "MEDIUM",
-            .heuristic => "HEURISTIC",
-            .experimental => "EXPERIMENTAL",
-        };
-    }
-
-    pub fn fromScore(score: f32) Confidence {
-        if (score >= 0.9) return .high;
-        if (score >= 0.7) return .medium;
-        if (score >= 0.5) return .heuristic;
-        return .experimental;
-    }
-
-    pub fn defaultScore(self: Confidence) f32 {
-        return switch (self) {
-            .high => 0.95,
-            .medium => 0.75,
-            .heuristic => 0.55,
-            .experimental => 0.35,
-        };
-    }
-};
-
-/// Severity level enumeration
-///
-/// Defines the severity levels for issues.
-pub const Severity = enum(u8) {
-    /// Low severity issue
-    low = 0,
-    /// Medium severity issue
-    medium = 1,
-    /// High severity issue
-    high = 2,
-    /// Critical severity issue
-    critical = 3,
-
-    /// Convert severity to string representation
-    pub fn toString(self: Severity) []const u8 {
-        return switch (self) {
-            .low => "low",
-            .medium => "medium",
-            .high => "high",
-            .critical => "critical",
-        };
-    }
-
-    /// Get severity color code for terminal output
-    pub fn toColorCode(self: Severity) []const u8 {
-        return switch (self) {
-            .low => "\x1b[36m", // Cyan
-            .medium => "\x1b[33m", // Yellow
-            .high => "\x1b[31m", // Red
-            .critical => "\x1b[35m", // Magenta
-        };
-    }
-};
+/// Re-export core types for backward compatibility.
+/// All new code should import directly from common/types.zig.
+pub const Location = CommonTypes.Location;
+pub const Severity = CommonTypes.Severity;
+pub const IssueKind = CommonTypes.IssueKind;
+pub const Confidence = CommonTypes.Confidence;
 
 /// Trace entry for issue reasoning path
 ///
@@ -250,6 +90,8 @@ pub const Issue = struct {
     trace: ?[]TraceEntry,
     /// Whether message and trace are owned
     owned: bool,
+    /// Whether location.function is heap-allocated and should be freed
+    function_owned: bool,
 
     /// Create a new issue
     ///
@@ -280,6 +122,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
+            .function_owned = false,
         };
     }
 
@@ -303,6 +146,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = null,
             .owned = false,
+            .function_owned = false,
         };
     }
 
@@ -337,6 +181,7 @@ pub const Issue = struct {
             .ffi_boundary = null,
             .trace = trace,
             .owned = true,
+            .function_owned = false,
         };
     }
 
@@ -370,6 +215,9 @@ pub const Issue = struct {
             if (self.message.len > 0) {
                 allocator.free(self.message);
             }
+            if (self.function_owned and self.location.func.len > 0) {
+                allocator.free(self.location.func);
+            }
             if (self.trace) |trace| {
                 for (trace) |*entry| {
                     entry.deinit(allocator);
@@ -377,97 +225,6 @@ pub const Issue = struct {
                 allocator.free(trace);
             }
         }
-    }
-};
-
-/// Location information for an issue
-///
-/// Contains the location where an issue was detected, including function,
-/// file, line, and column information.
-pub const Location = struct {
-    /// Function name where issue was detected
-    function: []const u8,
-    /// File name (optional, may not be available)
-    file: ?[]const u8,
-    /// Line number (optional, may not be available)
-    line: ?u32,
-    /// Column number (optional, may not be available)
-    column: ?u32,
-
-    /// Create a new location with minimal information
-    ///
-    /// Parameters:
-    ///   - function: Function name
-    ///
-    /// Returns:
-    ///   - A new Location instance
-    pub fn init(function: []const u8) Location {
-        return .{
-            .function = function,
-            .file = null,
-            .line = null,
-            .column = null,
-        };
-    }
-
-    /// Create a new location with full information
-    ///
-    /// Parameters:
-    ///   - function: Function name
-    ///   - file: File name
-    ///   - line: Line number
-    ///   - column: Column number
-    ///
-    /// Returns:
-    ///   - A new Location instance
-    pub fn initFull(function: []const u8, file: []const u8, line: u32, column: u32) Location {
-        return .{
-            .function = function,
-            .file = file,
-            .line = line,
-            .column = column,
-        };
-    }
-
-    /// Set file information
-    ///
-    /// Parameters:
-    ///   - file: File name
-    pub fn setFile(self: *Location, file: []const u8) void {
-        self.file = file;
-    }
-
-    /// Set line information
-    ///
-    /// Parameters:
-    ///   - line: Line number
-    pub fn setLine(self: *Location, line: u32) void {
-        self.line = line;
-    }
-
-    /// Set column information
-    ///
-    /// Parameters:
-    ///   - column: Column number
-    pub fn setColumn(self: *Location, column: u32) void {
-        self.column = column;
-    }
-
-    /// Format location as string
-    ///
-    /// Returns:
-    ///   - String representation of location
-    pub fn format(self: *const Location, allocator: std.mem.Allocator) ![]const u8 {
-        if (self.file) |file| {
-            if (self.line) |line| {
-                if (self.column) |column| {
-                    return std.fmt.allocPrint(allocator, "{s}:{d}:{d}", .{ file, line, column });
-                }
-                return std.fmt.allocPrint(allocator, "{s}:{d}", .{ file, line });
-            }
-            return std.fmt.allocPrint(allocator, "{s}", .{file});
-        }
-        return std.fmt.allocPrint(allocator, "{s}", .{self.function});
     }
 };
 
@@ -499,6 +256,12 @@ pub const FFIBoundary = struct {
         c_to_rust,
         /// C calling Zig
         c_to_zig,
+        /// Dynamic library loading (dlopen/dlsym/dlclose)
+        dynamic_loading,
+        /// Java Native Interface call
+        jni_call,
+        /// Python C API call
+        python_c_api_call,
         /// Unknown external call
         external_unknown,
     };
@@ -565,6 +328,7 @@ pub const FFIBoundary = struct {
 test "IssueKind - toString" {
     try std.testing.expectEqualStrings("ffi_unsafe_call", IssueKind.ffi_unsafe_call.toString());
     try std.testing.expectEqualStrings("unchecked_return", IssueKind.unchecked_return.toString());
+    try std.testing.expectEqualStrings("callback_signature_mismatch", IssueKind.callback_signature_mismatch.toString());
     try std.testing.expectEqualStrings("unknown", IssueKind.unknown.toString());
 }
 
@@ -616,41 +380,35 @@ test "Issue - setFFIBoundary" {
 
 test "Location - init" {
     const location = Location.init("test_func");
-    try std.testing.expectEqualStrings("test_func", location.function);
+    try std.testing.expectEqualStrings("test_func", location.func);
     try std.testing.expect(location.file == null);
-    try std.testing.expect(location.line == null);
+    try std.testing.expect(location.line == 0);
 }
 
-test "Location - initFull" {
-    const location = Location.initFull("test_func", "test.zig", 42, 10);
-    try std.testing.expectEqualStrings("test_func", location.function);
+test "Location - initWithFile" {
+    const location = Location.initWithFile("test.zig", "test_func", 42, 10);
+    try std.testing.expectEqualStrings("test_func", location.func);
     try std.testing.expectEqualStrings("test.zig", location.file.?);
-    try std.testing.expectEqual(@as(u32, 42), location.line.?);
-    try std.testing.expectEqual(@as(u32, 10), location.column.?);
+    try std.testing.expectEqual(@as(u32, 42), location.line);
+    try std.testing.expectEqual(@as(u32, 10), location.column);
 }
 
-test "Location - setFile" {
-    var location = Location.init("test_func");
-    try std.testing.expect(location.file == null);
-
-    location.setFile("test.zig");
-    try std.testing.expectEqualStrings("test.zig", location.file.?);
-}
-
-test "Location - format" {
-    var allocator = std.testing.allocator;
-
-    // Test minimal location
+test "Location - hasFilePath" {
     const location1 = Location.init("test_func");
-    const formatted1 = try location1.format(allocator);
-    defer allocator.free(formatted1);
-    try std.testing.expectEqualStrings("test_func", formatted1);
+    try std.testing.expect(!location1.hasFilePath());
 
-    // Test full location
-    const location2 = Location.initFull("test_func", "test.zig", 42, 10);
-    const formatted2 = try location2.format(allocator);
-    defer allocator.free(formatted2);
-    try std.testing.expectEqualStrings("test.zig:42:10", formatted2);
+    const location2 = Location.initWithFile("test.zig", "test_func", 0, 0);
+    try std.testing.expect(location2.hasFilePath());
+}
+
+test "Location - displayName" {
+    // Test minimal location (func only)
+    const location1 = Location.init("test_func");
+    try std.testing.expectEqualStrings("test_func", location1.displayName());
+
+    // Test full location (file available)
+    const location2 = Location.initWithFile("test.zig", "test_func", 42, 10);
+    try std.testing.expectEqualStrings("test.zig", location2.displayName());
 }
 
 test "FFIBoundary - init" {
@@ -760,9 +518,11 @@ test "Issue - hasTrace" {
         .severity = .high,
         .confidence = 0.9,
         .confidence_level = .high,
+        .reason = "",
         .ffi_boundary = null,
         .trace = &[_]TraceEntry{},
         .owned = false,
+        .function_owned = false,
     };
     try std.testing.expect(!issue2.hasTrace());
 }
@@ -793,12 +553,14 @@ test "IssueKind - toCweId" {
     try std.testing.expectEqual(@as(u32, 120), IssueKind.buffer_overflow.toCweId());
     try std.testing.expectEqual(@as(u32, 252), IssueKind.malloc_unchecked.toCweId());
     try std.testing.expectEqual(@as(u32, 590), IssueKind.invalid_free.toCweId());
+    try std.testing.expectEqual(@as(u32, 688), IssueKind.callback_signature_mismatch.toCweId());
 }
 
 test "IssueKind - toDescription" {
     try std.testing.expectEqualStrings("Command injection vulnerability", IssueKind.command_injection.toDescription());
     try std.testing.expectEqualStrings("Malloc result used without null check", IssueKind.malloc_unchecked.toDescription());
     try std.testing.expectEqualStrings("Free called on non-malloc pointer", IssueKind.invalid_free.toDescription());
+    try std.testing.expectEqualStrings("Callback signature does not match receiver expectation - potential ABI mismatch", IssueKind.callback_signature_mismatch.toDescription());
 }
 
 test "Confidence - toString" {
@@ -821,10 +583,16 @@ test "Confidence - fromScore" {
 }
 
 test "Confidence - defaultScore" {
-    try std.testing.approxEqAbs(@as(f32, 0.95), Confidence.high.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.75), Confidence.medium.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.55), Confidence.heuristic.defaultScore(), 0.01);
-    try std.testing.approxEqAbs(@as(f32, 0.35), Confidence.experimental.defaultScore(), 0.01);
+    const testApproxEq = struct {
+        fn run(expected: f32, actual: f32, tolerance: f32) !void {
+            try std.testing.expect(@abs(actual - expected) < tolerance);
+        }
+    }.run;
+
+    try testApproxEq(@as(f32, 0.95), Confidence.high.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.75), Confidence.medium.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.55), Confidence.heuristic.defaultScore(), 0.01);
+    try testApproxEq(@as(f32, 0.35), Confidence.experimental.defaultScore(), 0.01);
 }
 
 test "Issue - confidence_level auto-derived from score" {

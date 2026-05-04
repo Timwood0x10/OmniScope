@@ -42,6 +42,9 @@ const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullC
 const alloc_classifier = @import("allocation_classifier.zig");
 const cpp_fp = @import("cpp_fp_reduction.zig");
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
+const noise_filter = @import("../../semantics/noise_filter.zig");
+const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
+const hooks = @import("../../registry/hooks.zig");
 
 /// Error type for ownership tracking operations.
 pub const OwnershipError = error{
@@ -150,6 +153,15 @@ pub const PointerOwnershipPass = struct {
             if (_timer) |*t| t.stop() catch {};
         }
 
+        // R7.2 Language Channel Gate
+        const own_channel = ctx.channelPointerOwnership();
+        if (own_channel == .skip) {
+            diag.debug("LANG-SKIP [pointer_ownership]: module is {s}", .{
+                @tagName(ctx.getModuleLanguage().language),
+            });
+            return;
+        }
+
         if (ctx.module == null) {
             diag.warn("PointerOwnership: No module loaded, skipping", .{});
             return;
@@ -217,25 +229,49 @@ pub const PointerOwnershipPass = struct {
         };
         defer analysis_timer.stop() catch {};
 
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        // Phase R5.3: Initialize Hook system for ownership transfer tracking.
+        try hooks.initHookStates(ctx.allocator);
+        defer hooks.deinitHookStates();
 
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
 
-            const zone = zone_classifier.classifyFunction(func_name, null);
+            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
-            switch (zone) {
-                .safe, .runtime_internal => {
-                    diag.debug("ZONE-SKIP: {s} is {s} zone — language guarantees apply", .{ func_name, @tagName(zone) });
-                    continue;
-                },
-                .unsafe, .ffi, .unknown => {},
+            // Skip declarations (extern functions without bodies in this module).
+            // PointerOwnership is an intra-procedural pass that scans instructions
+            // inside function bodies (alloc/store/load/call/GEP). Declarations have
+            // no body to analyze — their effects are handled at call sites within
+            // defined (non-declaration) caller functions. Zone classification is
+            // recorded above for accurate statistics before skipping.
+            if (c.LLVMIsDeclaration(func) != 0) continue;
+
+            // R7.0: Shared zone gate (single source of truth, also used by ffi_boundary).
+            if (!PassContext.shouldAnalyzeZone(zone)) {
+                diag.debug("ZONE-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
+                continue;
+            }
+
+            // INTEGRATION: Use three-layer noise filter (name + path + behavior)
+            // Layer 2 uses debug info from the function's source location
+            const func_loc = DebugInfoUtils.getFunctionLocation(func);
+            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            if (!classification.origin.shouldReportByDefault()) {
+                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
+                continue;
             }
 
             if (!isRustFFIRelevantFunction(func)) continue;
-            try analyzeFunctionForOwnership(
+
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
+
+            // Phase R5.3: Reset hook state per function scope
+            hooks.resetHookStatesForFunction();
+
+            // Function-level error isolation
+            analyzeFunctionForOwnership(
                 ctx.allocator,
                 func,
                 &alloc_map,
@@ -247,7 +283,21 @@ pub const PointerOwnershipPass = struct {
                 &alloc_pool,
                 &free_pool,
                 &null_check_recognizer,
-            );
+            ) catch |err| {
+                diag.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, func_name });
+                ctx.recordDegradedFunction();
+                continue;
+            };
+
+            // Phase R5.3: Check hook state for end-of-function ownership issues.
+            if (hooks.rustUnpairedTransferCount() > 0) {
+                diag.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{func_name});
+                stats.cross_ffi_transfers += 1;
+            }
+            if (hooks.pythonUnbalancedDecrefCount() > 0) {
+                diag.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), func_name });
+                stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
+            }
         }
 
         {
@@ -409,14 +459,13 @@ pub const PointerOwnershipPass = struct {
         }
 
         const pool_stats = alloc_pool.stats();
-        diag.info("PointerOwnership: Memory pool stats - allocated: {}, reused: {}, in_use: {}", .{
+        diag.info("PointerOwnership: Memory pool stats - allocated: {d}, reused: {d}, in_use: {d}", .{
             pool_stats.allocated,
             pool_stats.reused,
             pool_stats.in_use,
         });
 
-        const issue_count = stats.cross_ffi_transfers + stats.violations + stats.memory_leaks + stats.double_frees + stats.use_after_frees;
-        @import("../pass.zig").printZoneSummary(ctx.zone_stats, issue_count);
+        @import("../pass.zig").printZoneSummary(ctx.zone_stats, ctx.data_flow_graph);
     }
 
     /// Check if debug metadata is available in the module.
@@ -852,7 +901,7 @@ pub const PointerOwnershipPass = struct {
         return cpp_fp.getFunctionName(func);
     }
     fn identifyLanguage(func: c.LLVMValueRef) Language {
-        return cpp_fp.identifyLanguage(func);
+        return @import("../../semantics/language_detector.zig").identifyLanguage(func);
     }
     fn isGuardedByNullCheck(free_inst: c.LLVMValueRef, ptr_value_id: u32, path_manager: *PathManager) bool {
         return cpp_fp.isGuardedByNullCheck(free_inst, ptr_value_id, path_manager);
@@ -882,8 +931,8 @@ pub const PointerOwnershipPass = struct {
     fn isMeyersSingletonPattern(func_name: []const u8) bool {
         return cpp_fp.isMeyersSingletonPattern(func_name);
     }
-    fn isLikelyIntentionalPattern(func_name: []const u8) bool {
-        return cpp_fp.isLikelyIntentionalPattern(func_name);
+    fn is_likely_intentional_pattern(func_name: []const u8) bool {
+        return cpp_fp.is_likely_intentional_pattern(func_name);
     }
     fn detectRaiiManagedAllocations(
         func: c.LLVMValueRef,

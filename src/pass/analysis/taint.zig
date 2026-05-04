@@ -13,7 +13,7 @@
 //! 3. No path-sensitive analysis
 //! 4. Higher false positive rate on FFI boundaries
 //!
-//! **Status**: Kept for backward compatibility. Will be removed in v0.2.0.
+//! **Status**: Kept for backward compatibility. Will be removed in v0.1.6.
 //! **All dependencies have been migrated to `pointer-flow` pass.**
 
 const std = @import("std");
@@ -97,8 +97,14 @@ pub const TaintPass = struct {
                     );
                 }
 
-                // Analyze function
-                try self.analyzeFunction(ctx, FunctionRef{ .raw = func_ref });
+                // Function-level error isolation
+                self.analyzeFunction(ctx, FunctionRef{ .raw = func_ref }) catch |err| {
+                    const func_name_raw = c.LLVMGetValueName(func_ref);
+                    const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+                    diag.warn("Taint: skipped function due to error: {} ({s})", .{ err, func_name });
+                    func = c.LLVMGetNextFunction(func);
+                    continue;
+                };
             }
             func = c.LLVMGetNextFunction(func);
         }
@@ -188,10 +194,11 @@ pub const TaintPass = struct {
     fn isTaintSource(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint source
@@ -273,10 +280,11 @@ pub const TaintPass = struct {
     fn isTaintSink(inst: c.LLVMValueRef) bool {
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
-        if (called_func == null) return false;
+        if (@intFromPtr(called_func) == 0) return false;
 
         // Get function name
         const func_name = c.LLVMGetValueName(called_func);
+        if (@intFromPtr(func_name) == 0) return false;
         const func_name_slice = std.mem.span(func_name);
 
         // Check if it's a known taint sink

@@ -5,9 +5,9 @@
 
 const std = @import("std");
 const Issue = @import("../diag/issue.zig").Issue;
-const generateSarif = @import("../report/sarif.zig").generateSarif;
-const writeSarifToFile = @import("../report/sarif.zig").writeSarifToFile;
-const ToolInfo = @import("../report/sarif.zig").ToolInfo;
+const generateSarif = @import("../output/sarif.zig").generateSarif;
+const writeSarifToFile = @import("../output/sarif.zig").writeSarifToFile;
+const ToolInfo = @import("../output/sarif.zig").ToolInfo;
 
 /// CI/CD platform types
 pub const CIPlatform = enum {
