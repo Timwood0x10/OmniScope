@@ -301,11 +301,19 @@ pub const PtrLifetimePass = struct {
             }
         }
 
-        diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
-            stats.total_functions_analyzed,
-            stats.total_pointers_tracked,
-            stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
-        });
+        const total_violations = stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found;
+        if (total_violations > 0) {
+            diag.info("[OMI-HIGH] PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
+                stats.total_functions_analyzed,
+                stats.total_pointers_tracked,
+                total_violations,
+            });
+        } else {
+            diag.debug("PtrLifetime: analyzed {} funcs, tracked {} ptrs, no violations found", .{
+                stats.total_functions_analyzed,
+                stats.total_pointers_tracked,
+            });
+        }
 
         // R8.3-f: Post-analysis cross-function freed status propagation.
         // Optimized: Instead of O(N×A) scan (each node × each alias),
@@ -1166,7 +1174,23 @@ pub const PtrLifetimePass = struct {
             const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang) catch false;
             if (is_double) {
                 if (!ctx.isRelevantAlloc(ptr_hash)) return;
-                diag.warn("[DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
+                const msg = try std.fmt.allocPrint(ctx.allocator, "[OMI-HIGH] [DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
+                // NOTE: msg memory is owned by Issue (owned=true in initWithTrace).
+                // Do NOT free msg here - Issue.deinit() will handle cleanup when needed.
+                const trace = try ctx.allocator.alloc(TraceEntry, 1);
+                errdefer ctx.allocator.free(trace);
+                trace[0] = TraceEntry.init("Double-free detected via MemoryGraph trackFree");
+                const issue = Issue.initWithTrace(
+                    .double_free,
+                    msg,
+                    Location.init(func_name),
+                    .high,
+                    0.90,
+                    trace,
+                );
+                try ctx.addIssue(&issue);
+                // NOTE: Issue already contains full diagnostic info.
+                // No separate diag.warn needed - would cause duplicate reporting.
                 stats.use_after_free_found += 1;
                 return;
             }
@@ -1176,7 +1200,20 @@ pub const PtrLifetimePass = struct {
         if (pointer_map.get(ptr_arg)) |ptr_info| {
             if (ptr_info.double_free_detected) {
                 if (!ctx.isRelevantAlloc(ptr_hash)) return;
-                diag.warn("[DOUBLE_FREE] {s} freed twice in {s}", .{ ptr_info.source_desc, func_name });
+                // H3 FIX: Create Issue for fallback path too (consistent with MemoryGraph path)
+                const fb_msg = try std.fmt.allocPrint(ctx.allocator, "[OMI-HIGH] [DOUBLE_FREE] {s} freed twice in {s}", .{ ptr_info.source_desc, func_name });
+                const fb_trace = try ctx.allocator.alloc(TraceEntry, 1);
+                errdefer ctx.allocator.free(fb_trace);
+                fb_trace[0] = TraceEntry.init("Double-free detected via pointer_map fallback");
+                const fb_issue = Issue.initWithTrace(
+                    .double_free,
+                    fb_msg,
+                    Location.init(func_name),
+                    .high,
+                    0.80,
+                    fb_trace,
+                );
+                try ctx.addIssue(&fb_issue);
                 stats.use_after_free_found += 1;
             }
         }

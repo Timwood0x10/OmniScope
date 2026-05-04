@@ -550,12 +550,21 @@ pub const TaintPropagationPass = struct {
     fn storeResults(ctx: *PassContext, taint_ctx: *TaintContext, diag: *DiagnosticWriter) !void {
         var iter = taint_ctx.value_taint.iterator();
         var count: u32 = 0;
+        var filtered_count: u32 = 0;
 
         while (iter.next()) |entry| {
             const value_id = entry.key_ptr.*;
             const taint_info = entry.value_ptr.*;
 
             if (taint_info.state != .none) {
+                // E2-1a: MemoryGraph gate - only store taint facts for pointers
+                // that are on a danger path (FFI-relevant). This prevents non-FFI
+                // taint data from polluting downstream analysis passes.
+                if (!ctx.isRelevantAlloc(value_id)) {
+                    filtered_count += 1;
+                    continue;
+                }
+
                 try ctx.fact_store.insert(
                     .taint,
                     value_id,
@@ -567,7 +576,9 @@ pub const TaintPropagationPass = struct {
         }
 
         if (count > 0) {
-            diag.info("PointerFlow: Stored {} pointer flow facts", .{count});
+            diag.info("PointerFlow: Stored {} pointer flow facts ({} filtered as non-FFI)", .{ count, filtered_count });
+        } else if (filtered_count > 0) {
+            diag.debug("PointerFlow: All {} taint facts filtered (not on FFI danger path)", .{filtered_count});
         }
     }
 

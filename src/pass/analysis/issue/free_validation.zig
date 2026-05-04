@@ -71,7 +71,11 @@ pub const FreeValidationPass = struct {
             issue_count += count;
         }
 
-        diag.info("FreeValidation: Analyzed functions, found {} invalid free calls", .{issue_count});
+        if (issue_count > 0) {
+            diag.info("[OMI-HIGH] FreeValidation: Found {} invalid free calls", .{issue_count});
+        } else {
+            diag.debug("FreeValidation: No invalid free calls found", .{});
+        }
     }
 
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {

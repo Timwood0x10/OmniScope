@@ -275,22 +275,22 @@ pub const ThreadCrossingPass = struct {
         }
 
         if (is_extern_c and has_exception) {
-            try reportExceptionAcrossFFI(ctx, func_name, diag);
+            try reportExceptionAcrossFFI(ctx, func, func_name, diag);
             stats.exception_ffi_violations += 1;
         }
 
         if (is_callback and has_global_write and !has_lock) {
-            try reportUnsyncedWrite(ctx, func_name, diag);
+            try reportUnsyncedWrite(ctx, func, func_name, diag);
             stats.unsynchronized_writes += 1;
         }
 
         if (is_callback and has_lock) {
-            try reportLockRisk(ctx, func_name, diag);
+            try reportLockRisk(ctx, func, func_name, diag);
             stats.lock_risks += 1;
         }
 
         if (is_signal_handler and has_signal_unsafe) {
-            try reportSignalUnsafe(ctx, func_name, diag);
+            try reportSignalUnsafe(ctx, func, func_name, diag);
             stats.signal_unsafe_calls += 1;
         }
     }
@@ -302,9 +302,18 @@ pub const ThreadCrossingPass = struct {
 
 fn reportExceptionAcrossFFI(
     ctx: *PassContext,
+    func: c.LLVMValueRef,
     func_name: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1c: MemoryGraph gate - only report exception crossing if the function
+    // is on an FFI danger path (relevant to cross-language calls).
+    const func_ptr = @as(u64, @intFromPtr(func));
+    if (!ctx.isRelevantFunction(func_ptr)) {
+        diag.debug("[EXCEPTION-FFI SUPPRESSED] Function {s} not on FFI danger path", .{func_name});
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -333,9 +342,18 @@ fn reportExceptionAcrossFFI(
 
 fn reportUnsyncedWrite(
     ctx: *PassContext,
+    func: c.LLVMValueRef,
     func_name: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1c: MemoryGraph gate - only report unsynchronized writes if the
+    // callback function is on an FFI danger path.
+    const func_ptr = @as(u64, @intFromPtr(func));
+    if (!ctx.isRelevantFunction(func_ptr)) {
+        diag.debug("[UNSYNCED-WRITE SUPPRESSED] Function {s} not on FFI danger path", .{func_name});
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -364,9 +382,18 @@ fn reportUnsyncedWrite(
 
 fn reportLockRisk(
     ctx: *PassContext,
+    func: c.LLVMValueRef,
     func_name: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1c: MemoryGraph gate - only report lock risk if the callback
+    // function is on an FFI danger path.
+    const func_ptr = @as(u64, @intFromPtr(func));
+    if (!ctx.isRelevantFunction(func_ptr)) {
+        diag.debug("[LOCK-RISK SUPPRESSED] Function {s} not on FFI danger path", .{func_name});
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -395,9 +422,18 @@ fn reportLockRisk(
 
 fn reportSignalUnsafe(
     ctx: *PassContext,
+    func: c.LLVMValueRef,
     func_name: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1c: MemoryGraph gate - only report signal-unsafe calls if the
+    // signal handler is on an FFI danger path.
+    const func_ptr = @as(u64, @intFromPtr(func));
+    if (!ctx.isRelevantFunction(func_ptr)) {
+        diag.debug("[SIGNAL-UNSAFE SUPPRESSED] Function {s} not on FFI danger path", .{func_name});
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);

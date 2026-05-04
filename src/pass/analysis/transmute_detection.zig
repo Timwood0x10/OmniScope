@@ -13,6 +13,7 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 
+const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Issue = @import("../../diag/issue.zig").Issue;
 const Severity = @import("../../diag/issue.zig").Severity;
@@ -127,18 +128,18 @@ pub fn isLifetimeExtension(
 /// Detect transmute operations in a function.
 ///
 /// Arguments:
-///   allocator - Memory allocator
+///   ctx - PassContext for MemoryGraph access
 ///   func - The function to analyze
 ///   diag - Diagnostic writer
 ///
 /// Returns:
 ///   A list of transmute operations found
 pub fn detectTransmutes(
-    allocator: std.mem.Allocator,
+    ctx: *PassContext,
     func: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) std.ArrayList(TransmuteOp) {
-    var transmutes = std.ArrayList(TransmuteOp).init(allocator);
+    var transmutes = std.ArrayList(TransmuteOp).init(ctx.allocator);
 
     if (@intFromPtr(func) == 0) return transmutes;
 
@@ -171,8 +172,15 @@ pub fn detectTransmutes(
                                     std.mem.indexOf(u8, callee_name, "'a") != null or
                                     std.mem.indexOf(u8, callee_name, "'b") != null)
                                 {
-                                    risk = .high;
-                                    diag.warn("LIFETIME-BYPASS [HIGH]: transmute extends lifetime to 'static in {s}", .{func_name});
+                                    // E2-1f: MemoryGraph gate - only report lifetime bypass
+                                    // if the transmuted value flows into an FFI boundary call.
+                                    const inst_ptr = @as(u64, @intFromPtr(inst));
+                                    if (!ctx.isRelevantAlloc(inst_ptr)) {
+                                        diag.debug("[LIFETIME-BYPASS SUPPRESSED] Transmute not on FFI danger path in {s}", .{func_name});
+                                    } else {
+                                        risk = .high;
+                                        diag.warn("LIFETIME-BYPASS [HIGH]: transmute extends lifetime to 'static in {s}", .{func_name});
+                                    }
                                 }
                             }
 
@@ -222,13 +230,14 @@ pub fn reportTransmuteIssue(
 ///
 /// Arguments:
 ///   allocator - Memory allocator
+///   ctx - PassContext for MemoryGraph access
 ///   module - The LLVM module to analyze
 ///   diag - Diagnostic writer
 ///
 /// Returns:
 ///   Total number of high-risk transmutes found
 pub fn analyzeModule(
-    allocator: std.mem.Allocator,
+    ctx: *PassContext,
     module: c.LLVMModuleRef,
     diag: *DiagnosticWriter,
 ) usize {
@@ -238,7 +247,7 @@ pub fn analyzeModule(
 
     var func = c.LLVMGetFirstFunction(module);
     while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        var transmutes = detectTransmutes(allocator, func, diag);
+        var transmutes = detectTransmutes(ctx, func, diag);
         for (transmutes.items) |t| {
             if (t.risk_level == .high) {
                 high_risk_count += 1;

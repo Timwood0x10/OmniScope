@@ -113,6 +113,9 @@ pub const DangerSurfacePass = struct {
             if (node.zone == .unsafe) {
                 try ctx.markRelevantAlloc(ptr_val);
                 try markFunctionFromInst(ctx, node.alloc_inst);
+                // H2 FIX: Clear visited before Phase 2 alias tracing to avoid
+                // inheriting Phase 1's visited set which would skip valid aliases.
+                visited.clearRetainingCapacity();
                 traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
                     diag.debug("[P1-1] Alias propagation error for unsafe ptr 0x{x}: {}", .{ ptr_val, err });
                 };
@@ -122,6 +125,8 @@ pub const DangerSurfacePass = struct {
                     try ctx.markRelevantAlloc(ptr_val);
                     ctx.markFfiRelevant(ptr_val) catch {}; // BUGFIX: cross-lang free is FFI-relevant
                     try markFunctionFromInst(ctx, node.alloc_inst);
+                    // H2 FIX: Clear visited for cross-lang free alias tracing too.
+                    visited.clearRetainingCapacity();
                     traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
                         diag.debug("[P1-1] Alias propagation error for cross-lang ptr 0x{x}: {}", .{ ptr_val, err });
                     };

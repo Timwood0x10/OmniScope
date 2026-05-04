@@ -82,10 +82,14 @@ pub const MemorySafetyPass = struct {
             issue_count += count;
         }
 
-        diag.info("MemorySafety: Single-pass scan complete — {} functions, {} issues detected", .{
-            func_count,
-            issue_count,
-        });
+        if (issue_count > 0) {
+            diag.info("[OMI-HIGH] MemorySafety: {} functions analyzed, {} issues detected", .{
+                func_count,
+                issue_count,
+            });
+        } else {
+            diag.debug("MemorySafety: {} functions analyzed, no issues detected", .{func_count});
+        }
     }
 
     /// Single-function scan: build relations AND detect issues in one pass

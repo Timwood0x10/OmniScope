@@ -162,7 +162,7 @@ pub const Pipeline = struct {
                     try ctx.addIssue(&issue);
                 }
             }
-            diag.info("[R8.3-d] GlobalAllocTracker: {d} leak candidates reported from {d} tracked allocations", .{
+            diag.info("[OMI-HIGH] GlobalAllocTracker: {d} memory leaks confirmed from {d} tracked allocations", .{
                 leak_count, tracker.size(),
             });
         }

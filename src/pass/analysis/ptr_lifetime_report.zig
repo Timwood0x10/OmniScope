@@ -30,6 +30,16 @@ pub fn reportStackEscape(
     _: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - stack escape only dangerous if pointer reaches FFI
+    // Use isOnDangerPathFull for complete path analysis (alias closure, zone, lang checks)
+    if (ptr_info.source_inst) |inst| {
+        const ptr_val = @as(u64, @intFromPtr(inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[STACK-ESCAPE SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -63,6 +73,14 @@ pub fn reportReturnStackAddr(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - return stack addr only dangerous across FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RETURN-STACK SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -96,6 +114,14 @@ pub fn reportReturnHeapPtr(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - heap return only matters if crosses FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RETURN-HEAP SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -130,6 +156,14 @@ pub fn reportHeapToGlobal(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - heap to global only dangerous across FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[HEAP-TO-GLOBAL SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -164,6 +198,14 @@ pub fn reportStackToGlobal(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - stack to global only dangerous across FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[STACK-TO-GLOBAL SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -199,6 +241,14 @@ pub fn reportUseAfterFree(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - UAF critical only on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[UAF-RISK SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -234,6 +284,14 @@ pub fn reportResourceUAF(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - resource UAF only dangerous on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RESOURCE-UAF SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 

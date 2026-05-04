@@ -67,7 +67,7 @@ pub const BufferOverflowPass = struct {
 
                         // If pointer comes from GEP, check bounds
                         if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMGetElementPtr) {
-                            if (checkStackBounds(ctx.allocator, func, ptr_operand, diag)) |vuln| {
+                            if (checkStackBounds(ctx, func, ptr_operand, diag)) |vuln| {
                                 overflow_count += 1;
                                 try reportIssue(ctx, vuln, diag);
                             }
@@ -76,7 +76,7 @@ pub const BufferOverflowPass = struct {
 
                     // Also check raw GEP instructions for array OOB
                     if (opcode == c.LLVMGetElementPtr) {
-                        if (checkArrayBounds(ctx.allocator, func, inst, diag)) |vuln| {
+                        if (checkArrayBounds(ctx, func, inst, diag)) |vuln| {
                             oob_count += 1;
                             try reportIssue(ctx, vuln, diag);
                         }
@@ -99,7 +99,7 @@ pub const BufferOverflowPass = struct {
 
     /// Check if a GEP instruction accessing an alloca result exceeds bounds.
     /// Returns an issue if the last index is a constant exceeding allocation size.
-    fn checkStackBounds(allocator: std.mem.Allocator, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+    fn checkStackBounds(ctx: *PassContext, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
         const base_ptr = c.LLVMGetOperand(gep, 0);
         if (@intFromPtr(base_ptr) == 0) return null;
 
@@ -160,7 +160,14 @@ pub const BufferOverflowPass = struct {
                 func_name_str,
             });
 
-            const msg = std.fmt.allocPrint(allocator, "Stack buffer overflow: element index {d} exceeds allocation of {d} elements", .{ last_index_value, max_elements }) catch "Stack buffer overflow detected";
+            const msg = std.fmt.allocPrint(ctx.allocator, "Stack buffer overflow: element index {d} exceeds allocation of {d} elements", .{ last_index_value, max_elements }) catch "Stack buffer overflow detected";
+            // E2-1d: MemoryGraph gate - only report stack overflows if the base pointer
+            // (alloca result) flows into an FFI call (is on danger path).
+            const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
+            if (!ctx.isRelevantAlloc(base_ptr_val)) {
+                diag.debug("[STACK-OVERFLOW SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
+                return null;
+            }
             return Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.85);
         }
 
@@ -169,7 +176,7 @@ pub const BufferOverflowPass = struct {
 
     /// Check if a GEP instruction on a global/static array exceeds bounds.
     /// Returns an issue if index exceeds declared array length.
-    fn checkArrayBounds(allocator: std.mem.Allocator, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+    fn checkArrayBounds(ctx: *PassContext, func: c.LLVMValueRef, gep: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
         const base_ptr = c.LLVMGetOperand(gep, 0);
         if (@intFromPtr(base_ptr) == 0) return null;
 
@@ -219,7 +226,14 @@ pub const BufferOverflowPass = struct {
                 last_index_value, array_size,
             });
 
-            const msg = std.fmt.allocPrint(allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected";
+            const msg = std.fmt.allocPrint(ctx.allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected";
+            // E2-1d: MemoryGraph gate - only report array OOB if the base pointer
+            // flows into an FFI call (is on danger path).
+            const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
+            if (!ctx.isRelevantAlloc(base_ptr_val)) {
+                diag.debug("[ARRAY-OOB SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
+                return null;
+            }
             return Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.8);
         }
 

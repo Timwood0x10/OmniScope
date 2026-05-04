@@ -855,6 +855,15 @@ pub const MemoryGraph = struct {
         ffi_boundaries: []const MemoryGraph.DangerSurface,
         visited: *std.AutoHashMap(u64, void),
     ) DangerPathKind {
+        // H1 FIX: Add ptr_val to visited at entry to prevent infinite recursion
+        // when alias closure contains cycles back to the original pointer.
+        if (visited.contains(ptr_val)) return .none;
+        visited.put(ptr_val, {}) catch {
+            // Allocation failure in visited set - cannot safely continue recursion.
+            // Return .none to prevent potential infinite loop.
+            return .none;
+        };
+
         // Build callee_name set for O(1) lookup instead of O(N) linear scan.
         var ffi_set = std.StringHashMap(void).init(graph.allocator);
         defer ffi_set.deinit();

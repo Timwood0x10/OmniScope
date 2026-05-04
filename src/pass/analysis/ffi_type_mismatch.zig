@@ -550,10 +550,32 @@ pub const FFITypeMismatchPass = struct {
         ctx: *PassContext,
         caller_name: []const u8,
         callee_name: []const u8,
-        _: c.LLVMValueRef,
+        call_inst: c.LLVMValueRef,
         mismatch: TypeMismatchInfo,
         diag: *DiagnosticWriter,
     ) !void {
+        // E2-1b: MemoryGraph gate - only report type mismatches where at least one
+        // call argument pointer is on an FFI danger path. This prevents reporting
+        // type mismatches for internal/non-FFI-relevant calls.
+        if (@intFromPtr(call_inst) != 0) {
+            var has_relevant_ptr = false;
+            var arg_idx: u32 = 0;
+            while (arg_idx < c.LLVMGetNumArgOperands(call_inst)) : (arg_idx += 1) {
+                const arg = c.LLVMGetOperand(call_inst, arg_idx);
+                if (@intFromPtr(arg) != 0) {
+                    const ptr_val = @as(u64, @intFromPtr(arg));
+                    if (ctx.isRelevantAlloc(ptr_val)) {
+                        has_relevant_ptr = true;
+                        break;
+                    }
+                }
+            }
+            if (!has_relevant_ptr) {
+                diag.debug("[FFI-TYPE-MISMATCH SUPPRESSED] No relevant pointers on FFI path in {s} -> {s}", .{ caller_name, callee_name });
+                return;
+            }
+        }
+
         const location = Location.init(caller_name);
 
         const trace = try ctx.allocator.alloc(TraceEntry, 3);

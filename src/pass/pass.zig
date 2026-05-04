@@ -793,6 +793,31 @@ pub const PassContext = struct {
         return self.ffi_auto_relevant.contains(ptr_val);
     }
 
+    /// P0: Full danger path validation using MemoryGraph + CallGraph analysis.
+    /// Performs complete path tracing: (b) ffi_arg, (c) ffi_ret,
+    /// (a/e) alloc zone+lang, (d) alias closure traversal.
+    /// Use this for issue reporting gates instead of isRelevantAlloc() for
+    /// stricter validation per todolist.md architecture requirements.
+    pub fn isOnDangerPathFull(self: *PassContext, ptr_val: u64) bool {
+        const raw_ffis = self.getCrossLangEdges();
+        if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
+
+        // Convert CrossLangEdge[] to MemoryGraph.DangerSurface[] for isOnDangerPath API
+        var danger_surfaces = self.allocator.alloc(memory_graph_mod.MemoryGraph.DangerSurface, raw_ffis.len) catch return false;
+        defer self.allocator.free(danger_surfaces);
+        for (raw_ffis, 0..) |ffe, i| {
+            danger_surfaces[i] = .{
+                .callee_name = ffe.callee_name,
+                .is_ffi_boundary = ffe.is_ffi_boundary,
+            };
+        }
+
+        var visited = std.AutoHashMap(u64, void).init(self.allocator);
+        defer visited.deinit();
+        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited);
+        return result != .none;
+    }
+
     /// P1-1: Mark a pointer value as being on a danger path.
     /// Called by DangerSurfacePass during surface tracing.
     pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {

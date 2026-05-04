@@ -133,20 +133,44 @@ run_analysis() {
     local issue_count=0
     local ffi_critical_count=0
     local ffi_high_count=0
+    local zone_total=0
+    local ptr_violations=0
+    local leak_candidates=0
+    local vulnerability_count=0
 
     while IFS= read -r line; do
         if [[ "$line" =~ \[CRITICAL\]\ FFI\ RISK ]] || [[ "$line" =~ FFI\ RISK.*command ]]; then
             ((ffi_critical_count++)) || true
-            ((issue_count++)) || true
         elif [[ "$line" =~ \[HIGH\]\ FFI\ RISK ]] || [[ "$line" =~ FFI\ RISK ]] || \
              [[ "$line" =~ \[HIGH\]\ RISKY\ LIBC\ CALL ]] || [[ "$line" =~ CROSS-LANGUAGE ]]; then
             ((ffi_high_count++)) || true
-            ((issue_count++)) || true
-        elif [[ "$line" =~ VULNERABILITY\ (OMI-[0-9]+) ]] || \
+        fi
+
+        if [[ "$line" =~ VULNERABILITY\ (OMI-[0-9]+) ]] || \
              [[ "$line" =~ (MEMORY\ LEAK|DOUBLE-FREE|USE-AFTER-FREE) ]]; then
-            ((issue_count++)) || true
+            ((vulnerability_count++)) || true
+        fi
+
+        if [[ "$line" =~ found\ ([0-9]+)\ violation ]]; then
+            ptr_violations=${BASH_REMATCH[1]}
+        fi
+        if [[ "$line" =~ ([0-9]+)\ leak\ candidates\ reported ]]; then
+            leak_candidates=${BASH_REMATCH[1]}
+        fi
+        if [[ "$line" =~ Issues\ found:\ *([0-9]+) ]]; then
+            zone_total=${BASH_REMATCH[1]}
         fi
     done <<< "$raw_output"
+
+    if [[ $zone_total -gt 0 ]]; then
+        issue_count=$zone_total
+    else
+        issue_count=$((vulnerability_count + ptr_violations + leak_candidates))
+    fi
+
+    if [[ $issue_count -lt $((vulnerability_count + ptr_violations + leak_candidates)) ]]; then
+        issue_count=$((vulnerability_count + ptr_violations + leak_candidates))
+    fi
 
     echo "$raw_output" > "${output_file%.json}.raw"
     echo "${issue_count}|${ffi_critical_count}|${ffi_high_count}"
@@ -248,7 +272,7 @@ print_summary() {
 
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         OmniScope FFI/Unsafe Benchmark (v0.1.5)          ║${NC}"
+    echo -e "${BLUE}║         OmniScope FFI/Unsafe Benchmark (v0.1.6)          ║${NC}"
     echo -e "${BLUE}╠════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${BLUE}║  Core Focus: FFI Boundary / Unsafe Memory / Command Exec  ║${NC}"
     echo -e "${BLUE}║  Secondary: Memory Leaks, UAF, Double-Free (FFI context)  ║${NC}"
@@ -306,7 +330,7 @@ print_summary() {
     fi
 
     echo ""
-    echo -e "FFI Focus Targets (v0.1.5):"
+    echo -e "FFI Focus Targets (v0.1.6):"
     echo -e "  FFI CRITICAL (command exec): >= $TARGET_FFI_CRITICAL  $(if $ffi_crit_pass; then echo "${GREEN}PASS${NC} ($TOTAL_FFI_CRITICAL detected)"; else echo "${RED}FAIL${NC} ($TOTAL_FFI_CRITICAL detected, need $TARGET_FFI_CRITICAL)"; fi)"
     echo -e "  FFI HIGH (risky FFI):         >= $TARGET_FFI_HIGH   $(if $ffi_high_pass; then echo "${GREEN}PASS${NC} ($TOTAL_FFI_HIGH detected)"; else echo "${RED}FAIL${NC} ($TOTAL_FFI_HIGH detected, need $TARGET_FFI_HIGH)"; fi)"
     echo ""
