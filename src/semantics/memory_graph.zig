@@ -854,6 +854,7 @@ pub const MemoryGraph = struct {
         ptr_val: u64,
         ffi_boundaries: []const MemoryGraph.DangerSurface,
         visited: *std.AutoHashMap(u64, void),
+        ffi_set: ?*const std.StringHashMap(void),
     ) DangerPathKind {
         // H1 FIX: Add ptr_val to visited at entry to prevent infinite recursion
         // when alias closure contains cycles back to the original pointer.
@@ -864,12 +865,17 @@ pub const MemoryGraph = struct {
             return .none;
         };
 
-        // Build callee_name set for O(1) lookup instead of O(N) linear scan.
-        var ffi_set = std.StringHashMap(void).init(graph.allocator);
-        defer ffi_set.deinit();
-        for (ffi_boundaries) |b| {
-            if (b.is_ffi_boundary) {
-                ffi_set.put(b.callee_name, {}) catch {};
+        // Build callee_name set for O(1) lookup (only once at top-level call).
+        var local_ffi_set = std.StringHashMap(void).init(graph.allocator);
+        defer local_ffi_set.deinit();
+        const set = if (ffi_set) |s| s else &local_ffi_set;
+
+        if (ffi_set == null) {
+            // Only build at top-level call (when ffi_set is null)
+            for (ffi_boundaries) |b| {
+                if (b.is_ffi_boundary) {
+                    local_ffi_set.put(b.callee_name, {}) catch {};
+                }
             }
         }
 
@@ -877,7 +883,7 @@ pub const MemoryGraph = struct {
         const arg_indices = graph.getCallArgsForPtr(ptr_val);
         for (arg_indices) |idx| {
             const arg_edge = &graph.call_args.items[idx];
-            if (ffi_set.contains(arg_edge.callee_name)) {
+            if (set.contains(arg_edge.callee_name)) {
                 return .ffi_arg;
             }
         }
@@ -886,7 +892,7 @@ pub const MemoryGraph = struct {
         const ret_indices = graph.getCallRetsForPtr(ptr_val);
         for (ret_indices) |idx| {
             const ret_edge = &graph.call_rets.items[idx];
-            if (ffi_set.contains(ret_edge.callee_name)) {
+            if (set.contains(ret_edge.callee_name)) {
                 return .ffi_ret;
             }
         }
@@ -911,7 +917,7 @@ pub const MemoryGraph = struct {
             const alias_ptr = entry.key_ptr.*;
             if (visited.contains(alias_ptr)) continue;
             visited.put(alias_ptr, {}) catch {};
-            const kind = isOnDangerPath(graph, alias_ptr, ffi_boundaries, visited);
+            const kind = isOnDangerPath(graph, alias_ptr, ffi_boundaries, visited, set);
             if (kind != .none) return kind;
         }
 

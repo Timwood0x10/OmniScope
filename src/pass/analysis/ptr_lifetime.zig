@@ -61,6 +61,7 @@ const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
 const hooks = @import("../../registry/hooks.zig");
 const NoiseReduction = @import("noise_reduction.zig");
+const word_boundary = @import("../../utils/word_boundary.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
@@ -1235,18 +1236,39 @@ pub const PtrLifetimePass = struct {
         if (@intFromPtr(pred1) == 0 or @intFromPtr(pred2) == 0) return false;
         if (@intFromPtr(pred1) != @intFromPtr(pred2)) return false;
 
-        // Common predecessor — check if it's a conditional branch with
-        // exactly 2 successors (the two blocks are the true/false branches)
+        // Common predecessor — check terminator instruction type
+        const term_inst = c.LLVMGetBasicBlockTerminator(@ptrCast(pred1));
+        if (@intFromPtr(term_inst) == 0) return false;
+
+        const opcode = c.LLVMGetInstructionOpcode(term_inst);
         const num_successors = c.LLVMGetNumSuccessors(pred1);
-        if (num_successors != 2) return false;
 
-        const succ0 = c.LLVMGetSuccessor(pred1, 0);
-        const succ1 = c.LLVMGetSuccessor(pred1, 1);
+        // Case 1: Conditional branch (br i1) with exactly 2 successors
+        if (opcode == c.LLVMBr and num_successors == 2) {
+            const succ0 = c.LLVMGetSuccessor(pred1, 0);
+            const succ1 = c.LLVMGetSuccessor(pred1, 1);
 
-        // Check if the two successors are exactly bb1 and bb2
-        const match = (@intFromPtr(succ0) == @intFromPtr(bb1) and @intFromPtr(succ1) == @intFromPtr(bb2)) or
-            (@intFromPtr(succ0) == @intFromPtr(bb2) and @intFromPtr(succ1) == @intFromPtr(bb1));
-        return match;
+            // Check if the two successors are exactly bb1 and bb2
+            const match = (@intFromPtr(succ0) == @intFromPtr(bb1) and @intFromPtr(succ1) == @intFromPtr(bb2)) or
+                (@intFromPtr(succ0) == @intFromPtr(bb2) and @intFromPtr(succ1) == @intFromPtr(bb1));
+            return match;
+        }
+
+        // M4 FIX: Case 2: Switch instruction — all case/default targets are mutually exclusive
+        if (opcode == c.LLVMSwitch and num_successors >= 2) {
+            var found_bb1 = false;
+            var found_bb2 = false;
+            var succ_idx: u32 = 0;
+            while (succ_idx < num_successors) : (succ_idx += 1) {
+                const succ = c.LLVMGetSuccessor(pred1, succ_idx);
+                if (@intFromPtr(succ) == @intFromPtr(bb1)) found_bb1 = true;
+                if (@intFromPtr(succ) == @intFromPtr(bb2)) found_bb2 = true;
+                if (found_bb1 and found_bb2) return true; // Both blocks are switch targets → mutually exclusive
+            }
+            return false;
+        }
+
+        return false;
     }
 
     /// Get the single predecessor of a basic block.
@@ -1773,14 +1795,18 @@ pub const PtrLifetimePass = struct {
     /// Check if a stack escape should be suppressed.
     /// Callback/hook patterns legitimately receive stack pointers.
     fn isStackEscapeSuppressed(callee_name: []const u8, _: PtrInfo) bool {
-        // Callback/Hook patterns that legitimately take stack pointers
+        // Callback/Hook patterns that legitimately take stack pointers.
+        // Use word-boundary-aware matching to avoid false positives:
+        //   - my_handler should NOT match Handler
+        //   - myCallback SHOULD match Callback (camelCase convention)
+        // Strategy: match if pattern appears at start, end, or after '_'/'.' separator
         const callback_patterns = [_][]const u8{
             "Hook",         "Callback",    "Handler",       "Notifier", "Observer",
             "busy_handler", "commit_hook", "rollback_hook", "wal_hook", "pthread_create",
             "pthread_join",
         };
         for (callback_patterns) |pattern| {
-            if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            if (word_boundary.isWordBoundaryMatch(callee_name, pattern)) {
                 return true;
             }
         }

@@ -268,7 +268,7 @@ pub fn reportUseAfterFree(
         message,
         location,
         .high,
-        0.75,
+        0.82, // M5 FIX: UAF confidence raised from 0.75 to 0.82 (consistent with severity)
         trace,
     );
 
@@ -347,6 +347,14 @@ pub fn reportHeapAmbiguous(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // M6 FIX: Add MemoryGraph gate - heap ambiguous only dangerous on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[HEAP-AMBIGUOUS SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 

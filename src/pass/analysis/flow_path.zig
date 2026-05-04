@@ -7,17 +7,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const TaintState = @import("./taint_state.zig").TaintState;
 
-/// Risk level for vulnerabilities
-pub const RiskLevel = enum(u8) {
-    /// Low risk - minor issues
-    low = 0,
-    /// Medium risk - potential issues that should be investigated
-    medium = 1,
-    /// High risk - significant vulnerabilities
-    high = 2,
-    /// Critical risk - severe vulnerabilities requiring immediate attention
-    critical = 3,
-};
+/// M8 FIX: Unified RiskLevel - re-export from noise_filter.zig for consistency.
+/// Both root.RiskLevel and root.NoiseRiskLevel now point to the same definition.
+pub const RiskLevel = @import("../../semantics/noise_filter.zig").RiskLevel;
 
 /// Source location in the IR
 pub const Location = struct {

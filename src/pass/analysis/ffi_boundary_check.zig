@@ -323,6 +323,8 @@ pub fn checkTypeCompatibility(
 }
 
 /// Convert RiskKind to IssueKind for reporting.
+/// M7 FIX: Unified with ffi_safety_checker.zig version for consistency.
+/// Uses .static_buffer_misuse instead of .buffer_overflow for accuracy.
 pub fn riskKindToIssueKind(risk: RiskKind) IssueKind {
     return switch (risk) {
         .command_exec => .command_injection,
@@ -341,7 +343,8 @@ pub fn riskKindToIssueKind(risk: RiskKind) IssueKind {
         .dynamic_loading => .ffi_unsafe_call,
         .jni => .ffi_unsafe_call,
         .python_c_api => .ffi_unsafe_call,
-        .static_buffer => .buffer_overflow,
+        // M7: Use .static_buffer_misuse (consistent with ffi_safety_checker.zig)
+        .static_buffer => .static_buffer_misuse,
         .thread_mgmt => .ffi_unsafe_call,
         .process_mgmt => .command_injection,
         .signal_handler => .ffi_unsafe_call,

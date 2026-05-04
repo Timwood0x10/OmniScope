@@ -812,9 +812,19 @@ pub const PassContext = struct {
             };
         }
 
+        // M1 FIX: Build ffi_set once here and pass to all recursive calls
+        // to avoid O(N) HashMap rebuild at each recursion level.
+        var ffi_set = std.StringHashMap(void).init(self.allocator);
+        defer ffi_set.deinit();
+        for (danger_surfaces) |ds| {
+            if (ds.is_ffi_boundary) {
+                ffi_set.put(ds.callee_name, {}) catch {};
+            }
+        }
+
         var visited = std.AutoHashMap(u64, void).init(self.allocator);
         defer visited.deinit();
-        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited);
+        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited, &ffi_set);
         return result != .none;
     }
 

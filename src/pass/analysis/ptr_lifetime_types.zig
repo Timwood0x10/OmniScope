@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const word_boundary = @import("../../utils/word_boundary.zig");
 
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
 const intrinsic_filter = @import("../../semantics/intrinsic_filter.zig");
@@ -360,11 +361,11 @@ pub fn is_extern_function(name: []const u8) bool {
     if (name.len == 0) return false;
 
     for (FFI_RETAINING_FUNCTIONS) |func| {
-        if (std.mem.indexOf(u8, name, func) != null) return true;
+        if (word_boundary.isWordBoundaryMatch(name, func)) return true;
     }
 
     for (CALLBACK_TAKING_FUNCTIONS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
+        if (word_boundary.isWordBoundaryMatch(name, pattern)) return true;
     }
 
     return false;
@@ -375,7 +376,7 @@ pub fn is_extern_function(name: []const u8) bool {
 pub fn is_known_deallocator(func_name: []const u8) bool {
     inline for (.{ KNOWN_DEALLOCATORS.finalize_functions, KNOWN_DEALLOCATORS.close_functions, KNOWN_DEALLOCATORS.free_functions, KNOWN_DEALLOCATORS.destroy_functions }) |group| {
         for (group) |dealloc| {
-            if (std.mem.indexOf(u8, func_name, dealloc) != null) return true;
+            if (word_boundary.isWordBoundaryMatch(func_name, dealloc)) return true;
         }
     }
     return false;
