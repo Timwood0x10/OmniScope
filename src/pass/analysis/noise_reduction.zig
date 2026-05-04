@@ -191,9 +191,9 @@ const llvm_intrinsic_prefixes = [_][]const u8{
 const rust_synthetic_patterns = [_][]const u8{
     // Global allocator shims (safe by design — just wraps system alloc)
     // Canonical source: ptr_types.RUST_ALLOC_INTRINSICS.alloc_only (subset below)
-    "__rust_alloc",
-    "__rust_dealloc",
-    "__rust_realloc",
+    // NOTE: __rust_alloc/dealloc/realloc are NOT noise — they are real heap operations
+    // that must be tracked by ptr_lifetime for FFI boundary detection.
+    // See todolist.md FIX-1 for details.
 
     // Channel primitives (type-safe MPSC/SPMC, not FFI)
     "sync_channel::",
@@ -287,8 +287,7 @@ const rust_stdlib_patterns = [_][]const u8{
     "_RNv", // namespaced
 
     // Common compiler-generated functions
-    "__rust_dealloc",
-    "__rust_alloc",
+    // NOTE: __rust_dealloc/__rust_alloc removed — NOT noise (see L192 comment)
     "real_drop_in_place",
     "size_hint",
     "reserve_total",

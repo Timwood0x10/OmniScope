@@ -346,7 +346,7 @@ pub fn validate_callback_signature(func_name: []const u8, callback_arg_type: []c
 pub const CallbackEscapePass = struct {
     pub const name = "callback-escape";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{ "call-graph", "danger-surface" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;

@@ -60,7 +60,8 @@ pub fn rustUnpairedTransferCount() usize {
 ///   TRANSFERRED_OUT at EOF → report potential leak ⚠️
 pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
     const callee_name = ctx.callee_name;
-    const ptr_key = @as(u64, @intFromPtr(ctx.inst));
+    const ptr_key = ctx.first_arg_ptr_val;
+    if (ptr_key == 0) return .none;
 
     // Transfer-out patterns (ownership leaves Rust)
     const transfer_out_patterns = [_][]const u8{
@@ -191,7 +192,8 @@ pub fn pythonUnbalancedDecrefCount() usize {
 ///   balance≥0 at EOF → balanced ✅
 pub fn pythonRefcountHook(ctx: *types.HookContext) types.HookResult {
     const callee_name = ctx.callee_name;
-    const ptr_key = @as(u64, @intFromPtr(ctx.inst));
+    const ptr_key = ctx.first_arg_ptr_val;
+    if (ptr_key == 0) return .none;
 
     // Reference count increment (safe)
     const incref_patterns = [_][]const u8{

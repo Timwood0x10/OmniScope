@@ -95,7 +95,7 @@ pub const TypeMismatchStats = struct {
 pub const FFITypeMismatchPass = struct {
     pub const name = "ffi-type-mismatch";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{"call-graph"};
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
@@ -171,7 +171,10 @@ pub const FFITypeMismatchPass = struct {
         const callee_name = std.mem.span(callee_name_ptr);
 
         // Check if this is an FFI boundary
-        const is_ffi = isFFIBoundary(caller_name, callee_name);
+        // Use CrossLangEdges from call-graph (covers unmangled Rust wrappers)
+        // + fallback to pattern-based detection for edge cases
+        const is_ffi = ctx.getCrossEdgeByCallee(callee_name) != null or
+            isFFIBoundary(caller_name, callee_name);
         if (!is_ffi) return;
 
         stats.ffi_boundaries_found += 1;

@@ -112,6 +112,9 @@ pub const HookContext = struct {
     /// The detected language of the current function (empty if unknown).
     /// Used by AnalysisHook.run() for target_languages filtering.
     language: []const u8 = "",
+    /// Pointer value of the first argument (for ownership tracking).
+    /// Used by hooks.zig to pair into_raw/from_raw calls in Rust FFI.
+    first_arg_ptr_val: u64 = 0,
 };
 
 /// Semantic analysis hook result.

@@ -149,7 +149,7 @@ pub const FreeSiteList = struct {
 pub const PtrLifetimePass = struct {
     pub const name = "ptr-lifetime";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{ "call-graph", "danger-surface" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;

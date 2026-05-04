@@ -28,7 +28,7 @@ const DangerSurface = MemoryGraph.DangerSurface;
 pub const DangerSurfacePass = struct {
     pub const name = "danger-surface";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{"call-graph"};
+    pub const deps = &[_][]const u8{ "call-graph", "ptr-lifetime" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
