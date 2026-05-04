@@ -249,7 +249,7 @@ src/
 docs/
 ├── TOUSER/                     # 给用户的信
 ├── investigation_reports/      # 调查报告 (en/zh)
-├── project_exports/            # 综合测试报告
+├── investigation_reports/    # 调查报告
 ├── en/                         # 英文技术文档
 ├── zh/                         # 中文技术文档
 ├── architecture.md             # 架构文档
@@ -268,8 +268,8 @@ config/                         # 语言配置
 |------|------|
 | [写给用户的信](./docs/TOUSER/zh.md) | 为什么做这个项目 |
 | [架构文档](./docs/architecture.md) | 分层架构详细设计 |
-| [综合测试报告](./docs/project_exports/zh/COMPREHENSIVE_REPORT.md) | 12 个项目测试结果 |
-| [性能报告](./docs/project_exports/zh/PERFORMANCE_IMPROVEMENT.md) | v0.1.5 性能数据 |
+| [基准测试报告](./docs/BENCHMARK_zh.md) | 17 个项目性能数据 |
+| [调查报告索引](./docs/investigation_reports/zh/README.md) | 各项目深度分析报告 |
 | [wasmtime 源码验证](./docs/investigation_reports/zh/wasmtime_source.md) | 真实漏洞验证 |
 | [FFI 密集型项目报告](./docs/investigation_reports/zh/ffi_dense.md) | 25 个真实问题 |
 | [调查报告索引](./docs/investigation_reports/zh/README.md) | 所有调查报告汇总 |

@@ -353,8 +353,8 @@ zig build-llvm -femit-llvm-ir target.zig
 |----------|---------------|
 | [README](../README.md) | Project overview, quick start, feature list |
 | [Architecture](./architecture.md) | Tier 1/Tier 2 design, pass dependency graph, data structures |
-| [Comprehensive Report](./project_exports/en/COMPREHENSIVE_REPORT.md) | Full 17-project benchmark data |
-| [Performance Report](./project_exports/en/PERFORMANCE_IMPROVEMENT.md) | v0.1.5 -> v0.1.6 performance gains |
+| [Benchmark Report](../BENCHMARK.md) | Full 17-project benchmark data |
+| [Investigation Reports](./investigation_reports/en/README.md) | Per-project deep-dive reports |
 | [wasmtime Investigation](./investigation_reports/en/wasmtime_source.md) | Real CVE pattern detection deep-dive |
 | [FFI-Dense Report](./investigation_reports/en/ffi_dense.md) | 25 real issues found in synthetic FFI code |
 | [Letter to Users](./TOUSER/en.md) | The human story behind this project |

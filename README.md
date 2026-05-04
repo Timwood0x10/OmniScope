@@ -17,7 +17,7 @@
 
 Supports C/C++/Rust/Zig/Go. Detects memory safety issues and FFI boundary violations via LLVM IR.
 
-English | [简体中文](./README_ZH.md)
+English | [简体中文](./README_zh.md)
 
 ***
 
@@ -266,7 +266,7 @@ docs/
 ├── TOUSER/                   # Letters to users
 ├── investigation_reports/    # Detailed investigation reports
 ├── architecture.md           # Architecture documentation
-└── project_exports/          # Comprehensive test reports
+└── BENCHMARK.md              # Benchmark report
 ```
 
 ***
@@ -277,8 +277,8 @@ docs/
 | ---------------------------------------------------------------------------------- | ------------------------------- |
 | [Letter to Users](./docs/TOUSER/en.md)                                             | Why this project exists         |
 | [Architecture](./docs/architecture.md)                                             | Tier 1/Tier 2 design details   |
-| [Comprehensive Report](./docs/project_exports/en/COMPREHENSIVE_REPORT.md)          | 12 project test results         |
-| [Performance Report](./docs/project_exports/en/PERFORMANCE_IMPROVEMENT.md)         | v0.1.5 performance data         |
+| [Benchmark Report](./docs/BENCHMARK.md)                                              | 17-project performance data       |
+| [Investigation Reports](./docs/investigation_reports/en/README.md)                     | Per-project deep-dive reports     |
 | [wasmtime Source Verification](./docs/investigation_reports/en/wasmtime_source.md) | Real vulnerability verification |
 | [FFI-Dense Project Report](./docs/investigation_reports/en/ffi_dense.md)           | 25 real issues                  |
 | [Investigation Reports](./docs/investigation_reports/)                             | All investigation reports       |
