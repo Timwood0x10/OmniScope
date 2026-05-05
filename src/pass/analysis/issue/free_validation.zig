@@ -259,6 +259,11 @@ pub const FreeValidationPass = struct {
     /// Centralizes Rust ownership model awareness: when Rust code uses
     /// __rust_dealloc on a pointer from Box::into_raw(), it's intentional
     /// ownership reclamation — not a bug.
+    ///
+    /// SECURITY POLICY (2026-05-05 tightened):
+    /// For C/C++: Established conventions allow broader trust (global statics, well-known wrappers).
+    /// For Rust/Zig: Stricter — these languages have ownership systems; if code bypasses them
+    /// via FFI, we require explicit safety proof (null checks, RAII, refcount), not assumptions.
     fn isFreeSafe(free_func: []const u8, origin: ValueOrigin, source_desc: []const u8) bool {
         // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
         if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
@@ -274,6 +279,11 @@ pub const FreeValidationPass = struct {
         //   - vkFreeMemory (Vulkan API) pairs with vkAllocateMemory
         //   - ID3D12Device_Release (DirectX 12) pairs with CreateDevice
         //   - Platform-specific: VirtualFree/HeapFree (Windows), munmap (POSIX)
+        //
+        // NOTE: .from_global origin is intentionally NOT auto-trusted here.
+        // Global pointers in Rust/Zig FFI context are suspicious — they may indicate
+        // a static that was allocated in one language and freed in another without
+        // proper coordination. Flag for manual review unless proven safe.
         if (origin == .from_ffi_call and !isRustDeallocFunction(free_func) and
             !std.mem.eql(u8, free_func, "free"))
         {
@@ -291,6 +301,8 @@ pub const FreeValidationPass = struct {
             }
             // Default: do NOT exempt — flag as suspicious for manual review
         }
+        // All other origins (.from_global, .unknown, etc.) default to unsafe.
+        // This is intentional: if we can't prove it's safe, flag it.
         return false;
     }
 

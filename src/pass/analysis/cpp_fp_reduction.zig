@@ -166,8 +166,13 @@ pub fn isMeyersSingletonPattern(func_name: []const u8) bool {
 pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
     if (std.mem.eql(u8, func_name, "main")) return true;
     const intentional_prefixes = [_][]const u8{
+        // SECURITY: "safe_" intentionally excluded from this list to prevent bypass.
+        // Functions with "safe_" prefix could evade leak detection if they contain
+        // actual memory leaks (e.g., safe_free_my_pointer() with unbalanced alloc/free).
+        // Genuine safety requires provable null checks (isGuardedByNullCheck) or RAII patterns
+        // (detectRaiiManagedAllocations/detectRefCountedContainerFunctions), not naming convention.
         "correct_", "valid_",  "example_", "good_",
-        "safe_",    "proper_", "fixed_",   "ok_",
+        "proper_",   "fixed_",   "ok_",
     };
     for (intentional_prefixes) |prefix| {
         if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
