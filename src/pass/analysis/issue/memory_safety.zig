@@ -322,7 +322,7 @@ pub const MemorySafetyPass = struct {
         );
 
         const issue = Issue.init(
-            .use_after_free,
+            .invalid_free,
             message,
             location,
             severity,

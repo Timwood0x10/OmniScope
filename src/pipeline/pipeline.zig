@@ -17,6 +17,7 @@ const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
+const call_graph_mod = @import("../semantics/call_graph.zig");
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
@@ -99,7 +100,17 @@ pub const Pipeline = struct {
             .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
             .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
+            .semantics_call_graph = null,
         };
+        // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
+        // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
+        // The graph uses GeneralPurposeAllocator (not Arena) so all internal
+        // allocations (HashMap, ArrayList, dupe'd strings) must be explicitly freed.
+        defer {
+            if (ctx.semantics_call_graph) |*sg| {
+                call_graph_mod.CallGraph.deinit(sg);
+            }
+        }
         defer ctx.deinit();
 
         // R7.2 Language-First: detect module language ONCE before any passes run.
@@ -149,7 +160,6 @@ pub const Pipeline = struct {
         if (leak_count > 0) {
             const tracker = &ctx.global_alloc_tracker;
             var confirmed_high: u32 = 0;
-            var confirmed_critical: u32 = 0;
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
@@ -159,7 +169,7 @@ pub const Pipeline = struct {
                     const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
                     const severity: Severity = if (is_on_ffi_path) .high else .low;
                     const confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
-                    if (is_on_ffi_path) confirmed_high += 1 else confirmed_critical += 0;
+                    if (is_on_ffi_path) confirmed_high += 1;
                     var issue = Issue.initWithTrace(
                         .memory_leak,
                         msg,

@@ -186,6 +186,11 @@ pub const MemoryGraph = struct {
     /// Built by trackAlias. Enables O(1) reverse lookup instead of O(N) node scan.
     alias_to_canonical: std.AutoHashMap(u64, u64),
 
+    /// V2: Set of weak aliases (borrowed pointers, not ownership transfers).
+    /// Used to prevent false positives in double-free detection.
+    /// A pointer in this set was borrowed, not owned, so freeing it is not a double-free error.
+    weak_aliases: std.AutoHashMap(u64, void),
+
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
         return MemoryGraph{
@@ -202,6 +207,7 @@ pub const MemoryGraph = struct {
             .call_ret_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
             .call_ret_by_ptr = std.AutoHashMap(u64, std.ArrayList(u32)).init(allocator),
             .alias_to_canonical = std.AutoHashMap(u64, u64).init(allocator),
+            .weak_aliases = std.AutoHashMap(u64, void).init(allocator),
         };
     }
 
@@ -251,6 +257,7 @@ pub const MemoryGraph = struct {
         graph.call_ret_by_ptr.deinit();
 
         graph.alias_to_canonical.deinit();
+        graph.weak_aliases.deinit(); // V2: Clean up weak aliases set
 
         graph.* = undefined;
     }
@@ -307,15 +314,38 @@ pub const MemoryGraph = struct {
 
     /// Records an alias relationship: from_val = to_val.
     /// Called when we see a store like "ptr_b = ptr_a".
-    pub fn trackAlias(graph: *MemoryGraph, from_val: u64, to_val: u64) !void {
+    ///
+    /// V2 Enhancement: Added is_weak parameter to distinguish:
+    ///   - Strong alias (is_weak=false): Ownership transfer, double-free IS an error
+    ///   - Weak alias (is_weak=true): Borrow only, freeing borrowed ptr is NOT double-free
+    ///
+    /// For backward compatibility, use trackAliasStrong() which defaults is_weak=false.
+    pub fn trackAlias(graph: *MemoryGraph, from_val: u64, to_val: u64, is_weak: bool) !void {
         const target_node = graph.nodes.get(to_val) orelse {
             return MemoryGraphError.NodeNotFound;
         };
 
         try target_node.aliases.put(from_val, {});
+        // V2: Store weak flag for downstream double-free decision making
+        if (is_weak) {
+            try graph.weak_aliases.put(from_val, {});
+        }
         try graph.nodes.put(from_val, target_node);
         // Build reverse index for O(1) alias→canonical lookup
         try graph.alias_to_canonical.put(from_val, to_val);
+    }
+
+    /// Backward-compatible version of trackAlias that defaults to strong alias (is_weak=false).
+    ///
+    /// Use this function when you don't need weak alias tracking:
+    ///   - Existing code that doesn't care about borrow vs ownership distinction
+    ///   - V1-style analysis where all aliases are treated as strong
+    ///   - Simple cases where double-free precision isn't critical
+    ///
+    /// For new code that needs weak alias support, use trackAlias() with explicit is_weak parameter.
+    pub fn trackAliasStrong(graph: *MemoryGraph, from_val: u64, to_val: u64) !void {
+        // Delegate to the full version with is_weak=false (strong alias)
+        return trackAlias(graph, from_val, to_val, false);
     }
 
     /// Records a free operation and checks for double-free.

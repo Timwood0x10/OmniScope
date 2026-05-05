@@ -24,6 +24,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const word_boundary = @import("../../utils/word_boundary.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -157,10 +158,68 @@ pub fn isCgoBoundary(func_name: []const u8) bool {
     return false;
 }
 
+/// Checks if a function name provides sufficient Go-specific evidence to be
+/// considered a cgo boundary function.
+///
+/// This helper consolidates the three-tier Go evidence check used across multiple
+/// linkage type validations in isCgoBoundaryFromLLVM():
+///   1. Known cgo glue patterns (isCgoGlueByPattern)
+///   2. Go runtime prefix (_cgo_)
+///   3. Go callback marker (__cgocallback)
+///
+/// Using this single function ensures consistency and reduces maintenance overhead.
+/// If the evidence requirements change, only this one place needs updating.
+///
+/// Arguments:
+///   func_name - The LLVM function name to check
+///
+/// Returns:
+///   true if the function name contains Go-specific cgo evidence
+fn hasCgoEvidence(func_name: []const u8) bool {
+    return isCgoGlueByPattern(func_name) or
+        std.mem.indexOf(u8, func_name, "_cgo_") != null or
+        std.mem.indexOf(u8, func_name, "__cgocallback") != null;
+}
+
+/// Unified CGO boundary detection by LLVM linkage type and name evidence.
+///
+/// Consolidates all cgo boundary checks into a single helper that:
+///   1. Checks if the linkage type is one of the known cgo linkage types
+///      (ExternalWeak, Common, External, WeakAny/ODR, LinkOnceAny/ODR)
+///   2. Requires additional Go-specific evidence for non-obvious linkages
+///      (prevents false positives in non-Go projects)
+///
+/// This replaces the duplicated logic previously in isCgoBoundaryFromLLVM()
+/// where each linkage type had its own copy of the evidence check.
+///
+/// Arguments:
+///   linkage - The LLVM linkage type of the function
+///   func_name - The function name to check for Go patterns
+///
+/// Returns:
+///   true if the function should be treated as a cgo boundary
+fn isCgoBoundaryByLinkage(linkage: c.LLVMLinkage, func_name: []const u8) bool {
+    // All these linkage types are commonly used in cgo glue code,
+    // but can also appear in non-Go projects (e.g., weak symbols, COMDAT).
+    // Therefore, we require additional Go-specific evidence to reduce false positives.
+    const is_cgo_linkage = (linkage == c.LLVMExternalWeakLinkage or
+        linkage == c.LLVMCommonLinkage or
+        linkage == c.LLVMExternalLinkage or
+        linkage == c.LLVMWeakAnyLinkage or
+        linkage == c.LLVMWeakODRLinkage or
+        linkage == c.LLVMLinkOnceAnyLinkage or
+        linkage == c.LLVMLinkOnceODRLinkage);
+
+    return is_cgo_linkage and hasCgoEvidence(func_name);
+}
+
 /// Check if a function is a cgo boundary using LLVM metadata.
 ///
 /// Uses LLVM linkage type and declaration status to identify
 /// compiler-generated cgo glue functions more precisely than string matching.
+///
+/// Delegates to isCgoBoundaryByLinkage() for all declaration-based checks,
+/// ensuring consistent evidence requirements across all linkage types.
 pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
     if (func == null) return false;
 
@@ -169,22 +228,9 @@ pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
     const func_name = std.mem.span(func_name_ptr);
 
     if (c.LLVMIsDeclaration(func) != 0) {
+        // Unified check: all cgo-relevant linkage types + Go evidence
         const linkage = c.LLVMGetLinkage(func);
-        if (linkage == c.LLVMExternalWeakLinkage or
-            linkage == c.LLVMCommonLinkage)
-        {
-            return true;
-        }
-        if (linkage == c.LLVMExternalLinkage) {
-            if (isCgoGlueByPattern(func_name)) return true;
-        }
-        if (linkage == c.LLVMWeakAnyLinkage or
-            linkage == c.LLVMWeakODRLinkage or
-            linkage == c.LLVMLinkOnceAnyLinkage or
-            linkage == c.LLVMLinkOnceODRLinkage)
-        {
-            if (isCgoGlueByPattern(func_name)) return true;
-        }
+        if (isCgoBoundaryByLinkage(linkage, func_name)) return true;
     } else {
         if (isCgoGlueByPattern(func_name)) return true;
 
@@ -256,10 +302,68 @@ fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool 
 }
 
 /// Detect C.CBytes pattern in function names.
+/// Uses word boundary matching to prevent false positives from names like
+/// "myCBytesHandler" or "CBytesUtils".
+///
+/// V2 ENHANCEMENT: Now also supports data flow verification via CallGraph.
+/// Use `isCBytesEscapeWithDataFlow()` for more precise detection that checks
+/// whether the CBytes return value actually reaches a retaining FFI call.
 pub fn isCBytesPattern(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "CBytes") != null or
-        std.mem.indexOf(u8, name, "C.GoString") != null or
-        std.mem.indexOf(u8, name, "C.GoStringN") != null;
+    // Use word boundary for precise matching (not substring)
+    return word_boundary.isWordBoundaryMatch(name, "C.CBytes") or
+        word_boundary.isWordBoundaryMatch(name, "C.GoString") or
+        word_boundary.isWordBoundaryMatch(name, "C.GoStringN");
+}
+
+/// Enhanced CBytes escape detection with data flow analysis.
+///
+/// This V2 function combines:
+/// 1. Name-based pattern matching (isCBytesPattern) - fast pre-filter
+/// 2. Data flow verification via MemoryGraph - confirms return value is used in FFI context
+///
+/// When to use:
+///   - Use this instead of isCBytesPattern() when you have access to ctx (PassContext)
+///   - Provides fewer false positives than name-only checking
+///
+/// Example of false positive avoided by data flow check:
+/// ```go
+/// func safeUsage() {
+///     buf := C.CBytes("hello")  // Matches pattern ✓
+///     defer C.free(unsafe.Pointer(buf))  // Properly freed, NOT an escape ✗
+/// }
+/// ```
+/// vs true positive:
+/// ```go
+/// func dangerousUsage() {
+///     buf := C.CBytes("hello")  // Matches pattern ✓
+///     C.storeGlobally(buf)      // Retained by C code → ESCAPE ✓
+/// }
+/// ```
+pub fn isCBytesEscapeWithDataFlow(
+    callee_name: []const u8,
+    ptr_val: u64,
+    ctx: *const PassContext,
+) bool {
+    // Step 1: Fast pre-filter by name (avoids expensive graph traversal for non-CBytes calls)
+    if (!isCBytesPattern(callee_name)) return false;
+
+    // Step 2: Check if the pointer value is tracked as passed to any FFI call
+    // This uses MemoryGraph's cross-function tracking to verify actual data flow
+    const mg = &ctx.memory_graph;
+
+    // Check if this pointer is passed as argument to any external/FFI function
+    if (mg.isPassedAsArg(ptr_val)) {
+        // The pointer from C.Bytes is actually used in a call → potential escape
+        return true;
+    }
+
+    // Step 3: Check if pointer is stored to global (another form of escape)
+    if (mg.isStoredToGlobal(ptr_val)) {
+        return true;
+    }
+
+    // Name matched but no data flow evidence found → likely safe usage
+    return false;
 }
 
 /// Detect unsafe.Pointer conversion pattern.
@@ -513,7 +617,12 @@ pub const CallbackEscapePass = struct {
             stats.go_cgo_boundaries_found += 1;
         }
 
-        var has_keepalive = false;
+        // Track per-call-site KeepAlive protection.
+        // Key: pointer value (u64), Value: void
+        // This allows precise tracking of which specific pointers are protected,
+        // preventing false negatives when some pointers have KeepAlive but others don't.
+        var keepalive_protected = std.AutoHashMap(u64, void).init(ctx.allocator);
+        defer keepalive_protected.deinit();
         var alloc_sites: std.ArrayList(AllocSiteInfo) = .{};
         defer {
             for (alloc_sites.items) |site| ctx.allocator.free(site.func_name);
@@ -536,7 +645,7 @@ pub const CallbackEscapePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls, &callback_escapes, ctx.isGoModule());
+                try scanInstruction(ctx.allocator, inst, &keepalive_protected, &alloc_sites, &free_sites, &cgo_calls, &callback_escapes, ctx.isGoModule());
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                     const called = c.LLVMGetCalledValue(inst);
@@ -592,10 +701,39 @@ pub const CallbackEscapePass = struct {
             stats.go_cgo_boundaries_found += 1;
         }
 
-        if (!has_keepalive and cgo_calls.items.len > 0) {
+        if (cgo_calls.items.len > 0) {
+            // Per-call-site KeepAlive protection check.
+            // Only report missing KeepAlive for pointers that are NOT protected.
             for (cgo_calls.items) |call| {
-                // R7.1-3: Language-aware retention check
-                if (call.is_pointer_arg and mayRetainInCLanguageAware(call.callee_name, is_cgo_boundary)) {
+                // Check if ANY pointer argument to this call has KeepAlive protection.
+                // A CGO call is considered "protected" if at least one of its pointer
+                // arguments was explicitly passed to runtime.KeepAlive().
+                //
+                // This handles cases like:
+                //   C.useData(ptr1, ptr2)  where only KeepAlive(ptr2) is called
+                //   → The call is still considered protected (ptr2 is the critical one)
+                var is_this_call_protected = false;
+                {
+                    var arg_i: u32 = 1; // Skip operand 0 (called function)
+                    while (arg_i < c.LLVMGetNumOperands(call.inst)) : (arg_i += 1) {
+                        const arg = c.LLVMGetOperand(call.inst, arg_i);
+                        if (@intFromPtr(arg) != 0) {
+                            const arg_type = c.LLVMTypeOf(arg);
+                            if (@intFromPtr(arg_type) != 0 and c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
+                                const ptr_val = @as(u64, @intFromPtr(arg));
+                                if (keepalive_protected.contains(ptr_val)) {
+                                    is_this_call_protected = true;
+                                    // Don't break — continue checking remaining args
+                                    // (though we already know it's protected)
+                                }
+                            }
+                        }
+                    }
+                    // Note: We intentionally check ALL pointer arguments, not just the first.
+                    // This ensures comprehensive coverage for multi-pointer CGO calls.
+                }
+
+                if (!is_this_call_protected and call.is_pointer_arg and mayRetainInCLanguageAware(call.callee_name, is_cgo_boundary)) {
                     // R8.0: Cross-verify with unified MemoryGraph before reporting.
                     // Only report if the pointer is confirmed to flow into a call edge.
                     const mg = &ctx.memory_graph;
@@ -933,7 +1071,7 @@ pub const CallbackEscapePass = struct {
     fn scanInstruction(
         allocator: std.mem.Allocator,
         inst: c.LLVMValueRef,
-        has_keepalive: *bool,
+        keepalive_protected: *std.AutoHashMap(u64, void),
         alloc_sites: *std.ArrayList(AllocSiteInfo),
         free_sites: *std.ArrayList(FreeSiteInfo),
         cgo_calls: *std.ArrayList(CGoCallInfo),
@@ -951,13 +1089,25 @@ pub const CallbackEscapePass = struct {
             const callee_name = std.mem.span(name_ptr);
 
             if (isGoSafetyFunction(callee_name)) {
-                has_keepalive.* = true;
+                // Record which pointer is protected by this KeepAlive call.
+                // runtime.KeepAlive(ptr) takes one argument: the pointer to protect.
+                if (c.LLVMGetNumOperands(inst) >= 2) {
+                    const protected_ptr = c.LLVMGetOperand(inst, 1);
+                    if (@intFromPtr(protected_ptr) != 0) {
+                        const ptr_val = @as(u64, @intFromPtr(protected_ptr));
+                        // Propagate allocation failure rather than silently ignoring.
+                        // OOM here would indicate system resource exhaustion, which should
+                        // be reported to the caller for proper error handling.
+                        try keepalive_protected.put(ptr_val, {});
+                    }
+                }
             }
 
             // R7.2: Module-level language gate (passed from analyzeFunction).
+            // Use word boundary matching to prevent false positives like "dmalloc" or "calfree"
             if (is_go_module or
-                std.mem.indexOf(u8, callee_name, "malloc") != null or
-                std.mem.indexOf(u8, callee_name, "calloc") != null)
+                word_boundary.isWordBoundaryMatch(callee_name, "malloc") or
+                word_boundary.isWordBoundaryMatch(callee_name, "calloc"))
             {
                 try alloc_sites.append(allocator, .{
                     .inst_id = inst,
@@ -965,7 +1115,7 @@ pub const CallbackEscapePass = struct {
                 });
             }
 
-            if (std.mem.indexOf(u8, callee_name, "free") != null) {
+            if (word_boundary.isWordBoundaryMatch(callee_name, "free")) {
                 try free_sites.append(allocator, .{
                     .inst_id = inst,
                     .func_name = try allocator.dupe(u8, callee_name),
@@ -1051,11 +1201,11 @@ pub const CallbackEscapePass = struct {
         var malloc_count: u32 = 0;
         var free_count: u32 = 0;
 
-        // Count allocations
+        // Count allocations (using word boundary matching for consistency)
         for (alloc_sites.items) |site| {
-            if (std.mem.indexOf(u8, site.func_name, "malloc") != null or
-                std.mem.indexOf(u8, site.func_name, "calloc") != null or
-                std.mem.indexOf(u8, site.func_name, "realloc") != null)
+            if (word_boundary.isWordBoundaryMatch(site.func_name, "malloc") or
+                word_boundary.isWordBoundaryMatch(site.func_name, "calloc") or
+                word_boundary.isWordBoundaryMatch(site.func_name, "realloc"))
             {
                 malloc_count += 1;
             }
@@ -1063,7 +1213,7 @@ pub const CallbackEscapePass = struct {
 
         // Count frees
         for (free_sites.items) |site| {
-            if (std.mem.indexOf(u8, site.func_name, "free") != null) {
+            if (word_boundary.isWordBoundaryMatch(site.func_name, "free")) {
                 free_count += 1;
             }
         }

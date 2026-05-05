@@ -14,8 +14,8 @@ const std = @import("std");
 /// Prevents false positives from substring matching:
 ///   - my_free_wrapper should NOT match "free"
 ///   - my_handler should NOT match "handler"
-///   - myCallback SHOULD match "Callback) (camelCase)
-///   - handle_Event SHOULD match "Event) (snake_case)
+///   - myCallback SHOULD match "Callback" (camelCase)
+///   - handle_Event SHOULD match "Event" (snake_case)
 pub fn isWordBoundaryMatch(name: []const u8, pattern: []const u8) bool {
     // Exact match
     if (std.mem.eql(u8, name, pattern)) return true;

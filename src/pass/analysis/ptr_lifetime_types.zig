@@ -206,6 +206,7 @@ pub const RUST_ALLOC_INTRINSICS = struct {
     /// All 8 Rust allocator/deallocator intrinsics (alloc + dealloc combined)
     pub const all = [_][]const u8{
         "__rust_alloc", "__rust_dealloc",  "__rust_realloc",
+        "__rust_alloc_zeroed",
         "__rdl_alloc",  "__rdl_dealloc",   "__rg_alloc",
         "__rg_dealloc", "exchange_malloc",
     };

@@ -68,8 +68,32 @@ pub const TypeMismatchInfo = struct {
     description: []const u8,
 };
 
-/// Helper to check if LLVM API returned null pointer.
-/// Returns true if pointer is valid (non-null), false if null.
+/// Helper to check if LLVM API returned a valid (non-null) pointer.
+///
+/// **When to use**: For all LLVM C API return values (LLVMValueRef, LLVMTypeRef,
+/// LLVMBasicBlockRef, etc.). LLVM APIs return null on failure/invalid input.
+///
+/// **When NOT to use**: For non-LLVM pointers (Zig slices, optionals, user-defined types).
+/// Use direct comparison for those: `if (ptr == null) return;`
+///
+/// **Why this helper exists**: LLVM uses opaque pointer types (usize-sized handles) where
+/// null is represented as integer 0. This helper encapsulates the `@intFromPtr(ptr) != 0`
+/// pattern to improve readability and ensure consistent null-checking across the codebase.
+///
+/// Example:
+/// ```zig
+/// const val = c.LLVMGetOperand(inst, i);
+/// if (!llvmNotNull(val)) return;  // Clean, self-documenting
+///
+/// // Equivalent verbose form:
+/// if (@intFromPtr(val) == 0) return;
+/// ```
+///
+/// Arguments:
+///   ptr - Any LLVM API pointer type (comptime anytype for flexibility)
+///
+/// Returns:
+///   true if pointer is non-null (valid), false if null (invalid/error)
 inline fn llvmNotNull(ptr: anytype) bool {
     return @intFromPtr(ptr) != 0;
 }

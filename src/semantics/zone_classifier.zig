@@ -17,6 +17,8 @@
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 const debug_info = @import("../ir/debug_info.zig");
+const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
+pub const Language = FFIBoundary.Language;
 
 /// Zone classification for code regions.
 pub const ZoneKind = enum(u8) {
@@ -474,9 +476,11 @@ fn classifyBySubprogramPath(func: c.LLVMValueRef) ?ZoneKind {
     }
 
     // C/C++ system header paths → safe
+    // NOTE: "/include/" alone is too broad (matches user project headers).
+    // Only match known system include paths where headers are trusted.
     const system_paths = [_][]const u8{
         "/usr/include/",  "/usr/local/include/",
-        "/include/",      "/sysroot/",
+        "/sysroot/",
         "/llvm-project/", "/libcxx/",
     };
     for (system_paths) |pat| {
@@ -525,16 +529,6 @@ fn isLikelyRuntimeInternal(name: []const u8) bool {
 
     return false;
 }
-
-/// Source language for classification.
-pub const Language = enum(u8) {
-    rust,
-    zig,
-    go,
-    c,
-    cpp,
-    unknown,
-};
 
 /// Classify a Rust function.
 fn classifyRustFunction(func_name: []const u8) ZoneKind {

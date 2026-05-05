@@ -11,6 +11,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const CommonTypes = @import("../../common/types.zig");
+const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
+const Language = FFIBoundary.Language;
 
 const Pass = @import("../pass.zig").Pass;
 const PassContext = @import("../pass.zig").PassContext;
@@ -111,16 +113,6 @@ pub const FFIAnalysisPass = struct {
         language: Language,
         value_id: u64,
         inst_ptr: c.LLVMValueRef,
-    };
-
-    const Language = enum {
-        unknown,
-        c,
-        rust,
-        cpp,
-        zig,
-        swift,
-        go,
     };
 
     pub fn init(allocator: Allocator, store: *FactStore) FFIAnalysisPass {

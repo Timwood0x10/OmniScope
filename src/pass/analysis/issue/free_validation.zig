@@ -264,11 +264,32 @@ pub const FreeValidationPass = struct {
         if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
         // into_raw + matching Rust dealloc: correct ownership reclamation
         if (source_desc.len > 0 and isPossibleIntoRawOutput(source_desc) and isRustDeallocFunction(free_func)) return true;
-        // Non-Rust, non-standard free on FFI-sourced ptr: may be legitimate wrapper
+        // FFI-sourced pointer freed by known safe wrappers only.
+        // Previously exempted ALL non-Rust/non-standard frees (too broad — missed Rust FFI bugs).
+        // Now restricted to well-known language-specific deallocators:
+        //   - g_free (GLib/GObject) pairs with g_malloc/g_new
+        //   - CFRelease/CFAutorelease (CoreFoundation) pairs with Create/Copy
+        //   - PyObject_Free (Python C API) pairs with PyObject_Malloc
+        //   - cudaFree (CUDA runtime) pairs with cudaMalloc
+        //   - vkFreeMemory (Vulkan API) pairs with vkAllocateMemory
+        //   - ID3D12Device_Release (DirectX 12) pairs with CreateDevice
+        //   - Platform-specific: VirtualFree/HeapFree (Windows), munmap (POSIX)
         if (origin == .from_ffi_call and !isRustDeallocFunction(free_func) and
             !std.mem.eql(u8, free_func, "free"))
         {
-            return true;
+            const known_safe_wrappers = [_][]const u8{
+                "g_free", "CFRelease", "CFAutorelease",
+                "PyObject_Free", "PyMem_Free", "cudaFree",
+                "vkFreeMemory", "ID3D12Device_Release",
+                "VirtualFree", "HeapFree",
+                "munmap", "mmap_free",
+                "objc_release", "NSDeallocateObject",
+                "CoTaskMemFree", "SysFreeString",
+            };
+            for (known_safe_wrappers) |wrapper| {
+                if (std.mem.eql(u8, free_func, wrapper)) return true;
+            }
+            // Default: do NOT exempt — flag as suspicious for manual review
         }
         return false;
     }

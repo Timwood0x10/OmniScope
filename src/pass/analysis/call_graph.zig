@@ -14,6 +14,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const CrossLangEdge = @import("../pass.zig").CrossLangEdge;
 const ptr_types = @import("ptr_lifetime_types.zig");
 const language_detector = @import("../../semantics/language_detector.zig");
+const semantics_call_graph = @import("../../semantics/call_graph.zig");
 
 /// Classification of function origin in the call graph.
 /// Used to determine trust boundaries and FFI transitions.
@@ -226,6 +227,52 @@ pub const CallGraphPass = struct {
 
         // R8.2-b: Extract cross-language call edges for downstream passes.
         try extractCrossLangEdges(ctx, &nodes, &edges, diag);
+
+        // CRITICAL FIX for 0/73 benchmark: Build semantics-level CallGraph for BFS traversal.
+        {
+            var sg = semantics_call_graph.CallGraph.init(ctx.allocator) catch |err| {
+                diag.warn("CallGraph: failed to init semantics CallGraph: {}", .{err});
+                return;
+            };
+            errdefer sg.deinit();
+
+            var name_to_sg_id = std.StringHashMap(u64).init(ctx.allocator);
+            defer name_to_sg_id.deinit();
+
+            var node_fail_count: u32 = 0;
+            var edge_fail_count: u32 = 0;
+
+            for (nodes.items) |node| {
+                const is_ffi_boundary = node.kind == .external_unknown or isSink(node.name);
+                const node_id = sg.addNode(null, node.name, node.is_external, is_ffi_boundary) catch {
+                    node_fail_count += 1;
+                    continue;
+                };
+                try name_to_sg_id.put(node.name, node_id);
+            }
+
+            for (edges.items) |edge| {
+                if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
+                const caller_name = nodes.items[edge.caller].name;
+                const callee_name = nodes.items[edge.callee].name;
+                const caller_sg_id = name_to_sg_id.get(caller_name) orelse continue;
+                const callee_sg_id = name_to_sg_id.get(callee_name) orelse continue;
+                _ = sg.addEdge(caller_sg_id, callee_sg_id, null, callee_name) catch {
+                    edge_fail_count += 1;
+                    continue;
+                };
+            }
+
+            if (node_fail_count > 0 or edge_fail_count > 0) {
+                diag.warn("CallGraph: semantics graph built with {} node failures, {} edge failures", .{ node_fail_count, edge_fail_count });
+            }
+            if (sg.nodes.items.len == 0) {
+                diag.warn("CallGraph: semantics graph is EMPTY — reachesFFIBoundary will always return false", .{});
+            }
+
+            ctx.semantics_call_graph = sg;
+            diag.info("CallGraph: built semantics CallGraph with {} nodes, {} edges for BFS traversal", .{ sg.nodes.items.len, sg.edges.items.len });
+        }
     }
 
     fn buildNodes(allocator: std.mem.Allocator, mod: c.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {

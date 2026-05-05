@@ -14,6 +14,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const memory_graph_mod = @import("../semantics/memory_graph.zig");
+const call_graph_mod = @import("../semantics/call_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const language_detector = @import("../semantics/language_detector.zig");
@@ -269,6 +270,12 @@ pub const PassContext = struct {
     /// Populated by addCrossLangEdge(). Used by ffi_boundary.checkCallForFFI.
     cross_edge_by_callee: std.StringHashMap(std.ArrayList(u32)),
 
+    /// CRITICAL FIX for 0/73 benchmark: Semantics-level CallGraph for BFS traversal.
+    /// Built by CallGraphPass, consumed by ptr_lifetime and other analysis passes
+    /// via reachesFFIBoundary() for cross-function FFI boundary reachability analysis.
+    /// Without this, reachesFFIBoundary() exists but is never called — causing 0% recall.
+    semantics_call_graph: ?call_graph_mod.CallGraph,
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -306,6 +313,7 @@ pub const PassContext = struct {
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
             .CallSiteIndex = CallSiteIndex.init(allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
+            .semantics_call_graph = null,
         };
     }
 

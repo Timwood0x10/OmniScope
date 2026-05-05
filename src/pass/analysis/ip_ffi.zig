@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const word_boundary = @import("../../utils/word_boundary.zig");
 
 const NULL_GUARD_MAX_SCAN: u32 = 15;
 
@@ -142,15 +143,49 @@ fn check_result_used(call_inst: c.LLVMValueRef) bool {
 ///   %cmp = icmp eq %ptr, null
 ///   br i1 %cmp, label %error, label %success
 pub fn check_null_guard_after(call_inst: c.LLVMValueRef) bool {
-    // Scan forward from the call instruction looking for ICMP + branch
-    // Limit search to next N instructions to avoid O(n²)
+    // Scan forward from the call instruction looking for ICMP + branch.
+    //
+    // IMPORTANT: NULL guard checks often span multiple basic blocks in LLVM IR:
+    //   - Call instruction is in entry block
+    //   - ICMP comparison may be in a successor block (after conditional branch)
+    //   - Branch on that comparison is in the same or next block
+    //
+    // To handle this, we use a simple work-queue approach that follows terminator
+    // instructions to successor blocks (limited by total instruction count).
     const max_scan: u32 = NULL_GUARD_MAX_SCAN;
-    var inst = c.LLVMGetNextInstruction(call_inst);
-    var count: u32 = 0;
+    var total_scanned: u32 = 0;
 
-    while (@intFromPtr(inst) != 0 and count < max_scan) : ({
+    // Start with the current basic block's next instruction
+    var inst = c.LLVMGetNextInstruction(call_inst);
+
+    // Use a simple stack to track pending basic blocks to scan
+    // (avoids recursion depth issues while keeping code simple)
+    var bb_stack: [4]c.LLVMBasicBlockRef = undefined; // Max 4 successor levels deep
+    var bb_stack_len: usize = 0;
+    var visited_bbs: [8]c.LLVMBasicBlockRef = undefined; // Avoid re-scanning same BB
+    var visited_bbs_len: usize = 0;
+
+    // Helper to check if we've already queued/visited this BB (inlined for Zig compatibility)
+    const isBBVisited = struct {
+        fn check(bb: c.LLVMBasicBlockRef, list: []c.LLVMBasicBlockRef, len: usize) bool {
+            for (list[0..len]) |visited| {
+                if (@intFromPtr(visited) == @intFromPtr(bb)) return true;
+            }
+            return false;
+        }
+    }.check;
+
+    while (@intFromPtr(inst) != 0 and total_scanned < max_scan) : ({
+        // Move to next instruction in current block
         inst = c.LLVMGetNextInstruction(inst);
-        count += 1;
+        total_scanned += 1;
+
+        // If we've exhausted the current block, try to get next from stack
+        if (@intFromPtr(inst) == 0 and bb_stack_len > 0) {
+            bb_stack_len -= 1;
+            const next_bb = bb_stack[bb_stack_len];
+            inst = c.LLVMGetFirstInstruction(next_bb);
+        }
     }) {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -177,13 +212,38 @@ pub fn check_null_guard_after(call_inst: c.LLVMValueRef) bool {
             }
         }
 
-        // Stop at terminator instructions (branch, switch, ret)
+        // At terminator instructions: follow successors (limited depth)
         const is_terminator = opcode == c.LLVMBr or
             opcode == c.LLVMSwitch or
             opcode == c.LLVMIndirectBr or
             opcode == c.LLVMRet or
             opcode == c.LLVMInvoke;
-        if (is_terminator) break;
+
+        if (is_terminator and bb_stack_len < bb_stack.len and total_scanned < max_scan) {
+            // For conditional branches, follow both successors
+            if (opcode == c.LLVMBr) {
+                const then_bb = c.LLVMGetSuccessor(inst, 0);
+                const else_bb = c.LLVMGetSuccessor(inst, 1);
+
+                // Queue successor blocks that haven't been visited yet
+                if (@intFromPtr(then_bb) != 0 and !isBBVisited(then_bb, &visited_bbs, visited_bbs_len)) {
+                    bb_stack[bb_stack_len] = then_bb;
+                    bb_stack_len += 1;
+                    visited_bbs[visited_bbs_len] = then_bb;
+                    visited_bbs_len += 1;
+                }
+                if (@intFromPtr(else_bb) != 0 and !isBBVisited(else_bb, &visited_bbs, visited_bbs_len)) {
+                    bb_stack[bb_stack_len] = else_bb;
+                    bb_stack_len += 1;
+                    visited_bbs[visited_bbs_len] = else_bb;
+                    visited_bbs_len += 1;
+                }
+            }
+            // Don't break here — let the loop try to pop from stack first
+        } else if (is_terminator) {
+            // For non-branch terminators (ret, switch, etc.), stop scanning this path
+            break;
+        }
     }
 
     return false;
@@ -196,16 +256,24 @@ fn is_null_constant(val: c.LLVMValueRef) bool {
     // Check for constant pointer null
     if (c.LLVMIsAConstantPointerNull(val) != null) return true;
 
-    // Check for constant integer zero (NULL is often represented as i64 0)
+    // Check for constant integer zero (NULL is often represented as i64 0 or i32 0)
+    // IMPORTANT: Only treat as potential NULL if the width matches common pointer sizes.
+    // This prevents false positives where small integers (i8 0, i16 0) used in
+    // non-pointer contexts are incorrectly classified as NULL guards.
     if (c.LLVMIsAConstantInt(val) != null) {
-        // For pointer comparisons, NULL is typically i64 0 or i32 0
-        // We don't need exact width match — any zero constant is suspicious enough
         const width = c.LLVMGetIntTypeWidth(c.LLVMTypeOf(val));
         if (width > 4096) return false;
-        if (width <= 64) {
-            // Conservative: treat small integer constants as potential NULL
+
+        // Only consider pointer-sized or near-pointer-sized widths as potential NULL:
+        // - 32-bit: Common on 32-bit platforms and for some pointer comparisons
+        // - 64-bit: Standard pointer size on 64-bit platforms
+        // - Other widths (8, 16 bits): Too small, likely just integer zero, not NULL
+        const is_pointer_width = (width == 32 or width == 64);
+        if (is_pointer_width) {
             return true;
         }
+        // For other widths, be conservative and don't treat as NULL
+        // unless it's exactly pointer-sized (avoids FP from i8/i16 zeros)
     }
 
     return false;
@@ -294,7 +362,9 @@ pub fn is_acquisition_function(name: []const u8) bool {
         "NewGlobalRef", "PyGILState_Ensure", "PyObject_Call",
     };
     for (acquisitions) |acq| {
-        if (std.mem.indexOf(u8, name, acq) != null) return true;
+        // Use word boundary matching to prevent false positives.
+        // Example: "my_free_wrapper" should NOT match "free"
+        if (word_boundary.isWordBoundaryMatch(name, acq)) return true;
     }
     return false;
 }
@@ -308,7 +378,9 @@ fn is_release_function(name: []const u8) bool {
         "Py_DECREF",
     };
     for (releases) |rel| {
-        if (std.mem.indexOf(u8, name, rel) != null) return true;
+        // Use word boundary matching to prevent false positives.
+        // Example: "unfreeze" should NOT match "free"
+        if (word_boundary.isWordBoundaryMatch(name, rel)) return true;
     }
     return false;
 }

@@ -246,7 +246,22 @@ pub const PtrLifetimePass = struct {
             // FFIBoundaryPass which runs BEFORE ptr_lifetime) to skip expensive
             // call-edge tracking (trackCallArg/trackCallRet) for non-FFI functions.
             // Full alloc/free/alias tracking still applies to ALL functions.
-            const is_ffi_func = ffi_func_names.contains(func_name);
+            //
+            // CRITICAL FIX for 0/73 benchmark: Also use CallGraph BFS traversal to
+            // detect functions that INDIRECTLY reach FFI boundaries. A wrapper function
+            // like my_process_data() may not be in cross_lang_edges itself, but if it
+            // calls C.save_to_file() transitively, it needs full MemoryGraph tracking
+            // to detect pointer leaks across the FFI boundary.
+            var is_ffi_func = ffi_func_names.contains(func_name);
+            if (!is_ffi_func) {
+                if (ctx.semantics_call_graph) |*sg| {
+                    if (sg.getNodeByName(func_name)) |node_id| {
+                        if (call_graph_mod.CallGraph.reachesFFIBoundary(sg, node_id, 10)) {
+                            is_ffi_func = true;
+                        }
+                    }
+                }
+            }
 
             // Phase R5.1: Reset hook state per function scope
             hooks.resetHookStatesForFunction();
@@ -666,7 +681,7 @@ pub const PtrLifetimePass = struct {
                                         if (mg_effective) |mg| {
                                             const inst_ptr = @as(u64, @intFromPtr(inst));
                                             const handle_ptr = @as(u64, @intFromPtr(handle_arg));
-                                            mg.trackAlias(inst_ptr, handle_ptr) catch {};
+                                            mg.trackAliasStrong(inst_ptr, handle_ptr) catch {};
                                         }
                                     }
                                 }
@@ -878,7 +893,7 @@ pub const PtrLifetimePass = struct {
                     if (mg_effective) |mg| {
                         const from_hash = @as(u64, @intFromPtr(dest));
                         const to_hash = @as(u64, @intFromPtr(value));
-                        mg.trackAlias(from_hash, to_hash) catch {};
+                        mg.trackAliasStrong(from_hash, to_hash) catch {};
                     }
                 } else {
                     // v0.1.6: Record content source even when value is not in pointer_map.
@@ -1077,7 +1092,7 @@ pub const PtrLifetimePass = struct {
             if (mem_graph) |mg| {
                 const from_hash = @as(u64, @intFromPtr(dst));
                 const to_hash = @as(u64, @intFromPtr(src));
-                mg.trackAlias(from_hash, to_hash) catch {};
+                mg.trackAliasStrong(from_hash, to_hash) catch {};
             }
         }
     }

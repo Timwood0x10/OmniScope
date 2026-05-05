@@ -24,6 +24,10 @@ const types = @import("types.zig");
 /// Each `into_raw` records the pointer as "transferred out".
 /// Each `from_raw` clears the record. Unpaired transfers at end-of-function
 /// are reported as potential leaks.
+// SAFETY: These are lazily initialized via rustOwnershipStateInit()/
+// pythonRefcountStateInit(). All access paths MUST check *_state_initialized
+// before use. `undefined` is required because AutoHashMap cannot be
+// initialized at comptime for threadlocal storage.
 threadlocal var rust_transfer_map: std.AutoHashMap(u64, void) = undefined;
 threadlocal var rust_state_initialized: bool = false;
 
@@ -74,6 +78,9 @@ pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
     if (ptr_key == 0) return .none;
 
     // Transfer-out patterns (ownership leaves Rust)
+    // NOTE: Specific variants (Box::/Rc::/Arc::) are subsumed by the generic
+    // "into_raw" entry when using endsWith/suffix matching (L96-L98).
+    // Kept here for documentation clarity and future-proofing if matching logic changes.
     const transfer_out_patterns = [_][]const u8{
         "into_raw",
         "Box::into_raw",
