@@ -273,8 +273,7 @@ pub fn checkCallViolation(
     // For stack-escape detection, check ALL extern/FFI calls (not just retaining ones).
     // Passing a stack address to any external function is dangerous — the callee
     // may store it for async use, and the stack frame will be gone when it fires.
-    const is_extern = is_extern_function(callee_name) or
-        (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+    const is_extern = is_extern_function(callee_name);
     const should_check_stack_escape = is_extern or may_retain_pointer(callee_name);
 
     if (!should_check_stack_escape) return;

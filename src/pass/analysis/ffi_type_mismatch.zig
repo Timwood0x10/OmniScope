@@ -68,6 +68,12 @@ pub const TypeMismatchInfo = struct {
     description: []const u8,
 };
 
+/// Helper to check if LLVM API returned null pointer.
+/// Returns true if pointer is valid (non-null), false if null.
+inline fn llvmNotNull(ptr: anytype) bool {
+    return @intFromPtr(ptr) != 0;
+}
+
 /// Statistics for FFI type mismatch detection.
 pub const TypeMismatchStats = struct {
     total_calls_analyzed: u32 = 0,
@@ -127,7 +133,7 @@ pub const FFITypeMismatchPass = struct {
         stats: *TypeMismatchStats,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_ptr) == 0) return;
+        if (!llvmNotNull(func_name_ptr)) return;
         const func_name = std.mem.span(func_name_ptr);
 
         // INTEGRATION: Use three-layer noise filter (name + path)
@@ -144,10 +150,10 @@ pub const FFITypeMismatchPass = struct {
         if (std.mem.startsWith(u8, func_name, "llvm.")) return;
 
         var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        while (llvmNotNull(bb)) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+            while (llvmNotNull(inst)) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (llvmNotNull(c.LLVMIsACallInst(inst))) {
                     try analyzeCallSite(ctx, func_name, inst, diag, stats);
                 }
             }
@@ -164,10 +170,10 @@ pub const FFITypeMismatchPass = struct {
         stats.total_calls_analyzed += 1;
 
         const called_val = c.LLVMGetCalledValue(call_inst);
-        if (@intFromPtr(called_val) == 0) return;
+        if (!llvmNotNull(called_val)) return;
 
         const callee_name_ptr = c.LLVMGetValueName(called_val);
-        if (@intFromPtr(callee_name_ptr) == 0) return;
+        if (!llvmNotNull(callee_name_ptr)) return;
         const callee_name = std.mem.span(callee_name_ptr);
 
         // Check if this is an FFI boundary
@@ -223,7 +229,7 @@ pub const FFITypeMismatchPass = struct {
         diag: *DiagnosticWriter,
     ) ?TypeMismatchInfo {
         const arg_type = c.LLVMTypeOf(arg);
-        if (@intFromPtr(arg_type) == 0) return null;
+        if (!llvmNotNull(arg_type)) return null;
 
         // Check 1: Size mismatch (e.g., usize vs size_t)
         if (detectSizeMismatch(arg_type, callee_name, param_index)) |mismatch| {
@@ -307,19 +313,19 @@ pub const FFITypeMismatchPass = struct {
 
         // Get the element type (what the pointer points to)
         const elem_type = c.LLVMGetElementType(arg_type);
-        if (@intFromPtr(elem_type) == 0) return null;
+        if (!llvmNotNull(elem_type)) return null;
 
         const elem_kind = c.LLVMGetTypeKind(elem_type);
 
         // Get DataLayout from module to compute type size
         const bb = c.LLVMGetInstructionParent(call_inst);
-        if (@intFromPtr(bb) == 0) return null;
+        if (!llvmNotNull(bb)) return null;
         const func = c.LLVMGetBasicBlockParent(bb);
-        if (@intFromPtr(func) == 0) return null;
+        if (!llvmNotNull(func)) return null;
         const module = c.LLVMGetGlobalParent(func);
-        if (@intFromPtr(module) == 0) return null;
+        if (!llvmNotNull(module)) return null;
         const dl = c.LLVMGetModuleDataLayout(module);
-        if (@intFromPtr(dl) == 0) return null;
+        if (!llvmNotNull(dl)) return null;
         const elem_size = c.LLVMABISizeOfType(dl, elem_type);
 
         // Pattern 1: Functions with alignment requirements in their name
@@ -433,11 +439,11 @@ pub const FFITypeMismatchPass = struct {
 
         // Get source and destination types of the trunc
         const src_val = c.LLVMGetOperand(def_inst, 0);
-        if (@intFromPtr(src_val) == 0) return null;
+        if (!llvmNotNull(src_val)) return null;
 
         const src_type = c.LLVMTypeOf(src_val);
         const dst_type = c.LLVMTypeOf(arg);
-        if (@intFromPtr(src_type) == 0 or @intFromPtr(dst_type) == 0) return null;
+        if (!llvmNotNull(src_type) or !llvmNotNull(dst_type)) return null;
 
         const src_kind = c.LLVMGetTypeKind(src_type);
         const dst_kind = c.LLVMGetTypeKind(dst_type);
@@ -484,7 +490,7 @@ pub const FFITypeMismatchPass = struct {
     /// Try to get the defining instruction of a value.
     /// Returns null if the value is not an instruction (e.g., constant, parameter).
     fn getDefiningInstruction(val: c.LLVMValueRef) ?c.LLVMValueRef {
-        if (@intFromPtr(val) == 0) return null;
+        if (!llvmNotNull(val)) return null;
         const val_kind = c.LLVMGetValueKind(val);
         if (val_kind != c.LLVMInstructionValueKind) return null;
         return val;
@@ -588,9 +594,9 @@ pub const FFITypeMismatchPass = struct {
         diag: *DiagnosticWriter,
     ) !bool {
         const called_val = c.LLVMGetCalledValue(call_inst);
-        if (@intFromPtr(called_val) == 0) return false;
+        if (!llvmNotNull(called_val)) return false;
         const callee_name_ptr = c.LLVMGetValueName(called_val);
-        if (@intFromPtr(callee_name_ptr) == 0) return false;
+        if (!llvmNotNull(callee_name_ptr)) return false;
         const callee_name = std.mem.span(callee_name_ptr);
         const is_incr = std.mem.eql(u8, callee_name, "Py_INCREF") or
             std.mem.eql(u8, callee_name, "Py_XINCREF");
@@ -599,24 +605,24 @@ pub const FFITypeMismatchPass = struct {
         if (!is_incr and !is_decr) return false;
 
         const py_obj = c.LLVMGetOperand(call_inst, 0);
-        if (@intFromPtr(py_obj) == 0) return false;
+        if (!llvmNotNull(py_obj)) return false;
 
         // Type safety: py_obj must be a pointer type (PyObject* is i8* in CPython ABI)
         const obj_type = c.LLVMTypeOf(py_obj);
-        if (@intFromPtr(obj_type) == 0) return false;
+        if (!llvmNotNull(obj_type)) return false;
         if (c.LLVMGetTypeKind(obj_type) != c.LLVMPointerTypeKind) return false;
 
         const decr_bb = c.LLVMGetInstructionParent(call_inst);
-        if (@intFromPtr(decr_bb) == 0) return false;
+        if (!llvmNotNull(decr_bb)) return false;
         const func = c.LLVMGetBasicBlockParent(decr_bb);
-        if (@intFromPtr(func) == 0) return false;
+        if (!llvmNotNull(func)) return false;
         const func_name_ptr = c.LLVMGetValueName(func);
         const func_name = if (func_name_ptr) |p| std.mem.span(p) else "unknown";
 
         if (is_decr) {
             var use_iter = c.LLVMGetFirstUse(py_obj);
             var has_prior_incr = false;
-            while (@intFromPtr(use_iter) != 0) : (use_iter = c.LLVMGetNextUse(use_iter)) {
+            while (llvmNotNull(use_iter)) : (use_iter = c.LLVMGetNextUse(use_iter)) {
                 const user = c.LLVMGetUser(use_iter);
                 if (@intFromPtr(user) == 0 or user == call_inst) continue;
                 const user_opcode = c.LLVMGetInstructionOpcode(user);

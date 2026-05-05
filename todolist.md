@@ -807,3 +807,380 @@ benchmark.sh: extended scan + v017_critical_patterns.ll included         ✅
 | [plan/lang_ffi_analysis/zig_ffi_filter.md](plan/lang_ffi_analysis/zig_ffi_filter.md) | Zig extern/c IR-level screening |
 | [plan/nexts.md](plan/nexts.md) | Phase 3 architecture: isOnDangerPath algorithm design **FULLY IMPLEMENTED** |
 | [plan/todolist.md](plan/todolist.md) | v0.1.6 completed work (Phase 1+2+3) |
+
+---
+
+## Pillar H: Deep Code Review Issues (from plan/untodo.md -- 2026-05-05)
+
+> **Source**: [plan/untodo.md](plan/untodo.md) — comprehensive code review of 5 core files
+> **Method**: Line-by-line source code verification (2026-05-05)
+> **Result**: 11 High + 11 Medium + 13 Low = **35 total issues** confirmed
+> **Status**: All issues VERIFIED against current source code
+
+### H0: Issue Summary Table
+
+| Severity | Count | Files Affected | Critical Impact |
+|----------|-------|----------------|-----------------|
+| 🔴 High | 11 | call_graph.zig (3), ip_ffi.zig (1), callback_escape.zig (1), behavior_filter.zig (1), memory_graph.zig (1), danger_surface.zig (1), ptr_lifetime.zig (1), ffi_boundary_check.zig (1), ffi_safety_checker.zig (1) | H6/H7/H8 break cross-function analysis; H9-H11 cause FP/FN |
+| 🟡 Medium | 11 | ip_ffi.zig (2), call_graph.zig (3), callback_escape.zig (4), behavior_filter.zig (2) | FP sources, missing features |
+| 🟢 Low | 13 | noise_filter.zig (3), ip_ffi.zig (3), call_graph.zig (2), callback_escape.zig (2), behavior_filter.zig (3) | Quality improvements |
+
+**Total: 35 issues across 8 files**
+
+---
+
+### H1: 🔴 High Priority Issues (11) — Must Fix for Correctness
+
+#### H1: memory_graph.zig L857 — isOnDangerPath 入口未加入 visited
+
+**Problem**: 环检测不完整，入口节点未标记为已访问
+
+**Impact**: 递归别名闭包遍历时可能重复处理同一节点
+
+**File**: [memory_graph.zig](src/semantics/memory_graph.zig#L857)
+
+**Fix**: 在函数入口处添加 `visited.put(ptr_val, {}) catch return .none`
+
+---
+
+#### H2: danger_surface.zig L108-130 — Phase 2 visited 未清空
+
+**Problem**: Phase 2 fallback 遍历复用 visited 集合但未清空
+
+**Impact**: Phase 2 可能跳过应该检查的节点（被 Phase 1 标记为已访问）
+
+**File**: [danger_surface.zig](src/pass/analysis/danger_surface.zig#L108-L130)
+
+**Fix**: 在 Phase 2 开始前调用 `visited.clear()`
+
+---
+
+#### H3: ptr_lifetime.zig L1197-1204 — double-free 只 warn 不报 Issue
+
+**Problem**: MemoryGraph 检测到 double-free 后仅输出 `diag.warn`，未创建 `Issue` 对象
+
+**Impact**: 用户永远看不到 double-free 结果，检测工作白费（**静默数据丢失**）
+
+**File**: [ptr_lifetime.zig](src/pass/analysis/ptr_lifetime.zig#L1197-L1204)
+
+**Fix**: 添加 `try ctx.addIssue(.double_free, ...)` 或使用 `[OMI-HIGH] [DOUBLE_FREE]` 格式
+
+---
+
+#### H4: ffi_boundary_check.zig L285-301 — checkReturnValueEscape 完全空体
+
+**Problem**: 函数返回 false，无实际检测逻辑
+
+**Impact**: FFI 返回值逃逸检测完全失效
+
+**File**: [ffi_boundary_check.zig](src/pass/analysis/ffi_boundary_check.zig#L285-L301)
+
+**Fix**: 实现 LLVM Use iteration + 跨函数返回值追踪
+
+---
+
+#### H5: ffi_safety_checker.zig L271-307 — 有实现的 checkReturnValueEscape 是死代码
+
+**Problem**: 包含完整实现但从未被调用（ffi_boundary_check.zig 的空版本被调用）
+
+**Impact**: 正确的实现被废弃代码覆盖
+
+**File**: [ffi_safety_checker.zig](src/pass/analysis/ffi_safety_checker.zig#L271-L307)
+
+**Fix**: 删除 ffi_boundary_check.zig 中的空壳，委托给 ffi_safety_checker.zig 的实现
+
+---
+
+#### H6: call_graph.zig L318-327 — callee_to_caller 返回值场景不处理 ✅ CONFIRMED
+
+**Problem**: 当 `direction == .callee_to_caller` 但 `is_output_param == false` 时（即通过**返回值**转移所有权），函数**不创建任何别名**
+
+**Impact**: `malloc()` 返回指针给 caller 的所有权转移完全不被追踪 —— **跨函数分析核心缺陷**
+
+**Current Code**:
+```zig
+.callee_to_caller => {
+    if (mapping.is_output_param) {
+        track_alias_fn(...); // ✅ 只处理 output param
+        aliases_created += 1;
+    }
+    // ❌ is_output_param == false 时什么都不做！返回值场景丢失
+},
+```
+
+**File**: [call_graph.zig](src/semantics/call_graph.zig#L318-L327)
+
+**Fix**: 当 `is_output_param == false` 时，将 `call_inst` 的返回值标记为 callee 创建的新资源，关联到 caller 上下文
+
+**Lines**: ~15
+**Priority**: **P0** — 直接影响跨函数 FFI 分析正确性
+
+---
+
+#### H7: call_graph.zig — 无环检测 ✅ CONFIRMED
+
+**Problem**: `CallGraph` 定义了 `CycleDetected` 错误（L29），但**整个实现中没有任何环检测逻辑**
+
+**Impact**: 对于递归函数（如 `foo() -> bar() -> foo()`），`propagateMemoryGraphThroughCall` 会导致无限循环或栈溢出
+
+**Current Behavior**:
+- `addEdge` 不检查是否引入环
+- `propagateMemoryGraphThroughCall` 不检查递归调用
+- 无深度限制或 visited 集合保护
+
+**File**: [call_graph.zig](src/semantics/call_graph.zig)
+
+**Fix Options**:
+1. 在 `addEdge` 中添加 DFS 或 visited set 环检测
+2. 在 `propagateMemoryGraphThroughCall` 中添加深度限制（如 max_depth=32）
+3. 至少在文档中明确说明不支持递归函数
+
+**Lines**: ~20
+**Priority**: **P0** — 递归函数会导致 crash
+
+---
+
+#### H8: call_graph.zig L192-194 — addEdge 不安全索引 ✅ CONFIRMED
+
+**Problem**: 假设 `caller_id - 1` 是 nodes 数组的有效索引，但如果 `caller_id` 为 0（虽然当前从 1 开始），会导致 `@as(usize, 0 - 1)` 溢出为 `usize::MAX`
+
+**Current Code**:
+```zig
+if (graph.nodes.items.len > caller_id) {
+    try graph.nodes.items[@as(usize, caller_id - 1)].outgoing_edges.append(id);
+}
+```
+
+**Impact**: 潜在的严重内存安全问题（越界访问）
+
+**File**: [call_graph.zig](src/semantics/call_graph.zig#L192-L194)
+
+**Fix**: 使用 `getNode(caller_id)` 安全获取节点，或添加 `caller_id >= 1` 的显式检查
+
+**Lines**: ~5
+**Priority**: **P0** — 潜在 crash / 内存安全
+
+---
+
+#### H9: ip_ffi.zig L296-299 — indexOf 子串匹配导致 FP ✅ CONFIRMED
+
+**Problem**: `is_acquisition_function` / `is_release_function` 使用 `indexOf` 做**子串匹配**而非精确匹配
+
+**FP Examples**:
+- `"my_free_wrapper"` 匹配 `"free"` → 误判为 release 函数
+- `"unfreeze"` 匹配 `"free"` → 误判
+- `"Py_DECREF_extra"` 匹配 `"Py_DECREF"` → 误判
+- `"dmalloc"` 匹配 `"malloc"` → dmalloc 是调试分配器
+
+**Current Code**:
+```zig
+for (acquisitions) |acq| {
+    if (std.mem.indexOf(u8, name, acq) != null) return true;
+}
+```
+
+**File**: [ip_ffi.zig](src/pass/analysis/ip_ffi.zig#L296-L299)
+
+**Fix**: 对短关键词（len <= 5）使用 `std.mem.eql` 精确匹配或单词边界匹配；长模式用 `indexOf`
+
+**Lines**: ~10
+**Priority**: **P0** — 最大 FP 来源之一
+
+---
+
+#### H10: callback_escape.zig L516 — has_keepalive 函数级标志 ✅ CONFIRMED
+
+**Problem**: `has_keepalive` 是**函数级布尔标志**，只要函数中任何位置调用了 `runtime.KeepAlive`，就认为所有 cgo 调用都有保护
+
+**FN Example**:
+```go
+ptr1 := C.malloc(1024)
+C.useData(ptr1)           // 无 KeepAlive
+runtime.KeepAlive(ptr2)   // 保护的是 ptr2，不是 ptr1
+// has_keepalive = true，但 ptr1 实际上没有保护 → 漏报
+```
+
+**Impact**: Go cgo KeepAlive 检测产生**漏报（False Negative）**
+
+**File**: [callback_escape.zig](src/pass/analysis/callback_escape.zig#L516)
+
+**Fix**: 将 `has_keepalive` 改为 per-call-site 检查，追踪哪个指针被 KeepAlive 保护
+
+**Lines**: ~25
+**Priority**: **P0** — Go FFI 安全关键缺陷
+
+---
+
+#### H11: behavior_filter.zig L427-451 — detectSequence 允许乱序匹配 ✅ CONFIRMED
+
+**Problem**: 
+1. 只要求匹配 **>= 50%** 序列元素即返回 true（部分匹配）
+2. 不匹配时**不一定重置** `seq_idx`（当 `seq_idx <= sequence.len / 2` 时不重置）
+
+**Impact**: 允许**乱序匹配**，导致行为分类错误
+
+**Example**: 对于序列 `["free", "memset", "br"]`：
+- 只要有 `free` 和 `br`（中间隔着任意多指令），就匹配 Rust drop glue
+- 先匹配第 1 个元素，遇到不匹配时 `seq_idx` 保持为 1，后续匹配第 3 个元素就满足条件
+
+**Current Code**:
+```zig
+return seq_idx >= sequence.len / 2; // Allow partial matches
+// ...
+if (seq_idx > sequence.len / 2) {
+    seq_idx = 0; // Full reset
+}
+// seq_idx <= sequence.len / 2 时不重置！允许乱序
+```
+
+**File**: [behavior_filter.zig](src/semantics/behavior_filter.zig#L427-L451)
+
+**Fix**: 
+1. 不匹配时总是重置 `seq_idx = 0`（严格顺序匹配）
+2. 或要求完全匹配（`seq_idx >= sequence.len`）
+3. 或使用滑动窗口替代全局状态机
+
+**Lines**: ~10
+**Priority**: **P0** — 行为分类准确性核心问题
+
+---
+
+### H2: 🟡 Medium Priority Issues (11) — Capability Gaps & FP Sources
+
+| ID | File | Line | Problem | Impact | Fix Direction |
+|----|------|------|---------|--------|---------------|
+| **M9** | ip_ffi.zig | L200-209 | `is_null_constant` 对所有 ≤64 位零值都视为 NULL | 非 NULL 场景误判 | 增加类型兼容性检查 |
+| **M10** | ip_ffi.zig | L148-151 | NULL guard 仅扫描同一基本块 | 跨 BB NULL 检查遗漏 | 跟随 successor blocks 扫描 |
+| **M11** | call_graph.zig | L336-341 | `borrowed_only` 仍创建别名 | 不区分借用和所有权转移 | 添加 `is_weak` 参数 |
+| **M12** | call_graph.zig | L483-484 | `classifyArgDirectionByName` 默认 `caller_to_callee` | 未知函数全部视为所有权转移 | 默认改为 `.borrowed_only` |
+| **M13** | call_graph.zig | - | `classifyArgDirectionByName` 用 indexOf | `"FreeBD_init"` 匹配 `"Free"` | 单词边界检查 |
+| **M14** | callback_escape.zig | L627-630 | CBytes escape 检查函数名而非调用关系 | 函数名不匹配时漏检 | 追踪返回值数据流 |
+| **M15** | callback_escape.zig | L171-198 | `isCgoBoundaryFromLLVM` 把所有 ExternalWeak/Common linkage 视为 cgo | 非 Go 项目误判 | 增加 Go 特征检查 |
+| **M16** | callback_escape.zig | L482-892 | analyzeFunction 和 checkCallbackEscape 大量重复代码 | 维护成本高 | 提取公共逻辑 |
+| **M17** | callback_escape.zig | L958-960 | scanInstruction 中 indexOf("malloc")/indexOf("free") | 子串匹配 FP | 单词边界匹配 |
+| **M18** | behavior_filter.zig | L292-295 | indicator_density 在大函数中严重低估 | 大函数很难达到阈值 | 对数缩放或密度上限 |
+| **M19** | behavior_filter.zig | L455-461 | `"alloc"` 子串匹配 `"alloca"`/`"dealloc"`/`"allocator"` | 错误匹配非堆分配 | 更精确的模式 |
+
+---
+
+### H3: 🟢 Low Priority Issues (13) — Quality Improvements
+
+**noise_filter.zig (3)**:
+- Layer 2 路径信息不会将 `compiler_generated` 升级为 `user`
+- `shouldAnalyze` 缺少 Layer 3 行为分析
+- `unknown` 来源返回 true 导致噪声较大
+
+**ip_ffi.zig (3)**:
+- `detect_ownership_transfer` 仅依赖函数名启发式（V1 已知限制）
+- deferred 功能对 V1 的影响（V2 预留代码）
+- 测试覆盖不足（check_null_guard_after、check_result_used 等）
+
+**call_graph.zig (2)**:
+- `addArgumentMapping` 使用 arena allocator realloc（性能退化风险）
+- 文档缺失（不支持递归函数未说明）
+
+**callback_escape.zig (2)**:
+- `isCgoGlueByPattern` 中 `_cgo_` 重复匹配（CGO_GLUE_PATTERNS 已包含）
+- hooks 系统状态管理风险（非线程安全）
+
+**behavior_filter.zig (3)**:
+- `scoreRustDropGlue` 中 indicator_count 可能重复计数（需注释说明 break 意图）
+- `analyzeBehavior` 中 "best result" 选取逻辑歧义（同分时先检查者胜出）
+- 阈值 0.6 对纯指令级检测过低
+
+---
+
+### H4: Systematic Cross-File Issue — Substring Matching Epidemic
+
+**这是整个项目最大的 FP 来源**：
+
+| File | Problem Function | Matching Method | Examples of False Positives |
+|------|-----------------|-----------------|------------------------------|
+| ip_ffi.zig | `is_acquisition_function` | `indexOf` | `"my_free_handler"` → free, `"dmalloc"` → malloc |
+| call_graph.zig | `classifyArgDirectionByName` | `indexOf` | `"FreeBD_init"` → Free+Init |
+| callback_escape.zig | `scanInstruction` | `indexOf` | `"calfree"` → free |
+| ptr_lifetime.zig | `is_extern_function` | `indexOf` | (已修复 ✅) |
+| ptr_lifetime.zig | `isStackEscapeSuppressed` | `indexOf` | 待验证 |
+| behavior_filter.zig | `hasAllocationPattern` | `indexOf` | `"alloca"` → alloc, `"dealloc"` → alloc |
+
+**Recommendation**: 统一实现 `matchFunctionName` 工具函数，支持：
+- 精确匹配 (`std.mem.eql`)
+- 前缀/后缀匹配 (`startsWith`/`endsWith`)
+- 单词边界匹配 (`word_boundary.isWordBoundaryMatch`)
+- 排除规则 (如 `"dealloc"` 不应匹配 `"alloc"`)
+
+---
+
+### H5: Action Plan from untodo.md
+
+#### Step 1: Fix Rust FP — Wire isOnDangerPath into ptr_lifetime_report.zig
+
+**Goal**: 在 7 个报告函数中添加 `isOnDangerPath` gate，过滤纯内部模式
+
+**Target Functions** (need gate):
+
+| Function | Add Gate? | Reason |
+|----------|-----------|--------|
+| `reportStackEscape` | ✅ YES | 栈逃逸仅在传给 FFI 时危险 |
+| `reportReturnStackAddr` | ✅ YES | 返回栈地址仅在跨 FFI 时危险 |
+| `reportReturnHeapPtr` | ✅ YES | 堆泄漏仅在跨 FFI 时报告 |
+| `reportHeapToGlobal` | ✅ YES | 同上 |
+| `reportStackToGlobal` | ✅ YES | 同上 |
+| `reportUseAfterFree` | ✅ YES | UAF 仅在跨 FFI 时关键 |
+| `reportResourceUAF` | ✅ YES | 资源 UAF 同理 |
+| `reportHeapEscapeToFFI` | ❌ NO | 本身就是 FFI 边界检测 |
+| `reportCrossLanguageLeak` | ❌ NO | 已经是跨语言检测 |
+
+**Expected Impact**: Rust stdlib 内部 FP ↓ 40%+
+
+**Lines**: ~40 (7 functions × ~5 lines each)
+
+---
+
+#### Step 2: Strengthen Call Graph — Enable Graph Traversal in ptr_lifetime.zig & ip_ffi.zig
+
+**Problem**: 
+- `ptr_lifetime.zig` 只消费 `cross_lang_edges` 扁平列表，**完全不使用** CallGraph 图遍历 API
+- `ip_ffi.zig` 也完全不使用 CallGraph
+
+**Enhancements**:
+
+1. **ptr_lifetime.zig**: 在 `trackCallArg` / `trackCallRet` 时，通过 CallGraph 查询 callee 是否最终到达 FFI 边界。仅当 `callee → ... → FFI boundary` 时记录 call edge
+
+2. **ip_ffi.zig**: 用 CallGraph 替代函数名模式匹配。从 FFI boundary 反向追溯调用链，自动识别 wrapper 函数是否为"获取型"
+
+**Expected Impact**: 跨函数 FFI 推理能力从 V1（邻域扫描）升级到 V2（调用链追溯）
+
+**Lines**: ~60
+
+---
+
+### H6: Priority Matrix for Implementation
+
+| Priority | Issue IDs | Total Lines | Impact | Dependencies |
+|----------|-----------|-------------|--------|--------------|
+| **P0** | H6, H7, H8, H9, H10, H11, H3 | ~90 | Correctness + crash prevention | None |
+| **P1** | H1, H2, M9-M19 | ~150 | FP reduction + capability gaps | P0 fixes |
+| **P2** | H3 (Low), H4 (systematic), Step 1-2 | ~100 | Quality + advanced features | P1 fixes |
+
+**Recommended Execution Order**:
+1. **Batch 1** (P0 correctness): H8 (5 lines) → H7 (20 lines) → H6 (15 lines) → H9 (10 lines) → H11 (10 lines) → H10 (25 lines) → H3 (5 lines)
+2. **Batch 2** (P0 architecture): Step 1 (~40 lines) — wire isOnDangerPath into report functions
+3. **Batch 3** (P1 quality): M9-M19 systematic fix + H4 substring matching unification
+4. **Batch 4** (P2 enhancement): Step 2 CallGraph integration + Low priority items
+
+**Total Estimated Effort**: ~340 lines across 8 files
+
+---
+
+### H7: Verification Status
+
+All 35 issues **verified against current source code on 2026-05-05**:
+
+- ✅ H1-H11: All 11 High issues confirmed in source code
+- ✅ M9-M19: All 11 Medium issues confirmed  
+- ✅ All 13 Low issues confirmed
+- ✅ Systemic substring matching problem confirmed across 6 files
+- ✅ Action plan (Step 1 + Step 2) technically feasible
+
+**Next Steps**: Begin with Batch 1 (P0 correctness fixes) starting with H8 (quickest win)

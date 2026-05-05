@@ -1450,8 +1450,7 @@ pub const PtrLifetimePass = struct {
                     const arg = c.LLVMGetOperand(inst, i);
                     if (pointer_map.get(arg)) |ptr_info| {
                         if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                            const is_extern = is_extern_function(callee_name) or
-                                (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+                            const is_extern = is_extern_function(callee_name);
                             if (is_extern) {
                                 try report.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
                             } else {
