@@ -285,7 +285,8 @@ pub const MemorySafetyPass = struct {
         try ctx.addIssue(&issue);
         ctx.allocator.free(message);
 
-        diag.warn("Double free: {s} → {s}{s}", .{ caller_name, func_name, ffi_note });
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Double free: {s} → {s}{s}", .{ omi_prefix, caller_name, func_name, ffi_note });
     }
 
     fn reportSuspiciousFree(
@@ -331,7 +332,9 @@ pub const MemorySafetyPass = struct {
         try ctx.addIssue(&issue);
         ctx.allocator.free(message);
 
-        diag.warn("Suspicious free: {s} → {s} ({d:.1}%){s}", .{
+        const omi_prefix2 = if (severity == .high) "[OMI-HIGH] " else if (severity == .medium) "[OMI-MEDIUM] " else "";
+        diag.warn("{s}Suspicious free: {s} → {s} ({d:.1}%){s}", .{
+            omi_prefix2,
             caller_name,
             func_name,
             adj_confidence * 100.0,

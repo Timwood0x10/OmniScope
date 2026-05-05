@@ -8,11 +8,11 @@
 //!   2. Ownership transfer direction (caller → callee vs callee → caller)
 //!   3. Callback data lifetime (does callback outlive stack frame?)
 //!   4. Resource lifecycle pairing hint (open/close across functions)
+//!   5. Alias-aware acquisition: ptr from other func → FFI arg (V2)
 //!
 //! What we explicitly do NOT do (deferred to v0.2.x):
 //!   - Full call graph construction
-//!   - Alias analysis across functions
-//!   - Data flow through complex control flow
+//!   - Full data flow through complex control flow
 //!
 //! Reference: plan/v0.1.8.md P0-2, plan/rules/skills.md (surgical changes)
 
@@ -313,6 +313,65 @@ fn is_release_function(name: []const u8) bool {
     return false;
 }
 
+/// V2: Detect cross-function alias patterns at FFI call sites.
+///
+/// When a pointer argument to an FFI call originates from:
+///   - A function parameter (passed from caller's caller)
+///   - A global variable load (shared state)
+///   - A return value of another non-FFI function
+///
+/// This indicates the pointer may have aliases we can't see in the current
+/// function scope. Such pointers are higher risk for use-after-free when
+/// passed across language boundaries because their lifetime is not locally
+/// controlled.
+///
+/// Returns true if any pointer argument shows cross-function alias evidence.
+pub fn detect_cross_func_alias(call_inst: c.LLVMValueRef) bool {
+    const num_args = c.LLVMGetNumArgOperands(call_inst);
+    for (0..@as(usize, @intCast(num_args))) |i| {
+        const arg = c.LLVMGetOperand(call_inst, @intCast(i));
+        if (@intFromPtr(arg) == 0) continue;
+
+        // Pattern 1: Argument is a function parameter → came from caller
+        if (c.LLVMIsAArgument(arg) != null) return true;
+
+        // Pattern 2: Argument is a load from global address → shared state
+        if (c.LLVMGetInstructionOpcode(arg) == c.LLVMLoad) {
+            const ptr_op = c.LLVMGetOperand(arg, 0);
+            if (@intFromPtr(ptr_op) != 0) {
+                const ptr_name = c.LLVMGetValueName(ptr_op);
+                if (@intFromPtr(ptr_name) != 0) {
+                    const name = std.mem.span(ptr_name);
+                    if (std.mem.startsWith(u8, name, "@") or
+                        std.mem.indexOf(u8, name, "global") != null)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Pattern 3: Argument is return value of another call → cross-func origin
+        if (c.LLVMGetInstructionOpcode(arg) == c.LLVMCall or
+            c.LLVMGetInstructionOpcode(arg) == c.LLVMInvoke)
+        {
+            const inner_callee = c.LLVMGetCalledValue(arg);
+            if (@intFromPtr(inner_callee) != 0) {
+                const inner_name = c.LLVMGetValueName(inner_callee);
+                if (@intFromPtr(inner_name) != 0) {
+                    const n = std.mem.span(inner_name);
+                    // Non-trivial inner call suggests cross-function data flow
+                    if (!is_release_function(n) and !is_acquisition_function(n)) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════
@@ -358,4 +417,9 @@ test "is_release_function - non-releases rejected" {
     try std.testing.expect(!is_release_function("printf"));
     try std.testing.expect(!is_release_function("strlen"));
     try std.testing.expect(!is_release_function("my_cleanup"));
+}
+
+test "detect_cross_func_alias - stub" {
+    // Full test requires LLVM IR context; this verifies compilation
+    _ = detect_cross_func_alias;
 }

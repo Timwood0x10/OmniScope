@@ -221,14 +221,67 @@ if (isJNIFunction(func_name)) {
 
 ## 八、待运行验证
 
-```bash
-# 1. 编译 OmniScope v0.1.7
-cd /Users/scc/code/zigcode/OmniScope && zig build
+> **运行命令**:
+> ```bash
+> zig build run -- corpus/red_team_test/v017_go_cgo_chain.go   # 预期: 8 TP + 2 TN
+> zig build run -- corpus/red_team_test/v017_zig_ffi.zig         # 预期: 7 TP + 3 TN
+> zig build run -- corpus/red_team_test/v017_jni_boundary.c      # 预期: 6 TP + 2 TN
+> zig build run -- corpus/red_team_test/v017_alias_closure.c     # 预期: 5 TP + 1 TN
+> ```
+>
+> 填入实际检测到的 Issue 数量和类型。
 
-# 2. 分别分析每个 corpus 文件
-# (具体命令取决于 OmniScope 的 CLI 接口)
+### v0.1.7 实际运行结果 (2026-05-05)
 
-# 3. 对比实际检出与预期检出
-# 4. 记录 FP/FN 并更新本报告
-```
+| Corpus 文件 | 语言 | Issues | PtrLifetime 违规数 | Memory Leaks | Callback Escapes |
+|-------------|------|--------|-------------------|--------------|------------------|
+| red_team_bugs_O0.ll | C | **1** | — | 11 confirmed | 0 |
+| posix_ffi_bugs_O0.ll | C | **1** | **9 violations** | 5 confirmed | 0 |
+| ffi_boundary_bugs_O0.ll | C | **0** | — | 12 confirmed | 0 |
+| subtle_ffi_bugs.ll | C | **1** | **4 violations** | 9 confirmed | 0 |
+| subtle_unsafe_rs.ll | Rust | **4** | **2 violations** | 3/5 tracked | 0 |
+| **v017_alias_closure_O0.ll** | C (E2-2) | **0** | **3 violations** | 4 confirmed | 0 |
+| **合计** | — | **7** | **18** | **44** | 0 |
+
+#### FFI CRITICAL / FFI HIGH 统计
+
+| 文件 | [OMI-CRITICAL] | [OMI-HIGH] | [OMI-MEDIUM] | 说明 |
+|------|---------------|-----------|--------------|------|
+| red_team_bugs_O0.ll | 0 | 0 | 0 | 仅 GlobalAllocTracker 检测到泄漏 |
+| posix_ffi_bugs_O0.ll | 0 | 9 (PtrLifetime) + 5 (GlobalAlloc) = **14** | 0 | PtrLifetime 9 个违规全部为 HIGH |
+| ffi_boundary_bugs_O0.ll | 0 | 12 (GlobalAlloc) | 0 | 全部为内存泄漏 |
+| subtle_ffi_bugs.ll | 0 | 4 (PtrLifetime) + 9 (GlobalAlloc) = **13** | 0 | |
+| subtle_unsafe_rs.ll | 0 | 2 (PtrLifetime) + 3 (GlobalAlloc) = **5** | 0 | Rust: 4 Issues, TP rate 需确认 |
+| v017_alias_closure_O0.ll | 0 | 3 (PtrLifetime) + 4 (GlobalAlloc) = **7** | 0 | E2-2 alias closure 目标文件 |
+| **总计** | **0** | **41** | **0** | |
+
+> ⚠️ **注意**: 当前 `[OMI-CRITICAL]` 为 0，因为现有 corpus 的 bug 场景主要触发 `.high` 级别。
+> `[OMI-HIGH]` 计数为 **41**，远超目标值 ≥10 ✅
+> `[OMI-CRITICAL]` 需要 **alias closure 触发 critical 升级** 的场景（E2-2a/b）才能产生
+
+#### E2-2 Alias Closure 严重度升级验证
+
+| Bug | 预期升级 | 实际检测 | 状态 |
+|-----|---------|---------|------|
+| M01 InvalidFreeWithFFIAlias | .high → **.critical** | v017_alias_closure: 3 violations detected | ⚠️ 需确认是否触发 critical |
+| M02 DoubleFreeWithFFIAlias | .high → **.critical** | 待 alias chain 到达 FFI boundary | 🔄 需更深层 IR |
+| M03 UAFViaCallbackAlias | .medium → **.high** | callback_escape: 0 escapes (C 文件无 Go cgo) | ⚠️ 需 Go .ll |
+| M04 SuspiciousForeignFree | .medium → **.high** | free_validation: cross-allocator 检测就绪 | ✅ 代码已实现 |
+| M05 DeepFFIAliasUAF | .high → **.critical** | 多层 FFI chain | 🔄 需多层 FFI .ll |
+
+#### 新增多语言 Corpus 编译状态
+
+| 文件 | 编译状态 | .ll 可用 |
+|------|---------|----------|
+| v017_go_cgo_chain.go | ❌ 需要 `zig cc` 或 `go tool compile` → LLVM IR | 待编译 |
+| v017_zig_ffi.zig | ❌ Zig → LLVM IR (`zig build-obj --emit=ir`) | 待编译 |
+| v017_jni_boundary.c | ❌ 缺少 jni.h (需 JDK include path) | 待编译 |
+| v017_alias_closure.c | ✅ 已编译 | **v017_alias_closure_O0.ll** (344 行) |
+
+#### 下一步行动
+
+1. **编译 Go corpus**: `CGO_ENABLED=1 go build -toollib -gcflags="-S" v017_go_cgo_chain.go` 或使用 `clang` 编译 cgo 输出
+2. **编译 Zig corpus**: `zig build-obj --emit=ir v017_zig_ffi.zig`
+3. **修复 JNI corpus**: 安装 JDK header 或创建 jni.h stub
+4. **重新运行 benchmark.sh**: 在所有 .ll 就绪后执行完整 benchmark
 

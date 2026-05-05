@@ -1033,6 +1033,24 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
             });
         }
         std.debug.print("\n", .{});
+
+        // E2-3c: Graph coverage metric
+        const graph_stats = dfg.getStats();
+        const coverage_pct: f64 = if (graph_stats.node_count > 0)
+            @as(f64, @floatFromInt(graph_stats.tainted_node_count)) / @as(f64, @floatFromInt(graph_stats.node_count)) * 100
+        else
+            0;
+        std.debug.print("    " ++ Colors.bold ++ "Graph coverage:" ++ Colors.reset ++ "\n", .{});
+        std.debug.print("      Total nodes analyzed:     {d}\n", .{graph_stats.node_count});
+        std.debug.print("      Nodes on danger path:     {d} ({d:.1}%)\n", .{ graph_stats.tainted_node_count, coverage_pct });
+        std.debug.print("      FFI boundaries tracked:   {d}\n", .{dfg.getFFIBoundaries().len});
+        std.debug.print("      Issues in graph:          {d}\n", .{dfg.getIssues().len});
+
+        // E2-3b: Danger path depth hint (alias closure reach)
+        if (issue_stats.total > 0) {
+            const depth_hint = if (coverage_pct > 50) "deep alias analysis" else if (coverage_pct > 20) "moderate reach" else "shallow scan";
+            std.debug.print("      Analysis depth:           {s}\n", .{depth_hint});
+        }
     } else {
         std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
     }

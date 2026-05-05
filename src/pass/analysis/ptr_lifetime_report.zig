@@ -63,7 +63,7 @@ pub fn reportStackEscape(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportReturnStackAddr(
@@ -104,7 +104,7 @@ pub fn reportReturnStackAddr(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-CRITICAL] [RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportReturnHeapPtr(
@@ -146,7 +146,7 @@ pub fn reportReturnHeapPtr(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-HIGH] [RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportHeapToGlobal(
@@ -188,7 +188,7 @@ pub fn reportHeapToGlobal(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-HIGH] [HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportStackToGlobal(
@@ -230,7 +230,7 @@ pub fn reportStackToGlobal(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-CRITICAL] [STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportUseAfterFree(
@@ -273,7 +273,7 @@ pub fn reportUseAfterFree(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
+    diag.warn("[OMI-HIGH] [UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
 }
 
 pub fn reportResourceUAF(
@@ -336,7 +336,7 @@ pub fn reportResourceUAF(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-CRITICAL] [RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportHeapAmbiguous(
@@ -379,7 +379,7 @@ pub fn reportHeapAmbiguous(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-MEDIUM] [HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 /// Report heap pointer escaping to FFI boundary.
@@ -418,5 +418,5 @@ pub fn reportHeapEscapeToFFI(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-HIGH] [HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }

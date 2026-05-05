@@ -35,6 +35,7 @@ const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
+const lang_classifier = @import("ffi_language_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
 comptime {
@@ -535,7 +536,7 @@ pub const CallbackEscapePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls, ctx.isGoModule());
+                try scanInstruction(ctx.allocator, inst, &has_keepalive, &alloc_sites, &free_sites, &cgo_calls, &callback_escapes, ctx.isGoModule());
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                     const called = c.LLVMGetCalledValue(inst);
@@ -936,6 +937,7 @@ pub const CallbackEscapePass = struct {
         alloc_sites: *std.ArrayList(AllocSiteInfo),
         free_sites: *std.ArrayList(FreeSiteInfo),
         cgo_calls: *std.ArrayList(CGoCallInfo),
+        callback_escapes: *std.ArrayList(CallbackEscapeInfo),
         is_go_module: bool,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
@@ -996,6 +998,33 @@ pub const CallbackEscapePass = struct {
                     .callee_name = try allocator.dupe(u8, callee_name),
                     .is_pointer_arg = has_ptr_arg,
                 });
+            }
+        }
+
+        // A1-3/B3: Detect alloca (stack allocation) passed to FFI boundary.
+        // Stack addresses become dangling when the FFI callee stores them
+        // and accesses them after the caller returns.
+        if (opcode == c.LLVMAlloca) {
+            var alloca_use = c.LLVMGetFirstUse(inst);
+            while (@intFromPtr(alloca_use) != 0) : (alloca_use = c.LLVMGetNextUse(alloca_use)) {
+                const user = c.LLVMGetUser(alloca_use);
+                if (@intFromPtr(user) == 0) continue;
+                const user_opcode = c.LLVMGetInstructionOpcode(user);
+                if (user_opcode == c.LLVMCall or user_opcode == c.LLVMInvoke) {
+                    const called_val = c.LLVMGetCalledValue(user);
+                    if (@intFromPtr(called_val) == 0) continue;
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    if (@intFromPtr(called_name_ptr) == 0) continue;
+                    const called_name = std.mem.span(called_name_ptr);
+                    const callee_lang = lang_classifier.identifyCalleeLanguage(called_name);
+                    if (callee_lang != .c and callee_lang != .unknown) {
+                        try callback_escapes.append(allocator, .{
+                            .inst = user,
+                            .receiver_name = called_name,
+                            .callback_arg = inst,
+                        });
+                    }
+                }
             }
         }
     }

@@ -68,6 +68,7 @@ pub const DangerSurfacePass = struct {
         var total_args: u64 = 0;
         var total_rets: u64 = 0;
         var total_alias_traces: u64 = 0;
+        var cross_lang_frees: u64 = 0;
 
         for (ffis) |surface| {
             // Phase 1 args: callee is already a known FFI boundary →
@@ -122,6 +123,7 @@ pub const DangerSurfacePass = struct {
             } else if (node.freed) {
                 const fl = node.free_lang orelse continue;
                 if (node.alloc_lang != fl) {
+                    cross_lang_frees += 1;
                     try ctx.markRelevantAlloc(ptr_val);
                     ctx.markFfiRelevant(ptr_val) catch {}; // BUGFIX: cross-lang free is FFI-relevant
                     try markFunctionFromInst(ctx, node.alloc_inst);
@@ -134,7 +136,7 @@ pub const DangerSurfacePass = struct {
             }
         }
 
-        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | Phase1={d:.0}ms (args={d} rets={d} alias_traces={d}) Phase2={d:.0}ms", .{
+        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | Phase1={d:.0}ms (args={d} rets={d} alias_traces={d}) Phase2={d:.0}ms (cross_lang_free={d})", .{
             ffi_count,
             ctx.danger_surface_relevant.count(),
             ctx.relevant_functions.count(),
@@ -143,6 +145,7 @@ pub const DangerSurfacePass = struct {
             total_rets,
             total_alias_traces,
             @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t1)) / 1_000_000.0)),
+            cross_lang_frees,
         });
     }
 };

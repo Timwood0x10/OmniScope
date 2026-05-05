@@ -42,7 +42,11 @@ pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
 
 pub fn isFreeFunction(fn_name: []const u8) bool {
     // Exact matches for well-known free/dealloc functions
-    const exact_fns = [_][]const u8{ "free", "realloc", "kfree", "vfree", "g_free", "cfree" };
+    const exact_fns = [_][]const u8{
+        "free",       "realloc",  "kfree",   "vfree",
+        "g_free",     "cfree",    "__rust_dealloc", "__rdl_dealloc",
+        "__rg_dealloc",
+    };
     for (exact_fns) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;
     }

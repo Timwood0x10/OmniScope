@@ -255,6 +255,24 @@ pub const FreeValidationPass = struct {
         }
     }
 
+    /// Determine if a free/dealloc call is safe in its FFI context.
+    /// Centralizes Rust ownership model awareness: when Rust code uses
+    /// __rust_dealloc on a pointer from Box::into_raw(), it's intentional
+    /// ownership reclamation — not a bug.
+    fn isFreeSafe(free_func: []const u8, origin: ValueOrigin, source_desc: []const u8) bool {
+        // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
+        if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
+        // into_raw + matching Rust dealloc: correct ownership reclamation
+        if (source_desc.len > 0 and isPossibleIntoRawOutput(source_desc) and isRustDeallocFunction(free_func)) return true;
+        // Non-Rust, non-standard free on FFI-sourced ptr: may be legitimate wrapper
+        if (origin == .from_ffi_call and !isRustDeallocFunction(free_func) and
+            !std.mem.eql(u8, free_func, "free"))
+        {
+            return true;
+        }
+        return false;
+    }
+
     /// Check if a free call is valid
     fn checkFreeCall(
         ctx: *PassContext,
@@ -297,11 +315,8 @@ pub const FreeValidationPass = struct {
         // without updating this switch, ensuring completeness at compile time.
         switch (origin) {
             .from_param => {
-                // Skip from_param when the free function is a Rust dealloc.
-                // Rust's ownership model transfers allocation responsibility to callees,
-                // so __rustc__rustc_dealloc on function parameters is normal behavior.
-                // This avoids false positives for cross-function memory management.
-                if (isRustDeallocFunction(callee_name)) return false;
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isFreeSafe(callee_name, origin, src)) return false;
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -315,11 +330,7 @@ pub const FreeValidationPass = struct {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                     return true;
                 }
-                if (!isRustDeallocFunction(callee_name) and
-                    !std.mem.eql(u8, callee_name, "free"))
-                {
-                    return false;
-                }
+                if (isFreeSafe(callee_name, origin, src)) return false;
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -329,7 +340,7 @@ pub const FreeValidationPass = struct {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                     return true;
                 }
-                if (src.len > 0 and isPossibleIntoRawOutput(src) and !isRustDeallocFunction(callee_name)) {
+                if (src.len > 0 and !isFreeSafe(callee_name, origin, src)) {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                     return true;
                 }
@@ -498,7 +509,8 @@ pub const FreeValidationPass = struct {
 
         try ctx.addIssue(&issue);
 
-        diag.warn("Invalid {s} on {s} pointer in function: {s}{s}", .{ free_func_name, origin_str, caller_name, ffi_note });
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Invalid {s} on {s} pointer in function: {s}{s}", .{ omi_prefix, free_func_name, origin_str, caller_name, ffi_note });
     }
 
     /// Create trace entry for pointer origin
