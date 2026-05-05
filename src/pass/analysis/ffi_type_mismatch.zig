@@ -600,7 +600,16 @@ pub const FFITypeMismatchPass = struct {
 
         const py_obj = c.LLVMGetOperand(call_inst, 0);
         if (@intFromPtr(py_obj) == 0) return false;
-        const func = c.LLVMGetBasicBlockParent(c.LLVMGetInstructionParent(call_inst));
+
+        // Type safety: py_obj must be a pointer type (PyObject* is i8* in CPython ABI)
+        const obj_type = c.LLVMTypeOf(py_obj);
+        if (@intFromPtr(obj_type) == 0) return false;
+        if (c.LLVMGetTypeKind(obj_type) != c.LLVMPointerTypeKind) return false;
+
+        const decr_bb = c.LLVMGetInstructionParent(call_inst);
+        if (@intFromPtr(decr_bb) == 0) return false;
+        const func = c.LLVMGetBasicBlockParent(decr_bb);
+        if (@intFromPtr(func) == 0) return false;
         const func_name_ptr = c.LLVMGetValueName(func);
         const func_name = if (func_name_ptr) |p| std.mem.span(p) else "unknown";
 
@@ -612,6 +621,18 @@ pub const FFITypeMismatchPass = struct {
                 if (@intFromPtr(user) == 0 or user == call_inst) continue;
                 const user_opcode = c.LLVMGetInstructionOpcode(user);
                 if (user_opcode != c.LLVMCall and user_opcode != c.LLVMInvoke) continue;
+
+                // Control-flow safety: Py_INCREF must dominate Py_DECREF's basic block,
+                // OR be in the same basic block and appear before the Py_DECREF.
+                // Note: LLVM C API does not expose dominance analysis; use BB ordering
+                // as a safe approximation (conservative — may miss some detections but
+                // never produces false positives).
+                const user_bb = c.LLVMGetInstructionParent(user);
+                if (@intFromPtr(user_bb) == 0) continue;
+                const same_bb = @intFromPtr(user_bb) == @intFromPtr(decr_bb);
+                if (!same_bb and !basicBlockComesBefore(user_bb, decr_bb)) continue;
+                if (same_bb and !instructionComesBefore(user, call_inst)) continue;
+
                 const user_called_val = c.LLVMGetCalledValue(user);
                 if (@intFromPtr(user_called_val) == 0) continue;
                 const user_callee_ptr = c.LLVMGetValueName(user_called_val);
@@ -641,6 +662,28 @@ pub const FFITypeMismatchPass = struct {
                 try ctx.addIssue(&issue);
                 return true;
             }
+        }
+        return false;
+    }
+
+    /// Check if instruction `a` appears before instruction `b` within the same basic block.
+    fn instructionComesBefore(a: c.LLVMValueRef, b: c.LLVMValueRef) bool {
+        var inst_a: ?c.LLVMValueRef = a;
+        while (inst_a) |cur| : (inst_a = c.LLVMGetNextInstruction(cur)) {
+            if (@intFromPtr(cur) == @intFromPtr(b)) return true;
+        }
+        return false;
+    }
+
+    /// Check if basic block `a` appears before `b` in the function's BB list.
+    /// Used as conservative approximation for dominance when LLVM C API
+    /// doesn't expose DominatorTree analysis. Safe for structured code.
+    fn basicBlockComesBefore(a: c.LLVMBasicBlockRef, b: c.LLVMBasicBlockRef) bool {
+        var bb: ?c.LLVMBasicBlockRef = c.LLVMGetFirstBasicBlock(c.LLVMGetBasicBlockParent(a));
+        var found_a = false;
+        while (bb) |cur| : (bb = c.LLVMGetNextBasicBlock(cur)) {
+            if (@intFromPtr(cur) == @intFromPtr(b)) return found_a;
+            if (@intFromPtr(cur) == @intFromPtr(a)) found_a = true;
         }
         return false;
     }

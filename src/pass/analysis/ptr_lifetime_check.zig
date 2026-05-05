@@ -17,8 +17,10 @@ const LifetimeStats = @import("ptr_lifetime_types.zig").LifetimeStats;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 const HEAP_ALLOC_FUNCTIONS = @import("ptr_lifetime_types.zig").HEAP_ALLOC_FUNCTIONS;
 const may_retain_pointer = @import("ptr_lifetime_types.zig").may_retain_pointer;
+const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const getAllocatorKB = @import("ptr_lifetime_types.zig").getAllocatorKB;
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
+const report = @import("ptr_lifetime_report.zig");
 
 /// Violation checking logic for PtrLifetimePass.
 /// Extracted from ptr_lifetime.zig for code organization.
@@ -268,7 +270,14 @@ pub fn checkCallViolation(
 
     const callee_name = std.mem.span(name_ptr);
 
-    if (!may_retain_pointer(callee_name)) return;
+    // For stack-escape detection, check ALL extern/FFI calls (not just retaining ones).
+    // Passing a stack address to any external function is dangerous — the callee
+    // may store it for async use, and the stack frame will be gone when it fires.
+    const is_extern = is_extern_function(callee_name) or
+        (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+    const should_check_stack_escape = is_extern or may_retain_pointer(callee_name);
+
+    if (!should_check_stack_escape) return;
 
     if (mem_graph) |mg| {
         const callee_ptr = @as(u64, @intFromPtr(called));
@@ -293,7 +302,7 @@ pub fn checkCallViolation(
                 const arg = c.LLVMGetOperand(inst, i);
                 if (pointer_map.get(arg)) |ptr_info| {
                     if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                        diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
+                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
                         stats.stack_escapes_found += 1;
                         if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                     } else if (ptr_info.freed) {
@@ -579,63 +588,31 @@ fn reportHeapToGlobal(ctx: *PassContext, func_name: []const u8, ptr_info: PtrInf
 }
 
 fn reportStackToGlobal(ctx: *PassContext, func_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportStackToGlobal(ctx, func_name, ptr_info, inst, diag);
 }
 
 fn reportResourceUAF(ctx: *PassContext, func_name: []const u8, callee_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = callee_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
 }
 
 fn reportUseAfterFree(ctx: *PassContext, func_name: []const u8, callee_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = callee_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
 }
 
 fn reportStackEscape(ctx: *PassContext, func_name: []const u8, callee_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = callee_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
 }
 
 fn reportHeapEscapeToFFI(ctx: *PassContext, func_name: []const u8, callee_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = callee_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportHeapEscapeToFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
 }
 
 fn reportReturnStackAddr(ctx: *PassContext, func_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
 }
 
 fn reportReturnHeapPtr(ctx: *PassContext, func_name: []const u8, ptr_info: PtrInfo, inst: c.LLVMValueRef, diag: *DiagnosticWriter) !void {
-    _ = ctx;
-    _ = func_name;
-    _ = ptr_info;
-    _ = inst;
-    _ = diag;
+    try report.reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
 }
 
 fn isStackEscapeSuppressed(callee_name: []const u8, ptr_info: PtrInfo) bool {

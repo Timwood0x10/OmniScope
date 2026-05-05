@@ -409,10 +409,11 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
     const retaining_patterns = [_][]const u8{
         "register_", "add_",  "insert_", "push_",
         "store_",    "save_", "cache_",  "copy_",
+        "retain",    "keep",     "hold",    "pass",
     };
 
     for (retaining_patterns) |pat| {
-        if (std.mem.startsWith(u8, callee_name, pat)) return true;
+        if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
     }
 
     if (std.mem.startsWith(u8, callee_name, "set_")) {

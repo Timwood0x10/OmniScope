@@ -464,6 +464,10 @@ pub const PtrLifetimePass = struct {
                 }
                 {
                     const t0 = std.time.nanoTimestamp();
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                        _ = c.LLVMGetCalledValue(inst);
+                    }
                     try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
                     t_check.* += std.time.nanoTimestamp() - t0;
                 }
@@ -892,6 +896,8 @@ pub const PtrLifetimePass = struct {
             },
 
             c.LLVMGetElementPtr => {
+                const src = c.LLVMGetOperand(inst, 0);
+                _ = pointer_map.get(src) != null;
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
             },
 
@@ -1438,16 +1444,19 @@ pub const PtrLifetimePass = struct {
             };
 
             if (!callee_returns_ptr) {
-                // Callee never returns a pointer → likely a sink.
-                // Suppress stack escape for sink functions.
-                // Note: we still report use-after-free (freed pointers are always dangerous).
                 const num_ops = c.LLVMGetNumOperands(inst);
                 var i: u32 = 0;
                 while (i < num_ops) : (i += 1) {
                     const arg = c.LLVMGetOperand(inst, i);
                     if (pointer_map.get(arg)) |ptr_info| {
                         if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                            diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
+                            const is_extern = is_extern_function(callee_name) or
+                                (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+                            if (is_extern) {
+                                try report.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                            } else {
+                                diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
+                            }
                             stats.stack_escapes_found += 1;
                             if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                         } else if (ptr_info.freed) {

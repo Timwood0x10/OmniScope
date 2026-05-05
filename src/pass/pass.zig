@@ -450,19 +450,32 @@ pub const PassContext = struct {
         // P2-1: Risk weighting integration.
         // Classify the function origin and apply risk level adjustment.
         // Suppressed issues are silently dropped — no noise in output.
+        //
+        // EXCEPTION: CRITICAL severity issues are never suppressed.
+        // CRITICAL = confirmed FFI boundary bug (stack escape, UAF at boundary).
+        // These must always be reported regardless of function origin,
+        // because they represent real security vulnerabilities.
         const func_name = issue.location.func;
         const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
-        const risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
-        if (risk == .suppressed) {
+        var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
+        if (issue.severity != .critical and risk == .suppressed) {
             return;
+        }
+        // For CRITICAL issues, override suppression to at least .low
+        if (issue.severity == .critical and risk == .suppressed) {
+            risk = .critical;
         }
 
         const dedup_key = self.dedupKey(issue);
-        const gop = try self.reported_keys.getOrPut(dedup_key);
-        if (gop.found_existing) {
-            var dup = issue.*;
-            dup.deinit(self.allocator);
-            return;
+        // CRITICAL issues bypass dedup — they must always be reported
+        // even if a lower-severity issue exists for the same (func, kind).
+        if (issue.severity != .critical) {
+            const gop = try self.reported_keys.getOrPut(dedup_key);
+            if (gop.found_existing) {
+                var dup = issue.*;
+                dup.deinit(self.allocator);
+                return;
+            }
         }
 
         // Adjust severity based on risk level when downgraded.

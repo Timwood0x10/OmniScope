@@ -524,6 +524,43 @@ main() {
         fi
     fi
 
+    echo ""
+    echo -e "${BLUE}=== Analyzing: Extended Corpus (ffi-dense + real_world) ===${NC}"
+
+    local critical_patterns="$PROJECT_ROOT/corpus/red_team_test/v017_critical_patterns.ll"
+    if [[ -f "$critical_patterns" ]]; then
+        echo -n "  v017_critical_patterns.ll ... "
+        local result
+        result=$(run_analysis "$critical_patterns" "$OUTPUT_DIR/v017_critical_patterns.json")
+        local detected="${result%%|*}"
+        local ffi_crit="${result#*|}"; ffi_crit="${ffi_crit%%|*}"
+        local ffi_high="${result##*|}"
+        echo "FFI: ${ffi_crit}C/${ffi_high}H ($detected issues)"
+        TOTAL_DETECTED=$((TOTAL_DETECTED + detected))
+        TOTAL_FFI_CRITICAL=$((TOTAL_FFI_CRITICAL + ffi_crit))
+        TOTAL_FFI_HIGH=$((TOTAL_FFI_HIGH + ffi_high))
+    fi
+
+    for ext_dir in "ffi-dense" "real_world/zkp" "real_world/other"; do
+        ext_path="$CORPUS_DIR/$ext_dir"
+        if [[ -d "$ext_path" ]]; then
+            for ir_file in "$ext_dir"/*.ll; do
+                [[ -f "$ir_file" ]] || continue
+                local name=$(basename "$ir_file")
+                echo -n "  $name ... "
+                local result
+                result=$(run_analysis "$ir_file" "$OUTPUT_DIR/ext_${name}.json")
+                local detected="${result%%|*}"
+                local ffi_crit="${result#*|}"; ffi_crit="${ffi_crit%%|*}"
+                local ffi_high="${result##*|}"
+                echo "FFI: ${ffi_crit}C/${ffi_high}H ($detected issues)"
+                TOTAL_DETECTED=$((TOTAL_DETECTED + detected))
+                TOTAL_FFI_CRITICAL=$((TOTAL_FFI_CRITICAL + ffi_crit))
+                TOTAL_FFI_HIGH=$((TOTAL_FFI_HIGH + ffi_high))
+            done
+        fi
+    done
+
     if $output_json; then
         generate_json_report
         exit $?

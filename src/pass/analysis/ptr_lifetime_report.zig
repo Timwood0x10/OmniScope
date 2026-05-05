@@ -16,6 +16,7 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
+const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 
 pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
     const desc = try std.fmt.allocPrint(allocator, fmt, args);
@@ -30,11 +31,12 @@ pub fn reportStackEscape(
     _: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
-    // G-3: MemoryGraph gate - stack escape only dangerous if pointer reaches FFI
-    // Use isOnDangerPathFull for complete path analysis (alias closure, zone, lang checks)
+    const is_extern_callee = is_extern_function(callee_name) or
+        (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+
     if (ptr_info.source_inst) |inst| {
         const ptr_val = @as(u64, @intFromPtr(inst));
-        if (!ctx.isOnDangerPathFull(ptr_val)) {
+        if (!is_extern_callee and !ctx.isOnDangerPathFull(ptr_val)) {
             diag.debug("[STACK-ESCAPE SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
             return;
         }
@@ -63,7 +65,7 @@ pub fn reportStackEscape(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.critical("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportReturnStackAddr(
@@ -73,14 +75,6 @@ pub fn reportReturnStackAddr(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
-    // G-3: MemoryGraph gate - return stack addr only dangerous across FFI
-    if (ptr_info.source_inst) |src_inst| {
-        const ptr_val = @as(u64, @intFromPtr(src_inst));
-        if (!ctx.isOnDangerPathFull(ptr_val)) {
-            diag.debug("[RETURN-STACK SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
-            return;
-        }
-    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -104,7 +98,7 @@ pub fn reportReturnStackAddr(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[OMI-CRITICAL] [RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+    diag.critical("[OMI-CRITICAL] [RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportReturnHeapPtr(
@@ -198,14 +192,6 @@ pub fn reportStackToGlobal(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
-    // G-3: MemoryGraph gate - stack to global only dangerous across FFI
-    if (ptr_info.source_inst) |src_inst| {
-        const ptr_val = @as(u64, @intFromPtr(src_inst));
-        if (!ctx.isOnDangerPathFull(ptr_val)) {
-            diag.debug("[STACK-TO-GLOBAL SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
-            return;
-        }
-    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -230,7 +216,7 @@ pub fn reportStackToGlobal(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[OMI-CRITICAL] [STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+    diag.critical("[OMI-CRITICAL] [STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportUseAfterFree(
@@ -336,7 +322,7 @@ pub fn reportResourceUAF(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[OMI-CRITICAL] [RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+    diag.critical("[OMI-CRITICAL] [RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportHeapAmbiguous(
