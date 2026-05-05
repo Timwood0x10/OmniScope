@@ -587,17 +587,61 @@ pub const FFITypeMismatchPass = struct {
         call_inst: c.LLVMValueRef,
         diag: *DiagnosticWriter,
     ) !bool {
-        _ = ctx;
-        _ = caller_name;
-        _ = call_inst;
-        _ = diag;
+        const called_val = c.LLVMGetCalledValue(call_inst);
+        if (@intFromPtr(called_val) == 0) return false;
+        const callee_name_ptr = c.LLVMGetValueName(called_val);
+        if (@intFromPtr(callee_name_ptr) == 0) return false;
+        const callee_name = std.mem.span(callee_name_ptr);
+        const is_incr = std.mem.eql(u8, callee_name, "Py_INCREF") or
+            std.mem.eql(u8, callee_name, "Py_XINCREF");
+        const is_decr = std.mem.eql(u8, callee_name, "Py_DECREF") or
+            std.mem.eql(u8, callee_name, "Py_XDECREF");
+        if (!is_incr and !is_decr) return false;
 
-        // TODO: Implement Python refcount checking
-        // This requires:
-        // 1. Detecting Py_INCREF/Py_DECREF calls
-        // 2. Tracking reference count balance
-        // 3. Reporting unbalanced INC/DEC
+        const py_obj = c.LLVMGetOperand(call_inst, 0);
+        if (@intFromPtr(py_obj) == 0) return false;
+        const func = c.LLVMGetBasicBlockParent(c.LLVMGetInstructionParent(call_inst));
+        const func_name_ptr = c.LLVMGetValueName(func);
+        const func_name = if (func_name_ptr) |p| std.mem.span(p) else "unknown";
 
+        if (is_decr) {
+            var use_iter = c.LLVMGetFirstUse(py_obj);
+            var has_prior_incr = false;
+            while (@intFromPtr(use_iter) != 0) : (use_iter = c.LLVMGetNextUse(use_iter)) {
+                const user = c.LLVMGetUser(use_iter);
+                if (@intFromPtr(user) == 0 or user == call_inst) continue;
+                const user_opcode = c.LLVMGetInstructionOpcode(user);
+                if (user_opcode != c.LLVMCall and user_opcode != c.LLVMInvoke) continue;
+                const user_called_val = c.LLVMGetCalledValue(user);
+                if (@intFromPtr(user_called_val) == 0) continue;
+                const user_callee_ptr = c.LLVMGetValueName(user_called_val);
+                if (@intFromPtr(user_callee_ptr) == 0) continue;
+                const user_callee = std.mem.span(user_callee_ptr);
+                if (std.mem.eql(u8, user_callee, "Py_INCREF") or
+                    std.mem.eql(u8, user_callee, "Py_XINCREF"))
+                {
+                    has_prior_incr = true;
+                    break;
+                }
+            }
+            if (!has_prior_incr) {
+                const msg = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "[OMI-HIGH] Python FFI refcount imbalance in {s}(): Py{s}DECREF on object 0x{x} without matching Py_INCREF — potential UAF",
+                    .{ caller_name, if (std.mem.indexOfScalar(u8, callee_name, 'X') != null) "X" else "", @intFromPtr(py_obj) },
+                );
+                diag.warn("{s}", .{msg});
+                var issue = Issue.init(
+                    .use_after_free,
+                    msg,
+                    Location.init(func_name),
+                    .high,
+                    0.72,
+                );
+                try ctx.addIssue(&issue);
+                return true;
+            }
+        }
         return false;
     }
 
@@ -693,6 +737,41 @@ pub const FFITypeMismatchPass = struct {
             }
         }
 
+        // F2-3: Signature-based disambiguation — check calling convention.
+        // Functions with C calling convention are more likely real FFI boundaries
+        // than internal wrappers with the same name pattern.
+        if (hasCCallingConvention(callee_name)) {
+            if (!isSameLanguagePair(caller_name, callee_name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    fn hasCCallingConvention(func_name: []const u8) bool {
+        const known_c_apis = [_][]const u8{
+            "malloc",  "free",   "realloc", "calloc",
+            "memcpy",  "memmove", "memset",  "memcmp",
+            "strlen",  "strcpy", "strcat",  "strcmp",
+            "printf",  "scanf",  "fopen",   "fread",
+            "fwrite",  "fclose", "pthread_create", "pthread_join",
+            "signal",  "dlopen", "dlsym",   "dlerror",
+        };
+        for (known_c_apis) |api| {
+            if (std.mem.eql(u8, func_name, api)) return true;
+        }
+        return false;
+    }
+
+    fn isSameLanguagePair(caller: []const u8, callee: []const u8) bool {
+        const rust_caller = std.mem.startsWith(u8, caller, "_ZN") or std.mem.startsWith(u8, caller, "_R");
+        const rust_callee = std.mem.startsWith(u8, callee, "_ZN") or std.mem.startsWith(u8, callee, "_R");
+        const go_caller = std.mem.indexOf(u8, caller, "_cgo_") != null;
+        const zig_caller = std.mem.startsWith(u8, caller, "zig.") or std.mem.startsWith(u8, caller, "main.");
+        if (rust_caller and rust_callee) return true;
+        if (go_caller and std.mem.indexOf(u8, callee, "_cgo_") != null) return true;
+        if (zig_caller and (std.mem.startsWith(u8, callee, "zig.") or std.mem.startsWith(u8, callee, "main."))) return true;
         return false;
     }
 

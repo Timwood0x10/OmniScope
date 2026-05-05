@@ -9,6 +9,7 @@ const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
+const Severity = @import("../diag/issue.zig").Severity;
 const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const Location = @import("../diag/issue.zig").Location;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
@@ -143,27 +144,36 @@ pub const Pipeline = struct {
         // R8.3-d: Post-pass leak report — scan GlobalAllocTracker for unfreed allocations.
         // After all passes have run, any allocation that was never freed is a leak candidate.
         // Skip global/static variables (intentionally never freed) and already-matched pairs.
+        // D1-4: Promote candidates to confirmed leaks when they reach FFI boundaries.
         const leak_count = ctx.global_alloc_tracker.leakCount();
         if (leak_count > 0) {
             const tracker = &ctx.global_alloc_tracker;
+            var confirmed_high: u32 = 0;
+            var confirmed_critical: u32 = 0;
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
                     const trace = try self.allocator.alloc(TraceEntry, 1);
                     trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
+                    // D1-4: Check if leaked ptr reaches FFI boundary → promote severity
+                    const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
+                    const severity: Severity = if (is_on_ffi_path) .high else .low;
+                    const confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
+                    if (is_on_ffi_path) confirmed_high += 1 else confirmed_critical += 0;
                     var issue = Issue.initWithTrace(
                         .memory_leak,
                         msg,
                         Location.init(rec.alloc_func),
-                        .low,
-                        0.50,
+                        severity,
+                        confidence,
                         trace,
                     );
                     try ctx.addIssue(&issue);
                 }
             }
-            diag.info("[OMI-HIGH] GlobalAllocTracker: {d} memory leaks confirmed from {d} tracked allocations", .{
-                leak_count, tracker.size(),
+            const omi_prefix = if (confirmed_high > 0) "[OMI-HIGH] " else "";
+            diag.info("{s}GlobalAllocTracker: {d} memory leaks confirmed from {d} tracked allocations ({d} cross-FFI)", .{
+                omi_prefix, leak_count, tracker.size(), confirmed_high,
             });
         }
     }

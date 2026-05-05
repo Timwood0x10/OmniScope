@@ -588,11 +588,11 @@ ptr_lifetime_report.zig → does diag.warn directly (no further gate)
 | **P0** | D1-2~D1-4 | Wire [OMI-HIGH]/[OMI-CRITICAL] into all pass outputs | ~40 | Benchmark FFI targets |
 | **P0** | A1-2 | Add __rust_dealloc* to FREE_FUNCTIONS whitelist | ~5 | Rust DF detection |
 | **P0** | A1-5 | isFreeSafe(): remove .from_global=>true for Rust FFI | ~15 | Cross-allocator free |
-| **P1** | G-2 | danger_surface.zig: replace inline isOnDangerPath logic with function call | ~10 | Maintainability |
-| **P1** | F2-4 | flow_path.zig Location type → import from common/types.zig | ~5 | Type fragmentation cleanup |
-| **P1** | F2-1 | checkGoPointerEscape: implement cgo pointer escape detection | ~30 | Go FFI (aligns with A2) |
-| **P1** | F2-2 | checkPythonRefcount: implement Py_INCREF/Py_DECREF tracking | ~40 | Python C API |
-| **P1** | F2-3 | FFI matcher: add signature-based disambiguation | ~50 | C++ overload support |
+| **P1** | G-2 | danger_surface.zig: replace inline isOnDangerPath logic with function call | ~10 | ✅ DONE |
+| **P1** | F2-4 | flow_path.zig Location type → import from common/types.zig | ~5 | ✅ DONE |
+| **P1** | F2-1 | checkGoPointerEscape: implement cgo pointer escape detection | ~30 | ✅ DONE |
+| **P1** | F2-2 | checkPythonRefcount: implement Py_INCREF/Py_DECREF tracking | ~40 | ✅ DONE |
+| **P1** | F2-3 | FFI matcher: add signature-based disambiguation | ~50 | ✅ DONE |
 | **P1** | E2-2a~E2-2e | Enhance graph usage in already-gated passes | ~60 | Deeper analysis quality |
 | **P1** | G-4 | ip_ffi.zig: add CallGraph-aware acquisition detection | ~30 | Wrapper function support |
 | **P1** | A2-1~A2-4 | Go cgo complete recognition chain | ~70 | New language support |
@@ -632,7 +632,7 @@ G-3: ptr_lifetime_report.zig 7 functions -> add isOnDangerPath gate             
 ```
 D1-2: PtrLifetime -> [OMI-HIGH] prefix for violations       ⚠️ PARTIAL (gate done, prefix pending)
 D1-3: FreeValidation/MemorySafety -> severity prefix         ⚠️ PARTIAL (severity upgrade done via E2-2)
-D1-4: GlobalAllocTracker -> candidate vs confirmed leak       ❌ NOT STARTED
+D1-4: GlobalAllocTracker -> candidate vs confirmed leak       ✅ DONE (isOnDangerPathFull promotion)
 D1-5: benchmark.sh -> add [OMI-HIGH]/[OMI-CRITICAL] regex     ❌ NOT STARTED
 A1-2: FREE_FUNCTIONS -> add __rust_dealloc* entries            ❌ NOT STARTED
 A1-5: isFreeSafe() -> Rust FFI context awareness               ❌ NOT STARTED
@@ -685,6 +685,18 @@ C0-c: FFISeverity unified (confirmed single definition)              ✅ N/A
 C0-d: flow_path Location -> common/types.zig                         ✅
 ```
 
+### Step 6: Remaining P1/P2 Polish (Post-Step 5) ✅ DONE
+
+```
+D1-4: GlobalAllocTracker candidate→confirmed leak promotion            ✅ (isOnDangerPathFull gate)
+G-2: danger_surface.zig inline logic → isOnDangerPathFull() call       ✅ (~15 lines simplified)
+F2-2: checkPythonRefcount Py_INCREF/Py_DECREF tracking                 ✅ (~45 lines, Use-scanning)
+F2-3: FFI matcher signature-based disambiguation                      ✅ (hasCCallingConvention + isSameLanguagePair)
+callback_escape.zig L1020: alloca filter .unknown only (not !.c)      ✅ (Issue1 fix per user request)
+Corpus compilation fixes: v017_zig_ffi / v017_go_cgo / v017_jni       ✅ (3 files compile → .ll)
+Benchmark: FFI HIGH=9, FFI CRITICAL=0 (14 .ll files analyzed)         ⚠️ (HIGH needs +1, CRITICAL needs corpus)
+```
+
 ---
 
 ## Success Criteria (v0.1.7) -- REVISED
@@ -697,8 +709,8 @@ C0-d: flow_path Location -> common/types.zig                         ✅
   - [x] Precision >= 0.40 **(0.8272)**
   - [x] Recall >= 0.70 **(0.9178)**
   - [x] F1 Score >= 0.54 **(0.8701)**
-  - [ ] **FFI CRITICAL >= 2** (currently FAIL: 0) <- D1 OMI format done, needs corpus run
-  - [ ] **FFI HIGH >= 10** (currently FAIL: 0) <- D1 OMI format done, needs corpus run
+  - [ ] **FFI CRITICAL >= 2** (currently FAIL: 0) <- needs corpus with stack-escape/resource-UAF patterns
+  - [ ] **FFI HIGH >= 10** (currently FAIL: 9) <- close, needs 1 more detection or corpus file
 - [x] isOnDangerPath() implemented and wired into >=3 passes
 - [x] **100% of issue-reporting passes use graph gate** (E2-1a~f all done)
 - [x] **isZigExtern() returns correct results** (F1-1: 3-layer detection)

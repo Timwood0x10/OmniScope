@@ -50,6 +50,8 @@ Java_com_example_MyClass_nativeLeak(JNIEnv* env, jobject thiz) {
 static void (*g_jni_callback)(void*) = NULL;
 static char* g_callback_data = NULL;
 
+static void jni_onDataCallback(void* data); // forward decl
+
 JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env = NULL;
@@ -161,6 +163,8 @@ Java_com_example_ArrayOps_sumArray(JNIEnv* env, jclass cls, jintArray arr) {
 
 static pthread_t g_worker_thread;
 static JavaVM* g_cached_vm = NULL;
+
+static void* worker_main(void* arg); // forward decl
 
 JNIEXPORT void JNICALL
 Java_com_example_ThreadBridge_startWorker(JNIEnv* env, jclass cls) {

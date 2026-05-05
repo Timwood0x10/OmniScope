@@ -25,7 +25,7 @@ extern fn __zig_panic_handler(msg: [*:0]const u8) noreturn;
 
 // Simulated C library functions called through @cImport
 extern fn c_process_data(buf: [*]u8, len: c_int) c_int;
-extern fn c_register_callback(cb: ?*const fn ([*]u8, c_int) callconv(.C) void) void;
+extern fn c_register_callback(cb: ?*const fn ([*]u8, c_int) void) void;
 
 // ================================================================
 // BUG-ZIG-01: zig_alloc without zig_free — memory leak at FFI bridge
@@ -70,7 +70,7 @@ pub export fn bugZig02_CMallocZigFreeMismatch() void {
 // when the arena scope ends.
 // ================================================================
 
-var g_zig_ptr: ?*u8 = null;
+var g_zig_ptr: ?[*]u8 = null;
 
 pub export fn bugZig03_ZigGlueGlobalEscape() void {
     g_zig_ptr = @ptrCast(__zig_c_allocator(512));
@@ -104,9 +104,10 @@ pub export fn bugZig04_FormatStringInjection(user_input: [*:0]const u8) void {
 // E2-2c: This indirect escape through alias closure should boost severity.
 // ================================================================
 
-var g_callback_fn: ?*const fn () callconv(.C) void = null;
+var g_callback_fn: ?*const fn () void = null;
 
-fn onCallbackFires(data: *u8) callconv(.C) void {
+fn onCallbackFires(data: [*]u8, len: c_int) void {
+    _ = len;
     // This fires after bugZig05 returns — data is on dead stack
     _ = c_printf_debug(data[0]); // UAF via callback
 }
@@ -114,9 +115,8 @@ extern fn c_printf_debug(val: u8) void;
 
 pub export fn bugZig05_CallbackStackEscape() void {
     var secret: [16]u8 = .{0xDE} ** 16; // Stack variable
-    // Register callback capturing &secret[0]
-    _ = &secret; // Suppress unused warning — value used by callback closure
-    c_register_callback(&onCallbackFires); // Indirect escape path
+    _ = &secret;
+    c_register_callback(@ptrCast(&onCallbackFires)); // Indirect escape path
     // When callback fires: secret is out of scope → UAF
 }
 
@@ -194,7 +194,8 @@ pub export fn controlZig02_CorrectCMallocFree() void {
 
 pub export fn controlZig03_PureZigNoFFI() void {
     var buf: [32]u8 = undefined;
-    std.mem.copy(u8, &buf, "hello world");
+    const src = "hello world";
+    @memcpy(buf[0..src.len], src);
     _ = buf[0]; // Pure Zig, no FFI — no issues expected
 }
 
@@ -206,7 +207,7 @@ pub fn main() void {
     bugZig01_ZigAllocLeak();
     bugZig02_CMallocZigFreeMismatch();
     bugZig03_ZigGlueGlobalEscape();
-    bugZig03_UseAfterArenaEnd();
+    _ = bugZig03_UseAfterArenaEnd();
     bugZig04_FormatStringInjection("test %s %x %n");
     bugZig05_CallbackStackEscape();
     bugZig06_DoubleFreeCrossDealloc();

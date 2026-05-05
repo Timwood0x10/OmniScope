@@ -1017,7 +1017,7 @@ pub const CallbackEscapePass = struct {
                     if (@intFromPtr(called_name_ptr) == 0) continue;
                     const called_name = std.mem.span(called_name_ptr);
                     const callee_lang = lang_classifier.identifyCalleeLanguage(called_name);
-                    if (callee_lang != .c and callee_lang != .unknown) {
+                    if (callee_lang != .unknown) {
                         try callback_escapes.append(allocator, .{
                             .inst = user,
                             .receiver_name = called_name,
