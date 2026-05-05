@@ -27,7 +27,6 @@ const type_checker = @import("ffi_type_checker.zig");
 const safety_checker = @import("ffi_safety_checker.zig");
 
 // Constants
-pub const NULL_GUARD_SCAN_LIMIT: u32 = 20;
 pub const OWNERSHIP_CHAIN_SCAN_LIMIT: u32 = 15;
 
 /// Report an FFI issue with standardized formatting.
@@ -45,48 +44,9 @@ pub fn reportFFIIssue(
 }
 
 /// Scan forward in the same basic block for a NULL comparison of the call result.
+/// Delegates to safety_checker to avoid code duplication.
 pub fn checkNullGuard(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
-    _ = func;
-    const parent_bb = c.LLVMGetInstructionParent(inst);
-    if (@intFromPtr(parent_bb) == 0) return false;
-
-    var next_inst = c.LLVMGetNextInstruction(inst);
-    const scan_limit: u32 = NULL_GUARD_SCAN_LIMIT;
-    var scanned: u32 = 0;
-
-    while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
-        next_inst = c.LLVMGetNextInstruction(next_inst);
-        scanned += 1;
-    }) {
-        const opcode = c.LLVMGetInstructionOpcode(next_inst);
-        // icmp eq/ne with null → NULL guard pattern
-        if (opcode == c.LLVMICmp) {
-            const num_ops = c.LLVMGetNumOperands(next_inst);
-            if (num_ops >= 2) {
-                const op0 = c.LLVMGetOperand(next_inst, 0);
-                const op1 = c.LLVMGetOperand(next_inst, 1);
-                // Check if either operand is our call instruction's result
-                if (@intFromPtr(op0) == @intFromPtr(inst) or @intFromPtr(op1) == @intFromPtr(inst)) {
-                    const other_op = if (@intFromPtr(op0) == @intFromPtr(inst)) op1 else op0;
-                    if (c.LLVMIsAConstantPointerNull(other_op) != null) return true;
-                    if (c.LLVMIsAConstantInt(other_op) != null) {
-                        const int_val = c.LLVMConstIntGetSExtValue(other_op);
-                        if (int_val == 0) return true;
-                    }
-                    const other_name = c.LLVMGetValueName(other_op);
-                    if (@intFromPtr(other_name) != 0) {
-                        const name_str = std.mem.span(other_name);
-                        if (std.mem.indexOf(u8, name_str, "null") != null or
-                            std.mem.indexOf(u8, name_str, "NULL") != null)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return false;
+    return safety_checker.checkNullGuard(inst, func);
 }
 
 /// Check if the result of an ownership-transferring call is properly handled
@@ -279,10 +239,8 @@ fn checkPythonCApiSafety(
 
 /// Check if the return value of an FFI call escapes to unsafe contexts.
 /// Detects patterns where a raw pointer from FFI is stored in a global,
-/// returned to caller, or used in async/callback context — all of which
+/// returned to caller, or passed to another FFI call — all of which
 /// can lead to use-after-free or data races.
-///
-/// TODO: Re-enable after fixing LLVM Use iteration API compatibility.
 pub fn checkReturnValueEscape(
     ctx: *PassContext,
     diag: *DiagnosticWriter,
@@ -290,14 +248,63 @@ pub fn checkReturnValueEscape(
     func: c.LLVMValueRef,
     called_name: []const u8,
 ) !void {
-    _ = ctx;
     _ = diag;
-    _ = inst;
-    _ = func;
-    _ = called_name;
+    const caller_name_ptr = c.LLVMGetValueName(func);
+    const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+        std.mem.span(caller_name_ptr)
+    else
+        "unknown";
 
-    // LLVM Use iteration API not available in current LLVM version
-    // This check will be re-enabled once the API is stabilized
+    var global_escape = false;
+    var return_escape = false;
+    var ffi_reentry = false;
+    var num_uses: usize = 0;
+
+    var use = c.LLVMGetFirstUse(inst);
+    while (@intFromPtr(use) != 0) : (use = c.LLVMGetNextUse(use)) {
+        num_uses += 1;
+        const user = c.LLVMGetUser(use);
+        if (@intFromPtr(user) == 0) continue;
+
+        const opcode = c.LLVMGetInstructionOpcode(user);
+        if (opcode == c.LLVMStore) {
+            const ptr_op = c.LLVMGetOperand(user, 1);
+            const ptr_name = c.LLVMGetValueName(ptr_op);
+            if (@intFromPtr(ptr_name) != 0) {
+                const name_str = std.mem.span(ptr_name);
+                if (std.mem.indexOf(u8, name_str, "@global") != null or
+                    std.mem.indexOf(u8, name_str, "@g_") != null or
+                    std.mem.startsWith(u8, name_str, "@"))
+                {
+                    global_escape = true;
+                }
+            }
+        }
+        if (opcode == c.LLVMRet) {
+            return_escape = true;
+        }
+        if (opcode == c.LLVMCall) {
+            const callee = c.LLVMGetCalledValue(user);
+            const callee_name_ptr = c.LLVMGetValueName(callee);
+            if (@intFromPtr(callee_name_ptr) != 0) {
+                const callee_name = std.mem.span(callee_name_ptr);
+                if (lang_classifier.identifyCalleeLanguage(callee_name) != .c)
+                {
+                    ffi_reentry = true;
+                }
+            }
+        }
+    }
+
+    if (global_escape or return_escape or ffi_reentry or num_uses > 4) {
+        const msg = try std.fmt.allocPrint(ctx.allocator, "FFI return value escape: {s} result in {s} (global={}, ret={}, ffi_reentry={}, uses={})", .{
+            called_name, caller_name, global_escape, return_escape, ffi_reentry, num_uses,
+        });
+        defer ctx.allocator.free(msg);
+
+        const severity: Severity = if (global_escape or ffi_reentry) .high else .medium;
+        reportFFIIssue(ctx, .borrow_escape, msg, caller_name, severity, 0.70) catch {};
+    }
 }
 
 /// Check type compatibility at FFI boundaries.
@@ -315,7 +322,9 @@ pub fn checkTypeCompatibility(
     _ = called_name;
     _ = sem;
     return type_checker.checkTypeCompatibility(ctx, diag, inst, func, struct {
-        fn report(_: *PassContext, _: IssueKind, _: []const u8, _: []const u8, _: IssueSeverity, _: f32) anyerror!void {}
+        pub fn report(caller_ctx: *PassContext, kind: IssueKind, msg: []const u8, fn_name: []const u8, sev: IssueSeverity, conf: f32) anyerror!void {
+            reportFFIIssue(caller_ctx, kind, msg, fn_name, sev, conf) catch {};
+        }
     }.report);
 }
 

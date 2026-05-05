@@ -25,6 +25,7 @@ const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 const ffi_utils = @import("../ffi_utils.zig");
 const ptr_types = @import("../ptr_lifetime_types.zig");
+const classify = @import("../ptr_lifetime_classify.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -309,20 +310,30 @@ pub const FreeValidationPass = struct {
                 return true;
             },
             .from_ffi_call => {
-                // Pointer from FFI boundary call being freed by a different allocator.
-                // Risk: C-allocated pointer freed by __rust_dealloc, or vice versa.
-                // Report with reduced confidence since cross-allocator free is
-                // sometimes legitimate (e.g., C's malloc + Rust's free wrapper).
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isCrossAllocatorFree(.from_ffi_call, src, callee_name)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
+                }
                 if (!isRustDeallocFunction(callee_name) and
                     !std.mem.eql(u8, callee_name, "free"))
                 {
-                    // Non-standard free on FFI-sourced ptr — less confident
                     return false;
                 }
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
-            .from_malloc => {},
+            .from_malloc => {
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isCrossAllocatorFree(.from_malloc, src, callee_name)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
+                }
+                if (src.len > 0 and isPossibleIntoRawOutput(src) and !isRustDeallocFunction(callee_name)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
+                }
+            },
             .unknown => {},
         }
 
@@ -363,15 +374,50 @@ pub const FreeValidationPass = struct {
         return true;
     }
 
+    /// Check if a free call crosses allocator boundaries.
+    /// Returns true when memory from one runtime's allocator is freed
+    /// by a different runtime's deallocator — almost always a bug.
+    fn isCrossAllocatorFree(alloc_origin: ValueOrigin, source_desc: []const u8, free_func: []const u8) bool {
+        const is_rust_free = isRustDeallocFunction(free_func);
+        const is_c_free = std.mem.eql(u8, free_func, "free") or
+            std.mem.eql(u8, free_func, "kfree") or
+            std.mem.eql(u8, free_func, "g_free");
+
+        if (alloc_origin == .from_malloc) {
+            const is_rust_alloc = std.mem.indexOf(u8, source_desc, "__rust_alloc") != null or
+                std.mem.indexOf(u8, source_desc, "__rdl_alloc") != null or
+                std.mem.indexOf(u8, source_desc, "__rg_alloc") != null;
+            if (is_rust_alloc and is_c_free) return true;
+            if (!is_rust_alloc and is_rust_free) return true;
+        }
+
+        if (alloc_origin == .from_ffi_call) {
+            const is_rust_source = std.mem.indexOf(u8, source_desc, "__rust") != null or
+                std.mem.indexOf(u8, source_desc, "_ZN") != null;
+            if (is_rust_source and is_c_free) return true;
+        }
+
+        return false;
+    }
+
+    /// Check if the pointer may originate from Rust's into_raw() call.
+    /// into_raw transfers ownership to the caller — freeing with anything
+    /// other than the correct Rust deallocator is undefined behavior.
+    fn isPossibleIntoRawOutput(source_desc: []const u8) bool {
+        const into_raw_patterns = [_][]const u8{
+            "into_raw", "into_raw_parts",
+            "Box::into_raw",
+        };
+        for (into_raw_patterns) |pat| {
+            if (std.mem.indexOf(u8, source_desc, pat) != null) return true;
+        }
+        return false;
+    }
+
     /// Check if function is a free function.
     /// Uses exact match + endsWith to avoid FP like 'my_custom_free' matching 'free'.
     fn isFreeFunction(func_name: []const u8) bool {
-        for (FREE_FUNCTIONS) |free_func| {
-            if (functionNameMatches(func_name, free_func)) {
-                return true;
-            }
-        }
-        return false;
+        return classify.isFreeFunction(func_name);
     }
 
     /// Check if function is an allocation function.

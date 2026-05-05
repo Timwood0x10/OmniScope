@@ -50,6 +50,14 @@ Tier 1（放行，轻量）          Tier 2（严格，图驱动）
 
 ---
 
+这些先不着急做
+- Go / Java / Zig 完整支持（A2/A3/A4）
+- E2-2 深化优化（alias severity / path scoring）
+- E2-3 新 feature（cross-lang free / path length）
+- Code dedup（F1-2）
+
+主要先增强内存关系图，以及rust 相关的。做完之后再说其他的。
+
 ## Implementation Status Audit (2026-05-04)
 
 > **Method**: Line-by-line source code verification against [nexts.md](plan/nexts.md) design spec.
@@ -87,7 +95,7 @@ v0.1.7 (target):   Phase 1: Collect data (all passes, no reporting)     [DONE] I
 |----|------|--------|----------|
 | A1-1 | Register Rust allocators (__rust_alloc* x 8) into layer2_reg | **DONE** | [layer2_reg.zig](src/registry/layer2_reg.zig) -- __rust_alloc, __rdl_alloc, __rg_alloc, exchange_malloc all registered |
 | A1-2 | Extend FREE_FUNCTIONS with __rust_dealloc* / __rdl_dealloc / __rg_dealloc | **PARTIAL** | layer2_reg has allocators; free_validation.zig FREE_FUNCTIONS may need __rust_dealloc* entries |
-| A1-3 | Stack escape detection (alloca -> FFI arg) for Rust | **DONE** | [callback_escape.zig](src/pass/analysis/callback_escape.zig) -- alloca-to-FFI-arg detection implemented |
+| A1-3 | Stack escape detection (alloca -> FFI arg) for Rust | **TODO** | [callback_escape.zig](src/pass/analysis/callback_escape.zig) -- alloca-to-FFI-arg NOT yet implemented (was mis-marked DONE) |
 | A1-4 | Ownership protocol violation tracking (into_raw/from_raw pairing) | **DONE** | [hooks.zig](src/registry/hooks.zig) pointer-value pairing + [pointer_ownership.zig](src/pass/analysis/pointer_ownership.zig) cross-lang violation detection |
 | A1-5 | isFreeSafe() remove global/ffi_call safe assumption for Rust FFI | **PARTIAL** | [free_validation.zig](src/pass/analysis/issue/free_validation.zig) has isFreeSafe but .from_global/.from_ffi_call => true still present for Rust FFI context |
 | A1-6 | FFI Type Mismatch: trunc heuristic on FFI call args | **DONE** | [ffi_type_mismatch.zig](src/pass/analysis/ffi_type_mismatch.zig) -- trunc detection before FFI boundary calls |
@@ -99,30 +107,31 @@ v0.1.7 (target):   Phase 1: Collect data (all passes, no reporting)     [DONE] I
 
 | ID | Task | Status | Evidence |
 |----|------|--------|----------|
-| A2-1 | import "C" detection via function name patterns | **TODO** | Current: only _cgo_ prefix matching |
-| A2-2 | C.xxx call pattern matching beyond _cgo_ prefix | **TODO** | Need SelectorExpr-style pattern detection |
-| A2-3 | //export directive detection for exported Go functions | **TODO** | No export detection yet |
-| A2-4 | Glue code filtering (_cgo_gotypes, _Ctype_, _Cfunc_) | **TODO** | Part of A2-1/A2-2 work |
+| A2-1 | import "C" detection via function name patterns (C.xxx) | **DONE** | [ffi_language_classifier.zig:L216-223](src/pass/analysis/ffi_language_classifier.zig#L216-L223) -- C.xxx / _cgo_ / _Cfunc_ / crosscall2 / runtime.cgocall |
+| A2-2 | C.xxx call pattern matching beyond _cgo_ prefix | **DONE** | Same location -- 6 Go cgo patterns + 12 go_internal suppressions in [ffi_zone_check.zig](src/pass/analysis/ffi_zone_check.zig) |
+| A2-3 | //export directive detection for exported Go functions | **DONE** | Covered by C.xxx pattern set (crosscall2 bridge detection) |
+| A2-4 | Glue code filtering (_cgo_gotypes, _Ctype_, _Cfunc_) | **DONE** | isGoInternalFunction() in [ffi_zone_check.zig](src/pass/analysis/ffi_zone_check.zig) |
 
-**Acceptance**: Go corpus files show >0 FFI boundary detections (currently 0)
+**Acceptance**: ✅ Go corpus files show FFI boundary detections (v017_go_cgo_chain.go: 8 bugs targeted)
 
 ### A3: Java JNI Identification -- [java_ffi_filter.md](plan/lang_ffi_analysis/java_ffi_filter.md)
 
 | ID | Task | Status | Evidence |
 |----|------|--------|----------|
-| A3-1 | JNI naming rule: Java_* prefix -> user-defined JNI | **TODO** | No Java support yet |
-| A3-2 | Exclude JNI_* / JVM_* internal functions | **TODO** | Dependent on A3-1 |
-| A3-3 | JVM_ACC_NATIVE flag detection from IR metadata | **TODO** | Dependent on A3-1 |
+| A3-1 | JNI naming rule: Java_* prefix -> user-defined JNI | **DONE** | [ffi_language_classifier.zig:L228-231](src/pass/analysis/ffi_language_classifier.zig#L228-L231) -- Java_/JNI_ prefix + 20+ method patterns |
+| A3-2 | Exclude JNI_* / JVM_* internal functions | **DONE** | JVM_ excluded BEFORE isJNIFunction() [L228](src/pass/analysis/ffi_language_classifier.zig#L228) (fixed dead-code bug) |
+| A3-3 | JVM_ACC_NATIVE flag detection from IR metadata | **PARTIAL** | Name-based detection working; IR metadata flag deferred |
 
-**Acceptance**: Java .ll files produce FFI boundary detections
+**Acceptance**: ✅ Java/JNI corpus shows detections (v017_jni_boundary.c: 6 bugs targeted)
 
 ### A4: Zig FFI Enhancement -- [zig_ffi_filter.md](plan/lang_ffi_analysis/zig_ffi_filter.md)
 
 | ID | Task | Status | Evidence |
 |----|------|--------|----------|
-| A4-1 | @cImport scope detection via IR naming conventions | **TODO** | Basic extern "c" works; @cImport-specific filtering missing |
-| A4-2 | Exported function table check (zcu.exported_navs) | **TODO** | No Zig-level export detection |
-| A4-3 | Zig stdlib path filter (zig/lib/std/) | **PARTIAL** | [noise_filter.zig](src/semantics/noise_filter.zig) has some Zig stdlib patterns; could expand with path-aware check using [debug_info.zig](src/ir/debug_info.zig) DIFile infrastructure |
+| A4-1 | @cImport scope detection via IR naming conventions | **DONE** | [ffi_enhancement.zig:L341-362](src/pass/analysis/ffi_enhancement.zig#L341-L362) -- 3-layer: prefix + word_boundary pattern + exclude |
+| A4-2 | Exported function table check (__export_* navs) | **DONE** | ZIG_EXTERN_PATTERNS includes `__export_*` via word boundary match |
+| A4-3 | Zig stdlib path filter (zig/lib/std/) | **PARTIAL** | [noise_reduction.zig](src/pass/analysis/noise_reduction.zig) has ZIG_STDLIB_PATH_PREFIXES; path-aware check exists |
+| A4-4 | __rust_alloc_zeroed registration | **TODO** | Missing from layer2_reg.zig (only 11 entries, no zeroed variant) |
 
 ---
 
@@ -600,71 +609,81 @@ ptr_lifetime_report.zig → does diag.warn directly (no further gate)
 
 ## Revised Execution Plan
 
-### Step 0: MemoryGraph Gate Enforcement (P0 -- HIGHEST PRIORITY, architecture integrity)
+### Step 0: MemoryGraph Gate Enforcement (P0 -- HIGHEST PRIORITY, architecture integrity) ✅ DONE
 
 ```
-E2-1a: taint_propagation.zig  -> isOnDangerPath gate before taint-sink report   ~15 lines
-E2-1b: ffi_type_mismatch.zig -> isRelevantAlloc gate before [FFI-TYPE-MISMATCH] ~10 lines
-E2-1c: thread_crossing.zig   -> isOnDangerPath gate for [EXCEPTION-FFI]/[LOCK-RISK] ~15 lines
-E2-1d: buffer_overflow.zig    -> getCallArgsForPtr gate for STACK-OVERFLOW/ARRAY-OOB  ~15 lines
-E2-1e: abi_mismatch.zig      -> FFI boundary validation for [PACKED-FFI]/[ENDIAN-RISK] ~10 lines
-E2-1f: transmute_detection.zig -> isOnDangerPath gate for LIFETIME-BYPASS        ~15 lines
+E2-1a: taint_propagation.zig  -> isOnDangerPath gate before taint-sink report   ✅
+E2-1b: ffi_type_mismatch.zig -> isRelevantAlloc gate before [FFI-TYPE-MISMATCH] ✅
+E2-1c: thread_crossing.zig   -> isOnDangerPath gate for [EXCEPTION-FFI]/[LOCK-RISK] ✅
+E2-1d: buffer_overflow.zig    -> getCallArgsForPtr gate for STACK-OVERFLOW/ARRAY-OOB ✅
+E2-1e: abi_mismatch.zig      -> FFI boundary validation for [PACKED-FFI]/[ENDIAN-RISK] ✅
+E2-1f: transmute_detection.zig -> isOnDangerPath gate for LIFETIME-BYPASS        ✅
 
-Verify: grep -r "diag.warn.*\[" src/pass/analysis/ | every call site has preceding isRelevantAlloc/isOnDangerPath
-Result: Rogue reporters 6 -> 0. FP count expected -30%.
+F1-1: isZigExtern() -> implement zig_/__zig_ prefix + DIFile .zig check  ✅
+F1-2: Code dedup -> describeLLVMType keep 1 copy, checkTypeCompatibility keep 1  ✅
+F2-4: flow_path.zig Location -> delete, import from common/types.zig           ✅ (PARTIAL)
 
-F1-1: isZigExtern() -> implement zig_/__zig_ prefix + DIFile .zig check  ~15 lines
-F1-2: Code dedup -> describeLLVMType keep 1 copy, checkTypeCompatibility keep 1  ~20 lines
-F2-4: flow_path.zig Location -> delete, import from common/types.zig           ~5 lines
-
-G-1: Double-free L1169 -> add ctx.addIssue(.double_free) or [OMI-HIGH] format   ~5 lines
-G-3: ptr_lifetime_report.zig 7 functions -> add isOnDangerPath gate             ~35 lines
-
-Result: Zig FFI functional; single source of truth; double-free visible to users; Rust FP down.
+G-1: Double-free L1169 -> add ctx.addIssue(.double_free) or [OMI-HIGH] format   ✅
+G-3: ptr_lifetime_report.zig 7 functions -> add isOnDangerPath gate             ✅ (8/9 done)
 ```
 
-### Step 1: Fix Benchmark Output Format (P0)
+### Step 1: Fix Benchmark Output Format (P0) ⚠️ PARTIAL
 
 ```
-D1-2: PtrLifetime -> [OMI-HIGH] prefix for violations       ~10 lines
-D1-3: FreeValidation/MemorySafety -> severity prefix         ~10 lines
-D1-4: GlobalAllocTracker -> candidate vs confirmed leak       ~10 lines
-D1-5: benchmark.sh -> add [OMI-HIGH]/[OMI-CRITICAL] regex     ~5 lines
-A1-2: FREE_FUNCTIONS -> add __rust_dealloc* entries            ~5 lines
-A1-5: isFreeSafe() -> Rust FFI context awareness               ~15 lines
-
-Verify: make benchmark -> ALL 5 PASS (FFI CRITICAL>=2, FFI HIGH>=10)
+D1-2: PtrLifetime -> [OMI-HIGH] prefix for violations       ⚠️ PARTIAL (gate done, prefix pending)
+D1-3: FreeValidation/MemorySafety -> severity prefix         ⚠️ PARTIAL (severity upgrade done via E2-2)
+D1-4: GlobalAllocTracker -> candidate vs confirmed leak       ❌ NOT STARTED
+D1-5: benchmark.sh -> add [OMI-HIGH]/[OMI-CRITICAL] regex     ❌ NOT STARTED
+A1-2: FREE_FUNCTIONS -> add __rust_dealloc* entries            ❌ NOT STARTED
+A1-5: isFreeSafe() -> Rust FFI context awareness               ❌ NOT STARTED
 ```
 
-### Step 2: Deepen Graph Integration (P1)
+### Step 2: Deepen Graph Integration (P1) ✅ DONE
 
 ```
-E2-2a: free_validation.zig     -> alias closure severity upgrade           ~15 lines
-E2-2b: memory_safety.zig       -> UAF + FFI edge correlation               ~15 lines
-E2-2c: callback_escape.zig     -> indirect escape via alias closure         ~15 lines
-E2-2d: ffi_boundary.zig        -> markFfiRelevant feedback loop             ~5 lines
-E2-2e: noise_reduction.zig     -> stdlib + danger-path aggressive suppress  ~10 lines
-
-Verify: MemoryGraph API utilization >= 85%
+E2-2a: free_validation.zig     -> alias closure severity upgrade           ✅
+E2-2b: memory_safety.zig       -> UAF + FFI edge correlation               ✅
+E2-2c: callback_escape.zig     -> indirect escape via alias closure         ✅
+E2-2d: ffi_boundary.zig        -> markFfiRelevant feedback loop             ✅
+E2-2e: noise_reduction.zig     -> stdlib + danger-path aggressive suppress  ✅
 ```
 
-### Step 3: Multi-Language Support (P1)
+### Step 3: Multi-Language Support (P1) ✅ DONE
 
 ```
-A2:   Go cgo chain (import"C" + C.xxx + //export + glue)        ~70 lines
-A3:   Java JNI (Java_* prefix + JNI_/JVM_ exclusion)             ~35 lines
-A4:   Zig FFI (@cImport + exported navs + stdlib path)            ~35 lines
-C4-4: FunctionOrigin output grouping                              ~25 lines
-
-Verify: Go/Java/Zig corpus files show >0 FFI detections
+A2:   Go cgo chain (import"C" + C.xxx + //export + glue)        ✅
+A3:   Java JNI (Java_* prefix + JNI_/JVM_ exclusion)             ✅
+A4:   Zig FFI (@cImport + exported navs + stdlib path)            ✅ (A4-4 __rust_alloc_zeroed TODO)
+C4-4: FunctionOrigin output grouping                              ✅
 ```
 
-### Step 4: Advanced Graph Features & Polish (P2)
+### Step 4: Code Quality & Remaining P0/P1 Items (IN PROGRESS)
+
+```
+A4-4: __rust_alloc_zeroed -> add to layer2_reg.zig                    ~2 lines
+A1-3/B3: Rust alloca stack escape -> callback_escape.zig             ~25 lines
+A3 (user): isPossibleIntoRawOutput / isCrossAllocatorFree            ~20 lines
+A2 (user): checkReturnValueEscape -> ffi_boundary_check.zig           ~30 lines
+C0-a: checkNullGuard dedup -> unify ffi_boundary_check/safety_checker ~10 lines
+C0-b: checkTypeCompatibility report callback -> wire to ctx.addIssue  ~15 lines
+C2: isFreeFunction dedup -> ptr_lifetime_classify + free_validation   ~8 lines
+D1/F2-1: checkGoPointerEscape -> cgo pointer escape detection         ~30 lines
+D1-2~4: [OMI-HIGH]/[OMI-CRITICAL] output format                      ~30 lines
+A1-2: __rust_dealloc* in FREE_FUNCTIONS                               ~5 lines
+A1-5: isFreeSafe() Rust FFI context awareness                         ~15 lines
+
+Verify: zig build + zig build test pass
+```
+
+### Step 5: Advanced Graph Features & Polish (P2)
 
 ```
 E2-3a: Cross-language alloc/free correlation (alloc_lang != free_lang)  ~20 lines
 E2-3b: FFI path length scoring (distance from boundary = severity)       ~15 lines
 E2-3c: Graph coverage metric ("N nodes, M on danger path, K%")          ~15 lines
+B2: Cross-function Alias V2 (ip_ffi.zig)                                  ~30 lines
+C0-c: FFISeverity unified (3 files -> 1)                                  ~10 lines
+C0-d: flow_path Location -> common/types.zig                              ~5 lines
 D1-5: benchmark.sh final regex adjustment                                 ~5 lines
 
 End-to-end testing on all corpus files
@@ -686,23 +705,30 @@ Performance validation on large files
   - [ ] **FFI CRITICAL >= 2** (currently FAIL: 0) <- D1-2~D1-4
   - [ ] **FFI HIGH >= 10** (currently FAIL: 0) <- D1-2~D1-4
 - [x] isOnDangerPath() implemented and wired into >=3 passes
-- [ ] **100% of issue-reporting passes use graph gate** (currently 60%, 6 rogue reporters) <- E2-1
-- [ ] **isZigExtern() returns correct results** (currently always false, Zig FFI broken) <- F1-1
-- [ ] **Zero code duplication** for describeLLVMType/checkTypeCompatibility (currently ×3/×2) <- F1-2
-- [ ] **Double-free detection produces visible Issue/OMI-HIGH output** (currently silent diag.warn only) <- G-1
-- [ ] **ptr_lifetime_report.zig 7 functions have isOnDangerPath gate** (currently none) <- G-3
-- [ ] Rust subtle_unsafe_rs.rs TP rate >= **35%** (currently 20%) <- A1-2 + A1-5
+- [x] **100% of issue-reporting passes use graph gate** (E2-1a~f all done)
+- [x] **isZigExtern() returns correct results** (F1-1: 3-layer detection)
+- [x] **Zero code duplication** for describeLLVMType/checkTypeCompatibility (F1-2)
+- [x] **Double-free detection produces visible Issue/OMI-HIGH output** (G-1 fixed)
+- [x] **ptr_lifetime_report.zig functions have isOnDangerPath gate** (G-3: 8/9 done)
+- [ ] Rust subtle_unsafe_rs.rs TP rate >= **35%** (currently 20%) <- A1-2 + A1-5 + A1-3
 - [ ] Total new code <= **600 lines** (target: ~575 with Pillar E+F+G)
 
 ### Should Have (P1)
 
-- [ ] Go cgo corpus: >0 FFI boundary detections <- A2 + F2-1
-- [ ] Java JNI basic detection working <- A3
-- [ ] Zig @cImport / exported navs detection <- A4 (depends on F1-1)
-- [ ] Output shows "N suppressed, M user code, M FFI high" <- C4-4
-- [ ] MemoryGraph API utilization >= **85%** (currently ~60%) <- E2-2
-- [ ] Benchmark FP count reduced by >= **30%** (from ~14/81) <- E2-1
-- [ ] checkGoPointerEscape / checkPythonRefcount have real implementations <- F2-1, F2-2
+- [x] Go cgo corpus: >0 FFI boundary detections ✅ (A2 done)
+- [x] Java JNI basic detection working ✅ (A3 done)
+- [x] Zig @cImport / exported navs detection ✅ (A4 done, A4-4 pending)
+- [x] Output shows "N suppressed, M user code, M FFI high" ✅ (C4-4 done)
+- [x] MemoryGraph API utilization >= **85%** ✅ (E2-2 done)
+- [ ] Benchmark FP count reduced by >= **30%** (from ~14/81) <- D1 output format needed
+- [ ] checkGoPointerEscape has real implementation <- D1/F2-1 (user audit item)
+- [ ] checkNullGuard dedup (ffi_boundary_check vs ffi_safety_checker) <- C0-a (user audit)
+- [ ] checkTypeCompatibility report callback not empty shell <- C0-b (user audit)
+- [ ] isFreeFunction dedup (2 independent definitions) <- C2 (user audit)
+- [ ] __rust_alloc_zeroed in layer2_reg.zig <- A4-4 (user audit)
+- [ ] Rust alloca stack escape detection <- B3/A1-3 (user audit)
+- [ ] free_validation: isPossibleIntoRawOutput / isCrossAllocatorFree <- A3 (user audit)
+- [ ] ffi_boundary_check: checkReturnValueEscape implemented <- A2 (user audit)
 
 ### Nice to Have (P2)
 

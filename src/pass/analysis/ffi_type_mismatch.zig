@@ -504,22 +504,78 @@ pub const FFITypeMismatchPass = struct {
     }
 
     /// Checks for Go pointer escape (Go pointer passed to C without KeepAlive).
+    /// When a Go heap object is passed to C via cgo, the GC must be prevented
+    /// from reclaiming it while C still holds the pointer. Without
+    /// runtime.KeepAlive, the GC may collect the object prematurely.
     fn checkGoPointerEscape(
         ctx: *PassContext,
         caller_name: []const u8,
         call_inst: c.LLVMValueRef,
         diag: *DiagnosticWriter,
     ) !bool {
-        _ = ctx;
-        _ = caller_name;
-        _ = call_inst;
-        _ = diag;
+        const num_args = c.LLVMGetNumArgOperands(call_inst);
+        var go_ptr_arg: bool = false;
 
-        // TODO: Implement Go cgo pointer escape detection
-        // This requires:
-        // 1. Detecting if the caller is Go code
-        // 2. Checking if any argument is a Go pointer
-        // 3. Verifying that runtime.KeepAlive is called after the FFI call
+        for (0..@as(usize, @intCast(num_args))) |i| {
+            const arg = c.LLVMGetOperand(call_inst, @intCast(i));
+            if (@intFromPtr(arg) == 0) continue;
+            const arg_name = c.LLVMGetValueName(arg);
+            if (@intFromPtr(arg_name) == 0) continue;
+            const name_str = std.mem.span(arg_name);
+
+            const go_alloc_patterns = [_][]const u8{
+                "runtime.newobject", "runtime.mallocgc", "C.malloc",
+                "C.CString",       "C.CBytes",         "_cgo_allocate",
+            };
+            for (go_alloc_patterns) |pat| {
+                if (std.mem.indexOf(u8, name_str, pat) != null) {
+                    go_ptr_arg = true;
+                    break;
+                }
+            }
+        }
+
+        if (!go_ptr_arg) return false;
+
+        var has_keepalive = false;
+        var next_inst = c.LLVMGetNextInstruction(call_inst);
+        const scan_limit: u32 = 10;
+        var scanned: u32 = 0;
+        while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
+            next_inst = c.LLVMGetNextInstruction(next_inst);
+            scanned += 1;
+        }) {
+            if (c.LLVMGetInstructionOpcode(next_inst) == c.LLVMCall) {
+                const callee = c.LLVMGetCalledValue(next_inst);
+                const callee_name = c.LLVMGetValueName(callee);
+                if (@intFromPtr(callee_name) != 0) {
+                    const cname = std.mem.span(callee_name);
+                    if (std.mem.indexOf(u8, cname, "KeepAlive") != null or
+                        std.mem.indexOf(u8, cname, "keepalive") != null or
+                        std.mem.indexOf(u8, cname, "KeepAlive_p") != null)
+                    {
+                        has_keepalive = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!has_keepalive) {
+            diag.warn("  [CGO] Go pointer passed to C without runtime.KeepAlive in {s}", .{caller_name});
+            diag.warn("    Risk: GC reclaims object while C still holds pointer (CWE-407)", .{});
+
+            const msg = try std.fmt.allocPrint(ctx.allocator, "Go cgo pointer escape: no KeepAlive after passing Go heap ptr to C in {s}", .{
+                caller_name,
+            });
+            defer ctx.allocator.free(msg);
+
+            const location = Location.init(caller_name);
+            const issue = Issue.init(.borrow_escape, msg, location, .high, 0.75);
+            try ctx.addIssue(&issue);
+
+            return true;
+        }
 
         return false;
     }
