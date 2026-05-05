@@ -54,6 +54,7 @@ pub const AnalyzeResult = ffi_types.AnalyzeResult;
 /// New code should import from ffi_zone_check.zig directly.
 pub const is_zig_internal_function = zone_check.isZigInternalFunction;
 pub const is_zig_safe_cimport = zone_check.isZigSafeCimport;
+pub const is_go_internal_function = zone_check.isGoInternalFunction;
 pub const is_dangerous_pattern = zone_check.isDangerousPattern;
 pub const is_likely_intentional_pattern = zone_check.isLikelyIntentionalPattern;
 

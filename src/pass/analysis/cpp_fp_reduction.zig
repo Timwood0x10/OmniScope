@@ -1205,6 +1205,7 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
         .cpp => .cpp,
         .go => .go,
         .swift => .swift,
+        .java => .java,
         .unknown => .unknown,
     };
 }

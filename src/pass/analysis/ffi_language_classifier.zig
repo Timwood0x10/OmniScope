@@ -104,6 +104,26 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
         return .zig;
     }
 
+    // A2: Go cgo chain detection in identifyLanguage
+    if (std.mem.indexOf(u8, func_name, "C.") != null or
+        std.mem.indexOf(u8, func_name, "_cgo_") != null or
+        std.mem.indexOf(u8, func_name, "_Cfunc_") != null)
+    {
+        return .go;
+    }
+    if (std.mem.startsWith(u8, func_name, "main.") or
+        std.mem.startsWith(u8, func_name, "runtime."))
+    {
+        return .go;
+    }
+
+    // A3: Java JNI detection
+    if (std.mem.startsWith(u8, func_name, "Java_") or
+        std.mem.startsWith(u8, func_name, "JNI_"))
+    {
+        return .java;
+    }
+
     // Default to C (most common case for C ABI)
     return .c;
 }
@@ -184,12 +204,30 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         }
     }
 
-    // Check for Go functions (main.* or runtime.* patterns)
+    // Check for Go functions — enhanced with cgo chain detection
+    // main.* / runtime.* / syscall.* → pure Go
     if (std.mem.startsWith(u8, func_name, "main.") or
         std.mem.startsWith(u8, func_name, "runtime.") or
         std.mem.startsWith(u8, func_name, "syscall."))
     {
         return .go;
+    }
+    // A2: Go cgo chain patterns (import"C" → C.xxx, glue code)
+    if (std.mem.startsWith(u8, func_name, "C.") or
+        std.mem.indexOf(u8, func_name, "_cgo_") != null or
+        std.mem.indexOf(u8, func_name, "_Cfunc_") != null or
+        std.mem.indexOf(u8, func_name, "crosscall2") != null or
+        std.mem.indexOf(u8, func_name, "runtime.cgocall") != null)
+    {
+        return .go;
+    }
+
+    // A3: Java JNI function detection (Java_* prefix + JNI_/JVM_ exclusion)
+    // JVM_* functions must be excluded FIRST — they don't match JNI_/Java_
+    // prefix in isJNIFunction(), so the inner check would be dead code.
+    if (std.mem.startsWith(u8, func_name, "JVM_")) return .unknown;
+    if (isJNIFunction(func_name)) {
+        return .java;
     }
 
     // Check for Objective-C functions

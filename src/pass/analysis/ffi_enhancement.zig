@@ -17,6 +17,8 @@
 //!   - plan/lang_ffi_analysis/zig_ffi_filter.md (Zig FFI mechanisms)
 
 const std = @import("std");
+const word_boundary = @import("../../utils/word_boundary.zig");
+const noise_reduction_mod = @import("noise_reduction.zig");
 
 // ============================================================================
 // Rust Intrinsic Classification (Phase 5.1)
@@ -303,8 +305,24 @@ fn isZigStdlib(name: []const u8) bool {
 }
 
 const ZIG_EXTERN_PREFIXES = &[_][]const u8{
-    "zig_",   // Zig runtime FFI bridges (e.g., zig_write, zig_alloc)
+    "zig_", // Zig runtime FFI bridges (e.g., zig_write, zig_alloc)
     "__zig_", // Zig compiler-generated FFI glue code
+};
+
+/// A4: Additional Zig extern patterns beyond prefix matching.
+/// Covers @cImport wrappers, exported navs, and stdlib-adjacent patterns.
+const ZIG_EXTERN_PATTERNS = &[_][]const u8{
+    "c.", // @cImport wrapper: c.printf, c.malloc, etc.
+    "__export_", // Zig exported function (LLVM mangled export name)
+};
+
+/// A4: Zig standard library path prefixes for DIFile-based detection.
+/// Used to identify when a function originates from the Zig standard library.
+const ZIG_STDLIB_PATH_PREFIXES = &[_][]const u8{
+    "/lib/zig/", // system-installed Zig stdlib
+    "/zig/lib/", // alternative install path
+    "lib/zig/std/", // common project-local zig cache
+    "std/", // relative path from zig source tree
 };
 
 const ZIG_EXTERN_EXCLUDES = &[_][]const u8{
@@ -321,6 +339,7 @@ const ZIG_EXTERN_EXCLUDES = &[_][]const u8{
 };
 
 fn isZigExtern(name: []const u8) bool {
+    // Prefix-based detection (zig_, __zig_)
     for (ZIG_EXTERN_PREFIXES) |prefix| {
         if (std.mem.startsWith(u8, name, prefix)) {
             var is_excluded = false;
@@ -332,6 +351,21 @@ fn isZigExtern(name: []const u8) bool {
             }
             if (!is_excluded) return true;
         }
+    }
+
+    // A4: Pattern-based detection (@cImport wrappers, exported navs)
+    for (ZIG_EXTERN_PATTERNS) |pattern| {
+        if (word_boundary.isWordBoundaryMatch(name, pattern)) return true;
+    }
+
+    return false;
+}
+
+/// A4: Check if a debug file path originates from Zig standard library.
+/// Used to suppress FFI warnings for functions defined in Zig's own source.
+pub fn isZigStdlibPath(file_path: []const u8) bool {
+    for (ZIG_STDLIB_PATH_PREFIXES) |prefix| {
+        if (noise_reduction_mod.indexOfPath(file_path, prefix)) return true;
     }
     return false;
 }

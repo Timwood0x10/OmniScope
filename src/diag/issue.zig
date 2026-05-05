@@ -280,6 +280,8 @@ pub const FFIBoundary = struct {
         swift,
         /// Go language
         go,
+        /// Java/JNI language
+        java,
         /// Unknown language
         unknown,
     };

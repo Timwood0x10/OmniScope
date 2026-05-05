@@ -518,6 +518,12 @@ pub const DataFlowGraph = struct {
         cross_language_leak: usize,
         static_buffer_misuse: usize,
         unknown: usize,
+
+        /// C4-4: FunctionOrigin grouping for output summary
+        user_code: usize = 0,
+        stdlib_suppressed: usize = 0,
+        compiler_ignored: usize = 0,
+        third_party: usize = 0,
     };
 
     pub fn getIssueStats(self: *const DataFlowGraph) IssueStats {
@@ -560,8 +566,58 @@ pub const DataFlowGraph = struct {
                 .static_buffer_misuse => stats.static_buffer_misuse += 1,
                 .unknown => stats.unknown += 1,
             }
+
+            // C4-4: Infer FunctionOrigin from issue location for grouping output
+            const fn_name = issue.location.func;
+            if (inferIsStdlib(fn_name)) {
+                stats.stdlib_suppressed += 1;
+            } else if (inferIsCompilerGenerated(fn_name)) {
+                stats.compiler_ignored += 1;
+            } else if (inferIsThirdParty(fn_name)) {
+                stats.third_party += 1;
+            } else {
+                stats.user_code += 1;
+            }
         }
         return stats;
+    }
+
+    /// C4-4: Lightweight stdlib detection for origin grouping.
+    fn inferIsStdlib(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "std::", "boost::", "__gnu", "__cxa_", "llvm.",
+            "std.", "runtime.", "syscall.", "java.lang.",
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
+    }
+
+    /// C4-4: Lightweight compiler-generated detection for origin grouping.
+    fn inferIsCompilerGenerated(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "__", "_Z", "_GLOBAL__", ".omp.",
+            "zig_assert_fail", "zig_panic",
+            "zig_generic_resolve",
+            "llvm.dbg", // LLVM debug intrinsics (prefix-matched for consistency)
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
+    }
+
+    /// C4-4: Lightweight third-party detection for origin grouping.
+    fn inferIsThirdParty(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "C.", "_cgo_", "_Cfunc_", "Java_", "JNI_",
+            "crosscall2", "PyInit_", "Python_",
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
     }
 
     /// Graph statistics

@@ -1016,6 +1016,22 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
         if (issue_stats.unknown > 0) {
             std.debug.print("      Unknown:                  {d}\n", .{issue_stats.unknown});
         }
+
+        // C4-4: FunctionOrigin grouping output
+        std.debug.print("\n    " ++ Colors.bold ++ "Origin breakdown:" ++ Colors.reset ++ "\n", .{});
+        std.debug.print("      ✅ User code:             {d:>6} (ACTION NEEDED)\n", .{issue_stats.user_code});
+        std.debug.print("      📦 Third-party (FFI):     {d:>6}\n", .{issue_stats.third_party});
+        std.debug.print("      📚 Stdlib (suppressed):  {d:>6}\n", .{issue_stats.stdlib_suppressed});
+        std.debug.print("      🔧 Compiler (ignored):   {d:>6}\n", .{issue_stats.compiler_ignored});
+
+        const actionable = issue_stats.user_code + issue_stats.third_party;
+        if (actionable > 0) {
+            std.debug.print("\n    " ++ Colors.yellow ++ "→ {d} actionable issues ({d} user, {d} FFI boundary)" ++ Colors.reset ++ "\n", .{
+                actionable,
+                issue_stats.user_code,
+                issue_stats.third_party,
+            });
+        }
         std.debug.print("\n", .{});
     } else {
         std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
