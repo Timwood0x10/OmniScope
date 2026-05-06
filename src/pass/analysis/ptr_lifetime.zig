@@ -376,8 +376,13 @@ pub const PtrLifetimePass = struct {
                         for (aliasers.items) |aliaser_ptr| {
                             if (mem_graph.?.nodes.get(aliaser_ptr)) |aliaser_node| {
                                 if (!aliaser_node.freed) {
-                                    _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
-                                    propagated += 1;
+                                _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
+                                // Sync MemoryGraph.freed: propagate from original freed node.
+                                if (mem_graph) |mg| {
+                                    const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
+                                    _ = mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang) catch {};
+                                }
+                                propagated += 1;
                                 }
                             }
                         }
@@ -573,6 +578,11 @@ pub const PtrLifetimePass = struct {
                                                 const func_name_raw = c.LLVMGetValueName(func);
                                                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
                                                 _ = global_tracker.markFreed(old_ptr_int, func_name);
+                                                // Sync MemoryGraph.freed for Source 1 consistency.
+                                                if (mem_graph) |mg| {
+                                                    const free_inst: u64 = @intFromPtr(inst);
+                                                    _ = mg.trackFree(free_inst, old_ptr_int, lang) catch {};
+                                                }
                                                 _ = &old_info;
                                             }
                                         }
@@ -719,6 +729,14 @@ pub const PtrLifetimePass = struct {
                                 const fn_name_raw = c.LLVMGetValueName(func);
                                 const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
                                 _ = global_tracker.markFreed(ptr_val, fn_name);
+                                // CRITICAL FIX (v0.1.7): Also sync MemoryGraph.freed/freed_by.
+                                // This eliminates the dual-source workaround in pointer_ownership.zig
+                                // where Source 1 (MemoryGraph.freed_by) had 0 coverage because
+                                // trackFree() was never called. Now both data structures stay synchronized.
+                                if (mem_graph) |mg| {
+                                    const free_inst: u64 = @intFromPtr(inst);
+                                    _ = mg.trackFree(free_inst, ptr_val, lang) catch {};
+                                }
                             }
 
                             // R8.4-d: Alias-aware free matching — when free(ptr) is called,
@@ -755,6 +773,9 @@ pub const PtrLifetimePass = struct {
                                     const fn_name_raw = c.LLVMGetValueName(func);
                                     const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
                                     _ = global_tracker.markFreed(canon_inst, fn_name);
+                                    // Sync MemoryGraph.freed for canonical alias free.
+                                    const free_inst_canon: u64 = @intFromPtr(inst);
+                                    _ = mg.trackFree(free_inst_canon, canon_inst, lang) catch {};
                                 }
                             }
                         }

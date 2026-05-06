@@ -117,7 +117,7 @@ pub const RUST_ESCAPE_PATTERNS = [_][]const u8{
     // Unsafe blocks
     "unsafe",
 
-    // FFI
+    // FFI (source-level — may not match mangled names but kept for demangled paths)
     "extern \"C\"",
     "extern \"system\"",
     "libc::",
@@ -148,6 +148,21 @@ pub const RUST_ESCAPE_PATTERNS = [_][]const u8{
     // Assembly
     "asm!",
     "llvm_asm!",
+
+    // v0.1.7: Mangled-name level patterns (actually match LLVM IR names).
+    // Source-level patterns above rarely match because Rust mangles everything.
+    // These patterns target the actual symbols seen in LLVM IR:
+    "_ffi",       // mymod::_ffi_func
+    "_extern",    // bindgen-generated wrappers
+    "_bindgen",   // rust-bindgen output
+    "_cinterop",  // Zig-style C interop in Rust projects
+    "_marshal",   // serialization FFI boundary
+    "_syscall",   // direct syscall invocation
+    "_invoke",    // indirect call through FFI trampoline
+    "_callback",  // FFI callback handler
+    "_native",    // JNI/native interop
+    "_interop",   // generic interop boundary
+    "$",          // Rust legacy mangling (often used for FFI shims)
 };
 
 /// Zig safe patterns - skip analysis.
@@ -559,11 +574,15 @@ fn classifyRustFunction(func_name: []const u8) ZoneKind {
         return .ffi;
     }
 
-    // Default: user Rust code is safe (trust Rust's borrow checker)
+    // Default: user Rust code classification (v0.1.7 relaxed).
+    // Old behavior: all user Rust functions → .safe (overly conservative, blocks FFI analysis).
+    // New behavior: use .unknown to let downstream passes (isRustFFIRelevantFunction,
+    // DangerSurface, etc.) make the final decision based on IR-level analysis.
+    // This fixes the "three-layer break" where zone gate filtered ALL Rust functions.
     if (std.mem.startsWith(u8, func_name, "_ZN") or
         std.mem.startsWith(u8, func_name, "_R"))
     {
-        return .safe;
+        return .unknown;
     }
 
     return .unknown;

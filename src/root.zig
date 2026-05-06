@@ -139,6 +139,7 @@ pub const cross_lang = struct {
     pub const IntegerOverflowPass = @import("pass/analysis/issue/integer_overflow.zig").IntegerOverflowPass;
     pub const MallocCheckPass = @import("pass/analysis/issue/malloc_check.zig").MallocCheckPass;
     pub const FreeValidationPass = @import("pass/analysis/issue/free_validation.zig").FreeValidationPass;
+    pub const BufferOverflowPass = @import("pass/analysis/buffer_overflow.zig").BufferOverflowPass;
     pub const FFITypeMismatchPass = @import("pass/analysis/ffi_type_mismatch.zig").FFITypeMismatchPass;
     pub const RustFfiAuditor = @import("pass/analysis/rust_ffi_auditor.zig").RustFfiAuditor;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;

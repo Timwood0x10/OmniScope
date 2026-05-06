@@ -225,7 +225,13 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "malloc",          "calloc",         "realloc",      "aligned_alloc",
     "valloc",          "pvalloc",        "memalign",     "operator new",
-    "operator new[]",  "into_raw",       "allocImpl",    "mmap",
+    "operator new[]",  "allocImpl",      "mmap",
+    // v0.1.7 FIX: Removed "into_raw" from this list.
+    // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
+    // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was
+    // recorded as a new allocation, and without matching from_raw, reported
+    // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
+    // which pairs into_raw/from_raw as transfer-out/transfer-in.
     "dlopen",          "fopen",          "socket",       "JNI_OnLoad",
     "Py_Initialize",   "Py_BuildValue",  "PyTuple_New",  "PyList_New",
     "PyDict_New",      "NewStringUTF",   "NewByteArray", "NewGlobalRef",

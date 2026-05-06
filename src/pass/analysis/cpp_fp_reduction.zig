@@ -498,8 +498,11 @@ pub fn isNullableAllocation(alloc: *const AllocSite) bool {
 ///   - Same-BB double-free = REAL bug (sequential free() calls)
 ///   - Different-BB multi-free = cleanup paths (each error branch frees, NOT a bug)
 ///
-/// FFI-core principle: we focus on clear bugs at FFI boundaries,
-/// not complex alias analysis for generic static analysis.
+/// v0.1.7 FIX: Dual-source deduplication.
+/// MemoryGraph.trackFree() sync (Source 1) + IR-scan (Source 3) may both create
+/// FreeSite entries for the same LLVM instruction. Without deduplication, every
+/// real free appears twice → 100% false-positive rate on double-free detection.
+/// Fix: group by (ptr_value_id, inst_id) to eliminate dual-source duplicates.
 pub fn detectDoubleFree(
     ctx: *PassContext,
     free_map: *std.AutoHashMap(u32, *FreeSite),
@@ -521,6 +524,10 @@ pub fn detectDoubleFree(
         count: u32,
         bb_set: std.AutoHashMap(usize, void),
         first_func: []const u8,
+        // Dedup set: tracks (inst_id) to avoid counting same instruction twice.
+        // Root cause: Source 1 (MemoryGraph.freed) + Source 3 (IR-scan) both
+        // create FreeSite for identical LLVM instructions after trackFree() sync.
+        inst_set: std.AutoHashMap(u32, void),
     };
 
     var ptr_info_map = std.AutoHashMap(u32, PtrInfo).init(free_map.allocator);
@@ -528,11 +535,12 @@ pub fn detectDoubleFree(
         var iter = ptr_info_map.iterator();
         while (iter.next()) |entry| {
             entry.value_ptr.bb_set.deinit();
+            entry.value_ptr.inst_set.deinit();
         }
         ptr_info_map.deinit();
     }
 
-    // Collect free operations with RAII filtering + BB tracking
+    // Collect free operations with RAII filtering + BB tracking + dedup
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
@@ -543,15 +551,26 @@ pub fn detectDoubleFree(
         const func_name_ptr = @intFromPtr(free_info.func_name.ptr);
         if (ctx.raii_func_set.contains(func_name_ptr)) continue;
 
+        // DEDUP: Skip if we already counted this exact (ptr, inst) pair.
+        // This eliminates dual-source duplication from MemoryGraph + IR-scan.
         const gop_result = try ptr_info_map.getOrPut(ptr_id);
         if (!gop_result.found_existing) {
             gop_result.value_ptr.* = .{
                 .count = 0,
                 .bb_set = std.AutoHashMap(usize, void).init(free_map.allocator),
                 .first_func = free_info.func_name,
+                .inst_set = std.AutoHashMap(u32, void).init(free_map.allocator),
             };
         }
         const info = gop_result.value_ptr;
+
+        // Only increment count if this is a UNIQUE (ptr_id, inst_id) pair.
+        const inst_id = free_info.inst_id;
+        if (info.inst_set.contains(inst_id)) {
+            diag.debug("DF-DEDUP: Skipping duplicate free for ptr={d} inst={d} in {s}", .{ ptr_id, inst_id, free_info.func_name });
+            continue;
+        }
+        info.inst_set.put(inst_id, {}) catch {};
         info.count += 1;
         info.bb_set.put(free_info.bb_id, {}) catch {};
     }
@@ -607,6 +626,9 @@ pub fn detectDoubleFree(
 }
 
 /// Detect use-after-free: pointer used after being freed.
+/// v0.1.7 FIX: Deduplication — each unique (freed_ptr, function) pair reports
+/// at most 1 UAF. Previously, every flow edge from a freed pointer was counted
+/// separately, causing 10x count inflation (e.g., 10 UAFs for 1 real bug).
 pub fn detectUseAfterFree(
     ctx: *PassContext,
     free_map: *std.AutoHashMap(u32, *FreeSite),
@@ -614,33 +636,30 @@ pub fn detectUseAfterFree(
     stats: *OwnershipStats,
     diag: *DiagnosticWriter,
 ) void {
+    // Dedup set: each (ptr_id) reports at most once.
+    var reported = std.AutoHashMap(u32, void).init(free_map.allocator);
+    defer reported.deinit();
+
     var free_iter = free_map.iterator();
     while (free_iter.next()) |entry| {
         const free_info = entry.value_ptr.*;
         const ptr_id = free_info.ptr_value_id;
 
+        // Skip if already reported for this ptr (dedup).
+        if (reported.contains(ptr_id)) continue;
+
         // P1 Enhancement: Skip UAF in Rust's guaranteed-safe drop glue.
-        // `core::ptr::drop_in_place` is Rust's destructor mechanism.
-        // UAF patterns here are normal (destructor chain calling sub-drops),
-        // NOT real use-after-free bugs. Rust's ownership system guarantees safety.
         if (isRustDropGlue(free_info.func_name)) {
             diag.debug("UAF-SKIP: {s} is Rust drop_in_place — guaranteed safe by ownership system", .{free_info.func_name});
             continue;
         }
 
-        // INTEGRATION: Use three-layer noise filter (name-based only here,
-        // no LLVMValueRef available for path-based Layer 2)
         const classification = noise_filter.classifyFunctionFull(free_info.func_name, null, null, null);
         if (!classification.origin.shouldReportByDefault()) {
             diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
             continue;
         }
 
-        // Rust ownership safety: For Rust mangled names (_ZN... or _R...),
-        // UAF is extremely unlikely because Rust's ownership/borrow system
-        // guarantees memory safety at compile time. Only report if the function
-        // is explicitly unsafe (contains 'unsafe' or 'unchecked' in name).
-        // This is the #1 source of FP in Rust projects (wasmtime: 98% FP).
         const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_ZN") or
             std.mem.startsWith(u8, free_info.func_name, "_R");
         const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or
@@ -651,6 +670,7 @@ pub fn detectUseAfterFree(
             continue;
         }
 
+        var uaf_found = false;
         var flow_iter = flow_graph.iterator();
         while (flow_iter.next()) |flow_entry| {
             const from_id = flow_entry.key_ptr.*;
@@ -662,15 +682,21 @@ pub fn detectUseAfterFree(
                     const to_id = target_entry.key_ptr.*;
 
                     if (!free_map.contains(to_id)) {
-                        stats.use_after_frees += 1;
-                        ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
-                            diag.warn("Failed to register use_after_free issue", .{});
-                        };
-                        diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
+                        uaf_found = true;
                         break;
                     }
                 }
+                if (uaf_found) break;
             }
+        }
+
+        if (uaf_found) {
+            stats.use_after_frees += 1;
+            ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
+                diag.warn("Failed to register use_after_free issue", .{});
+            };
+            diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
+            reported.put(ptr_id, {}) catch {};
         }
     }
 }

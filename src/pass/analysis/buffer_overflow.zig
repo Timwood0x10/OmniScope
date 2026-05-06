@@ -24,6 +24,7 @@ const IssueKind = @import("../../diag/issue.zig").IssueKind;
 pub const BufferOverflowPass = struct {
     pub const name = "buffer-overflow";
     pub const kind = .analysis;
+    pub const deps: []const []const u8 = &[_][]const u8{};
 
     /// Run buffer overflow detection on the loaded module.
     /// This is an AUXILIARY pass (not core FFI/unsafe detection).
@@ -78,6 +79,15 @@ pub const BufferOverflowPass = struct {
                     if (opcode == c.LLVMGetElementPtr) {
                         if (checkArrayBounds(ctx, func, inst, diag)) |vuln| {
                             oob_count += 1;
+                            try reportIssue(ctx, vuln, diag);
+                        }
+                    }
+
+                    // Check __memcpy_chk / __memmove_chk for size > destination buffer.
+                    // Pattern: __memcpy_chk(dest, src, size, limit) where size > limit = overflow.
+                    if (opcode == c.LLVMCall) {
+                        if (checkMemcpyChkOverflow(ctx, func, inst, diag)) |vuln| {
+                            overflow_count += 1;
                             try reportIssue(ctx, vuln, diag);
                         }
                     }
@@ -238,6 +248,60 @@ pub const BufferOverflowPass = struct {
         }
 
         return null;
+    }
+
+    /// Check if a __memcpy_chk / __memmove_chk call has size > limit (buffer overflow).
+    /// These functions take (dest, src, size, limit) where limit is the dest buffer size.
+    /// If size > limit, it's a definite overflow (the chk variant would abort at runtime).
+    fn checkMemcpyChkOverflow(ctx: *PassContext, func: c.LLVMValueRef, inst: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+        const called_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called_val) == 0) return null;
+        const name_ptr = c.LLVMGetValueName(called_val);
+        if (@intFromPtr(name_ptr) == 0) return null;
+        const callee_name = std.mem.span(name_ptr);
+
+        // Only check __memcpy_chk and __memmove_chk variants
+        const is_memcpy_chk = std.mem.indexOf(u8, callee_name, "__memcpy_chk") != null;
+        const is_memmove_chk = std.mem.indexOf(u8, callee_name, "__memmove_chk") != null;
+        if (!is_memcpy_chk and !is_memmove_chk) return null;
+
+        // Need at least 4 operands: dest, src, size, limit
+        const num_ops = c.LLVMGetNumOperands(inst);
+        if (num_ops < 4) return null;
+
+        // Operand 2 = size, Operand 3 = limit (dest buffer size)
+        const size_val = c.LLVMGetOperand(inst, 2);
+        const limit_val = c.LLVMGetOperand(inst, 3);
+        if (@intFromPtr(size_val) == 0 or @intFromPtr(limit_val) == 0) return null;
+
+        // Both must be constant integers for us to compare
+        if (c.LLVMIsConstant(size_val) == 0 or c.LLVMIsAConstantInt(size_val) == null) return null;
+        if (c.LLVMIsConstant(limit_val) == 0 or c.LLVMIsAConstantInt(limit_val) == null) return null;
+
+        // LLVMConstIntGetZExtValue returns c_ulonglong (unsigned long long).
+        // Use explicit @as() cast instead of @bitCast for type safety and portability:
+        // c_ulonglong may differ from u64 on some platforms (e.g., LLP64 vs LP64).
+        const size: u64 = @as(u64, c.LLVMConstIntGetZExtValue(size_val));
+        const limit: u64 = @as(u64, c.LLVMConstIntGetZExtValue(limit_val));
+
+        if (size <= limit) return null; // Safe: size fits within buffer
+
+        // OVERFLOW: writing more bytes than destination can hold
+        const func_name_raw = c.LLVMGetValueName(func);
+        const func_name = if (@intFromPtr(func_name_raw) != 0)
+            std.mem.span(func_name_raw)
+        else
+            "unknown";
+
+        diag.warn("MEMCPY-CHK [HIGH]: {s} writes {d} bytes to {d}-byte buffer in {s}", .{
+            callee_name, size, limit, func_name,
+        });
+
+        const msg = std.fmt.allocPrint(ctx.allocator,
+            "{s} buffer overflow: copying {d} bytes exceeds destination buffer of {d} bytes",
+            .{ callee_name, size, limit },
+        ) catch "memcpy_chk buffer overflow detected";
+        return Issue.init(.buffer_overflow, msg, Location.init(func_name), .high, 0.9);
     }
 
     /// Helper function to register a detected issue with the context.
