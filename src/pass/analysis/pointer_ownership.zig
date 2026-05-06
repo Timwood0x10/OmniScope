@@ -53,6 +53,14 @@ pub const OwnershipError = error{
     NullPointer,
 };
 
+/// Truncate u64 LLVM instruction ID to u32 for use in HashMap keys.
+/// LLVM instruction IDs can exceed u32 range in large modules, but we use
+/// the truncated value as a hash key rather than an exact identifier.
+/// Collisions are possible but rare and acceptable for analysis purposes.
+fn truncateInstId(inst_id: u64) u32 {
+    return @as(u32, @truncate(inst_id));
+}
+
 /// Ownership violation types detected by this pass.
 pub const OwnershipViolationType = enum(u8) {
     cross_lang_free_mismatch,
@@ -247,12 +255,13 @@ pub const PointerOwnershipPass = struct {
                     // UNFREED ALLOCATION — potential leak or valid lifetime
                     mg_unfreed_count += 1;
                     const site = try alloc_pool.alloc();
+                    const inst_id_safe = truncateInstId(node.alloc_inst);
                     site.* = .{
-                        .inst_id = @truncate(node.alloc_inst), // u64→u32: safe for LLVM inst IDs
+                        .inst_id = inst_id_safe,
                         .func_name = "memory_graph", // Source: MemoryGraph tracking
                         .lang = node.alloc_lang,
                         .alloc_type = .heap, // Default: heap allocation
-                        .ptr_value_id = @truncate(node.alloc_inst),
+                        .ptr_value_id = inst_id_safe,
                         .bb_id = 0, // N/A for MemoryGraph-sourced
                         .transferred = (node.zone == .ffi), // Mark FFI transfers
                         .stored_to_struct_field = false,
@@ -260,24 +269,26 @@ pub const PointerOwnershipPass = struct {
                         .debug_line = null,
                         .debug_column = null,
                     };
-                    try alloc_map.put(@truncate(node.alloc_inst), site);
+                    try alloc_map.put(inst_id_safe, site);
                     stats.alloc_sites += 1;
                 } else if (node.freed_by) |free_inst| {
                     // FREED ALLOCATION (from MemoryGraph — now populated by ptr_lifetime.zig mg.trackFree())
                     mg_freed_count += 1;
                     const fsite = try free_pool.alloc();
+                    const freed_inst_id_safe = truncateInstId(free_inst);
+                    const alloc_inst_id_safe = truncateInstId(node.alloc_inst);
                     fsite.* = .{
-                        .inst_id = @truncate(free_inst),
+                        .inst_id = freed_inst_id_safe,
                         .func_name = "memory_graph",
                         .lang = node.free_lang orelse node.alloc_lang,
                         .free_type = .free, // Default: standard free
-                        .ptr_value_id = @truncate(node.alloc_inst),
+                        .ptr_value_id = alloc_inst_id_safe,
                         .bb_id = 0, // N/A for MemoryGraph-sourced
                         .debug_file = null,
                         .debug_line = null,
                         .debug_column = null,
                     };
-                    try free_map.put(@truncate(free_inst), fsite);
+                    try free_map.put(freed_inst_id_safe, fsite);
                     stats.free_sites += 1;
                 }
             }
@@ -835,7 +846,8 @@ pub const PointerOwnershipPass = struct {
             const current = bfs_queue.orderedRemove(0);
 
             if (visited.contains(current)) continue;
-            visited.put(current, {}) catch return;
+            // Propagate error instead of silent return - ensures complete traversal
+            try visited.put(current, {});
 
             if (alloc_map.get(current)) |site| {
                 site.transferred = true;

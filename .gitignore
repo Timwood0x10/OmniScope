@@ -2,6 +2,9 @@
 .vscode/
 .idea/
 .claude/
+.codeartsdoer/
+.arts/
+
 Claude.md
 AGENTS.md
 

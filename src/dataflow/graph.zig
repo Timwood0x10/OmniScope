@@ -16,6 +16,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 
 const Location = @import("../diag/issue.zig").Location;
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const IssueKind = @import("../diag/issue.zig").IssueKind;
 const Severity = @import("../diag/issue.zig").Severity;
 const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
@@ -364,6 +365,19 @@ pub const DataFlowGraph = struct {
             if (func_copy) |f| self.allocator.free(f);
         }
 
+        var trace_copy: ?[]TraceEntry = null;
+        errdefer {
+            if (trace_copy) |t| {
+                // Free each TraceEntry's owned description
+                for (t) |*entry| {
+                    if (entry.owned and entry.description.len > 0) {
+                        self.allocator.free(entry.description);
+                    }
+                }
+                self.allocator.free(t);
+            }
+        }
+
         var issue_copy = issue;
         issue_copy.message = message_copy;
 
@@ -373,12 +387,26 @@ pub const DataFlowGraph = struct {
             issue_copy.function_owned = true;
         }
 
+        // Deep copy trace array if present, including owned descriptions
+        if (issue.trace) |trace| {
+            trace_copy = try self.allocator.dupe(TraceEntry, trace);
+            // Deep copy each TraceEntry's owned description
+            for (trace_copy.?, 0..) |*entry, i| {
+                if (trace[i].owned and trace[i].description.len > 0) {
+                    entry.description = try self.allocator.dupe(u8, trace[i].description);
+                }
+            }
+            issue_copy.trace = trace_copy.?;
+        }
+
         issue_copy.owned = true;
         try self.issues.append(self.allocator, issue_copy);
 
-        // Transfer ownership of original message (trace is shared via shallow copy).
-        if (issue.owned and issue.message.len > 0) {
-            self.allocator.free(issue.message);
+        // Transfer ownership: free original issue's owned memory
+        // The issue_copy now owns all deep copies
+        if (issue.owned) {
+            var mutable_issue = issue;
+            mutable_issue.deinit(self.allocator);
         }
     }
 

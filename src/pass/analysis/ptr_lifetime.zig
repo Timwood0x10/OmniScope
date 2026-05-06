@@ -752,7 +752,9 @@ pub const PtrLifetimePass = struct {
                                     var alias_iter = node.aliases.iterator();
                                     while (alias_iter.next()) |alias_entry| {
                                         const alias_ptr = alias_entry.key_ptr.*;
-                                        // Convert back to LLVMValueRef for pointer_map lookup
+                                        // Safety check: verify pointer alignment before conversion
+                                        // LLVMValueRef must be pointer-aligned (8 bytes on 64-bit)
+                                        if (alias_ptr % @sizeOf(usize) != 0) continue;
                                         const alias_ref: c.LLVMValueRef = @ptrFromInt(alias_ptr);
                                         if (pointer_map.getPtr(alias_ref)) |alias_info| {
                                             if (!alias_info.freed and !alias_info.double_free_detected) {
@@ -764,18 +766,21 @@ pub const PtrLifetimePass = struct {
                                 // Case 2: ptr_arg is an alias of some other tracked alloc node.
                                 // Use alias_to_canonical index for O(1) lookup instead of O(N) scan.
                                 if (mg.alias_to_canonical.get(ptr_val)) |canon_inst| {
-                                    const canon_ref: c.LLVMValueRef = @ptrFromInt(canon_inst);
-                                    if (pointer_map.getPtr(canon_ref)) |canon_info| {
-                                        if (!canon_info.freed and !canon_info.double_free_detected) {
-                                            canon_info.freed = true;
+                                    // Safety check: verify pointer alignment before conversion
+                                    if (canon_inst % @sizeOf(usize) == 0) {
+                                        const canon_ref: c.LLVMValueRef = @ptrFromInt(canon_inst);
+                                        if (pointer_map.getPtr(canon_ref)) |canon_info| {
+                                            if (!canon_info.freed and !canon_info.double_free_detected) {
+                                                canon_info.freed = true;
+                                            }
                                         }
+                                        const fn_name_raw = c.LLVMGetValueName(func);
+                                        const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                        _ = global_tracker.markFreed(canon_inst, fn_name);
+                                        // Sync MemoryGraph.freed for canonical alias free.
+                                        const free_inst_canon: u64 = @intFromPtr(inst);
+                                        _ = mg.trackFree(free_inst_canon, canon_inst, lang) catch {};
                                     }
-                                    const fn_name_raw = c.LLVMGetValueName(func);
-                                    const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                    _ = global_tracker.markFreed(canon_inst, fn_name);
-                                    // Sync MemoryGraph.freed for canonical alias free.
-                                    const free_inst_canon: u64 = @intFromPtr(inst);
-                                    _ = mg.trackFree(free_inst_canon, canon_inst, lang) catch {};
                                 }
                             }
                         }
@@ -848,7 +853,6 @@ pub const PtrLifetimePass = struct {
                         _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang) catch {};
                     }
                 }
-                try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
 
                 // After propagateOrigin, check MemoryGraph contentSource.

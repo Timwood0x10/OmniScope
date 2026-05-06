@@ -178,6 +178,7 @@ pub const Pipeline = struct {
                         confidence,
                         trace,
                     );
+                    issue.owned = true; // msg and trace are heap-allocated
                     try ctx.addIssue(&issue);
                 }
             }

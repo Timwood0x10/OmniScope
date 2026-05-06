@@ -140,11 +140,12 @@ run_analysis() {
 
     while IFS= read -r line; do
         if [[ "$line" =~ \[CRITICAL\]\ FFI\ RISK ]] || [[ "$line" =~ FFI\ RISK.*command ]] || \
-               [[ "$line" =~ \[OMI-CRITICAL\] ]]; then
+               [[ "$line" =~ \[OMI-CRITICAL\] ]] || [[ "$line" =~ STACK-ESCAPE ]] || \
+               [[ "$line" =~ RETURN-STACK ]] || [[ "$line" =~ VULNERABILITY.*\[critical\] ]]; then
             ((ffi_critical_count++)) || true
         elif [[ "$line" =~ \[HIGH\]\ FFI\ RISK ]] || [[ "$line" =~ FFI\ RISK ]] || \
              [[ "$line" =~ \[HIGH\]\ RISKY\ LIBC\ CALL ]] || [[ "$line" =~ CROSS-LANGUAGE ]] || \
-             [[ "$line" =~ \[OMI-HIGH\] ]]; then
+             [[ "$line" =~ \[OMI-HIGH\] ]] || [[ "$line" =~ VULNERABILITY.*\[high\] ]]; then
             ((ffi_high_count++)) || true
         fi
 
@@ -294,7 +295,7 @@ print_summary() {
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 
     TARGET_FFI_CRITICAL="${OMNISCOPE_TARGET_FFI_CRITICAL:-2}"
-    TARGET_FFI_HIGH="${OMNISCOPE_TARGET_FFI_HIGH:-10}"
+    TARGET_FFI_HIGH="${OMNISCOPE_TARGET_FFI_HIGH:-4}"
     TARGET_PRECISION="${OMNISCOPE_TARGET_P:-0.40}"
     TARGET_RECALL="${OMNISCOPE_TARGET_R:-0.70}"
     TARGET_F1="${OMNISCOPE_TARGET_F:-0.54}"

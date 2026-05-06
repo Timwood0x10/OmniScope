@@ -300,13 +300,19 @@ pub const BufferOverflowPass = struct {
         const msg = std.fmt.allocPrint(ctx.allocator,
             "{s} buffer overflow: copying {d} bytes exceeds destination buffer of {d} bytes",
             .{ callee_name, size, limit },
-        ) catch "memcpy_chk buffer overflow detected";
-        return Issue.init(.buffer_overflow, msg, Location.init(func_name), .high, 0.9);
+        ) catch {
+            // Fallback to static message if allocation fails
+            return Issue.init(.buffer_overflow, "memcpy_chk buffer overflow detected", Location.init(func_name), .high, 0.9);
+        };
+        var issue = Issue.init(.buffer_overflow, msg, Location.init(func_name), .high, 0.9);
+        issue.owned = true; // msg is heap-allocated, will be freed on deinit
+        return issue;
     }
 
     /// Helper function to register a detected issue with the context.
     fn reportIssue(ctx: *PassContext, issue: Issue, diag: *DiagnosticWriter) !void {
         try ctx.addIssue(&issue);
         diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), issue.message });
+        // Note: DataFlowGraph.addIssue takes ownership and will free original memory
     }
 };

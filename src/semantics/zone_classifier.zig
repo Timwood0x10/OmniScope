@@ -336,6 +336,9 @@ pub const C_ESCAPE_PATTERNS = [_][]const u8{
 /// Returns:
 ///   ZoneKind classification
 fn isAlphaNumeric(ch: u8) bool {
+    // ASCII alphanumeric check (UTF-8 bytes outside ASCII range are non-alphanumeric)
+    // This is conservative: multi-byte UTF-8 chars (ch > 127) return false,
+    // which is safe because we only care about ASCII separators/punctuation.
     return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9');
 }
 

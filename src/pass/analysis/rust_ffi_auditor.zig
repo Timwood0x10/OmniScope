@@ -395,7 +395,9 @@ pub const RustFfiAuditor = struct {
                                 0.80,
                                 trace,
                             );
-                            try ctx.addIssue(&issue);
+                            var mutable_issue = issue;
+                            mutable_issue.owned = true;
+                            try ctx.addIssue(&mutable_issue);
 
                             diag.warn("RustFfiFilter: stack escape in {s} → {s}() arg {d}", .{ func_name, callee_name, arg_i });
                         }
@@ -520,7 +522,10 @@ pub const RustFfiAuditor = struct {
                     0.72,
                     trace,
                 );
-                try ctx.addIssue(&issue);
+                // Mark as owned so DataFlowGraph will free all allocated memory
+                var mutable_issue = issue;
+                mutable_issue.owned = true;
+                try ctx.addIssue(&mutable_issue);
 
                 diag.warn(
                     \\RustFfiFilter: ownership violation in {s}
@@ -766,7 +771,9 @@ pub const RustFfiAuditor = struct {
                             0.78,
                             trace,
                         );
-                        try ctx.addIssue(&issue);
+                        var mutable_issue = issue;
+                        mutable_issue.owned = true;
+                        try ctx.addIssue(&mutable_issue);
 
                         diag.warn(
                             \\RustFfiFilter: dangling as_ptr in {s}

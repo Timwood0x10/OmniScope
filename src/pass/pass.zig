@@ -19,6 +19,7 @@ const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
 const NoiseSeverity = noise_filter.Severity;
 const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
