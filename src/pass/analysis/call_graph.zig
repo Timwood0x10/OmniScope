@@ -373,6 +373,7 @@ pub const CallGraphPass = struct {
     }
 
     fn propagateTaint(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+        _ = allocator;
         var changed = true;
         var iterations: u32 = 0;
         const max_iterations: u32 = 8;
@@ -381,25 +382,17 @@ pub const CallGraphPass = struct {
             changed = false;
             iterations += 1;
 
-            // Track processed callees in this iteration to avoid redundant processing
-            var processed = std.AutoHashMap(u32, void).init(allocator);
-            defer processed.deinit();
-
             for (edges.items) |edge| {
                 if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
 
                 const caller = &nodes.items[edge.caller];
                 const callee = &nodes.items[edge.callee];
 
-                // Only propagate taint if caller is tainted and callee is not yet tainted
                 if (caller.is_tainted and !callee.is_tainted) {
                     callee.is_tainted = true;
                     callee.tainted_by = caller.id;
                     changed = true;
                 }
-
-                // Mark callee as processed after handling to allow multiple paths to reach it
-                try processed.put(edge.callee, {});
             }
         }
     }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# OmniScope v0.1.8 Regression Test Suite
+# OmniScope v0.1.7 Regression Test Suite
 #
 # Usage:
 #   ./scripts/regression_test.sh [all|c|cpp|rust|go|zig|sarif|json]
@@ -282,7 +282,7 @@ test_json_output() {
 print_summary() {
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           OmniScope v0.1.8 Regression Test Summary           ║"
+    echo "║           OmniScope v0.1.7 Regression Test Summary           ║"
     echo "╠══════════════════════════════════════════════════════════════╣"
     echo "║  Status  │  Count                                             ║"
     echo "╠──────────┼──────────────────────────────────────────────────╣"
@@ -307,7 +307,7 @@ main() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║       OmniScope v0.1.8 Regression Test Suite                 ║"
+    echo "║       OmniScope v0.1.7 Regression Test Suite                 ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 
     compile_all_ir

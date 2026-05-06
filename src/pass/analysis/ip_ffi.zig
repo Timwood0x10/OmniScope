@@ -14,7 +14,7 @@
 //!   - Full call graph construction
 //!   - Full data flow through complex control flow
 //!
-//! Reference: plan/v0.1.8.md P0-2, plan/rules/skills.md (surgical changes)
+//! Reference: plan/v0.1.7.md P0-2, plan/rules/skills.md (surgical changes)
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;

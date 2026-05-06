@@ -496,13 +496,13 @@ pub const CallbackEscapePass = struct {
             const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
-            // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
+            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
-            // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
+            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             // P0-1: Function-level gate — skip functions without danger-surface-relevant
@@ -958,7 +958,7 @@ pub const CallbackEscapePass = struct {
         }
 
         for (callback_escapes.items) |escape| {
-            // v0.1.8: Use call_graph argument direction analysis to filter
+            // v0.1.7: Use call_graph argument direction analysis to filter
             // false-positive callback escapes. If the callback argument is
             // classified as borrowed_only (e.g. function pointer callback),
             // it's a legitimate pattern, not an escape.

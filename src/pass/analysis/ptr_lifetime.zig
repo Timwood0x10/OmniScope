@@ -65,7 +65,7 @@ const word_boundary = @import("../../utils/word_boundary.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
-// v0.1.8: New semantic modules
+// v0.1.7: New semantic modules
 const memory_graph = @import("../../semantics/memory_graph.zig");
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
@@ -214,7 +214,7 @@ pub const PtrLifetimePass = struct {
             const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
-            // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
+            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
             const debug_file_path = extractDebugFilePath(func);
             var classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             // E2-2e: Stdl functions on FFI danger path should not be suppressed
@@ -231,7 +231,7 @@ pub const PtrLifetimePass = struct {
                 continue;
             }
 
-            // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
+            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             // NOTE: Function-level isRelevantFunction() gate intentionally NOT applied here.
@@ -685,7 +685,7 @@ pub const PtrLifetimePass = struct {
                                         try putPtrInfo(pointer_map, inst, info, allocator);
                                         stats.total_pointers_tracked += 1;
 
-                                        // v0.1.8: Sync dlsym-derived alias with MemoryGraph.
+                                        // v0.1.7: Sync dlsym-derived alias with MemoryGraph.
                                         // dlsym result lifecycle is bound to the handle —
                                         // closing the handle invalidates all derived pointers.
                                         if (mg_effective) |mg| {
@@ -698,7 +698,7 @@ pub const PtrLifetimePass = struct {
                             }
                         }
 
-                        // v0.1.8: Double-free detection via Memory Graph.
+                        // v0.1.7: Double-free detection via Memory Graph.
                         if (isFreeFunction(callee_name)) {
                             // v0.1.9: Record free for alloc/free balance checking.
                             if (mg_effective) |mg| {
@@ -1113,7 +1113,7 @@ pub const PtrLifetimePass = struct {
             new_info.needs_free = true;
             try putPtrInfo(pointer_map, dst, new_info, allocator);
 
-            // v0.1.8: Sync alias with MemoryGraph.
+            // v0.1.7: Sync alias with MemoryGraph.
             if (mem_graph) |mg| {
                 const from_hash = @as(u64, @intFromPtr(dst));
                 const to_hash = @as(u64, @intFromPtr(src));
@@ -1583,7 +1583,7 @@ pub const PtrLifetimePass = struct {
             return;
         }
 
-        // v0.1.8: Use OutputParamClassifier for precise C API output param detection.
+        // v0.1.7: Use OutputParamClassifier for precise C API output param detection.
         if (output_param_classifier.OutputParamClassifier.isLikelyOutputParamFunction(func_name)) {
             diag.debug("[SUPPRESSED] C API output parameter pattern: {s} (known output-param family)", .{func_name});
             stats.heap_intentional_transfer += 1;

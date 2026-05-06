@@ -228,7 +228,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -287,7 +287,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -334,8 +334,8 @@ pub const FFIAnalysisPass = struct {
                                 try self.free_sites.put(ptr_value_id, list);
                             }
                             // v0.1.6: Track which BB this free is in
-                            if (self.free_bb_map.get(ptr_value_id)) |bb_list| {
-                                try bb_list.append(bb);
+                            if (self.free_bb_map.getPtr(ptr_value_id)) |bb_list_ptr| {
+                                try bb_list_ptr.append(bb);
                             } else {
                                 var bb_list = std.ArrayList(c.LLVMBasicBlockRef).init(self.allocator);
                                 errdefer bb_list.deinit();

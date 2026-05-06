@@ -41,7 +41,7 @@ const Config = struct {
     input_files: std.ArrayList([]const u8),
     output_format: OutputFormat = .text,
     output_file: ?[]const u8 = null,
-    /// v0.1.8: Generate HTML visualization of memory/call graphs
+    /// v0.1.7: Generate HTML visualization of memory/call graphs
     visualize: bool = false,
     /// P2-2: Only report issues from user code (skip stdlib/compiler_generated)
     focus_user_code: bool = false,
@@ -268,7 +268,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.8");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.7");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;
@@ -294,7 +294,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
         }
     }
 
-    // v0.1.8: Export HTML visualization if requested
+    // v0.1.7: Export HTML visualization if requested
     if (config.visualize) {
         const graph_visualizer = @import("./visual/graph_visualizer.zig");
         const GraphIssue = graph_visualizer.GraphIssue;
@@ -642,7 +642,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v0.1.8\n", .{});
+        std.debug.print("OmniScope v0.1.7\n", .{});
         return;
     }
 

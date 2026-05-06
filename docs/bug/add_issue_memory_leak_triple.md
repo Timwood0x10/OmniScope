@@ -1,4 +1,4 @@
-# addIssue 内存泄漏三连Bug (v0.1.8)
+# addIssue 内存泄漏三连Bug (v0.1.7)
 
 ## 概述
 
@@ -10,7 +10,7 @@
 
 ## 问题描述
 
-在 v0.1.8 Semantic Contracts Update 集成过程中，发现 `addIssue` 函数存在**三个关联的内存泄漏点**，导致分析 sqlite3.ll 时产生大量内存泄漏（100+ 泄漏点）。
+在 v0.1.7 Semantic Contracts Update 集成过程中，发现 `addIssue` 函数存在**三个关联的内存泄漏点**，导致分析 sqlite3.ll 时产生大量内存泄漏（100+ 泄漏点）。
 
 ## 根因分析
 

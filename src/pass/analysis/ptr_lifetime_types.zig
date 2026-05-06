@@ -68,7 +68,7 @@ pub const PtrInfo = struct {
     escaped: bool = false,
     /// Whether this pointer has been freed
     freed: bool = false,
-    /// v0.1.8: Whether this pointer has been double-freed (freed twice)
+    /// v0.1.7: Whether this pointer has been double-freed (freed twice)
     double_free_detected: bool = false,
     /// Basic block where the pointer was allocated (for scope tracking)
     alloc_bb_id: usize = 0,
@@ -408,7 +408,7 @@ pub fn is_intentional_free(func_name: []const u8) bool {
 
 /// Check if a function may store/retain its pointer argument.
 pub fn may_retain_pointer(callee_name: []const u8) bool {
-    // v0.1.8: Check if this is an LLVM intrinsic that should be suppressed.
+    // v0.1.7: Check if this is an LLVM intrinsic that should be suppressed.
     if (isIntrinsicNoise(callee_name)) return false;
 
     if (is_extern_function(callee_name)) return true;
@@ -432,7 +432,7 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
 }
 
 fn isOutputParamSetter(func_name: []const u8) bool {
-    // v0.1.8: Check for output parameter patterns.
+    // v0.1.7: Check for output parameter patterns.
 
     // Check if function has output parameters based on common patterns.
     const output_patterns = [_][]const u8{
@@ -458,7 +458,7 @@ fn isOutputParamSetter(func_name: []const u8) bool {
 // Allocation Site Detection
 // ============================================================================
 
-/// v0.1.8: Check if a function is a known heap allocator using Allocator KB.
+/// v0.1.7: Check if a function is a known heap allocator using Allocator KB.
 var g_allocator_kb: ?allocator_kb.AllocatorKB = null;
 var g_allocator_kb_init_failed: bool = false;
 var g_allocator_kb_lock = std.atomic.Value(bool).init(false);
@@ -495,7 +495,7 @@ pub fn isHeapAllocFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// v0.1.8: Check if a function is a known deallocator using Allocator KB.
+/// v0.1.7: Check if a function is a known deallocator using Allocator KB.
 pub fn isKnownDeallocFunction(func_name: []const u8) bool {
     if (getAllocatorKB()) |kb| {
         if (kb.isDeallocator(func_name)) return true;
@@ -508,7 +508,7 @@ pub fn isKnownDeallocFunction(func_name: []const u8) bool {
 // Intrinsic Filter
 // ============================================================================
 
-/// v0.1.8: Check if a function is an LLVM intrinsic that should be suppressed.
+/// v0.1.7: Check if a function is an LLVM intrinsic that should be suppressed.
 /// Note: IntrinsicFilter.init() does not return an error, so no error handling needed.
 var g_intrinsic_filter: ?intrinsic_filter.IntrinsicFilter = null;
 var g_intrinsic_filter_lock = std.atomic.Value(bool).init(false);
