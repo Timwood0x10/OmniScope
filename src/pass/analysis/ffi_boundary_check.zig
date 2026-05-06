@@ -288,8 +288,7 @@ pub fn checkReturnValueEscape(
             const callee_name_ptr = c.LLVMGetValueName(callee);
             if (@intFromPtr(callee_name_ptr) != 0) {
                 const callee_name = std.mem.span(callee_name_ptr);
-                if (lang_classifier.identifyCalleeLanguage(callee_name) != .c)
-                {
+                if (lang_classifier.identifyCalleeLanguage(callee_name) != .c) {
                     ffi_reentry = true;
                 }
             }

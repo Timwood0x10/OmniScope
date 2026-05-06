@@ -288,13 +288,12 @@ pub const FreeValidationPass = struct {
             !std.mem.eql(u8, free_func, "free"))
         {
             const known_safe_wrappers = [_][]const u8{
-                "g_free", "CFRelease", "CFAutorelease",
-                "PyObject_Free", "PyMem_Free", "cudaFree",
-                "vkFreeMemory", "ID3D12Device_Release",
-                "VirtualFree", "HeapFree",
-                "munmap", "mmap_free",
-                "objc_release", "NSDeallocateObject",
-                "CoTaskMemFree", "SysFreeString",
+                "g_free",        "CFRelease",            "CFAutorelease",
+                "PyObject_Free", "PyMem_Free",           "cudaFree",
+                "vkFreeMemory",  "ID3D12Device_Release", "VirtualFree",
+                "HeapFree",      "munmap",               "mmap_free",
+                "objc_release",  "NSDeallocateObject",   "CoTaskMemFree",
+                "SysFreeString",
             };
             for (known_safe_wrappers) |wrapper| {
                 if (std.mem.eql(u8, free_func, wrapper)) return true;
@@ -449,7 +448,7 @@ pub const FreeValidationPass = struct {
     /// other than the correct Rust deallocator is undefined behavior.
     fn isPossibleIntoRawOutput(source_desc: []const u8) bool {
         const into_raw_patterns = [_][]const u8{
-            "into_raw", "into_raw_parts",
+            "into_raw",      "into_raw_parts",
             "Box::into_raw",
         };
         for (into_raw_patterns) |pat| {

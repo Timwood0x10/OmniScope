@@ -468,11 +468,11 @@ test "Severity - toString" {
 test "IssueKind - count matches expected" {
     // Verify we have exactly 19 issue kinds (18 known + 1 unknown)
     const kinds = [_]IssueKind{
-        .ffi_unsafe_call,      .unchecked_return, .type_mismatch,               .ffi_type_mismatch,
-        .cross_language_leak,  .cross_language_free, .memory_leak,              .use_after_free,
-        .command_injection,    .buffer_overflow,      .double_free,              .format_string,
-        .malloc_unchecked,     .null_dereference,    .borrow_escape,            .callback_signature_mismatch,
-        .invalid_free,         .static_buffer_misuse, .unknown,
+        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
+        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
+        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
+        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
+        .invalid_free,        .static_buffer_misuse, .unknown,
     };
     try std.testing.expectEqual(@as(usize, 19), kinds.len);
 }
@@ -480,11 +480,11 @@ test "IssueKind - count matches expected" {
 test "IssueKind - CWE mapping consistency" {
     // Each known issue should have a valid CWE ID (> 0)
     const known_kinds = [_]IssueKind{
-        .ffi_unsafe_call,      .unchecked_return, .type_mismatch,               .ffi_type_mismatch,
-        .cross_language_leak,  .cross_language_free, .memory_leak,              .use_after_free,
-        .command_injection,    .buffer_overflow,      .double_free,              .format_string,
-        .malloc_unchecked,     .null_dereference,    .borrow_escape,            .callback_signature_mismatch,
-        .invalid_free,         .static_buffer_misuse,
+        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
+        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
+        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
+        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
+        .invalid_free,        .static_buffer_misuse,
     };
     for (known_kinds) |kind| {
         try std.testing.expect(kind.toCweId() > 0);

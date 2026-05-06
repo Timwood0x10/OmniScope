@@ -152,17 +152,17 @@ pub const RUST_ESCAPE_PATTERNS = [_][]const u8{
     // v0.1.7: Mangled-name level patterns (actually match LLVM IR names).
     // Source-level patterns above rarely match because Rust mangles everything.
     // These patterns target the actual symbols seen in LLVM IR:
-    "_ffi",       // mymod::_ffi_func
-    "_extern",    // bindgen-generated wrappers
-    "_bindgen",   // rust-bindgen output
-    "_cinterop",  // Zig-style C interop in Rust projects
-    "_marshal",   // serialization FFI boundary
-    "_syscall",   // direct syscall invocation
-    "_invoke",    // indirect call through FFI trampoline
-    "_callback",  // FFI callback handler
-    "_native",    // JNI/native interop
-    "_interop",   // generic interop boundary
-    "$",          // Rust legacy mangling (often used for FFI shims)
+    "_ffi", // mymod::_ffi_func
+    "_extern", // bindgen-generated wrappers
+    "_bindgen", // rust-bindgen output
+    "_cinterop", // Zig-style C interop in Rust projects
+    "_marshal", // serialization FFI boundary
+    "_syscall", // direct syscall invocation
+    "_invoke", // indirect call through FFI trampoline
+    "_callback", // FFI callback handler
+    "_native", // JNI/native interop
+    "_interop", // generic interop boundary
+    "$", // Rust legacy mangling (often used for FFI shims)
 };
 
 /// Zig safe patterns - skip analysis.
@@ -497,9 +497,9 @@ fn classifyBySubprogramPath(func: c.LLVMValueRef) ?ZoneKind {
     // NOTE: "/include/" alone is too broad (matches user project headers).
     // Only match known system include paths where headers are trusted.
     const system_paths = [_][]const u8{
-        "/usr/include/",  "/usr/local/include/",
-        "/sysroot/",
-        "/llvm-project/", "/libcxx/",
+        "/usr/include/", "/usr/local/include/",
+        "/sysroot/",     "/llvm-project/",
+        "/libcxx/",
     };
     for (system_paths) |pat| {
         if (std.mem.indexOf(u8, filename, pat) != null) return .safe;

@@ -459,7 +459,7 @@ pub const PassContext = struct {
         // 90/10 Priority分层: FFI boundary (90%) vs local-only (10%)
         // Check if issue reaches FFI/unsafe boundary for priority classification
         const on_danger_path = if (issue.ffi_boundary) |_| true else false;
-        
+
         // P2-1: Risk weighting integration.
         // Classify the function origin and apply risk level adjustment.
         // Suppressed issues are silently dropped — no noise in output.
@@ -504,7 +504,7 @@ pub const PassContext = struct {
                 .suppressed => unreachable, // handled above
             };
         }
-        
+
         // 90/10 Priority分层: Set classification based on FFI boundary reachability
         // - ffi_boundary (90%): Issue reaches FFI/unsafe boundary → high priority
         // - local_only (10%): Local memory issue → auxiliary priority

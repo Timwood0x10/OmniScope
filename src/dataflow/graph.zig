@@ -171,7 +171,7 @@ pub const DataFlowGraph = struct {
             @memcpy(new_list[0..outgoing.len], outgoing);
             new_list[@intCast(outgoing.len)] = @intCast(edge_index);
             try self.outgoing_edges.put(edge.from, new_list);
-            self.allocator.free(outgoing);  // Free old after successful put
+            self.allocator.free(outgoing); // Free old after successful put
         }
 
         if (self.incoming_edges.get(edge.to)) |incoming| {
@@ -179,7 +179,7 @@ pub const DataFlowGraph = struct {
             @memcpy(new_list[0..incoming.len], incoming);
             new_list[@intCast(incoming.len)] = @intCast(edge_index);
             try self.incoming_edges.put(edge.to, new_list);
-            self.allocator.free(incoming);  // Free old after successful put
+            self.allocator.free(incoming); // Free old after successful put
         }
     }
 
@@ -614,8 +614,8 @@ pub const DataFlowGraph = struct {
     /// C4-4: Lightweight stdlib detection for origin grouping.
     fn inferIsStdlib(fn_name: []const u8) bool {
         const prefixes = [_][]const u8{
-            "std::", "boost::", "__gnu", "__cxa_", "llvm.",
-            "std.", "runtime.", "syscall.", "java.lang.",
+            "std::", "boost::",  "__gnu",    "__cxa_",     "llvm.",
+            "std.",  "runtime.", "syscall.", "java.lang.",
         };
         for (prefixes) |p| {
             if (std.mem.startsWith(u8, fn_name, p)) return true;
@@ -626,9 +626,8 @@ pub const DataFlowGraph = struct {
     /// C4-4: Lightweight compiler-generated detection for origin grouping.
     fn inferIsCompilerGenerated(fn_name: []const u8) bool {
         const prefixes = [_][]const u8{
-            "__", "_Z", "_GLOBAL__", ".omp.",
-            "zig_assert_fail", "zig_panic",
-            "zig_generic_resolve",
+            "__",              "_Z",        "_GLOBAL__",           ".omp.",
+            "zig_assert_fail", "zig_panic", "zig_generic_resolve",
             "llvm.dbg", // LLVM debug intrinsics (prefix-matched for consistency)
         };
         for (prefixes) |p| {
@@ -640,7 +639,7 @@ pub const DataFlowGraph = struct {
     /// C4-4: Lightweight third-party detection for origin grouping.
     fn inferIsThirdParty(fn_name: []const u8) bool {
         const prefixes = [_][]const u8{
-            "C.", "_cgo_", "_Cfunc_", "Java_", "JNI_",
+            "C.",         "_cgo_",   "_Cfunc_", "Java_", "JNI_",
             "crosscall2", "PyInit_", "Python_",
         };
         for (prefixes) |p| {

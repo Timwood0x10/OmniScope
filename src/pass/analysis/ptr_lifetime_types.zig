@@ -205,10 +205,9 @@ pub const KNOWN_DEALLOCATORS = struct {
 pub const RUST_ALLOC_INTRINSICS = struct {
     /// All 8 Rust allocator/deallocator intrinsics (alloc + dealloc combined)
     pub const all = [_][]const u8{
-        "__rust_alloc", "__rust_dealloc",  "__rust_realloc",
-        "__rust_alloc_zeroed",
-        "__rdl_alloc",  "__rdl_dealloc",   "__rg_alloc",
-        "__rg_dealloc", "exchange_malloc",
+        "__rust_alloc",        "__rust_dealloc", "__rust_realloc",
+        "__rust_alloc_zeroed", "__rdl_alloc",    "__rdl_dealloc",
+        "__rg_alloc",          "__rg_dealloc",   "exchange_malloc",
     };
     /// Allocator-only subset (no deallocators)
     pub const alloc_only = [_][]const u8{
@@ -223,21 +222,22 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",          "calloc",         "realloc",      "aligned_alloc",
-    "valloc",          "pvalloc",        "memalign",     "operator new",
-    "operator new[]",  "allocImpl",      "mmap",
+    "malloc",         "calloc",       "realloc",      "aligned_alloc",
+    "valloc",         "pvalloc",      "memalign",     "operator new",
+    "operator new[]", "allocImpl",    "mmap",
     // v0.1.7 FIX: Removed "into_raw" from this list.
     // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
     // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was
     // recorded as a new allocation, and without matching from_raw, reported
     // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
     // which pairs into_raw/from_raw as transfer-out/transfer-in.
-    "dlopen",          "fopen",          "socket",       "JNI_OnLoad",
-    "Py_Initialize",   "Py_BuildValue",  "PyTuple_New",  "PyList_New",
-    "PyDict_New",      "NewStringUTF",   "NewByteArray", "NewGlobalRef",
+            "dlopen",
+    "fopen",          "socket",       "JNI_OnLoad",   "Py_Initialize",
+    "Py_BuildValue",  "PyTuple_New",  "PyList_New",   "PyDict_New",
+    "NewStringUTF",   "NewByteArray", "NewGlobalRef",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
-    "__rust_alloc",    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",
-    "exchange_malloc",
+    "__rust_alloc",
+    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",   "exchange_malloc",
 };
 
 // ============================================================================
@@ -416,7 +416,7 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
     const retaining_patterns = [_][]const u8{
         "register_", "add_",  "insert_", "push_",
         "store_",    "save_", "cache_",  "copy_",
-        "retain",    "keep",     "hold",    "pass",
+        "retain",    "keep",  "hold",    "pass",
     };
 
     for (retaining_patterns) |pat| {

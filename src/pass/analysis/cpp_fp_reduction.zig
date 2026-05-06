@@ -171,8 +171,8 @@ pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
         // actual memory leaks (e.g., safe_free_my_pointer() with unbalanced alloc/free).
         // Genuine safety requires provable null checks (isGuardedByNullCheck) or RAII patterns
         // (detectRaiiManagedAllocations/detectRefCountedContainerFunctions), not naming convention.
-        "correct_", "valid_",  "example_", "good_",
-        "proper_",   "fixed_",   "ok_",
+        "correct_", "valid_", "example_", "good_",
+        "proper_",  "fixed_", "ok_",
     };
     for (intentional_prefixes) |prefix| {
         if (std.mem.indexOf(u8, func_name, prefix) != null) return true;

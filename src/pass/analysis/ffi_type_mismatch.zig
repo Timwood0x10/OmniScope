@@ -555,7 +555,7 @@ pub const FFITypeMismatchPass = struct {
 
             const go_alloc_patterns = [_][]const u8{
                 "runtime.newobject", "runtime.mallocgc", "C.malloc",
-                "C.CString",       "C.CBytes",         "_cgo_allocate",
+                "C.CString",         "C.CBytes",         "_cgo_allocate",
             };
             for (go_alloc_patterns) |pat| {
                 if (std.mem.indexOf(u8, name_str, pat) != null) {
@@ -824,12 +824,12 @@ pub const FFITypeMismatchPass = struct {
 
     fn hasCCallingConvention(func_name: []const u8) bool {
         const known_c_apis = [_][]const u8{
-            "malloc",  "free",   "realloc", "calloc",
-            "memcpy",  "memmove", "memset",  "memcmp",
-            "strlen",  "strcpy", "strcat",  "strcmp",
-            "printf",  "scanf",  "fopen",   "fread",
-            "fwrite",  "fclose", "pthread_create", "pthread_join",
-            "signal",  "dlopen", "dlsym",   "dlerror",
+            "malloc", "free",    "realloc",        "calloc",
+            "memcpy", "memmove", "memset",         "memcmp",
+            "strlen", "strcpy",  "strcat",         "strcmp",
+            "printf", "scanf",   "fopen",          "fread",
+            "fwrite", "fclose",  "pthread_create", "pthread_join",
+            "signal", "dlopen",  "dlsym",          "dlerror",
         };
         for (known_c_apis) |api| {
             if (std.mem.eql(u8, func_name, api)) return true;

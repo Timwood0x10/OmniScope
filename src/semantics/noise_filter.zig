@@ -136,25 +136,25 @@ const RUST_COMPILER_PATTERNS = [_][]const u8{
     "glue_drop",
     "need_drop",
     "drop_glue",
-    
+
     // Panic infrastructure
     "begin_panic",
     "panic_fmt",
     "panic_bounds_check",
-    
+
     // Monomorphization artifacts
     "$LT$",
     "$GT$",
     "$u20$",
     "$C$",
-    
+
     // Shims and compiler internals
     "_ZN17alloc", // alloc internals
     "_ZN4core", // core internals
     "__rust_",
     "impl_drop",
     "impl_clone",
-    
+
     // Opaque type wrappers
     "opaque_type",
     "dyn_drop",
@@ -191,20 +191,20 @@ const ZIG_COMPILER_PATTERNS = [_][]const u8{
     "FixedBufferAllocator",
     "ArenaAllocator",
     "ThreadSafeAllocator",
-    
+
     // Runtime internals
     "zig_start",
     "__zig_launch",
     "start.main",
     "callMain",
-    
+
     // Compiler-generated safety
     "safety_panic",
     "boundsCheck",
     "sentinelCheck",
     "fieldCheck",
     "overflowCheck",
-    
+
     // Defer glue
     "__defer",
     "defer_",
@@ -237,22 +237,22 @@ const CPP_COMPILER_PATTERNS = [_][]const u8{
     "__cxa_pure_virtual",
     "__cxa_deleted_virtual",
     "__gxx_personality",
-    
+
     // STL template internals (already covered by stdlib, but extra safety)
     "_ZSt", // std template instantiations
     "_ZNSt", // std namespace mangled
-    
+
     // RAII/destructor glue
     "_ZN", // All mangled names starting with _ZN (could be destructor)
     "D0Ev", // Deleting destructor
     "D1Ev", // Complete object destructor
     "D2Ev", // Base object destructor
-    
+
     // VTable and RTTI
     "_ZTV", // Virtual table
     "_ZTI", // Typeinfo
     "_ZTS", // Typeinfo name
-    
+
     // Allocator internals
     "allocator",
     "_Znwm", // operator new

@@ -122,16 +122,16 @@ pub const BufferOverflowPass = struct {
         // Get data layout to compute type size - validate each step
         const inst_parent = c.LLVMGetInstructionParent(base_ptr);
         if (@intFromPtr(inst_parent) == 0) return null;
-        
+
         const base_func = c.LLVMGetBasicBlockParent(inst_parent);
         if (@intFromPtr(base_func) == 0) return null;
-        
+
         const module = c.LLVMGetGlobalParent(base_func);
         if (@intFromPtr(module) == 0) return null;
-        
+
         const dl = c.LLVMGetModuleDataLayout(module);
         if (@intFromPtr(dl) == 0) return null;
-        
+
         const type_size = c.LLVMABISizeOfType(dl, alloc_type);
         if (type_size == 0) return null;
 
@@ -302,7 +302,8 @@ pub const BufferOverflowPass = struct {
             callee_name, size, limit, func_name,
         });
 
-        const msg = std.fmt.allocPrint(ctx.allocator,
+        const msg = std.fmt.allocPrint(
+            ctx.allocator,
             "{s} buffer overflow: copying {d} bytes exceeds destination buffer of {d} bytes",
             .{ callee_name, size, limit },
         ) catch {

@@ -310,8 +310,7 @@ pub const MemorySafetyPass = struct {
         // E2-2b: UAF + FFI edge correlation
         const reaches_ffi = ctx.isOnDangerPathFull(ptr_value);
         const adj_confidence = if (reaches_ffi) @min(confidence + 0.10, 0.95) else confidence;
-        const severity: Severity = if (reaches_ffi and adj_confidence > 0.8) .high else
-            if (adj_confidence > 0.8) .medium else .low;
+        const severity: Severity = if (reaches_ffi and adj_confidence > 0.8) .high else if (adj_confidence > 0.8) .medium else .low;
 
         const ffi_note = if (reaches_ffi) " [cross-FFI alias]" else "";
 
