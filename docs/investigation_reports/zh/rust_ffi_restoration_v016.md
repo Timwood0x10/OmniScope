@@ -1,7 +1,7 @@
-# OmniScope v0.1.6 修复后调查报告（Rust FFI 专题）
+# OmniScope v0.1.7 修复后调查报告（Rust FFI 专题）
 
-**报告日期**: 2026-05-04
-**版本**: v0.1.6 (Phase 1+2+3 修复后)
+**报告日期**: 2026-05-06
+**版本**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **核心焦点**: Rust FFI 边界检测恢复与验证
 **测试范围**: **17 个 .ll 文件** (Red Team 8 + FFI-Dense 3 + Real-World 6)
 

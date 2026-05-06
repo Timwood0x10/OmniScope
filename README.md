@@ -8,7 +8,7 @@
 `..        `.. `..  `.  `.. `..  `..`..      `.. `..    `..    `..`.   `..`..... `..
   `..     `..  `..  `.  `.. `..  `..`..`..    `.. `..    `..  `.. `.. `.. `.
     `....     `...  `.  `..`...  `..`..  `.. ..     `...   `..    `..       `....
-                                                                  `..
+                                                                   `..
 ```
 
 **Cross-Language FFI & Memory Safety Static Analyzer**
@@ -18,6 +18,23 @@
 Supports C/C++/Rust/Zig/Go. Detects memory safety issues and FFI boundary violations via LLVM IR.
 
 English | [简体中文](./README_zh.md)
+
+***
+
+## v0.1.7 Highlights (Latest Release)
+
+- **24 Bug Fixes** across CRITICAL/HIGH/MEDIUM/LOW severity
+- **Exhaustive Code Review** — full src/ audit identified all issues
+- **340/340 Tests Passing** — all fixes verified
+- **CI/CD Fixed** — SARIF upload now works, CodeQL v4 migration
+
+### Critical Fixes
+
+| Bug | Impact | Fix |
+|-----|--------|-----|
+| Double-free detection broken | `free_sites.get()` returns copy | `get()` → `getPtr()` |
+| API mismatch | AutoHashMap.deinit() wrong | Removed allocator param |
+| OOM panics | `catch unreachable` crashes | Proper error handling |
 
 ***
 

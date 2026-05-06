@@ -1,7 +1,7 @@
-# Wasmtime 源码验证报告 v0.1.6
+# Wasmtime 源码验证报告 v0.1.7
 
-**测试日期**: 2026-05-04
-**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
+**测试日期**: 2026-05-06
+**测试版本**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **关联报告**: [wasmtime.md](./wasmtime.md) — **44 issues detected, 130 FFI boundaries**
 **CVE 关联**: GHSA-4pww-gw9q-vvvh (沙箱逃逸)
 

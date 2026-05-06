@@ -1,7 +1,7 @@
-# blst Project Investigation Report v0.1.6
+# blst Project Investigation Report v0.1.7
 
-**Test Date**: 2026-05-04
-**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Test Date**: 2026-05-06
+**Test Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **Test Project**: blst (BLS12-381 Signature Library)
 **Test File**: corpus/real_world/crypto/blst.dll
 

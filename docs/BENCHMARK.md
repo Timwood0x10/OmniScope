@@ -1,8 +1,8 @@
-# OmniScope Benchmark Report v0.1.6
+# OmniScope Benchmark Report v0.1.7
 
 > "In God we trust, all others must bring data." — W. Edwards Deming (probably)
 
-Last updated: 2026-05-04
+Last updated: 2026-05-06
 
 ## Test Environment
 
@@ -29,21 +29,24 @@ Last updated: 2026-05-04
 
 | Project | Language | Functions | Issues | Ptrs Tracked | FFI Bounds | Violations | Time |
 |---------|----------|-----------|--------|-------------|------------|------------|------|
-| ring | Rust+C | 278 | 19 | 841 | 4,266 | 0 | 142ms |
-| wasmtime | Rust | 619 | 44 | 31 | 130 | 0 | 203ms |
-| blst | Rust+C | 267 | 35 | 269 | 1,382 | 0 | 836ms |
+| sqlite3 | C | 3,346 | 137 | 20,192 | 1,717 | 156 | 13,594ms |
+| ring | Rust+C | 410 | 16 | 841 | 4,242 | 0 | 1,874ms |
+| blst | Rust+C | 416 | 36 | 269 | 1,355 | 0 | 1,104ms |
 | curl8 | C | 944 | 114 | 4,948 | 1,499 | 89 | 312ms |
-| sqlite3 | C | 3,250 | 226 | 20,192 | 1,547 | 142 | 1,247ms |
 | zkcrypto | Rust | 287 | 0 | - | - | - | 89ms |
-| subtle_unsafe_rs | Rust | 20 | 4 | - | 123 | 4 | 12ms |
+| subtle_unsafe_rs | Rust | 68 | 6 | - | 128 | 4 | 67ms |
+| ffi_boundary_bugs | C | 37 | 12 | - | 41 | 1 | 28ms |
+| red_team_bugs | C | 38 | 12 | - | 64 | 3 | 20ms |
+| posix_ffi_bugs | C | 48 | 10 | - | 35 | 4 | 19ms |
 
 ## Rust FFI Detection: Before vs After
 
-| Metric | v0.1.5 | v0.1.6 | Change |
+| Metric | v0.1.5 | v0.1.7 | Change |
 |--------|--------|--------|--------|
-| Rust FFI TP Rate | 0% | 20% | +20pp |
-| subtle_unsafe_rs Issues | 0 | 4 | +4 |
-| FFI Boundaries (Rust) | 0 | 123 | +123 |
+| Rust FFI TP Rate | 0% | 95% | +95pp |
+| subtle_unsafe_rs Issues | 0 | 6 | +6 |
+| ring Issues | 0 | 16 | +16 |
+| FFI Boundaries (Rust) | 0 | 5,725 | +5,725 |
 | Noise Reduction Rate | ~94% | ~97% | +3pp |
 
 ## Performance
@@ -52,8 +55,14 @@ Last updated: 2026-05-04
 |--------|-------|
 | Small files (<100 funcs) | <50ms |
 | Medium files (100-500 funcs) | 50-300ms |
-| Large files (500-3000 funcs) | 300-1500ms |
-| Very large (3000+ funcs) | ~1.5s |
+| Large files (500-3000 funcs) | 300-2,000ms |
+| Very large (3000+ funcs) | ~13.6s (sqlite3: 3,346 funcs) |
+
+**Performance Note**: sqlite3 (3,346 functions) takes 13.6s due to:
+- 147,862 MemoryGraph nodes
+- 20,192 pointers tracked
+- 16,949 call graph edges
+- Full ptr_lifetime analysis on 3,250 functions
 
 ## Notes
 

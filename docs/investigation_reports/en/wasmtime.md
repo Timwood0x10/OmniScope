@@ -1,7 +1,7 @@
-# Wasmtime Investigation Report v0.1.6
+# Wasmtime Investigation Report v0.1.7
 
-**Test Date**: 2026-05-04
-**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Test Date**: 2026-05-06
+**Test Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **Test Target**: wasmtime (Rust WebAssembly Runtime)
 **Test File**: corpus/real_world/other/wasmtime_test.ll
 

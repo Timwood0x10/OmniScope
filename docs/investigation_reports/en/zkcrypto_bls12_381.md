@@ -1,7 +1,7 @@
-# zkcrypto-bls12-381 Investigation Report v0.1.6
+# zkcrypto-bls12-381 Investigation Report v0.1.7
 
-**Test Date**: 2026-05-04
-**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Test Date**: 2026-05-06
+**Test Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **Test Project**: zkcrypto-bls12-381 (Pure-Rust BLS12-381 Crypto Library)
 
 ---

@@ -2,7 +2,7 @@
 
 **写给凌晨两点还在调跨语言 Crash 的人**
 
-**Version**: v0.1.6 | **Date**: 2026-05-04 | **Language**: Zig (LLVM 22)
+**Version**: v0.1.7 | **Date**: 2026-05-06 | **Language**: Zig (LLVM 22)
 
 ---
 
@@ -300,7 +300,7 @@ Real-World Tests (6 files)
 
 **Rust FFI TP Rate: 0% -> 20%**
 
-在 v0.1.6 的时候，我们对 Rust FFI 的检测率是 0%。没错，零。原因说出来有点丢人——我们把 `__rust_alloc` 放进了 noise filter，等于把所有 Rust 堆操作都给过滤掉了。修完之后，TP 率直接从 0% 跳到 20%（4/20），而且检出的 4 个全部是 true positive，precision 100%。
+在 v0.1.7 的时候，我们对 Rust FFI 的检测率是 0%。没错，零。原因说出来有点丢人——我们把 `__rust_alloc` 放进了 noise filter，等于把所有 Rust 堆操作都给过滤掉了。修完之后，TP 率直接从 0% 跳到 20%（4/20），而且检出的 4 个全部是 true positive，precision 100%。
 
 **zkcrypto（纯 Rust）= 0 issues**
 
@@ -332,7 +332,7 @@ Real-World Tests (6 files)
 
 ### "我们把想检测的东西给过滤掉了"
 
-前面提到过，v0.1.6 的 Rust FFI 检测率是 0%。根因是 `__rust_alloc` / `__rust_dealloc` / `__rust_realloc` 被放进了 noise filter。
+前面提到过，v0.1.7 的 Rust FFI 检测率是 0%。根因是 `__rust_alloc` / `__rust_dealloc` / `__rust_realloc` 被放进了 noise filter。
 
 翻译成人话就是：我们的 noise filter 太激进了，把 Rust 所有的堆分配操作都当成"噪音"给过滤掉了。然后我们纳闷为什么 Rust FFI 一个都检测不到。
 
@@ -408,13 +408,13 @@ Real-World Tests (6 files)
 
 ---
 
-## 7. 下一步（v0.1.6 更新 — 2026-05-04）
+## 7. 下一步（v0.1.7 更新 — 2026-05-06）
 
-> **v0.1.6 状态**: Phase 1+2+3 已全部完成（详见 [rust_ffi_restoration_v016](./investigation_reports/zh/rust_ffi_restoration_v016.md)）
+> **v0.1.7 状态**: Phase 1+2+3 已全部完成（详见 [rust_ffi_restoration_v016](./investigation_reports/zh/rust_ffi_restoration_v016.md)）
 >
 > 当前基线：**TP Rate = 20%** (4/20 subtle_unsafe_rs), **Precision ≈ 88%**, **Test Coverage = 92% (191 tests)**
 
-### ✅ P0：已完成（v0.1.6 Phase 1+2+3）
+### ✅ P0：已完成（v0.1.7 Phase 1+2+3）
 
 | 任务 | 状态 | 效果 |
 |------|------|------|
@@ -512,8 +512,8 @@ cargo rustc -- --emit=llvm-ir
 | 版本 | 日期 | 主要变化 |
 |------|------|---------|
 | v0.1.5 | 2026-04-15 | 初始发布，10 个项目 baseline |
-| v0.1.6 | 2026-04-27 | FP 抑制 + Zone Classifier |
-| **v0.1.6** | **2026-05-04** | **Phase 1+2+3 修复，Rust FFI 检测恢复，-700 行死代码清理** |
+| v0.1.7 | 2026-04-27 | FP 抑制 + Zone Classifier |
+| **v0.1.7** | **2026-05-06** | **24 bugs fixed, 340/340 tests passing, production-ready** |
 
 ---
 

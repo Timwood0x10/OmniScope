@@ -2,7 +2,7 @@
 
 > "你的代码有 bug，我们能帮你找到一些。"
 
-最后更新: 2026-05-04 | 版本: v0.1.6
+最后更新: 2026-05-06 | 版本: v0.1.7
 
 ## OmniScope 做什么
 
@@ -76,7 +76,7 @@ zig build-obj --emit-llvm-ir file.zig
 
 ```json
 {
-  "tool_version 0.1.6",
+  "tool_version 0.1.7",
   "issues": [
     {
       "kind": "DOUBLE_FREE",

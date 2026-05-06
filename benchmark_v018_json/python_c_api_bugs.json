@@ -1,0 +1,90 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: corpus/red_team_test/python_c_api_bugs.ll
+
+
+[INFO] Loaded: 37 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+[32m[INFO][0m CallGraph: extracted 30 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 37 nodes, 36 edges for BFS traversal
+[32m[INFO][0m RustFfiFilter: analyzed 13 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m BufferOverflow: No buffer overflow issues detected
+[32m[INFO][0m FFITypeMismatch: analyzed 36 calls, found 36 FFI boundaries, 0 issues
+[32m[INFO][0m [P1-1] DangerSurfacePass: 30 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 30 cross-language edges from CallGraph
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in PY_05_Call_Without_GIL
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 13 funcs, tracked 26 ptrs, found 1 violations
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 54 unfreed + 0 freed = 54 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 5 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 0 frees — total now 0
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 54 allocs, 0 frees
+[32m[INFO][0m PointerOwnership: Found 1 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 54 allocations, 0 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 54, reused: 0, in_use: 54
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    111
+info:   Safe zone (skipped):         0 (10.8%)
+info:   Runtime internal (skipped):  12
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         75
+info:   Unknown zone:                24
+info: 
+info:   Escape zone functions:       75 (67.6% of total)
+info:   Issues found:              2
+info:     Issue breakdown by category:
+info:       Memory leak:              1
+info:       Borrow escape:            1
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  2
+info:     Origin breakdown:
+info:       ✅ User code:                  2 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 2 actionable issues (2 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          2
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         5.84      5839.63      5839.63
+detect                                  2         0.91       454.94       479.08
+total                                   1         5.85      5846.00      5846.00
+analysis                                1         4.53      4525.92      4525.92
+[32m[INFO][0m PointerOwnership: 4 ops, 17.12ms total
+[32m[INFO][0m GlobalAllocTracker: 5 memory leaks confirmed from 5 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 37
+
+[INFO] Facts generated: 21
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1778066586,"summary":{"functions":37,"issues":7,"time_ms":19},"issues":[
+  {"id":"OMI-001","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"PY_05_Call_Without_GIL"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in PY_01_Py_BuildValue_Null_Check() was never freed","location":{"function":"PY_01_Py_BuildValue_Null_Check"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in PY_03_PyTuple_New_Null_Check() was never freed","location":{"function":"PY_03_PyTuple_New_Null_Check"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in PY_04_PyList_New_Null_Check() was never freed","location":{"function":"PY_04_PyList_New_Null_Check"}},
+  {"id":"OMI-006","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in thread_worker() was never freed","location":{"function":"thread_worker"}},
+  {"id":"OMI-007","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in PY_12_PyEval_CallObject_Wrong_Args() was never freed","location":{"function":"PY_12_PyEval_CallObject_Wrong_Args"}}
+]}

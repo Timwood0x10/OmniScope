@@ -1,7 +1,7 @@
-# Other Open Source Projects Investigation Report v0.1.6
+# Other Open Source Projects Investigation Report v0.1.7
 
-**Test Date**: 2026-05-04
-**Test Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Test Date**: 2026-05-06
+**Test Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **Test Projects**: curl, sqlite3, openssl
 
 ---

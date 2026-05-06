@@ -1,7 +1,7 @@
 # OmniScope v0.1.7 Corpus Analysis Report
 
 **Generated**: 2026-05-06  
-**Version**: v0.1.7 (Bug Fix Round 5 Complete)  
+**Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)  
 **Analyzer**: OmniScope - Multi-Language FFI Safety Analyzer
 
 ---
@@ -23,14 +23,14 @@ These files contain **known critical FFI boundary bugs** for analyzer validation
 
 ### 1.1 Critical Findings
 
-| Test File | Issues | Vulnerabilities | Key Findings |
-|-----------|--------|-----------------|--------------|
-| `ffi_boundary_bugs.ll` | 12 | 1 | Memory leaks, tainted data flow to execvp() |
-| `red_team_bugs.ll` | 12 | 3 | Buffer overflow (2), null dereference (1), use-after-free (4) |
-| `posix_ffi_bugs.ll` | ✅ Fixed | - | Previously crashed, now fixed |
+| Test File | Issues | FFI Bounds | Key Findings |
+|-----------|--------|------------|--------------|
+| `subtle_unsafe_rs.ll` | 6 | 128 | Rust unsafe block issues, stack escape |
+| `ffi_boundary_bugs.ll` | 12 | 41 | Memory leaks, tainted data flow to execvp() |
+| `red_team_bugs.ll` | 12 | 64 | Buffer overflow (2), null dereference (1), use-after-free (4) |
+| `posix_ffi_bugs.ll` | 10 | 35 | pthread_create stack escape (4) |
 | `jni_boundary_bugs_O0.ll` | 0 | 0 | No FFI issues (clean code) |
-| `python_c_api_bugs.ll` | 8 | 2 | Python C API boundary issues |
-| `subtle_unsafe_rs.ll` | 5 | 1 | Rust unsafe block issues |
+| `python_c_api_bugs.ll` | 8 | - | Python C API boundary issues |
 
 ### 1.2 Vulnerability Types Detected
 
@@ -139,8 +139,10 @@ These files contain **known critical FFI boundary bugs** for analyzer validation
 
 ### 3.1 BLST (Rust, 416 functions)
 
-**Analysis Time**: 630ms  
+**Analysis Time**: 1104ms  
 **Issues Found**: 36
+**FFI Boundaries**: 1355
+**Cross-Lang Edges**: 4850
 
 | Category | Count | Origin | Description |
 |----------|-------|--------|-------------|
@@ -158,12 +160,13 @@ These files contain **known critical FFI boundary bugs** for analyzer validation
 
 ### 3.2 Other ZKP Libraries
 
-| Library | Functions | Unsafe Zone % | Issues | Notes |
-|---------|-----------|---------------|--------|-------|
-| **ring** | ~300 | 85% | 1 | Rust safety guarantees |
-| **gnark_test** | ~150 | 70% | 4 | Go ↔ C boundary |
-| **libsodium_blake2b** | ~100 | 90% | 0 | Crypto primitives clean |
-| **libsodium_sign** | ~120 | 92% | 0 | Signature algorithm safe |
+| Library | Functions | FFI Bounds | Issues | Notes |
+|---------|-----------|------------|--------|-------|
+| **ring** | 410 | 4,242 | 16 | Rust safety guarantees, cross-FFI transfers (816) |
+| **blst** | 416 | 1,355 | 36 | Cross-FFI transfers (275), compiler-generated issues |
+| **gnark_test** | ~150 | - | 4 | Go ↔ C boundary |
+| **libsodium_blake2b** | ~100 | - | 0 | Crypto primitives clean |
+| **libsodium_sign** | ~120 | - | 0 | Signature algorithm safe |
 | **ark_ff** | ~80 | 88% | 2 | Finite field operations |
 | **zkcrypto_bls12_381** | ~200 | 75% | 3 | Elliptic curve operations |
 

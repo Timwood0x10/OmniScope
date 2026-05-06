@@ -2,7 +2,7 @@
 
 > "Your code has bugs. We can help you find some of them."
 
-Last updated: 2026-05-04 | Version: v0.1.6
+Last updated: 2026-05-06 | Version: v0.1.7
 
 ## What OmniScope Does
 
@@ -76,7 +76,7 @@ zig build-obj --emit-llvm-ir file.zig
 
 ```json
 {
-  "tool_version 0.1.6",
+  "tool_version 0.1.7",
   "issues": [
     {
       "kind": "DOUBLE_FREE",

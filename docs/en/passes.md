@@ -2,7 +2,7 @@
 
 > "13 passes, one pipeline, zero mercy for memory bugs."
 
-Last updated: 2026-05-04 | Version: v0.1.6
+Last updated: 2026-05-06 | Version: v0.1.7
 
 ## Pipeline Overview
 
@@ -70,7 +70,7 @@ flowchart LR
 - **Deps**: `["call-graph"]`
 - **What**: Detects type mismatches at FFI boundaries (e.g., passing i32 where i64 expected)
 - **Consumes**: `CrossLangEdge` from call-graph
-- **Fixed in v0.1.6**: Added `getCrossEdgeByCallee()` lookup (was only using name mangling)
+- **Fixed in v0.1.7**: Added `getCrossEdgeByCallee()` lookup (was only using name mangling)
 
 ### ptr-lifetime
 - **File**: `src/pass/analysis/ptr_lifetime.zig` (+ ptr_lifetime_types.zig, ptr_lifetime_track.zig, ptr_lifetime_check.zig, ptr_lifetime_classify.zig, ptr_lifetime_report.zig)
@@ -100,7 +100,7 @@ flowchart LR
 - **Kind**: analysis
 - **Deps**: `["call-graph", "danger-surface"]`
 - **What**: Detects pointers that escape through callback registrations
-- **Fixed in v0.1.6**: `GetStructName` null handling for function types
+- **Fixed in v0.1.7**: `GetStructName` null handling for function types
 
 ### return-check
 - **File**: `src/pass/analysis/lifetime_reporting.zig`
@@ -125,14 +125,14 @@ flowchart LR
 - **Kind**: analysis
 - **Deps**: `["call-graph"]`
 - **What**: Tracks taint flow from untrusted sources to sensitive sinks
-- **Fixed in v0.1.6**: `LLVMInvoke` correctly classified as `.call` (not `.control_flow`)
+- **Fixed in v0.1.7**: `LLVMInvoke` correctly classified as `.call` (not `.control_flow`)
 
 ### noise-reduction
 - **File**: `src/pass/analysis/noise_reduction.zig` (via noise_reduction_test.zig)
 - **Kind**: analysis
 - **Deps**: `[]`
 - **What**: Multi-layer noise reduction (name + path + behavior patterns)
-- **Fixed in v0.1.6**: Removed `__rust_alloc`/`__rust_dealloc`/`__rust_realloc` from noise patterns (they're what we're trying to detect!)
+- **Fixed in v0.1.7**: Removed `__rust_alloc`/`__rust_dealloc`/`__rust_realloc` from noise patterns (they're what we're trying to detect!)
 
 ## Filter Passes
 

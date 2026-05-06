@@ -1,7 +1,7 @@
 # OmniScope Architecture
 
-> **Version**: v0.1.6
-> **Last updated**: 2026-05-04
+> **Version**: v0.1.7
+> **Last updated**: 2026-05-06
 
 ## System Architecture Overview
 
@@ -91,7 +91,7 @@ graph TB
 
 ## Tier 1 / Tier 2 Architecture
 
-OmniScope v0.1.6 classifies all 13 analysis passes into two tiers based on their
+OmniScope v0.1.7 classifies all 13 analysis passes into two tiers based on their
 analysis strategy and issue-reporting behavior.
 
 ### Tier 1 -- Pass-Through (No Issues)
@@ -416,7 +416,7 @@ Reason: as_ptr() on local String/Vec passed to extern C - may dangle
 {
   "schema_version": "1.0.0",
   "tool": "omniscope",
-  "tool_version 0.1.6",
+  "tool_version 0.1.7",
   "summary": {"functions": 135, "issues": 6, "time_ms": 91},
   "issues": [{
     "id": "OMI-001",
@@ -463,7 +463,7 @@ Per **rules.md section 49**: Maximum 1000 lines per `.zig` file
 | memory_safety.zig | -- | Within limit |
 | free_validation.zig | -- | Within limit |
 
-## Known Issues (v0.1.6)
+## Known Issues (v0.1.7)
 
 ### Pass Dependency Bugs (3 unfixed)
 
