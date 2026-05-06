@@ -67,6 +67,19 @@ fn parseRiskKind(str: []const u8) ConfigError!RiskKind {
         .{ "deallocator", .deallocator },
         .{ "rust_ownership", .rust_ownership },
         .{ "borrow_escaped", .borrow_escaped },
+        .{ "memory_map", .memory_map },
+        .{ "file_io", .file_io },
+        .{ "network_io", .network_io },
+        .{ "go_cgo_alloc", .go_cgo_alloc },
+        .{ "zig_allocator", .zig_allocator },
+        .{ "cpp_allocator", .cpp_allocator },
+        .{ "dynamic_loading", .dynamic_loading },
+        .{ "jni", .jni },
+        .{ "python_c_api", .python_c_api },
+        .{ "signal_handler", .signal_handler },
+        .{ "thread_mgmt", .thread_mgmt },
+        .{ "process_mgmt", .process_mgmt },
+        .{ "static_buffer", .static_buffer },
     };
 
     inline for (kind_map) |entry| {

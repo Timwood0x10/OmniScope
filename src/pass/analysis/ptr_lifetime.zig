@@ -226,9 +226,15 @@ pub const PtrLifetimePass = struct {
             // INTEGRATION: Three-layer noise filter (name + path + behavior)
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
             const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
-            if (!full_classification.origin.shouldReportByDefault()) {
-                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, full_classification.origin.toString(), full_classification.reason });
-                continue;
+            // P0-2: Relax noise filter for Rust FFI callback functions.
+            // Rust callbacks (e.g., rs_ffi_*_cb) may be classified as third_party
+            // or have suppressed risk, but they are critical for FFI boundary analysis.
+            // Only skip compiler_generated code; stdlib/third_party may have FFI callbacks.
+            if (full_classification.origin == .compiler_generated) continue;
+            if (full_classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+            if (full_classification.origin == .third_party) {
+                const func_ptr_val_tmp: u64 = @intFromPtr(func);
+                if (!ctx.isRelevantFunction(func_ptr_val_tmp)) continue;
             }
 
             // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)

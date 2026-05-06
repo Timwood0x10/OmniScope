@@ -74,7 +74,9 @@ pub const SarifOutput = struct {
             .ffi_unsafe_call,
             .unchecked_return,
             .type_mismatch,
+            .ffi_type_mismatch,
             .cross_language_leak,
+            .cross_language_free,
             .use_after_free,
             .command_injection,
             .buffer_overflow,
@@ -84,6 +86,8 @@ pub const SarifOutput = struct {
             .invalid_free,
             .null_dereference,
             .borrow_escape,
+            .callback_signature_mismatch,
+            .static_buffer_misuse,
             .unknown,
         };
         for (kinds, 0..) |kind, i| {

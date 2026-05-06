@@ -66,6 +66,13 @@ Tier 1（放行，轻量）          Tier 2（严格，图驱动）
 | ----- | ------------------------------------------------------------------ | --------------------------------------- | ------ | ----------------------------------------------------------------------------- |
 | B10   | **std.debug.print violation** - performance log                    | pipeline.zig:147                        | ✅ Fixed | `std.debug.print` → `std.log.info`                                           |
 | B11   | **std.debug.print violation** - warning log                        | ptr_lifetime_types.zig:479              | ✅ Fixed | `std.debug.print` → `std.log.warn`                                           |
+| B12   | **RuleEngine field name** - `"function"` vs Location.`func`        | rule_engine.zig:322                     | ✅ Fixed | `@hasField(loc, "function")` → `@hasField(loc, "func")`                      |
+| B13   | **SARIF missing IssueKinds** - 15/19 kinds in rules               | sarif.zig:72-88                         | ✅ Fixed | Added 4 missing: ffi_type_mismatch, cross_language_free, callback_signature_mismatch, static_buffer_misuse |
+| B14   | **ffi_body_check test fields** - caller_name/callee_name don't exist | ffi_body_check.zig:854-858            | ✅ Fixed | Use FFIBoundary fields: id, kind, caller_language, callee_language             |
+| B15   | **return_check no zone filter** - reports safe zone functions      | return_check.zig:66                     | ✅ Fixed | Added noise_filter.classifyFunctionFull + shouldReportByDefault check          |
+| B16   | **from_raw ownership semantics** - transfers_ownership wrong       | layer2_reg.zig:8                        | ✅ Fixed | from_raw: transfers=false,consumes=true; into_raw: transfers=true,consumes=false |
+| B17   | **parseRiskKind incomplete** - 7/20 RiskKind mapped               | config_loader.zig:62-70                 | ✅ Fixed | Added 13 missing mappings (20/20)                                             |
+| B18   | **formatter SARIF rules array** - missing `rules` in tool.driver  | formatter.zig:207-223                   | ✅ Fixed | Added `"rules": []` + fixed version to 0.1.8                                  |
 
 ### Low Priority (Deferred — Verified Safe)
 
@@ -83,7 +90,37 @@ Tier 1（放行，轻量）          Tier 2（严格，图驱动）
 
 ***
 
-## 🔲 Remaining Pending Items
+## 🔲 Next Steps (v0.1.9 Roadmap)
+
+### P0 — Improve Rust FFI Detection Rate (TP 20% → 60%+)
+
+Current: subtle_unsafe_rs has ~20 known vulnerabilities, only 6 detected (TP≈30%).
+Root cause: **PtrLifetime only tracks functions with explicit alloc/free**.
+Rust FFI callbacks receive pointers via params — no alloc/free in the function body.
+
+| ID          | Task                                                              | Status   | Notes                                                                 |
+| ----------- | ----------------------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| **P0-1**    | ✅ Fix _RNv blanket stdlib classification                         | ✅ Done  | Moved _RNv from RUST_STDLIB_PREFIXES to RUST_V0_STDLIB_PREFIXES with crate check |
+| **P0-2**    | ✅ Relax noise filter for Rust FFI functions                     | ✅ Done  | Only skip compiler_generated; allow third_party on FFI danger path |
+| **P0-3**    | Analyze why Rust FFI callbacks still miss violations             | ⏳ Todo  | 5/68 funcs analyzed but callbacks pass noise filter — need deeper pointer tracking |
+| **P0-3**    | Improve borrow_escape for nested FFI calls                        | ⏳ Todo  | as_ptr→FFI→use_after_dangle chain                                     |
+| **P0-4**    | Add cross_language_free to ptr_lifetime                           | ⏳ Todo  | Rust alloc + C free — currently only in pointer_ownership              |
+
+### P1 — Fix call_graph Segfault & Test Quality
+
+| ID          | Task                                                              | Status   | Notes                                                                 |
+| ----------- | ----------------------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| **P1-1**    | Fix call_graph test segfault at L809                              | ⏳ Todo | Null pointer in BFS traversal — add guard                              |
+| **P1-2**    | Add boundary test cases for FFI zone classification               | ⏳ Todo | Go→C, Zig→C, Python→C boundaries                                      |
+| **P1-3**    | sqlite3 performance — large file (>3000 funcs) sampling analysis  | ⏳ Todo | PtrLifetime 4.6s + PointerOwnership 6.4s = 87% of total time          |
+
+### P2 — Corpus & CI
+
+| ID          | Task                                                              | Status   | Notes                                                                 |
+| ----------- | ----------------------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| **P2-1**    | Add Go cgo FFI test corpus (compile .go → .ll)                   | ⏳ Todo | Currently no Go FFI test cases                                         |
+| **P2-2**    | Add Zig @cImport FFI test corpus (compile .zig → .ll)            | ⏳ Todo | Currently no Zig FFI test cases                                        |
+| **P2-3**    | Fix ZVM version_map CI error                                      | ⏳ Todo | GitHub Actions cannot find Zig — update version map or use direct URL  |
 
 ### V2 Enhancements (Deferred)
 

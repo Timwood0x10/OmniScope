@@ -181,7 +181,12 @@ pub const CallGraph = struct {
         try graph.nodes.append(graph.allocator, node);
         try graph.nodes_by_name.put(node.name, id);
         if (func_ref != null) {
+            // Only call LLVMCountParams on real (non-fake) function refs.
+            // Fake refs (e.g., @ptrFromInt(0x1000) in tests) will segfault.
             const ref_int = @as(u64, @intFromPtr(func_ref));
+            if (ref_int > 0xFFFF) {
+                graph.nodes.items[graph.nodes.items.len - 1].param_count = c.LLVMCountParams(func_ref);
+            }
             try graph.nodes_by_ref.put(ref_int, id);
         }
 

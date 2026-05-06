@@ -216,8 +216,9 @@ pub const Formatter = struct {
         try buffer.appendSlice(self.allocator, "      \"tool\": {\n");
         try buffer.appendSlice(self.allocator, "        \"driver\": {\n");
         try buffer.appendSlice(self.allocator, "          \"name\": \"OmniScope\",\n");
-        try buffer.appendSlice(self.allocator, "          \"version\": \"1.0.0\",\n");
-        try buffer.appendSlice(self.allocator, "          \"informationUri\": \"https://github.com/omniscope/omniscope\"\n");
+        try buffer.appendSlice(self.allocator, "          \"version\": \"0.1.8\",\n");
+        try buffer.appendSlice(self.allocator, "          \"informationUri\": \"https://github.com/omniscope/omniscope\",\n");
+        try buffer.appendSlice(self.allocator, "          \"rules\": []\n");
         try buffer.appendSlice(self.allocator, "        }\n");
         try buffer.appendSlice(self.allocator, "      },\n");
         try buffer.appendSlice(self.allocator, "      \"results\": [\n");

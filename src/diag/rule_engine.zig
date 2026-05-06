@@ -319,8 +319,8 @@ pub const RuleEngine = struct {
         if (rule.match_function_pattern) |pattern| {
             if (@hasField(T, "location")) {
                 const loc = @field(issue, "location");
-                if (@hasField(@TypeOf(loc), "function")) {
-                    const func_name = @field(loc, "function");
+                if (@hasField(@TypeOf(loc), "func")) {
+                    const func_name = @field(loc, "func");
                     if (!patternMatches(pattern, func_name)) return false;
                 } else {
                     return false;
