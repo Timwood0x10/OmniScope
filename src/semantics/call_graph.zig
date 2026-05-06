@@ -911,7 +911,7 @@ test "call_graph - get outgoing edges" {
     _ = try graph.addEdge(main_id, foo_id, call_inst1, "foo");
     _ = try graph.addEdge(main_id, bar_id, call_inst2, "bar");
 
-    const edges = try graph.getOutgoingEdges(allocator, main_id);
+    var edges = try graph.getOutgoingEdges(allocator, main_id);
     defer edges.deinit(allocator);
     try std.testing.expect(edges.items.len == 2);
 }

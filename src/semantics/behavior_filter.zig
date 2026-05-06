@@ -346,16 +346,17 @@ fn scoreRustDropGlue(instructions: [][]const u8) f64 {
     // - Small functions (< DENSITY_SMALL_FUNC_THRESHOLD): Use raw density directly
     // - Medium functions (DENSITY_SMALL_FUNC_THRESHOLD to DENSITY_MEDIUM_FUNC_THRESHOLD): Log scaling
     // - Large functions (> DENSITY_MEDIUM_FUNC_THRESHOLD): Capped boost
-    const indicator_density: f64 = if (instructions.len < DENSITY_SMALL_FUNC_THRESHOLD) {
-        raw_density;
+    var indicator_density: f64 = undefined;
+    if (instructions.len < DENSITY_SMALL_FUNC_THRESHOLD) {
+        indicator_density = raw_density;
     } else if (instructions.len < DENSITY_MEDIUM_FUNC_THRESHOLD) {
         // Log scaling normalizes to [0, ~1] range
-        std.math.log(f64, @as(f64, 1.0) + raw_density * DENSITY_LOG_SCALE_FACTOR) /
-            std.math.log(f64, @as(f64, DENSITY_LOG_SCALE_FACTOR + 1.0));
+        indicator_density = std.math.log(f64, std.math.e, @as(f64, 1.0) + raw_density * DENSITY_LOG_SCALE_FACTOR) /
+            std.math.log(f64, std.math.e, @as(f64, DENSITY_LOG_SCALE_FACTOR + 1.0));
     } else {
         // For very large functions, use a density cap to ensure fair evaluation
-        @min(raw_density * DENSITY_LARGE_FUNC_BOOST, 1.0);
-    };
+        indicator_density = @min(raw_density * DENSITY_LARGE_FUNC_BOOST, 1.0);
+    }
 
     score += indicator_density * 0.4;
 

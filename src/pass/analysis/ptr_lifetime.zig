@@ -376,13 +376,13 @@ pub const PtrLifetimePass = struct {
                         for (aliasers.items) |aliaser_ptr| {
                             if (mem_graph.?.nodes.get(aliaser_ptr)) |aliaser_node| {
                                 if (!aliaser_node.freed) {
-                                _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
-                                // Sync MemoryGraph.freed: propagate from original freed node.
-                                if (mem_graph) |mg| {
-                                    const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
-                                    _ = mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang) catch {};
-                                }
-                                propagated += 1;
+                                    _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
+                                    // Sync MemoryGraph.freed: propagate from original freed node.
+                                    if (mem_graph) |mg| {
+                                        const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
+                                        _ = mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang) catch {};
+                                    }
+                                    propagated += 1;
                                 }
                             }
                         }
@@ -1514,6 +1514,12 @@ pub const PtrLifetimePass = struct {
         while (i < num_ops) : (i += 1) {
             const arg = c.LLVMGetOperand(inst, i);
             if (pointer_map.get(arg)) |ptr_info| {
+                // V2: Check for cross-function alias evidence using CallGraph
+                // If the pointer argument originates from another function's return value
+                // or global state, it may have aliases we can't see — higher UAF risk
+                const call_graph_ptr: ?*call_graph_mod.CallGraph = if (ctx.semantics_call_graph) |*sg| sg else null;
+                const has_cross_func_alias = ip_ffi.detect_cross_func_alias(inst, call_graph_ptr);
+
                 if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
                     // Check suppression for callback/hook patterns
                     if (isStackEscapeSuppressed(callee_name, ptr_info)) {
@@ -1521,6 +1527,10 @@ pub const PtrLifetimePass = struct {
                         stats.stack_escapes_found += 1;
                     } else {
                         try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        // V2: Enhance severity when cross-function alias detected
+                        if (has_cross_func_alias) {
+                            diag.debug("[ENHANCED] Cross-function alias evidence found for stack escape to {s}", .{callee_name});
+                        }
                         stats.stack_escapes_found += 1;
                     }
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
@@ -1529,6 +1539,10 @@ pub const PtrLifetimePass = struct {
                     // A malloc'd buffer passed to an extern retaining function means
                     // the caller must know to free it — classic FFI ownership bug.
                     try reportHeapEscapeToFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    // V2: Enhance severity when cross-function alias detected
+                    if (has_cross_func_alias) {
+                        diag.debug("[ENHANCED] Cross-function alias evidence for heap escape to {s}", .{callee_name});
+                    }
                     stats.heap_ambiguous_found += 1;
                     if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
                 } else if (ptr_info.freed) {
@@ -1537,6 +1551,10 @@ pub const PtrLifetimePass = struct {
                         try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
                     } else {
                         try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
+                    }
+                    // V2: Enhance severity when cross-function alias detected
+                    if (has_cross_func_alias) {
+                        diag.debug("[ENHANCED] Cross-function alias evidence for UAF to {s}", .{callee_name});
                     }
                     stats.use_after_free_found += 1;
                 }

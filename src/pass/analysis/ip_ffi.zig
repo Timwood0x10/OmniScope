@@ -385,7 +385,7 @@ fn is_release_function(name: []const u8) bool {
     return false;
 }
 
-/// V2: Detect cross-function alias patterns at FFI call sites.
+/// Detects whether an FFI call has cross-function alias evidence.
 ///
 /// When a pointer argument to an FFI call originates from:
 ///   - A function parameter (passed from caller's caller)
@@ -398,11 +398,19 @@ fn is_release_function(name: []const u8) bool {
 /// controlled.
 ///
 /// V2 ENHANCEMENT (2026-05-05): Now integrates CallGraph BFS traversal for cross-function
-/// FFI reasoning. If ctx.semantics_call_graph is available, checks whether the inner
+/// FFI reasoning. If call_graph is provided, checks whether the inner
 /// callee can reach an FFI boundary, providing stronger evidence of cross-function risk.
 ///
+/// Parameters:
+///   - call_inst: The FFI call instruction to analyze
+///   - call_graph: Optional semantics CallGraph for cross-function reachability analysis.
+///                 If null, falls back to name-based heuristics (V1 behavior)
+///
 /// Returns true if any pointer argument shows cross-function alias evidence.
-pub fn detect_cross_func_alias(call_inst: c.LLVMValueRef) bool {
+pub fn detect_cross_func_alias(
+    call_inst: c.LLVMValueRef,
+    call_graph: ?*@import("../../semantics/call_graph.zig").CallGraph,
+) bool {
     const num_args = c.LLVMGetNumArgOperands(call_inst);
     for (0..@as(usize, @intCast(num_args))) |i| {
         const arg = c.LLVMGetOperand(call_inst, @intCast(i));
@@ -440,8 +448,17 @@ pub fn detect_cross_func_alias(call_inst: c.LLVMValueRef) bool {
                     if (!is_release_function(n) and !is_acquisition_function(n)) {
                         // V2: Check if inner callee reaches FFI boundary via CallGraph
                         // This provides stronger evidence than just name-based heuristics
-                        // Implementation requires ctx access — for now, return true on pattern match
-                        return true;
+                        if (call_graph) |sg| {
+                            // Use CallGraph for precise cross-function reachability
+                            if (reachesFFIBoundaryViaCallGraph(sg, n, 10)) {
+                                return true;
+                            }
+                            // If CallGraph says no FFI reachability, don't flag it
+                            // This reduces false positives compared to V1 heuristic
+                        } else {
+                            // V1 fallback: No CallGraph available, use conservative heuristic
+                            return true;
+                        }
                     }
                 }
             }
@@ -460,17 +477,21 @@ pub fn detect_cross_func_alias(call_inst: c.LLVMValueRef) bool {
 ///
 /// Parameters:
 ///   - sg: The semantics CallGraph (built by CallGraphPass)
+///        NOTE: Uses mutable pointer (*CallGraph) to match underlying API signatures.
+///        The function does NOT modify CallGraph — this is a const-correctness limitation
+///        in call_graph.zig's getNode/getNodeByName/reachesFFIBoundary methods which should
+///        accept *const CallGraph but currently require *CallGraph.
 ///   - func_name: The function to check for FFI boundary reachability
 ///   - max_depth: Maximum BFS depth to prevent infinite loops (default: 10)
 ///
 /// Returns: true if func_name can reach any FFI boundary within max_depth hops
 pub fn reachesFFIBoundaryViaCallGraph(
-    sg: *const @import("../../semantics/call_graph.zig").CallGraph,
+    sg: *@import("../../semantics/call_graph.zig").CallGraph,
     func_name: []const u8,
     max_depth: u32,
 ) bool {
     const node_id = sg.getNodeByName(func_name) orelse return false;
-    return sg.reachesFFIBoundary(sg, node_id, max_depth);
+    return sg.reachesFFIBoundary(node_id, max_depth);
 }
 
 // ═══════════════════════════════════════════════════════════════
