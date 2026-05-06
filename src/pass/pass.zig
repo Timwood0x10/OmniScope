@@ -456,6 +456,10 @@ pub const PassContext = struct {
     /// reported an issue with the same (function, kind) signature,
     /// this call is silently skipped to avoid duplicate alerts.
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
+        // 90/10 Priority分层: FFI boundary (90%) vs local-only (10%)
+        // Check if issue reaches FFI/unsafe boundary for priority classification
+        const on_danger_path = if (issue.ffi_boundary) |_| true else false;
+        
         // P2-1: Risk weighting integration.
         // Classify the function origin and apply risk level adjustment.
         // Suppressed issues are silently dropped — no noise in output.
@@ -500,6 +504,11 @@ pub const PassContext = struct {
                 .suppressed => unreachable, // handled above
             };
         }
+        
+        // 90/10 Priority分层: Set classification based on FFI boundary reachability
+        // - ffi_boundary (90%): Issue reaches FFI/unsafe boundary → high priority
+        // - local_only (10%): Local memory issue → auxiliary priority
+        final_issue.classification = if (on_danger_path) .ffi_boundary else .local_only;
 
         try self.data_flow_graph.addIssue(final_issue);
     }
@@ -965,7 +974,7 @@ pub const DiagnosticWriter = struct {
     }
 };
 
-/// Print zone classification summary
+/// Print zone classification summary with 90/10 priority分层
 /// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
 pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) void {
     if (log.current_log_level == .quiet) return;
@@ -975,86 +984,103 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
     const skip_ratio = stats.skipRatio();
     const issue_stats = dfg.getIssueStats();
 
-    std.debug.print("\n" ++ Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n", .{});
-    std.debug.print(Colors.bold ++ "Zone Classification Summary" ++ Colors.reset ++ "\n", .{});
-    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+    // Separate issues by classification (90/10 split)
+    var ffi_issues: u32 = 0;
+    var local_issues: u32 = 0;
+    for (dfg.issues.items) |issue| {
+        if (issue.classification == .ffi_boundary) {
+            ffi_issues += 1;
+        } else {
+            local_issues += 1;
+        }
+    }
 
-    std.debug.print("  Total functions analyzed:    {d}\n", .{total});
-    std.debug.print("  Safe zone (skipped):         {d} ({d:.1}%)\n", .{ stats.safe_count, skip_ratio * 100 });
-    std.debug.print("  Runtime internal (skipped):  {d}\n", .{stats.runtime_count});
-    std.debug.print("  Unsafe zone (analyzed):      {d}\n", .{stats.unsafe_count});
-    std.debug.print("  FFI zone (analyzed):         {d}\n", .{stats.ffi_count});
-    std.debug.print("  Unknown zone:                {d}\n", .{stats.unknown_count});
-    std.debug.print("\n", .{});
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
+    std.log.info("Zone Classification Summary", .{});
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
 
-    std.debug.print(Colors.green ++ "  Escape zone functions:       {d} ({d:.1}% of total)" ++ Colors.reset ++ "\n", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
+    std.log.info("  Total functions analyzed:    {d}", .{total});
+    std.log.info("  Safe zone (skipped):         {d} ({d:.1}%)", .{ stats.safe_count, skip_ratio * 100 });
+    std.log.info("  Runtime internal (skipped):  {d}", .{stats.runtime_count});
+    std.log.info("  Unsafe zone (analyzed):      {d}", .{stats.unsafe_count});
+    std.log.info("  FFI zone (analyzed):         {d}", .{stats.ffi_count});
+    std.log.info("  Unknown zone:                {d}", .{stats.unknown_count});
+    std.log.info("", .{});
+
+    std.log.info("  Escape zone functions:       {d} ({d:.1}% of total)", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
 
     if (issue_stats.total > 0) {
-        std.debug.print(Colors.yellow ++ "  Issues found:              {d}" ++ Colors.reset ++ "\n", .{issue_stats.total});
+        std.log.info("  Issues found:              {d}", .{issue_stats.total});
 
-        std.debug.print("\n    " ++ Colors.bold ++ "Issue breakdown by category:" ++ Colors.reset ++ "\n", .{});
+        std.log.info("    Issue breakdown by category:", .{});
         if (issue_stats.memory_leak > 0) {
-            std.debug.print("      Memory leak:              {d}\n", .{issue_stats.memory_leak});
+            std.log.info("      Memory leak:              {d}", .{issue_stats.memory_leak});
         }
         if (issue_stats.use_after_free > 0) {
-            std.debug.print("      Use after free:           {d}\n", .{issue_stats.use_after_free});
+            std.log.info("      Use after free:           {d}", .{issue_stats.use_after_free});
         }
         if (issue_stats.double_free > 0) {
-            std.debug.print("      Double free:               {d}\n", .{issue_stats.double_free});
+            std.log.info("      Double free:               {d}", .{issue_stats.double_free});
         }
         if (issue_stats.ffi_unsafe > 0) {
-            std.debug.print("      FFI unsafe call:          {d}\n", .{issue_stats.ffi_unsafe});
+            std.log.info("      FFI unsafe call:          {d}", .{issue_stats.ffi_unsafe});
         }
         if (issue_stats.command_injection > 0) {
-            std.debug.print("      Command injection:         {d}\n", .{issue_stats.command_injection});
+            std.log.info("      Command injection:         {d}", .{issue_stats.command_injection});
         }
         if (issue_stats.buffer_overflow > 0) {
-            std.debug.print("      Buffer overflow:          {d}\n", .{issue_stats.buffer_overflow});
+            std.log.info("      Buffer overflow:          {d}", .{issue_stats.buffer_overflow});
         }
         if (issue_stats.format_string > 0) {
-            std.debug.print("      Format string:            {d}\n", .{issue_stats.format_string});
+            std.log.info("      Format string:            {d}", .{issue_stats.format_string});
         }
         if (issue_stats.type_mismatch > 0) {
-            std.debug.print("      Type mismatch:            {d}\n", .{issue_stats.type_mismatch});
+            std.log.info("      Type mismatch:            {d}", .{issue_stats.type_mismatch});
         }
         if (issue_stats.borrow_escape > 0) {
-            std.debug.print("      Borrow escape:            {d}\n", .{issue_stats.borrow_escape});
+            std.log.info("      Borrow escape:            {d}", .{issue_stats.borrow_escape});
         }
         if (issue_stats.null_dereference > 0) {
-            std.debug.print("      Null dereference:         {d}\n", .{issue_stats.null_dereference});
+            std.log.info("      Null dereference:         {d}", .{issue_stats.null_dereference});
         }
         if (issue_stats.invalid_free > 0) {
-            std.debug.print("      Invalid free:             {d}\n", .{issue_stats.invalid_free});
+            std.log.info("      Invalid free:             {d}", .{issue_stats.invalid_free});
         }
         if (issue_stats.unchecked_return > 0) {
-            std.debug.print("      Unchecked return:         {d}\n", .{issue_stats.unchecked_return});
+            std.log.info("      Unchecked return:         {d}", .{issue_stats.unchecked_return});
         }
         if (issue_stats.malloc_unchecked > 0) {
-            std.debug.print("      Malloc unchecked:         {d}\n", .{issue_stats.malloc_unchecked});
+            std.log.info("      Malloc unchecked:         {d}", .{issue_stats.malloc_unchecked});
         }
         if (issue_stats.callback_mismatch > 0) {
-            std.debug.print("      Callback mismatch:        {d}\n", .{issue_stats.callback_mismatch});
+            std.log.info("      Callback mismatch:        {d}", .{issue_stats.callback_mismatch});
         }
         if (issue_stats.unknown > 0) {
-            std.debug.print("      Unknown:                  {d}\n", .{issue_stats.unknown});
+            std.log.info("      Unknown:                  {d}", .{issue_stats.unknown});
         }
 
+        // 90/10 Priority分层报告
+        std.log.info("", .{});
+        std.log.info("    90/10 Priority Classification:", .{});
+        std.log.info("      FFI Boundary (90% core):     {d}", .{ffi_issues});
+        std.log.info("      Local Only (10% auxiliary):  {d}", .{local_issues});
+
         // C4-4: FunctionOrigin grouping output
-        std.debug.print("\n    " ++ Colors.bold ++ "Origin breakdown:" ++ Colors.reset ++ "\n", .{});
-        std.debug.print("      ✅ User code:             {d:>6} (ACTION NEEDED)\n", .{issue_stats.user_code});
-        std.debug.print("      📦 Third-party (FFI):     {d:>6}\n", .{issue_stats.third_party});
-        std.debug.print("      📚 Stdlib (suppressed):  {d:>6}\n", .{issue_stats.stdlib_suppressed});
-        std.debug.print("      🔧 Compiler (ignored):   {d:>6}\n", .{issue_stats.compiler_ignored});
+        std.log.info("    Origin breakdown:", .{});
+        std.log.info("      ✅ User code:             {d:>6} (ACTION NEEDED)", .{issue_stats.user_code});
+        std.log.info("      📦 Third-party (FFI):     {d:>6}", .{issue_stats.third_party});
+        std.log.info("      📚 Stdlib (suppressed):  {d:>6}", .{issue_stats.stdlib_suppressed});
+        std.log.info("      🔧 Compiler (ignored):   {d:>6}", .{issue_stats.compiler_ignored});
 
         const actionable = issue_stats.user_code + issue_stats.third_party;
         if (actionable > 0) {
-            std.debug.print("\n    " ++ Colors.yellow ++ "→ {d} actionable issues ({d} user, {d} FFI boundary)" ++ Colors.reset ++ "\n", .{
+            std.log.info("    → {d} actionable issues ({d} user, {d} FFI boundary)", .{
                 actionable,
                 issue_stats.user_code,
                 issue_stats.third_party,
             });
         }
-        std.debug.print("\n", .{});
+        std.log.info("", .{});
 
         // E2-3c: Graph coverage metric
         const graph_stats = dfg.getStats();
@@ -1062,22 +1088,22 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
             @as(f64, @floatFromInt(graph_stats.tainted_node_count)) / @as(f64, @floatFromInt(graph_stats.node_count)) * 100
         else
             0;
-        std.debug.print("    " ++ Colors.bold ++ "Graph coverage:" ++ Colors.reset ++ "\n", .{});
-        std.debug.print("      Total nodes analyzed:     {d}\n", .{graph_stats.node_count});
-        std.debug.print("      Nodes on danger path:     {d} ({d:.1}%)\n", .{ graph_stats.tainted_node_count, coverage_pct });
-        std.debug.print("      FFI boundaries tracked:   {d}\n", .{dfg.getFFIBoundaries().len});
-        std.debug.print("      Issues in graph:          {d}\n", .{dfg.getIssues().len});
+        std.log.info("    Graph coverage:", .{});
+        std.log.info("      Total nodes analyzed:     {d}", .{graph_stats.node_count});
+        std.log.info("      Nodes on danger path:     {d} ({d:.1}%)", .{ graph_stats.tainted_node_count, coverage_pct });
+        std.log.info("      FFI boundaries tracked:   {d}", .{dfg.getFFIBoundaries().len});
+        std.log.info("      Issues in graph:          {d}", .{dfg.getIssues().len});
 
         // E2-3b: Danger path depth hint (alias closure reach)
         if (issue_stats.total > 0) {
             const depth_hint = if (coverage_pct > 50) "deep alias analysis" else if (coverage_pct > 20) "moderate reach" else "shallow scan";
-            std.debug.print("      Analysis depth:           {s}\n", .{depth_hint});
+            std.log.info("      Analysis depth:           {s}", .{depth_hint});
         }
     } else {
-        std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
+        std.log.info("  Issues found:                0", .{});
     }
 
-    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
 }
 
 fn getSeverityColor(comptime severity: []const u8) []const u8 {

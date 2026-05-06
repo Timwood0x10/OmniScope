@@ -65,6 +65,14 @@ pub const TraceEntry = struct {
     }
 };
 
+/// Issue classification for 90/10 priority (FFI focus vs general memory)
+pub const IssueClassification = enum(u8) {
+    /// FFI boundary violation - 90% core priority
+    ffi_boundary,
+    /// Local-only memory issue - 10% auxiliary priority
+    local_only,
+};
+
 /// Issue represents a detected security problem
 ///
 /// This struct contains all information about a detected issue including
@@ -92,6 +100,10 @@ pub const Issue = struct {
     owned: bool,
     /// Whether location.function is heap-allocated and should be freed
     function_owned: bool,
+    /// Classification tag for 90/10 priority
+    /// - ffi_boundary: 90% core - reaches FFI/unsafe boundary
+    /// - local_only: 10% auxiliary - local memory issue
+    classification: IssueClassification,
 
     /// Create a new issue
     ///
@@ -123,6 +135,7 @@ pub const Issue = struct {
             .trace = null,
             .owned = false,
             .function_owned = false,
+            .classification = .local_only, // Default to local-only
         };
     }
 
@@ -147,6 +160,7 @@ pub const Issue = struct {
             .trace = null,
             .owned = false,
             .function_owned = false,
+            .classification = .local_only,
         };
     }
 
@@ -161,7 +175,6 @@ pub const Issue = struct {
     ///   - trace: Trace entries showing reasoning path (owned)
     ///
     /// Returns:
-    ///   - A new Issue instance with trace
     pub fn initWithTrace(
         kind: IssueKind,
         message: []const u8,
@@ -182,6 +195,7 @@ pub const Issue = struct {
             .trace = trace,
             .owned = true,
             .function_owned = false,
+            .classification = .local_only,
         };
     }
 

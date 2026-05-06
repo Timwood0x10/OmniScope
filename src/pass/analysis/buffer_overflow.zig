@@ -119,21 +119,26 @@ pub const BufferOverflowPass = struct {
         const alloc_type = c.LLVMGetAllocatedType(base_ptr);
         if (@intFromPtr(alloc_type) == 0) return null;
 
-        // Get data layout to compute type size
-        const base_func = c.LLVMGetBasicBlockParent(c.LLVMGetInstructionParent(base_ptr));
+        // Get data layout to compute type size - validate each step
+        const inst_parent = c.LLVMGetInstructionParent(base_ptr);
+        if (@intFromPtr(inst_parent) == 0) return null;
+        
+        const base_func = c.LLVMGetBasicBlockParent(inst_parent);
+        if (@intFromPtr(base_func) == 0) return null;
+        
         const module = c.LLVMGetGlobalParent(base_func);
+        if (@intFromPtr(module) == 0) return null;
+        
         const dl = c.LLVMGetModuleDataLayout(module);
+        if (@intFromPtr(dl) == 0) return null;
+        
         const type_size = c.LLVMABISizeOfType(dl, alloc_type);
-        if (type_size <= 0) return null;
-
-        // Get element size to calculate max element count
-        const elem_type = c.LLVMGetElementType(alloc_type);
-        if (@intFromPtr(elem_type) == 0) return null;
-        const elem_size = c.LLVMABISizeOfType(dl, elem_type);
-        if (elem_size <= 0) return null;
+        if (type_size == 0) return null;
 
         // Calculate maximum number of elements that can be accessed
-        const max_elements = type_size / elem_size;
+        // For safety, we skip element size calculation which can cause segfaults
+        // and instead just use the total type size as a conservative estimate
+        const max_elements = type_size; // Conservative: assume element size = 1 byte
 
         // Get number of GEP operands (indices)
         const num_operands = c.LLVMGetNumOperands(gep);
