@@ -144,7 +144,7 @@ pub const Pipeline = struct {
                 }
             }
             const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
-            if (idx_ms > 10) std.debug.print("[PERF] CallSiteIndex build: {d:.1} ms\n", .{@as(u32, @intFromFloat(idx_ms))});
+            if (idx_ms > 10) std.log.info("[PERF] CallSiteIndex build: {d:.1} ms", .{@as(u32, @intFromFloat(idx_ms))});
         }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
