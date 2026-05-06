@@ -268,7 +268,7 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,

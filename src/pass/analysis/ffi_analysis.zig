@@ -325,8 +325,8 @@ pub const FFIAnalysisPass = struct {
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
                             };
-                            if (self.free_sites.get(ptr_value_id)) |list| {
-                                try list.append(free_info);
+                            if (self.free_sites.getPtr(ptr_value_id)) |list_ptr| {
+                                try list_ptr.append(free_info);
                             } else {
                                 var list = std.ArrayList(FreeInfo).init(self.allocator);
                                 errdefer list.deinit();
@@ -691,7 +691,9 @@ test "FFIAnalysisPass - name is ownership-violation" {
 }
 
 test "FFIAnalysisPass - detectLanguage fallback" {
-    var pass = FFIAnalysisPass.init(std.testing.allocator, undefined);
+    var fact_store = @import("../../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var pass = FFIAnalysisPass.init(std.testing.allocator, &fact_store);
     defer pass.deinit();
 
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_ZN4core3ptr"));

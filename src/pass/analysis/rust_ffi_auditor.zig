@@ -547,7 +547,7 @@ pub const RustFfiAuditor = struct {
 
         if (a_unwrapped == b_unwrapped) return true;
         if (a_unwrapped != null and a_unwrapped.? == b) return true;
-        if (b_unwrapped != null and b_unwrapped.? == a) return false; // already checked a==b
+        if (b_unwrapped != null and b_unwrapped.? == a) return true;
 
         // Check if both are pointers to globals or allocations
         if (isSameBasePointer(a, b)) return true;

@@ -679,7 +679,7 @@ test "TaintPropagationPass - handles null module gracefully" {
     var data_flow_graph = try @import("../../dataflow/graph.zig").DataFlowGraph.init(allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var context = PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    var context = try PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer context.deinit();
 
     var diagnostics = DiagnosticWriter{ .allocator = allocator };

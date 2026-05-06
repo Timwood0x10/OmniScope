@@ -65,15 +65,16 @@ pub const AliasPass = struct {
 
     /// Deinitialize the pass
     pub fn deinit(self: *AliasPass, allocator: std.mem.Allocator) void {
+        _ = allocator;  // AutoHashMap.deinit() doesn't need allocator
         self.query.deinit();
-        self.type_cache.deinit(allocator);
-        self.ptr_info_map.deinit(allocator);
+        self.type_cache.deinit();
+        self.ptr_info_map.deinit();
     }
 
     /// Reset internal state for re-analysis
     fn reset(self: *AliasPass, allocator: std.mem.Allocator) void {
-        self.type_cache.deinit(allocator);
-        self.ptr_info_map.deinit(allocator);
+        self.type_cache.deinit();
+        self.ptr_info_map.deinit();
         self.type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator);
         self.ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator);
         self.func_id = 0;

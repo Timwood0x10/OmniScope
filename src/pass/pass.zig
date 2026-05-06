@@ -284,7 +284,7 @@ pub const PassContext = struct {
         fact_store: *FactStore,
         query_engine: *QueryEngine,
         data_flow_graph: *DataFlowGraph,
-    ) PassContext {
+    ) !PassContext {
         return .{
             .allocator = allocator,
             .module = module,
@@ -308,7 +308,7 @@ pub const PassContext = struct {
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
-            .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
+            .memory_graph = try memory_graph_mod.MemoryGraph.init(allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
             .ffi_auto_relevant = std.AutoHashMap(u64, void).init(allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
@@ -1165,7 +1165,7 @@ test "PassContext - init and deinit" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1185,7 +1185,7 @@ test "PassContext - getNextId" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1211,7 +1211,7 @@ test "PassContext - setModule and hasModule" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1236,7 +1236,7 @@ test "PassContext - access to components" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1257,7 +1257,7 @@ test "PassContext - getOrComputeZoneByName caching" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer ctx.deinit();
 
     // LLVM intrinsics → .runtime_internal
@@ -1294,7 +1294,7 @@ test "PassContext - getOrComputeZone null safety" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer ctx.deinit();
 
     // Valid pointer should return a valid zone (not crash)

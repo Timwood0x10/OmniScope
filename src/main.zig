@@ -80,7 +80,7 @@ fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
             '\t' => try writer.writeAll("\\t"),
             else => {
                 if (c < 0x20) {
-                    try writer.print("\\u{X:0>4}", .{c});
+                    try writer.print("\\u{x:0>4}", .{c});
                 } else {
                     try writer.writeByte(c);
                 }
@@ -268,7 +268,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 std.debug.print("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
-            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.6");
+            var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.8");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});
                 return;
@@ -642,7 +642,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v0.1.6\n", .{});
+        std.debug.print("OmniScope v0.1.8\n", .{});
         return;
     }
 

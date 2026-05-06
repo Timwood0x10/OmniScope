@@ -515,7 +515,9 @@ pub const CallGraphPass = struct {
 
             // Duplicate names into ctx.allocator so they outlive CallGraphPass's local nodes.
             const caller_name_owned = try ctx.allocator.dupe(u8, caller_node.name);
+            errdefer ctx.allocator.free(caller_name_owned);
             const callee_name_owned = try ctx.allocator.dupe(u8, callee_node.name);
+            errdefer ctx.allocator.free(callee_name_owned);
 
             const cross_edge = CrossLangEdge{
                 .caller_name = caller_name_owned,

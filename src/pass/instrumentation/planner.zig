@@ -708,7 +708,12 @@ test "InstrumentationPlan - selection with budget" {
     // Create dummy context and diag for the test
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
-    var ctx = PassContext.init(std.testing.allocator);
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = @import("../../query/engine.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+    var data_flow_graph = try @import("../../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer ctx.deinit();
     var diag = DiagnosticWriter.init(std.testing.allocator);
     defer diag.deinit();

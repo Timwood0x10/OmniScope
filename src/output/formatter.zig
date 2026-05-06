@@ -138,7 +138,7 @@ pub const Formatter = struct {
                 '\t' => try writer.writeAll("\\t"),
                 else => {
                     if (c < 0x20) {
-                        try writer.print("\\u{X:0>4}", .{c});
+                        try writer.print("\\u{x:0>4}", .{c});
                     } else {
                         try writer.writeByte(c);
                     }

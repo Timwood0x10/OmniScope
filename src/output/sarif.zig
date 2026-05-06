@@ -256,6 +256,6 @@ fn writeUint64(writer: anytype, v: u64) !void {
 
 fn writeFloat(writer: anytype, v: f64) !void {
     var buf: [32]u8 = undefined;
-    const result = std.fmt.bufPrint(&buf, "{d}", .{v}) catch unreachable;
+    const result = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return error.OutOfMemory;
     try writer.writeAll(result);
 }
