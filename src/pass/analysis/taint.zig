@@ -487,7 +487,7 @@ test "TaintPass - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const pass = TaintPass.init(&store);
+    const pass = TaintPass.init(&store, std.testing.allocator);
     _ = pass;
 }
 

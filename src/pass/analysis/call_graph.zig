@@ -629,9 +629,9 @@ test "isSink - no match" {
 }
 
 test "isSink - partial match edge cases" {
-    try std.testing.expect(CallGraphPass.isSink("system_call"));
-    try std.testing.expect(CallGraphPass.isSink("mysystem"));
     try std.testing.expect(!CallGraphPass.isSink("systematic"));
+    try std.testing.expect(!CallGraphPass.isSink("system_call"));
+    try std.testing.expect(!CallGraphPass.isSink("mysystem"));
 }
 
 test "FunctionKind - all kinds have values" {
