@@ -539,6 +539,7 @@ test "Issue - hasTrace" {
         .trace = &[_]TraceEntry{},
         .owned = false,
         .function_owned = false,
+        .classification = .local_only,
     };
     try std.testing.expect(!issue2.hasTrace());
 }

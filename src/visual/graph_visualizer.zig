@@ -48,6 +48,7 @@ pub const GraphKind = enum {
     use_after_free,
     double_free,
     cross_language_leak,
+    cross_language_free,
     malloc_unchecked,
     null_dereference,
     invalid_free,
@@ -126,6 +127,7 @@ pub const GraphVisualizer = struct {
         while (fiter.next()) |entry| {
             // Deep copy issues slice to avoid dangling reference after func_map deinit.
             const issues_copy = try self.allocator.alloc(GraphIssue, entry.value_ptr.items.len);
+            errdefer self.allocator.free(issues_copy);
             @memcpy(issues_copy, entry.value_ptr.items);
             try func_list.append(self.allocator, .{ .name = entry.key_ptr.*, .issues = issues_copy });
         }
@@ -286,6 +288,7 @@ fn isMemoryKind(kind: GraphKind) bool {
         .use_after_free,
         .double_free,
         .cross_language_leak,
+        .cross_language_free,
         .malloc_unchecked,
         .null_dereference,
         .invalid_free,
@@ -297,7 +300,7 @@ fn isMemoryKind(kind: GraphKind) bool {
 
 fn kindToColor(kind: GraphKind) []const u8 {
     return switch (kind) {
-        .memory_leak, .cross_language_leak => "#f39c12",
+        .memory_leak, .cross_language_leak, .cross_language_free => "#f39c12",
         .use_after_free, .borrow_escape => "#e94560",
         .double_free => "#e74c3c",
         .malloc_unchecked, .null_dereference => "#9b59b6",

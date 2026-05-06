@@ -342,6 +342,7 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .use_after_free => .use_after_free,
         .double_free => .double_free,
         .cross_language_leak => .cross_language_leak,
+        .cross_language_free => .cross_language_free,
         .malloc_unchecked => .malloc_unchecked,
         .null_dereference => .null_dereference,
         .invalid_free => .invalid_free,

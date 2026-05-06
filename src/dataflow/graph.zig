@@ -165,23 +165,21 @@ pub const DataFlowGraph = struct {
         const edge_index = self.edges.items.len;
         try self.edges.append(self.allocator, edge);
 
-        // Update indices
+        // Update indices - allocate new list before freeing old
         if (self.outgoing_edges.get(edge.from)) |outgoing| {
             const new_list = try self.allocator.alloc(u32, outgoing.len + 1);
-            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..outgoing.len], outgoing);
             new_list[@intCast(outgoing.len)] = @intCast(edge_index);
-            self.allocator.free(outgoing);
             try self.outgoing_edges.put(edge.from, new_list);
+            self.allocator.free(outgoing);  // Free old after successful put
         }
 
         if (self.incoming_edges.get(edge.to)) |incoming| {
             const new_list = try self.allocator.alloc(u32, incoming.len + 1);
-            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..incoming.len], incoming);
             new_list[@intCast(incoming.len)] = @intCast(edge_index);
-            self.allocator.free(incoming);
             try self.incoming_edges.put(edge.to, new_list);
+            self.allocator.free(incoming);  // Free old after successful put
         }
     }
 
@@ -544,6 +542,7 @@ pub const DataFlowGraph = struct {
         malloc_unchecked: usize,
         callback_mismatch: usize,
         cross_language_leak: usize,
+        cross_language_free: usize,
         static_buffer_misuse: usize,
         unknown: usize,
 
@@ -572,6 +571,7 @@ pub const DataFlowGraph = struct {
             .malloc_unchecked = 0,
             .callback_mismatch = 0,
             .cross_language_leak = 0,
+            .cross_language_free = 0,
             .static_buffer_misuse = 0,
             .unknown = 0,
         };
@@ -591,6 +591,7 @@ pub const DataFlowGraph = struct {
                 .unchecked_return => stats.unchecked_return += 1,
                 .malloc_unchecked => stats.malloc_unchecked += 1,
                 .callback_signature_mismatch => stats.callback_mismatch += 1,
+                .cross_language_free => stats.cross_language_free += 1,
                 .static_buffer_misuse => stats.static_buffer_misuse += 1,
                 .unknown => stats.unknown += 1,
             }
