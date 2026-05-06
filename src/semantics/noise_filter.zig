@@ -112,10 +112,20 @@ const RUST_STDLIB_PREFIXES = [_][]const u8{
 
     // Compiler-generated patterns
     "__rust_",
-    "_RNv", // Rust name versioning
     "$LT$core", // Generic core types
     "$LT$alloc", // Generic alloc types
     "$LT$std", // Generic std types
+};
+
+/// Rust v0 mangling stdlib prefixes (_RNv + crate name).
+/// Only _RNv + core/alloc/std is stdlib — user crates like _RNvXs...MyCrate are user code.
+const RUST_V0_STDLIB_PREFIXES = [_][]const u8{
+    "_RNvN4core",
+    "_RNvN5alloc",
+    "_RNvN3std",
+    "_RNvXsX_N4core",
+    "_RNvXsX_N5alloc",
+    "_RNvXsX_N3std",
 };
 
 /// Rust standard library substrings to skip.
@@ -243,7 +253,8 @@ const CPP_COMPILER_PATTERNS = [_][]const u8{
     "_ZNSt", // std namespace mangled
 
     // RAII/destructor glue
-    "_ZN", // All mangled names starting with _ZN (could be destructor)
+    // Note: _ZN is NOT listed here — it matches all mangled user code.
+    // Destructor patterns D0Ev/D1Ev/D2Ev are sufficient for compiler-generated detection.
     "D0Ev", // Deleting destructor
     "D1Ev", // Complete object destructor
     "D2Ev", // Base object destructor
@@ -468,7 +479,18 @@ pub const Language = enum(u8) {
 
 /// Classify a Rust function by name patterns.
 fn classifyRustFunction(func_name: []const u8) ClassificationResult {
-    // Check stdlib prefixes FIRST (more specific than compiler patterns)
+    // Check v0 mangling stdlib prefixes first (most specific for _RNv patterns)
+    for (RUST_V0_STDLIB_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .stdlib,
+                .risk_level = .low,
+                .reason = "Rust standard library (v0 mangling)",
+            };
+        }
+    }
+
+    // Check stdlib prefixes (legacy C++ mangling)
     for (RUST_STDLIB_PREFIXES) |prefix| {
         if (std.mem.startsWith(u8, func_name, prefix)) {
             return .{
@@ -1008,5 +1030,22 @@ test "auto language detection - Rust" {
 
 test "auto language detection - C++" {
     const result = classifyFunction("_Z9myProcessv", null);
+    try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "_RNv v0 mangling: user crate not classified as stdlib" {
+    const result = classifyFunction("_RNvXsX_NtNtCs7MyCrate3ffi4cb_handler", null);
+    try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "_RNv v0 mangling: core/alloc/std classified as stdlib" {
+    const core = classifyFunction("_RNvXsX_N4core3fmt3Debug", null);
+    try std.testing.expectEqual(FunctionOrigin.stdlib, core.origin);
+    const alloc = classifyFunction("_RNvXsX_N5alloc3ffi", null);
+    try std.testing.expectEqual(FunctionOrigin.stdlib, alloc.origin);
+}
+
+test "_ZN not in CPP_COMPILER_PATTERNS indexOf" {
+    const result = classifyCppFunction("_ZN4myapp4mainE");
     try std.testing.expectEqual(FunctionOrigin.user, result.origin);
 }

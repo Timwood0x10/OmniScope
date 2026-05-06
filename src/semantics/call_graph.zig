@@ -172,7 +172,7 @@ pub const CallGraph = struct {
             .id = id,
             .func_ref = func_ref,
             .name = try graph.allocator.dupe(u8, name),
-            .param_count = if (func_ref != null) c.LLVMCountParams(func_ref) else 0,
+            .param_count = 0,
             .is_external = is_external,
             .is_ffi_boundary = is_ffi_boundary,
             .outgoing_edges = std.ArrayList(u64).initCapacity(graph.allocator, 4) catch return error.OutOfMemory,
