@@ -215,9 +215,19 @@ pub const OutputParamClassifier = struct {
         return false;
     }
 
-    /// Checks if a function has output parameters (simple name-based check).
+    /// Checks if a function has output parameters (function-level + param-level).
+    /// Function-level check uses known_output_param_families knowledge base.
+    /// Param-level check uses name heuristics (pp*, out*, result*, etc.)
     pub fn hasOutputParams(func_name: []const u8, param_names: []const []const u8) bool {
-        _ = func_name;
+        // Strategy 1: Check known function families first (more reliable)
+        for (known_output_param_families) |family| {
+            if (std.mem.startsWith(u8, func_name, family.prefix) and
+                family.output_param_index != 0xFFFF)
+            {
+                return true;
+            }
+        }
+        // Strategy 2: Fall back to parameter name heuristics
         for (param_names) |pname| {
             if (isOutputParamName(pname)) return true;
         }

@@ -185,6 +185,10 @@ pub const IssueKind = enum {
     invalid_free,
     /// Static buffer misuse - thread-unsafe functions like ctime, strerror (CWE-242).
     static_buffer_misuse,
+    /// Data race - concurrent access without synchronization (CWE-362).
+    data_race,
+    /// Thread safety violation - lock ordering, deadlock risk (CWE-807).
+    thread_safety_violation,
     /// Unknown issue type (fallback for future extensibility).
     unknown,
 
@@ -211,6 +215,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "callback_signature_mismatch",
             .invalid_free => "invalid_free",
             .static_buffer_misuse => "static_buffer_misuse",
+            .data_race => "data_race",
+            .thread_safety_violation => "thread_safety_violation",
             .unknown => "unknown",
         };
     }
@@ -239,6 +245,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => 688,
             .invalid_free => 590,
             .static_buffer_misuse => 242,
+            .data_race => 362,
+            .thread_safety_violation => 807,
             .unknown => 0,
         };
     }
@@ -266,6 +274,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
             .invalid_free => "Free called on non-malloc pointer",
             .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
+            .data_race => "Data race - concurrent access without synchronization",
+            .thread_safety_violation => "Thread safety violation - lock ordering issue or deadlock risk",
             .unknown => "Unknown issue type",
         };
     }

@@ -355,6 +355,8 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .format_string => .format_string,
         .callback_signature_mismatch => .callback_signature_mismatch,
         .static_buffer_misuse => .static_buffer_misuse,
+        .data_race => .other,
+        .thread_safety_violation => .other,
         .unknown => .other,
     };
 }

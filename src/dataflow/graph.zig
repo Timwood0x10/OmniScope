@@ -559,6 +559,8 @@ pub const DataFlowGraph = struct {
         cross_language_leak: usize,
         cross_language_free: usize,
         static_buffer_misuse: usize,
+        data_race: usize,
+        thread_safety_violation: usize,
         unknown: usize,
 
         /// C4-4: FunctionOrigin grouping for output summary
@@ -588,6 +590,8 @@ pub const DataFlowGraph = struct {
             .cross_language_leak = 0,
             .cross_language_free = 0,
             .static_buffer_misuse = 0,
+            .data_race = 0,
+            .thread_safety_violation = 0,
             .unknown = 0,
         };
         for (self.issues.items) |issue| {
@@ -608,6 +612,8 @@ pub const DataFlowGraph = struct {
                 .callback_signature_mismatch => stats.callback_mismatch += 1,
                 .cross_language_free => stats.cross_language_free += 1,
                 .static_buffer_misuse => stats.static_buffer_misuse += 1,
+                .data_race => stats.data_race += 1,
+                .thread_safety_violation => stats.thread_safety_violation += 1,
                 .unknown => stats.unknown += 1,
             }
 

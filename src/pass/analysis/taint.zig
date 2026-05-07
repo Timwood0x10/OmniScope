@@ -531,7 +531,7 @@ test "TaintPass - emit taint fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Emit taint fact
@@ -578,7 +578,7 @@ test "TaintPass - taint source tracking" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Add taint sources
@@ -596,7 +596,7 @@ test "TaintPass - taint sink tracking" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Add taint sinks
@@ -612,7 +612,7 @@ test "TaintPass - taint graph propagation" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Mark a value as tainted
@@ -637,7 +637,7 @@ test "TaintPass - complex taint scenario" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Simulate a complex taint scenario:
@@ -685,7 +685,7 @@ test "TaintPass - taint reaching sink" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = TaintPass.init(&store);
+    var pass = TaintPass.init(&store, std.testing.allocator);
     pass.func_id = 1;
 
     // Add source and sink

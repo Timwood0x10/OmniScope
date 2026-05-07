@@ -623,8 +623,6 @@ pub fn detectDoubleFree(
             };
 
             ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
-            ctx.allocator.free(msg);
-
             diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
             diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
@@ -709,7 +707,7 @@ pub fn detectUseAfterFree(
 
 fn hasUseAfterFree(
     freed_ptr: u32,
-    flow: std.AutoHashMap(u32, void),
+    flow: *const std.AutoHashMap(u32, void),
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     visited: *std.AutoHashMap(u32, void),
 ) bool {
@@ -890,11 +888,14 @@ pub fn detectResourceLeaks(
             if (has_alloc and !has_free) {
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
-                const msg = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch "Resource leak detected";
-                ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(func_name), .medium, 0.75)) catch {};
-                if (!std.mem.eql(u8, msg, "Resource leak detected")) {
-                    ctx.allocator.free(msg);
-                }
+                const is_heap_msg: bool = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch {
+                    ctx.addIssue(&Issue.init(.memory_leak, "Resource leak detected", Location.init(func_name), .medium, 0.75)) catch {};
+                    diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
+                    continue;
+                };
+                ctx.addIssue(&Issue.init(.memory_leak, is_heap_msg, Location.init(func_name), .medium, 0.75)) catch {
+                    ctx.allocator.free(is_heap_msg);
+                };
                 diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
             }
         }

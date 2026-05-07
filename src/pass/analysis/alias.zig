@@ -326,7 +326,7 @@ test "AliasPass - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const pass = AliasPass.init(&store);
+    const pass = AliasPass.init(std.testing.allocator, &store);
     _ = pass;
 }
 
@@ -367,7 +367,7 @@ test "AliasPass - emit alias_may fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit alias_may fact
@@ -386,7 +386,7 @@ test "AliasPass - emit alias_must fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit alias_must fact
@@ -405,7 +405,7 @@ test "AliasPass - multiple alias facts" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit multiple alias facts
@@ -430,7 +430,7 @@ test "AliasPass - function ID tracking" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 42;
 
     try pass.store.insert(.alias_may, 1, 2, 42);
@@ -443,7 +443,7 @@ test "AliasPass - type cache consistency" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create dummy types
@@ -466,7 +466,7 @@ test "AliasPass - pointer info map consistency" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create dummy pointers
@@ -504,7 +504,7 @@ test "AliasPass - complex alias graph" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create a complex alias graph:

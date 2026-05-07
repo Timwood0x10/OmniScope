@@ -106,7 +106,7 @@ pub fn rustOwnershipHook(ctx: *types.HookContext) types.HookResult {
                 isOwnershipMethodBoundary(callee_name, pat));
         if (is_match) {
             if (rust_state_initialized) {
-                rust_transfer_map.put(ptr_key, {}) catch {};
+                rust_transfer_map.put(ptr_key, {}) catch return .issue_found;
             }
             return .none; // Don't flag yet — wait to see if from_raw pairs it
         }

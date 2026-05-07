@@ -370,7 +370,7 @@ fn reportUnsyncedWrite(
     );
 
     const issue = Issue.initWithTrace(
-        .buffer_overflow,
+        .data_race,
         message,
         location,
         .high,
@@ -410,7 +410,7 @@ fn reportLockRisk(
     );
 
     const issue = Issue.initWithTrace(
-        .buffer_overflow,
+        .thread_safety_violation,
         message,
         location,
         .medium,

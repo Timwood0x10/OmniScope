@@ -430,7 +430,7 @@ test "LockPass - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const pass = LockPass.init(&store);
+    const pass = LockPass.init(std.testing.allocator, &store);
     _ = pass;
 }
 
@@ -452,7 +452,7 @@ test "LockPass - emit lock_acquire fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit lock_acquire fact
@@ -471,7 +471,7 @@ test "LockPass - emit lock_release fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit lock_release fact
@@ -490,7 +490,7 @@ test "LockPass - lock operation tracking" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create lock operations
@@ -526,7 +526,7 @@ test "LockPass - lock ID mapping" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
 
     // Create dummy lock objects
     const lock1: c.LLVMValueRef = @ptrFromInt(0x1000);
@@ -552,7 +552,7 @@ test "LockPass - lock ID map consistency" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
 
     // Create dummy lock objects
     const lock1: c.LLVMValueRef = @ptrFromInt(0x1000);
@@ -589,7 +589,7 @@ test "LockPass - lock acquire vs release detection" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
 
     // Test lock acquire and release detection through function names
     // The implementation checks for "lock" in name and not "unlock"
@@ -605,7 +605,7 @@ test "LockPass - complex deadlock scenario" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = LockPass.init(&store);
+    var pass = LockPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Simulate a potential deadlock:

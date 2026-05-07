@@ -1314,7 +1314,7 @@ pub const PointerOwnershipPass = struct {
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         visited: *std.AutoHashMap(u32, void),
     ) bool {
-        return cpp_fp.hasUseAfterFree(freed_ptr, flow, flow_graph, visited);
+        return cpp_fp.hasUseAfterFree(freed_ptr, &flow, flow_graph, visited);
     }
     fn isMemoryAccess(value_id: u32) bool {
         // Check if value_id corresponds to a memory access instruction.

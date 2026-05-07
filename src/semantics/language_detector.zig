@@ -370,7 +370,7 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         // We scan for them by checking function names directly since
         // LLVM-C doesn't expose a direct "getPersonality" API in older versions.
 
-        if (std.mem.eql(u8, name, "@rust_eh_personality") or
+        if (std.mem.eql(u8, name, "rust_eh_personality") or
             std.mem.indexOf(u8, name, "rust_eh_personality") != null)
         {
             rust_score += PERSONALITY_WEIGHT;
