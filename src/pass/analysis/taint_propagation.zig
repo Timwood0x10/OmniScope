@@ -19,6 +19,10 @@ const call_graph = @import("./call_graph.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const Issue = @import("../../diag/issue.zig").Issue;
+const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const IssueSeverity = @import("../../diag/issue.zig").Severity;
+const Location = @import("../../diag/issue.zig").Location;
 const TaintContext = @import("./taint_state.zig").TaintContext;
 const FactStore = @import("../../fact/store.zig").FactStore;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
@@ -114,7 +118,11 @@ pub const TaintPropagationPass = struct {
         var inst_count: u32 = 0;
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
+            // BUG-05/07/12 FIX: Taint propagation must analyze ALL functions, not just
+            // danger-surface-relevant ones. Source functions (fgets, read) and sinks
+            // (system, printf) may live in ANY function — skipping non-"relevant" ones
+            // breaks the entire source→sink detection chain.
+            // Original: if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
             try propagateThroughFunction(ctx, taint_ctx, sanitizer_registry, func, &inst_count, diag);
         }
 
@@ -163,7 +171,7 @@ pub const TaintPropagationPass = struct {
             .cast => try handleCast(taint_ctx, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
             .arithmetic => try handleArithmetic(taint_ctx, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
             .memory => try handleMemoryOp(taint_ctx, inst, opcode, ctx.getValueId(@intFromPtr(inst)) catch return),
-            .call => try handleCall(taint_ctx, sanitizer_registry, path_manager, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
+            .call => try handleCall(ctx, taint_ctx, sanitizer_registry, path_manager, inst, ctx.getValueId(@intFromPtr(inst)) catch return),
             .aggregate => try handleAggregate(taint_ctx, inst, opcode, ctx.getValueId(@intFromPtr(inst)) catch return),
         }
     }
@@ -307,12 +315,126 @@ pub const TaintPropagationPass = struct {
         }
     }
 
-    fn handleCall(taint_ctx: *TaintContext, sanitizer_registry: *SanitizerRegistry, path_manager: ?*PathManager, inst: c.LLVMValueRef, next_id: u32) !void {
+    fn handleCall(ctx: *PassContext, taint_ctx: *TaintContext, sanitizer_registry: *SanitizerRegistry, path_manager: ?*PathManager, inst: c.LLVMValueRef, next_id: u32) !void {
+        _ = path_manager;
         const called_value = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_value) == 0) return;
 
         const called_name_ptr = c.LLVMGetValueName(called_value);
         const called_func_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else "";
+
+        // If this call is TO a source function (fgets, read, getenv, etc.),
+        // mark all actual arguments as tainted sources.
+        // This bridges the gap between formal params (marked by markFunctionParametersTainted)
+        // and actual args at call sites (what we see during propagation).
+        if (called_func_name.len > 0 and isSource(called_func_name)) {
+            const num_ops = c.LLVMGetNumOperands(inst);
+            var k: u32 = 0;
+            while (k < num_ops) : (k += 1) {
+                const arg = c.LLVMGetOperand(inst, k);
+                const arg_val = @intFromPtr(arg);
+                if (arg_val == 0) continue;
+                const arg_id = try taint_ctx.getValueIdFromUsize(arg_val);
+                const src_info = TaintInfo{
+                    .id = next_id,
+                    .state = .source,
+                    .source_id = null,
+                    .confidence = 1.0,
+                };
+                try taint_ctx.setValueTaint(arg_id, src_info);
+            }
+        }
+
+        // BUG-05/07/12 FIX: Check for tainted data reaching dangerous sinks BEFORE
+        // the sanitizer check (which may return early). This ensures we detect
+        // command injection and format string vulnerabilities even when the
+        // function is also classified as a sanitizer (e.g., snprintf).
+        if (called_func_name.len > 0) {
+            const num_ops = c.LLVMGetNumOperands(inst);
+            var tainted_arg_idx: ?u32 = null;
+            var max_taint_conf: f32 = 0.0;
+
+            var j: u32 = 0;
+            while (j < num_ops) : (j += 1) {
+                const op = c.LLVMGetOperand(inst, j);
+                const op_val = @intFromPtr(op);
+                if (op_val == 0) continue;
+                const op_id = try taint_ctx.getValueIdFromUsize(op_val);
+                if (taint_ctx.getValueTaint(op_id)) |info| {
+                    if (info.state == .source or info.state == .tainted) {
+                        if (info.confidence > max_taint_conf) {
+                            max_taint_conf = info.confidence;
+                            tainted_arg_idx = j;
+                        }
+                    }
+                }
+            }
+
+            if (tainted_arg_idx) |arg_idx| {
+                // Normalize: strip \01 prefix from mangled/internal symbols
+                const normalized = if (called_func_name.len > 0 and called_func_name[0] == '\x01')
+                    called_func_name[1..]
+                else
+                    called_func_name;
+                const is_cmd = std.mem.indexOf(u8, normalized, "system") != null or
+                    std.mem.indexOf(u8, normalized, "exec") != null or
+                    std.mem.indexOf(u8, normalized, "popen") != null;
+                // Match both vanilla (sprintf) and FORTIFY (__sprintf_chk) variants
+                const is_fmt = std.mem.indexOf(u8, normalized, "printf") != null or
+                    std.mem.indexOf(u8, normalized, "sprintf") != null or
+                    std.mem.indexOf(u8, normalized, "snprintf") != null;
+
+                if (is_cmd) {
+                    const msg = try std.fmt.allocPrint(ctx.allocator, "Command injection risk: tainted user input passed to {s}() — attacker may execute arbitrary commands", .{called_func_name});
+                    defer ctx.allocator.free(msg);
+                    var issue = Issue.init(
+                        .command_injection,
+                        msg,
+                        Location.init(called_func_name),
+                        IssueSeverity.critical,
+                        max_taint_conf,
+                    );
+                    issue.owned = false;
+                    try ctx.addIssue(&issue);
+                } else if (is_fmt and arg_idx == 0) {
+                    const fmt_op = c.LLVMGetOperand(inst, 0);
+                    const is_literal = c.LLVMIsAConstantDataSequential(fmt_op) != null or
+                        c.LLVMIsAConstantAggregateZero(fmt_op) != null;
+                    if (!is_literal) {
+                        const msg = try std.fmt.allocPrint(ctx.allocator, "Format string vulnerability: tainted data used as format string in {s}()", .{called_func_name});
+                        defer ctx.allocator.free(msg);
+                        var issue = Issue.init(
+                            .format_string,
+                            msg,
+                            Location.init(called_func_name),
+                            IssueSeverity.high,
+                            max_taint_conf,
+                        );
+                        issue.owned = false;
+                        try ctx.addIssue(&issue);
+                    }
+                }
+
+                // Taint propagation for sprintf/snprintf: the destination buffer (operand 0)
+                // receives tainted data from other arguments via internal side effect.
+                // Without this, system(cmd) won't see %cmd as tainted because sprintf's
+                // internal store to %cmd is invisible at IR level.
+                if (is_fmt and num_ops >= 2 and arg_idx > 0) {
+                    const dest_op = c.LLVMGetOperand(inst, 0);
+                    const dest_val = @intFromPtr(dest_op);
+                    if (dest_val != 0) {
+                        const dest_id = try taint_ctx.getValueIdFromUsize(dest_val);
+                        const prop_info = TaintInfo{
+                            .id = next_id,
+                            .state = .tainted,
+                            .source_id = null,
+                            .confidence = max_taint_conf * CONFIDENCE_DECAY,
+                        };
+                        try taint_ctx.setValueTaint(dest_id, prop_info);
+                    }
+                }
+            }
+        }
 
         // Check if this is a sanitizer function
         if (called_func_name.len > 0 and sanitizer_registry.isSanitizer(called_func_name)) {
@@ -357,35 +479,18 @@ pub const TaintPropagationPass = struct {
             return;
         }
 
-        // Check if this is a dangerous sink (known risky function in registry)
+        // Check if this is a dangerous sink (known risky function in registry).
+        // Mark return value as tainted (issue emission handled above, before sanitizer check).
         if (called_func_name.len > 0) {
             const sem = SemanticRegistry.lookup(called_func_name) orelse return;
             const is_dangerous = sem.severity == .critical or sem.severity == .high;
             if (!is_dangerous) return;
-            var confidence: f32 = 1.0;
-
-            // Reduce confidence if path conditions indicate safety
-            if (path_manager) |pm| {
-                const num_operands = c.LLVMGetNumOperands(inst);
-                var i: u32 = 0;
-                while (i < num_operands) : (i += 1) {
-                    const operand = c.LLVMGetOperand(inst, i);
-                    const operand_val = @intFromPtr(operand);
-                    if (operand_val == 0) continue;
-                    const operand_id = try taint_ctx.getValueIdFromUsize(operand_val);
-
-                    // If we know the pointer is not null on this path, reduce risk
-                    if (pm.isPtrNonNull(operand_id)) {
-                        confidence *= 0.7;
-                    }
-                }
-            }
 
             const new_info = TaintInfo{
                 .id = next_id,
                 .state = .tainted,
                 .source_id = null,
-                .confidence = confidence,
+                .confidence = 1.0,
             };
             const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
             try taint_ctx.setValueTaint(inst_id, new_info);

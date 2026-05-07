@@ -146,20 +146,23 @@ pub const SOURCE_FUNCTIONS = &[_][]const u8{
     "read",
     "recv",
     "gets",
+    "fgets",     // BUG-05/12 FIX: reads from stdin/file → taint source for command injection
     "scanf",
-    "main",
+    "getenv",     // BUG-05 FIX: environment variable → taint source
+    "main",       // argv parameters are user-controlled
 };
 
 /// Substring patterns that indicate dangerous sink functions.
 /// Used to detect potential vulnerability paths.
 pub const SINK_PATTERNS = &[_][]const u8{
-    "system",
-    "exec",
-    "popen",
-    "sprintf",
-    "snprintf",
-    "strcpy",
-    "strncpy",
+    "system",     // command execution sink (BUG-05, BUG-12)
+    "exec",       // exec* family command execution
+    "popen",      // pipe+command execution sink (BUG-12)
+    "sprintf",    // format string sink (also buffer overflow risk)
+    "snprintf",   // format string sink (safer but still risky with tainted input)
+    "printf",     // BUG-07 FIX: format string vulnerability when 1st arg is tainted
+    "strcpy",     // buffer overflow / memory corruption sink
+    "strncpy",    // buffer overflow sink
 };
 
 /// A node in the call graph representing a function.
