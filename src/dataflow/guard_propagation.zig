@@ -64,8 +64,9 @@ pub const GuardPropagation = struct {
     pub fn propagate(self: *GuardPropagation, func: c.LLVMValueRef, recognizer: *NullCheckRecognizer) !void {
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            const bb_id = @intFromPtr(bb);
-            try self.propagateFromBasicBlock(bb, bb_id, recognizer);
+            // Issue3 FIX: Removed unused bb_id parameter from propagateFromBasicBlock.
+            // The function now determines branch direction solely from guard.is_null_branch.
+            try self.propagateFromBasicBlock(bb, recognizer);
         }
 
         try self.propagateThroughPhis(func);
@@ -74,17 +75,24 @@ pub const GuardPropagation = struct {
     fn propagateFromBasicBlock(
         self: *GuardPropagation,
         bb: c.LLVMBasicBlockRef,
-        bb_id: usize,
         recognizer: *NullCheckRecognizer,
     ) !void {
+        // Issue3 FIX: Removed unused bb_id parameter (was only used in old branch direction logic).
         if (recognizer.getGuardForBlock(@intFromPtr(bb))) |guard| {
             const true_bb_id = guard.branch_bb_id;
             const false_bb_id = guard.other_bb_id;
 
-            if (true_bb_id == bb_id) {
+            // H5 FIX: Use is_null_branch to determine which branch gets which condition.
+            // Previous code assumed true_bb_id is always the null branch, which is incorrect.
+            // The guard's is_null_branch flag tells us the semantic meaning of the branch.
+            if (guard.is_null_branch) {
+                // Null check pattern: if (ptr == null) goto true_bb; else goto false_bb
+                // → ptr is null in true_bb, ptr is not null in false_bb
                 try self.addNullPtr(true_bb_id, guard.value_id);
                 try self.addNonNullPtr(false_bb_id, guard.value_id);
             } else {
+                // Non-null check pattern: if (ptr != null) goto true_bb; else goto false_bb
+                // → ptr is not null in true_bb, ptr is null in false_bb
                 try self.addNonNullPtr(true_bb_id, guard.value_id);
                 try self.addNullPtr(false_bb_id, guard.value_id);
             }

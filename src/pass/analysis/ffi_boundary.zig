@@ -444,7 +444,9 @@ pub const FFIBoundaryPass = struct {
     /// Returns true if format string is provably constant (safe from injection).
     fn isFormatStringConstant(inst: c.LLVMValueRef) bool {
         if (c.LLVMGetNumOperands(inst) < 2) return false;
-        const fmt_arg = c.LLVMGetOperand(inst, 1);
+        // H18 FIX: Format string is operand 0 for printf-like functions, NOT operand 1.
+        // Comment at line 394 says "operand 0" but code incorrectly used operand 1.
+        const fmt_arg = c.LLVMGetOperand(inst, 0);
         if (@intFromPtr(fmt_arg) == 0) return false;
 
         // Case 1: GEP wrapping a global constant (most common pattern)

@@ -918,7 +918,15 @@ fn classifyCFunction(func_name: []const u8) ZoneKind {
     if (std.mem.indexOf(u8, func_name, "_handler") != null) return .ffi;
     if (std.mem.indexOf(u8, func_name, "_hook") != null) return .ffi;
 
-    if (std.mem.indexOf(u8, func_name, "_init") != null) return .ffi;
+    // M17 FIX: Use word-boundary matching for _init to avoid false positives.
+    // Previous code matched "_init" as substring, causing "initialize" to be classified as FFI.
+    // Now check that _init is followed by non-alphanumeric character (word boundary).
+    if (std.mem.indexOf(u8, func_name, "_init")) |idx| {
+        const next_idx = idx + "_init".len;
+        if (next_idx >= func_name.len or !isAlphaNumeric(func_name[next_idx])) {
+            return .ffi;
+        }
+    }
     if (std.mem.indexOf(u8, func_name, "_cleanup") != null) return .ffi;
     if (std.mem.indexOf(u8, func_name, "_destroy") != null) return .ffi;
 

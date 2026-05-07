@@ -89,11 +89,10 @@ pub const RustFfiAuditor = struct {
     }
 
     pub fn deinit(self: *RustFfiAuditor) void {
-        for (self.findings.items) |finding| {
-            // func_name and reason are allocator-owned slices from allocPrint/Location.init
-            self.allocator.free(finding.func_name);
-            self.allocator.free(finding.reason);
-        }
+        // C4 FIX: Don't free func_name and reason - they are NOT owned by this struct.
+        // - func_name comes from LLVMGetValueName (LLVM-owned, must not free)
+        // - reason is always a string literal (comptime, must not free)
+        // Only the findings ArrayList itself was allocated by us.
         self.findings.deinit(self.allocator);
     }
 
@@ -909,8 +908,8 @@ pub fn isCFreeCall(callee_name: []const u8) bool {
 /// Check if a callee name is a Rust allocator call (_Znwm, __rust_alloc, etc.)
 pub fn isRustAllocCall(callee_name: []const u8) bool {
     const rust_alloc_patterns = [_][]const u8{
-        "_Znwm",    // operator new(unsigned long) - Rust's default allocator
-        "_Znw",     // operator new variants
+        "_Znwm", // operator new(unsigned long) - Rust's default allocator
+        "_Znw", // operator new variants
         "__rust_alloc",
         "__rust_alloc_zeroed",
         "alloc::alloc::alloc",

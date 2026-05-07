@@ -275,8 +275,11 @@ pub const BoundaryAnalyzer = struct {
 
 /// Detect language from function name patterns.
 pub fn detectLanguage(func_name: []const u8) LanguageHint {
+    // M23 FIX: _ZN is C++ Itanium ABI prefix (nested names), NOT Rust.
+    // Rust uses _ZN in older v0 mangling but modern Rust uses _RNv or other prefixes.
+    // C++ consistently uses _ZN for all mangled names with namespaces/classes.
     if (std.mem.startsWith(u8, func_name, "_ZN")) {
-        return .rust;
+        return .cpp; // Changed from .rust to .cpp
     }
     if (std.mem.startsWith(u8, func_name, "_Z")) {
         return .cpp;

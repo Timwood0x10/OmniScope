@@ -359,20 +359,21 @@ pub const DataFlowGraph = struct {
         errdefer self.allocator.free(message_copy);
 
         var func_copy: ?[]u8 = null;
-        errdefer {
-            if (func_copy) |f| self.allocator.free(f);
-        }
-
         var trace_copy: ?[]TraceEntry = null;
+
+        // ERRDEFER cleanup for partial allocations on OOM
+        // Only cleans up if function returns error (not on success path)
         errdefer {
             if (trace_copy) |t| {
-                // Free each TraceEntry's owned description
                 for (t) |*entry| {
                     if (entry.owned and entry.description.len > 0) {
                         self.allocator.free(entry.description);
                     }
                 }
                 self.allocator.free(t);
+            }
+            if (func_copy) |f| {
+                self.allocator.free(f);
             }
         }
 

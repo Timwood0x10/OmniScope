@@ -485,24 +485,43 @@ pub const PassContext = struct {
         if (issue.severity != .critical) {
             const gop = try self.reported_keys.getOrPut(dedup_key);
             if (gop.found_existing) {
-                var dup = issue.*;
-                dup.deinit(self.allocator);
+                // H1 FIX v2: On dedup, free owned memory to prevent leak.
+                // When issue.owned=true, the caller has transferred ownership to us.
+                // If we return without freeing, msg/trace allocated by the caller leak.
+                // The previous H1 fix avoided freeing to prevent double-free with callers
+                // that manage their own memory (owned=false). Now we respect the owned flag:
+                //   - owned=true:  we own it, we free it here (caller expects transfer)
+                //   - owned=false: caller owns it, caller will free it themselves
+                if (issue.owned) {
+                    var mutable_issue = issue.*;
+                    mutable_issue.deinit(self.allocator);
+                }
                 return;
             }
         }
 
         // Adjust severity based on risk level when downgraded.
         var final_issue = issue.*;
-        if (@intFromEnum(risk) > @intFromEnum(issue.severity)) {
-            // Risk level is lower than original severity — downgrade.
-            // Map RiskLevel back to Severity for the issue.
-            final_issue.severity = switch (risk) {
-                .critical => .critical,
-                .high => .high,
-                .medium => .medium,
-                .low => .low,
-                .suppressed => unreachable, // handled above
-            };
+        // C1 FIX v2: Use explicit severity ordering comparison instead of fragile @intFromEnum.
+        // This is more readable and won't break if enum values are reordered in the future.
+        // Severity order (highest to lowest): critical > high > medium > low
+        // Downgrade only when risk level is strictly lower than issue's current severity.
+        const risk_severity: DiagSeverity = switch (risk) {
+            .critical => .critical,
+            .high => .high,
+            .medium => .medium,
+            .low => .low,
+            .suppressed => .low, // suppressed maps to lowest effective severity
+        };
+        // Explicit comparison: check if risk_severity should downgrade the issue
+        const should_downgrade = switch (issue.severity) {
+            .critical => risk_severity != .critical, // anything downgrades from critical
+            .high => risk_severity == .medium or risk_severity == .low,
+            .medium => risk_severity == .low,
+            .low => false, // already lowest
+        };
+        if (should_downgrade) {
+            final_issue.severity = risk_severity;
         }
 
         // 90/10 Priority分层: Set classification based on FFI boundary reachability
@@ -510,6 +529,21 @@ pub const PassContext = struct {
         // - local_only (10%): Local memory issue → auxiliary priority
         final_issue.classification = if (on_danger_path) .ffi_boundary else .local_only;
 
+        // H2 FIX v3: Only clone message if not already owned.
+        // Root cause of leak: previous code unconditionally cloned, causing double-allocation:
+        //   - Caller allocates msg A, sets owned=true
+        //   - This code clones A → C, sets owned=true (A is now orphaned!)
+        //   - dfg.addIssue deep-copies C → D, then frees C (correct)
+        //   - graph.deinit frees D (correct)
+        //   - But A (original) leaks! Nobody frees it.
+        //
+        // Fix: If caller already owns the message (owned=true), don't clone again.
+        // Let dfg.addIssue's deep-copy + ownership transfer handle it.
+        if (!final_issue.owned) {
+            const cloned_msg = try self.allocator.dupe(u8, final_issue.message);
+            final_issue.message = cloned_msg;
+            final_issue.owned = true;
+        }
         try self.data_flow_graph.addIssue(final_issue);
     }
 

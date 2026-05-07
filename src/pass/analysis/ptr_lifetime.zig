@@ -28,6 +28,8 @@
 const std = @import("std");
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const c = @import("../../ir/llvm_raw.zig").c;
+// Issue2 FIX: Import helper for standardized CallInst argument counting
+const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
 const zone_cls = @import("../../semantics/zone_classifier.zig");
 const ZoneKind = zone_cls.ZoneKind;
@@ -827,14 +829,18 @@ pub const PtrLifetimePass = struct {
                         if (is_ffi_func) {
                             if (mg_effective) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
-                                const num_ops = c.LLVMGetNumOperands(inst);
-                                var arg_i: u32 = 1;
-                                while (arg_i < num_ops) : (arg_i += 1) {
+                                // Issue2 FIX v2: Use standardized helper for CallInst argument count.
+                                // OVERFLOW FIX: Removed (arg_i - 1) that caused integer underflow.
+                                // After standardization refactor, arg_i now starts at 0 (not 1),
+                                // so we pass arg_i directly without subtracting 1.
+                                const num_args = getCallInstArgCount(inst);
+                                var arg_i: u32 = 0;
+                                while (arg_i < num_args) : (arg_i += 1) {
                                     const arg = c.LLVMGetOperand(inst, arg_i);
                                     if (@intFromPtr(arg) == 0) continue;
                                     const arg_ptr_val = @as(u64, @intFromPtr(arg));
                                     if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
-                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i - 1) catch {};
+                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i) catch {};
                                     }
                                 }
                                 if (pointer_map.contains(inst)) {
@@ -1390,14 +1396,23 @@ pub const PtrLifetimePass = struct {
                 }
             }
 
-            // Pattern: icmp eq, 0 (RC == 0 check)
+            // Pattern: icmp eq ptr, 0 (RC == 0 / null check)
+            // H9 FIX v2: Must verify LHS is a pointer type, not just any integer comparison.
+            //   - "icmp eq ptr, 0" → null check on a pointer ✅
+            //   - "icmp eq int, 0" → integer zero comparison, NOT an RC pattern ❌
             if (opcode == c.LLVMICmp) {
-                if (c.LLVMGetNumOperands(inst) >= 2) {
-                    const rhs = c.LLVMGetOperand(inst, 1);
-                    if (c.LLVMIsAConstantInt(rhs) != null) {
-                        const val = c.LLVMConstIntGetZExtValue(rhs);
-                        if (val == 0) {
-                            has_cmp_zero = true;
+                const predicate = c.LLVMGetICmpPredicate(inst);
+                if (predicate == c.LLVMIntEQ) {
+                    if (c.LLVMGetNumOperands(inst) >= 2) {
+                        const lhs = c.LLVMGetOperand(inst, 0);
+                        const rhs = c.LLVMGetOperand(inst, 1);
+                        const lhs_type = if (@intFromPtr(lhs) != 0) c.LLVMTypeOf(lhs) else null;
+                        const lhs_is_ptr = if (lhs_type) |t| @intFromPtr(t) != 0 and c.LLVMGetTypeKind(t) == c.LLVMPointerTypeKind else false;
+                        if (lhs_is_ptr and c.LLVMIsAConstantInt(rhs) != null) {
+                            const val = c.LLVMConstIntGetZExtValue(rhs);
+                            if (val == 0) {
+                                has_cmp_zero = true;
+                            }
                         }
                     }
                 }
@@ -1493,9 +1508,10 @@ pub const PtrLifetimePass = struct {
             };
 
             if (!callee_returns_ptr) {
-                const num_ops = c.LLVMGetNumOperands(inst);
+                // Issue2 FIX: Use standardized helper for CallInst argument count.
+                const num_args = getCallInstArgCount(inst);
                 var i: u32 = 0;
-                while (i < num_ops) : (i += 1) {
+                while (i < num_args) : (i += 1) {
                     const arg = c.LLVMGetOperand(inst, i);
                     if (pointer_map.get(arg)) |ptr_info| {
                         if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {

@@ -366,7 +366,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     const timestamp = std.time.timestamp();
     const writer = output.writer();
 
-    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.6\",\"timestamp\":");
+    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.7\",\"timestamp\":");
     try writer.print("{d}", .{timestamp});
     try writer.writeAll(",\"summary\":{");
     try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });

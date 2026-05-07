@@ -614,7 +614,13 @@ pub fn detectDoubleFree(
 
             const severity: Severity = .high;
             const confidence: f32 = 0.92;
-            const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch "Double-free detected";
+            // C2 FIX: Don't free string literal on OOM path - use early return pattern
+            const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch {
+                ctx.addIssue(&Issue.init(.double_free, "Double-free detected", Location.init(first_func), severity, confidence)) catch {};
+                diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
+                diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
+                continue;
+            };
 
             ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
             ctx.allocator.free(msg);
@@ -804,7 +810,12 @@ pub fn detectLoopLeaks(
     }
 
     for (leak_candidates.items) |candidate| {
-        const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch "Loop memory leak detected";
+        // C3 FIX: Don't free string literal on OOM path - use early return pattern
+        const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch {
+            ctx.addIssue(&Issue.init(.memory_leak, "Loop memory leak detected", Location.init(candidate.func), .medium, 0.7)) catch {};
+            diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
+            continue;
+        };
         defer ctx.allocator.free(msg);
         ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
         diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });

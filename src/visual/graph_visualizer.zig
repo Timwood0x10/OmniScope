@@ -606,7 +606,7 @@ const MEMORY_JS =
     \\    for(const iss of items){const sc=SEV[iss.severity]||'#888';
     \\    h+='<div class=lifecycle-item onclick="showIssueTip(event,this)" data-msg="'+esc(iss.msg)+'" data-line='+iss.line+' data-sev='+iss.severity+' data-conf='+iss.confidence+'>';
     \\    h+='<span class=sev-dot style=background:'+sc+'></span><span class=line-num>L'+iss.line+'</span>';
-    \\    h+='<span class=issue-msg>'+(iss.msg.length>80?iss.msg.slice(0,77)+'...':esc(iss.msg))+'</span>';
+    \\    h+='<span class=issue-msg>'+esc(iss.msg.length>80?iss.msg.slice(0,77)+'...':iss.msg)+'</span>';
     \\    h+='<span class=conf>'+(iss.confidence/100).toFixed(0)+'%</span></div>';}
     \\    h+='</div>';}
     \\  if(!any)h+='<p style=color:#888>No memory issues.</p>';h+='</div>';

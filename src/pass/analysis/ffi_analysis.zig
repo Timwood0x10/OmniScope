@@ -374,16 +374,35 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn detectOwnershipMismatch(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
-        // Check for cross-language free mismatches
+        // H21 FIX: Optimize from O(N×M) Cartesian product to O(N+M) using HashMap index.
+        // Previous implementation nested loops over all allocations × all frees,
+        // comparing every pair regardless of pointer identity.
+        // New approach: Index free sites by pointer, only compare matching pairs.
+
+        // Build index: ptr_value → []FreeInfo
+        var free_index = std.AutoHashMap(u64, usize).init(self.allocator);
+        defer free_index.deinit();
+
+        {
+            var free_iter = self.free_sites.iterator();
+            var idx: usize = 0;
+            while (free_iter.next()) |entry| {
+                const ptr_val = entry.key_ptr.*;
+                try free_index.put(ptr_val, idx);
+                idx += 1;
+            }
+        }
+
+        // Now iterate allocations and check only matching frees
         var alloc_iter = self.allocation_sites.iterator();
         while (alloc_iter.next()) |alloc_entry| {
+            const ptr_val = alloc_entry.key_ptr.*;
             const alloc_info = alloc_entry.value_ptr.*;
 
-            var free_iter = self.free_sites.iterator();
-            while (free_iter.next()) |free_entry| {
-                const free_list = free_entry.value_ptr.*;
+            // Only check if this pointer has corresponding frees
+            if (free_index.get(ptr_val)) |free_idx| {
+                const free_list = self.free_sites.items[free_idx].value_ptr.*;
 
-                // Iterate through all FreeInfo entries for this pointer
                 for (free_list.items) |free_info| {
                     // Check if allocation and free are from different languages
                     if (alloc_info.language != free_info.language and
@@ -405,6 +424,7 @@ pub const FFIAnalysisPass = struct {
                     }
                 }
             }
+            // If no matching frees found, skip (no mismatch possible)
         }
     }
 

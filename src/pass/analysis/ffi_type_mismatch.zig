@@ -17,6 +17,8 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+// Issue2 FIX: Import helper for standardized CallInst argument counting
+const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -210,10 +212,11 @@ pub const FFITypeMismatchPass = struct {
         stats.ffi_boundaries_found += 1;
 
         // Check for type mismatches at each argument
-        const num_args = c.LLVMGetNumOperands(call_inst) - 1;
+        // Issue2 FIX: Use standardized helper for CallInst argument count.
+        const num_args = getCallInstArgCount(call_inst);
         var arg_idx: u32 = 0;
         while (arg_idx < num_args) : (arg_idx += 1) {
-            const arg = c.LLVMGetOperand(call_inst, arg_idx + 1);
+            const arg = c.LLVMGetOperand(call_inst, arg_idx);
             if (@intFromPtr(arg) == 0) continue;
 
             if (checkTypeMismatch(ctx, caller_name, callee_name, call_inst, arg, arg_idx, diag)) |mismatch| {

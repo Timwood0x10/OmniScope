@@ -170,6 +170,15 @@ pub const Pipeline = struct {
                     const severity: Severity = if (is_on_ffi_path) .high else .low;
                     const confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
                     if (is_on_ffi_path) confirmed_high += 1;
+
+                    // FIX: Let addIssue take ownership by setting owned=true.
+                    // Previous code used owned=false + manual free, which leaked trace[0].description.
+                    // The correct ownership model is:
+                    //   1. We allocate msg and trace (with trace[0].description)
+                    //   2. We set owned=true to indicate we own this memory
+                    //   3. addIssue deep-copies everything, then calls deinit on our original
+                    //   4. deinit frees msg + trace + trace[0].description (all owned)
+                    //   5. The graph owns the deep copies and frees them on graph.deinit
                     var issue = Issue.initWithTrace(
                         .memory_leak,
                         msg,
@@ -178,7 +187,7 @@ pub const Pipeline = struct {
                         confidence,
                         trace,
                     );
-                    issue.owned = true; // msg and trace are heap-allocated
+                    issue.owned = true; // We own msg and trace; addIssue will deep-copy then deinit our originals
                     try ctx.addIssue(&issue);
                 }
             }

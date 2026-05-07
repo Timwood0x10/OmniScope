@@ -169,6 +169,8 @@ pub const PassManager = struct {
 
         // Build and cache execution names
         var names = try std.ArrayList([]const u8).initCapacity(self.allocator, num_passes);
+        // H3 FIX: Add defer to prevent leak if loop fails mid-way
+        defer names.deinit(self.allocator);
         for (self.resolved_order.?) |idx| {
             try names.append(self.allocator, self.passes.items[idx].name);
         }

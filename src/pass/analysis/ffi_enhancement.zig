@@ -110,7 +110,7 @@ pub fn classifyRustIntrinsic(name: []const u8) IntrinsicRisk {
         "saturating_sub",       "exact_div",         "div_exact",
         "wrapping_add",         "wrapping_sub",      "wrapping_mul",
         "add_with_overflow",    "sub_with_overflow", "mul_with_overflow",
-        "carryling_mul_add",    "disjoint_bitor",    "unchecked_funnel_shl",
+        "carrying_mul_add",     "disjoint_bitor",    "unchecked_funnel_shl",
         "unchecked_funnel_shr", "carryless_mul",
     };
     for (low_intrinsics) |intr| {

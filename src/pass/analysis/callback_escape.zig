@@ -25,6 +25,8 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const word_boundary = @import("../../utils/word_boundary.zig");
+// Issue2 FIX: Import helper for standardized CallInst argument counting
+const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -714,8 +716,11 @@ pub const CallbackEscapePass = struct {
                 //   → The call is still considered protected (ptr2 is the critical one)
                 var is_this_call_protected = false;
                 {
-                    var arg_i: u32 = 1; // Skip operand 0 (called function)
-                    while (arg_i < c.LLVMGetNumOperands(call.inst)) : (arg_i += 1) {
+                    // H13 FIX: For CallInst, operand (num_ops-1) is the callee, NOT operand 0.
+                    // Issue2 FIX: Use standardized helper to avoid inconsistency across files.
+                    const num_args = getCallInstArgCount(call.inst);
+                    var arg_i: u32 = 0;
+                    while (arg_i < num_args) : (arg_i += 1) {
                         const arg = c.LLVMGetOperand(call.inst, arg_i);
                         if (@intFromPtr(arg) != 0) {
                             const arg_type = c.LLVMTypeOf(arg);

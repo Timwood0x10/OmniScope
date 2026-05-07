@@ -607,6 +607,11 @@ pub const MemoryGraph = struct {
         }
         graph.call_rets.clearRetainingCapacity();
 
+        // M14 FIX: Clear weak_aliases to prevent stale data across resets.
+        // Previous implementation cleared all other HashMap fields but missed this one,
+        // causing weak alias information from previous analyses to leak into new ones.
+        graph.weak_aliases.clearRetainingCapacity();
+
         var arg_iter = graph.call_arg_by_ptr.iterator();
         while (arg_iter.next()) |entry| {
             entry.value_ptr.deinit(graph.allocator);
@@ -848,8 +853,13 @@ pub const MemoryGraph = struct {
         for (arg_indices) |idx| {
             const arg_edge = &graph.call_args.items[idx];
             for (graph.call_rets.items) |ret_edge| {
-                // BUGFIX: Add null check for consistency with isLeaked.
-                if (ret_edge.ret_ptr == 0 or ret_edge.caller_inst == arg_edge.caller_inst) {
+                // H22 FIX: Fix inverted logic. Previous condition was:
+                //   if (ret_ptr == 0 or caller_inst matches) → return true
+                // This is wrong because:
+                //   1. ret_ptr == 0 means null pointer, NOT double-freed
+                //   2. Same caller_inst only means same call site, not double-free
+                // Correct logic: check if the returned pointer WAS freed AND matches our node.
+                if (ret_edge.ret_ptr != 0 and ret_edge.caller_inst == arg_edge.caller_inst) {
                     const ret_node = graph.nodes.get(ret_edge.ret_ptr) orelse continue;
                     if (ret_node.freed and ret_node.id == node.id) return true;
                 }

@@ -1,0 +1,6 @@
+abseil2024|19|borrow_escape(19)
+libuv150|138|double_free(39) ffi_unsafe_call(38) borrow_escape(36)
+wabt_wast2json|7|memory_leak(2) malloc_unchecked(2) borrow_escape(2)
+curl8|148|double_free(66) borrow_escape(60) ffi_unsafe_call(18)
+sqlite3|436|double_free(225) borrow_escape(136) memory_leak(60)
+rust_sqlite|23|memory_leak(11) invalid_free(6) unchecked_return(2)

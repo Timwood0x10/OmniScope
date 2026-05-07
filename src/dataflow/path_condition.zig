@@ -105,19 +105,20 @@ pub const PathCondition = struct {
     pub fn implies(self: PathCondition, other: PathCondition) bool {
         if (self.value_id != other.value_id) return false;
 
-        return switch (self.kind) {
-            .ptr_not_null => switch (other.kind) {
-                .ptr_not_null => !self.negated and !other.negated,
-                .ptr_is_null => !self.negated and other.negated,
-                else => false,
-            },
-            .ptr_is_null => switch (other.kind) {
-                .ptr_is_null => !self.negated and !other.negated,
-                .ptr_not_null => !self.negated and other.negated,
-                else => false,
-            },
-            else => false,
-        };
+        // H4 FIX: Handle negation correctly in implication logic.
+        // Previous implementation had incomplete negation handling.
+        // A condition implies another if whenever self is true, other must also be true.
+        const self_is_not_null = (self.kind == .ptr_not_null and !self.negated) or (self.kind == .ptr_is_null and self.negated);
+        const self_is_null = (self.kind == .ptr_is_null and !self.negated) or (self.kind == .ptr_not_null and self.negated);
+        const other_is_not_null = (other.kind == .ptr_not_null and !other.negated) or (other.kind == .ptr_is_null and other.negated);
+        const other_is_null = (other.kind == .ptr_is_null and !other.negated) or (other.kind == .ptr_not_null and other.negated);
+
+        // If self says ptr is not null, it implies any "not null" condition
+        // If self says ptr is null, it implies any "null" condition
+        if (self_is_not_null and other_is_not_null) return true;
+        if (self_is_null and other_is_null) return true;
+
+        return false;
     }
 
     /// Check if this condition conflicts with another

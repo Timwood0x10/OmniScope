@@ -195,7 +195,10 @@ pub const DynamicRegistry = struct {
             const pattern = self.allocator.dupe(u8, func.pattern) catch {
                 return ConfigError.OutOfMemory;
             };
-            errdefer self.allocator.free(pattern);
+            // M20 FIX: Removed errdefer to prevent double-free.
+            // Previous code had: errdefer self.allocator.free(pattern);
+            // This caused double-free when both errdefer and explicit free (line 218) fired on append failure.
+            // Now each error path handles cleanup explicitly.
 
             const description = self.allocator.dupe(u8, func.description) catch {
                 self.allocator.free(pattern);
@@ -283,30 +286,30 @@ pub const DynamicRegistry = struct {
     ///
     /// This is the preferred method for analysis passes that only need
     /// to check tags (alloc/free/ffi) and zone classification.
-    pub fn query(self: *const DynamicRegistry, func_name: []const u8) ?types.FunctionInfo {
+    /// M19 FIX: Added allocator parameter to prevent dangling pointer.
+    /// Previous implementation returned a slice to stack-allocated array (undefined behavior).
+    pub fn query(self: *const DynamicRegistry, allocator: std.mem.Allocator, func_name: []const u8) ?types.FunctionInfo {
         const sem = self.lookup(func_name) orelse return null;
 
         // Convert FunctionSemantics to FunctionInfo
-        var tags_buf: [4]Tag = undefined;
-        var tags_len: usize = 0;
+        var tags_list = std.ArrayList(Tag).init(allocator);
+        errdefer tags_list.deinit();
 
         // Map RiskKind to Tag
         if (sem.kind == .allocator or sem.kind == .go_cgo_alloc or sem.kind == .zig_allocator or sem.kind == .cpp_allocator) {
-            tags_buf[tags_len] = .alloc;
-            tags_len += 1;
+            tags_list.append(.alloc) catch return null;
         }
         if (sem.kind == .deallocator) {
-            tags_buf[tags_len] = .free;
-            tags_len += 1;
+            tags_list.append(.free) catch return null;
         }
         if (sem.transfers_ownership) {
-            tags_buf[tags_len] = .transfer;
-            tags_len += 1;
+            tags_list.append(.transfer) catch return null;
         }
         if (sem.kind == .dynamic_loading or sem.kind == .jni or sem.kind == .python_c_api) {
-            tags_buf[tags_len] = .ffi;
-            tags_len += 1;
+            tags_list.append(.ffi) catch return null;
         }
+
+        const tags = tags_list.toOwnedSlice() catch return null;
 
         // Map kind to ZoneTag
         const zone = switch (sem.kind) {
@@ -319,7 +322,7 @@ pub const DynamicRegistry = struct {
         };
 
         return .{
-            .tags = tags_buf[0..tags_len],
+            .tags = tags, // Heap-allocated, safe to return
             .zone = zone,
             .kind = sem.kind,
             .severity = sem.severity,
