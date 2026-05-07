@@ -237,6 +237,9 @@ pub const SanitizerRegistry = struct {
             .initialized = false,
         };
 
+        // R8-H9 FIX: Ensure partial HashMap is freed on error (put() failure)
+        errdefer registry.sanitizers.deinit();
+
         for (SANITIZER_FUNCTIONS) |info| {
             registry.sanitizers.put(info.name, info) catch |err| {
                 std.log.err("SanitizerRegistry: Failed to register sanitizer '{s}': {}", .{ info.name, err });
@@ -344,7 +347,8 @@ test "SanitizerRegistry - lookup" {
     const info = registry.lookup("strncpy");
     try std.testing.expect(info != null);
     try std.testing.expectEqual(SanitizerCategory.bounds_check, info.?.category);
-    try std.testing.expectEqual(SanitizerEffectiveness.partial, info.?.effectiveness);
+    // R8-M1 FIX: Data definition sets .conditional, not .partial
+    try std.testing.expectEqual(SanitizerEffectiveness.conditional, info.?.effectiveness);
 }
 
 test "SanitizerRegistry - isSanitizer" {
@@ -361,7 +365,8 @@ test "SanitizerRegistry - getConfidenceFactor" {
     var registry = try SanitizerRegistry.init(std.testing.allocator);
     defer registry.deinit();
 
-    try std.testing.expectEqual(@as(f32, 0.4), registry.getConfidenceFactor("strncpy"));
+    // R8-M2 FIX: Data definition sets 0.6, not 0.4
+    try std.testing.expectEqual(@as(f32, 0.6), registry.getConfidenceFactor("strncpy"));
     try std.testing.expectEqual(@as(f32, 1.0), registry.getConfidenceFactor("unknown_func"));
 }
 

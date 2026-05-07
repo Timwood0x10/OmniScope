@@ -106,7 +106,9 @@ const THREAD_FUNCTIONS = &[_][]const u8{
 /// Functions commonly used in signal handlers that are NOT async-signal-safe.
 const SIGNAL_UNSAFE_FUNCTIONS = &[_][]const u8{
     "malloc",  "free",     "calloc",      "realloc",
-    "printf",  "fprintf",  "sprintf",     "malloc",
+    "printf",  "fprintf",  "sprintf",
+    // R8-L1 FIX: Replaced duplicate "malloc" with "exit" (also signal-unsafe)
+        "exit",
     "syslog",  "getpwuid", "getgrgid",    "strtok",
     "asctime", "ctime",    "std::string",
 };

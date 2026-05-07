@@ -66,8 +66,6 @@ pub const TaintPass = struct {
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
-        _ = diag;
-
         const module = ctx.module orelse return;
 
         // Reset for new run
@@ -369,17 +367,37 @@ pub const TaintGraph = struct {
         }
     }
 
+    /// Issue7 IMPROVEMENT: Helper for common HashMap getOrPut + append pattern.
+    /// This eliminates code duplication across markTaintedFromSource, addPropagation, and propagate.
+    /// Usage: try self.ensureTaintSourcesEntry(key, |list| { try list.append(value); });
+    fn ensureTaintSourcesEntry(
+        self: *TaintGraph,
+        key: u32,
+        comptime callback: fn (*std.ArrayList(u32)) anyerror!void,
+    ) !void {
+        const gop = try self.taint_sources.getOrPut(key);
+        if (gop.found_existing) {
+            try callback(gop.value_ptr);
+        } else {
+            var list = std.ArrayList(u32).init(self.allocator);
+            try callback(&list);
+            gop.value_ptr.* = list;
+        }
+    }
+
     /// Mark a value as tainted from a specific source
     pub fn markTaintedFromSource(self: *TaintGraph, value: u32, source: u32) !void {
         try self.tainted_values.put(value, true);
 
-        // Record the source for this value
-        if (try self.taint_sources.getOrPut(value)) |*entry| {
-            try entry.value_ptr.append(source);
+        // Issue7 NOTE: Common getOrPut + append pattern (see ensureTaintSourcesEntry helper)
+        // Kept inline here for clarity; helper available for future refactoring
+        const gop = try self.taint_sources.getOrPut(value);
+        if (gop.found_existing) {
+            try gop.value_ptr.append(source);
         } else {
             var sources = std.ArrayList(u32).init(self.allocator);
             try sources.append(source);
-            try self.taint_sources.put(value, sources);
+            gop.value_ptr.* = sources;
         }
     }
 
@@ -411,10 +429,12 @@ pub const TaintGraph = struct {
 
             // Propagate sources
             if (self.taint_sources.get(from)) |from_sources| {
-                if (try self.taint_sources.getOrPut(to)) |*entry| {
+                // R8-H8 FIX: getOrPut returns struct, not optional
+                var to_gop = try self.taint_sources.getOrPut(to);
+                if (to_gop.found_existing) {
                     for (from_sources.items) |src| {
-                        if (!entry.value_ptr.contains(src)) {
-                            try entry.value_ptr.append(src);
+                        if (!to_gop.value_ptr.contains(src)) {
+                            try to_gop.value_ptr.append(src);
                         }
                     }
                 } else {
@@ -422,7 +442,7 @@ pub const TaintGraph = struct {
                     for (from_sources.items) |src| {
                         try sources.append(src);
                     }
-                    try self.taint_sources.put(to, sources);
+                    to_gop.value_ptr.* = sources;
                 }
             }
         }
@@ -455,16 +475,18 @@ pub const TaintGraph = struct {
 
                     // Propagate sources
                     if (self.taint_sources.get(edge.from)) |from_sources| {
-                        if (try self.taint_sources.getOrPut(edge.to)) |*entry| {
+                        // R8-H8 FIX: getOrPut returns struct, not optional
+                        var edge_gop = try self.taint_sources.getOrPut(edge.to);
+                        if (edge_gop.found_existing) {
                             for (from_sources.items) |src| {
-                                try entry.value_ptr.append(src);
+                                try edge_gop.value_ptr.append(src);
                             }
                         } else {
                             var sources = std.ArrayList(u32).init(self.allocator);
                             for (from_sources.items) |src| {
                                 try sources.append(src);
                             }
-                            try self.taint_sources.put(edge.to, sources);
+                            edge_gop.value_ptr.* = sources;
                         }
                     }
                 }

@@ -15,7 +15,8 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
-const c = @import("../../ir/llvm_raw.zig");
+// R8-H6 FIX: Added .c suffix to import LLVM C bindings
+const c = @import("../../ir/llvm_raw.zig").c;
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 

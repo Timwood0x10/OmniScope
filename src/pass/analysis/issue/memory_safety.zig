@@ -151,6 +151,8 @@ pub const MemorySafetyPass = struct {
                         try relations.recordFree(func_hash);
 
                         const ptr_arg = c.LLVMGetOperand(inst, 0);
+                        // R8-L3 FIX: Add null guard before @intFromPtr to prevent panic
+                        if (@intFromPtr(ptr_arg) == 0) continue;
                         const ptr_as_int = @intFromPtr(ptr_arg);
 
                         if (try validateAndReportFree(ctx, func, called_name, ptr_as_int, freed_pointers, &free_bb_map, relations, diag)) {

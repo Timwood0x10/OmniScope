@@ -181,9 +181,13 @@ pub const BufferOverflowPass = struct {
             const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
             if (!ctx.isRelevantAlloc(base_ptr_val)) {
                 diag.debug("[STACK-OVERFLOW SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
+                ctx.allocator.free(msg); // R8-M11 FIX: Free heap-allocated message on early return
                 return null;
             }
-            return Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.85);
+            // R8-M11 FIX: Set owned=true for heap-allocated message to prevent memory leak
+            var issue = Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.85);
+            issue.owned = true;
+            return issue;
         }
 
         return null;
@@ -208,7 +212,9 @@ pub const BufferOverflowPass = struct {
         if (!is_array) return null;
 
         const array_size = c.LLVMGetArrayLength(pointed_type);
-        if (array_size <= 0) return null;
+        // R8-L2 FIX: array_size is unsigned (c_uint), so <= 0 is equivalent to == 0
+        // Changed to == 0 to remove dead < 0 branch and clarify intent
+        if (array_size == 0) return null;
 
         // Validate indices similar to stack bounds check
         const num_operands = c.LLVMGetNumOperands(gep);
@@ -247,9 +253,13 @@ pub const BufferOverflowPass = struct {
             const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
             if (!ctx.isRelevantAlloc(base_ptr_val)) {
                 diag.debug("[ARRAY-OOB SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
+                ctx.allocator.free(msg); // R8-M11 FIX: Free heap-allocated message on early return
                 return null;
             }
-            return Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.8);
+            // R8-M11 FIX: Set owned=true for heap-allocated message
+            var issue = Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.8);
+            issue.owned = true;
+            return issue;
         }
 
         return null;
@@ -270,11 +280,12 @@ pub const BufferOverflowPass = struct {
         const is_memmove_chk = std.mem.indexOf(u8, callee_name, "__memmove_chk") != null;
         if (!is_memcpy_chk and !is_memmove_chk) return null;
 
-        // Need at least 4 operands: dest, src, size, limit
+        // __memcpy_chk(dest, src, size, limit) has 4 args + callee = 5 operands
+        // R8-H5 FIX: Changed from < 4 to < 5 to correctly check for all required operands
         const num_ops = c.LLVMGetNumOperands(inst);
-        if (num_ops < 4) return null;
+        if (num_ops < 5) return null;
 
-        // Operand 2 = size, Operand 3 = limit (dest buffer size)
+        // Operand 0 = dest, 1 = src, 2 = size, 3 = limit (dest buffer size), 4 = callee
         const size_val = c.LLVMGetOperand(inst, 2);
         const limit_val = c.LLVMGetOperand(inst, 3);
         if (@intFromPtr(size_val) == 0 or @intFromPtr(limit_val) == 0) return null;

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const safe = @import("../../ir/llvm_safe.zig"); // Issue2: Standardized LLVM helpers
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -178,20 +179,21 @@ pub fn checkFFITypeMismatch(
 
     if (!is_extern_function(callee_name)) return;
 
-    const num_ops = c.LLVMGetNumOperands(inst);
-    var arg_i: u32 = 1;
-    while (arg_i < num_ops) : (arg_i += 1) {
+    // Issue2 FIX: Use standardized helper for consistent arg iteration
+    const num_args = safe.getCallInstArgCount(inst);
+    var arg_i: u32 = 0;
+    while (arg_i < num_args) : (arg_i += 1) {
         const arg = c.LLVMGetOperand(inst, arg_i);
         if (@intFromPtr(arg) == 0) continue;
 
         const arg_opcode = c.LLVMGetInstructionOpcode(arg);
         if (arg_opcode == c.LLVMBitCast) {
             const src = c.LLVMGetOperand(arg, 0);
-            if (@intFromPtr(src) == 0) continue;
+            if (@intFromPtr(src) == 0) return; // continue in callback = return
 
             const src_type = c.LLVMTypeOf(src);
             const arg_type = c.LLVMTypeOf(arg);
-            if (@intFromPtr(src_type) == 0 or @intFromPtr(arg_type) == 0) continue;
+            if (@intFromPtr(src_type) == 0 or @intFromPtr(arg_type) == 0) return;
 
             if (c.LLVMGetTypeKind(src_type) == c.LLVMPointerTypeKind and
                 c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)

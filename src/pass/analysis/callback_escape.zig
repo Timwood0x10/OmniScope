@@ -24,6 +24,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const safe = @import("../../ir/llvm_safe.zig"); // Issue2/3: Standardized LLVM helpers
 const word_boundary = @import("../../utils/word_boundary.zig");
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
@@ -744,8 +745,10 @@ pub const CallbackEscapePass = struct {
                     const mg = &ctx.memory_graph;
                     var confirmed_by_graph = false;
                     var detected_ptr_val: u64 = 0;
-                    var arg_k: u32 = 1;
-                    while (arg_k < c.LLVMGetNumOperands(call.inst)) : (arg_k += 1) {
+                    // Issue2/3 FIX: Use standardized helper for consistent arg iteration
+                    const num_args_keepalive = safe.getCallInstArgCount(call.inst);
+                    var arg_k: u32 = 0;
+                    while (arg_k < num_args_keepalive) : (arg_k += 1) {
                         const arg = c.LLVMGetOperand(call.inst, arg_k);
                         if (@intFromPtr(arg) == 0) continue;
                         const arg_ptr_val = @as(u64, @intFromPtr(arg));
@@ -775,8 +778,10 @@ pub const CallbackEscapePass = struct {
                     // if the CBytes call's pointer arg is tracked as passed to an FFI call.
                     const mg = &ctx.memory_graph;
                     var cgo_ptr_val: u64 = 0;
-                    var arg_i: u32 = 1;
-                    while (arg_i < c.LLVMGetNumOperands(call.inst)) : (arg_i += 1) {
+                    // Issue2/3 FIX: Use standardized helper for consistent arg iteration
+                    const cgo_num_args = safe.getCallInstArgCount(call.inst);
+                    var arg_i: u32 = 0;
+                    while (arg_i < cgo_num_args) : (arg_i += 1) {
                         const arg = c.LLVMGetOperand(call.inst, arg_i);
                         if (@intFromPtr(arg) != 0 and mg.isPassedAsArg(@as(u64, @intFromPtr(arg)))) {
                             cgo_ptr_val = @as(u64, @intFromPtr(arg));

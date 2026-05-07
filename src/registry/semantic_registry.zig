@@ -383,7 +383,8 @@ pub const SemanticRegistry = struct {
         const str_patterns = [_][]const u8{
             "strcpy",  "strncpy",  "strcat", "strncat",
             "sprintf", "snprintf", "strlen", "strcmp",
-            "strncpy", "strndup",
+            // R8-M10 FIX: Removed duplicate "strncpy" (was at end of array)
+            "strndup",
         };
         for (str_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;

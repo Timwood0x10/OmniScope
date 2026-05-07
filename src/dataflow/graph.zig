@@ -389,12 +389,26 @@ pub const DataFlowGraph = struct {
         // Deep copy trace array if present, including owned descriptions
         if (issue.trace) |trace| {
             trace_copy = try self.allocator.dupe(TraceEntry, trace);
-            // Deep copy each TraceEntry's owned description
+            // Issue1 IMPROVEMENT: Use explicit ownership tracking array instead of index
+            // This makes cleanup logic clearer and less error-prone
+            var copied = try self.allocator.alloc(bool, trace.len);
+            @memset(copied, false);
+            errdefer {
+                for (copied, 0..) |was_copied, i| {
+                    if (was_copied and trace_copy.?[i].owned and trace_copy.?[i].description.len > 0) {
+                        self.allocator.free(trace_copy.?[i].description);
+                    }
+                }
+                self.allocator.free(copied);
+                if (trace_copy) |tc| self.allocator.free(tc);
+            }
             for (trace_copy.?, 0..) |*entry, i| {
                 if (trace[i].owned and trace[i].description.len > 0) {
                     entry.description = try self.allocator.dupe(u8, trace[i].description);
+                    copied[i] = true; // Mark as successfully copied
                 }
             }
+            self.allocator.free(copied); // Free tracking array on success
             issue_copy.trace = trace_copy.?;
         }
 

@@ -236,7 +236,8 @@ pub const DynamicRegistry = struct {
         const pattern = self.allocator.dupe(u8, sem.pattern) catch {
             return ConfigError.OutOfMemory;
         };
-        errdefer self.allocator.free(pattern);
+        // R8-H4 FIX: Removed errdefer to avoid double-free.
+        // Each error path now handles cleanup explicitly.
 
         const description = self.allocator.dupe(u8, sem.description) catch {
             self.allocator.free(pattern);

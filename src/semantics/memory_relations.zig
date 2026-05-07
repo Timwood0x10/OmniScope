@@ -185,8 +185,9 @@ pub const MemoryRelations = struct {
             }
         }
 
+        // R8-H11 FIX: Recognizing a function as free should confirm validity, not invalidate it
         if (FuzzyMatcher.classify(free_func_name) == .free) {
-            return .{ .is_valid = false, .confidence = 0.6, .reason = 4 };
+            return .{ .is_valid = true, .confidence = 0.6, .reason = 4 };
         }
 
         return .{ .is_valid = false, .confidence = 0.5, .reason = 0 };

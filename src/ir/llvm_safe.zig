@@ -251,3 +251,24 @@ pub fn getCallInstArgCountSafe(inst: c.LLVMValueRef) ?u32 {
     if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return null;
     return getCallInstArgCount(inst);
 }
+
+/// Issue2/3 IMPROVEMENT: Standardized helper to iterate call arguments safely.
+/// This eliminates duplicated patterns across analysis passes and ensures
+/// consistent operand indexing (args are operands 0..num_args-1, callee is last).
+/// Usage:
+///   const safe = @import("llvm_safe.zig");
+///   try safe.iterateCallArgs(inst, allocator, |arg, idx| {
+///       // Process each argument (arg is LLVMValueRef, idx is u32)
+///   });
+pub fn iterateCallArgs(
+    inst: c.LLVMValueRef,
+    comptime callback: fn (c.LLVMValueRef, u32) anyerror!void,
+) !void {
+    const num_args = getCallInstArgCount(inst);
+    var i: u32 = 0;
+    while (i < num_args) : (i += 1) {
+        const arg = c.LLVMGetOperand(inst, i);
+        if (@intFromPtr(arg) == 0) continue;
+        try callback(arg, i);
+    }
+}

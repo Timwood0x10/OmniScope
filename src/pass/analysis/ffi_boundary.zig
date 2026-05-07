@@ -128,7 +128,7 @@ pub const FFIBoundaryPass = struct {
                     "unknown";
                 const is_ffi_boundary_func = (std.mem.indexOf(u8, func_name, "JNI_") != null or
                     std.mem.indexOf(u8, func_name, "Java_") != null or
-                    std.mem.startsWith(u8, func_name, "Py"));
+                    std.mem.startsWith(u8, func_name, "Py_")); // Python C API functions use Py_ prefix (e.g., Py_Init, Py_BuildValue)
 
                 if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func))) and !is_ffi_boundary_func) {
                     continue;
@@ -269,14 +269,12 @@ pub const FFIBoundaryPass = struct {
         // so stack slices would cause use-after-free or duplicate-key crashes.
         //
         // Memory safety guarantee:
-        //   - indirect_name_owned is null until successful allocation (L280)
-        //   - errdefer ensures cleanup on ANY error return (allocation failure,
-        //     allocPrint failure, etc.)
-        //   - Normal returns (true/false) also trigger cleanup via defer
-        //   - All 8 early-return paths are covered (safe zone, runtime internal,
+        //   - indirect_name_owned is null until successful allocation (L290)
+        //   - defer ensures cleanup on ALL exit paths (normal return, error return, early return)
+        //   - When indirect_name_owned is null, the if-guard prevents double-free
+        //   - All 8+ early-return paths are covered (safe zone, runtime internal,
         //     STL filter, same-language, low-confidence, intentional, Zig, normal)
         var indirect_name_owned: ?[]u8 = null;
-        errdefer if (indirect_name_owned) |owned| ctx.allocator.free(owned);
         defer if (indirect_name_owned) |owned| ctx.allocator.free(owned);
         var is_indirect_call = false;
 
@@ -288,6 +286,8 @@ pub const FFIBoundaryPass = struct {
             const resolved = resolveIndirectCallTarget(inst, diag);
             if (resolved.len > 0) {
                 indirect_name_owned = try ctx.allocator.dupe(u8, resolved);
+                // try guarantees non-null, but assert for defensive programming (Debug builds only)
+                std.debug.assert(indirect_name_owned != null);
                 called_name = indirect_name_owned.?;
                 is_indirect_call = true;
             } else {
