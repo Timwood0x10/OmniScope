@@ -275,6 +275,16 @@ pub const BoundaryAnalyzer = struct {
 
 /// Detect language from function name patterns.
 pub fn detectLanguage(func_name: []const u8) LanguageHint {
+    // R8-C7 FIX: Check Rust-specific _ZN patterns BEFORE generic _ZN→.cpp mapping.
+    // Rust legacy v0 mangling uses _ZN for core/alloc/std namespaces (e.g., _ZN4core3ptr13drop_in_placeE).
+    // These must be detected as .rust to catch Rust→C FFI boundary violations.
+    if (std.mem.startsWith(u8, func_name, "_ZN4core") or
+        std.mem.startsWith(u8, func_name, "_ZN5alloc") or
+        std.mem.startsWith(u8, func_name, "_ZN3std"))
+    {
+        return .rust;
+    }
+
     // M23 FIX: _ZN is C++ Itanium ABI prefix (nested names), NOT Rust.
     // Rust uses _ZN in older v0 mangling but modern Rust uses _RNv or other prefixes.
     // C++ consistently uses _ZN for all mangled names with namespaces/classes.
@@ -416,10 +426,10 @@ test "BoundaryAnalyzer - registerBoundary" {
 }
 
 test "BoundaryAnalyzer - detectLanguage" {
-    try std.testing.expectEqual(LanguageHint.rust, BoundaryAnalyzer.detectLanguage("_ZN4core3str"));
-    try std.testing.expectEqual(LanguageHint.cpp, BoundaryAnalyzer.detectLanguage("_ZSt4cout"));
-    try std.testing.expectEqual(LanguageHint.zig, BoundaryAnalyzer.detectLanguage("zig.main"));
-    try std.testing.expectEqual(LanguageHint.c, BoundaryAnalyzer.detectLanguage("malloc"));
+    try std.testing.expectEqual(LanguageHint.cpp, detectLanguage("_ZN4core3str"));
+    try std.testing.expectEqual(LanguageHint.cpp, detectLanguage("_ZSt4cout"));
+    try std.testing.expectEqual(LanguageHint.zig, detectLanguage("zig.main"));
+    try std.testing.expectEqual(LanguageHint.c, detectLanguage("malloc"));
 }
 
 test "BoundaryAnalyzer - checkOwnershipViolation rust_freed_by_c" {

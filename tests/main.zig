@@ -164,13 +164,14 @@ test "Severity: toString" {
 // ========================================
 
 test "SemanticRegistry: layer counts" {
-    try std.testing.expectEqual(@as(usize, 43), registry.SemanticRegistry.layer1Count());
+    // Updated: layer1 43→65 (added Python C API + JNI FFI boundary functions)
+    try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 275), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 297), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {
@@ -296,13 +297,14 @@ test "SemanticRegistry: Linux variants" {
 // ========================================
 
 test "Regression: layer counts unchanged" {
-    try std.testing.expectEqual(@as(usize, 43), registry.SemanticRegistry.layer1Count());
+    // Updated: layer1 43→65 (added Python C API + JNI FFI boundary functions)
+    try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
     try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 275), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 297), registry.SemanticRegistry.totalCount());
 }
 
 test "Regression: critical functions always detected" {

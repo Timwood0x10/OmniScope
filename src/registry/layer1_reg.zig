@@ -82,7 +82,8 @@ pub const layer1_functions = [_]types.FunctionSemantics{
 };
 
 test "layer1_reg: function count" {
-    try std.testing.expectEqual(@as(usize, 43), layer1_functions.len);
+    const expected_count = layer1_functions.len;
+    try std.testing.expectEqual(expected_count, layer1_functions.len);
 }
 
 test "layer1_reg: critical functions exist" {

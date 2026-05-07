@@ -188,12 +188,12 @@ pub const SarifGenerator = struct {
     }
 
     pub fn generate(self: *SarifGenerator, issues: []const Issue) ![]const u8 {
-        var sarif = SarifOutput.init(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
+        var sarif = SarifOutput.initWithUri(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
         return try sarif.generate(issues);
     }
 
     pub fn writeToFile(self: *SarifGenerator, path: []const u8, issues: []const Issue) !void {
-        var sarif = SarifOutput.init(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
+        var sarif = SarifOutput.initWithUri(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
         try sarif.writeToFile(path, issues);
     }
 };

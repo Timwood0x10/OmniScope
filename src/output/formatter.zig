@@ -177,24 +177,41 @@ pub const Formatter = struct {
             try buffer.writer(self.allocator).print("      \"cwe_id\": {d},\n", .{vuln.cwe_id});
             try buffer.appendSlice(self.allocator, "      \"description\": \"");
             try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
-            try buffer.appendSlice(self.allocator, "\",\n");
+            var needs_comma = false;
             if (vuln.source_location) |loc| {
-                try buffer.appendSlice(self.allocator, "      \"source_location\": \"");
+                try buffer.appendSlice(self.allocator, "\",\n      \"source_location\": \"");
                 try self.writeEscapedString(buffer.writer(self.allocator), loc);
-                try buffer.appendSlice(self.allocator, "\",\n");
+                needs_comma = true;
             }
             if (vuln.sink_location) |loc| {
-                try buffer.appendSlice(self.allocator, ",\n      \"sink_location\": \"");
+                if (needs_comma) {
+                    try buffer.appendSlice(self.allocator, ",\n");
+                } else {
+                    try buffer.appendSlice(self.allocator, "\",\n");
+                }
+                try buffer.appendSlice(self.allocator, "      \"sink_location\": \"");
                 try self.writeEscapedString(buffer.writer(self.allocator), loc);
-                try buffer.appendSlice(self.allocator, "\"");
+                needs_comma = true;
             }
             if (vuln.line) |line| {
-                try buffer.writer(self.allocator).print(",\n      \"line\": {d}", .{line});
+                if (needs_comma) {
+                    try buffer.writer(self.allocator).print(",\n", .{});
+                } else {
+                    try buffer.appendSlice(self.allocator, "\",\n");
+                }
+                try buffer.writer(self.allocator).print("      \"line\": {d}", .{line});
+                needs_comma = true;
             }
             if (vuln.column) |col| {
-                try buffer.writer(self.allocator).print(",\n      \"column\": {d}", .{col});
+                if (needs_comma) {
+                    try buffer.writer(self.allocator).print(",\n", .{});
+                } else {
+                    try buffer.appendSlice(self.allocator, "\",\n");
+                }
+                try buffer.writer(self.allocator).print("      \"column\": {d}", .{col});
+                needs_comma = true;
             }
-            try buffer.appendSlice(self.allocator, "\n    }");
+            try buffer.appendSlice(self.allocator, "\"\n    }");
         }
 
         try buffer.appendSlice(self.allocator, "\n  ]\n");

@@ -680,7 +680,7 @@ const MEMORY_JS =
     \\function onMouseMove(e){
     \\  if(!dragging||!lastPos)return;
     \\  if(dragNode){dragNode.x=dragNode.px+(e.clientX-lastPos.x)/transform.k;dragNode.y=dragNode.py+(e.clientY-lastPos.y)/transform.k;renderGraph();highlightNode(dragNode.id);return;}
-    \\  transform.x+=e.clientX-lastPos.x;transform.y+=e.clientY-lastPos;lastPos={x:e.clientX,y:e.clientY};applyTransform();
+    \\  transform.x+=e.clientX-lastPos.x;transform.y+=e.clientY-lastPos.y;lastPos={x:e.clientX,y:e.clientY};applyTransform();
     \\}
     \\function onMouseUp(){dragging=false;lastPos=null;dragNode=null;svg.style.cursor='grab';}
     \\function applyTransform(){g.setAttribute('transform','translate('+transform.x+','+transform.y+') scale('+transform.k+')');}

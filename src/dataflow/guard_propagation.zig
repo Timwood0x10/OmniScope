@@ -82,10 +82,9 @@ pub const GuardPropagation = struct {
             const true_bb_id = guard.branch_bb_id;
             const false_bb_id = guard.other_bb_id;
 
-            // H5 FIX: Use is_null_branch to determine which branch gets which condition.
-            // Previous code assumed true_bb_id is always the null branch, which is incorrect.
-            // The guard's is_null_branch flag tells us the semantic meaning of the branch.
-            if (guard.is_null_branch) {
+            // H5 FIX: Use is_not_null_branch to determine which branch gets which condition.
+            // The guard's is_not_null_branch flag tells us the semantic meaning of the branch.
+            if (!guard.is_not_null_branch) {
                 // Null check pattern: if (ptr == null) goto true_bb; else goto false_bb
                 // → ptr is null in true_bb, ptr is not null in false_bb
                 try self.addNullPtr(true_bb_id, guard.value_id);
