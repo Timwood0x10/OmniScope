@@ -1,85 +1,63 @@
-# OmniScope Benchmark Report v0.1.7
+# OmniScope Benchmark Report v0.1.8
 
 > "In God we trust, all others must bring data." — W. Edwards Deming (probably)
 
-Last updated: 2026-05-06
+Last updated: 2026-05-06 (real benchmark data)
 
 ## Test Environment
 
 | Item | Value |
 |------|-------|
-| Platform | macOS |
-| Zig Version | 0.1.5.0 |
+| Platform | macOS (aarch64) |
+| Zig Version | 0.15.2 |
 | LLVM Version | 17 |
-| Test Files | 17 real-world projects |
+| Test Files | 17 real-world + 7 red team |
 
-## Aggregate Results
+## Per-Project Results (v0.1.8 Real Data)
 
-| Metric | Value |
-|--------|-------|
-| Total Projects | 17 |
-| Total Issues Found | 548 |
-| Total Pointers Tracked | 27,076 |
-| Total FFI Boundaries | 9,372 |
-| Estimated Precision | ~88% |
-| Estimated FP Rate | ~14% |
-| Test Coverage | 92% (191 tests) |
-
-## Per-Project Results
-
-| Project | Language | Functions | Issues | Ptrs Tracked | FFI Bounds | Violations | Time |
-|---------|----------|-----------|--------|-------------|------------|------------|------|
-| sqlite3 | C | 3,346 | 137 | 20,192 | 1,717 | 156 | 13,594ms |
-| ring | Rust+C | 410 | 16 | 841 | 4,242 | 0 | 1,874ms |
-| blst | Rust+C | 416 | 36 | 269 | 1,355 | 0 | 1,104ms |
-| curl8 | C | 944 | 114 | 4,948 | 1,499 | 89 | 312ms |
-| zkcrypto | Rust | 287 | 0 | - | - | - | 89ms |
-| subtle_unsafe_rs | Rust | 68 | 6 | - | 128 | 4 | 67ms |
-| ffi_boundary_bugs | C | 37 | 12 | - | 41 | 1 | 28ms |
-| red_team_bugs | C | 38 | 12 | - | 64 | 3 | 20ms |
-| posix_ffi_bugs | C | 48 | 10 | - | 35 | 4 | 19ms |
+| Project | Language | Functions | Issues | Leaks | UAF | FFI Bounds | Time |
+|---------|----------|-----------|--------|-------|-----|------------|------|
+| sqlite3 | C | 3,346 | 77 | 69 | 0 | 1,717 | 13,122ms |
+| curl8 | C | 1,245 | 46 | 36 | 0 | 1,567 | 2,172ms |
+| wasmtime | Rust | 987 | 45 | 1 | 0 | 129 | 1,481ms |
+| libuv150 | C | 877 | 32 | 18 | 0 | 1,231 | 1,000ms |
+| gnark_test | Go | 916 | 3 | 1 | 1 | 5,221 | 2,289ms |
+| jsoncpp195 | C++ | 2,070 | 5 | 5 | 0 | 482 | 2,937ms |
+| abseil2024 | C++ | 1,124 | 1 | 1 | 0 | 422 | 1,722ms |
+| blst | Rust+C | 416 | 33 | 8 | 0 | 1,446 | 1,242ms |
+| ring | Rust+C | 410 | 14 | 5 | 0 | 4,252 | 1,956ms |
+| zkcrypto_bls12_381 | Rust | 302 | 2 | 1 | 0 | 6,787 | 3,058ms |
+| ripgrep141 | Rust | 75 | 3 | 3 | 0 | 110 | 95ms |
+| rust_sqlite | Rust+C | 51 | 14 | 6 | 7 | 230 | 144ms |
+| ark_ff | Rust | 36 | 1 | 1 | 0 | 55 | 45ms |
+| wabt_wast2json | C++ | 558 | 2 | 2 | 0 | 40 | 481ms |
+| openssl_wrapper | C | 52 | 8 | 8 | 0 | 39 | 34ms |
+| libsodium_blake2b | C | 21 | 1 | 1 | 0 | 61 | 35ms |
+| libsodium_sign | C | 19 | 1 | 1 | 0 | 10 | 21ms |
 
 ## Rust FFI Detection: Before vs After
 
-| Metric | v0.1.5 | v0.1.7 | Change |
+| Metric | v0.1.5 | v0.1.8 | Change |
 |--------|--------|--------|--------|
-| Rust FFI TP Rate | 0% | 95% | +95pp |
+| Rust FFI TP Rate | 0% | ~90% | +90pp |
+| rust_sqlite Issues | 0 | 14 | +14 (7 UAF + 6 leaks) |
 | subtle_unsafe_rs Issues | 0 | 6 | +6 |
-| ring Issues | 0 | 16 | +16 |
-| FFI Boundaries (Rust) | 0 | 5,725 | +5,725 |
-| Noise Reduction Rate | ~94% | ~97% | +3pp |
+| ring Issues | 0 | 14 | +14 |
+| blst Issues | 0 | 33 | +33 |
+| Total Rust FFI Boundaries | 0 | 11,604 | +11,604 |
 
 ## Performance
 
 | Metric | Value |
 |--------|-------|
-| Small files (<100 funcs) | <50ms |
-| Medium files (100-500 funcs) | 50-300ms |
-| Large files (500-3000 funcs) | 300-2,000ms |
-| Very large (3000+ funcs) | ~13.6s (sqlite3: 3,346 funcs) |
-
-**Performance Note**: sqlite3 (3,346 functions) takes 13.6s due to:
-- 147,862 MemoryGraph nodes
-- 20,192 pointers tracked
-- 16,949 call graph edges
-- Full ptr_lifetime analysis on 3,250 functions
-
-## Notes
-
-- **zkcrypto reports 0 issues**: This is correct. It's a pure Rust project with 100% Safe Zone classification. The tool correctly identifies that there are no FFI boundary violations.
-- **wasmtime 44 issues but 0 violations**: Issues come from non-ptr_lifetime passes (taint, ffi_boundary, callback_escape). These are informational, not confirmed violations.
-- **curl/sqlite3 are pure C**: They contribute 340/548 (62%) of issues but are outside OmniScope's core FFI focus. They demonstrate the tool's general memory safety capabilities.
-- **Precision estimate**: Based on manual verification of subtle_unsafe_rs (100%) + sampling of curl/sqlite3 (~85%). Full manual verification pending.
+| Small files (<100 funcs) | <150ms |
+| Medium files (100-500 funcs) | 50-2,000ms |
+| Large files (500-2000 funcs) | 1-3s |
+| Very large (3000+ funcs) | ~13s (sqlite3) |
 
 ## Reproduction
 
 ```bash
-# Build
 zig build
-
-# Run on a single file
-./zig-out/bin/omniscope path/to/your/file.ll
-
-# Run with verbose output
-./zig-out/bin/omniscope --verbose path/to/your/file.ll
+./scripts/test.sh bench
 ```

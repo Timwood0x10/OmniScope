@@ -367,6 +367,9 @@ fn extractFunctionPrefix(func_name: []const u8) []const u8 {
 pub fn is_extern_function(name: []const u8) bool {
     if (name.len == 0) return false;
 
+    if (std.mem.startsWith(u8, name, "c_ffi_")) return true;
+    if (std.mem.startsWith(u8, name, "ffi_")) return true;
+
     for (FFI_RETAINING_FUNCTIONS) |func| {
         if (word_boundary.isWordBoundaryMatch(name, func)) return true;
     }

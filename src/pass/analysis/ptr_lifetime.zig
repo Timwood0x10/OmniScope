@@ -1149,6 +1149,9 @@ pub const PtrLifetimePass = struct {
         if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
             try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);
             try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats);
+            try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
+            try checkCrossLanguageFree(ctx, inst, func_name, pointer_map, mem_graph, diag, stats);
+            try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);
         }
 
         if (opcode == c.LLVMRet) {
@@ -1498,7 +1501,11 @@ pub const PtrLifetimePass = struct {
                         if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
                             const is_extern = is_extern_function(callee_name);
                             if (is_extern) {
-                                try report.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                if (isRustBorrowPattern(ptr_info.source_desc)) {
+                                    try report.reportBorrowEscapeFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                } else {
+                                    try report.reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                }
                             } else {
                                 diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
                             }
@@ -1536,7 +1543,13 @@ pub const PtrLifetimePass = struct {
                         diag.debug("[SUPPRESSED] Stack escape in callback/hook: {s}", .{callee_name});
                         stats.stack_escapes_found += 1;
                     } else {
-                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        const is_extern_callee = is_extern_function(callee_name);
+                        const is_borrow = isRustBorrowPattern(ptr_info.source_desc);
+                        if (is_extern_callee and is_borrow) {
+                            try report.reportBorrowEscapeFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        } else {
+                            try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        }
                         // V2: Enhance severity when cross-function alias detected
                         if (has_cross_func_alias) {
                             diag.debug("[ENHANCED] Cross-function alias evidence found for stack escape to {s}", .{callee_name});
@@ -2014,6 +2027,178 @@ pub const PtrLifetimePass = struct {
         return false;
     }
 
+    fn isRustBorrowPattern(source_desc: []const u8) bool {
+        const borrow_patterns = [_][]const u8{
+            "as_ptr",
+            "as_mut_ptr",
+            "as_raw",
+            "as_raw_mut",
+            "borrow",
+            "deref",
+        };
+        for (borrow_patterns) |pattern| {
+            if (std.mem.indexOf(u8, source_desc, pattern) != null) return true;
+        }
+        return false;
+    }
+
+    fn checkFFIReturnNullGuard(
+        ctx: *PassContext,
+        inst: c.LLVMValueRef,
+        func: c.LLVMValueRef,
+        func_name: []const u8,
+        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        diag: *DiagnosticWriter,
+        stats: *LifetimeStats,
+    ) !void {
+        _ = func;
+        const called = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called) == 0) return;
+
+        const name_ptr = c.LLVMGetValueName(called);
+        if (@intFromPtr(name_ptr) == 0) return;
+        const callee_name = std.mem.span(name_ptr);
+
+        if (!is_extern_function(callee_name)) return;
+
+        const ret_type = c.LLVMTypeOf(inst);
+        if (@intFromPtr(ret_type) == 0) return;
+        if (c.LLVMGetTypeKind(ret_type) != c.LLVMPointerTypeKind) return;
+
+        if (pointer_map.contains(inst)) return;
+
+        if (!ip_ffi.check_null_guard_after(inst)) {
+            if (ip_ffi.check_result_used(inst)) {
+                try report.reportFFINullGuardMissing(ctx, func_name, callee_name, inst, diag);
+                stats.use_after_free_found += 1;
+            }
+        }
+    }
+
+    fn checkCrossLanguageFree(
+        ctx: *PassContext,
+        inst: c.LLVMValueRef,
+        func_name: []const u8,
+        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        mem_graph: ?*memory_graph.MemoryGraph,
+        diag: *DiagnosticWriter,
+        stats: *LifetimeStats,
+    ) !void {
+        _ = stats;
+        const called = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called) == 0) return;
+
+        const name_ptr = c.LLVMGetValueName(called);
+        if (@intFromPtr(name_ptr) == 0) return;
+        const callee_name = std.mem.span(name_ptr);
+
+        const is_rust_dealloc = std.mem.indexOf(u8, callee_name, "__rust_dealloc") != null or
+            std.mem.indexOf(u8, callee_name, "__rdl_dealloc") != null or
+            std.mem.indexOf(u8, callee_name, "__rg_dealloc") != null;
+        const is_c_free = isFreeFunction(callee_name) and !is_rust_dealloc;
+
+        if (!is_rust_dealloc and !is_c_free) return;
+
+        const ptr_arg = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(ptr_arg) == 0) return;
+
+        const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
+        if (mem_graph) |mg| {
+            if (mg.nodes.get(ptr_hash)) |node| {
+                const alloc_lang = node.alloc_lang;
+                const free_is_rust = is_rust_dealloc;
+                const alloc_is_c = alloc_lang == .c or alloc_lang == .cpp;
+                const alloc_is_rust = alloc_lang == .rust;
+
+                if (free_is_rust and alloc_is_c) {
+                    try report.reportCrossLanguageFree(ctx, func_name, callee_name, "C/C++", "Rust", inst, diag);
+                    return;
+                }
+                if (is_c_free and alloc_is_rust) {
+                    try report.reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", "C/C++", inst, diag);
+                    return;
+                }
+            }
+        }
+
+        if (pointer_map.get(ptr_arg)) |ptr_info| {
+            if (ptr_info.source_inst) |src_inst| {
+                const src_name_ptr = c.LLVMGetValueName(src_inst);
+                if (@intFromPtr(src_name_ptr) != 0) {
+                    const src_name = std.mem.span(src_name_ptr);
+                    const src_is_rust_alloc = std.mem.indexOf(u8, src_name, "__rust_alloc") != null or
+                        std.mem.indexOf(u8, src_name, "__rdl_alloc") != null or
+                        std.mem.indexOf(u8, src_name, "__rg_alloc") != null or
+                        std.mem.indexOf(u8, src_name, "__rust_alloc_zeroed") != null;
+                    const src_is_c_alloc = std.mem.indexOf(u8, src_name, "malloc") != null or
+                        std.mem.indexOf(u8, src_name, "calloc") != null or
+                        std.mem.indexOf(u8, src_name, "realloc") != null;
+
+                    if (is_rust_dealloc and src_is_c_alloc) {
+                        try report.reportCrossLanguageFree(ctx, func_name, callee_name, "C/C++", "Rust", inst, diag);
+                    } else if (is_c_free and src_is_rust_alloc) {
+                        try report.reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", "C/C++", inst, diag);
+                    }
+                }
+            }
+        }
+    }
+
+    fn checkFFITypeMismatch(
+        ctx: *PassContext,
+        inst: c.LLVMValueRef,
+        func: c.LLVMValueRef,
+        func_name: []const u8,
+        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+        diag: *DiagnosticWriter,
+        stats: *LifetimeStats,
+    ) !void {
+        _ = func;
+        _ = stats;
+        const called = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called) == 0) return;
+
+        const name_ptr = c.LLVMGetValueName(called);
+        if (@intFromPtr(name_ptr) == 0) return;
+        const callee_name = std.mem.span(name_ptr);
+
+        if (!is_extern_function(callee_name)) return;
+
+        const num_ops = c.LLVMGetNumOperands(inst);
+        var arg_i: u32 = 1;
+        while (arg_i < num_ops) : (arg_i += 1) {
+            const arg = c.LLVMGetOperand(inst, arg_i);
+            if (@intFromPtr(arg) == 0) continue;
+
+            const arg_opcode = c.LLVMGetInstructionOpcode(arg);
+            if (arg_opcode == c.LLVMBitCast) {
+                const src = c.LLVMGetOperand(arg, 0);
+                if (@intFromPtr(src) == 0) continue;
+
+                const src_type = c.LLVMTypeOf(src);
+                const arg_type = c.LLVMTypeOf(arg);
+                if (@intFromPtr(src_type) == 0 or @intFromPtr(arg_type) == 0) continue;
+
+                if (c.LLVMGetTypeKind(src_type) == c.LLVMPointerTypeKind and
+                    c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
+                {
+                    const src_pointee = c.LLVMGetElementType(src_type);
+                    const arg_pointee = c.LLVMGetElementType(arg_type);
+                    if (@intFromPtr(src_pointee) != 0 and @intFromPtr(arg_pointee) != 0) {
+                        if (c.LLVMGetTypeKind(src_pointee) != c.LLVMGetTypeKind(arg_pointee)) {
+                            if (pointer_map.get(src)) |ptr_info| {
+                                const mismatch_desc = try std.fmt.allocPrint(ctx.allocator, "const-cast: {s} type changed via bitcast", .{ptr_info.source_desc});
+                                defer ctx.allocator.free(mismatch_desc);
+                                try report.reportFFITypeMismatch(ctx, func_name, callee_name, mismatch_desc, inst, diag);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn is_resource_alloc_function(fn_name: []const u8) ?ResourceType {
         if (std.mem.indexOf(u8, fn_name, "dlopen") != null) return .dlopen_handle;
         if (std.mem.indexOf(u8, fn_name, "mmap64") != null or
@@ -2050,6 +2235,10 @@ pub const reportResourceUAF = report.reportResourceUAF;
 pub const reportHeapAmbiguous = report.reportHeapAmbiguous;
 pub const makeTrace = report.makeTrace;
 pub const reportHeapEscapeToFFI = report.reportHeapEscapeToFFI;
+pub const reportFFINullGuardMissing = report.reportFFINullGuardMissing;
+pub const reportBorrowEscapeFFI = report.reportBorrowEscapeFFI;
+pub const reportCrossLanguageFree = report.reportCrossLanguageFree;
+pub const reportFFITypeMismatch = report.reportFFITypeMismatch;
 
 // Tests are in ptr_lifetime_test.zig (imported to run tests)
 const _tests = @import("ptr_lifetime_test.zig");

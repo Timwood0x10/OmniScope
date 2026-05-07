@@ -124,7 +124,7 @@ pub fn analyze_ffi_caller_context(
 ///
 /// Scans all uses of the instruction's result.
 /// If any use exists (store, pass, compare, branch), returns true.
-fn check_result_used(call_inst: c.LLVMValueRef) bool {
+pub fn check_result_used(call_inst: c.LLVMValueRef) bool {
     var use = c.LLVMGetFirstUse(call_inst);
     while (@intFromPtr(use) != 0) : (use = c.LLVMGetNextUse(use)) {
         // Any use at all means the result is used
