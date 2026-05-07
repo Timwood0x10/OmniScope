@@ -1,0 +1,159 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/curl8.bc
+
+
+[INFO] Loaded: 1245 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+[31m[ERROR][0m VULNERABILITY OMI-001 [medium] [Confidence: MEDIUM]
+[31m[ERROR][0m Type: tainted_path_to_sink
+[31m[ERROR][0m Reason: Untrusted data flows to sensitive sink without validation
+[31m[ERROR][0m Path:
+[31m[ERROR][0m   [Sink] getenv()
+[32m[INFO][0m CallGraph: extracted 1506 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 1245 nodes, 3386 edges for BFS traversal
+[32m[INFO][0m [PERF] Pass 'call-graph: 92 ms
+[32m[INFO][0m RustFfiFilter: analyzed 962 funcs, 0 findings (5 stack escapes)
+[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 11 ms
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m BufferOverflow: Skipped (module has 962 functions, >500 threshold)
+[32m[INFO][0m PointerFlow: Marked 3 parameters of 'fgets' as sources
+[32m[INFO][0m PointerFlow: Marked 1 parameters of 'getenv' as sources
+[32m[INFO][0m PointerFlow: Found 2 source functions
+[32m[INFO][0m PointerFlow: 11 values tracked after propagation
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 71 ms
+[32m[INFO][0m FFITypeMismatch: analyzed 3804 calls, found 1567 FFI boundaries, 1 issues
+[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 19 ms
+[32m[INFO][0m [P1-1] DangerSurfacePass: 1506 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 1506 cross-language edges from CallGraph
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> cshutdn_run_conn_handler() in cshutdn_run_once
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> cshutdn_run_conn_handler() in cshutdn_run_once
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> cshutdn_run_conn_handler() in Curl_cshutdn_terminate
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> cshutdn_run_conn_handler() in Curl_cshutdn_terminate
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in Curl_thread_create
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in Curl_thread_create
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> mqtt_subscribe() in mqtt_doing
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> Curl_getn_scheme_handler() in protocol2num
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> Curl_getn_scheme_handler() in protocol2num
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 944 funcs, tracked 4942 ptrs, found 152 violations
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 839ms total (track=440ms, check=37ms, postprocess=79ms) for 944 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 839 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m [PERF] Pass 'callback-escape: 26 ms
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 28836 unfreed + 1533 freed = 30369 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 44 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 1533 frees — total now 1533
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 28836 allocs, 1533 frees
+[32m[INFO][0m RC-Container: 1 functions identified as refcount-managed (skipped)
+[32m[INFO][0m PointerOwnership: Found 36 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 28879 allocations, 1533 frees, 43 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 28879, reused: 0, in_use: 28879
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    3735
+info:   Safe zone (skipped):         9 (1.0%)
+info:   Runtime internal (skipped):  30
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         1545
+info:   Unknown zone:                2151
+info: 
+info:   Escape zone functions:       1545 (41.4% of total)
+info:   Issues found:              47
+info:     Issue breakdown by category:
+info:       Memory leak:              36
+info:       Borrow escape:            10
+info:       Unchecked return:         1
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  47
+info:     Origin breakdown:
+info:       ✅ User code:                 47 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 47 actionable issues (47 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          47
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       845.79    845788.38    845788.38
+detect                                  2       233.95    116976.13    117038.00
+total                                   1       845.79    845793.67    845793.67
+analysis                                1       673.07    673069.25    673069.25
+[32m[INFO][0m PointerOwnership: 4 ops, 2598.60ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 845 ms
+[32m[INFO][0m GlobalAllocTracker: 44 memory leaks confirmed from 44 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 1245
+
+[INFO] Facts generated: 2975
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158916,"summary":{"functions":1245,"issues":49,"time_ms":2081},"issues":[
+  {"id":"OMI-001","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ldap_set_option() receives alloca-derived pointer","location":{"function":"ldap_do"}},
+  {"id":"OMI-002","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function cshutdn_run_conn_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"cshutdn_run_once"}},
+  {"id":"OMI-003","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function cshutdn_run_conn_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"cshutdn_run_once"}},
+  {"id":"OMI-004","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function cshutdn_run_conn_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"Curl_cshutdn_terminate"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function cshutdn_run_conn_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"Curl_cshutdn_terminate"}},
+  {"id":"OMI-006","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"Curl_thread_create"}},
+  {"id":"OMI-007","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"Curl_thread_create"}},
+  {"id":"OMI-008","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function mqtt_subscribe() - pointer invalid after function returns (CWE-562)","location":{"function":"mqtt_doing"}},
+  {"id":"OMI-009","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function Curl_getn_scheme_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"protocol2num"}},
+  {"id":"OMI-010","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function Curl_getn_scheme_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"protocol2num"}},
+  {"id":"OMI-011","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function Curl_getn_scheme_handler() return value not NULL-checked in protocol2num - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"protocol2num"}},
+  {"id":"OMI-012","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-013","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_conn_get_socket"}},
+  {"id":"OMI-014","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_tcp_connect"}},
+  {"id":"OMI-015","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_socket_destroy"}},
+  {"id":"OMI-016","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_cf_socket_peek"}},
+  {"id":"OMI-017","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_altsvc_save"}},
+  {"id":"OMI-018","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_cf_tcp_create"}},
+  {"id":"OMI-019","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_udp_setup_quic"}},
+  {"id":"OMI-020","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_cf_udp_create"}},
+  {"id":"OMI-021","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_socket_cntrl"}},
+  {"id":"OMI-022","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ws_send_raw_blocking"}},
+  {"id":"OMI-023","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"altsvc_load"}},
+  {"id":"OMI-024","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_tcp_accept_connect"}},
+  {"id":"OMI-025","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"socks_cf_adjust_pollset"}},
+  {"id":"OMI-026","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_multi_will_close"}},
+  {"id":"OMI-027","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_socket_data_pending"}},
+  {"id":"OMI-028","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_multi_ev_socket_done"}},
+  {"id":"OMI-029","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_cshutdn_perform"}},
+  {"id":"OMI-030","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_haproxy_adjust_pollset"}},
+  {"id":"OMI-031","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"mev_pollset_diff"}},
+  {"id":"OMI-032","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_pp_statemach"}},
+  {"id":"OMI-033","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_udp_connect"}},
+  {"id":"OMI-034","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"protocol_getsock"}},
+  {"id":"OMI-035","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"connecting_getsock"}},
+  {"id":"OMI-036","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_socket_open"}},
+  {"id":"OMI-037","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"curl_multi_socket"}},
+  {"id":"OMI-038","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_socketpair"}},
+  {"id":"OMI-039","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_cf_unix_create"}},
+  {"id":"OMI-040","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_socket_open"}},
+  {"id":"OMI-041","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_conn_connect"}},
+  {"id":"OMI-042","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"curl_multi_socket_action"}},
+  {"id":"OMI-043","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"Curl_getinfo"}},
+  {"id":"OMI-044","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"curl_multi_socket_all"}},
+  {"id":"OMI-045","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_socket_close"}},
+  {"id":"OMI-046","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unfold_value"}},
+  {"id":"OMI-047","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"cf_h1_proxy_adjust_pollset"}},
+  {"id":"OMI-048","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in socket_open() was never freed","location":{"function":"socket_open"}},
+  {"id":"OMI-049","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in Curl_socket_close() was never freed","location":{"function":"Curl_socket_close"}}
+]}

@@ -23,10 +23,12 @@
 
 ## v0.1.7 亮点（最新版本）
 
-- **24 个 Bug 修复** — 覆盖 CRITICAL/HIGH/MEDIUM/LOW 所有严重级别
+- **67 个 Bug 修复** — 覆盖 CRITICAL/HIGH/MEDIUM/LOW 所有严重级别（Round 7: 24 + Round 8: 43）
 - **全量代码审查** — 完整 src/ 目录审计发现所有问题
-- **340/340 测试通过** — 所有修复已验证
+- **343/343 测试通过** — 所有修复已验证
 - **CI/CD 修复** — SARIF 上传正常工作，CodeQL v4 迁移
+- **20 种 Issue Kind** — 新增 `data_race`, `thread_safety_violation`
+- **311 函数语义** — 集成 14 个 POSIX static_buffer 函数到注册表
 
 ### 关键修复
 

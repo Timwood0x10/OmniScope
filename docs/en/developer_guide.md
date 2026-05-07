@@ -2,7 +2,7 @@
 
 > "Read the code. No, seriously, read the code."
 
-Last updated: 2026-05-06 | Version: v0.1.7
+Last updated: 2026-05-07 | Version: v0.1.7
 
 ## Architecture Overview
 

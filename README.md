@@ -23,10 +23,12 @@ English | [简体中文](./README_zh.md)
 
 ## v0.1.7 Highlights (Latest Release)
 
-- **24 Bug Fixes** across CRITICAL/HIGH/MEDIUM/LOW severity
+- **67 Bug Fixes** across CRITICAL/HIGH/MEDIUM/LOW severity (Round 7: 24 + Round 8: 43)
 - **Exhaustive Code Review** — full src/ audit identified all issues
-- **340/340 Tests Passing** — all fixes verified
+- **343/343 Tests Passing** — all fixes verified
 - **CI/CD Fixed** — SARIF upload now works, CodeQL v4 migration
+- **20 Issue Kinds** — added `data_race`, `thread_safety_violation`
+- **311 Function Semantics** — integrated 14 POSIX static_buffer functions
 
 ### Critical Fixes
 

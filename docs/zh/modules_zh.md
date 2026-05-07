@@ -2,7 +2,7 @@
 
 > "居然都能跑起来。大部分时候。"
 
-> 版本: v0.1.7 | 最后更新: 2026-05-06
+> 版本: v0.1.7 | 最后更新: 2026-05-07
 
 OmniScope 由若干个模块组成，每个模块各司其职。下面是完整的模块地图。
 
@@ -192,7 +192,7 @@ graph TD
 
 | 文件 | 职责 |
 |------|------|
-| `semantic_registry.zig` | 主注册表，400+ 函数的语义信息 |
+| `semantic_registry.zig` | 主注册表，311 函数的语义信息（含 14 个 static_buffer 函数） |
 | `config_loader.zig` | 从 JSON 配置动态加载注册表 |
 | `hooks.zig` | Hook 注册表（`into_raw` / `from_raw` 配对追踪） |
 | `types.zig` | 注册表类型定义 |

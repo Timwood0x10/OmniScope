@@ -1,12 +1,12 @@
 # 写给每一个被 FFI 坑过的人
 
-> 这不是一篇技术文档。这是一个被跨语言内存 bug 折磨了两年的人，写给同行的几句话。
+> 这不是一篇技术文档。这是一个被Cross-Language内存 bug 折磨了两年的人，写给同行的几句话。
 
 ***
 
 ## 凌晨两点的 crash log
 
-上周三凌晨两点，我盯着生产环境的 crash log 发了十分钟呆。
+上周三凌晨两点，我盯着生产Environment的 crash log 发了十分钟呆。
 
 ```
 double free detected in thread 0
@@ -15,13 +15,13 @@ double free detected in thread 0
   second free at: rust::drop::Drop::drop -> Box::from_raw -> free
 ```
 
-这个 bug 我在测试环境跑过一百遍。一百遍。没复现。
+这个 bug 我在测试Environment跑过一百遍。一百遍。没复现。
 
 上线第一天，炸了。
 
 原因说出来你可能觉得蠢：Rust 把内存通过 `Box::into_raw()` 交给 C，C 侧调了 `free()`，但 Rust 侧的 `Drop` trait 不知道这件事，函数结束时又 `free()` 了一次。两条路径，一个指针，两次释放。
 
-编译器不管这事。Rust 编译器只看 Rust 侧的所有权，C 编译器只看 C 侧的 `malloc/free`。**跨语言边界是所有编译器的盲区。** 你在 Rust 侧写的每一行 unsafe 代码，编译器都会放行——它信任你。
+编译器不管这事。Rust 编译器只看 Rust 侧的所有权，C 编译器只看 C 侧的 `malloc/free`。**Cross-Language边界是所有编译器的盲区。** 你在 Rust 侧写的每一行 unsafe 代码，编译器都会放行——它信任你。
 
 但我不值得被信任。凌晨两点的那条 crash log 就是证据。
 
@@ -53,11 +53,11 @@ graph LR
 
 **Double Free**。上面那个 crash log 就是一例。还有一种更隐蔽的：C 侧把指针存进了全局哈希表，Rust 侧以为已经转移了所有权，后来 C 侧从哈希表取出来又 free 了一次。你猜这个 bug多久才复现？**三周。** 因为哈希表的插入顺序是随机的。
 
-**Use-After-Free**。Rust 的借用检查器说"借用已结束，内存可以回收了"。但 C 侧还拿着那个指针，存进了某个回调函数的闭包里。等回调被触发的时候，那块内存早就是别人的了。概率性崩溃，最恶心的那种——你在开发环境永远复现不了。
+**Use-After-Free**。Rust 的借用检查器说"借用已结束，内存可以回收了"。但 C 侧还拿着那个指针，存进了某个回调函数的闭包里。等回调被触发的时候，那块内存早就是别人的了。概率性崩溃，最恶心的那种——你在开发Environment永远复现不了。
 
 **CUDA 设备指针混用**。`cudaMalloc` 分配的是设备内存，`malloc` 分配的是主机内存，两者不能混用。但当你写了一个 C wrapper 把两者包在一起的时候，释放顺序搞反一次就 OOM。而且这种 OOM 不会立刻炸，它会吃掉你所有可用显存，然后在下一个完全不相关的 `cudaMemcpy` 时才报错。排查的时候你会怀疑人生。
 
-**内存泄漏**。这个最安静，也最致命。不会 crash，不会报错，就是慢慢地吃内存。跑了三天才发现进程占了 16GB。查到最后发现是 Rust 侧 `into_raw` 交出去的指针，C 侧用完了但没还回来。Rust 侧的析构函数不会跑（因为已经 `into_raw` 了），C 侧也没人记得 `free`。
+**Memory Leak**。这个最安静，也最致命。不会 crash，不会报错，就是慢慢地吃内存。跑了三天才发现进程占了 16GB。查到最后发现是 Rust 侧 `into_raw` 交出去的指针，C 侧用完了但没还回来。Rust 侧的析构函数不会跑（因为已经 `into_raw` 了），C 侧也没人记得 `free`。
 
 ***
 
@@ -65,15 +65,15 @@ graph LR
 
 我试过。真的试过。
 
-| 工具       | 我的期望                     | 实际体验                             |
+| 工具       | 我的期望                     | Actual体验                             |
 | -------- | ------------------------ | -------------------------------- |
 | Clang SA | 帮我看看 C 侧有没有问题            | 看了。但 Rust 侧传过来的指针它不认识            |
 | Clippy   | 帮我看看 Rust 侧 unsafe 有没有问题 | 看了。但 `unsafe` 块里面是黑箱，它管不了        |
 | MIRI     | 运行时检测 UB                 | 好用。但不支持 FFI，一碰到 `extern "C"` 就瞎了 |
 | Valgrind | 运行时内存检查                  | 好用。但慢 10-50 倍，GPU 代码跑不起来，没法 CI   |
-| CodeQL   | 多语言分析                    | 每种语言各分析各的，跨语言的数据流它看不到            |
+| CodeQL   | 多语言分析                    | 每种语言各分析各的，Cross-Language的数据流它看不到            |
 
-核心问题就一个：**这些工具都只在单一语言内部工作。** 但我的 bug 全在语言边界上。
+Core问题就一个：**这些工具都只在单一语言内部工作。** 但我的 bug 全在语言边界上。
 
 Rust 编译器不知道 C 侧会 `free` 它的指针。C 编译器不知道 Rust 侧的借用什么时候结束。两个编译器各自觉得自己是对的——它们确实都是对的——但合在一起就是错的。
 
@@ -83,14 +83,14 @@ Rust 编译器不知道 C 侧会 `free` 它的指针。C 编译器不知道 Rust
 
 ## OmniScope
 
-这就是 OmniScope。一个基于 LLVM IR 的跨语言 FFI 静态安全分析器。
+这就是 OmniScope。一个基于 LLVM IR 的Cross-Language FFI 静态安全分析器。
 
 它做的事情说起来不复杂：
 
 1. 把你的代码编译成 LLVM IR（`.ll` 文件）
 2. OmniScope 加载 IR，构建控制流图和数据流图
-3. 15 个分析 Pass 依次跑：别名分析 → 污点传播 → 所有权分析 → FFI 边界检测 → 噪音过滤
-4. 输出结果（Text / JSON / SARIF）
+3. 15 个分析 Pass 依次跑：别名分析 → 污点传播 → 所有权分析 → FFI Boundary检测 → 噪音过滤
+4. Output结果（Text / JSON / SARIF）
 
 ```mermaid
 graph LR
@@ -98,14 +98,14 @@ graph LR
     DFG --> Alias["别名分析"]
     Alias --> Taint["污点传播"]
     Taint --> Own["所有权分析"]
-    Own --> FFI["FFI 边界检测"]
+    Own --> FFI["FFI Boundary检测"]
     FFI --> Noise["噪音过滤"]
     Noise --> Result["结果"]
 ```
 
 能检测 6 种漏洞：Double-Free、Use-After-Free、Memory Leak、Buffer Overflow、Format String、Ownership Violation。
 
-能覆盖 5 种语言的 FFI 边界：Rust ↔ C、Zig ↔ C、C++ ↔ C、Go ↔ C。
+能覆盖 5 种语言的 FFI Boundary：Rust ↔ C、Zig ↔ C、C++ ↔ C、Go ↔ C。
 
 ***
 
@@ -121,11 +121,11 @@ v0.1.5 刚写完的时候，我拿 wasmtime（Rust 写的 WebAssembly 运行时�
 
 四千零二十三个。
 
-我逐个看了前五十个，全是误报。Rust 编译器生成的 `drop_in_place`、`panic_fmt`、`trait_dispatch`……它们在 LLVM IR 层看起来跟真实的内存安全问题一模一样——都是"这块内存被 free 了又用"或者"这块内存分配了没释放"。
+我逐个看了前五十个，全是误报。Rust 编译器生成的 `drop_in_place`、`panic_fmt`、`trait_dispatch`……它们在 LLVM IR 层看起来跟真实的Memory Safety问题一模一样——都是"这块内存被 free 了又用"或者"这块内存分配了没释放"。
 
-如果你用过静态分析工具，你一定懂这种感觉。工具报了一屏幕红色警告，你花了两个小时逐个排查，发现全是误报。然后你关掉了工具，发誓再也不用了。
+如果你用过Static Analysis工具，你一定懂这种感觉。工具报了一屏幕红色警告，你花了两个小时逐个排查，发现全是误报。然后你关掉了工具，发誓再也不用了。
 
-**一个没人用的安全工具，实际漏报率是 100%。**
+**一个没人用的安全工具，ActualFalse Negative Rate是 100%。**
 
 所以我花了比写检测逻辑更多的时间去做降噪。四轮迭代：
 
@@ -140,7 +140,7 @@ v0.1.5 刚写完的时候，我拿 wasmtime（Rust 写的 WebAssembly 运行时�
 
 - **名称过滤**：`core::ptr::drop_in_place`？跳过。`std::alloc::`？跳过。120+ 个已知安全模式。
 - **路径过滤**：通过 LLVM DebugInfo 看函数定义在哪个文件。`/rustc/library/core/`？标准库，跳过。`zig/lib/std/`？标准库，跳过。
-- **行为过滤**：识别"分配 → 拷贝 → 释放旧缓冲"这种模式，这是 STL `vector.push_back()` 的正常行为，不是内存泄漏。
+- **行为过滤**：识别"分配 → 拷贝 → 释放旧缓冲"这种模式，这是 STL `vector.push_back()` 的正常行为，不是Memory Leak。
 
 三层叠在一起，4000 多个噪音被过滤到了 9 个真实问题。
 
@@ -152,7 +152,7 @@ v0.1.5 刚写完的时候，我拿 wasmtime（Rust 写的 WebAssembly 运行时�
 
 最"meta"的事情是：**我让 SOLO 审计 OmniScope 自身的代码。** 四轮审计，79 个文件逐行扫描，从 52 个 bug 降到 9 个。
 
-但 SOLO 也翻过车。有一次它信誓旦旦地告诉我一个 crash 是"LLVM 的 bug"，我差点去给 LLVM 提 issue。最后自己翻文档，发现是 `LLVMGetOperand` 和 `LLVMGetSuccessor` 的区别——参数传错了。还有一次它操作文件系统失误，把我的项目文件全删了。幸好有 git。
+但 SOLO 也翻过车。有一次它信誓旦旦地告诉我一个 crash 是"LLVM 的 bug"，我差点去给 LLVM 提 issue。最后自己翻文档，发现是 `LLVMGetOperand` 和 `LLVMGetSuccessor` 的区别——Parameters传错了。还有一次它操作文件系统失误，把我的项目文件全删了。幸好有 git。
 
 **AI 是放大器，不是替代品。** 好的工程师 + AI = 10x 效率。差的工程师 + AI = 10x 灾难。区别在于：你能不能判断 AI 给你的东西是对的还是错的。
 
@@ -162,7 +162,7 @@ v0.1.5 刚写完的时候，我拿 wasmtime（Rust 写的 WebAssembly 运行时�
 
 因为我踩过的坑，不想让你再踩一遍。
 
-如果你也做跨语言开发，如果你也写过 `unsafe` 然后祈祷它别炸，如果你也在凌晨两点看过 crash log——
+如果你也做Cross-Language开发，如果你也写过 `unsafe` 然后祈祷它别炸，如果你也在凌晨两点看过 crash log——
 
 试试 OmniScope。它不完美，但它能帮你在编译期看到那些编译器看不到的东西。
 
@@ -170,7 +170,7 @@ v0.1.5 刚写完的时候，我拿 wasmtime（Rust 写的 WebAssembly 运行时�
 # 分析你的项目
 omniscope target.ll
 
-# 输出 SARIF，集成到 GitHub Code Scanning
+# Output SARIF，集成到 GitHub Code Scanning
 omniscope --output-format sarif target.ll
 ```
 
@@ -180,7 +180,7 @@ omniscope --output-format sarif target.ll
 
 ***
 
-*OmniScope — 跨语言 FFI 安全分析器*
+*OmniScope — Cross-Language FFI 安全分析器*
 *因为编译器不管的边界，总得有人管。*
 
 ***
@@ -193,35 +193,35 @@ omniscope --output-format sarif target.ll
 
 **结果：零。**
 
-不是零误报。是零检出。一个专门找跨语言内存 bug 的工具，一个 bug 都没找到。
+不是零误报。是零检出。一个专门找Cross-Language内存 bug 的工具，一个 bug 都没找到。
 
 讽刺到你可以用 `free()` 切开。
 
-### 根因
+### Root Cause
 
 查来查去发现，我们把 `__rust_alloc`——Rust 用来分配内存的函数——放进了噪音过滤器。我们字面意义上把要检测的东西给过滤掉了。就好比装了个监控摄像头，然后因为"镜头太亮"把镜头贴上了胶带。
 
-三行代码。就三行，废掉了整个 Rust 检测能力。
+三行代码。就三行，废掉了整个 Rust Detection Capability。
 
-### 修复之路
+### Fix之路
 
 接下来是三个阶段的深挖：
 
-**第一阶段——"先止血"**（4 个修复，约 27 行）：
+**第一阶段——"先止血"**（4 个Fix，约 27 行）：
 - 删除了噪音过滤条目（删了 5 行）
 - 把 ffi_type_mismatch 接入调用图（1 行）
-- 修复所有权配对键，从指令地址改为指针值（15 行）
+- Fix所有权配对键，从指令地址改为指针值（15 行）
 - 正确声明了 pipeline 依赖关系（4 行）
 
-**第二阶段——"收拾烂摊子"**（8 个修复）：
-- 修复 Go 函数分类（之前把名字里带点的 C++ 函数也匹配进去了）
-- 修复 LLVMInvoke 分类（它是调用，不是控制流）
-- 修复回调逃逸检测（GetStructName 对函数类型返回 null）
+**第二阶段——"收拾烂摊子"**（8 个Fix）：
+- Fix Go 函数分类（之前把名字里带点的 C++ 函数也匹配进去了）
+- Fix LLVMInvoke 分类（它是调用，不是控制流）
+- Fix回调逃逸检测（GetStructName 对函数类型返回 null）
 - 用返回指针校验提升了泄漏检测精度
 
 **第三阶段——"烧掉枯枝"**（-700 行）：
 - 删除了 2 个死文件
-- 移除了 13 个死测试文件
+- 移除了 13 个死Test File
 - 清理了文档
 
 ### 结果
@@ -230,20 +230,20 @@ omniscope --output-format sarif target.ll
 
 - Rust FFI 真正率：0% → 20%
 - 检出问题总数：0 → 4（在 subtle_unsafe_rs 上）
-- 发现的 FFI 边界：0 → 123
+- 发现的 FFI Boundary：0 → 123
 - 测试覆盖率：70% → 92%
 
 20% 算厉害吗？说实话？这只是个开始。剩下的 80% 需要我们还没建好的能力——MIR 层分析来检测大小截断、数据流追踪来检测未初始化内存、边界检查来检测缓冲区溢出。
 
-但关键是：我们找到的那 4 个 bug？都是真的。Double-free、use-after-free、借用逃逸、内存泄漏。全部确认为真正例。零误报。
+但关键是：我们找到的那 4 个 bug？都是真的。Double-free、use-after-free、借用逃逸、Memory Leak。全部确认为真正例。零误报。
 
-**精确率 100%，召回率 20%。我们宁可对，也不要吵。**
+**精确率 100%，Recall 20%。我们宁可对，也不要吵。**
 
 ### 还剩什么
 
 当然还有 bug。怎么可能没有：
 
-- `allocator_kb.zig` 把释放函数存进了错误的 HashMap（1 行修复，搁在那好几周了）
+- `allocator_kb.zig` 把释放函数存进了错误的 HashMap（1 行Fix，搁在那好几周了）
 - `noise_filter.zig` 有一行重复代码——同一个检查写了两遍，像神经性抽搐
 - 3 个 Pass 的依赖数组还是空的，全靠注册顺序和运气撑着
 - `ptr_lifetime.zig` 自己抄了一份 `isFreeFunction` 而不是导入共享版本
@@ -256,7 +256,7 @@ omniscope --output-format sarif target.ll
 
 **你最得意在别人代码里找到的 bug，恰恰是你最不可能在自己代码里发现的。**
 
-我们造了一个找跨语言内存 bug 的工具。然后我们给自己的工具引入了一个跨语言内存 bug（把需要追踪的分配操作给过滤掉了）。
+我们造了一个找Cross-Language内存 bug 的工具。然后我们给自己的工具引入了一个Cross-Language内存 bug（把需要追踪的分配操作给过滤掉了）。
 
 调试器赐予你，调试器也会夺走你。
 

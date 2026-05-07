@@ -6,9 +6,9 @@
 
 ---
 
-## 1. 测试概述
+## 1. 测试Overview
 
-### 1.1 核心改进
+### 1.1 Core改进
 
 **Zone Classification** - 只分析语言保障失效的地方：
 
@@ -54,17 +54,17 @@
 | blst | 267 | 39 | 132 | 64.0% | 48 |
 | ark-ff | 16 | 1 | 2 | 18.8% | 0 |
 
-**结论**: Rust 项目平均跳过 **60%** 的函数，信任 borrow checker。
+**Conclusion**: Rust 项目平均跳过 **60%** 的函数，信任 borrow checker。
 
 ### 2.2 FFI 密集型项目
 
 | 项目 | 总函数 | Unknown | Issues | 分析 |
 |------|--------|---------|--------|------|
-| zlib-binding | 12 | 12 | 14 | FFI 边界，需要分析 |
-| openssl-wrapper | 12 | 12 | 7 | FFI 边界，需要分析 |
-| sqlite-binding | 8 | 8 | 4 | FFI 边界，需要分析 |
+| zlib-binding | 12 | 12 | 14 | FFI Boundary，需要分析 |
+| openssl-wrapper | 12 | 12 | 7 | FFI Boundary，需要分析 |
+| sqlite-binding | 8 | 8 | 4 | FFI Boundary，需要分析 |
 
-**结论**: FFI 密集型项目全部需要分析，问题检测率高。
+**Conclusion**: FFI 密集型项目全部需要分析，问题检测率高。
 
 ### 2.3 C/Go 项目
 
@@ -75,7 +75,7 @@
 
 ---
 
-## 3. 详细测试结果
+## 3. 详细Test Results
 
 ### 3.1 wasmtime (Rust WebAssembly Runtime)
 
@@ -92,7 +92,7 @@
 - 大型 Rust 项目，987 个函数
 - 跳过 74.3% (460 个 safe/runtime)
 - 159 个 unknown 函数需要分析
-- 96 个问题来自 FFI 边界和 unsafe 代码
+- 96 个问题来自 FFI Boundary和 unsafe 代码
 
 ### 3.2 rust-sqlite (Rust FFI)
 
@@ -107,7 +107,7 @@
 
 **分析**:
 - Rust FFI 项目，调用 SQLite C 库
-- 8 个 unknown 函数是 FFI 边界
+- 8 个 unknown 函数是 FFI Boundary
 - 6 个问题来自 FFI 内存管理
 
 ### 3.3 zlib-binding (Rust FFI)
@@ -169,7 +169,7 @@
 
 ### 5.1 wasmtime 的 96 个问题
 
-来源：FFI 边界和 unsafe 代码
+来源：FFI Boundary和 unsafe 代码
 
 wasmtime 是 WebAssembly 运行时，大量使用：
 - `unsafe` 代码块
@@ -186,7 +186,7 @@ wasmtime 是 WebAssembly 运行时，大量使用：
 | openssl-wrapper | 7 | 加密操作内存管理 |
 | sqlite-binding | 4 | 数据库操作内存管理 |
 
-**判定**: FFI 边界问题，需要审查。
+**判定**: FFI Boundary问题，需要审查。
 
 ### 5.3 blst 的 48 个问题
 
@@ -224,7 +224,7 @@ wasmtime 是 WebAssembly 运行时，大量使用：
 
 ---
 
-## 7. 结论
+## 7. Conclusion
 
 ### 7.1 Zone Classification 效果
 
@@ -235,7 +235,7 @@ wasmtime 是 WebAssembly 运行时，大量使用：
 | 性能提升 | 最高 **73%** |
 | 问题检测 | 更精准 |
 
-### 7.2 输出更有说服力
+### 7.2 Output更有说服力
 
 **之前**:
 ```
@@ -260,7 +260,7 @@ wasmtime 是 WebAssembly 运行时，大量使用：
 
 ## 8. 附录
 
-### 8.1 测试环境
+### 8.1 测试Environment
 
 | 项目 | 值 |
 |------|------|

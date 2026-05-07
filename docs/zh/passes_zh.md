@@ -2,7 +2,7 @@
 
 > "13 个 pass，一条流水线，对内存 bug 零容忍。"
 
-> 版本: v0.1.7 | 最后更新: 2026-05-06
+> 版本: v0.1.7 | 最后更新: 2026-05-07
 
 OmniScope 的分析引擎由 13 个 pass 组成，分为 Foundation、Tier 1（透传）和 Tier 2（图驱动）三层。每个 pass 都是独立的分析单元，通过共享图数据结构进行通信。
 
@@ -465,11 +465,11 @@ fn isOnDangerPath(fn_or_ptr: ID) bool {
 | 类别 | IssueKind | 严重度 | 置信度 |
 |------|-----------|--------|--------|
 | **内存** | memory_leak, use_after_free, double_free, invalid_free | Critical/High | 0.70-0.90 |
-| **FFI** | ffi_unsafe_call, unchecked_return, type_mismatch | High | 0.65-0.80 |
-| **Rust FFI** | borrow_escape, cross_language_leak, unpaired_into_raw | High | 0.75-0.85 |
+| **FFI** | ffi_unsafe_call, unchecked_return, type_mismatch, ffi_type_mismatch | High | 0.65-0.80 |
+| **Rust FFI** | borrow_escape, cross_language_leak, cross_language_free, unpaired_into_raw | High | 0.75-0.85 |
 | **安全** | command_injection, format_string, buffer_overflow | Critical | 0.75-0.90 |
-| **解引用** | null_dereference | Critical | 0.85 |
-| **并发** | (通过锁分析) | High | TBD |
+| **解引用** | null_dereference, malloc_unchecked | Critical | 0.85 |
+| **并发** | data_race, thread_safety_violation | High/Medium | 0.65-0.75 |
 
 ## 输出格式
 
@@ -505,6 +505,6 @@ Reason: as_ptr() on local String/Vec passed to extern C - may dangle
 
 ### SARIF v2.1.0
 
-- 14 条规则定义（覆盖所有 IssueKind 变体）
+- 16 条规则定义（覆盖所有 20 种 IssueKind 变体）
 - GitHub Code Scanning 兼容
 - 属性：`confidence`、`confidenceLevel`、`reason`、`cwe`

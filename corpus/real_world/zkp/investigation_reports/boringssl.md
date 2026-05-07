@@ -23,7 +23,7 @@
 ### 2.1 编译命令
 
 ```bash
-# 核心内存管理模块
+# Core内存管理模块
 clang++ -std=c++17 -O2 -S -emit-llvm -I./include \
   crypto/mem.cc -o llvm_ir/mem.ll
 
@@ -49,7 +49,7 @@ clang++ -std=c++17 -O2 -S -emit-llvm -I./include \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -117,7 +117,7 @@ void OPENSSL_free(void *orig_ptr) {
 
 **分析**:
 - OmniScope 认为 `ptr` 在 `free(ptr)` 之后被访问
-- 实际情况: 第 249 行访问 `ptr` 获取 `size`，然后第 255/260 行释放 `ptr`
+- Actual情况: 第 249 行访问 `ptr` 获取 `size`，然后第 255/260 行释放 `ptr`
 - 这是 **释放前访问**，不是释放后访问
 - `OPENSSL_cleanse()` 在释放前安全清除内存
 
@@ -166,7 +166,7 @@ void *OPENSSL_realloc(void *orig_ptr, size_t new_size) {
 
 **分析**:
 - OmniScope 认为 `orig_ptr` 在释放后被访问
-- 实际情况: 第 290 行复制数据到新内存，第 291 行释放原内存
+- Actual情况: 第 290 行复制数据到新内存，第 291 行释放原内存
 - 这是标准的 **realloc 模式**: 分配新 → 复制 → 释放旧
 
 **判定**: **误报** - 标准的 realloc 实现
@@ -228,7 +228,7 @@ err:
 
 **分析**:
 - OmniScope 认为在错误路径释放后有问题
-- 实际情况: `err` 标签只在分配失败时执行
+- Actual情况: `err` 标签只在分配失败时执行
 - `candidate` 在成功路径被返回，在失败路径被释放
 - 这是正确的 **错误处理模式**
 
@@ -263,7 +263,7 @@ err:
 
 ### 6.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **指令顺序追踪** | 在基本块内追踪 load/store 与 free 的精确顺序 | 减少 40% 误报 |
 | **模式识别** | 识别 realloc、cleanup、error-handling 等安全模式 | 减少 30% 误报 |
@@ -272,7 +272,7 @@ err:
 
 ---
 
-## 7. 结论
+## 7. Conclusion
 
 ### 7.1 boringssl 代码质量
 
@@ -287,9 +287,9 @@ err:
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
-| UAF 检测 | ⚠️ 误报率 100% |
+| UAF 检测 | ⚠️ False Positive Rate 100% |
 | 模式识别 | ❌ 需改进 |
 
-**总结**: boringssl 是经过严格审计的生产级密码学库，OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法精确追踪指令顺序和控制流。
+**Summary**: boringssl 是经过严格审计的生产级密码学库，OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法精确追踪指令顺序和控制流。

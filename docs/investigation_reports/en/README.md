@@ -18,7 +18,7 @@ All reports have been updated to **v0.1.7** with 24 bugs fixed and 340/340 tests
 | [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md) | EN | **Rust FFI Restoration** — Phase 1+2+3 fix details, TP 0%→20% |
 | [rust_ffi_restoration_v016](../zh/rust_ffi_restoration_v016.md) | ZH | Rust FFI 恢复调查报告 |
 | [v018_bug_fix_report](./v018_bug_fix_report.md) | EN | **v0.1.7 Bug Fix Report** — 24 bugs fixed, 340/340 tests pass |
-| [v018_bug_fix_report](../zh/v018_bug_fix_report.md) | ZH | v0.1.7 Bug修复报告 |
+| [v018_bug_fix_report](../zh/v018_bug_fix_report.md) | ZH | v0.1.7 BugFix报告 |
 
 ### 🔬 Project-Specific Reports
 

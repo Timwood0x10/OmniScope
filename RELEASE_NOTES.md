@@ -2,12 +2,14 @@
 
 ## Summary
 
-**Exhaustive Code Review & Bug Fix Release**
+**Exhaustive Code Review & Bug Fix Release (Round 7 + Round 8)**
 
-- **24 bugs fixed** across CRITICAL/HIGH/MEDIUM/LOW severity levels
-- **340/340 tests passing** — all fixes verified
+- **67 bugs fixed** across CRITICAL/HIGH/MEDIUM/LOW severity levels (Round 7: 24, Round 8: 43)
+- **343/343 tests passing** — all fixes verified
 - **0 compilation errors** — clean build
 - **CI/CD infrastructure fixed** — SARIF upload now works
+- **20 Issue Kinds** — added `data_race` (CWE-362), `thread_safety_violation` (CWE-807)
+- **311 Function Semantics** in SemanticRegistry (+14 static_buffer functions)
 
 ---
 

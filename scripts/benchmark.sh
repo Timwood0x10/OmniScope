@@ -38,7 +38,7 @@ if ! command -v "$ZIG" >/dev/null 2>&1; then
 fi
 CORPUS_DIR="${OMNISCOPE_CORPUS:-$PROJECT_ROOT/corpus}"
 EXPECTED_FILE="$CORPUS_DIR/EXPECTED_RESULTS.md"
-OUTPUT_DIR="$PROJECT_ROOT/benchmark-output"
+OUTPUT_DIR="$PROJECT_ROOT/outputs/benchmark"
 STATS_FILE="$OUTPUT_DIR/.stats.tmp"
 
 TOTAL_TP=0

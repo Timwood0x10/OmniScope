@@ -27,7 +27,7 @@
 # 安装 tinygo
 brew install tinygo
 
-# 编写测试文件
+# 编写Test File
 cat > gnark_test.go << 'EOF'
 package main
 
@@ -58,7 +58,7 @@ tinygo build -target=wasi -opt=z -emit-llvm -o gnark_test.ll gnark_test.go
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -236,7 +236,7 @@ define void @runtime.slice(i8* %ptr, i64 %len) {
 
 ### 7.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **Go runtime 识别** | 识别 tinygo 的 runtime 函数 | 减少 Go 误报 |
 | **GC 语义** | 理解 GC 管理的内存 | 减少 GC 误报 |
@@ -244,13 +244,13 @@ define void @runtime.slice(i8* %ptr, i64 %len) {
 
 ---
 
-## 8. 结论
+## 8. Conclusion
 
 ### 8.1 gnark-crypto 代码质量
 
 | 方面 | 评价 |
 |------|------|
-| 内存安全 | ✅ 良好 - Go GC 保护 |
+| Memory Safety | ✅ 良好 - Go GC 保护 |
 | 性能 | ✅ 良好 - tinygo 优化 |
 | 代码风格 | ✅ 良好 - 标准 Go 风格 |
 | 测试覆盖 | ✅ 优秀 - 完整测试 |
@@ -259,9 +259,9 @@ define void @runtime.slice(i8* %ptr, i64 %len) {
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
-| UAF 检测 | ⚠️ 误报率 100% |
+| UAF 检测 | ⚠️ False Positive Rate 100% |
 | Go 支持 | ❌ 需增强 |
 
-**总结**: gnark-crypto 是 Go 语言的高质量密码学库，使用 tinygo 编译后产生大量 runtime 函数调用。OmniScope 报告的问题均为误报，主要原因是无法理解 Go/tinygo 的内存管理模型。
+**Summary**: gnark-crypto 是 Go 语言的高质量密码学库，使用 tinygo 编译后产生大量 runtime 函数调用。OmniScope 报告的问题均为误报，主要原因是无法理解 Go/tinygo 的内存管理模型。

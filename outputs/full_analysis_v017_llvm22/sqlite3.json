@@ -1,0 +1,248 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/sqlite3.bc
+
+
+[INFO] Loaded: 3346 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+info: [PERF] CallSiteIndex build: 24 ms
+[31m[ERROR][0m VULNERABILITY OMI-001 [medium] [Confidence: MEDIUM]
+[31m[ERROR][0m Type: tainted_path_to_sink
+[31m[ERROR][0m Reason: Untrusted data flows to sensitive sink without validation
+[31m[ERROR][0m Path:
+[31m[ERROR][0m   [Sink] getenv()
+[32m[INFO][0m CallGraph: extracted 1548 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 3346 nodes, 16949 edges for BFS traversal
+[32m[INFO][0m [PERF] Pass 'call-graph: 359 ms
+[32m[INFO][0m RustFfiFilter: analyzed 3258 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 65 ms
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m [PERF] Pass 'return-check: 52 ms
+[32m[INFO][0m BufferOverflow: Skipped (module has 3258 functions, >500 threshold)
+[32m[INFO][0m PointerFlow: Marked 1 parameters of 'getenv' as sources
+[32m[INFO][0m PointerFlow: Found 1 source functions
+[32m[INFO][0m PointerFlow: 184 values tracked after propagation
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 447 ms
+[32m[INFO][0m FFITypeMismatch: analyzed 17340 calls, found 1717 FFI boundaries, 0 issues
+[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 222 ms
+[32m[INFO][0m [P1-1] DangerSurfacePass: 1548 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 1548 cross-language edges from CallGraph
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> sqlite3_busy_handler() in sqlite3_busy_timeout
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> sqlite3_busy_handler() in sqlite3_busy_timeout
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> sqlite3_busy_handler() in sqlite3_busy_timeout
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in sqlite3ThreadCreate
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in sqlite3ThreadCreate
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in sqlite3ThreadCreate
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 3250 funcs, tracked 20192 ptrs, found 32 violations
+[32m[INFO][0m [R8.3-f] Cross-function alias propagation: 29 allocations marked freed via alias chain
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 4346ms total (track=2237ms, check=181ms, postprocess=389ms) for 3250 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 4346 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m [PERF] Pass 'callback-escape: 162 ms
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 132518 unfreed + 15344 freed = 147862 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 121 records, 4 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 15395 frees — total now 15395
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 132518 allocs, 15395 frees
+[32m[INFO][0m RC-Container: 226 functions identified as refcount-managed (skipped)
+[31m[ERROR][0m VULNERABILITY OMI-002 [critical] [Confidence: medium]
+[31m[ERROR][0m Type: null_dereference
+[31m[ERROR][0m Reason: allocation may return NULL, used without null guard
+[32m[INFO][0m PointerOwnership: Found 69 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 132693 allocations, 15445 frees, 175 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 132693, reused: 0, in_use: 132693
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    10038
+info:   Safe zone (skipped):         0 (0.6%)
+info:   Runtime internal (skipped):  63
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         546
+info:   Unknown zone:                9429
+info: 
+info:   Escape zone functions:       546 (5.4% of total)
+info:   Issues found:              76
+info:     Issue breakdown by category:
+info:       Memory leak:              69
+info:       Borrow escape:            6
+info:       Null dereference:         1
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  76
+info:     Origin breakdown:
+info:       ✅ User code:                 76 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 76 actionable issues (76 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          76
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1      6048.80   6048798.79   6048798.79
+detect                                  2      4291.53   2145763.75   2145824.54
+total                                   1      6048.81   6048805.29   6048805.29
+analysis                                1      5151.59   5151590.08   5151590.08
+[32m[INFO][0m PointerOwnership: 4 ops, 21540.72ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 6048 ms
+[32m[INFO][0m GlobalAllocTracker: 117 memory leaks confirmed from 121 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 3346
+
+[INFO] Facts generated: 13047
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778156760,"summary":{"functions":3346,"issues":136,"time_ms":12457},"issues":[
+  {"id":"OMI-001","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function sqlite3_busy_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3_busy_timeout"}},
+  {"id":"OMI-002","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function sqlite3_busy_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3_busy_timeout"}},
+  {"id":"OMI-003","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function sqlite3_busy_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3_busy_timeout"}},
+  {"id":"OMI-004","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3ThreadCreate"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3ThreadCreate"}},
+  {"id":"OMI-006","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"sqlite3ThreadCreate"}},
+  {"id":"OMI-007","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-008","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3ParseUri"}},
+  {"id":"OMI-009","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"splitNodeStartree"}},
+  {"id":"OMI-010","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unixOpen"}},
+  {"id":"OMI-011","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"exprINAffinity"}},
+  {"id":"OMI-012","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"geomCallback"}},
+  {"id":"OMI-013","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"concatFuncCore"}},
+  {"id":"OMI-014","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeSqlInit"}},
+  {"id":"OMI-015","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3Malloc"}},
+  {"id":"OMI-016","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"pragmaVtabOpen"}},
+  {"id":"OMI-017","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_set_clientdata"}},
+  {"id":"OMI-018","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3OsInit"}},
+  {"id":"OMI-019","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_exec"}},
+  {"id":"OMI-020","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_rtree_geometry_callback"}},
+  {"id":"OMI-021","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3LoadExtension"}},
+  {"id":"OMI-022","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unixOpenSharedMemory"}},
+  {"id":"OMI-023","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"jsonReturnFromBlob"}},
+  {"id":"OMI-024","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"parseGrowPhraseArray"}},
+  {"id":"OMI-025","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"getAndInitPage"}},
+  {"id":"OMI-026","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"btreeGetPage"}},
+  {"id":"OMI-027","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"walBeginShmUnreliable"}},
+  {"id":"OMI-028","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3VdbeAllocUnpackedRecord"}},
+  {"id":"OMI-029","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3AddColumn"}},
+  {"id":"OMI-030","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"groupConcatStep"}},
+  {"id":"OMI-031","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"proxyCreateUnixFile"}},
+  {"id":"OMI-032","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeConstraintError"}},
+  {"id":"OMI-033","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeOpen"}},
+  {"id":"OMI-034","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeCheckGetNode"}},
+  {"id":"OMI-035","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"printfTempBuf"}},
+  {"id":"OMI-036","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"nodeNew"}},
+  {"id":"OMI-037","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"execSql"}},
+  {"id":"OMI-038","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"walIndexRecover"}},
+  {"id":"OMI-039","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"pragmaVtabConnect"}},
+  {"id":"OMI-040","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"findInodeInfo"}},
+  {"id":"OMI-041","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_rtree_query_callback"}},
+  {"id":"OMI-042","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeColumn"}},
+  {"id":"OMI-043","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3BitvecBuiltinTest"}},
+  {"id":"OMI-044","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeQueryStat1"}},
+  {"id":"OMI-045","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3DbStrDup"}},
+  {"id":"OMI-046","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_value_dup"}},
+  {"id":"OMI-047","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unixFileControl"}},
+  {"id":"OMI-048","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"fillInUnixFile"}},
+  {"id":"OMI-049","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"walRewriteChecksums"}},
+  {"id":"OMI-050","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"unixShmMap"}},
+  {"id":"OMI-051","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3DbMallocZero"}},
+  {"id":"OMI-052","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"wherePartIdxExpr"}},
+  {"id":"OMI-053","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"proxyCreateConchPathname"}},
+  {"id":"OMI-054","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"getIntFromStmt"}},
+  {"id":"OMI-055","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memjrnlWrite"}},
+  {"id":"OMI-056","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_get_table_cb"}},
+  {"id":"OMI-057","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3TableAffinityStr"}},
+  {"id":"OMI-058","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"proxyTransformUnixFile"}},
+  {"id":"OMI-059","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"whereAddIndexedExpr"}},
+  {"id":"OMI-060","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"strAccumFinishRealloc"}},
+  {"id":"OMI-061","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_auto_extension"}},
+  {"id":"OMI-062","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3PagerOpen"}},
+  {"id":"OMI-063","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"nodeAcquire"}},
+  {"id":"OMI-064","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"charFunc"}},
+  {"id":"OMI-065","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3RCStrResize"}},
+  {"id":"OMI-066","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3SrcListDup"}},
+  {"id":"OMI-067","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"rtreeEnqueue"}},
+  {"id":"OMI-068","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_str_new"}},
+  {"id":"OMI-069","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"walIteratorInit"}},
+  {"id":"OMI-070","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"pragmaVtabFilter"}},
+  {"id":"OMI-071","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3ParserAddCleanup"}},
+  {"id":"OMI-072","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3BitvecSet"}},
+  {"id":"OMI-073","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3RCStrNew"}},
+  {"id":"OMI-074","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"sqlite3_create_filename"}},
+  {"id":"OMI-075","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"createTableStmt"}},
+  {"id":"OMI-076","kind":"null_dereference","severity":"critical","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":476,"message":"Potential null dereference: pointer used without null check","location":{"function":"sqlite3DbMallocZero"}},
+  {"id":"OMI-077","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in unixDlOpen() was never freed","location":{"function":"unixDlOpen"}},
+  {"id":"OMI-078","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3_serialize() was never freed","location":{"function":"sqlite3_serialize"}},
+  {"id":"OMI-079","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3_get_table() was never freed","location":{"function":"sqlite3_get_table"}},
+  {"id":"OMI-080","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in parserStackRealloc() was never freed","location":{"function":"parserStackRealloc"}},
+  {"id":"OMI-081","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3MemFree() was never freed","location":{"function":"sqlite3MemFree"}},
+  {"id":"OMI-082","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3MemRealloc() was never freed","location":{"function":"sqlite3MemRealloc"}},
+  {"id":"OMI-083","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3MemSize() was never freed","location":{"function":"sqlite3MemSize"}},
+  {"id":"OMI-084","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3MemInit() was never freed","location":{"function":"sqlite3MemInit"}},
+  {"id":"OMI-085","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5Init() was never freed","location":{"function":"fts5Init"}},
+  {"id":"OMI-086","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5BestIndexMethod() was never freed","location":{"function":"fts5BestIndexMethod"}},
+  {"id":"OMI-087","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5OpenMethod() was never freed","location":{"function":"fts5OpenMethod"}},
+  {"id":"OMI-088","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5CreateAux() was never freed","location":{"function":"fts5CreateAux"}},
+  {"id":"OMI-089","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5LocaleFunc() was never freed","location":{"function":"fts5LocaleFunc"}},
+  {"id":"OMI-090","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5MallocZero() was never freed","location":{"function":"sqlite3Fts5MallocZero"}},
+  {"id":"OMI-091","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5ConfigParse() was never freed","location":{"function":"sqlite3Fts5ConfigParse"}},
+  {"id":"OMI-092","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5StorageOpen() was never freed","location":{"function":"sqlite3Fts5StorageOpen"}},
+  {"id":"OMI-093","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5Strndup() was never freed","location":{"function":"sqlite3Fts5Strndup"}},
+  {"id":"OMI-094","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ConfigGobbleWord() was never freed","location":{"function":"fts5ConfigGobbleWord"}},
+  {"id":"OMI-095","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5BufferSize() was never freed","location":{"function":"sqlite3Fts5BufferSize"}},
+  {"id":"OMI-096","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5TriCreate() was never freed","location":{"function":"fts5TriCreate"}},
+  {"id":"OMI-097","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5ExprNew() was never freed","location":{"function":"sqlite3Fts5ExprNew"}},
+  {"id":"OMI-098","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5ExprAnd() was never freed","location":{"function":"sqlite3Fts5ExprAnd"}},
+  {"id":"OMI-099","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5ExprPattern() was never freed","location":{"function":"sqlite3Fts5ExprPattern"}},
+  {"id":"OMI-100","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5CursorFirstSorted() was never freed","location":{"function":"fts5CursorFirstSorted"}},
+  {"id":"OMI-101","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ParseAlloc() was never freed","location":{"function":"fts5ParseAlloc"}},
+  {"id":"OMI-102","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ParseColset() was never freed","location":{"function":"fts5ParseColset"}},
+  {"id":"OMI-103","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5IterSetOutputsTokendata() was never freed","location":{"function":"fts5IterSetOutputsTokendata"}},
+  {"id":"OMI-104","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5DataRead() was never freed","location":{"function":"fts5DataRead"}},
+  {"id":"OMI-105","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5SegIterReverseInitPage() was never freed","location":{"function":"fts5SegIterReverseInitPage"}},
+  {"id":"OMI-106","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5TokendataIterAppendMap() was never freed","location":{"function":"fts5TokendataIterAppendMap"}},
+  {"id":"OMI-107","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ExprPhraseIsMatch() was never freed","location":{"function":"fts5ExprPhraseIsMatch"}},
+  {"id":"OMI-108","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ExprSynonymList() was never freed","location":{"function":"fts5ExprSynonymList"}},
+  {"id":"OMI-109","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5ParseTokenize() was never freed","location":{"function":"fts5ParseTokenize"}},
+  {"id":"OMI-110","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5AppendTokendataIter() was never freed","location":{"function":"fts5AppendTokendataIter"}},
+  {"id":"OMI-111","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5StructureAddLevel() was never freed","location":{"function":"fts5StructureAddLevel"}},
+  {"id":"OMI-112","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5StructureExtendLevel() was never freed","location":{"function":"fts5StructureExtendLevel"}},
+  {"id":"OMI-113","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5WriteDlidxGrow() was never freed","location":{"function":"fts5WriteDlidxGrow"}},
+  {"id":"OMI-114","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5HashEntrySort() was never freed","location":{"function":"fts5HashEntrySort"}},
+  {"id":"OMI-115","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5DlidxIterInit() was never freed","location":{"function":"fts5DlidxIterInit"}},
+  {"id":"OMI-116","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5HashQuery() was never freed","location":{"function":"sqlite3Fts5HashQuery"}},
+  {"id":"OMI-117","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5ExprClearPoslists() was never freed","location":{"function":"sqlite3Fts5ExprClearPoslists"}},
+  {"id":"OMI-118","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5StorageIntegrity() was never freed","location":{"function":"sqlite3Fts5StorageIntegrity"}},
+  {"id":"OMI-119","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5HashNew() was never freed","location":{"function":"sqlite3Fts5HashNew"}},
+  {"id":"OMI-120","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in sqlite3Fts5HashWrite() was never freed","location":{"function":"sqlite3Fts5HashWrite"}},
+  {"id":"OMI-121","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5HashResize() was never freed","location":{"function":"fts5HashResize"}},
+  {"id":"OMI-122","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5SnippetFunction() was never freed","location":{"function":"fts5SnippetFunction"}},
+  {"id":"OMI-123","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5SentenceFinderAdd() was never freed","location":{"function":"fts5SentenceFinderAdd"}},
+  {"id":"OMI-124","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5Bm25GetData() was never freed","location":{"function":"fts5Bm25GetData"}},
+  {"id":"OMI-125","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5UnicodeCreate() was never freed","location":{"function":"fts5UnicodeCreate"}},
+  {"id":"OMI-126","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5UnicodeTokenize() was never freed","location":{"function":"fts5UnicodeTokenize"}},
+  {"id":"OMI-127","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5AsciiCreate() was never freed","location":{"function":"fts5AsciiCreate"}},
+  {"id":"OMI-128","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5AsciiTokenize() was never freed","location":{"function":"fts5AsciiTokenize"}},
+  {"id":"OMI-129","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5PorterCreate() was never freed","location":{"function":"fts5PorterCreate"}},
+  {"id":"OMI-130","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5UnicodeAddExceptions() was never freed","location":{"function":"fts5UnicodeAddExceptions"}},
+  {"id":"OMI-131","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in fts5VocabFilterMethod() was never freed","location":{"function":"fts5VocabFilterMethod"}},
+  {"id":"OMI-132","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in rtreeBestIndex() was never freed","location":{"function":"rtreeBestIndex"}},
+  {"id":"OMI-133","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in rtreeFilter() was never freed","location":{"function":"rtreeFilter"}},
+  {"id":"OMI-134","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in rtreeInit() was never freed","location":{"function":"rtreeInit"}},
+  {"id":"OMI-135","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in deserializeGeometry() was never freed","location":{"function":"deserializeGeometry"}},
+  {"id":"OMI-136","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in SplitNode() was never freed","location":{"function":"SplitNode"}}
+]}

@@ -1,7 +1,7 @@
 # OmniScope v0.1.7 Corpus Analysis Report
 
 **Generated**: 2026-05-06  
-**Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)  
+**Version**: v0.1.7 (67 bugs fixed, 343/343 tests passing)  
 **Analyzer**: OmniScope - Multi-Language FFI Safety Analyzer
 
 ---

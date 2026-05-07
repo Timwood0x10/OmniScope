@@ -1,0 +1,88 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/sqlite_binding.bc
+
+
+[INFO] Loaded: 24 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+[32m[INFO][0m CallGraph: extracted 17 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 24 nodes, 35 edges for BFS traversal
+[32m[INFO][0m RustFfiFilter: analyzed 8 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m BufferOverflow: No buffer overflow issues detected
+[32m[INFO][0m PointerFlow: Found 1 source functions
+[32m[INFO][0m PointerFlow: 24 values tracked after propagation
+[32m[INFO][0m FFITypeMismatch: analyzed 35 calls, found 20 FFI boundaries, 0 issues
+[32m[INFO][0m [P1-1] DangerSurfacePass: 17 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 17 cross-language edges from CallGraph
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 75 unfreed + 9 freed = 84 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 1 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 17 frees — total now 17
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 75 allocs, 17 frees
+[32m[INFO][0m PointerOwnership: Found 5 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 83 allocations, 25 frees, 8 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 83, reused: 0, in_use: 83
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    72
+info:   Safe zone (skipped):         0 (4.2%)
+info:   Runtime internal (skipped):  3
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         51
+info:   Unknown zone:                18
+info: 
+info:   Escape zone functions:       51 (70.8% of total)
+info:   Issues found:              5
+info:     Issue breakdown by category:
+info:       Memory leak:              5
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  5
+info:     Origin breakdown:
+info:       ✅ User code:                  5 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 5 actionable issues (5 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          5
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         5.04      5039.92      5039.92
+detect                                  2         2.82      1407.92      1434.54
+total                                   1         5.04      5044.13      5044.13
+analysis                                1         3.96      3956.67      3956.67
+[32m[INFO][0m PointerOwnership: 4 ops, 16.86ms total
+[32m[INFO][0m GlobalAllocTracker: 1 memory leaks confirmed from 1 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 24
+
+[INFO] Facts generated: 57
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778156743,"summary":{"functions":24,"issues":5,"time_ms":14},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"bind_dangling_pointer"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"leak_statement"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"get_user_name_dangling"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"leak_database_open"}}
+]}

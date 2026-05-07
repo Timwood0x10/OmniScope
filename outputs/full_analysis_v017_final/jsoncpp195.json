@@ -1,0 +1,100 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/jsoncpp195.bc
+
+
+[INFO] Loaded: 2070 functions
+
+
+[INFO] LANG-DETECT: module language = cpp, confidence = 100.0%, method = personality
+info: [PERF] CallSiteIndex build: 11 ms
+[32m[INFO][0m CallGraph: extracted 888 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 2070 nodes, 5090 edges for BFS traversal
+[32m[INFO][0m [PERF] Pass 'call-graph: 172 ms
+[32m[INFO][0m RustFfiFilter: analyzed 1998 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m [PERF] Pass 'return-check: 40 ms
+[32m[INFO][0m BufferOverflow: Skipped (module has 1998 functions, >500 threshold)
+[32m[INFO][0m PointerFlow: 2 values tracked after propagation
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 413 ms
+[32m[INFO][0m FFITypeMismatch: analyzed 1986 calls, found 482 FFI boundaries, 0 issues
+[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 58 ms
+[32m[INFO][0m [P1-1] DangerSurfacePass: 888 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 888 cross-language edges from CallGraph
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 346 funcs, tracked 1700 ptrs, found 3 violations
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 850ms total (track=172ms, check=52ms, postprocess=11ms) for 346 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 850 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m [PERF] Pass 'callback-escape: 237 ms
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 5097 unfreed + 4 freed = 5101 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 2 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 6 frees — total now 6
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 5097 allocs, 6 frees
+[32m[INFO][0m RAII: 51 functions identified as RAII-managed (skipped)
+[32m[INFO][0m Meyers: 3 functions identified as singleton init (skipped)
+[32m[INFO][0m RC-Container: 1 functions identified as refcount-managed (skipped)
+[32m[INFO][0m PointerOwnership: Found 5 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 5118 allocations, 8 frees, 21 tracked pointers
+[32m[INFO][0m PointerOwnership: 1499 cross-FFI ownership transfers detected
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 5118, reused: 0, in_use: 5118
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    6210
+info:   Safe zone (skipped):         0 (1.0%)
+info:   Runtime internal (skipped):  63
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         369
+info:   Unknown zone:                5778
+info: 
+info:   Escape zone functions:       369 (5.9% of total)
+info:   Issues found:              5
+info:     Issue breakdown by category:
+info:       Memory leak:              5
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  5
+info:     Origin breakdown:
+info:       ✅ User code:                  1 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        4
+info:     → 1 actionable issues (1 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          5
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1      1292.92   1292918.92   1292918.92
+detect                                  2       160.93     80465.83     80492.17
+total                                   1      1292.92   1292924.83   1292924.83
+analysis                                1       859.07    859074.38    859074.38
+[32m[INFO][0m PointerOwnership: 4 ops, 3605.85ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 1292 ms
+[32m[INFO][0m GlobalAllocTracker: 2 memory leaks confirmed from 2 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 2070
+
+[INFO] Facts generated: 3006
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158920,"summary":{"functions":2070,"issues":5,"time_ms":3163},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZNK4Json5Value8Comments3getENS_16CommentPlacementE"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZNK4Json5Value8Comments3hasENS_16CommentPlacementE"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4JsonL20duplicateStringValueEPKcm"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4JsonL29duplicateAndPrefixStringValueEPKcj"}}
+]}

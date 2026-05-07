@@ -14,7 +14,7 @@
 
 ## 一、执行摘要
 
-| 文件                          | 语言    | Intentional Bugs | Controls | Target Feature  | 预期检出      |
+| 文件                          | 语言    | Intentional Bugs | Controls | Target Feature  | Expected检出      |
 | --------------------------- | ----- | ---------------- | -------- | --------------- | --------- |
 | **v017\_go\_cgo\_chain.go** | Go    | **8**            | 2        | A2 (cgo chain)  | 6-8 TP    |
 | **v017\_zig\_ffi.zig**      | Zig   | **7**            | 3        | A4 (Zig FFI)    | 5-7 TP    |
@@ -27,11 +27,11 @@
 | 能力维度                    | V3 (v0.1.6)                      | V0.1.7 (当前)                                     | 提升说明                                       |
 | ----------------------- | -------------------------------- | ----------------------------------------------- | ------------------------------------------ |
 | **Go cgo 检测**           | ❌ 仅 `main.`/`runtime.` 基础分类      | ✅ `C.xxx`/`_cgo_`/`_Cfunc_`/`crosscall2` 完整链路   | A2: cgo import → glue → runtime bridge 全覆盖 |
-| **Java/JNI 检测**         | ❌ 无                              | ✅ `Java_`/`JNI_` 前缀 + 20+ 方法名模式 + `JVM_` 排除     | A3: 完整 JNI 函数命名规范支持                        |
+| **Java/JNI 检测**         | ❌ 无                              | ✅ `Java_`/`JNI_` 前缀 + 20+ Method名模式 + `JVM_` 排除     | A3: 完整 JNI 函数命名规范支持                        |
 | **Zig FFI 检测**          | ⚠️ isZigExtern 空壳 (return false) | ✅ `zig_`/`__zig_`/`c.`/`__export_` 完整实现         | F1-1: 从 0% → 100% Zig extern 检出率           |
-| **Alias Closure 严重度升级** | ❌ 统一 .high/.medium               | ✅ FFI alias → .critical / confidence +10%       | E2-2a/b/c: 跨语言内存错误自动提级                     |
-| **FunctionOrigin 分组输出** | ❌ 无 origin 维度                    | ✅ user\_code / third\_party / stdlib / compiler | C4-4: 输出中新增 Origin breakdown 区块            |
-| **JVM\_ 分类修复**          | 🔴 BUG: 被误分为 .c                  | ✅ 正确返回 .unknown                                 | 死代码排除逻辑提前到 isJNIFunction 前                 |
+| **Alias Closure 严重度升级** | ❌ 统一 .high/.medium               | ✅ FFI alias → .critical / confidence +10%       | E2-2a/b/c: Cross-Language内存错误自动提级                     |
+| **FunctionOrigin 分组Output** | ❌ 无 origin 维度                    | ✅ user\_code / third\_party / stdlib / compiler | C4-4: Output中新增 Origin breakdown 区块            |
+| **JVM\_ 分类Fix**          | 🔴 BUG: 被误分为 .c                  | ✅ 正确返回 .unknown                                 | 死代码排除逻辑提前到 isJNIFunction 前                 |
 
 ***
 
@@ -39,7 +39,7 @@
 
 ### 文件: [v017\_go\_cgo\_chain.go](v017_go_cgo_chain.go)
 
-| #   | Bug 名称                  | cgo 模式                        | 预期 Issue 类型                    | 严重度预期     | 检测依据                                  |
+| #   | Bug 名称                  | cgo 模式                        | Expected Issue 类型                    | 严重度Expected     | 检测依据                                  |
 | --- | ----------------------- | ----------------------------- | ------------------------------ | --------- | ------------------------------------- |
 | G01 | CMallocLeak             | `C.malloc` + no free          | memory\_leak / cross\_language | .high     | C.xxx 通过 identifyCalleeLanguage → .go |
 | G02 | CStringLeak             | `C.CString` + no free         | memory\_leak / cross\_language | .high     | C.CString 是 Go→C 内存桥接函数               |
@@ -74,7 +74,7 @@
 
 ### 文件: [v017\_zig\_ffi.zig](v017_zig_ffi.zig)
 
-| #   | Bug 名称                 | FFI 模式                          | 预期 Issue 类型                | 严重度预期      | 检测依据                                             |
+| #   | Bug 名称                 | FFI 模式                          | Expected Issue 类型                | 严重度Expected      | 检测依据                                             |
 | --- | ---------------------- | ------------------------------- | -------------------------- | ---------- | ------------------------------------------------ |
 | Z01 | ZigAllocLeak           | `zig_alloc` + no free           | memory\_leak               | .high      | zig\_\* 前缀 → isZigExtern = true                  |
 | Z02 | CMallocZigFreeMismatch | `c.malloc` + `zig_free`         | use\_after\_free           | .critical· | E2-2b: 跨分配器释放 + FFI alias                        |
@@ -87,16 +87,16 @@
 | C02 | CorrectCMallocFree     | —                               | (无)                        | —          | ✅ Control: c.malloc + c.free 配对                  |
 | C03 | PureZigNoFFI           | —                               | (无)                        | —          | ✅ Control: 纯 Zig，无 FFI 交互                        |
 
-### F1-1 关键修复: isZigExtern 从空壳到完整实现
+### F1-1 关键Fix: isZigExtern 从空壳到完整实现
 
 ```zig
-// 修复前 (v0.1.6): Zig FFI 检出率 = 0%
+// Fix前 (v0.1.6): Zig FFI 检出率 = 0%
 fn isZigExtern(name: []const u8) bool {
     _ = name;
     return false;  // ← 所有 Zig extern 函数都被忽略!
 }
 
-// 修复后 (v0.1.7): 三层检测
+// Fix后 (v0.1.7): 三层检测
 fn isZigExtern(name: []const u8) bool {
     // Layer 1: 前缀匹配 (zig_, __zig_)
     for (ZIG_EXTERN_PREFIXES) |prefix| { ... }
@@ -117,7 +117,7 @@ fn isZigExtern(name: []const u8) bool {
 
 ### 文件: [v017\_jni\_boundary.c](v017_jni_boundary.c)
 
-| #   | Bug 名称                    | JNI 模式                             | 预期 Issue 类型       | 严重度预期   | 检测依据                                         |
+| #   | Bug 名称                    | JNI 模式                             | Expected Issue 类型       | 严重度Expected   | 检测依据                                         |
 | --- | ------------------------- | ---------------------------------- | ----------------- | ------- | -------------------------------------------- |
 | J01 | nativeLeak                | `Java_com_example_*` + malloc leak | memory\_leak      | .high   | Java\_ 前缀 → identifyCalleeLanguage → .java   |
 | J02 | OnLoadDanglingCallback    | `JNI_OnLoad` + callback reg        | borrow\_escape    | .high   | JNI\_OnLoad 是标准 JNI 入口点                      |
@@ -180,9 +180,9 @@ if (isJNIFunction(func_name)) {
 
 ## 六、TP/FP 统计汇总
 
-### 预期检出率
+### Expected检出率
 
-| 文件                      | Bugs   | 预期 TP     | 预期 FN   | 预期 FP | 主要 FN 原因                     |
+| 文件                      | Bugs   | Expected TP     | Expected FN   | Expected FP | 主要 FN 原因                     |
 | ----------------------- | ------ | --------- | ------- | ----- | ---------------------------- |
 | v017\_go\_cgo\_chain.go | 8      | 6-8       | 0-2     | 0     | G03/G05 可能需运行时 IR 分析         |
 | v017\_zig\_ffi.zig      | 7      | 5-7       | 0-2     | 0     | Z04/Z05 取决于 format string 检测 |
@@ -197,10 +197,10 @@ if (isJNIFunction(func_name)) {
 | 支持的语言数              | 4 (C/Rust/C++/Zig/Swift/Go) | **6 (+Java)**    | 🆕 +2          |
 | Go cgo 模式覆盖         | 仅 main./runtime. 前缀         | **6 种 cgo 模式**   | 🆕 完整链路        |
 | Java/JNI 支持         | ❌ 无                         | ✅ **完整支持**       | 🆕 新增          |
-| Zig isZigExtern 功能性 | 🔴 空壳 (return false)        | ✅ **三层检测**       | 🔧 **修复**      |
+| Zig isZigExtern 功能性 | 🔴 空壳 (return false)        | ✅ **三层检测**       | 🔧 **Fix**      |
 | JVM\_ 分类正确性         | 🔴 误为 .c                    | ✅ **.unknown**   | 🔧 **Bug fix** |
 | FFI alias 严重度升级     | ❌ 无                         | ✅ **4 个报告函数**    | 🆕 新增          |
-| FunctionOrigin 输出分组 | ❌ 无                         | ✅ **4 类 origin** | 🆕 新增          |
+| FunctionOrigin Output分组 | ❌ 无                         | ✅ **4 类 origin** | 🆕 新增          |
 | **预估总 TP 提升**       | —                           | **+20\~26 bugs** | 🆕 多语言扩展       |
 
 ***
@@ -209,7 +209,7 @@ if (isJNIFunction(func_name)) {
 
 以下模式在 v0.1.7 中应**不被误报**:
 
-| 模式                | 示例                            | 预期行为     | 保护机制                         |
+| 模式                | 示例                            | Expected行为     | 保护机制                         |
 | ----------------- | ----------------------------- | -------- | ---------------------------- |
 | Go 运行时内部函数        | runtime.gopark, makeslice     | 静默跳过     | isGoInternalFunction()       |
 | Zig 编译器内部函数       | zig\_assert\_fail, zig\_panic | 静默跳过     | ZIG\_EXTERN\_EXCLUDES 列表     |
@@ -223,15 +223,15 @@ if (isJNIFunction(func_name)) {
 
 > **运行命令**:
 > ```bash
-> zig build run -- corpus/red_team_test/v017_go_cgo_chain.go   # 预期: 8 TP + 2 TN
-> zig build run -- corpus/red_team_test/v017_zig_ffi.zig         # 预期: 7 TP + 3 TN
-> zig build run -- corpus/red_team_test/v017_jni_boundary.c      # 预期: 6 TP + 2 TN
-> zig build run -- corpus/red_team_test/v017_alias_closure.c     # 预期: 5 TP + 1 TN
+> zig build run -- corpus/red_team_test/v017_go_cgo_chain.go   # Expected: 8 TP + 2 TN
+> zig build run -- corpus/red_team_test/v017_zig_ffi.zig         # Expected: 7 TP + 3 TN
+> zig build run -- corpus/red_team_test/v017_jni_boundary.c      # Expected: 6 TP + 2 TN
+> zig build run -- corpus/red_team_test/v017_alias_closure.c     # Expected: 5 TP + 1 TN
 > ```
 >
-> 填入实际检测到的 Issue 数量和类型。
+> 填入Actualdetected的 Issue 数量和类型。
 
-### v0.1.7 实际运行结果 (2026-05-05)
+### v0.1.7 Actual运行结果 (2026-05-05)
 
 | Corpus 文件 | 语言 | Issues | PtrLifetime 违规数 | Memory Leaks | Callback Escapes |
 |-------------|------|--------|-------------------|--------------|------------------|
@@ -247,21 +247,21 @@ if (isJNIFunction(func_name)) {
 
 | 文件 | [OMI-CRITICAL] | [OMI-HIGH] | [OMI-MEDIUM] | 说明 |
 |------|---------------|-----------|--------------|------|
-| red_team_bugs_O0.ll | 0 | 0 | 0 | 仅 GlobalAllocTracker 检测到泄漏 |
+| red_team_bugs_O0.ll | 0 | 0 | 0 | 仅 GlobalAllocTracker detected泄漏 |
 | posix_ffi_bugs_O0.ll | 0 | 9 (PtrLifetime) + 5 (GlobalAlloc) = **14** | 0 | PtrLifetime 9 个违规全部为 HIGH |
-| ffi_boundary_bugs_O0.ll | 0 | 12 (GlobalAlloc) | 0 | 全部为内存泄漏 |
+| ffi_boundary_bugs_O0.ll | 0 | 12 (GlobalAlloc) | 0 | 全部为Memory Leak |
 | subtle_ffi_bugs.ll | 0 | 4 (PtrLifetime) + 9 (GlobalAlloc) = **13** | 0 | |
 | subtle_unsafe_rs.ll | 0 | 2 (PtrLifetime) + 3 (GlobalAlloc) = **5** | 0 | Rust: 4 Issues, TP rate 需确认 |
-| v017_alias_closure_O0.ll | 0 | 3 (PtrLifetime) + 4 (GlobalAlloc) = **7** | 0 | E2-2 alias closure 目标文件 |
+| v017_alias_closure_O0.ll | 0 | 3 (PtrLifetime) + 4 (GlobalAlloc) = **7** | 0 | E2-2 alias closure Objective文件 |
 | **总计** | **0** | **41** | **0** | |
 
 > ⚠️ **注意**: 当前 `[OMI-CRITICAL]` 为 0，因为现有 corpus 的 bug 场景主要触发 `.high` 级别。
-> `[OMI-HIGH]` 计数为 **41**，远超目标值 ≥10 ✅
+> `[OMI-HIGH]` 计数为 **41**，远超Objective值 ≥10 ✅
 > `[OMI-CRITICAL]` 需要 **alias closure 触发 critical 升级** 的场景（E2-2a/b）才能产生
 
 #### E2-2 Alias Closure 严重度升级验证
 
-| Bug | 预期升级 | 实际检测 | 状态 |
+| Bug | Expected升级 | Actual检测 | 状态 |
 |-----|---------|---------|------|
 | M01 InvalidFreeWithFFIAlias | .high → **.critical** | v017_alias_closure: 3 violations detected | ⚠️ 需确认是否触发 critical |
 | M02 DoubleFreeWithFFIAlias | .high → **.critical** | 待 alias chain 到达 FFI boundary | 🔄 需更深层 IR |
@@ -280,8 +280,8 @@ if (isJNIFunction(func_name)) {
 
 #### 下一步行动
 
-1. **编译 Go corpus**: `CGO_ENABLED=1 go build -toollib -gcflags="-S" v017_go_cgo_chain.go` 或使用 `clang` 编译 cgo 输出
+1. **编译 Go corpus**: `CGO_ENABLED=1 go build -toollib -gcflags="-S" v017_go_cgo_chain.go` 或使用 `clang` 编译 cgo Output
 2. **编译 Zig corpus**: `zig build-obj --emit=ir v017_zig_ffi.zig`
-3. **修复 JNI corpus**: 安装 JDK header 或创建 jni.h stub
+3. **Fix JNI corpus**: 安装 JDK header 或创建 jni.h stub
 4. **重新运行 benchmark.sh**: 在所有 .ll 就绪后执行完整 benchmark
 

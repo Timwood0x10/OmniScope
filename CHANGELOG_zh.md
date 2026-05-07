@@ -115,7 +115,59 @@ OmniScope 的所有重要变更都将记录在此文件。
 
 ---
 
-## [0.1.5] - 2026-04-25
+## [0.1.7] - 2026-05-06
+
+### 🛡️ 全面 Bug 修复版本 (Round 7: 24 bugs)
+
+**全量代码审查发现并修复 24 个 CRITICAL/HIGH/MEDIUM/LOW 级别 Bug。**
+
+#### 关键修复 (CRITICAL + HIGH)
+
+| Bug | 文件 | 问题 | 修复 |
+|-----|------|------|------|
+| BUG-1 | ffi_analysis.zig | `free_sites.get()` 返回副本，append 丢失 | `get()` → `getPtr()` |
+| BUG-2 | alias.zig | AutoHashMap.deinit() API 错误 | 移除 allocator 参数 |
+| BUG-3/9 | pipeline.zig, pass.zig | `catch unreachable` OOM 崩溃 | 改用 `try` |
+| BUG-5/16 | formatter.zig, main.zig | JSON 大写 HEX 违反规范 | `{X}` → `{x}` |
+| BUG-6 | call_graph.zig | OOM 时字符串泄漏 | 添加 errdefer |
+| BUG-21 | rust_ffi_auditor.zig | 对称别名返回 false | 修正 |
+
+#### 测试结果
+
+- **340/340 测试通过**
+- **0 编译错误**
+- **CI/CD 修复** — SARIF 上传正常, CodeQL v4 迁移
+
+### Round 8: 系统化 Bug 审计 — 额外 43 个修复
+
+**日期**: 2026-05-07 | **测试**: 343/343 通过
+
+对所有已知问题进行系统化审计。全部 43 个 bug 已修复：
+
+#### CRITICAL (7/7)
+
+JSON 尾逗号修复、SARIF 初始化、JS 平移 NaN、字段名、测试断言、Rust 检测、HashMap errdefer。
+
+#### HIGH (12/12)
+
+LLVM 操作数索引标准化、trace deep-copy double-free 防护、off-by-one 修正、缺失 import、HashMap API、验证逻辑。
+
+#### MEDIUM (18/18)
+
+测试值修正、`static_buffer_functions` 集成到 lookup()（+14 函数，totalCount 297→311）、`isCFree` 整词匹配重构、错误吞没 → 保守报告、hooks 线程安全文档、输出参数分类器函数级查找、personality 死前缀移除、OOM 泄漏防护、use-after-free 修复、字符串比较 → 布尔标志、线程安全 IssueKind 修正（新增 `data_race` + `thread_safety_violation`）、HashMap 传值 → 传指针、测试缺少 allocator 参数。
+
+#### LOW (6/6)
+
+重复条目删除、无符号比较修正、null guard 添加、死代码删除（~450 行）、parseLanguage 截断防护。
+
+#### 重要结构变更
+
+- **IssueKind 枚举**: 14 → **20 种**（新增 `data_race` CWE-362, `thread_safety_violation` CWE-807）
+- **SARIF 规则**: 14 → **16**（覆盖新并发 issue kind）
+- **DataFlowGraph.IssueStats**: 新增 `data_race` 和 `thread_safety_violation` 字段
+- **死代码删除**: `ptr_lifetime_check.zig` 已删除（~450 行重复/桩代码）
+
+---
 
 ### 核心创新：Zone Classification
 

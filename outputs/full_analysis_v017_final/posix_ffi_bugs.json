@@ -1,0 +1,98 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/posix_ffi_bugs.bc
+
+
+[INFO] Loaded: 48 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+[32m[INFO][0m CallGraph: extracted 31 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 48 nodes, 40 edges for BFS traversal
+[32m[INFO][0m RustFfiFilter: analyzed 20 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m BufferOverflow: No buffer overflow issues detected
+[32m[INFO][0m PointerFlow: 27 values tracked after propagation
+[32m[INFO][0m FFITypeMismatch: analyzed 41 calls, found 35 FFI boundaries, 0 issues
+[32m[INFO][0m [P1-1] DangerSurfacePass: 31 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 31 cross-language edges from CallGraph
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in POSIX_06_create_Thread_Dangling_Arg
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in POSIX_06_create_Thread_Dangling_Arg
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in POSIX_11_use_After_Detach
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in POSIX_11_use_After_Detach
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 20 funcs, tracked 49 ptrs, found 8 violations
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 89 unfreed + 0 freed = 89 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 5 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 0 frees — total now 0
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 89 allocs, 0 frees
+[32m[INFO][0m PointerOwnership: Found 3 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 91 allocations, 0 frees, 2 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 91, reused: 0, in_use: 91
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    144
+info:   Safe zone (skipped):         0 (4.2%)
+info:   Runtime internal (skipped):  6
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         120
+info:   Unknown zone:                18
+info: 
+info:   Escape zone functions:       120 (83.3% of total)
+info:   Issues found:              8
+info:     Issue breakdown by category:
+info:       Memory leak:              4
+info:       Borrow escape:            4
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  8
+info:     Origin breakdown:
+info:       ✅ User code:                  8 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 8 actionable issues (8 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          8
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1         4.56      4560.29      4560.29
+detect                                  2         1.15       576.27       602.29
+total                                   1         4.56      4564.50      4564.50
+analysis                                1         3.42      3423.21      3423.21
+[32m[INFO][0m PointerOwnership: 4 ops, 13.70ms total
+[32m[INFO][0m GlobalAllocTracker: 5 memory leaks confirmed from 5 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 48
+
+[INFO] Facts generated: 35
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158948,"summary":{"functions":48,"issues":10,"time_ms":18},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":401,"message":"Heap pointer (dlsym-derived pointer from resource via dlopen()) stored to global in POSIX_03_dlclose_While_Pointers_Active - potential memory leak if never freed (CWE-401)","location":{"function":"POSIX_03_dlclose_While_Pointers_Active"}},
+  {"id":"OMI-002","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_06_create_Thread_Dangling_Arg"}},
+  {"id":"OMI-003","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_06_create_Thread_Dangling_Arg"}},
+  {"id":"OMI-004","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_11_use_After_Detach"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_11_use_After_Detach"}},
+  {"id":"OMI-006","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-007","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"POSIX_05_munmap_While_In_Use"}},
+  {"id":"OMI-008","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"POSIX_04_mmap_MAPEAILED_Not_Checked"}},
+  {"id":"OMI-009","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in POSIX_01_dlopen_Null_Check() was never freed","location":{"function":"POSIX_01_dlopen_Null_Check"}},
+  {"id":"OMI-010","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in POSIX_09_socket_Leak_On_Error() was never freed","location":{"function":"POSIX_09_socket_Leak_On_Error"}}
+]}

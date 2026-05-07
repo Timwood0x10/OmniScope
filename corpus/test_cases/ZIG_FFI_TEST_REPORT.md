@@ -11,7 +11,7 @@
 
 ### 中文摘要
 
-本报告展示了 OmniScope v0.1.5 对三个 Zig FFI 密集型项目的测试结果：
+本报告展示了 OmniScope v0.1.5 对三个 Zig FFI 密集型项目的Test Results：
 
 1. **zig-v（视频处理库模拟）**：194 个 FFI 问题检测
 2. **zgui（GUI 库/OpenGL 模拟）**：168 个 FFI 问题检测
@@ -39,7 +39,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 
 ---
 
-## 🎯 Test Environment / 测试环境
+## 🎯 Test Environment / 测试Environment
 
 | Item | Value |
 |------|-------|
@@ -61,7 +61,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 
 ---
 
-## 📊 Test Results / 测试结果
+## 📊 Test Results / Test Results
 
 ### Project #1: zig-v (Video Processing Library) / 视频处理库
 
@@ -98,7 +98,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 ⚠️ FP: debug.Dwarf.* -> __zig_is_named_enum_value (internal function)
 ```
 
-#### True Positives vs False Positives / 真阳性 vs 假阳性
+#### True Positives vs False Positives / True Positive vs False Positive
 
 | Metric | Count | Rate |
 |--------|-------|------|
@@ -141,7 +141,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 ✅ LIFETIME: ImGuiContext -> owned (must call igDestroyContext)
 ```
 
-#### True Positives vs False Positives / 真阳性 vs 假阳性
+#### True Positives vs False Positives / True Positive vs False Positive
 
 | Metric | Count | Rate |
 |--------|-------|------|
@@ -189,7 +189,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 ✅ TYPE MISMATCH: inttoptr in loadPlugin (potential invalid pointer)
 ```
 
-#### True Positives vs False Positives / 真阳性 vs 假阳性
+#### True Positives vs False Positives / True Positive vs False Positive
 
 | Metric | Count | Rate |
 |--------|-------|------|
@@ -274,7 +274,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 - Still reports dangerous calls (command_exec, unchecked_copy)
 - **Precision**: High - no known safe bindings missed
 
-### 3. Cross-Language Type Compatibility / 跨语言类型兼容性
+### 3. Cross-Language Type Compatibility / Cross-Language类型兼容性
 
 **Function**: `checkTypeCompatibility()` in [ffi_boundary.zig:592-651](src/pass/analysis/ffi_boundary.zig#L592-L651)
 
@@ -362,7 +362,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 3. **Third-Party Library Code**
    - Any libraries pulled in via @cImport that aren't in safe list
 
-### Recommendations for Improvement / 改进建议
+### Recommendations for Improvement / Improvement Suggestions
 
 1. **Expand zig_internal_patterns list**
    - Add more std library patterns as they're discovered
@@ -382,7 +382,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 
 ---
 
-## 🎯 Conclusions / 结论
+## 🎯 Conclusions / Conclusion
 
 ### Successes / 成功之处
 
@@ -413,7 +413,7 @@ This report presents OmniScope v0.1.5 test results on three Zig FFI-intensive pr
 
 ## 📎 Appendices / 附录
 
-### Appendix A: Test Files / 测试文件
+### Appendix A: Test Files / Test File
 
 | File | Location | Size | Lines |
 |------|----------|------|-------|
@@ -437,7 +437,7 @@ zig build-obj <file>.zig -femit-llvm-ir -fno-emit-bin
 ./zig-out/bin/omniscope <file>.ll 2>&1 | grep "Kind:" | sed 's/.*Kind: //' | sort | uniq -c
 ```
 
-### Appendix C: Configuration / 配置
+### Appendix C: Configuration / Configuration
 
 **Zig Compiler Flags**:
 - Target: native (arm64-macos)

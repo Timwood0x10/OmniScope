@@ -6,24 +6,24 @@
 
 ***
 
-## 1. 测试概述
+## 1. 测试Overview
 
-### 1.1 测试目标
+### 1.1 测试Objective
 
-对 ZKP 领域的典型项目进行硬核测试，验证 OmniScope 的检测能力和误报率。
+对 ZKP 领域的典型项目进行硬核测试，验证 OmniScope 的Detection Capability和False Positive Rate。
 
 ### 1.2 测试项目信息
 
 | 项目   | 语言       | FFI 模式             | IR 行数  | 函数数 |
 | ---- | -------- | ------------------ | ------ | --- |
-| blst | Rust + C | C 核心 + Rust FFI 绑定 | 54,711 | 416 |
+| blst | Rust + C | C Core + Rust FFI 绑定 | 54,711 | 416 |
 
-### 1.3 测试结果汇总
+### 1.3 Test Results汇总
 
 | 指标                    | 值      |
 | --------------------- | ------ |
-| 检测到的 USE-AFTER-FREE   | 185    |
-| FFI 边界问题              | 0      |
+| detected的 USE-AFTER-FREE   | 185    |
+| FFI Boundary问题              | 0      |
 | 正确过滤的 drop\_in\_place | \~200+ |
 | 分析耗时                  | 3.1s   |
 
@@ -37,7 +37,7 @@
 | ------------------ | ----- | --- | --------------------- |
 | std::sync::mpmc 通道 | \~120 | 65% | 误报（Rust 标准库安全抽象）      |
 | threadpool 相关      | \~15  | 8%  | 需关注（unsafe transmute） |
-| blst 核心算法          | \~30  | 16% | 误报（正确所有权转移）           |
+| blst Core算法          | \~30  | 16% | 误报（正确所有权转移）           |
 | std::sync::waker   | \~20  | 11% | 误报（Rust 标准库安全抽象）      |
 
 ### 2.2 典型案例分析
@@ -92,7 +92,7 @@ impl ThreadPoolExt for ThreadPool {
 
 **判定**: **需关注**
 
-这是一个真实的 `unsafe transmute` 操作，将 `'scope` 生命周期的闭包强制转换为 `'static`。注释说 "Bypass 'lifetime limitations by brute force"，这是潜在的生命期安全问题。
+这是一个真实的 `unsafe transmute` 操作，将 `'scope` 生命周期的闭包强制转换为 `'static`。注释说 "Bypass 'lifetime limitations by brute force"，这是潜在的生命期Security Issue。
 
 **风险评估**:
 
@@ -190,9 +190,9 @@ for _ in 0..n_workers {
 
 ***
 
-## 4. FFI 边界检测
+## 4. FFI Boundary检测
 
-### 4.1 检测结果
+### 4.1 Detection Results
 
 ```
 [INFO] FFIUnsafe: Analyzed 1366 boundaries, found 0 issues
@@ -201,28 +201,28 @@ for _ in 0..n_workers {
 
 ### 4.2 分析
 
-blst 的 FFI 边界设计良好：
+blst 的 FFI Boundary设计良好：
 
 - C 侧函数通过 `extern "C"` 声明
 - Rust 侧使用 `Box::into_raw` / `Box::from_raw` 进行所有权转移
-- 没有检测到 Rust-alloc/C-free 或 C-alloc/Rust-free 不匹配
+- 没有detected Rust-alloc/C-free 或 C-alloc/Rust-free 不匹配
 
 ***
 
-## 5. 结论与建议
+## 5. Conclusion与建议
 
 ### 5.1 OmniScope 表现
 
 | 方面                 | 评价                 |
 | ------------------ | ------------------ |
-| FFI 边界检测           | ✅ 准确，0 误报          |
+| FFI Boundary检测           | ✅ 准确，0 误报          |
 | drop\_in\_place 过滤 | ✅ 有效，过滤 \~200+     |
-| USE-AFTER-FREE 检测  | ⚠️ 误报率较高 (\~65%)   |
+| USE-AFTER-FREE 检测  | ⚠️ False Positive Rate较高 (\~65%)   |
 | 分析性能               | ✅ 54K 行 IR 仅需 3.1s |
 
-### 5.2 改进建议
+### 5.2 Improvement Suggestions
 
-1. **增强 mpmc/mpsc 模式识别**: 这些通道操作在 IR 层看起来像 USE-AFTER-FREE，但实际是安全的所有权转移
+1. **增强 mpmc/mpsc 模式识别**: 这些通道操作在 IR 层看起来像 USE-AFTER-FREE，但Actual是安全的所有权转移
 2. **识别 Arc<Mutex>** **模式**: 共享状态通过 `Arc` 保护，不会发生 USE-AFTER-FREE
 3. **识别 sync\_channel 所有权转移**: `send` 后所有权转移，`recv` 获得所有权
 4. **引入“线程安全原语”白名单**： 针对 `std::sync` 下的常用模式（`mpmc`、`Arc`、`Waker`）建立语义模型。一旦指针进入这些函数的“黑盒”，不应立即标记为失效，而应标记为“所有权转移至同步原语”。
@@ -256,7 +256,7 @@ blst 的 FFI 边界设计良好：
 [INFO] Issues detected: 185
 ```
 
-### 6.2 测试环境
+### 6.2 测试Environment
 
 | 项目           | 值          |
 | ------------ | ---------- |

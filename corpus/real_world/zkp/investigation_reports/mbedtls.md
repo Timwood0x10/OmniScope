@@ -23,7 +23,7 @@
 ### 2.1 编译命令
 
 ```bash
-# SSL/TLS 核心模块
+# SSL/TLS Core模块
 clang -O2 -S -emit-llvm -I./include -I./library \
   library/ssl_tls.c -o llvm_ir/ssl_tls.ll
 
@@ -47,7 +47,7 @@ clang -O2 -S -emit-llvm -I./include -I./library \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -313,7 +313,7 @@ static int tls_prf_generic(mbedtls_md_type_t md_type,
 | mbedtls_ssl_handshake_free UAF | 1 | 误报 | 结构体成员区别 |
 | tls_prf_generic UAF | 1 | 误报 | 临时缓冲区管理 |
 | mbedtls_ssl_parse_certificate UAF | 1 | 误报 | 证书解析清理 |
-| mbedtls_ssl_config_free UAF | 1 | 误报 | 配置清理模式 |
+| mbedtls_ssl_config_free UAF | 1 | 误报 | Configuration清理模式 |
 | **总计** | **7** | **100% 误报** | - |
 
 ---
@@ -331,7 +331,7 @@ static int tls_prf_generic(mbedtls_md_type_t md_type,
 
 ### 6.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **路径敏感分析** | 追踪条件分支，识别互斥路径 | 减少 30% 误报 |
 | **结构体字段分析** | 区分结构体字段与结构体本身 | 减少 20% 误报 |
@@ -340,7 +340,7 @@ static int tls_prf_generic(mbedtls_md_type_t md_type,
 
 ---
 
-## 7. 结论
+## 7. Conclusion
 
 ### 7.1 mbedtls 代码质量
 
@@ -355,9 +355,9 @@ static int tls_prf_generic(mbedtls_md_type_t md_type,
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
-| UAF 检测 | ⚠️ 误报率 100% |
+| UAF 检测 | ⚠️ False Positive Rate 100% |
 | 控制流分析 | ❌ 需改进 |
 
-**总结**: mbedtls 是嵌入式领域广泛使用的 TLS 库，代码质量良好。OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法进行精确的控制流和结构体字段分析。
+**Summary**: mbedtls 是嵌入式领域广泛使用的 TLS 库，代码质量良好。OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法进行精确的控制流和结构体字段分析。

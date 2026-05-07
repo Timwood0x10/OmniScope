@@ -1,8 +1,8 @@
-# OmniScope Rust FFI 失明根因诊断报告
+# OmniScope Rust FFI 失明Root Cause诊断报告
 
 > **日期**: 2026-05-03
-> **基于**: 源码逐行分析 + Rust .ll IR 实际指令对比
-> **测试文件**: [subtle_unsafe_rs.rs](subtle_unsafe_rs.rs) (20 FFI bugs, 0 Zone issues detected)
+> **基于**: 源码逐行分析 + Rust .ll IR Actual指令对比
+> **Test File**: [subtle_unsafe_rs.rs](subtle_unsafe_rs.rs) (20 FFI bugs, 0 Zone issues detected)
 
 ---
 
@@ -19,7 +19,7 @@ CallbackEscape:     0 issues found
 
 ---
 
-## 二、根因 #1 (最致命): PointerOwnership 不认识 Rust 分配器
+## 二、Root Cause #1 (最致命): PointerOwnership 不认识 Rust 分配器
 
 ### 2.1 调用链路
 
@@ -80,9 +80,9 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
 //         _ZN5alloc... (Rust mangled alloc)
 ```
 
-### 2.3 Rust .ll IR 中的实际分配调用样例
+### 2.3 Rust .ll IR 中的Actual分配调用样例
 
-从 [subtle_unsafe_rs.ll](subtle_unsafe_rs.ll) 中提取的实际 IR:
+从 [subtle_unsafe_rs.ll](subtle_unsafe_rs.ll) 中提取的Actual IR:
 
 ```llvm
 ; RS-FFI-01: Box::new([1,2,3,4,5,6,7,8]) 生成的调用:
@@ -106,7 +106,7 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
 ), !dbg !789
 ```
 
-**关键观察**: Rust 分配器的函数名是 **mangled name** (`_RNv...` 或 `_ZN5alloc...`)，不是简单的 `"__rust_alloc"`。
+**关键观察**: Rust 分配器的Function Name是 **mangled name** (`_RNv...` 或 `_ZN5alloc...`)，不是简单的 `"__rust_alloc"`。
 
 ### 2.4 失败的精确路径
 
@@ -118,7 +118,7 @@ isAllocationInstruction() [allocation_classifier.zig:31]
   ├─ Step 2: SemanticRegistry.lookup(name) [allocation_classifier.zig:43]
   │     │
   │     ├─ layer1 (posix): malloc/calloc/realloc/mmap/dlopen/fopen/socket/accept/bind/listen
-  │     │   → "_RNv..." 不匹配任何 posix 函数名 ✗
+  │     │   → "_RNv..." 不匹配任何 posix Function Name ✗
   │     │
   │     ├─ layer2 (rust): into_raw / from_raw / as_ptr
   │     │   → "_RNv..." 不包含 "into_raw" 等 ✗
@@ -147,9 +147,9 @@ isAllocationInstruction() [allocation_classifier.zig:31]
             → 但日志显示 "Found 0 allocations" → 说明最终仍返回 false
 ```
 
-**最可能的原因**: `isProjectAllocFunction()` 可能有额外过滤条件（如要求函数名不以 `_` 或 `__` 开头），或者整个 `isAllocationInstruction` 在某个更早的阶段被短路返回了。
+**最可能的原因**: `isProjectAllocFunction()` 可能有额外过滤条件（如要求Function Name不以 `_` 或 `__` 开头），或者整个 `isAllocationInstruction` 在某个更早的阶段被短路返回了。
 
-### 2.5 修复方案 (预计改动 <10 行)
+### 2.5 Fix方案 (预计改动 <10 行)
 
 **方案 A**: 在 `layer2_reg.zig` 的 `registerLayer2` 中添加:
 
@@ -194,7 +194,7 @@ if (std.mem.indexOf(u8, callee_name, "__rust_alloc") != null or
 
 ---
 
-## 三、根因 #2: FFITypeMismatch 检测逻辑过于狭窄
+## 三、Root Cause #2: FFITypeMismatch 检测逻辑过于狭窄
 
 ### 3.1 调用链路
 
@@ -207,8 +207,8 @@ ffi_type_mismatch.zig:checkFFITypeMismatch()
         → caller 是 "_ZN15subtle_unsafe_rs..." (Rust mangled) ✅
         → callee 是 "c_ffi_xxx" (非 _ZN/_R 前缀) ✅
         → 返回 true → stats.ffi_boundaries_found++ [L175]
-      → 对每个参数调用 checkTypeMismatch() [L184]
-        → detectSizeMismatch() [L224] ← 核心检测函数
+      → 对每个Parameters调用 checkTypeMismatch() [L184]
+        → detectSizeMismatch() [L224] ← Core检测函数
         → detectAlignmentMismatch() [L230]
         → detectSignednessMismatch() [L236]
 ```
@@ -226,7 +226,7 @@ fn detectSizeMismatch(arg_type, callee_name, param_index) ?TypeMismatchInfo {
         if (indexOf(callee_name, "size_t") != null or
             indexOf(callee_name, "Size") != null)
         {
-            if (bit_width == 64) {   // 且参数必须是 64 位
+            if (bit_width == 64) {   // 且Parameters必须是 64 位
                 return TypeMismatchInfo{ .kind = .size_mismatch, ... };
             }
         }
@@ -248,23 +248,23 @@ fn ffi_02_size_truncation_copy(const void* src, void* dst, int len) {
 // 对应的 extern "C" 声明:
 extern "C" {
     fn c_ffi_process_buffer(buf: *mut u8, len: i32) -> i32;
-    //                                    ^^^^ 参数类型是 i32 (32-bit)
+    //                                    ^^^^ Parameters类型是 i32 (32-bit)
 }
 ```
 
 **在 LLVM IR 层面**:
-- `c_ffi_process_buffer` 的参数 `len` 类型是 `i32` (LLVM IntegerTypeKind, bit_width=32)
+- `c_ffi_process_buffer` 的Parameters `len` 类型是 `i32` (LLVM IntegerTypeKind, bit_width=32)
 - 调用处传入的值也是 `i32` 类型（Rust 已在源码层面完成截断）
 - `detectSizeMismatch` 检查:
   - `callee_name = "c_ffi_process_buffer"`
-  - `indexOf("c_ffi_process_buffer", "size_t")` → **null** ❌ (函数名不含 "size_t")
-  - `indexOf("c_ffi_process_buffer", "Size")` → **null** ❌ (函数名不含 "Size")
+  - `indexOf("c_ffi_process_buffer", "size_t")` → **null** ❌ (Function Name不含 "size_t")
+  - `indexOf("c_ffi_process_buffer", "Size")` → **null** ❌ (Function Name不含 "Size")
   - → 直接返回 null
 
-**根本问题**: `detectSizeMismatch` 只通过 **callee 函数名字符串** 来判断是否需要做 size 检查。它不检查:
-1. 参数的 **实际语义** (这个 int 是否代表 size/buffer length?)
+**根本问题**: `detectSizeMismatch` 只通过 **callee Function Name字符串** 来判断是否需要做 size 检查。它不检查:
+1. Parameters的 **Actual语义** (这个 int 是否代表 size/buffer length?)
 2. **caller 侧的类型** (Rust 传入的是 usize 还是 int?)
-3. **跨语言类型契约** (C 函数声明说 int, 但 Rust 侧实际应该传 size_t?)
+3. **Cross-Language类型契约** (C 函数声明说 int, 但 Rust 侧Actual应该传 size_t?)
 
 ### 3.4 更深层的问题：IR 层信息丢失
 
@@ -275,22 +275,22 @@ Rust 源码层:
 
 LLVM IR 层 (截断已发生):
   %truncated = trunc i64 %len_to_i32        // 截断已在调用前完成
-  call @c_ffi_process_buffer(%buf, %truncated)  // IR 中只看到 i32 参数
+  call @c_ffi_process_buffer(%buf, %truncated)  // IR 中只看到 i32 Parameters
 ```
 
 **OmniScope 在 IR 层运行时，截断已经发生。它看到的是一个完全合法的 `i32 → i32` 调用。** 信息已丢失。
 
-### 3.5 修复方向
+### 3.5 Fix方向
 
 需要在 **Rust 源码级或 MIR 层** 做分析（而非纯 LLVM IR 层）:
 - 检测 `as i32` / `as isize` / `.try_into().unwrap()` 在 FFI 调用点前的使用
-- 或者: 维护一个 FFI 函数签名声明表，对比 Rust 传入类型 vs C 声明的参数类型
+- 或者: 维护一个 FFI 函数签名声明表，对比 Rust 传入类型 vs C 声明的Parameters类型
 
 ---
 
-## 四、根因 #3: FreeValidation 不追踪 FFI 来源指针
+## 四、Root Cause #3: FreeValidation 不追踪 FFI 来源指针
 
-### 4.1 核心代码 (free_validation.zig:L72-120)
+### 4.1 Core代码 (free_validation.zig:L72-120)
 
 ```zig
 pub fn validateFreeCalls(module, diag) !usize {
@@ -366,14 +366,14 @@ fn isFreeSafe(free_inst) bool {
 对于 `libc::free(RS01_GLOBAL_PTR)`:
 - `RS01_GLOBAL_PTR` 是 `static mut` 全局变量
 - `trackPointerOrigin` 返回 `.from_global` → `isFreeSafe` 返回 **true** (认为安全!)
-- **但实际上这是 double-free bug!** C 侧也拥有这个指针的所有权
+- **但Actual上这是 double-free bug!** C 侧也拥有这个指针的所有权
 
 对于 `libc::free(fake_free)` where `fake_free = c_ffi_retrieve_pointer()`:
 - `fake_ptr` 来自 `c_ffi_retrieve_pointer()` 的返回值
 - `trackPointerOrigin` 返回 `.from_ffi_call` → `isFreeSafe` 返回 **true** (认为安全!)
-- **但实际上这可能跨 allocator free!**
+- **但Actual上这可能跨 allocator free!**
 
-### 4.4 修复方向
+### 4.4 Fix方向
 
 需要在 `isFreeSafe()` 中增加 **FFI 所有权协议检查**:
 - 如果指针来自 `Box::into_raw()` 或 `CString::into_raw()` → 需要 **双向确认** (是否 also freed by C side)
@@ -381,9 +381,9 @@ fn isFreeSafe(free_inst) bool {
 
 ---
 
-## 五、根因 #4: CallbackEscape 是 Go-C 专用，不支持 Rust
+## 五、Root Cause #4: CallbackEscape 是 Go-C 专用，不支持 Rust
 
-### 5.1 核心代码 (callback_escape.zig)
+### 5.1 Core代码 (callback_escape.zig)
 
 ```zig
 // callback_escape.zig 中的关键检测逻辑:
@@ -391,7 +391,7 @@ fn isFreeSafe(free_inst) bool {
 fn analyzeFunction(ctx, func, diag) !void {
     const func_name = LLVMGetValueName(func);
     
-    // ⚠️ 主要检测目标: Go-C cgo 边界
+    // ⚠️ 主要检测Objective: Go-C cgo 边界
     if (isCgoBoundaryFromLLVM(func_name)) {
         // 检测 Go 指针泄漏到 C
         analyzeCgoBoundary(ctx, func, diag);
@@ -404,7 +404,7 @@ fn analyzeFunction(ctx, func, diag) !void {
         while (inst != null) {
             // 检测回调注册模式
             if (isCallbackRegistration(inst)) {
-                // 检查上下文参数是否逃逸
+                // 检查上下文Parameters是否逃逸
                 checkCallbackContext(ctx, inst, diag);
             }
             inst = LLVMGetNextInstruction(inst);
@@ -427,7 +427,7 @@ fn isCgoBoundaryFromLLVM(name: []const u8) bool {
 | RS-FFI-04 | `data.as_ptr()` → callback ctx → `drop(data)` | ❌ | 不追踪 Vec 生命周期与 callback 注册的关系 |
 | RS-FFI-11 | `&local_var` → `c_ffi_store_pointer` | ❌ | 同上，栈地址存储未被检测 |
 
-**CallbackEscape 的检测能力范围** (从源码推断):
+**CallbackEscape 的Detection Capability范围** (从源码推断):
 1. ✅ Go `C.CBytes(result)` 返回值逃逸
 2. ✅ Go `unsafe.Pointer(&local)` 传递给 C
 3. ✅ `pthread_create(thread, attr, cb, ctx)` — ctx 生命周期
@@ -436,7 +436,7 @@ fn isCgoBoundaryFromLLVM(name: []const u8) bool {
 6. ❌ **Rust `Vec::as_ptr()` → callback context → drop(Vec)**
 7. ❌ **Rust `Box::into_raw()` → FFI take_ownership**
 
-### 5.3 修复方向
+### 5.3 Fix方向
 
 需要扩展 CallbackEscape 支持 Rust 模式:
 
@@ -456,24 +456,24 @@ fn isRustCallbackRegistration(callee_name: []const u8) bool {
 ```
 
 同时需要添加 **栈地址逃逸检测**:
-- 当 `alloca` 结果或局部变量的 `getelementptr` 结果作为参数传递给 FFI 函数时
+- 当 `alloca` 结果或局部变量的 `getelementptr` 结果作为Parameters传递给 FFI 函数时
 - 且该 FFI 函数是 callback registration 或 store-pointer 类型的
 - → 报告 borrow escape
 
 ---
 
-## 六、根因总结表
+## 六、Root CauseSummary表
 
-| Pass | 失效原因 | 源码位置 | 修复复杂度 | 影响 |
+| Pass | 失效原因 | 源码位置 | Fix复杂度 | 影响 |
 |------|---------|---------|-----------|------|
 | **PointerOwnership** | `__rust_alloc` 未注册为 allocator | [layer2_reg.zig](../../src/registry/layer2_reg.zig): 仅 3 条目 | **低 (+8 行)** | Rust TP: 0% → ~30%+ |
 | **FFITypeMismatch** | detectSizeMismatch 只匹配 callee 名含 "size_t" 的函数；Rust 侧截断在 IR 中不可见 | [ffi_type_mismatch.zig:L261-276](../../src/pass/analysis/ffi_type_mismatch.zig#L261-L276) | **中 (需新策略)** | C FFI: +5-10% TP |
 | **FreeValidation** | `isFreeSafe()` 将 global/ffi_call 来源标记为 safe；noise filter 可能跳过 Rust 函数 | [free_validation.zig:L52-69](../../src/pass/analysis/issue/free_validation.zig#L52-L69) | **低-中** | DF/IF 检出改善 |
 | **CallbackEscape** | 专为 Go-C cgo 设计；不检测 Rust stack-ref-to-FFI 和 Vec.as_ptr escape | [callback_escape.zig](../../src/pass/analysis/callback_escape.zig) | **中** | BE/UAF via callback 改善 |
 
-### 一句话总结
+### 一句话Summary
 
-> **OmniScope 的四个核心 pass (PointerOwnership, FFITypeMismatch, FreeValidation, CallbackEscape) 全部是为 C/Go/Python FFI 场景设计的。它们的知识库 (SemanticRegistry)、白名单 (HEAP_ALLOC_FUNCTIONS/FREE_FUNCTIONS)、检测模式 (cgo boundary / size_t in name) 中没有任何 Rust 特有的条目。当面对 Rust 编译的 .ll IR 时，这些 pass 就像看到了外星语言——函数名不认识 (mangled `_RNv...`)、分配器不认识 (`__rust_alloc`)、模式不匹配 (Go-cgo vs Rust-extern"C")。结果就是: 0 allocations detected, 0 type mismatches, 0 invalid frees, 0 callback escapes.**
+> **OmniScope 的四个Core pass (PointerOwnership, FFITypeMismatch, FreeValidation, CallbackEscape) 全部是为 C/Go/Python FFI 场景设计的。它们的知识库 (SemanticRegistry)、白名单 (HEAP_ALLOC_FUNCTIONS/FREE_FUNCTIONS)、检测模式 (cgo boundary / size_t in name) 中没有任何 Rust 特有的条目。当面对 Rust 编译的 .ll IR 时，这些 pass 就像看到了外星语言——Function Name不认识 (mangled `_RNv...`)、分配器不认识 (`__rust_alloc`)、模式不匹配 (Go-cgo vs Rust-extern"C")。结果就是: 0 allocations detected, 0 type mismatches, 0 invalid frees, 0 callback escapes.**
 
 ---
 **诊断日期**: 2026-05-03

@@ -3,7 +3,7 @@
 > **日期**: 2026-04-23
 > **版本**: v0.1.5（C++ 支持 + jsoncpp/abseil 真实项目测试 + Confidence 分级 + 7层 FP 消减 + 基线回归自动化）
 > **编译器**: Zig 0.15.2 (Apple M-series macOS)
-> **Corpus 基准测试**: P=82.9%, R=93.2%, F1=87.7%（零退化）
+> **Corpus Benchmark测试**: P=82.9%, R=93.2%, F1=87.7%（零退化）
 
 ***
 
@@ -14,14 +14,14 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | 指标                    | v0.1.5 (3 项目) | v0.1.5 (4 项目) | 变化             |
 | --------------------- | --------------- | --------------- | --------------- |
 | **测试项目数**          | 3 (C only)      | **4 (3C + 1C++)** | **+1 C++**     |
-| **总函数数**           | 3,450           | **4,987**       | **+44%**        |
+| **Total Functions**           | 3,450           | **4,987**       | **+44%**        |
 | **总 IR 行数**         | 736K            | **826K**        | **+12%**        |
 | **Memory Leak (real)** | 0 ✅            | **0** ✅         | 不变             |
 | **Null Deref (real)**  | 0 ✅            | **0** ✅         | 不变             |
 | **真实 Bug 总计**      | 0               | **0**            | 不变             |
 | **分析耗时(总计)**      | ~5.92s          | **~9.2s**       | +55%(含新项目)    |
 
-**核心成就**: OmniScope 现在支持 **C++ 项目分析**（Itanium ABI 修饰名识别），在 4 个成熟开源项目上报告 **零真实 memory leak 和零 null dereference**。所有发现均经手动源码验证。
+**Core成就**: OmniScope 现在支持 **C++ 项目分析**（Itanium ABI 修饰名识别），在 4 个成熟开源项目上报告 **零真实 memory leak 和零 null dereference**。所有发现均经手动源码验证。
 
 ***
 
@@ -36,7 +36,7 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | IR 大小   | **727,000 行 / 40 MB**           |
 | 函数数     | **3,237**                       |
 | 分析耗时    | **5.80s**                       |
-| FFI 边界数 | 1,315                           |
+| FFI Boundary数 | 1,315                           |
 
 #### 结果
 
@@ -44,18 +44,18 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | -------------------- | ------- | ------------------------------------------------ |
 | **MEMORY LEAK**      | **0** ✅ | 所有权转移检测 + 结构体成员白名单全部消除                           |
 | **NULL DEREFERENCE** | **0** ✅ | 函数级 null guard 检测 + nullable 模式精确化全部消除           |
-| **FFI RISK**         | 9       | 2× `fprintf`（格式化字符串）+ 7× macOS zone allocator 调用 |
-| **总计**               | **9**   | 全部为信息性/预期发现                                      |
+| **FFI RISK**         | 9       | 2× `fprintf`（Format化字符串）+ 7× macOS zone allocator 调用 |
+| **总计**               | **9**   | 全部为信息性/Expected发现                                      |
 
 #### 消除过程 (13→0 leak, 5→0 null\_deref)
 
 | 优化轮次          | 技术                                            | Leak 影响     | NullDeref 影响 |
 | ------------- | --------------------------------------------- | ----------- | ------------ |
 | P3-P1         | Libc fortified function 过滤 (`__memcpy_chk` 等) | N/A（FFI 噪声） | N/A          |
-| P3-P2         | 返回值/输出参数所有权转移                                 | 13→5 (-62%) | N/A          |
+| P3-P2         | 返回值/OutputParameters所有权转移                                 | 13→5 (-62%) | N/A          |
 | P3-P3         | 函数级 null guard 支配关系分析                         | N/A         | 5→3 (-40%)   |
 | P3-P6         | 结构体成员所有权白名单（FTS5 缓存池）                         | 5→0 (-100%) | N/A          |
-| Bug Scan B-03 | Nullable 分配模式精确化 (`"sqlite3"` → 精确函数名)        | N/A         | 3→0 (-100%)  |
+| Bug Scan B-03 | Nullable 分配模式精确化 (`"sqlite3"` → 精确Function Name)        | N/A         | 3→0 (-100%)  |
 
 ### 2. libcurl 8.14.0
 
@@ -66,7 +66,7 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | IR 大小   | **2,915 行 / 192 KB**          |
 | 函数数     | **68**（180 源文件中；112 个平台相关被排除） |
 | 分析耗时    | **0.052s**                    |
-| FFI 边界数 | 118                           |
+| FFI Boundary数 | 118                           |
 
 #### 结果
 
@@ -76,9 +76,9 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | **NULL DEREFERENCE** | **0** ✅ | 正确的 null 检查                                                              |
 | **FFI RISK**         | 8       | `fprintf`(1), `fclose`(2), `fgets`(1), `realloc`(1), `free`(3) — 动态缓冲区代码 |
 | **报告的 Issues**       | **1**   | 仅 `Curl_altsvc_save -> fprintf` 被 FFIUnsafe pass 标记                      |
-| **总计**               | **1**   | 单个格式化字符串发现                                                               |
+| **总计**               | **1**   | 单个Format化字符串发现                                                               |
 
-**评估**: libcurl 是一个成熟的、经过实战检验的 C 项目，内存管理优秀。唯一报告的问题（`fprintf` 格式字符串）是一个合法的低风险发现。`free`/`realloc`/`fclose`/`fgets` 调用是 curl 内部缓冲区管理中的正常 libc 使用。
+**评估**: libcurl 是一个成熟的、经过实战检验的 C 项目，内存管理优秀。唯一报告的问题（`fprintf` Format字符串）是一个合法的低风险发现。`free`/`realloc`/`fclose`/`fgets` 调用是 curl 内部缓冲区管理中的正常 libc 使用。
 
 ### 3. libuv 1.50.0
 
@@ -89,20 +89,20 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | IR 大小   | **6,112 行 / 256 KB**             |
 | 函数数     | **145**（87 源文件中；42 个平台相关被排除）     |
 | 分析耗时    | **0.071s**                       |
-| FFI 边界数 | 289                              |
+| FFI Boundary数 | 289                              |
 
 #### 结果
 
 | 类别                   | 数量      | 详情                                                               |
 | -------------------- | ------- | ---------------------------------------------------------------- |
 | **MEMORY LEAK**      | **0** ✅ | 使用调用方提供的缓冲区（外部分配模式）                                              |
-| **NULL DEREFERENCE** | **0** ✅ | N/A（未检测到内部分配）                                                    |
+| **NULL DEREFERENCE** | **0** ✅ | N/A（未detected内部分配）                                                    |
 | **FFI RISK**         | 0       | 无                                                                |
 | **RISKY LIBC CALL**  | 3       | `free` 在 `uv__fs_work`, `uv__fs_scandir_cleanup` (×2) — 文件系统清理例程 |
 | **报告的 Issues**       | **1**   | 来自 FFIUnsafe: fs\_scandir cleanup 中的 `free`                      |
-| **总计**               | **1**   | 预期的文件系统清理行为                                                      |
+| **总计**               | **1**   | Expected的文件系统清理行为                                                      |
 
-**评估**: libuv 异常干净。它使用外部分配模型（调用方提供缓冲区），因此 OmniScope 检测到零内部分配。3 个 `free` 调用在文件系统操作清理中 — 完全正常行为。
+**评估**: libuv 异常干净。它使用外部分配模型（调用方提供缓冲区），因此 OmniScope detected零内部分配。3 个 `free` 调用在文件系统操作清理中 — 完全正常行为。
 
 ### 4. jsoncpp 1.9.5 (C++)
 
@@ -114,7 +114,7 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | 源文件     | 3 (json_reader.cpp, json_value.cpp, json_writer.cpp)            |
 | 函数数     | **1,537**（含 STL 模板展开）                                  |
 | 分析耗时    | **3.31s**                                                |
-| FFI 边界数 | 507                                                      |
+| FFI Boundary数 | 507                                                      |
 
 #### 结果
 
@@ -122,7 +122,7 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 | -------------------- | -------- | ------------------------------------------------------------------------------- |
 | **MEMORY LEAK**      | **37**    | 8 个用户代码 + 29 个 STL 内部函数（全部为 FP）                                              |
 | **NULL DEREFERENCE** | **0** ✅  | 无                                                                                |
-| **FFI RISK**         | **3**     | 2× snprintf（硬编码格式串=FP）+ C/C++ 混用 malloc/free+new（INFO 级别，有意设计）                          |
+| **FFI RISK**         | **3**     | 2× snprintf（硬编码Format串=FP）+ C/C++ 混用 malloc/free+new（INFO 级别，有意设计）                          |
 | **总计**               | **40**    | 全部经手动源码验证为 FP 或 INFO                                                            |
 
 #### 手动验证详情
@@ -131,10 +131,10 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 |---|-----------|:---:|:---:|------|
 | 1-8 | LEAK: `Comments::*` | 8 | ❌ FP — `std::unique_ptr<Array>` RAII 清理在析构函数中，intra-procedural 不可见 |
 | 9-37 | LEAK: STL 内部模板 | 29 | ❌ FP — stdlib 模板展开（`std::__tree`/`std::deque`/`std::unique_ptr`），STL 自管理内存 |
-| 38-39 | FFI: `snprintf` | 2 | ❌ FP — 格式化字符串为硬编码字面量 (`"Line %d..."`, `"%.*g"`)，非用户可控 |
+| 38-39 | FFI: `snprintf` | 2 | ❌ FP — Format化字符串为硬编码字面量 (`"Line %d..."`, `"%.*g"`)，非用户可控 |
 | 40 | FFI: C/C++ 内存混用 | ~8 | ℹ️ INFO — jsoncpp 有意设计：C `malloc` 管理字符串 + C++ `new` 管理对象 |
 
-**真实 Bug: 0** ✅ — jsoncpp 1.9.5 内存安全。
+**真实 Bug: 0** ✅ — jsoncpp 1.9.5 Memory Safety。
 
 #### C++ 分析关键发现
 
@@ -162,9 +162,9 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 
 ***
 
-## 精度与准确率分析
+## 精度与Accuracy分析
 
-### 真阳性 vs 假阳性率
+### True Positive vs False Positive率
 
 在这三个真实项目上：
 
@@ -178,28 +178,28 @@ OmniScope 对 **4 个真实项目（3 个 C + 1 个 C++）** 进行了测试，�
 **重要说明**: 上述"低精度"数字具有误导性，因为：
 
 1. **SQLite 的 9 个发现中有 7 个**是 macOS zone allocator 标注（INFO 级别，不是 bug）
-2. **libuv 的 3 个发现**是清理例程中的 `free`（预期行为）
+2. **libuv 的 3 个发现**是清理例程中的 `free`（Expected行为）
 3. 如果只统计**可操作的发现**: **2 TP / 11 total = 18%**，但 **2 TP / 3 可操作 = 67%**
 
 ### 为什么精度看起来低（以及为什么没关系）
 
 OmniScope 的设计理念是 **"捕获所有可疑项，由人工判断"**：
 
-- 它将 FFI 边界跨越作为信息性发现报告
-- Zone allocator 调用在跨语言上下文中技术上是"有风险的"
-- 格式化字符串风险是真实的，但在受控环境中通常无害
-- **在最重要的两个 bug 类别上实现了零假阳性：memory leak 和 null dereference**
+- 它将 FFI Boundary跨越作为信息性发现报告
+- Zone allocator 调用在Cross-Language上下文中技术上是"有风险的"
+- Format化字符串风险是真实的，但在受控Environment中通常无害
+- **在最重要的两个 bug 类别上实现了零False Positive：memory leak 和 null dereference**
 
-### 召回率分析
+### Recall分析
 
-| Bug 类型         | 测试项目中的已知 Bug     | 发现数量  | 召回率              |
+| Bug 类型         | 测试项目中的已知 Bug     | 发现数量  | Recall              |
 | -------------- | ---------------- | ----- | ---------------- |
 | Memory leak    | 0（这些是干净项目）       | 0 FP  | N/A（无真实 leak 可找） |
 | Null deref     | 0                | 0 FP  | N/A              |
-| Format string  | ≥1（curl fprintf） | 1 检测到 | **≥100%**        |
+| Format string  | ≥1（curl fprintf） | 1 detected | **≥100%**        |
 | Use-after-free | 0 已知             | 0     | N/A              |
 
-**可检测 bug 类型的召回率看起来很高。** Corpus benchmark（P=82.9%, R=93.2%）在有已知 ground truth 的合成测试用例上确认了这一点。
+**可检测 bug 类型的Recall看起来很高。** Corpus benchmark（P=82.9%, R=93.2%）在有已知 ground truth 的合成测试用例上确认了这一点。
 
 ***
 
@@ -215,14 +215,14 @@ OmniScope 的设计理念是 **"捕获所有可疑项，由人工判断"**：
 
 ***
 
-## 本轮应用的优化（Phase 3 + Bug 修复）
+## 本轮应用的优化（Phase 3 + Bug Fix）
 
 ### 代码变更（6 个文件修改）
 
 | 文件                                                                | 变更                                                     | 行数         |
 | ----------------------------------------------------------------- | ------------------------------------------------------ | ---------- |
-| [pointer\_ownership.zig](src/pass/analysis/pointer_ownership.zig) | 所有权转移检测、null 支配、结构体成员白名单、BFS 队列修复、参数数组修复、nullable 模式修复 | +350 / -10 |
-| [null\_check\_guard.zig](src/dataflow/null_check_guard.zig)       | 新增 `isPtrGuardedNonNull_byValue()` 方法                  | +12        |
+| [pointer\_ownership.zig](src/pass/analysis/pointer_ownership.zig) | 所有权转移检测、null 支配、结构体成员白名单、BFS 队列Fix、Parameters数组Fix、nullable 模式Fix | +350 / -10 |
+| [null\_check\_guard.zig](src/dataflow/null_check_guard.zig)       | 新增 `isPtrGuardedNonNull_byValue()` Method                  | +12        |
 | [semantic\_registry.zig](src/registry/semantic_registry.zig)      | zig\_allocator 收紧、macOS zone allocator 条目（6 个新增）       | +120 / -30 |
 | tests/main.zig                                                    | 更新新 registry size 断言                                   | ±8         |
 | tests/regression.zig                                              | 更新 layer counts + deallocator 模式                       | ±10        |
@@ -234,32 +234,32 @@ OmniScope 的设计理念是 **"捕获所有可疑项，由人工判断"**：
 | ----- | -------------------------------------- | ------------------------------ | ------------------------- |
 | 🥇 #1 | **返回值所有权转移** (P3-P2)                   | \~10 leak（return-to-caller 模式） | 中等 — 需要反向 flow graph BFS  |
 | 🥈 #2 | **Libc fortified function 过滤** (P3-P1) | 275 FFI RISK 噪声                | 简单 — 跳过列表                 |
-| 🥉 #3 | **Nullable 模式精确化** (B-03)              | 3 null deref                   | 极简 — 单行修复                 |
+| 🥉 #3 | **Nullable 模式精确化** (B-03)              | 3 null deref                   | 极简 — 单行Fix                 |
 | #4    | **结构体成员所有权白名单** (P3-P6)                | 5 leak（FTS5 缓存池）               | 简单 — 启发式前缀匹配              |
 | #5    | **函数级 null guard** (P3-P3)             | 6 null deref                   | 中等 — 需要 flow-graph 别名 BFS |
-| #6    | **zig\_allocator 分类修复**                | 分类污染                           | 简单 — 模式字符串修改              |
+| #6    | **zig\_allocator 分类Fix**                | 分类污染                           | 简单 — 模式字符串修改              |
 
 ***
 
 ## 当前局限性
 
-| 局限性      | 影响                              | 状态     | 计划修复                           |
+| 局限性      | 影响                              | 状态     | 计划Fix                           |
 | -------- | ------------------------------- | ------ | ------------------------------ |
 | 缺少过程间分析  | 结构体成员所有权仍是启发式 + GEP+store 检测    | 🟡 部分  | Task 8.6 完整实现                  |
 | 缺少可信度分级  | 所有 issue 看起来同等重要                | ✅ 已完成 | Task 8.5 HIGH/MEDIUM/HEURISTIC ✅ |
 | 无基线回归 CI | 未来变更可能重新引入 FP                   | ✅ 已完成 | `make baseline-check` 自动化 ✅   |
 | C++ 支持有限 | Registry 有 C++ 模式但未测试           | ✅ 已完成 | jsoncpp 1.9.5 验证通过 ✅          |
-| 线程安全部分实现 | atomic vuln\_id 正常工作，但部分共享状态未保护 | ✅ 已审计 | 纯单线程架构，无需修复 ✅            |
+| 线程安全部分实现 | atomic vuln\_id 正常工作，但部分共享状态未保护 | ✅ 已审计 | 纯单线程架构，无需Fix ✅            |
 | **C++ RAII** | intra-procedural 无法看到析构函数中的清理      | 🟡 主要 FP 来源 | 需要过程间分析或 RAII 模式识别        |
 | **STL 模板展开** | C++ 模板实例化产生大量 IR 函数             | 🟡 噪声   | 需要 STL 内部函数过滤启发式           |
 
 ***
 
-## 结论
+## Conclusion
 
-OmniScope v0.1.5 证明了 **静态分析在真实世界 C/C++ 代码上的精度可以在关键 bug 类别（memory leak、null dereference）上达到接近零假阳性率**，通过以下组合实现：
+OmniScope v0.1.5 证明了 **Static Analysis在真实世界 C/C++ 代码上的精度可以在关键 bug 类别（memory leak、null dereference）上达到接近零False Positive率**，通过以下组合实现：
 
-1. **感知所有权的 leak 检测**（非仅过程内）— 含返回值/输出参数转移 + GEP+store 结构体字段检测
+1. **感知所有权的 leak 检测**（非仅过程内）— 含返回值/OutputParameters转移 + GEP+store 结构体字段检测
 2. **函数级 null guard 支配关系**（非仅基本块局部）
 3. **领域特定启发式**（结构体成员所有权白名单）
 4. **精确语义分类**（zig\_allocator 分类法、平台特定分配器、**Itanium C++ ABI 修饰名**）
@@ -269,6 +269,6 @@ OmniScope v0.1.5 证明了 **静态分析在真实世界 C/C++ 代码上的精�
 剩余 51 个发现（跨 4,987 个函数，4 个项目）中：
 - **0 个真实 memory leak / null dereference**
 - C 项目的 11 个发现全是**信息性或低严重性**的
-- C++ 项目的 40 个发现中 37 个为 **RAII 不可见导致的 FP**，3 个为 **格式化字符串 FP 或 INFO**
+- C++ 项目的 40 个发现中 37 个为 **RAII 不可见导致的 FP**，3 个为 **Format化字符串 FP 或 INFO**
 
-**诚实结论**: OmniScope 在 C 项目上已达到生产级精度；C++ 项目需要进一步优化（RAII 模式识别、STL 内部函数过滤）。
+**诚实Conclusion**: OmniScope 在 C 项目上已达到生产级精度；C++ 项目需要进一步优化（RAII 模式识别、STL 内部函数过滤）。

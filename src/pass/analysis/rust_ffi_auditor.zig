@@ -380,25 +380,35 @@ pub const RustFfiAuditor = struct {
                             });
 
                             const trace = try self.allocator.alloc(TraceEntry, 3);
+                            errdefer self.allocator.free(trace);
                             trace[0] = TraceEntry.init("Stack address escapes across FFI boundary");
-                            trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                            
+                            const desc1 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Argument {d} of {s} derived from alloca instruction",
                                 .{ arg_i, callee_name },
-                            ));
-                            trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                            );
+                            errdefer self.allocator.free(desc1);
+                            trace[1] = TraceEntry.initOwned(desc1);
+                            
+                            const desc2 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Callee may store pointer beyond caller's lifetime",
                                 .{},
-                            ));
+                            );
+                            errdefer self.allocator.free(desc2);
+                            trace[2] = TraceEntry.initOwned(desc2);
+
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "Stack address escapes to FFI: {s}() receives alloca-derived pointer",
+                                .{callee_name},
+                            );
+                            errdefer self.allocator.free(msg);
 
                             const issue = Issue.initWithTrace(
                                 .borrow_escape,
-                                try std.fmt.allocPrint(
-                                    self.allocator,
-                                    "Stack address escapes to FFI: {s}() receives alloca-derived pointer",
-                                    .{callee_name},
-                                ),
+                                msg,
                                 Location.init(func_name),
                                 .high,
                                 0.80,
@@ -507,25 +517,36 @@ pub const RustFfiAuditor = struct {
                 self.stats.unpaired_into_raw += 1;
 
                 const trace = try self.allocator.alloc(TraceEntry, 3);
+                errdefer self.allocator.free(trace);
+                
                 trace[0] = TraceEntry.init("Ownership violation: pointer transferred to FFI then freed");
-                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                
+                const desc1 = try std.fmt.allocPrint(
                     self.allocator,
                     "Pointer was passed to an FFI boundary call (ownership transfer out)",
                     .{},
-                ));
-                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                );
+                errdefer self.allocator.free(desc1);
+                trace[1] = TraceEntry.initOwned(desc1);
+                
+                const desc2 = try std.fmt.allocPrint(
                     self.allocator,
                     "Same pointer also passed to {s}() — potential double-free or cross-allocator-free",
                     .{free_entry.free_name},
-                ));
+                );
+                errdefer self.allocator.free(desc2);
+                trace[2] = TraceEntry.initOwned(desc2);
+
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "Ownership violation: FFI-transferred pointer freed by {s}()",
+                    .{free_entry.free_name},
+                );
+                errdefer self.allocator.free(msg);
 
                 const issue = Issue.initWithTrace(
                     .use_after_free,
-                    try std.fmt.allocPrint(
-                        self.allocator,
-                        "Ownership violation: FFI-transferred pointer freed by {s}()",
-                        .{free_entry.free_name},
-                    ),
+                    msg,
                     Location.init(func_name),
                     .high,
                     0.72,
@@ -756,25 +777,35 @@ pub const RustFfiAuditor = struct {
                         self.stats.as_ptr_escapes += 1;
 
                         const trace = try self.allocator.alloc(TraceEntry, 3);
+                        errdefer self.allocator.free(trace);
                         trace[0] = TraceEntry.init("Dangling reference via as_ptr");
-                        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                        
+                        const desc1 = try std.fmt.allocPrint(
                             self.allocator,
                             "Borrowed pointer (as_ptr/GEP field 0) from aggregate still used after parent dropped",
                             .{},
-                        ));
-                        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                        );
+                        errdefer self.allocator.free(desc1);
+                        trace[1] = TraceEntry.initOwned(desc1);
+                        
+                        const desc2 = try std.fmt.allocPrint(
                             self.allocator,
                             "Parent dropped at instruction {d}, but pointer used again at instruction {d}",
                             .{ drop_idx, use_idx },
-                        ));
+                        );
+                        errdefer self.allocator.free(desc2);
+                        trace[2] = TraceEntry.initOwned(desc2);
+
+                        const msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "Dangling as_ptr: borrowed pointer used after parent deallocation in {s}",
+                            .{func_name},
+                        );
+                        errdefer self.allocator.free(msg);
 
                         const issue = Issue.initWithTrace(
                             .borrow_escape,
-                            try std.fmt.allocPrint(
-                                self.allocator,
-                                "Dangling as_ptr: borrowed pointer used after parent deallocation in {s}",
-                                .{func_name},
-                            ),
+                            msg,
                             Location.init(func_name),
                             .high,
                             0.78,

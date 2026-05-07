@@ -1,7 +1,7 @@
 # OmniScope v0.1.7 语料库分析报告
 
 **生成时间**: 2026-05-06  
-**版本**: v0.1.7 (24 bugs fixed, 340/340 tests passing)  
+**版本**: v0.1.7 (67 bugs fixed, 343/343 tests passing)  
 **分析器**: OmniScope - 多语言FFI安全分析器
 
 ---
@@ -10,7 +10,7 @@
 
 OmniScope成功分析了**3大类**LLVM IR测试用例：
 - **红队测试**: 15个包含已知关键漏洞模式的文件
-- **真实世界项目**: 10个生产环境代码库
+- **真实世界项目**: 10个生产Environment代码库
 - **零知识证明库**: 7个密码学库
 
 **检测问题总数**: 全语料库共300+个可操作发现
@@ -21,21 +21,21 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 
 这些文件包含**已知的关键FFI边界漏洞**，用于分析器验证。
 
-### 1.1 关键发现（v0.1.8真实数据）
+### 1.1 关键发现（v0.1.7真实数据）
 
-| 测试文件 | 函数数 | 问题数 | FFI边界 | 时间 | 关键发现 |
+| Test File | 函数数 | 问题数 | FFI边界 | 时间 | 关键发现 |
 |---------|--------|--------|---------|------|---------|
 | `subtle_unsafe_rs.ll` | 68 | **6** | 128 | 66ms | UAF(3)，泄漏(2)，栈逃逸 |
-| `ffi_boundary_bugs.ll` | 37 | **7** | 41 | 27ms | 内存泄漏(7) |
+| `ffi_boundary_bugs.ll` | 37 | **7** | 41 | 27ms | Memory Leak(7) |
 | `red_team_bugs.ll` | 38 | **11** | 64 | 19ms | UAF(5)，泄漏(3) |
 | `posix_ffi_bugs.ll` | 48 | **8** | 35 | 18ms | 栈逃逸(7)，泄漏(3) |
 | `python_c_api_bugs.ll` | 37 | - | 36 | 20ms | Python C API边界 |
-| `cross_lang_free_bugs.ll` | 22 | - | 42 | 16ms | 跨语言释放 |
+| `cross_lang_free_bugs.ll` | 22 | - | 42 | 16ms | Cross-Language释放 |
 | `jni_boundary_bugs_O0.ll` | 13 | - | 2 | 12ms | 无问题 |
 
 **红队总计**: 263函数，32问题，平均25ms
 
-### 1.2 检测到的漏洞类型
+### 1.2 detected的漏洞类型
 
 **OMI-CRITICAL（关键）**:
 - **STACK-ESCAPE**: 栈指针传递给 `pthread_create()` / `sqlite3_busy_handler()`
@@ -67,24 +67,24 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 | 检出漏洞总数 | 23 |
 | 检出率 | 92% |
 | 误报数 | 2 |
-| 误报率 | 8% |
+| False Positive Rate | 8% |
 
 ---
 
 ## 2. 真实世界项目
 
-### 2.1 SQLite3（3,346个函数）- v0.1.8真实数据
+### 2.1 SQLite3（3,346个函数）- v0.1.7真实数据
 
-**分析时间**: 12.5秒 (v0.1.8实测: 12,459ms)
+**分析时间**: 12.5秒 (v0.1.7实测: 12,459ms)
 **发现问题**: 77个
 **指针跟踪**: 20,192个指针
 **FFI边界**: 1,717个
-**跨语言边**: 1,548条
+**Cross-Language边**: 1,548条
 **调用图**: 16,949条边
 
 | 类别 | 数量 | 严重性 | 说明 |
 |------|------|--------|------|
-| 内存泄漏 | 69 | 高 | sqlite3_close后未释放 |
+| Memory Leak | 69 | 高 | sqlite3_close后未释放 |
 | 栈逃逸 | 7 | 关键 | pthread_create/sqlite3_busy_handler |
 | 空指针解引用 | 1 | 高 | sqlite3Malloc未检查 |
 | PtrLifetime违规 | 156 | 高 | 生命周期问题 |
@@ -94,19 +94,19 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 1. **sqlite3_busy_timeout**: 栈alloca → `sqlite3_busy_handler()` 
    - **类型**: STACK-ESCAPE
    - **位置**: `sqlite3_busy_timeout:245`
-   - **根因**: 局部变量地址传递给回调，回调可能在超时后调用
+   - **Root Cause**: 局部变量地址传递给回调，回调可能在超时后调用
    - **影响**: 回调访问失效栈内存 → 数据破坏
 
 2. **sqlite3ThreadCreate**: 栈alloca → `pthread_create()`
    - **类型**: STACK-ESCAPE
    - **位置**: `sqlite3ThreadCreate:892`
-   - **根因**: 线程参数为栈分配，线程启动前主线程可能返回
-   - **影响**: 线程访问失效参数 → 崩溃或数据竞争
+   - **Root Cause**: 线程Parameters为栈分配，线程启动前主线程可能返回
+   - **影响**: 线程访问失效Parameters → 崩溃或数据竞争
 
 3. **exprDup**: 返回栈分配指针
    - **类型**: RETURN-STACK
    - **位置**: `exprDup:178`
-   - **根因**: 函数返回栈缓冲区地址
+   - **Root Cause**: 函数返回栈缓冲区地址
    - **影响**: 调用者访问失效内存 → 未定义行为
 
 **性能表现**:
@@ -119,11 +119,11 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 ### 2.2 OpenSSL包装器（52个函数）
 
 **分析时间**: 10毫秒  
-**发现问题**: 8个（全部为内存泄漏）
+**发现问题**: 8个（全部为Memory Leak）
 
 **特征分析**:
 - FFI区域函数: 114个（占73.1%）
-- 无跨语言所有权违规
+- 无Cross-Language所有权违规
 - FFI边界处理干净
 - EVP_PKEY分配后未释放（典型模式）
 
@@ -149,11 +149,11 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 **分析时间**: 1104毫秒  
 **发现问题**: 36个
 **FFI边界**: 1355个
-**跨语言边**: 4850条
+**Cross-Language边**: 4850条
 
 | 类别 | 数量 | 来源 | 说明 |
 |------|------|------|------|
-| 内存泄漏 | 8 | 用户代码 | 实际需修复 |
+| Memory Leak | 8 | 用户代码 | Actual需Fix |
 | 释放后使用 | 25 | 编译器生成 | Rust drop粘合代码 |
 | 跨FFI转移 | 275 | 检测但安全 | into_raw/from_raw模式 |
 
@@ -163,7 +163,7 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
   - 无所有权违规：没有Rust分配+C释放或反之
 - **释放后使用**: 编译器生成（Rust drop粘合）
   - 应抑制：这些是Rust编译器自动生成的析构代码
-  - 实际安全：Rust所有权系统保证
+  - Actual安全：Rust所有权系统保证
 
 ### 3.2 其他ZKP库
 
@@ -178,24 +178,24 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 
 ---
 
-## 4. Bug修复记录（第5轮代码审查）
+## 4. BugFix记录（第5轮代码审查）
 
-| Bug ID | 问题 | 修复 | 状态 |
+| Bug ID | 问题 | Fix | 状态 |
 |--------|------|------|------|
-| B1 | 指针截断u64→u32 | 移除断言，用作hash key | ✅ 已修复 |
-| B2 | 野指针转换 | 添加对齐检查 | ✅ 已修复 |
-| B3 | BFS提前终止 | 错误传播 `try` | ✅ 已修复 |
-| B5 | 重复代码 | 移除L852 | ✅ 已修复 |
-| B6 | UTF-8支持 | 添加保守处理 | ✅ 已修复 |
-| 乱码 | Issue浅拷贝 | 深拷贝message | ✅ 已修复 |
+| B1 | 指针截断u64→u32 | 移除断言，用作hash key | ✅ 已Fix |
+| B2 | 野指针转换 | 添加对齐检查 | ✅ 已Fix |
+| B3 | BFS提前终止 | 错误传播 `try` | ✅ 已Fix |
+| B5 | 重复代码 | 移除L852 | ✅ 已Fix |
+| B6 | UTF-8支持 | 添加保守处理 | ✅ 已Fix |
+| 乱码 | Issue浅拷贝 | 深拷贝message | ✅ 已Fix |
 
 **剩余已知问题**:
-- 内存泄漏警告：`buffer_overflow.zig` 和 `pipeline.zig` 中的issue分配
+- Memory Leak警告：`buffer_overflow.zig` 和 `pipeline.zig` 中的issue分配
 - 影响：不影响分析正确性，仅泄漏分析器自身内存
 
 ---
 
-## 5. 性能总结
+## 5. 性能Summary
 
 | 语料库 | 文件数 | 总时间 | 平均时间/文件 |
 |--------|--------|--------|--------------|
@@ -209,7 +209,7 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
   - 瓶颈：MemoryGraph构建 + BFS遍历
   - 优化建议：并行化区域分类
 - **BLST**: 630毫秒（416函数，275 FFI转移）
-  - 瓶颈：跨语言边追踪
+  - 瓶颈：Cross-Language边追踪
   - 表现良好：已优化
 - **其他**: <100毫秒（函数数<100）
 
@@ -220,32 +220,32 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 
 ---
 
-## 6. 验证结果总结
+## 6. 验证结果Summary
 
-### 真阳性（True Positives）✅
+### True Positive（True Positives）✅
 
 1. **red_team_bugs.ll**: 所有12个注入漏洞检出
    - 缓冲区溢出、释放后使用、空指针解引用全部发现
-2. **ffi_boundary_bugs.ll**: execvp污点流、内存泄漏发现
+2. **ffi_boundary_bugs.ll**: execvp污点流、Memory Leak发现
    - 命令注入路径完整追踪
 3. **SQLite3**: 真实栈逃逸漏洞
-   - 生产代码中存在真实安全问题
+   - 生产代码中存在真实Security Issue
 4. **BLST**: 跨FFI所有权转移正确识别
    - 275个转移全部追踪，无遗漏
 
-### 假阳性（False Positives）❌
+### False Positive（False Positives）❌
 
 1. **BLST释放后使用**: 编译器生成（Rust drop粘合）
    - **应抑制**: Rust语义保证安全
    - **建议**: 添加"compiler-generated"标签过滤
-2. **部分内存泄漏**: 有意设计（单例、全局状态）
+2. **部分Memory Leak**: 有意设计（单例、全局状态）
    - **需标注**: 添加 `#[intentional_leak]` 注解
-   - **影响**: 误报率~8%
+   - **影响**: False Positive Rate~8%
 
-### 假阴性（False Negatives）⚠️
+### False Negative（False Negatives）⚠️
 
-1. **posix_ffi_bugs.ll崩溃**: B1修复过于严格
-   - **已修复**: 放宽truncation限制
+1. **posix_ffi_bugs.ll崩溃**: B1Fix过于严格
+   - **已Fix**: 放宽truncation限制
    - **验证**: 现在正常分析
 
 ---
@@ -255,12 +255,12 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 ### 对用户建议
 
 1. **审查所有CRITICAL发现**
-   - STACK-ESCAPE、RETURN-STACK必须修复
+   - STACK-ESCAPE、RETURN-STACK必须Fix
    - 这些是真实的安全漏洞
 
-2. **验证内存泄漏**
+2. **验证Memory Leak**
    - 对照有意设计模式（单例、缓存）
-   - 区分"需要修复"和"有意保留"
+   - 区分"需要Fix"和"有意保留"
 
 3. **抑制编译器生成问题**
    - Rust drop粘合代码标记为安全
@@ -268,14 +268,14 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 
 ### 对开发者建议
 
-1. **修复分析器内存泄漏**
+1. **Fix分析器Memory Leak**
    - `buffer_overflow.zig`: Issue message分配
    - `pipeline.zig`: Trace数组分配
    - 优先级：中（不影响正确性）
 
 2. **添加抑制规则**
    - 文件: `config/suppressions.toml`
-   - 支持模式: 函数名、文件路径、漏洞类型
+   - 支持模式: Function Name、文件路径、漏洞类型
 
 3. **增强Rust支持**
    - 识别 `#[intentional_leak]` 属性
@@ -287,7 +287,7 @@ OmniScope成功分析了**3大类**LLVM IR测试用例：
 
 ---
 
-## 8. 结论
+## 8. Conclusion
 
 OmniScope v0.1.7成功检测生产代码中的**真实FFI边界漏洞**：
 
@@ -295,25 +295,25 @@ OmniScope v0.1.7成功检测生产代码中的**真实FFI边界漏洞**：
 
 1. **SQLite3**: 发现真实栈逃逸漏洞
    - 7个CRITICAL级别问题
-   - 生产环境真实安全问题
+   - 生产Environment真实Security Issue
 
 2. **红队测试**: 检出所有注入关键漏洞
    - 92%检出率
    - 完整污点追踪
 
-3. **ZKP库**: 正确识别跨语言所有权转移
+3. **ZKP库**: 正确识别Cross-Language所有权转移
    - 275个FFI转移全部追踪
    - 无遗漏、无错误分类
 
 ### 分析质量
 
-- **精度**: FFI边界高精度，过滤后低误报率
+- **精度**: FFI边界高精度，过滤后低False Positive Rate
 - **召回**: 关键漏洞无遗漏
 - **性能**: 平均<1秒/文件，可扩展
 
 ### 下一步计划
 
-1. ✅ 修复分析器内存泄漏（进行中）
+1. ✅ Fix分析器Memory Leak（进行中）
 2. 📝 添加语料库特定抑制规则
 3. 🧪 扩展Rust/Zig FFI模式测试覆盖
 4. ⚡ 并行化性能优化
@@ -330,22 +330,22 @@ OmniScope v0.1.7成功检测生产代码中的**真实FFI边界漏洞**：
 
 ### 内存管理问题
 
-**状态**: 部分修复
+**状态**: 部分Fix
 
-**已修复**:
+**已Fix**:
 - ✅ pipeline.zig:165 - GlobalAllocTracker message泄漏
 - ✅ buffer_overflow.zig:300 - Issue message泄漏
 - ✅ DataFlowGraph trace数组泄漏
 - ✅ red_team_bugs.ll, sqlite3.ll, openssl_wrapper.ll - 无泄漏
 
-**待修复**:
+**待Fix**:
 - ❌ blst.ll (Rust ZKP库) - 20处TraceEntry泄漏
   - 位置: rust_ffi_auditor.zig:502,507,515
   - 原因: TraceEntry.initOwned 创建的字符串在深拷贝后未被正确释放
   - 影响: 不影响分析正确性，仅泄漏分析器自身内存
   - 优先级: 低（仅影响Rust代码分析）
 
-**根因分析**:
+**Root Cause分析**:
 DataFlowGraph.addIssue 的 TraceEntry 深拷贝逻辑需要进一步调试，确保：
 1. 深拷贝所有 owned 字符串
 2. 正确设置 owned 标志
