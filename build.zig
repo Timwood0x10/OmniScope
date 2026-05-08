@@ -6,15 +6,15 @@ fn getDefaultLLVMPath() []const u8 {
 
     return switch (os) {
         .macos => "/opt/homebrew/opt/llvm",
-        .linux => "/usr/lib/llvm-18",
+        .linux => "/usr/lib/llvm-22",
         .windows => "C:\\Program Files\\LLVM",
-        else => "/usr/lib/llvm-18",
+        else => "/usr/lib/llvm-22",
     };
 }
 
 /// Get the default LLVM version for the current OS
 fn getDefaultLLVMVersion() []const u8 {
-    return "18";
+    return "22";
 }
 
 /// Build configuration for OmniScope

@@ -9,7 +9,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-LLVM_VERSION=18
+LLVM_VERSION=22
 ZIG_VERSION="0.15.2"
 
 for arg in "$@"; do

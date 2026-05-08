@@ -171,7 +171,6 @@ jobs:
   #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
   #
   #     - name: Install LLVM
-  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
   #
   #     - name: Build
   #       run: make build
@@ -305,7 +304,6 @@ jobs:
   #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
   #
   #     - name: Install LLVM
-  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
   #
   #     - name: Build
   #       run: make build
@@ -336,7 +334,7 @@ jobs:
       matrix:
         build_mode: [release]
     env:
-      LLVM_VERSION: "18"
+      LLVM_VERSION: "22"
     steps:
       - uses: actions/checkout@v4
 
@@ -416,7 +414,7 @@ jobs:
           echo "  ❌ Failed:        $FAIL"
           echo "  📊 Functions:     $TOTAL_FUNCS"
           echo "  🐛 Issues:        $TOTAL_ISSUES"
-          echo "  Success Rate:    $(( SUCCESS * 100 / TOTAL ))%"
+          echo "  Success Rate:    $(if [ $TOTAL -gt 0 ]; then echo $(( SUCCESS * 100 / TOTAL )); else echo 0; fi)%"
           echo "========================================="
 
       - name: Upload analysis results
@@ -438,7 +436,7 @@ jobs:
           echo "| **Failed** | ❌ $FAIL |" >> $GITHUB_STEP_SUMMARY
           echo "| **Functions** | $TOTAL_FUNCS |" >> $GITHUB_STEP_SUMMARY
           echo "| **Issues Found** | 🐛 $TOTAL_ISSUES |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Success Rate** | $(( SUCCESS * 100 / TOTAL ))% |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Success Rate** | $(if [ $TOTAL -gt 0 ]; then echo $(( SUCCESS * 100 / TOTAL )); else echo 0; fi)% |" >> $GITHUB_STEP_SUMMARY
 
   sarif-upload:
     name: SARIF Report
@@ -547,7 +545,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
     env:
-      LLVM_VERSION: "18"
+      LLVM_VERSION: "22"
     steps:
       - uses: actions/checkout@v4
 
