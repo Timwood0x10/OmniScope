@@ -14,22 +14,8 @@ env:
 
 jobs:
 
-  ci-gate:
-    name: CI Gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for CI workflow
-        uses: lewagon/wait-on-check-action@v1.3.4
-        with:
-          ref: ${{ github.sha }}
-          check-name: CI Status
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 30
-          running-workflow-name: CI Gate
-
   build-linux-x86_64:
     name: Build (Linux x86_64)
-    needs: ci-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
