@@ -17,6 +17,9 @@ jobs:
 
   build-linux-x86_64:
     name: Build (Linux x86_64)
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +60,8 @@ jobs:
 
   build-macos-aarch64:
     name: Build (macOS aarch64)
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
