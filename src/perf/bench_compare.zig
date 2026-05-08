@@ -153,23 +153,23 @@ fn printComparison(name: []const u8, standard: BenchResult, optimized: BenchResu
     const speedup = standard.avg_ns / optimized.avg_ns;
     const improvement = ((standard.avg_ns - optimized.avg_ns) / standard.avg_ns) * 100;
 
-    std.debug.print("\n{s}:\n", .{name});
-    std.debug.print("  Standard: {d:.2} ns/iter\n", .{standard.avg_ns});
-    std.debug.print("  Optimized: {d:.2} ns/iter\n", .{optimized.avg_ns});
-    std.debug.print("  Speedup: {d:.2}x ({d:.1}% faster)\n", .{ speedup, improvement });
+    std.log.info("\n{s}:\n", .{name});
+    std.log.info("  Standard: {d:.2} ns/iter\n", .{standard.avg_ns});
+    std.log.info("  Optimized: {d:.2} ns/iter\n", .{optimized.avg_ns});
+    std.log.info("  Speedup: {d:.2}x ({d:.1}% faster)\n", .{ speedup, improvement });
 }
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const iterations = 10000;
 
-    std.debug.print("\n╔════════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║           PERFORMANCE OPTIMIZATION COMPARISON                  ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════════════════╝\n", .{});
-    std.debug.print("\nIterations: {d}\n", .{iterations});
+    std.log.info("\n╔════════════════════════════════════════════════════════════════╗\n", .{});
+    std.log.info("║           PERFORMANCE OPTIMIZATION COMPARISON                  ║\n", .{});
+    std.log.info("╚════════════════════════════════════════════════════════════════╝\n", .{});
+    std.log.info("\nIterations: {d}\n", .{iterations});
 
     // Allocation comparison
-    std.debug.print("\n=== Allocation Performance ===\n", .{});
+    std.log.info("\n=== Allocation Performance ===\n", .{});
     const std_alloc = try benchStandardAlloc(allocator, iterations);
     const pool_alloc = try benchMemoryPool(allocator, iterations);
     const arena_alloc = try benchArenaAlloc(allocator, iterations);
@@ -178,21 +178,21 @@ pub fn main() !void {
     printComparison("Arena Allocator", std_alloc, arena_alloc);
 
     // HashMap comparison
-    std.debug.print("\n=== HashMap Performance ===\n", .{});
+    std.log.info("\n=== HashMap Performance ===\n", .{});
     const std_hashmap = try benchHashMapStandard(allocator, iterations);
     const arena_hashmap = try benchHashMapArena(allocator, iterations);
 
     printComparison("Arena HashMap", std_hashmap, arena_hashmap);
 
     // Summary
-    std.debug.print("\n=== Summary ===\n", .{});
-    std.debug.print("Memory Pool speedup: {d:.2}x\n", .{std_alloc.avg_ns / pool_alloc.avg_ns});
-    std.debug.print("Arena Allocator speedup: {d:.2}x\n", .{std_alloc.avg_ns / arena_alloc.avg_ns});
-    std.debug.print("Arena HashMap speedup: {d:.2}x\n", .{std_hashmap.avg_ns / arena_hashmap.avg_ns});
+    std.log.info("\n=== Summary ===\n", .{});
+    std.log.info("Memory Pool speedup: {d:.2}x\n", .{std_alloc.avg_ns / pool_alloc.avg_ns});
+    std.log.info("Arena Allocator speedup: {d:.2}x\n", .{std_alloc.avg_ns / arena_alloc.avg_ns});
+    std.log.info("Arena HashMap speedup: {d:.2}x\n", .{std_hashmap.avg_ns / arena_hashmap.avg_ns});
 
-    std.debug.print("\n╔════════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║                   BENCHMARK COMPLETE                           ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════════════════╝\n", .{});
+    std.log.info("\n╔════════════════════════════════════════════════════════════════╗\n", .{});
+    std.log.info("║                   BENCHMARK COMPLETE                           ║\n", .{});
+    std.log.info("╚════════════════════════════════════════════════════════════════╝\n", .{});
 }
 
 test "bench standard alloc" {

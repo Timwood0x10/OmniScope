@@ -1,9 +1,0 @@
-test
-+- run test stderr
-=== Test Coverage Summary ===
-Lifetime Engine: owner, state, action, transitions
-Semantic Registry: 18 functions, 7 risk kinds
-Semantic Mapper: 14 rules, 5 languages
-test
-+- run test stderr
-[WARN] Failed to load file: error.FileNotFound

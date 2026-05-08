@@ -271,8 +271,17 @@ pub fn checkFFIReturnNullGuard(
                 if (op == c.LLVMICmp) {
                     // Found potential null check
                     guard = true;
-                    used = true; // Assume result is used if checked
-                    break;
+                    // DC-C5 FIX: Don't set used here - track separately below
+                }
+                
+                // DC-C5 FIX: Check if return value is used (store, call arg, etc.)
+                if (op == c.LLVMStore or op == c.LLVMCall or op == c.LLVMInvoke) {
+                    used = true;
+                }
+                
+                // Also check for bitcast/ptrtoint which indicate usage
+                if (op == c.LLVMBitCast or op == c.LLVMPtrToInt) {
+                    used = true;
                 }
             }) {}
             

@@ -10,7 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/zig-out/bin"
-OMNISCOPE="$BUILD_DIR/omniscope"
+# DC-C11 FIX: Use correct binary name (capital O as defined in build.zig)
+OMNISCOPE="$BUILD_DIR/OmniScope"
 
 TEST_IR_DIR="$PROJECT_ROOT/tests/ir"
 BC_DIR="$TEST_IR_DIR"

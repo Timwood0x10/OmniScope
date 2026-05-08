@@ -13,10 +13,12 @@ const log = OmniScope.log;
 
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
+/// Log info message using project logger (per rules.md: use std.log not std.debug.print)
 fn logInfo(comptime fmt: []const u8, args: anytype) void {
     log.info(fmt, args);
 }
 
+/// Log debug message using project logger
 fn logDebug(comptime fmt: []const u8, args: anytype) void {
     log.debug(fmt, args);
 }
@@ -50,9 +52,10 @@ const Config = struct {
     /// P2-2: Include stdlib issues (normally suppressed)
     include_stdlib: bool = false,
 
-    fn init(allocator: std.mem.Allocator) Config {
+    // DC-C2 FIX: Return error instead of crashing on OOM
+    fn init(allocator: std.mem.Allocator) !Config {
         return .{
-            .input_files = std.ArrayList([]const u8).initCapacity(allocator, 0) catch unreachable,
+            .input_files = std.ArrayList([]const u8).initCapacity(allocator, 0) catch return error.OutOfMemory,
         };
     }
 
@@ -96,7 +99,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
 
     _ = args.next(); // Skip program name
 
-    var config = Config.init(allocator);
+    var config = try Config.init(allocator);
     errdefer config.deinit(allocator);
 
     while (args.next()) |arg| {
@@ -135,7 +138,9 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
-            try config.input_files.append(allocator, arg);
+            // DC-C1 FIX: Deep copy arg to avoid use-after-free when args.deinit() is called
+            const arg_copy = try allocator.dupe(u8, arg);
+            try config.input_files.append(allocator, arg_copy);
         }
     }
 
@@ -144,7 +149,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
 
 /// Show help message
 fn showHelp() void {
-    std.debug.print(
+    logInfo(
         \\OmniScope - Universal LLVM Analysis Framework
         \\
         \\Usage: omniscope [options] <input.bc> [input2.bc] [...]
@@ -265,7 +270,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 };
                 logInfo("Report saved to: {s}\n", .{output_path});
             } else {
-                std.debug.print("{s}\n", .{json_output});
+                logInfo("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
             var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.7");
@@ -287,7 +292,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 };
                 logInfo("SARIF report saved to: {s}\n", .{output_path});
             } else {
-                std.debug.print("{s}\n", .{sarif_output});
+                logInfo("{s}\n", .{sarif_output});
             }
         } else {
             logInfo("Issues detected: {d}\n", .{issues.len});
@@ -550,27 +555,27 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
     if (vulnerabilities.items.len > 0) {
         logInfo("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
         for (vulnerabilities.items) |vuln| {
-            std.debug.print("  [VULN #{d}] {s}\n", .{ vuln.id, @tagName(vuln.vuln_type) });
-            std.debug.print("    Severity: {s}\n", .{@tagName(vuln.severity)});
-            std.debug.print("    Description: {s}\n", .{vuln.description});
-            std.debug.print("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
-            std.debug.print("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
+            logInfo("  [VULN #{d}] {s}\n", .{ vuln.id, @tagName(vuln.vuln_type) });
+            logInfo("    Severity: {s}\n", .{@tagName(vuln.severity)});
+            logInfo("    Description: {s}\n", .{vuln.description});
+            logInfo("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
+            logInfo("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
         }
     } else {
         logInfo("[*] No FFI vulnerabilities detected\n", .{});
     }
 
     logInfo("=== FFI Analysis Summary ===\n", .{});
-    std.debug.print("Total files analyzed: {d}\n", .{files.len});
-    std.debug.print("Total functions: {d}\n", .{blk: {
+    logInfo("Total files analyzed: {d}\n", .{files.len});
+    logInfo("Total functions: {d}\n", .{blk: {
         var total: usize = 0;
         for (loaders.items) |*loader| {
             total += loader.getFunctionCount();
         }
         break :blk total;
     }});
-    std.debug.print("FFI matches found: {d}\n", .{matcher.matches.items.len});
-    std.debug.print("Vulnerabilities detected: {d}\n", .{vulnerabilities.items.len});
+    logInfo("FFI matches found: {d}\n", .{matcher.matches.items.len});
+    logInfo("Vulnerabilities detected: {d}\n", .{vulnerabilities.items.len});
 }
 
 /// Check if an FFI match represents a dangerous pattern
@@ -644,12 +649,12 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        std.debug.print("OmniScope v0.1.7\n", .{});
+        logInfo("OmniScope v0.1.7\n", .{});
         return;
     }
 
     if (config.input_files.items.len == 0) {
-        std.debug.print("Error: No input file specified\n", .{});
+        logInfo("Error: No input file specified\n", .{});
         return error.NoInputFile;
     }
 

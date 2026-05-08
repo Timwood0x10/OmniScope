@@ -2,9 +2,9 @@ name: OmniScope Security Analysis
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, dev, improve]
   pull_request:
-    branches: [main]
+    branches: [main, master]
   schedule:
     # Run daily at 2:00 UTC
     - cron: '0 2 * * *'

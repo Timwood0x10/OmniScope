@@ -750,7 +750,7 @@ pub const AttributionSummary = struct {
     /// Print the noise-reduced analysis report.
     /// Format: "191 issues → 21 user code (8 FFI HIGH)"
     pub fn printReport(self: *const AttributionSummary) void {
-        std.debug.print(
+        std.log.info(
             \\╔══════════════════════════════════════════════════════╗
             \\║     OmniScope Analysis Report (Noise-Reduced)         ║
             \\╠══════════════════════════════════════════════════════╣
@@ -769,23 +769,23 @@ pub const AttributionSummary = struct {
             self.compiler_ignored,
         });
 
-        std.debug.print("\n{s} {d} issues → {d} user code", .{
+        std.log.info("\n{s} {d} issues → {d} user code", .{
             if (self.user_code > 0) "✅" else "⚠️",
             self.total_issues,
             self.user_code,
         });
 
         if (self.ffi_high_count > 0 or self.ffi_medium_count > 0) {
-            std.debug.print(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
+            std.log.info(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
                 self.ffi_high_count,
                 self.ffi_medium_count,
             });
         }
 
-        std.debug.print("\n", .{});
+        std.log.info("\n", .{});
 
         if (self.category_count > 0) {
-            std.debug.print("\n┌─ Issue Categories ────────────────────────────────\n", .{});
+            std.log.info("\n┌─ Issue Categories ────────────────────────────────\n", .{});
 
             for (self.categories[0..self.category_count]) |cat| {
                 if (cat.count == 0) continue;
@@ -798,14 +798,14 @@ pub const AttributionSummary = struct {
                     .unknown => "❓",
                 };
 
-                std.debug.print("│ {s} [{s}] {d:>4} issues\n", .{
+                std.log.info("│ {s} [{s}] {d:>4} issues\n", .{
                     icon,
                     cat.kind,
                     cat.count,
                 });
             }
 
-            std.debug.print("└────────────────────────────────────────────────\n", .{});
+            std.log.info("└────────────────────────────────────────────────\n", .{});
         }
     }
 
