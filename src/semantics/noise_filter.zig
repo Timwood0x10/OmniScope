@@ -265,8 +265,12 @@ const CPP_COMPILER_PATTERNS = [_][]const u8{
     "_ZTI", // Typeinfo
     "_ZTS", // Typeinfo name
 
-    // Allocator internals
-    "allocator",
+    // Allocator internals (DC-H14 FIX: Use precise patterns to avoid false positives)
+    // OLD: "allocator" matched "my_custom_allocator_init" incorrectly
+    // NEW: Only match std:: allocator patterns and operator new/delete
+    "_ZN9__gnu_cxx13new_allocator", // GNU new_allocator<T>
+    "_ZNSt13__allocated", // std::allocated_ptr (libstdc++)
+    "_ZSt15get_new_handlerv", // std::get_new_handler
     "_Znwm", // operator new
     "_ZdlPv", // operator delete
 };
@@ -1049,4 +1053,27 @@ test "_RNv v0 mangling: core/alloc/std classified as stdlib" {
 test "_ZN not in CPP_COMPILER_PATTERNS indexOf" {
     const result = classifyCppFunction("_ZN4myapp4mainE");
     try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "DC-H14: allocator pattern does not match custom allocators" {
+    const testing = std.testing;
+
+    // Should match (std:: allocator patterns)
+    try testing.expect(classifyFunction("_ZN9__gnu_cxx13new_allocatorIiE", .cpp).origin == .compiler_generated);
+    try testing.expect(classifyFunction("_Znwm", .cpp).origin == .compiler_generated);
+    try testing.expect(classifyFunction("_ZdlPv", .cpp).origin == .compiler_generated);
+
+    // Should NOT match (custom allocators)
+    const custom_cases = [_][]const u8{
+        "my_custom_allocator_init",
+        "get_allocator",
+        "allocator_pool_create",
+        "custom_allocator_dealloc",
+    };
+
+    for (custom_cases) |case| {
+        const result = classifyFunction(case, .cpp);
+        // Custom allocator code should be classified as user code, not suppressed
+        try testing.expect(result.origin != .compiler_generated);
+    }
 }
