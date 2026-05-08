@@ -27,6 +27,11 @@ fn logWarn(comptime fmt: []const u8, args: anytype) void {
     log.warn(fmt, args);
 }
 
+/// Log error message using project logger
+fn logErr(comptime fmt: []const u8, args: anytype) void {
+    log.err(fmt, args);
+}
+
 /// Main entry point error set
 pub const MainError = error{
     NoInputFile,
@@ -60,9 +65,16 @@ const Config = struct {
     }
 
     fn deinit(self: *Config, allocator: std.mem.Allocator) void {
+        for (self.input_files.items) |file| {
+            if (file.len > 0) {
+                allocator.free(file);
+            }
+        }
         self.input_files.deinit(allocator);
         if (self.output_file) |path| {
-            allocator.free(path);
+            if (path.len > 0) {
+                allocator.free(path);
+            }
         }
     }
 };
@@ -119,11 +131,11 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.output_format = .sarif;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             const output_file = args.next() orelse {
-                std.log.err("Error: --output requires a file path\n", .{});
+                logErr("Error: --output requires a file path\n", .{});
                 return error.InvalidOption;
             };
             if (output_file.len == 0) {
-                std.log.err("Error: --output requires a non-empty file path\n", .{});
+                logErr("Error: --output requires a non-empty file path\n", .{});
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);
@@ -208,7 +220,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     logInfo("File: {s}\n\n", .{path});
 
     var loader = IRLoader.loadFile(allocator, path) catch |err| {
-        std.log.err("Failed to load IR file: {s}\n", .{@errorName(err)});
+        logErr("Failed to load IR file: {s}\n", .{@errorName(err)});
         return err;
     };
     defer loader.deinit();
@@ -253,19 +265,19 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     if (issues.len > 0 or config.output_format == .json or config.output_format == .sarif) {
         if (config.output_format == .json) {
             const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
-                std.log.err("Failed to format JSON output: {}", .{err});
+                logErr("Failed to format JSON output: {}", .{err});
                 return;
             };
             defer allocator.free(json_output);
 
             if (config.output_file) |output_path| {
                 const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
-                    std.log.err("Failed to create output file '{s}': {}", .{ output_path, err });
+                    logErr("Failed to create output file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 defer file.close();
                 file.writeAll(json_output) catch |err| {
-                    std.log.err("Failed to write to file '{s}': {}", .{ output_path, err });
+                    logErr("Failed to write to file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 logInfo("Report saved to: {s}\n", .{output_path});
@@ -277,19 +289,19 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
             // No deinit needed - sarif_output is freed via defer allocator.free() below
             var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.7");
             const sarif_output = sarif.generate(issues) catch |err| {
-                std.log.err("Failed to generate SARIF output: {}", .{err});
+                logErr("Failed to generate SARIF output: {}", .{err});
                 return;
             };
             defer allocator.free(sarif_output);
 
             if (config.output_file) |output_path| {
                 const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
-                    std.log.err("Failed to create output file '{s}': {}", .{ output_path, err });
+                    logErr("Failed to create output file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 defer file.close();
                 file.writeAll(sarif_output) catch |err| {
-                    std.log.err("Failed to write to file '{s}': {}", .{ output_path, err });
+                    logErr("Failed to write to file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 logInfo("SARIF report saved to: {s}\n", .{output_path});

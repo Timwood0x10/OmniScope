@@ -382,7 +382,7 @@ pub const RustFfiAuditor = struct {
                             const trace = try self.allocator.alloc(TraceEntry, 3);
                             errdefer self.allocator.free(trace);
                             trace[0] = TraceEntry.init("Stack address escapes across FFI boundary");
-                            
+
                             const desc1 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Argument {d} of {s} derived from alloca instruction",
@@ -390,7 +390,7 @@ pub const RustFfiAuditor = struct {
                             );
                             errdefer self.allocator.free(desc1);
                             trace[1] = TraceEntry.initOwned(desc1);
-                            
+
                             const desc2 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Callee may store pointer beyond caller's lifetime",
@@ -518,9 +518,9 @@ pub const RustFfiAuditor = struct {
 
                 const trace = try self.allocator.alloc(TraceEntry, 3);
                 errdefer self.allocator.free(trace);
-                
+
                 trace[0] = TraceEntry.init("Ownership violation: pointer transferred to FFI then freed");
-                
+
                 const desc1 = try std.fmt.allocPrint(
                     self.allocator,
                     "Pointer was passed to an FFI boundary call (ownership transfer out)",
@@ -528,7 +528,7 @@ pub const RustFfiAuditor = struct {
                 );
                 errdefer self.allocator.free(desc1);
                 trace[1] = TraceEntry.initOwned(desc1);
-                
+
                 const desc2 = try std.fmt.allocPrint(
                     self.allocator,
                     "Same pointer also passed to {s}() — potential double-free or cross-allocator-free",
@@ -779,7 +779,7 @@ pub const RustFfiAuditor = struct {
                         const trace = try self.allocator.alloc(TraceEntry, 3);
                         errdefer self.allocator.free(trace);
                         trace[0] = TraceEntry.init("Dangling reference via as_ptr");
-                        
+
                         const desc1 = try std.fmt.allocPrint(
                             self.allocator,
                             "Borrowed pointer (as_ptr/GEP field 0) from aggregate still used after parent dropped",
@@ -787,7 +787,7 @@ pub const RustFfiAuditor = struct {
                         );
                         errdefer self.allocator.free(desc1);
                         trace[1] = TraceEntry.initOwned(desc1);
-                        
+
                         const desc2 = try std.fmt.allocPrint(
                             self.allocator,
                             "Parent dropped at instruction {d}, but pointer used again at instruction {d}",
@@ -976,21 +976,21 @@ pub fn isCoreFfiFunction(callee_name: []const u8) bool {
         "c_double",
         "CStr",
         "CString",
-        "from_raw",       // *const T::from_raw()
-        "into_raw",       // *mut T::into_raw()
-        "as_ptr",         // CStr::as_ptr()
-        "to_ptr",         // CString::to_ptr()
-        "to_str",         // CStr::to_str()
+        "from_raw", // *const T::from_raw()
+        "into_raw", // *mut T::into_raw()
+        "as_ptr", // CStr::as_ptr()
+        "to_ptr", // CString::to_ptr()
+        "to_str", // CStr::to_str()
         "from_bytes_with_nul_unchecked",
         "from_bytes_with_nul",
     };
-    
+
     for (core_ffi_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) {
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -1005,7 +1005,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "free",
         "memalign",
         "posix_memalign",
-        
+
         // POSIX I/O
         "open",
         "read",
@@ -1017,7 +1017,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "lseek",
         "mmap",
         "munmap",
-        
+
         // POSIX threads
         "pthread_create",
         "pthread_join",
@@ -1025,7 +1025,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "pthread_mutex_unlock",
         "pthread_cond_wait",
         "pthread_cond_signal",
-        
+
         // String operations
         "strlen",
         "strcpy",
@@ -1035,7 +1035,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "strcmp",
         "strncmp",
         "strdup",
-        
+
         // Network
         "socket",
         "bind",
@@ -1044,7 +1044,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "connect",
         "send",
         "recv",
-        
+
         // Time
         "time",
         "gettimeofday",
@@ -1052,24 +1052,24 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
         "sleep",
         "usleep",
         "nanosleep",
-        
+
         // Environment
         "getenv",
         "setenv",
         "unsetenv",
-        
+
         // Error handling
         "errno",
         "strerror",
         "perror",
     };
-    
+
     for (libc_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) {
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -1077,7 +1077,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
 pub fn classifyFfiBoundaryType(
     callee_name: []const u8,
     module_name: ?[]const u8,
-) enum { 
+) enum {
     /// Standard extern "C" function
     standard,
     /// core::ffi utility (CStr, CString, etc.)
@@ -1090,15 +1090,15 @@ pub fn classifyFfiBoundaryType(
     unknown,
 } {
     _ = module_name; // Reserved for future use
-    
+
     if (isCoreFfiFunction(callee_name)) return .core_ffi;
     if (isLibcFunction(callee_name)) return .libc_crate;
-    
+
     // OS-specific APIs
     const win32_patterns = [_][]const u8{ "CreateFile", "ReadFile", "WriteFile", "CloseHandle" };
     const macos_patterns = [_][]const u8{ "CFStringCreate", "dispatch_async", "kqueue" };
     const linux_patterns = [_][]const u8{ "epoll_create", "inotify_init", "signalfd" };
-    
+
     for (win32_patterns) |p| {
         if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
     }
@@ -1108,10 +1108,10 @@ pub fn classifyFfiBoundaryType(
     for (linux_patterns) |p| {
         if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
     }
-    
+
     // Default to standard extern "C"
     if (isExternCCall(callee_name)) return .standard;
-    
+
     return .unknown;
 }
 

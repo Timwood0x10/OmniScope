@@ -19,7 +19,7 @@ test "isCoreFfiFunction - CStr and CString patterns" {
     // CStr (from bytes to C string)
     try std.testing.expect(isCoreFfiFunction("CStr.from_bytes_with_nul"));
     try std.testing.expect(isCoreFfiFunction("CStr.from_bytes_with_nul_unchecked"));
-    
+
     // CString (owned C string)
     try std.testing.expect(isCoreFfiFunction("CString.new"));
     try std.testing.expect(isCoreFfiFunction("CString.into_boxed_c_str"));
@@ -41,7 +41,7 @@ test "isCoreFfiFunction - pointer conversion functions" {
     // Raw pointer conversions (ownership transfer)
     try std.testing.expect(isCoreFfiFunction("from_raw"));
     try std.testing.expect(isCoreFfiFunction("into_raw"));
-    
+
     // String/pointer accessors
     try std.testing.expect(isCoreFfiFunction("as_ptr"));
     try std.testing.expect(isCoreFfiFunction("to_ptr"));
@@ -54,8 +54,8 @@ test "isCoreFfiFunction - negative cases" {
     try std.testing.expect(!isCoreFfiFunction("free"));
     try std.testing.expect(!isCoreFfiFunction("printf"));
     try std.testing.expect(!isCoreFfiFunction("my_custom_function"));
-    try std.testing.expect(!isCoreFfiFunction("_ZN"));  // C++ mangled name
-    try std.testing.expect(!isCoreFfiFunction("__rust"));  // Rust internal
+    try std.testing.expect(!isCoreFfiFunction("_ZN")); // C++ mangled name
+    try std.testing.expect(!isCoreFfiFunction("__rust")); // Rust internal
 }
 
 test "isCoreFfiFunction - substring matching" {
@@ -89,7 +89,7 @@ test "isLibcFunction - I/O operations" {
     try std.testing.expect(isLibcFunction("ioctl"));
     try std.testing.expect(isLibcFunction("fstat"));
     try std.testing.expect(isLibcFunction("lseek"));
-    
+
     // Memory-mapped I/O
     try std.testing.expect(isLibcFunction("mmap"));
     try std.testing.expect(isLibcFunction("munmap"));
@@ -136,12 +136,12 @@ test "isLibcFunction - time and environment" {
     try std.testing.expect(isLibcFunction("sleep"));
     try std.testing.expect(isLibcFunction("usleep"));
     try std.testing.expect(isLibcFunction("nanosleep"));
-    
+
     // Environment
     try std.testing.expect(isLibcFunction("getenv"));
     try std.testing.expect(isLibcFunction("setenv"));
     try std.testing.expect(isLibcFunction("unsetenv"));
-    
+
     // Error handling
     try std.testing.expect(isLibcFunction("errno"));
     try std.testing.expect(isLibcFunction("strerror"));
@@ -153,8 +153,8 @@ test "isLibcFunction - negative cases" {
     try std.testing.expect(!isLibcFunction("my_malloc"));
     try std.testing.expect(!isLibcFunction("custom_free"));
     try std.testing.expect(!isLibcFunction("malloc_fast"));
-    try std.testing.expect(!isLibcFunction("xmalloc"));  // glibc internal
-    try std.testing.expect(!isLibcFunction(""));  // empty string
+    try std.testing.expect(!isLibcFunction("xmalloc")); // glibc internal
+    try std.testing.expect(!isLibcFunction("")); // empty string
 }
 
 // ============================================================================
@@ -169,10 +169,10 @@ test "classifyFfiBoundaryType - standard extern C" {
 test "classifyFfiBoundaryType - core::ffi utilities" {
     var result = classifyFfiBoundaryType("CStr.from_bytes", null);
     try std.testing.expectEqual(.core_ffi, result);
-    
+
     result = classifyFfiBoundaryType("into_raw", null);
     try std.testing.expectEqual(.core_ffi, result);
-    
+
     result = classifyFfiBoundaryType("from_raw", null);
     try std.testing.expectEqual(.core_ffi, result);
 }
@@ -180,10 +180,10 @@ test "classifyFfiBoundaryType - core::ffi utilities" {
 test "classifyFfiBoundaryType - libc crate wrappers" {
     var result = classifyFfiBoundaryType("pthread_create", null);
     try std.testing.expectEqual(.libc_crate, result);
-    
+
     result = classifyFfiBoundaryType("socket", null);
     try std.testing.expectEqual(.libc_crate, result);
-    
+
     result = classifyFfiBoundaryType("mmap", null);
     try std.testing.expectEqual(.libc_crate, result);
 }
@@ -192,21 +192,21 @@ test "classifyFfiBoundaryType - OS-specific APIs" {
     // Windows APIs
     var result = classifyFfiBoundaryType("CreateFileW", null);
     try std.testing.expectEqual(.os_api, result);
-    
+
     result = classifyFfiBoundaryType("ReadFile", null);
     try std.testing.expectEqual(.os_api, result);
-    
+
     // macOS APIs
     result = classifyFfiBoundaryType("CFStringCreateWithCString", null);
     try std.testing.expectEqual(.os_api, result);
-    
+
     result = classifyFfiBoundaryType("dispatch_async_f", null);
     try std.testing.expectEqual(.os_api, result);
-    
+
     // Linux APIs
     result = classifyFfiBoundaryType("epoll_create1", null);
     try std.testing.expectEqual(.os_api, result);
-    
+
     result = classifyFfiBoundaryType("inotify_init1", null);
     try std.testing.expectEqual(.os_api, result);
 }
@@ -220,11 +220,11 @@ test "classifyFfiBoundaryType - edge cases" {
     // Empty string
     const result_empty = classifyFfiBoundaryType("", null);
     try std.testing.expectEqual(.unknown, result_empty);
-    
+
     // Rust mangled name
     const result_rust = classifyFfiBoundaryType("_ZN3foo3barE", null);
     try std.testing.expectEqual(.unknown, result_rust);
-    
+
     // LLVM internal
     const result_llvm = classifyFfiBoundaryType("llvm.dbg.declare", null);
     try std.testing.expectEqual(.unknown, result_llvm);
@@ -245,13 +245,13 @@ test "isExternCCall - valid extern C calls" {
 test "isExternCCall - invalid calls" {
     // Empty
     try std.testing.expect(!isExternCCall(""));
-    
+
     // Starts with underscore (internal)
     try std.testing.expect(!isExternCCall("_internal_func"));
-    
+
     // C++ mangled
     try std.testing.expect(!isExternCCall("_Z3fooi"));
-    
+
     // Rust mangled
     try std.testing.expect(!isExternCCall("_RNvC"));
 }
@@ -264,74 +264,82 @@ test "Accuracy - core::ffi detection precision" {
     // True positives (should detect)
     const tp_count = 20;
     var tp_detected: u32 = 0;
-    
+
     const true_positives = [_][]const u8{
         "CStr.from_bytes",
         "CString.new",
-        "c_void", "c_char", "c_int", "c_long",
-        "from_raw", "into_raw", "as_ptr", "to_ptr",
-        "c_uint", "c_ulong", "c_float", "c_double",
-        "to_str", "from_bytes_with_nul_unchecked",
-        "into_boxed_c_str", "as_ptr_unchecked",
+        "c_void",
+        "c_char",
+        "c_int",
+        "c_long",
+        "from_raw",
+        "into_raw",
+        "as_ptr",
+        "to_ptr",
+        "c_uint",
+        "c_ulong",
+        "c_float",
+        "c_double",
+        "to_str",
+        "from_bytes_with_nul_unchecked",
+        "into_boxed_c_str",
+        "as_ptr_unchecked",
     };
-    
+
     for (true_positives) |name| {
         if (isCoreFfiFunction(name)) tp_detected += 1;
     }
-    
+
     // Should detect all true positives
     try std.testing.expectEqual(tp_count, tp_detected);
-    
+
     // False positives (should NOT detect)
     const fp_count = 10;
     var fp_false_positive: u32 = 0;
-    
+
     const false_positives = [_][]const u8{
-        "malloc", "free", "printf", "memcpy",
-        "my_string", "char_ptr", "int_value",
-        "_Zmangled", "__rust_internal", "", "main",
+        "malloc",          "free",     "printf",    "memcpy",
+        "my_string",       "char_ptr", "int_value", "_Zmangled",
+        "__rust_internal", "",         "main",
     };
-    
+
     for (false_positives) |name| {
         if (!isCoreFfiFunction(name)) fp_false_positive += 1;
     }
-    
+
     // Should reject all false positives
     try std.testing.expectEqual(fp_count, fp_false_positive);
-    
+
     // Calculate precision
     const total_detected = tp_detected + (tp_count - tp_detected) + (fp_count - fp_false_positive);
     const precision: f32 = @as(f32, @floatFromInt(tp_detected)) / @as(f32, @floatFromInt(total_detected));
-    
+
     // Precision should be >= 95%
     try std.testing.expectGreaterThanOrEqual(precision, 0.95);
 }
 
 test "Accuracy - libc function detection precision" {
     // Sample of common libc functions
-    const test_functions = [_][]struct { 
-        name: []const u8,
-        expected: bool 
-    }{
+    const test_functions = [_][]struct { name: []const u8, expected: bool }{
         .{ .name = "malloc", .expected = true },
         .{ .name = "free", .expected = true },
         .{ .name = "pthread_create", .expected = true },
         .{ .name = "socket", .expected = true },
         .{ .name = "strlen", .expected = true },
         .{ .name = "getenv", .expected = true },
-        .{ .name = "my_malloc", .expected = false },  // Not exact match
-        .{ .name = "xmalloc", .expected = false },   // glibc internal
+        .{ .name = "my_malloc", .expected = false }, // Not exact match
+        .{ .name = "xmalloc", .expected = false }, // glibc internal
         .{ .name = "", .expected = false },
-        .{ .name = "printf", .expected = false },     // Not in our list
+        .{ .name = "printf", .expected = false }, // Not in our list
     };
-    
+
     var correct: u32 = 0;
-    
+
     for (test_functions) |tf| {
         const result = isLibcFunction(tf.name);
         if (result == tf.expected) correct += 1;
     }
-    
+
     // All classifications should be correct
     try std.testing.expectEqual(@as(u32, test_functions.len), correct);
 }
@@ -348,14 +356,14 @@ test "Accuracy - FFI boundary classification coverage" {
         .{ .name = "CreateFileW", .expected_kind = .os_api },
         .{ .name = "unknown_func", .expected_kind = .unknown },
     };
-    
+
     var correct: u32 = 0;
-    
+
     for (test_cases) |tc| {
         const result = classifyFfiBoundaryType(tc.name, null);
         if (result == tc.expected_kind) correct += 1;
     }
-    
+
     // All classifications should be correct (100% accuracy)
     try std.testing.expectEqual(@as(u32, test_cases.len), correct);
 }

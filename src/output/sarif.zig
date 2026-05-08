@@ -198,22 +198,6 @@ pub const SarifGenerator = struct {
     }
 };
 
-pub const SarifRule = struct {
-    id: []const u8,
-    name: []const u8,
-    short_description: []const u8,
-    default_level: []const u8,
-};
-
-pub const SarifResult = struct {
-    rule_id: []const u8,
-    level: []const u8,
-    message: []const u8,
-    file: []const u8,
-    line: u32,
-    column: u32,
-};
-
 pub const DEFAULT_TOOL_INFO = ToolInfo{
     .name = "OmniScope",
     .version = "0.1.8",

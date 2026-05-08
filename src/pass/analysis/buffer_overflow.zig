@@ -31,14 +31,14 @@ pub const BufferOverflowPass = struct {
     fn getSafeFuncName(func: c.LLVMValueRef) []const u8 {
         const name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(name_ptr) == 0) return "unknown";
-        
+
         const func_name_raw = std.mem.span(name_ptr);
-        
+
         // Validate UTF-8 to prevent terminal display issues
         if (std.unicode.utf8ValidateSlice(func_name_raw)) {
             return func_name_raw;
         }
-        
+
         // Return safe fallback for non-UTF-8 names (e.g., mangled C++ names)
         return "function_with_non_utf8_name";
     }
@@ -334,13 +334,13 @@ pub const BufferOverflowPass = struct {
     /// Helper function to register a detected issue with the context.
     fn reportIssue(ctx: *PassContext, issue: Issue, diag: *DiagnosticWriter) !void {
         try ctx.addIssue(&issue);
-        
+
         // Fix: Ensure UTF-8 safe output to prevent garbled characters in terminal
         const safe_message = sanitizeUtf8String(issue.message);
         diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), safe_message });
         // Note: DataFlowGraph.addIssue takes ownership and will free original memory
     }
-    
+
     /// Sanitize string for safe UTF-8 output
     /// Replaces invalid UTF-8 sequences with '?' to prevent terminal display issues
     fn sanitizeUtf8String(input: []const u8) []const u8 {
@@ -348,7 +348,7 @@ pub const BufferOverflowPass = struct {
         if (std.unicode.utf8ValidateSlice(input)) {
             return input;
         }
-        
+
         // For invalid UTF-8, return a safe fallback message
         // (In production, you might want to allocate and clean the string)
         return "buffer overflow detected (details contain non-UTF-8 characters)";

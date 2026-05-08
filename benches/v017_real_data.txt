@@ -1,4 +1,4 @@
-=== OmniScope v0.1.8 Real Benchmark ===
+=== OmniScope v0.1.7 Real Benchmark ===
 Date: 2026-05-06T19:23:05+08:00
 Binary: 4.7M
 

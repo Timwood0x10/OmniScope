@@ -468,7 +468,7 @@ pub const DataFlowGraph = struct {
                     try self.allocator.dupe(u8, issue.location.func)
                 else
                     issue.location.func;
-                
+
                 result[index] = .{
                     .kind = issue.kind,
                     .message = message_copy,

@@ -75,6 +75,40 @@ pub const IssueClassification = enum(u8) {
 
 /// Issue represents a detected security problem
 ///
+/// ## Memory Ownership Model (DC-C3 FIX)
+///
+/// Issue uses **explicit ownership tags** to prevent memory leaks and double-free:
+///
+/// ### Ownership Fields
+/// - `owned: bool` - If `true`, caller owns `message` and `trace` heap memory
+///   - When `owned=true`: `deinit()` will free message and trace
+///   - When `owned=false`: Message/trace are string literals or borrowed slices
+///
+/// - `function_owned: bool` - If `true`, `location.function` is heap-allocated
+///   - When `function_owned=true`: `deinit()` will free location.function
+///   - When `function_owned=false`: location.function is a borrowed slice
+///
+/// ### Ownership Transfer Rules
+/// 1. **Caller-owned** (`owned=false`, default): Pass owns nothing, don't free
+/// 2. **Callee-owned** (`owned=true`): Pass takes ownership, must call deinit()
+/// 3. **Deep-copy**: Use `initWithOwnedMessage()` for callee-owned copies
+/// 4. **Borrowed**: Temporary references, neither side frees
+///
+/// ### Usage Pattern
+/// ```zig
+/// // Pattern 1: Borrowed (stack literals, most common)
+/// var issue = Issue.init(.memory_leak, "le detected", loc, .medium, 0.8);
+/// // owned=false, no deinit() needed
+///
+/// // Pattern 2: Owned (heap-allocated messages)
+/// var issue = Issue.initWithOwnedMessage(allocator, .memory_leak,
+///     try allocator.dupe(u8, "heap msg"), loc, .medium, 0.8);
+/// defer issue.deinit(allocator); // MUST free message
+///
+/// // Pattern 3: Transfer to collection (addIssue takes ownership)
+/// try issues.append(issue); // If issue.owned=true, collection now owns it
+/// ```
+///
 /// This struct contains all information about a detected issue including
 /// its type, location, severity, and optional context about FFI boundaries.
 pub const Issue = struct {
