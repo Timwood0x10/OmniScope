@@ -1,5 +1,5 @@
 #!/bin/bash
-# OmniScope v0.1.8 Regression Test Suite
+# OmniScope v0.1.7 Regression Test Suite
 #
 # Usage:
 #   ./scripts/regression_test.sh [all|c|cpp|rust|go|zig|sarif|json]
@@ -10,7 +10,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/zig-out/bin"
-OMNISCOPE="$BUILD_DIR/omniscope"
+# DC-C11 FIX: Use correct binary name (capital O as defined in build.zig)
+OMNISCOPE="$BUILD_DIR/OmniScope"
 
 TEST_IR_DIR="$PROJECT_ROOT/tests/ir"
 BC_DIR="$TEST_IR_DIR"
@@ -282,7 +283,7 @@ test_json_output() {
 print_summary() {
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           OmniScope v0.1.8 Regression Test Summary           ║"
+    echo "║           OmniScope v0.1.7 Regression Test Summary           ║"
     echo "╠══════════════════════════════════════════════════════════════╣"
     echo "║  Status  │  Count                                             ║"
     echo "╠──────────┼──────────────────────────────────────────────────╣"
@@ -307,7 +308,7 @@ main() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║       OmniScope v0.1.8 Regression Test Suite                 ║"
+    echo "║       OmniScope v0.1.7 Regression Test Suite                 ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 
     compile_all_ir

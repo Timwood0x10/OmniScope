@@ -1,0 +1,25 @@
+=== OmniScope v0.1.7 Real Benchmark ===
+Date: 2026-05-06T19:23:05+08:00
+Binary: 4.7M
+
+=== Red Team Tests ===
+  subtle_unsafe_rs               funcs=0     issues=0   ffi=128   cross=158   ptrs=38     time=197ms
+  ffi_boundary_bugs              funcs=0     issues=0   ffi=41    cross=23    ptrs=0      time=43ms
+  red_team_bugs                  funcs=0     issues=0   ffi=64    cross=34    ptrs=0      time=35ms
+  posix_ffi_bugs                 funcs=0     issues=0   ffi=35    cross=31    ptrs=49     time=33ms
+  python_c_api_bugs              funcs=0     issues=0   ffi=36    cross=30    ptrs=26     time=34ms
+  cross_lang_free_bugs           funcs=0     issues=0   ffi=42    cross=15    ptrs=0      time=28ms
+  jni_boundary_bugs_O0           funcs=0     issues=0   ffi=2     cross=2     ptrs=41     time=26ms
+
+=== Real World Projects ===
+  sqlite3                        funcs=0     issues=0   ffi=1717  cross=1548  ptrs=20192  time=13547ms
+  curl8                          funcs=0     issues=0   ffi=1567  cross=1506  ptrs=4948   time=2297ms
+  ripgrep141                     funcs=0     issues=0   ffi=110   cross=171   ptrs=0      time=98ms
+  jsoncpp195                     funcs=0     issues=0   ffi=4     cross=888   ptrs=0      time=1939ms
+  libuv150                       funcs=0     issues=0   ffi=1231  cross=1193  ptrs=2649   time=1034ms
+  ring                           funcs=0     issues=0   ffi=4242  cross=5148  ptrs=841    time=2068ms
+  blst                           funcs=0     issues=0   ffi=1355  cross=4850  ptrs=269    time=1274ms
+  zkcrypto_bls12_381             funcs=0     issues=0   ffi=6787  cross=8520  ptrs=0      time=3219ms
+
+=== Benchmark Complete ===
+JSON files saved to: benchmark_v018_json/

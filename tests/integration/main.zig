@@ -91,11 +91,12 @@ test "integration: Rust alloc -> C free (OK)" {
     var suite = TestSuite.init(std.testing.allocator);
     defer suite.deinit();
 
-    // This should pass: Rust allocates, C frees correctly
-    // Expected: 0 issues
+    // DC-C17 TODO: This test should load actual IR and run Pipeline analysis
+    // Currently hardcoded to simulate a passing result - needs refactoring
+    // Expected: 0 issues when Rust allocates and C frees correctly
     const result = TestResult{
         .name = "Rust alloc -> C free",
-        .passed = true,
+        .passed = true,  // TODO: Replace with actual pipeline execution result
         .expected_issues = 0,
         .actual_issues = 0,
         .true_positives = 0,

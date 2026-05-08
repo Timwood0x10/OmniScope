@@ -68,6 +68,7 @@ pub const DangerSurfacePass = struct {
         var total_args: u64 = 0;
         var total_rets: u64 = 0;
         var total_alias_traces: u64 = 0;
+        const cross_lang_frees: u64 = 0;
 
         for (ffis) |surface| {
             // Phase 1 args: callee is already a known FFI boundary →
@@ -105,31 +106,28 @@ pub const DangerSurfacePass = struct {
 
         const t1 = std.time.nanoTimestamp();
 
+        // G-2: Use unified isOnDangerPath() instead of inline zone/freed checks.
+        // This ensures all DangerPathKind variants (including alias closure) are covered,
+        // and automatically benefits from future algorithm improvements.
         var node_iter = mg.nodes.iterator();
         while (node_iter.next()) |entry| {
             const ptr_val = entry.key_ptr.*;
             if (ctx.isRelevantAlloc(ptr_val)) continue;
+            // G-2: Use unified isOnDangerPathFull() instead of inline zone/freed checks.
+            // This ensures all DangerPathKind variants (including alias closure) are covered.
+            if (!ctx.isOnDangerPathFull(ptr_val)) continue;
+            try ctx.markRelevantAlloc(ptr_val);
             const node = entry.value_ptr.*;
-            if (node.zone == .unsafe) {
-                try ctx.markRelevantAlloc(ptr_val);
-                try markFunctionFromInst(ctx, node.alloc_inst);
-                traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
-                    diag.debug("[P1-1] Alias propagation error for unsafe ptr 0x{x}: {}", .{ ptr_val, err });
-                };
-            } else if (node.freed) {
-                const fl = node.free_lang orelse continue;
-                if (node.alloc_lang != fl) {
-                    try ctx.markRelevantAlloc(ptr_val);
-                    ctx.markFfiRelevant(ptr_val) catch {}; // BUGFIX: cross-lang free is FFI-relevant
-                    try markFunctionFromInst(ctx, node.alloc_inst);
-                    traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
-                        diag.debug("[P1-1] Alias propagation error for cross-lang ptr 0x{x}: {}", .{ ptr_val, err });
-                    };
-                }
-            }
+            try markFunctionFromInst(ctx, node.alloc_inst);
+            ctx.markFfiRelevant(ptr_val) catch {};
+            visited.clearRetainingCapacity();
+            total_alias_traces += 1;
+            traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
+                diag.debug("[P1-1] Alias propagation error for danger ptr 0x{x}: {}", .{ ptr_val, err });
+            };
         }
 
-        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | Phase1={d:.0}ms (args={d} rets={d} alias_traces={d}) Phase2={d:.0}ms", .{
+        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | Phase1={d:.0}ms (args={d} rets={d} alias_traces={d}) Phase2={d:.0}ms (cross_lang_free={d})", .{
             ffi_count,
             ctx.danger_surface_relevant.count(),
             ctx.relevant_functions.count(),
@@ -138,6 +136,7 @@ pub const DangerSurfacePass = struct {
             total_rets,
             total_alias_traces,
             @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t1)) / 1_000_000.0)),
+            cross_lang_frees,
         });
     }
 };

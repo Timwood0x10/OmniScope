@@ -172,6 +172,17 @@ pub const SummaryRegistry = struct {
 
     /// Register a function summary
     pub fn register(self: *SummaryRegistry, summary: FunctionSummary) !void {
+        // M2 FIX v2: Free old entry on duplicate registration to prevent memory leak.
+        // Ownership semantics:
+        //   - entry.key:     heap string copy made by register()'s dupe() → must free
+        //   - entry.value:   FunctionSummary with internal heap arrays (param_flows, ownership)
+        //                     allocated by FunctionSummary.init() → must deinit to free them
+        // Only the key is explicitly freed here; the value's internal arrays are freed by deinit().
+        if (self.summaries.fetchRemove(summary.name)) |entry| {
+            var old_value = entry.value;
+            old_value.deinit(self.allocator);
+            self.allocator.free(entry.key);
+        }
         const name_copy = try self.allocator.dupe(u8, summary.name);
         errdefer self.allocator.free(name_copy);
         try self.summaries.put(name_copy, summary);

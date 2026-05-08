@@ -2,7 +2,7 @@
 
 > "We have 13 directories and 95 files. Somehow it all works. Mostly."
 
-Last updated: 2026-05-04 | Version: v0.1.6
+Last updated: 2026-05-07 | Version: v0.1.7
 
 ## Architecture Layers
 

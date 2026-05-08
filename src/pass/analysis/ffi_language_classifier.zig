@@ -78,6 +78,11 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
 
     const func_name = std.mem.span(func_name_ptr);
 
+    // LLVM intrinsics are compiler-generated, not any language's FFI function.
+    if (std.mem.startsWith(u8, func_name, "llvm.")) {
+        return .unknown;
+    }
+
     // Check for Rust patterns
     for (FFIPatterns.rust_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
@@ -85,23 +90,89 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
         }
     }
 
+    // Rust v0 mangling prefix (RFC 2603) — _R<hash>...
+    // Missing from original identifyLanguage, present in identifyCalleeLanguage.
+    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') return .rust;
+
+    // Rust ownership transfer / drop glue patterns.
+    const rust_ownership = [_][]const u8{ "into_raw", "from_raw", "drop_in_place" };
+    for (rust_ownership) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return .rust;
+    }
+
+    // C++ Itanium mangling (_Z prefix) — but NOT _ZN which is ambiguous.
+    if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z' and
+        !(func_name.len > 3 and func_name[2] == 'N')) return .cpp;
+
+    // _ZN ambiguity resolution: could be Rust or C++ Itanium nested name.
+    if (func_name.len > 3 and func_name[0] == '_' and func_name[1] == 'Z' and func_name[2] == 'N') {
+        if (isRustMangledName(func_name)) return .rust;
+        return .cpp;
+    }
+
     // Check for Zig patterns (be more specific to avoid false positives)
-    // Only mark as zig if we see clear Zig indicators
     var has_zig_indicator = false;
     for (FFIPatterns.zig_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            // Check for additional Zig-specific patterns
             if (std.mem.indexOf(u8, func_name, "zig_") != null or
                 std.mem.indexOf(u8, func_name, "@") != null)
             {
                 has_zig_indicator = true;
                 break;
             }
+            if (std.mem.eql(u8, pattern, "extern") or std.mem.eql(u8, pattern, "c_")) {
+                continue;
+            }
+            has_zig_indicator = true;
+            break;
+        }
+    }
+    if (has_zig_indicator) {
+        return .zig;
+    }
+    // Zig allocator patterns (missing from original)
+    if (std.mem.indexOf(u8, func_name, "Allocator.") != null or
+        std.mem.indexOf(u8, func_name, "allocImpl") != null)
+    {
+        return .zig;
+    }
+
+    // Check for libc functions — these are C by definition
+    for (FFIPatterns.libc_patterns) |pattern| {
+        if (std.mem.eql(u8, func_name, pattern)) {
+            return .c;
         }
     }
 
-    if (has_zig_indicator) {
-        return .zig;
+    // A2: Go cgo chain detection (enhanced to match identifyCalleeLanguage)
+    if (std.mem.startsWith(u8, func_name, "main.") or
+        std.mem.startsWith(u8, func_name, "runtime.") or
+        std.mem.startsWith(u8, func_name, "syscall."))
+    {
+        return .go;
+    }
+    if (std.mem.startsWith(u8, func_name, "C.") or
+        std.mem.indexOf(u8, func_name, "_cgo_") != null or
+        std.mem.indexOf(u8, func_name, "_Cfunc_") != null or
+        std.mem.indexOf(u8, func_name, "crosscall2") != null or
+        std.mem.indexOf(u8, func_name, "runtime.cgocall") != null)
+    {
+        return .go;
+    }
+
+    // A3: Java JNI detection (with JVM_ exclusion first)
+    if (std.mem.startsWith(u8, func_name, "JVM_")) return .unknown;
+    if (std.mem.startsWith(u8, func_name, "Java_") or
+        std.mem.startsWith(u8, func_name, "JNI_"))
+    {
+        return .java;
+    }
+
+    // Objective-C detection (missing from original)
+    if (std.mem.startsWith(u8, func_name, "_OBJC_") or
+        std.mem.startsWith(u8, func_name, "objc_"))
+    {
+        return .unknown;
     }
 
     // Default to C (most common case for C ABI)
@@ -184,12 +255,30 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         }
     }
 
-    // Check for Go functions (main.* or runtime.* patterns)
+    // Check for Go functions — enhanced with cgo chain detection
+    // main.* / runtime.* / syscall.* → pure Go
     if (std.mem.startsWith(u8, func_name, "main.") or
         std.mem.startsWith(u8, func_name, "runtime.") or
         std.mem.startsWith(u8, func_name, "syscall."))
     {
         return .go;
+    }
+    // A2: Go cgo chain patterns (import"C" → C.xxx, glue code)
+    if (std.mem.startsWith(u8, func_name, "C.") or
+        std.mem.indexOf(u8, func_name, "_cgo_") != null or
+        std.mem.indexOf(u8, func_name, "_Cfunc_") != null or
+        std.mem.indexOf(u8, func_name, "crosscall2") != null or
+        std.mem.indexOf(u8, func_name, "runtime.cgocall") != null)
+    {
+        return .go;
+    }
+
+    // A3: Java JNI function detection (Java_* prefix + JNI_/JVM_ exclusion)
+    // JVM_* functions must be excluded FIRST — they don't match JNI_/Java_
+    // prefix in isJNIFunction(), so the inner check would be dead code.
+    if (std.mem.startsWith(u8, func_name, "JVM_")) return .unknown;
+    if (isJNIFunction(func_name)) {
+        return .java;
     }
 
     // Check for Objective-C functions

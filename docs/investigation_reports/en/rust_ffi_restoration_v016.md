@@ -1,7 +1,7 @@
-# OmniScope v0.1.6 Post-Fix Investigation Report (Rust FFI Focus)
+# OmniScope v0.1.7 Post-Fix Investigation Report (Rust FFI Focus)
 
-**Report Date**: 2026-05-04
-**Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Report Date**: 2026-05-06
+**Version**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **Focus**: Rust FFI Boundary Detection Restoration & Validation
 **Test Scope**: **17 .ll files** (Red Team 8 + FFI-Dense 3 + Real-World 6)
 

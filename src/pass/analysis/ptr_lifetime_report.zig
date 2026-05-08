@@ -16,6 +16,7 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
+const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 
 pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
     const desc = try std.fmt.allocPrint(allocator, fmt, args);
@@ -30,6 +31,17 @@ pub fn reportStackEscape(
     _: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    const is_extern_callee = is_extern_function(callee_name) or
+        (std.mem.indexOf(u8, callee_name, "ffi_") != null);
+
+    if (ptr_info.source_inst) |inst| {
+        const ptr_val = @as(u64, @intFromPtr(inst));
+        if (!is_extern_callee and !ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[STACK-ESCAPE SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -53,7 +65,7 @@ pub fn reportStackEscape(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.critical("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportReturnStackAddr(
@@ -63,6 +75,14 @@ pub fn reportReturnStackAddr(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - return stack addr only dangerous across FFI boundary
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RETURN-STACK SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -86,7 +106,7 @@ pub fn reportReturnStackAddr(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
+    diag.critical("[OMI-CRITICAL] [RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportReturnHeapPtr(
@@ -96,6 +116,14 @@ pub fn reportReturnHeapPtr(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - heap return only matters if crosses FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RETURN-HEAP SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -120,7 +148,7 @@ pub fn reportReturnHeapPtr(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-HIGH] [RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportHeapToGlobal(
@@ -130,6 +158,14 @@ pub fn reportHeapToGlobal(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - heap to global only dangerous across FFI
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[HEAP-TO-GLOBAL SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -154,7 +190,7 @@ pub fn reportHeapToGlobal(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+    diag.warn("[OMI-HIGH] [HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportStackToGlobal(
@@ -164,6 +200,14 @@ pub fn reportStackToGlobal(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - stack to global only dangerous across FFI boundary
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[STACK-TO-GLOBAL SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -188,7 +232,7 @@ pub fn reportStackToGlobal(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
+    diag.critical("[OMI-CRITICAL] [STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
 }
 
 pub fn reportUseAfterFree(
@@ -199,6 +243,14 @@ pub fn reportUseAfterFree(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - UAF critical only on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[UAF-RISK SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -218,12 +270,12 @@ pub fn reportUseAfterFree(
         message,
         location,
         .high,
-        0.75,
+        0.82, // M5 FIX: UAF confidence raised from 0.75 to 0.82 (consistent with severity)
         trace,
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
+    diag.warn("[OMI-HIGH] [UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
 }
 
 pub fn reportResourceUAF(
@@ -234,6 +286,14 @@ pub fn reportResourceUAF(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // G-3: MemoryGraph gate - resource UAF only dangerous on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[RESOURCE-UAF SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -278,7 +338,7 @@ pub fn reportResourceUAF(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
+    diag.critical("[OMI-CRITICAL] [RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
 }
 
 pub fn reportHeapAmbiguous(
@@ -289,6 +349,14 @@ pub fn reportHeapAmbiguous(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // M6 FIX: Add MemoryGraph gate - heap ambiguous only dangerous on FFI path
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[HEAP-AMBIGUOUS SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
     _ = inst;
     const location = Location.init(func_name);
 
@@ -313,7 +381,7 @@ pub fn reportHeapAmbiguous(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-MEDIUM] [HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
 }
 
 /// Report heap pointer escaping to FFI boundary.
@@ -352,5 +420,153 @@ pub fn reportHeapEscapeToFFI(
     );
 
     try ctx.addIssue(&issue);
-    diag.warn("[HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.warn("[OMI-HIGH] [HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+pub fn reportFFINullGuardMissing(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("FFI extern function returns pointer but result not checked for NULL");
+    trace[1] = try makeTrace(ctx.allocator, "Called {s}() which may return NULL on failure", .{callee_name});
+    trace[2] = TraceEntry.init("Dereferencing NULL pointer from FFI call causes undefined behavior");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "FFI function {s}() return value not NULL-checked in {s} - potential NULL dereference (CWE-252/CWE-476)",
+        .{ callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .unchecked_return,
+        message,
+        location,
+        .high,
+        0.80,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[OMI-HIGH] [FFI-NULL-CHECK] {s}() result not NULL-checked in {s}", .{ callee_name, func_name });
+}
+
+pub fn reportBorrowEscapeFFI(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    ptr_info: PtrInfo,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
+        if (!ctx.isOnDangerPathFull(ptr_val)) {
+            diag.debug("[BORROW-ESCAPE-FFI SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
+            return;
+        }
+    }
+
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Rust borrow (as_ptr/as_mut_ptr) passed to FFI function");
+    trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s} - borrow may outlive owner", .{ptr_info.source_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Passed to {s}() across FFI - if C stores pointer, use-after-free when Rust drops owner", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Borrowed pointer ({s}) passed to FFI {s}() in {s} - dangling if C retains beyond Rust owner lifetime (CWE-416)",
+        .{ ptr_info.source_desc, callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .borrow_escape,
+        message,
+        location,
+        .high,
+        0.82,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[OMI-HIGH] [BORROW-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+}
+
+pub fn reportCrossLanguageFree(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    alloc_lang: []const u8,
+    free_lang: []const u8,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = try makeTrace(ctx.allocator, "Memory allocated by {s} deallocated by {s}", .{ alloc_lang, free_lang });
+    trace[1] = try makeTrace(ctx.allocator, "Freed via {s}() - cross-language allocator mismatch", .{callee_name});
+    trace[2] = TraceEntry.init("Different allocators may use incompatible heaps - undefined behavior on free");
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Cross-language free: {s}-allocated memory freed by {s} deallocator {s}() in {s} (CWE-763)",
+        .{ alloc_lang, free_lang, callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .cross_language_free,
+        message,
+        location,
+        .critical,
+        0.88,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.critical("[OMI-CRITICAL] [CROSS-LANG-FREE] {s}-alloc freed by {s} {s}() in {s}", .{ alloc_lang, free_lang, callee_name, func_name });
+}
+
+pub fn reportFFITypeMismatch(
+    ctx: *PassContext,
+    func_name: []const u8,
+    callee_name: []const u8,
+    mismatch_desc: []const u8,
+    inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = inst;
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Pointer type modified across FFI boundary");
+    trace[1] = try makeTrace(ctx.allocator, "Modification: {s}", .{mismatch_desc});
+    trace[2] = try makeTrace(ctx.allocator, "Passed to {s}() - type contract violation may cause undefined behavior", .{callee_name});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "FFI type mismatch: {s} passed to {s}() in {s} - const/volatile contract violation (CWE-704)",
+        .{ mismatch_desc, callee_name, func_name },
+    );
+
+    const issue = Issue.initWithTrace(
+        .ffi_type_mismatch,
+        message,
+        location,
+        .high,
+        0.78,
+        trace,
+    );
+
+    try ctx.addIssue(&issue);
+    diag.warn("[OMI-HIGH] [FFI-TYPE-MISMATCH] {s} -> {s}() in {s}", .{ mismatch_desc, callee_name, func_name });
 }

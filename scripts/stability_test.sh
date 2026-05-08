@@ -21,6 +21,9 @@ FAIL_COUNT=0
 log_info() { echo -e "${BLUE}[TEST]${NC} $*"; }
 log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS_COUNT=$((PASS_COUNT + 1)); }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
+# DC-C12 FIX: Add missing log_skip and log_warn functions
+log_skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
 run_zig_test() {
     local test_name="$1"
@@ -164,7 +167,7 @@ main() {
     
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║       OmniScope v0.1.6 Stability & E2E Test Suite             ║"
+    echo "║       OmniScope v0.1.7 Stability & E2E Test Suite             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     

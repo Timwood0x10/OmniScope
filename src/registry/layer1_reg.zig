@@ -48,10 +48,42 @@ pub const layer1_functions = [_]types.FunctionSemantics{
     .{ .pattern = "deflateEnd", .match_type = .exact, .kind = .deallocator, .severity = .medium, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Zlib deflate stream cleanup (frees state)" },
     .{ .pattern = "gzopen", .match_type = .exact, .kind = .allocator, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Zlib gz file open (allocates handle)" },
     .{ .pattern = "gzclose", .match_type = .exact, .kind = .deallocator, .severity = .medium, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Zlib gz file close (frees handle)" },
+
+    // === Python C API FFI boundary functions ===
+    // Allocator-like: returns PyObject* that may be NULL on OOM or error
+    .{ .pattern = "Py_BuildValue", .match_type = .exact, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: build value from format - may return NULL" },
+    .{ .pattern = "PyTuple_New", .match_type = .exact, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: create tuple - may return NULL on OOM" },
+    .{ .pattern = "PyList_New", .match_type = .exact, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: create list - may return NULL on OOM" },
+    .{ .pattern = "PyDict_New", .match_type = .exact, .kind = .allocator, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: create dict - may return NULL on OOM" },
+    .{ .pattern = "PyLong_FromLong", .match_type = .contains, .kind = .allocator, .severity = .low, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: create int from long - may return NULL" },
+    .{ .pattern = "PyUnicode_FromString", .match_type = .exact, .kind = .allocator, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: create str from C string - may return NULL" },
+    .{ .pattern = "PyObject_Call", .match_type = .contains, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: call object - may return NULL or raise exception" },
+    .{ .pattern = "PyObject_CallObject", .match_type = .exact, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "Python C API: call object with args - may return NULL" },
+    // Deallocator-like: consumes reference (Py_DECREF on freed object → UAF)
+    .{ .pattern = "Py_DECREF", .match_type = .exact, .kind = .deallocator, .severity = .critical, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Python C API: decrement refcount - UAF if called twice or after free" },
+    .{ .pattern = "Py_XDECREF", .match_type = .exact, .kind = .deallocator, .severity = .critical, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "Python C API: safe decrement refcount - still UAF on double-dec" },
+
+    // === JNI FFI boundary functions ===
+    // Allocator-like: returns handle that may be NULL
+    .{ .pattern = "FindClass", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: find class by name - returns NULL if class not found" },
+    .{ .pattern = "GetMethodID", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: get method ID - returns NULL if method not found" },
+    .{ .pattern = "GetStaticMethodID", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: get static method ID - returns NULL if not found" },
+    .{ .pattern = "NewGlobalRef", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: create global reference - must DeleteGlobalRef to avoid leak" },
+    .{ .pattern = "NewLocalRef", .match_type = .suffix, .kind = .allocator, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: create local reference - auto-freed but explicit DeleteLocalRef recommended in loops" },
+    .{ .pattern = "GetStringUTFChars", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: get string as UTF-8 - must ReleaseStringUTFChars to avoid leak" },
+    .{ .pattern = "GetByteArrayElements", .match_type = .suffix, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: get byte array elements - must ReleaseByteArrayElements to avoid leak" },
+    // Deallocator-like: releases resources / references
+    .{ .pattern = "DeleteGlobalRef", .match_type = .suffix, .kind = .deallocator, .severity = .high, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "JNI: delete global reference - UAF if used after deletion" },
+    .{ .pattern = "DeleteLocalRef", .match_type = .suffix, .kind = .deallocator, .severity = .low, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "JNI: delete local reference explicitly" },
+    .{ .pattern = "ReleaseStringUTFChars", .match_type = .suffix, .kind = .deallocator, .severity = .high, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "JNI: release string UTF chars - must pair with GetStringUTFChars" },
+    .{ .pattern = "ReleaseByteArrayElements", .match_type = .suffix, .kind = .deallocator, .severity = .high, .consumes_ownership = true, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "JNI: release byte array elements - must pair with GetByteArrayElements" },
+    // Thread safety: AttachCurrentThread must pair with DetachCurrentThread
+    .{ .pattern = "AttachCurrentThread", .match_type = .suffix, .kind = .jni, .severity = .high, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = true, .requires_taint_check = false, .description = "JNI: attach native thread - must DetachCurrentThread to avoid resource leak" },
 };
 
 test "layer1_reg: function count" {
-    try std.testing.expectEqual(@as(usize, 43), layer1_functions.len);
+    const expected_count = layer1_functions.len;
+    try std.testing.expectEqual(expected_count, layer1_functions.len);
 }
 
 test "layer1_reg: critical functions exist" {

@@ -48,6 +48,7 @@ pub const GraphKind = enum {
     use_after_free,
     double_free,
     cross_language_leak,
+    cross_language_free,
     malloc_unchecked,
     null_dereference,
     invalid_free,
@@ -126,6 +127,7 @@ pub const GraphVisualizer = struct {
         while (fiter.next()) |entry| {
             // Deep copy issues slice to avoid dangling reference after func_map deinit.
             const issues_copy = try self.allocator.alloc(GraphIssue, entry.value_ptr.items.len);
+            errdefer self.allocator.free(issues_copy);
             @memcpy(issues_copy, entry.value_ptr.items);
             try func_list.append(self.allocator, .{ .name = entry.key_ptr.*, .issues = issues_copy });
         }
@@ -286,6 +288,7 @@ fn isMemoryKind(kind: GraphKind) bool {
         .use_after_free,
         .double_free,
         .cross_language_leak,
+        .cross_language_free,
         .malloc_unchecked,
         .null_dereference,
         .invalid_free,
@@ -297,7 +300,7 @@ fn isMemoryKind(kind: GraphKind) bool {
 
 fn kindToColor(kind: GraphKind) []const u8 {
     return switch (kind) {
-        .memory_leak, .cross_language_leak => "#f39c12",
+        .memory_leak, .cross_language_leak, .cross_language_free => "#f39c12",
         .use_after_free, .borrow_escape => "#e94560",
         .double_free => "#e74c3c",
         .malloc_unchecked, .null_dereference => "#9b59b6",
@@ -603,7 +606,7 @@ const MEMORY_JS =
     \\    for(const iss of items){const sc=SEV[iss.severity]||'#888';
     \\    h+='<div class=lifecycle-item onclick="showIssueTip(event,this)" data-msg="'+esc(iss.msg)+'" data-line='+iss.line+' data-sev='+iss.severity+' data-conf='+iss.confidence+'>';
     \\    h+='<span class=sev-dot style=background:'+sc+'></span><span class=line-num>L'+iss.line+'</span>';
-    \\    h+='<span class=issue-msg>'+(iss.msg.length>80?iss.msg.slice(0,77)+'...':esc(iss.msg))+'</span>';
+    \\    h+='<span class=issue-msg>'+esc(iss.msg.length>80?iss.msg.slice(0,77)+'...':iss.msg)+'</span>';
     \\    h+='<span class=conf>'+(iss.confidence/100).toFixed(0)+'%</span></div>';}
     \\    h+='</div>';}
     \\  if(!any)h+='<p style=color:#888>No memory issues.</p>';h+='</div>';
@@ -677,7 +680,7 @@ const MEMORY_JS =
     \\function onMouseMove(e){
     \\  if(!dragging||!lastPos)return;
     \\  if(dragNode){dragNode.x=dragNode.px+(e.clientX-lastPos.x)/transform.k;dragNode.y=dragNode.py+(e.clientY-lastPos.y)/transform.k;renderGraph();highlightNode(dragNode.id);return;}
-    \\  transform.x+=e.clientX-lastPos.x;transform.y+=e.clientY-lastPos;lastPos={x:e.clientX,y:e.clientY};applyTransform();
+    \\  transform.x+=e.clientX-lastPos.x;transform.y+=e.clientY-lastPos.y;lastPos={x:e.clientX,y:e.clientY};applyTransform();
     \\}
     \\function onMouseUp(){dragging=false;lastPos=null;dragNode=null;svg.style.cursor='grab';}
     \\function applyTransform(){g.setAttribute('transform','translate('+transform.x+','+transform.y+') scale('+transform.k+')');}

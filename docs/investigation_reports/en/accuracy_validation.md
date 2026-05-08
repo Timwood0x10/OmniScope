@@ -1,7 +1,7 @@
-# OmniScope v0.1.6 Accuracy Validation Report (FFI/Unsafe Perspective)
+# OmniScope v0.1.7 Accuracy Validation Report (FFI/Unsafe Perspective)
 
-**Update Date**: 2026-05-04
-**Version**: **v0.1.6 (Post Phase 1+2+3 Fixes)**
+**Update Date**: 2026-05-06
+**Version**: **v0.1.7 (24 bugs fixed, 340/340 tests passing)**
 **Core Positioning**: **unsafe/FFI boundary safety analyzer** — Only cares whether data safely crosses FFI/Unsafe boundaries
 - **80%+ focus**: FFI boundary safety (cross-language ownership transfer, escape detection, ABI mismatch)
 - **~20% general**: General memory safety (as auxiliary)

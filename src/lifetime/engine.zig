@@ -163,6 +163,7 @@ pub const LanguageHint = enum(u8) {
     go,
     julia,
     nim,
+    java,
 };
 
 /// Issue type detected by the lifetime engine.

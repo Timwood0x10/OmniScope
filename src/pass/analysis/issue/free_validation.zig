@@ -25,6 +25,7 @@ const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 const ffi_utils = @import("../ffi_utils.zig");
 const ptr_types = @import("../ptr_lifetime_types.zig");
+const classify = @import("../ptr_lifetime_classify.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -71,7 +72,11 @@ pub const FreeValidationPass = struct {
             issue_count += count;
         }
 
-        diag.info("FreeValidation: Analyzed functions, found {} invalid free calls", .{issue_count});
+        if (issue_count > 0) {
+            diag.info("[OMI-HIGH] FreeValidation: Found {} invalid free calls", .{issue_count});
+        } else {
+            diag.debug("FreeValidation: No invalid free calls found", .{});
+        }
     }
 
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
@@ -250,6 +255,56 @@ pub const FreeValidationPass = struct {
         }
     }
 
+    /// Determine if a free/dealloc call is safe in its FFI context.
+    /// Centralizes Rust ownership model awareness: when Rust code uses
+    /// __rust_dealloc on a pointer from Box::into_raw(), it's intentional
+    /// ownership reclamation — not a bug.
+    ///
+    /// SECURITY POLICY (2026-05-05 tightened):
+    /// For C/C++: Established conventions allow broader trust (global statics, well-known wrappers).
+    /// For Rust/Zig: Stricter — these languages have ownership systems; if code bypasses them
+    /// via FFI, we require explicit safety proof (null checks, RAII, refcount), not assumptions.
+    fn isFreeSafe(free_func: []const u8, origin: ValueOrigin, source_desc: []const u8) bool {
+        // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
+        if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
+        // into_raw + matching Rust dealloc: correct ownership reclamation
+        if (source_desc.len > 0 and isPossibleIntoRawOutput(source_desc) and isRustDeallocFunction(free_func)) return true;
+        // FFI-sourced pointer freed by known safe wrappers only.
+        // Previously exempted ALL non-Rust/non-standard frees (too broad — missed Rust FFI bugs).
+        // Now restricted to well-known language-specific deallocators:
+        //   - g_free (GLib/GObject) pairs with g_malloc/g_new
+        //   - CFRelease/CFAutorelease (CoreFoundation) pairs with Create/Copy
+        //   - PyObject_Free (Python C API) pairs with PyObject_Malloc
+        //   - cudaFree (CUDA runtime) pairs with cudaMalloc
+        //   - vkFreeMemory (Vulkan API) pairs with vkAllocateMemory
+        //   - ID3D12Device_Release (DirectX 12) pairs with CreateDevice
+        //   - Platform-specific: VirtualFree/HeapFree (Windows), munmap (POSIX)
+        //
+        // NOTE: .from_global origin is intentionally NOT auto-trusted here.
+        // Global pointers in Rust/Zig FFI context are suspicious — they may indicate
+        // a static that was allocated in one language and freed in another without
+        // proper coordination. Flag for manual review unless proven safe.
+        if (origin == .from_ffi_call and !isRustDeallocFunction(free_func) and
+            !std.mem.eql(u8, free_func, "free"))
+        {
+            const known_safe_wrappers = [_][]const u8{
+                "g_free",        "CFRelease",            "CFAutorelease",
+                "PyObject_Free", "PyMem_Free",           "cudaFree",
+                "vkFreeMemory",  "ID3D12Device_Release", "VirtualFree",
+                "HeapFree",      "munmap",               "mmap_free",
+                "objc_release",  "NSDeallocateObject",   "CoTaskMemFree",
+                "SysFreeString",
+            };
+            for (known_safe_wrappers) |wrapper| {
+                if (std.mem.eql(u8, free_func, wrapper)) return true;
+            }
+            // Default: do NOT exempt — flag as suspicious for manual review
+        }
+        // All other origins (.from_global, .unknown, etc.) default to unsafe.
+        // This is intentional: if we can't prove it's safe, flag it.
+        return false;
+    }
+
     /// Check if a free call is valid
     fn checkFreeCall(
         ctx: *PassContext,
@@ -292,11 +347,8 @@ pub const FreeValidationPass = struct {
         // without updating this switch, ensuring completeness at compile time.
         switch (origin) {
             .from_param => {
-                // Skip from_param when the free function is a Rust dealloc.
-                // Rust's ownership model transfers allocation responsibility to callees,
-                // so __rustc__rustc_dealloc on function parameters is normal behavior.
-                // This avoids false positives for cross-function memory management.
-                if (isRustDeallocFunction(callee_name)) return false;
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isFreeSafe(callee_name, origin, src)) return false;
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -305,20 +357,26 @@ pub const FreeValidationPass = struct {
                 return true;
             },
             .from_ffi_call => {
-                // Pointer from FFI boundary call being freed by a different allocator.
-                // Risk: C-allocated pointer freed by __rust_dealloc, or vice versa.
-                // Report with reduced confidence since cross-allocator free is
-                // sometimes legitimate (e.g., C's malloc + Rust's free wrapper).
-                if (!isRustDeallocFunction(callee_name) and
-                    !std.mem.eql(u8, callee_name, "free"))
-                {
-                    // Non-standard free on FFI-sourced ptr — less confident
-                    return false;
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isCrossAllocatorFree(.from_ffi_call, src, callee_name)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
                 }
+                if (isFreeSafe(callee_name, origin, src)) return false;
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
-            .from_malloc => {},
+            .from_malloc => {
+                const src = if (origin_info) |info| info.source_desc else "";
+                if (isCrossAllocatorFree(.from_malloc, src, callee_name)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
+                }
+                if (src.len > 0 and !isFreeSafe(callee_name, origin, src)) {
+                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                    return true;
+                }
+            },
             .unknown => {},
         }
 
@@ -359,15 +417,50 @@ pub const FreeValidationPass = struct {
         return true;
     }
 
+    /// Check if a free call crosses allocator boundaries.
+    /// Returns true when memory from one runtime's allocator is freed
+    /// by a different runtime's deallocator — almost always a bug.
+    fn isCrossAllocatorFree(alloc_origin: ValueOrigin, source_desc: []const u8, free_func: []const u8) bool {
+        const is_rust_free = isRustDeallocFunction(free_func);
+        const is_c_free = std.mem.eql(u8, free_func, "free") or
+            std.mem.eql(u8, free_func, "kfree") or
+            std.mem.eql(u8, free_func, "g_free");
+
+        if (alloc_origin == .from_malloc) {
+            const is_rust_alloc = std.mem.indexOf(u8, source_desc, "__rust_alloc") != null or
+                std.mem.indexOf(u8, source_desc, "__rdl_alloc") != null or
+                std.mem.indexOf(u8, source_desc, "__rg_alloc") != null;
+            if (is_rust_alloc and is_c_free) return true;
+            if (!is_rust_alloc and is_rust_free) return true;
+        }
+
+        if (alloc_origin == .from_ffi_call) {
+            const is_rust_source = std.mem.indexOf(u8, source_desc, "__rust") != null or
+                std.mem.indexOf(u8, source_desc, "_ZN") != null;
+            if (is_rust_source and is_c_free) return true;
+        }
+
+        return false;
+    }
+
+    /// Check if the pointer may originate from Rust's into_raw() call.
+    /// into_raw transfers ownership to the caller — freeing with anything
+    /// other than the correct Rust deallocator is undefined behavior.
+    fn isPossibleIntoRawOutput(source_desc: []const u8) bool {
+        const into_raw_patterns = [_][]const u8{
+            "into_raw",      "into_raw_parts",
+            "Box::into_raw",
+        };
+        for (into_raw_patterns) |pat| {
+            if (std.mem.indexOf(u8, source_desc, pat) != null) return true;
+        }
+        return false;
+    }
+
     /// Check if function is a free function.
     /// Uses exact match + endsWith to avoid FP like 'my_custom_free' matching 'free'.
     fn isFreeFunction(func_name: []const u8) bool {
-        for (FREE_FUNCTIONS) |free_func| {
-            if (functionNameMatches(func_name, free_func)) {
-                return true;
-            }
-        }
-        return false;
+        return classify.isFreeFunction(func_name);
     }
 
     /// Check if function is an allocation function.
@@ -400,7 +493,6 @@ pub const FreeValidationPass = struct {
         origin_info: ?PointerInfo,
         diag: *DiagnosticWriter,
     ) !void {
-        _ = ptr_arg;
         const caller_name_ptr = c.LLVMGetValueName(caller_func);
         const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
             std.mem.span(caller_name_ptr)
@@ -408,6 +500,13 @@ pub const FreeValidationPass = struct {
             "unknown";
 
         const location = Location.init(caller_name);
+
+        // E2-2a: Alias closure severity upgrade — if the freed pointer reaches
+        // FFI boundaries through alias chains, this is a cross-language memory error.
+        const ptr_val: u64 = @intFromPtr(ptr_arg);
+        const reaches_ffi = ctx.isOnDangerPathFull(ptr_val);
+        const base_confidence: f32 = if (reaches_ffi) 0.85 else 0.75;
+        const severity: Severity = if (reaches_ffi) .critical else .high;
 
         // Build trace for reasoning path
         const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -423,24 +522,27 @@ pub const FreeValidationPass = struct {
             else => "non-heap source",
         };
 
+        const ffi_note = if (reaches_ffi) " [cross-FFI alias detected]" else "";
+
         const message = try std.fmt.allocPrint(
             ctx.allocator,
-            "{s}() called on {s} pointer (confidence: {d:.2}%)",
-            .{ free_func_name, origin_str, 75.0 },
+            "{s}() called on {s} pointer (confidence: {d:.2}%{s})",
+            .{ free_func_name, origin_str, base_confidence, ffi_note },
         );
 
         const issue = Issue.initWithTrace(
             .invalid_free,
             message,
             location,
-            .high,
-            0.75,
+            severity,
+            base_confidence,
             trace,
         );
 
         try ctx.addIssue(&issue);
 
-        diag.warn("Invalid {s} on {s} pointer in function: {s}", .{ free_func_name, origin_str, caller_name });
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Invalid {s} on {s} pointer in function: {s}{s}", .{ omi_prefix, free_func_name, origin_str, caller_name, ffi_note });
     }
 
     /// Create trace entry for pointer origin

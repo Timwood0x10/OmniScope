@@ -40,7 +40,7 @@ rustc --emit=llvm-ir -O -C opt-level=2 \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -141,7 +141,7 @@ pub fn seal(
             key.bytes.as_ptr(),    // key 指针
             nonce_bytes.as_ptr(),  // nonce 指针
             aad.as_ptr(),          // aad 指针
-            in_out.as_mut_ptr(),   // 输出指针
+            in_out.as_mut_ptr(),   // Output指针
         );
     }
     
@@ -158,7 +158,7 @@ pub fn seal(
 - 函数返回时，`tag` 被创建并返回
 - 这是正确的 **FFI 调用模式**
 
-**判定**: **误报** - 正确的 FFI 边界处理
+**判定**: **误报** - 正确的 FFI Boundary处理
 
 ---
 
@@ -225,14 +225,14 @@ pub fn run_tests(tests: &[Test]) {
 **OmniScope 报告**: `Pointer 3567 used after free in test::run_tests`
 
 **分析**:
-- 测试结果在每次迭代后被 drop
+- Test Results在每次迭代后被 drop
 - 这是正常的循环变量生命周期
 
 **判定**: **误报** - 正常的循环变量管理
 
 ---
 
-## 5. FFI 边界分析
+## 5. FFI Boundary分析
 
 ### 5.1 ring 的 FFI 设计
 
@@ -277,7 +277,7 @@ void chacha20_poly1305_seal(
 | AEAD 加密 UAF | 2 | 误报 | FFI 调用模式 |
 | 密钥协商 UAF | 1 | 误报 | 栈变量管理 |
 | 摘要计算 UAF | 1 | 误报 | 临时缓冲区 |
-| 签名验证 UAF | 1 | 误报 | 输入参数 |
+| 签名验证 UAF | 1 | 误报 | 输入Parameters |
 | PBKDF2 UAF | 1 | 误报 | 派生密钥 |
 | HKDF UAF | 1 | 误报 | 提取阶段 |
 | 测试框架 UAF | 2 | 误报 | 循环变量 |
@@ -293,12 +293,12 @@ void chacha20_poly1305_seal(
 |------|------|------|
 | **Rust 所有权模型未识别** | 无法识别所有权转移 | 导致大量误报 |
 | **栈变量追踪不精确** | 无法区分栈/堆分配 | 栈变量误报 |
-| **FFI 边界语义不完整** | 无法识别安全的 FFI 调用 | FFI 相关误报 |
+| **FFI Boundary语义不完整** | 无法识别安全的 FFI 调用 | FFI 相关误报 |
 | **循环变量生命周期** | 无法识别循环中的正常 drop | 循环代码误报 |
 
 ### 7.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **Rust 语义增强** | 识别所有权转移、借用、生命周期 | 减少 50% 误报 |
 | **栈/堆区分** | 识别 alloca 与 malloc 的区别 | 减少 20% 误报 |
@@ -307,14 +307,14 @@ void chacha20_poly1305_seal(
 
 ---
 
-## 8. 结论
+## 8. Conclusion
 
 ### 8.1 ring 代码质量
 
 | 方面 | 评价 |
 |------|------|
 | FFI 设计 | ✅ 优秀 - 清晰的边界定义 |
-| 内存安全 | ✅ 优秀 - Rust 所有权保护 |
+| Memory Safety | ✅ 优秀 - Rust 所有权保护 |
 | unsafe 使用 | ✅ 良好 - 最小化 unsafe 块 |
 | 测试覆盖 | ✅ 优秀 - 完整的测试套件 |
 
@@ -322,9 +322,9 @@ void chacha20_poly1305_seal(
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 - 识别 4307 个边界 |
+| FFI Boundary检测 | ✅ 准确 - 识别 4307 个边界 |
 | 内存分配追踪 | ✅ 有效 |
-| UAF 检测 | ⚠️ 误报率 100% |
+| UAF 检测 | ⚠️ False Positive Rate 100% |
 | Rust 支持 | ❌ 需增强 |
 
-**总结**: ring 是 Rust 密码学库的优秀代表，使用 Rust 的所有权系统确保内存安全。OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法理解 Rust 的所有权语义。
+**Summary**: ring 是 Rust 密码学库的优秀代表，使用 Rust 的所有权系统确保Memory Safety。OmniScope 报告的所有问题均为误报，主要原因是 IR 层分析无法理解 Rust 的所有权语义。

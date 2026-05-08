@@ -18,7 +18,7 @@
 | **语言** | C++ |
 | **分析文件** | crypto/mem.cc |
 
-### 1.2 OmniScope 检测结果
+### 1.2 OmniScope Detection Results
 
 ```
 [WARN] USE-AFTER-FREE [MEDIUM]: Pointer 79 used after free in OPENSSL_free
@@ -60,7 +60,7 @@ void OPENSSL_free(void *orig_ptr) {
 
 **分析**:
 - OmniScope 报告 "Pointer 79 used after free"
-- 实际情况: 在 `free(ptr)` 之前，代码在第 249 行访问 `ptr` 来获取 `size`
+- Actual情况: 在 `free(ptr)` 之前，代码在第 249 行访问 `ptr` 来获取 `size`
 - 这是 **正确的模式**: 先读取元数据，再释放内存
 - **判定**: **误报** - 这是正常的内存管理模式，不是真正的 UAF
 
@@ -90,7 +90,7 @@ void *OPENSSL_realloc(void *orig_ptr, size_t new_size) {
 
 **分析**:
 - OmniScope 报告 "Pointer 119 used after free"
-- 实际情况: 在 `OPENSSL_free(orig_ptr)` 之前，数据已复制到 `ret`
+- Actual情况: 在 `OPENSSL_free(orig_ptr)` 之前，数据已复制到 `ret`
 - 这是 **标准的 realloc 模式**: 分配新内存 → 复制数据 → 释放旧内存
 - **判定**: **误报** - 这是正确的 realloc 实现
 
@@ -111,7 +111,7 @@ int bssl::OPENSSL_vasprintf_internal(char **str, const char *format,
     goto err;
   }
   
-  // ... 格式化操作 ...
+  // ... Format化操作 ...
   
   if ((size_t)ret >= candidate_len) {
     char *tmp;
@@ -135,11 +135,11 @@ err:
 
 **分析**:
 - OmniScope 报告 "Pointer 648/585 used after free"
-- 实际情况: `err` 标签只在错误路径执行，此时 `candidate` 需要被释放
+- Actual情况: `err` 标签只在错误路径执行，此时 `candidate` 需要被释放
 - 这是 **正确的错误处理模式**: 分配失败时清理资源
 - **判定**: **误报** - 这是正确的 RAII 风格错误处理
 
-### 1.4 boringssl 结论
+### 1.4 boringssl Conclusion
 
 | 问题类型 | 数量 | 判定 | 原因 |
 |---------|------|------|------|
@@ -150,7 +150,7 @@ err:
 | OPENSSL_secure_clear_free UAF | 1 | 误报 | 委托给 OPENSSL_clear_free |
 | CRYPTO_free UAF | 1 | 误报 | 委托给 OPENSSL_free |
 
-**总结**: boringssl 的内存管理设计良好，所有报告的 UAF 问题都是误报。OmniScope 在 IR 层无法区分"释放前访问"和"释放后访问"。
+**Summary**: boringssl 的内存管理设计良好，所有报告的 UAF 问题都是误报。OmniScope 在 IR 层无法区分"释放前访问"和"释放后访问"。
 
 ---
 
@@ -166,7 +166,7 @@ err:
 | **语言** | C |
 | **分析文件** | library/ssl_tls.c |
 
-### 2.2 OmniScope 检测结果
+### 2.2 OmniScope Detection Results
 
 ```
 [WARN] USE-AFTER-FREE [MEDIUM]: Pointer 1362 used after free in mbedtls_ssl_conf_own_cert
@@ -268,7 +268,7 @@ static int ssl_handshake_init(mbedtls_ssl_context *ssl)
 
 **分析**:
 - OmniScope 报告 "Pointer 723 used after free in ssl_handshake_init"
-- 实际情况: 这是 "先释放旧数据，再分配新数据" 的模式
+- Actual情况: 这是 "先释放旧数据，再分配新数据" 的模式
 - 第 1063 行释放旧的 handshake，第 1081 行分配新的 handshake
 - 这是 **正确的重新初始化模式**
 - **判定**: **误报** - 正确的内存管理模式
@@ -303,7 +303,7 @@ void mbedtls_ssl_handshake_free(mbedtls_ssl_context *ssl)
 
 **分析**:
 - OmniScope 报告 "Pointer 3290 used after free in mbedtls_ssl_handshake_free"
-- 实际情况: 这个函数只释放 `handshake` 的成员，不释放 `handshake` 本身
+- Actual情况: 这个函数只释放 `handshake` 的成员，不释放 `handshake` 本身
 - 第 4761 行释放 `handshake->group_list`，第 4763 行将其置空
 - 这是 **正确的清理模式**
 - **判定**: **误报** - OmniScope 未识别结构体成员与结构体本身的区别
@@ -333,7 +333,7 @@ static int tls_prf_generic(/* ... */) {
 - 计算完成后释放临时缓冲区
 - **判定**: **误报** - 正确的临时缓冲区管理
 
-### 2.4 mbedtls 结论
+### 2.4 mbedtls Conclusion
 
 | 问题类型 | 数量 | 判定 | 原因 |
 |---------|------|------|------|
@@ -342,9 +342,9 @@ static int tls_prf_generic(/* ... */) {
 | mbedtls_ssl_handshake_free UAF | 1 | 误报 | 结构体成员与结构体本身区别 |
 | tls_prf_generic UAF | 1 | 误报 | 正确的临时缓冲区管理 |
 | mbedtls_ssl_parse_certificate UAF | 1 | 误报 | 证书解析的正确清理 |
-| mbedtls_ssl_config_free UAF | 1 | 误报 | 配置清理的正确模式 |
+| mbedtls_ssl_config_free UAF | 1 | 误报 | Configuration清理的正确模式 |
 
-**总结**: mbedtls 的内存管理遵循 C 语言的最佳实践，所有报告的 UAF 问题都是误报。主要原因是 OmniScope 在 IR 层无法进行精确的控制流分析。
+**Summary**: mbedtls 的内存管理遵循 C 语言的最佳实践，所有报告的 UAF 问题都是误报。主要原因是 OmniScope 在 IR 层无法进行精确的控制流分析。
 
 ---
 
@@ -360,7 +360,7 @@ static int tls_prf_generic(/* ... */) {
 | **语言** | C++20 |
 | **分析文件** | src/lib/block/aes/aes.cpp, src/lib/hash/sha2_32/sha2_32.cpp 等 |
 
-### 3.2 OmniScope 检测结果
+### 3.2 OmniScope Detection Results
 
 ```
 [INFO] FFI Analysis Summary:
@@ -432,7 +432,7 @@ void SHA_256::compress_n(std::vector<uint32_t, secure_allocator<uint32_t>>& dige
 - `secure_allocator` 确保内存清零
 - **判定**: **无问题** - 正确的栈内存使用
 
-### 3.4 botan 结论
+### 3.4 botan Conclusion
 
 | 方面 | 评价 |
 |------|------|
@@ -440,19 +440,19 @@ void SHA_256::compress_n(std::vector<uint32_t, secure_allocator<uint32_t>>& dige
 | 敏感数据处理 | ✅ 良好 - 使用 secure_vector 和 zap() |
 | UAF 问题 | ✅ 无 - 无动态内存手动管理 |
 
-**总结**: botan 作为现代 C++ 密码学库，充分利用了 RAII 内存管理模式，没有发现任何内存安全问题。
+**Summary**: botan 作为现代 C++ 密码学库，充分利用了 RAII 内存管理模式，没有发现任何Memory Safety问题。
 
 ---
 
-## 4. 综合结论
+## 4. 综合Conclusion
 
 ### 4.1 OmniScope 表现评估
 
 | 方面 | 评价 | 说明 |
 |------|------|------|
-| FFI 边界检测 | ✅ 准确 | 正确识别所有 FFI 边界 |
+| FFI Boundary检测 | ✅ 准确 | 正确识别所有 FFI Boundary |
 | 内存分配追踪 | ✅ 有效 | 正确追踪 malloc/free/calloc |
-| UAF 检测 | ⚠️ 误报率高 | 约 100% 误报率 |
+| UAF 检测 | ⚠️ False Positive Rate高 | 约 100% False Positive Rate |
 | 控制流分析 | ⚠️ 需改进 | 未识别互斥分支 |
 
 ### 4.2 误报原因分析
@@ -464,7 +464,7 @@ void SHA_256::compress_n(std::vector<uint32_t, secure_allocator<uint32_t>>& dige
 | 重新分配模式 | 20% | 先释放旧内存，再分配新内存 |
 | 结构体成员 | 10% | 释放成员后访问结构体本身 |
 
-### 4.3 改进建议
+### 4.3 Improvement Suggestions
 
 1. **增强控制流分析**: 识别互斥分支，避免误报
 2. **区分释放前/后访问**: 在 IR 层追踪指令顺序
@@ -473,7 +473,7 @@ void SHA_256::compress_n(std::vector<uint32_t, secure_allocator<uint32_t>>& dige
 
 ### 4.4 测试覆盖
 
-| 项目 | 语言 | UAF 报告 | 真实问题 | 误报率 |
+| 项目 | 语言 | UAF 报告 | 真实问题 | False Positive Rate |
 |------|------|----------|----------|--------|
 | botan | C++ | 0 | 0 | - |
 | mbedtls | C | 7 | 0 | 100% |
@@ -484,7 +484,7 @@ void SHA_256::compress_n(std::vector<uint32_t, secure_allocator<uint32_t>>& dige
 
 ## 5. 附录
 
-### 5.1 测试环境
+### 5.1 测试Environment
 
 | 项目 | 值 |
 |------|-----|

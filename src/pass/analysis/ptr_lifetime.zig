@@ -28,6 +28,8 @@
 const std = @import("std");
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const c = @import("../../ir/llvm_raw.zig").c;
+// Issue2 FIX: Import helper for standardized CallInst argument counting
+const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
 const zone_cls = @import("../../semantics/zone_classifier.zig");
 const ZoneKind = zone_cls.ZoneKind;
@@ -35,17 +37,32 @@ const Lang = zone_cls.Language;
 
 const FfiLang = @import("../../diag/issue.zig").FFIBoundary.Language;
 
-fn toZoneLanguage(lang: FfiLang) Lang {
-    return switch (lang) {
-        .c => .c,
-        .cpp => .cpp,
-        .rust => .rust,
-        .zig => .zig,
-        .go => .go,
-        .swift => .unknown,
-        else => .unknown,
-    };
-}
+// Import utility functions from separate module (code organization)
+const ptr_utils = @import("ptr_lifetime_utils.zig");
+const toZoneLanguage = ptr_utils.toZoneLanguage;
+const isCppDestructorOrConstructor = ptr_utils.isCppDestructorOrConstructor;
+const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
+const isResourceCloseFunction = ptr_utils.isResourceCloseFunction;
+const isSocketClose = ptr_utils.isSocketClose;
+const isRustBorrowPattern = ptr_utils.isRustBorrowPattern;
+const is_resource_alloc_function = ptr_utils.is_resource_alloc_function;
+const get_resource_type = ptr_utils.get_resource_type;
+const isDerivedFrom = ptr_utils.isDerivedFrom;
+
+const violations = @import("ptr_lifetime_violations.zig");
+// NOTE: checkReturnViolation defined locally was removed (duplicate)
+const checkViolations = violations.checkViolations;
+const checkStoreToGlobal = violations.checkStoreToGlobal;
+const checkCrossLanguageFree = violations.checkCrossLanguageFree;
+const checkFFIReturnNullGuard = violations.checkFFIReturnNullGuard;
+const checkFFITypeMismatch = violations.checkFFITypeMismatch;
+const isSameOrAlias = ptr_utils.isSameOrAlias;
+const isGlobalVariable = ptr_utils.isGlobalVariable;
+const isFuncParam = ptr_utils.isFuncParam;
+const isNonPointerReturnType = ptr_utils.isNonPointerReturnType;
+const isRCPatternFree = ptr_utils.isRCPatternFree;
+const getSinglePredecessor = ptr_utils.getSinglePredecessor;
+const areMutuallyExclusive = ptr_utils.areMutuallyExclusive;
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -61,10 +78,11 @@ const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
 const hooks = @import("../../registry/hooks.zig");
 const NoiseReduction = @import("noise_reduction.zig");
+const word_boundary = @import("../../utils/word_boundary.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 
-// v0.1.8: New semantic modules
+// v0.1.7: New semantic modules
 const memory_graph = @import("../../semantics/memory_graph.zig");
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
@@ -114,11 +132,11 @@ pub const FreeSiteList = struct {
     capacity: usize,
     allocator: std.mem.Allocator,
 
-    fn init(allocator: std.mem.Allocator) FreeSiteList {
+    pub fn init(allocator: std.mem.Allocator) FreeSiteList {
         return .{ .items = &.{}, .len = 0, .capacity = 0, .allocator = allocator };
     }
 
-    fn append(self: *FreeSiteList, record: FreeSiteRecord) !void {
+    pub fn append(self: *FreeSiteList, record: FreeSiteRecord) !void {
         if (self.len >= self.capacity) {
             const new_cap = if (self.capacity == 0) 4 else self.capacity * 2;
             const new_items = try self.allocator.alloc(FreeSiteRecord, new_cap);
@@ -131,7 +149,7 @@ pub const FreeSiteList = struct {
         self.len += 1;
     }
 
-    fn deinit(self: *FreeSiteList) void {
+    pub fn deinit(self: *FreeSiteList) void {
         if (self.capacity > 0) self.allocator.free(self.items);
     }
 };
@@ -213,21 +231,30 @@ pub const PtrLifetimePass = struct {
             const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
 
-            // v0.1.8: Three-layer noise reduction (supersedes zone-only check)
+            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
             const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            var classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            // E2-2e: Stdl functions on FFI danger path should not be suppressed
+            const func_ptr_val: u64 = @intFromPtr(func);
+            classification = NoiseReduction.reevaluateWithDangerPath(classification, ctx.isRelevantFunction(func_ptr_val));
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
             // INTEGRATION: Three-layer noise filter (name + path + behavior)
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
             const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
-            if (!full_classification.origin.shouldReportByDefault()) {
-                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, full_classification.origin.toString(), full_classification.reason });
-                continue;
+            // P0-2: Relax noise filter for Rust FFI callback functions.
+            // Rust callbacks (e.g., rs_ffi_*_cb) may be classified as third_party
+            // or have suppressed risk, but they are critical for FFI boundary analysis.
+            // Only skip compiler_generated code; stdlib/third_party may have FFI callbacks.
+            if (full_classification.origin == .compiler_generated) continue;
+            if (full_classification.origin == .stdlib and !noise_config.include_stdlib) continue;
+            if (full_classification.origin == .third_party) {
+                const func_ptr_val_tmp: u64 = @intFromPtr(func);
+                if (!ctx.isRelevantFunction(func_ptr_val_tmp)) continue;
             }
 
-            // Defense-in-depth: known FP whitelist (v0.1.8 audit verified)
+            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
             if (FPWhitelist.is_known_fp(func_name) != null) continue;
 
             // NOTE: Function-level isRelevantFunction() gate intentionally NOT applied here.
@@ -242,7 +269,22 @@ pub const PtrLifetimePass = struct {
             // FFIBoundaryPass which runs BEFORE ptr_lifetime) to skip expensive
             // call-edge tracking (trackCallArg/trackCallRet) for non-FFI functions.
             // Full alloc/free/alias tracking still applies to ALL functions.
-            const is_ffi_func = ffi_func_names.contains(func_name);
+            //
+            // CRITICAL FIX for 0/73 benchmark: Also use CallGraph BFS traversal to
+            // detect functions that INDIRECTLY reach FFI boundaries. A wrapper function
+            // like my_process_data() may not be in cross_lang_edges itself, but if it
+            // calls C.save_to_file() transitively, it needs full MemoryGraph tracking
+            // to detect pointer leaks across the FFI boundary.
+            var is_ffi_func = ffi_func_names.contains(func_name);
+            if (!is_ffi_func) {
+                if (ctx.semantics_call_graph) |*sg| {
+                    if (sg.getNodeByName(func_name)) |node_id| {
+                        if (call_graph_mod.CallGraph.reachesFFIBoundary(sg, node_id, 10)) {
+                            is_ffi_func = true;
+                        }
+                    }
+                }
+            }
 
             // Phase R5.1: Reset hook state per function scope
             hooks.resetHookStatesForFunction();
@@ -301,11 +343,19 @@ pub const PtrLifetimePass = struct {
             }
         }
 
-        diag.info("PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
-            stats.total_functions_analyzed,
-            stats.total_pointers_tracked,
-            stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found,
-        });
+        const total_violations = stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found;
+        if (total_violations > 0) {
+            diag.info("[OMI-HIGH] PtrLifetime: analyzed {} funcs, tracked {} ptrs, found {} violations", .{
+                stats.total_functions_analyzed,
+                stats.total_pointers_tracked,
+                total_violations,
+            });
+        } else {
+            diag.debug("PtrLifetime: analyzed {} funcs, tracked {} ptrs, no violations found", .{
+                stats.total_functions_analyzed,
+                stats.total_pointers_tracked,
+            });
+        }
 
         // R8.3-f: Post-analysis cross-function freed status propagation.
         // Optimized: Instead of O(N×A) scan (each node × each alias),
@@ -350,6 +400,11 @@ pub const PtrLifetimePass = struct {
                             if (mem_graph.?.nodes.get(aliaser_ptr)) |aliaser_node| {
                                 if (!aliaser_node.freed) {
                                     _ = ctx.global_alloc_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
+                                    // Sync MemoryGraph.freed: propagate from original freed node.
+                                    if (mem_graph) |mg| {
+                                        const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
+                                        _ = mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang) catch {};
+                                    }
                                     propagated += 1;
                                 }
                             }
@@ -452,6 +507,10 @@ pub const PtrLifetimePass = struct {
                 }
                 {
                     const t0 = std.time.nanoTimestamp();
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                        _ = c.LLVMGetCalledValue(inst);
+                    }
                     try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
                     t_check.* += std.time.nanoTimestamp() - t0;
                 }
@@ -542,6 +601,11 @@ pub const PtrLifetimePass = struct {
                                                 const func_name_raw = c.LLVMGetValueName(func);
                                                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
                                                 _ = global_tracker.markFreed(old_ptr_int, func_name);
+                                                // Sync MemoryGraph.freed for Source 1 consistency.
+                                                if (mem_graph) |mg| {
+                                                    const free_inst: u64 = @intFromPtr(inst);
+                                                    _ = mg.trackFree(free_inst, old_ptr_int, lang) catch {};
+                                                }
                                                 _ = &old_info;
                                             }
                                         }
@@ -644,20 +708,20 @@ pub const PtrLifetimePass = struct {
                                         try putPtrInfo(pointer_map, inst, info, allocator);
                                         stats.total_pointers_tracked += 1;
 
-                                        // v0.1.8: Sync dlsym-derived alias with MemoryGraph.
+                                        // v0.1.7: Sync dlsym-derived alias with MemoryGraph.
                                         // dlsym result lifecycle is bound to the handle —
                                         // closing the handle invalidates all derived pointers.
                                         if (mg_effective) |mg| {
                                             const inst_ptr = @as(u64, @intFromPtr(inst));
                                             const handle_ptr = @as(u64, @intFromPtr(handle_arg));
-                                            mg.trackAlias(inst_ptr, handle_ptr) catch {};
+                                            mg.trackAliasStrong(inst_ptr, handle_ptr) catch {};
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // v0.1.8: Double-free detection via Memory Graph.
+                        // v0.1.7: Double-free detection via Memory Graph.
                         if (isFreeFunction(callee_name)) {
                             // v0.1.9: Record free for alloc/free balance checking.
                             if (mg_effective) |mg| {
@@ -688,6 +752,14 @@ pub const PtrLifetimePass = struct {
                                 const fn_name_raw = c.LLVMGetValueName(func);
                                 const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
                                 _ = global_tracker.markFreed(ptr_val, fn_name);
+                                // CRITICAL FIX (v0.1.7): Also sync MemoryGraph.freed/freed_by.
+                                // This eliminates the dual-source workaround in pointer_ownership.zig
+                                // where Source 1 (MemoryGraph.freed_by) had 0 coverage because
+                                // trackFree() was never called. Now both data structures stay synchronized.
+                                if (mem_graph) |mg| {
+                                    const free_inst: u64 = @intFromPtr(inst);
+                                    _ = mg.trackFree(free_inst, ptr_val, lang) catch {};
+                                }
                             }
 
                             // R8.4-d: Alias-aware free matching — when free(ptr) is called,
@@ -703,7 +775,9 @@ pub const PtrLifetimePass = struct {
                                     var alias_iter = node.aliases.iterator();
                                     while (alias_iter.next()) |alias_entry| {
                                         const alias_ptr = alias_entry.key_ptr.*;
-                                        // Convert back to LLVMValueRef for pointer_map lookup
+                                        // Safety check: verify pointer alignment before conversion
+                                        // LLVMValueRef must be pointer-aligned (8 bytes on 64-bit)
+                                        if (alias_ptr % @sizeOf(usize) != 0) continue;
                                         const alias_ref: c.LLVMValueRef = @ptrFromInt(alias_ptr);
                                         if (pointer_map.getPtr(alias_ref)) |alias_info| {
                                             if (!alias_info.freed and !alias_info.double_free_detected) {
@@ -715,15 +789,21 @@ pub const PtrLifetimePass = struct {
                                 // Case 2: ptr_arg is an alias of some other tracked alloc node.
                                 // Use alias_to_canonical index for O(1) lookup instead of O(N) scan.
                                 if (mg.alias_to_canonical.get(ptr_val)) |canon_inst| {
-                                    const canon_ref: c.LLVMValueRef = @ptrFromInt(canon_inst);
-                                    if (pointer_map.getPtr(canon_ref)) |canon_info| {
-                                        if (!canon_info.freed and !canon_info.double_free_detected) {
-                                            canon_info.freed = true;
+                                    // Safety check: verify pointer alignment before conversion
+                                    if (canon_inst % @sizeOf(usize) == 0) {
+                                        const canon_ref: c.LLVMValueRef = @ptrFromInt(canon_inst);
+                                        if (pointer_map.getPtr(canon_ref)) |canon_info| {
+                                            if (!canon_info.freed and !canon_info.double_free_detected) {
+                                                canon_info.freed = true;
+                                            }
                                         }
+                                        const fn_name_raw = c.LLVMGetValueName(func);
+                                        const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
+                                        _ = global_tracker.markFreed(canon_inst, fn_name);
+                                        // Sync MemoryGraph.freed for canonical alias free.
+                                        const free_inst_canon: u64 = @intFromPtr(inst);
+                                        _ = mg.trackFree(free_inst_canon, canon_inst, lang) catch {};
                                     }
-                                    const fn_name_raw = c.LLVMGetValueName(func);
-                                    const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                    _ = global_tracker.markFreed(canon_inst, fn_name);
                                 }
                             }
                         }
@@ -764,14 +844,18 @@ pub const PtrLifetimePass = struct {
                         if (is_ffi_func) {
                             if (mg_effective) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
-                                const num_ops = c.LLVMGetNumOperands(inst);
-                                var arg_i: u32 = 1;
-                                while (arg_i < num_ops) : (arg_i += 1) {
+                                // Issue2 FIX v2: Use standardized helper for CallInst argument count.
+                                // OVERFLOW FIX: Removed (arg_i - 1) that caused integer underflow.
+                                // After standardization refactor, arg_i now starts at 0 (not 1),
+                                // so we pass arg_i directly without subtracting 1.
+                                const num_args = getCallInstArgCount(inst);
+                                var arg_i: u32 = 0;
+                                while (arg_i < num_args) : (arg_i += 1) {
                                     const arg = c.LLVMGetOperand(inst, arg_i);
                                     if (@intFromPtr(arg) == 0) continue;
                                     const arg_ptr_val = @as(u64, @intFromPtr(arg));
                                     if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
-                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i - 1) catch {};
+                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i) catch {};
                                     }
                                 }
                                 if (pointer_map.contains(inst)) {
@@ -796,7 +880,6 @@ pub const PtrLifetimePass = struct {
                         _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang) catch {};
                     }
                 }
-                try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
 
                 // After propagateOrigin, check MemoryGraph contentSource.
@@ -862,7 +945,7 @@ pub const PtrLifetimePass = struct {
                     if (mg_effective) |mg| {
                         const from_hash = @as(u64, @intFromPtr(dest));
                         const to_hash = @as(u64, @intFromPtr(value));
-                        mg.trackAlias(from_hash, to_hash) catch {};
+                        mg.trackAliasStrong(from_hash, to_hash) catch {};
                     }
                 } else {
                     // v0.1.6: Record content source even when value is not in pointer_map.
@@ -880,6 +963,8 @@ pub const PtrLifetimePass = struct {
             },
 
             c.LLVMGetElementPtr => {
+                const src = c.LLVMGetOperand(inst, 0);
+                _ = pointer_map.get(src) != null;
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
             },
 
@@ -1055,849 +1140,13 @@ pub const PtrLifetimePass = struct {
             new_info.needs_free = true;
             try putPtrInfo(pointer_map, dst, new_info, allocator);
 
-            // v0.1.8: Sync alias with MemoryGraph.
+            // v0.1.7: Sync alias with MemoryGraph.
             if (mem_graph) |mg| {
                 const from_hash = @as(u64, @intFromPtr(dst));
                 const to_hash = @as(u64, @intFromPtr(src));
-                mg.trackAlias(from_hash, to_hash) catch {};
+                mg.trackAliasStrong(from_hash, to_hash) catch {};
             }
         }
-    }
-
-    fn checkViolations(
-        ctx: *PassContext,
-        inst: c.LLVMValueRef,
-        func: c.LLVMValueRef,
-        func_name: []const u8,
-        bb_id: usize,
-        bb_ref: c.LLVMValueRef,
-        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-        mem_graph: ?*memory_graph.MemoryGraph,
-        diag: *DiagnosticWriter,
-        stats: *LifetimeStats,
-        free_sites: *std.AutoHashMap(u64, FreeSiteList),
-    ) !void {
-        // Null pointer guard — prevent SIGABRT on invalid IR
-        if (@intFromPtr(inst) == 0) return;
-
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-
-        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-            try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);
-            try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats);
-        }
-
-        if (opcode == c.LLVMRet) {
-            try checkReturnViolation(ctx, inst, func, func_name, pointer_map, mem_graph, diag, stats);
-        }
-
-        if (opcode == c.LLVMStore) {
-            try checkStoreToGlobal(ctx, inst, func_name, pointer_map, diag, stats);
-        }
-    }
-
-    /// P0-3: Path-sensitive double-free detection.
-    /// Records each free's basic block and checks if two frees of the same
-    /// pointer are on mutually exclusive execution paths (sibling blocks
-    /// with the same conditional branch predecessor, or RC==0 pattern).
-    fn checkDoubleFreeViolation(
-        ctx: *PassContext,
-        inst: c.LLVMValueRef,
-        func_name: []const u8,
-        bb_id: usize,
-        bb_ref: c.LLVMValueRef,
-        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-        mem_graph: ?*memory_graph.MemoryGraph,
-        diag: *DiagnosticWriter,
-        stats: *LifetimeStats,
-        free_sites: *std.AutoHashMap(u64, FreeSiteList),
-    ) !void {
-        const called = c.LLVMGetCalledValue(inst);
-        if (@intFromPtr(called) == 0) return;
-
-        const name_ptr = c.LLVMGetValueName(called);
-        if (@intFromPtr(name_ptr) == 0) return;
-
-        const callee_name = std.mem.span(name_ptr);
-
-        if (!isFreeFunction(callee_name)) return;
-
-        const ptr_arg = c.LLVMGetOperand(inst, 0);
-        const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
-
-        // Record this free site for path-sensitive analysis
-        const record = FreeSiteRecord{
-            .bb_id = bb_id,
-            .bb_ref = bb_ref,
-            .free_inst = inst,
-        };
-
-        const gop = try free_sites.getOrPut(ptr_hash);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = FreeSiteList.init(ctx.allocator);
-        }
-        try gop.value_ptr.append(record);
-
-        // Check if this pointer has been freed before
-        const sites = free_sites.get(ptr_hash) orelse return;
-        if (sites.len <= 1) return; // First free — no double-free yet
-
-        // P0-3: Path-sensitive check — are the two frees on mutually
-        // exclusive paths? If so, this is NOT a real double-free.
-        const prev_record = sites.items[sites.len - 2];
-        if (areMutuallyExclusive(prev_record.bb_ref, bb_ref)) {
-            diag.debug("[SUPPRESSED] Double-free on mutually exclusive paths in {s} (bb {} vs bb {})", .{ func_name, prev_record.bb_id, bb_id });
-            return;
-        }
-
-        // Check for RC (reference count) pattern.
-        // Pattern: load RC -> sub 1 -> cmp 0 -> br; free in RC==0 branch.
-        // This is a conditional free, not a double-free.
-        if (isRCPatternFree(prev_record.bb_ref) or isRCPatternFree(bb_ref)) {
-            diag.debug("[SUPPRESSED] Double-free under RC==0 guard in {s}", .{func_name});
-            return;
-        }
-
-        // Not on mutually exclusive paths — report as real double-free.
-        // Also use MemoryGraph for cross-alias detection.
-        if (mem_graph) |mg| {
-            const inst_ptr = @as(u64, @intFromPtr(inst));
-            const free_lang: Lang = toZoneLanguage(ctx.module_language.language);
-            const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang) catch false;
-            if (is_double) {
-                if (!ctx.isRelevantAlloc(ptr_hash)) return;
-                diag.warn("[DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
-                stats.use_after_free_found += 1;
-                return;
-            }
-        }
-
-        // Fallback: pointer_map based detection (same-value double-free only).
-        if (pointer_map.get(ptr_arg)) |ptr_info| {
-            if (ptr_info.double_free_detected) {
-                if (!ctx.isRelevantAlloc(ptr_hash)) return;
-                diag.warn("[DOUBLE_FREE] {s} freed twice in {s}", .{ ptr_info.source_desc, func_name });
-                stats.use_after_free_found += 1;
-            }
-        }
-    }
-
-    /// Check if two basic blocks are mutually exclusive — they are
-    /// siblings (same predecessor, different branches of a conditional branch).
-    /// In this case, only one of them executes at runtime.
-    fn areMutuallyExclusive(bb1: c.LLVMValueRef, bb2: c.LLVMValueRef) bool {
-        if (@intFromPtr(bb1) == 0 or @intFromPtr(bb2) == 0) return false;
-        if (@intFromPtr(bb1) == @intFromPtr(bb2)) return false;
-
-        // Get predecessors of both blocks
-        // If they share a common predecessor that is a conditional branch
-        // with exactly 2 successors (bb1 and bb2), they are mutually exclusive.
-        const pred1 = getSinglePredecessor(@ptrCast(bb1));
-        const pred2 = getSinglePredecessor(@ptrCast(bb2));
-
-        if (@intFromPtr(pred1) == 0 or @intFromPtr(pred2) == 0) return false;
-        if (@intFromPtr(pred1) != @intFromPtr(pred2)) return false;
-
-        // Common predecessor — check if it's a conditional branch with
-        // exactly 2 successors (the two blocks are the true/false branches)
-        const num_successors = c.LLVMGetNumSuccessors(pred1);
-        if (num_successors != 2) return false;
-
-        const succ0 = c.LLVMGetSuccessor(pred1, 0);
-        const succ1 = c.LLVMGetSuccessor(pred1, 1);
-
-        // Check if the two successors are exactly bb1 and bb2
-        const match = (@intFromPtr(succ0) == @intFromPtr(bb1) and @intFromPtr(succ1) == @intFromPtr(bb2)) or
-            (@intFromPtr(succ0) == @intFromPtr(bb2) and @intFromPtr(succ1) == @intFromPtr(bb1));
-        return match;
-    }
-
-    /// Get the single predecessor of a basic block.
-    /// Returns null if the block has 0 or more than 1 predecessor.
-    fn getSinglePredecessor(bb: c.LLVMBasicBlockRef) c.LLVMValueRef {
-        // Iterate all instructions in the function to find branches
-        // that target this block. This is O(n) but only called when
-        // a potential double-free is detected (rare in practice).
-        const func = c.LLVMGetBasicBlockParent(bb);
-        if (@intFromPtr(func) == 0) return null;
-
-        var result: c.LLVMValueRef = null;
-        var cur_bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(cur_bb) != 0) : (cur_bb = c.LLVMGetNextBasicBlock(cur_bb)) {
-            const term = c.LLVMGetBasicBlockTerminator(cur_bb);
-            if (@intFromPtr(term) == 0) continue;
-
-            const num_succ = c.LLVMGetNumSuccessors(term);
-            var i: u32 = 0;
-            while (i < num_succ) : (i += 1) {
-                const succ = c.LLVMGetSuccessor(term, i);
-                if (@intFromPtr(succ) == @intFromPtr(bb)) {
-                    // Found a predecessor
-                    if (@intFromPtr(result) != 0) {
-                        // More than one predecessor — return null
-                        return null;
-                    }
-                    result = @ptrCast(cur_bb);
-                }
-            }
-        }
-        return result;
-    }
-
-    /// Check if a basic block contains an RC (reference count) pattern
-    /// that guards a free. Pattern: load RC -> sub 1 -> cmp eq 0 -> br.
-    /// If the free is in the RC==0 branch, it's a conditional free.
-    fn isRCPatternFree(bb: c.LLVMValueRef) bool {
-        if (@intFromPtr(bb) == 0) return false;
-
-        // Look for the pattern: sub N, 1 followed by icmp eq N-1, 0
-        // This is the standard RC decrement + check pattern.
-        var inst = c.LLVMGetFirstInstruction(@ptrCast(bb));
-        var has_sub_one: bool = false;
-        var has_cmp_zero: bool = false;
-
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-
-            // Pattern: sub N, 1 (RC decrement)
-            if (opcode == c.LLVMSub) {
-                if (c.LLVMGetNumOperands(inst) >= 2) {
-                    const rhs = c.LLVMGetOperand(inst, 1);
-                    // Check if RHS is constant 1
-                    if (c.LLVMIsAConstantInt(rhs) != null) {
-                        const val = c.LLVMConstIntGetZExtValue(rhs);
-                        if (val == 1) {
-                            has_sub_one = true;
-                        }
-                    }
-                }
-            }
-
-            // Pattern: icmp eq, 0 (RC == 0 check)
-            if (opcode == c.LLVMICmp) {
-                if (c.LLVMGetNumOperands(inst) >= 2) {
-                    const rhs = c.LLVMGetOperand(inst, 1);
-                    if (c.LLVMIsAConstantInt(rhs) != null) {
-                        const val = c.LLVMConstIntGetZExtValue(rhs);
-                        if (val == 0) {
-                            has_cmp_zero = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Both sub-1 and cmp-0 in the same block or its predecessors
-        // indicates an RC pattern guarding this free.
-        return has_sub_one and has_cmp_zero;
-    }
-
-    fn checkStoreToGlobal(
-        ctx: *PassContext,
-        inst: c.LLVMValueRef,
-        func_name: []const u8,
-        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-        diag: *DiagnosticWriter,
-        stats: *LifetimeStats,
-    ) !void {
-        const ptr_operand = c.LLVMGetOperand(inst, 1);
-        const value_operand = c.LLVMGetOperand(inst, 0);
-
-        if (ptr_operand == null or value_operand == null) return;
-
-        if (isGlobalVariable(ptr_operand)) {
-            if (pointer_map.get(value_operand)) |ptr_info| {
-                if (ptr_info.alloc_site == .heap and !ptr_info.escaped) {
-                    try reportHeapToGlobal(ctx, func_name, ptr_info, inst, diag);
-                    stats.heap_ambiguous_found += 1;
-                    if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
-                } else if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                    try reportStackToGlobal(ctx, func_name, ptr_info, inst, diag);
-                    stats.stack_escapes_found += 1;
-                    if (pointer_map.getPtr(value_operand)) |pi| pi.escaped = true;
-                }
-            }
-        }
-    }
-
-    fn isGlobalVariable(ptr: c.LLVMValueRef) bool {
-        if (ptr == null) return false;
-        const value_kind = c.LLVMGetValueKind(ptr);
-        return value_kind == c.LLVMGlobalVariableValueKind;
-    }
-
-    fn checkCallViolation(
-        ctx: *PassContext,
-        inst: c.LLVMValueRef,
-        _: c.LLVMValueRef,
-        func_name: []const u8,
-        _: usize,
-        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-        mem_graph: ?*memory_graph.MemoryGraph,
-        diag: *DiagnosticWriter,
-        stats: *LifetimeStats,
-    ) !void {
-        const called = c.LLVMGetCalledValue(inst);
-        if (@intFromPtr(called) == 0) return;
-
-        const name_ptr = c.LLVMGetValueName(called);
-        if (@intFromPtr(name_ptr) == 0) return;
-
-        const callee_name = std.mem.span(name_ptr);
-
-        if (!may_retain_pointer(callee_name)) return;
-
-        // v0.1.6: Cross-function sink detection via MemoryGraph.
-        // If the callee function never returns a pointer, it's likely a sink
-        // that consumes its arguments rather than forwarding them.
-        // Passing a stack pointer to a sink is much safer than passing to
-        // a function that might store or return the pointer.
-        //
-        // Two detection strategies:
-        //   1. Defined functions: FuncCounter.returns_pointer (from ret tracking)
-        //   2. Declared functions (no body): check call instruction's return type
-        if (mem_graph) |mg| {
-            const callee_ptr = @as(u64, @intFromPtr(called));
-            const callee_counter = mg.getFuncCounter(callee_ptr);
-
-            // For declared functions (no body), infer from call return type.
-            // If the call returns void/non-pointer, the callee is a sink.
-            const callee_returns_ptr = if (callee_counter.hasHeapOps())
-                callee_counter.returns_pointer
-            else blk: {
-                // Declared function — check call return type directly.
-                const ret_type = c.LLVMTypeOf(inst);
-                if (@intFromPtr(ret_type) != 0 and
-                    c.LLVMGetTypeKind(ret_type) == c.LLVMPointerTypeKind)
-                {
-                    break :blk true;
-                }
-                break :blk false;
-            };
-
-            if (!callee_returns_ptr) {
-                // Callee never returns a pointer → likely a sink.
-                // Suppress stack escape for sink functions.
-                // Note: we still report use-after-free (freed pointers are always dangerous).
-                const num_ops = c.LLVMGetNumOperands(inst);
-                var i: u32 = 0;
-                while (i < num_ops) : (i += 1) {
-                    const arg = c.LLVMGetOperand(inst, i);
-                    if (pointer_map.get(arg)) |ptr_info| {
-                        if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                            diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
-                            stats.stack_escapes_found += 1;
-                            if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
-                        } else if (ptr_info.freed) {
-                            if (!ctx.isRelevantAlloc(@as(u64, @intFromPtr(arg)))) continue;
-                            if (ptr_info.resource_type != .none) {
-                                try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
-                            } else {
-                                try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
-                            }
-                            stats.use_after_free_found += 1;
-                        }
-                    }
-                }
-                return;
-            }
-        }
-
-        const num_ops = c.LLVMGetNumOperands(inst);
-        var i: u32 = 0;
-        while (i < num_ops) : (i += 1) {
-            const arg = c.LLVMGetOperand(inst, i);
-            if (pointer_map.get(arg)) |ptr_info| {
-                if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
-                    // Check suppression for callback/hook patterns
-                    if (isStackEscapeSuppressed(callee_name, ptr_info)) {
-                        diag.debug("[SUPPRESSED] Stack escape in callback/hook: {s}", .{callee_name});
-                        stats.stack_escapes_found += 1;
-                    } else {
-                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
-                        stats.stack_escapes_found += 1;
-                    }
-                    if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
-                } else if (ptr_info.alloc_site == .heap and !ptr_info.escaped) {
-                    // v0.1.6: Heap pointer escaping to FFI is also critical.
-                    // A malloc'd buffer passed to an extern retaining function means
-                    // the caller must know to free it — classic FFI ownership bug.
-                    try reportHeapEscapeToFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
-                    stats.heap_ambiguous_found += 1;
-                    if (pointer_map.getPtr(arg)) |pi| pi.escaped = true;
-                } else if (ptr_info.freed) {
-                    if (!ctx.isRelevantAlloc(@as(u64, @intFromPtr(arg)))) continue;
-                    if (ptr_info.resource_type != .none) {
-                        try reportResourceUAF(ctx, func_name, callee_name, ptr_info, inst, diag);
-                    } else {
-                        try reportUseAfterFree(ctx, func_name, callee_name, ptr_info, inst, diag);
-                    }
-                    stats.use_after_free_found += 1;
-                }
-            }
-        }
-    }
-
-    fn checkReturnViolation(
-        ctx: *PassContext,
-        inst: c.LLVMValueRef,
-        func: c.LLVMValueRef,
-        func_name: []const u8,
-        pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-        mem_graph: ?*memory_graph.MemoryGraph,
-        diag: *DiagnosticWriter,
-        stats: *LifetimeStats,
-    ) !void {
-        const num_ops = c.LLVMGetNumOperands(inst);
-        if (num_ops == 0) return;
-
-        if (isCppDestructorOrConstructor(func_name)) {
-            return;
-        }
-
-        // v0.1.8: Use OutputParamClassifier for precise C API output param detection.
-        if (output_param_classifier.OutputParamClassifier.isLikelyOutputParamFunction(func_name)) {
-            diag.debug("[SUPPRESSED] C API output parameter pattern: {s} (known output-param family)", .{func_name});
-            stats.heap_intentional_transfer += 1;
-            return;
-        }
-
-        // Fallback: non-pointer return type check (e.g. int-returning functions)
-        if (isNonPointerReturnType(inst)) {
-            diag.debug("[SUPPRESSED] C API output parameter pattern: {s} returns non-pointer (likely using output params)", .{func_name});
-            return;
-        }
-
-        const retval = c.LLVMGetOperand(inst, 0);
-
-        // v0.1.9: Use MemoryGraph source kind to filter borrow_escape FP.
-        // If the return value is known to come from a heap/resource allocation,
-        // it cannot be a borrow_escape (stack address return).
-        if (mem_graph) |mg| {
-            const retval_ptr = @as(u64, @intFromPtr(retval));
-            const source = mg.getSourceKind(retval_ptr);
-            if (source == .heap_alloc or source == .resource_alloc) {
-                // Return value comes from malloc/calloc/dlopen/etc. — safe.
-                diag.debug("[SUPPRESSED] Return value is heap/resource allocation (MemoryGraph): {s}", .{func_name});
-                stats.heap_intentional_transfer += 1;
-                return;
-            }
-
-            // v0.1.9: Alloc/free balance check.
-            // If this function has net positive allocations (more allocs than frees),
-            // it's likely a factory/constructor that returns heap memory.
-            // This is a project-agnostic signal — no whitelists needed.
-            const func_ptr = @as(u64, @intFromPtr(func));
-            const counter = mg.getFuncCounter(func_ptr);
-            if (counter.hasHeapOps() and counter.net() > 0) {
-                diag.debug("[SUPPRESSED] Function has net heap allocations ({d} allocs, {d} frees): {s}", .{ counter.allocs, counter.frees, func_name });
-                stats.heap_intentional_transfer += 1;
-                return;
-            }
-
-            // v0.1.6: Check callee's alloc/free balance.
-            // Wrapper functions like sqlite3_malloc() delegate to sqlite3Malloc()
-            // and return the result. The wrapper itself has net()=0, but the callee
-            // has net()>0. This catches the pattern without project-specific whitelists.
-            const retval_opcode = c.LLVMGetInstructionOpcode(retval);
-            if (retval_opcode == c.LLVMCall or retval_opcode == c.LLVMInvoke) {
-                const callee_val = c.LLVMGetCalledValue(retval);
-                if (@intFromPtr(callee_val) != 0) {
-                    const callee_ptr = @as(u64, @intFromPtr(callee_val));
-                    const callee_counter = mg.getFuncCounter(callee_ptr);
-                    if (callee_counter.hasHeapOps() and callee_counter.net() > 0) {
-                        diag.debug("[SUPPRESSED] Callee has net heap allocations ({d} allocs, {d} frees): {s} -> {s}", .{
-                            callee_counter.allocs,
-                            callee_counter.frees,
-                            func_name,
-                            std.mem.span(c.LLVMGetValueName(callee_val)),
-                        });
-                        stats.heap_intentional_transfer += 1;
-                        return;
-                    }
-                }
-            }
-        }
-
-        // v0.1.9: Check if retval is a call instruction result from a known allocator.
-        // This catches cases where MemoryGraph doesn't track the call (e.g., custom allocators).
-        const retval_opcode = c.LLVMGetInstructionOpcode(retval);
-        if (retval_opcode == c.LLVMCall or retval_opcode == c.LLVMInvoke) {
-            const called_val = c.LLVMGetCalledValue(retval);
-            if (@intFromPtr(called_val) != 0) {
-                const callee_name_ptr = c.LLVMGetValueName(called_val);
-                if (@intFromPtr(callee_name_ptr) != 0) {
-                    const callee_name = std.mem.span(callee_name_ptr);
-                    // Check AllocatorKB for known allocators.
-                    if (getAllocatorKB()) |kb| {
-                        if (kb.isAllocator(callee_name)) {
-                            diag.debug("[SUPPRESSED] Return value from known allocator {s} in {s}", .{ callee_name, func_name });
-                            stats.heap_intentional_transfer += 1;
-                            return;
-                        }
-                    }
-                    // Check HEAP_ALLOC_FUNCTIONS.
-                    for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
-                        if (std.mem.indexOf(u8, callee_name, alloc_fn) != null) {
-                            diag.debug("[SUPPRESSED] Return value from heap alloc {s} in {s}", .{ callee_name, func_name });
-                            stats.heap_intentional_transfer += 1;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (pointer_map.get(retval)) |ptr_info| {
-            if (ptr_info.alloc_site == .stack) {
-                // v0.1.9: Skip param storage allocas — they are local copies of
-                // function parameters, not dangerous stack address returns.
-                if (ptr_info.is_param_storage) {
-                    diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
-                    stats.heap_intentional_transfer += 1;
-                    // v0.1.6: Skip sret allocas — LLVM uses "alloca ptr" as a return
-                    // value slot for functions returning pointers. The alloca itself is
-                    // on the stack, but it only holds a pointer to heap-allocated memory.
-                    // Returning the alloca address is the standard LLVM sret pattern,
-                    // not a dangerous stack escape.
-                } else if (isSretAlloca(retval, inst, func)) {
-                    diag.debug("[SUPPRESSED] Sret alloca (return value slot, not real stack escape): {s}", .{func_name});
-                    stats.heap_intentional_transfer += 1;
-                } else if (isAllocaReturnSuppressed(func_name, ptr_info)) {
-                    diag.debug("[SUPPRESSED] Alloca return in constructor/factory: {s}", .{func_name});
-                    stats.heap_intentional_transfer += 1;
-                } else {
-                    try reportReturnStackAddr(ctx, func_name, ptr_info, inst, diag);
-                    stats.return_stack_addr_found += 1;
-                }
-            } else if (ptr_info.alloc_site == .heap) {
-                if (!isIntentionalOwnershipTransfer(func_name)) {
-                    // P1-1: Use inter-procedural knowledge to detect acquisition functions.
-                    // If this function is a known resource acquisition function (dlopen, malloc,
-                    // socket, etc.), the heap return is intentional ownership transfer, not a leak.
-                    if (ip_ffi.is_acquisition_function(func_name)) {
-                        diag.debug("[SUPPRESSED] Heap return in acquisition function: {s} (ip_ffi detected)", .{func_name});
-                        stats.heap_intentional_transfer += 1;
-                    } else if (is_lifecycle_bound_return(func_name, ptr_info)) {
-                        diag.debug("[MARKED] Lifecycle-bound return: {s} -> {s} (handle-dependent lifetime)", .{ func_name, ptr_info.source_desc });
-                        stats.heap_intentional_transfer += 1;
-                    } else {
-                        try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
-                        stats.heap_ambiguous_found += 1;
-                    }
-                } else {
-                    diag.debug("[SUPPRESSED] Heap return in factory function: {s} (intentional ownership transfer)", .{func_name});
-                    stats.heap_intentional_transfer += 1;
-                }
-            }
-        }
-    }
-
-    fn is_lifecycle_bound_return(func_name: []const u8, ptr_info: PtrInfo) bool {
-        if (ptr_info.resource_type == .none) return false;
-        if (ptr_info.resource_type == .dlopen_handle) {
-            return std.mem.indexOf(u8, func_name, "dlsym") != null;
-        }
-        if (ptr_info.resource_type == .mmap_region) {
-            return std.mem.indexOf(u8, func_name, "mmap") != null;
-        }
-        if (ptr_info.resource_type == .file_handle) {
-            return std.mem.indexOf(u8, func_name, "fopen") != null;
-        }
-        if (ptr_info.resource_type == .socket_fd) {
-            return std.mem.indexOf(u8, func_name, "socket") != null;
-        }
-        if (ptr_info.resource_type == .jni_ref) {
-            return std.mem.indexOf(u8, func_name, "NewStringUTF") != null or
-                std.mem.indexOf(u8, func_name, "NewByteArray") != null;
-        }
-        if (ptr_info.resource_type == .python_obj) {
-            return std.mem.indexOf(u8, func_name, "Py_BuildValue") != null or
-                std.mem.indexOf(u8, func_name, "PyTuple_New") != null;
-        }
-        return false;
-    }
-
-    fn isCppDestructorOrConstructor(func_name: []const u8) bool {
-        if (func_name.len == 0) return false;
-        if (func_name[func_name.len - 1] == 'E') {
-            if (std.mem.indexOf(u8, func_name, "C1E") != null or
-                std.mem.indexOf(u8, func_name, "C2E") != null or
-                std.mem.indexOf(u8, func_name, "D1E") != null or
-                std.mem.indexOf(u8, func_name, "D2E") != null)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Checks if a function returning an alloca pointer should be suppressed.
-    /// Many C projects use alloca as temporary workspace in constructor/factory
-    /// functions (e.g., sqlite3PExpr, sqlite3SelectNew). The alloca is just an
-    /// intermediate buffer — the actual return value points to heap memory that
-    /// was copied from the alloca. Reporting these creates massive noise.
-    /// Check if a retval is an sret-style alloca (return value slot).
-    /// LLVM generates "alloca ptr" as a local slot to hold the return value.
-    /// The alloca is on the stack but only holds a pointer to heap memory.
-    /// Returning the alloca address is standard LLVM behavior, not a stack escape.
-    ///
-    /// Detection: retval is an alloca, its allocated type is ptr (not a data buffer),
-    /// and the function's return type is also ptr.
-    fn isSretAlloca(retval: c.LLVMValueRef, _: c.LLVMValueRef, func: c.LLVMValueRef) bool {
-        // retval must be an alloca instruction
-        if (c.LLVMGetInstructionOpcode(retval) != c.LLVMAlloca) return false;
-
-        // The alloca's allocated type must be ptr (not i8, [N x i8], etc.)
-        const alloca_type = c.LLVMGetAllocatedType(retval);
-        if (@intFromPtr(alloca_type) == 0) return false;
-        if (c.LLVMGetTypeKind(alloca_type) != c.LLVMPointerTypeKind) return false;
-
-        // The function's return type must also be ptr.
-        // Use LLVMGetElementType(LLVMTypeOf(func)) to get the function type,
-        // consistent with the rest of the codebase.
-        const func_ptr_type = c.LLVMTypeOf(func);
-        if (@intFromPtr(func_ptr_type) == 0) return false;
-        const func_type = c.LLVMGetElementType(func_ptr_type);
-        if (@intFromPtr(func_type) == 0) return false;
-        if (c.LLVMGetTypeKind(func_type) != c.LLVMFunctionTypeKind) return false;
-        const ret_type = c.LLVMGetReturnType(func_type);
-        if (@intFromPtr(ret_type) == 0) return false;
-        if (c.LLVMGetTypeKind(ret_type) != c.LLVMPointerTypeKind) return false;
-
-        return true;
-    }
-
-    /// Checks if a function returning an alloca pointer should be suppressed.
-    /// Many C projects use alloca as temporary workspace in constructor/factory
-    /// functions (e.g., sqlite3PExpr, sqlite3SelectNew). The alloca is just an
-    /// intermediate buffer — the actual return value points to heap memory that
-    /// was copied from the alloca. Reporting these creates massive noise.
-    fn isAllocaReturnSuppressed(func_name: []const u8, ptr_info: PtrInfo) bool {
-        // Only applies to alloca-sourced pointers.
-        if (!std.mem.startsWith(u8, ptr_info.source_desc, "stack")) return false;
-
-        // Constructor/factory naming patterns.
-        const factory_suffixes = [_][]const u8{
-            "New",  "Create", "Make",  "Alloc", "AllocX",
-            "Init", "Open",   "Build", "From",  "Copy",
-        };
-        for (factory_suffixes) |suffix| {
-            if (std.mem.endsWith(u8, func_name, suffix)) return true;
-        }
-
-        // Common C API patterns that use alloca internally.
-        const factory_substrings = [_][]const u8{
-            "Expr",     "Select",   "Token",        "SrcList",     "Name",
-            "Trigger",  "CollSeq",  "Vtab",         "Module",
-            // Extended factory patterns for C API recognition
-                 "Malloc",
-            "Alloc",    "Realloc",  "Hash",         "List",        "Table",
-            "Cache",    "Pool",
-            // Callback/Hook patterns that legitimately take stack addrs
-                "Hook",         "Callback",    "Handler",
-            "Notifier", "Observer", "busy_handler", "commit_hook", "rollback_hook",
-            "wal_hook",
-        };
-        for (factory_substrings) |sub| {
-            if (std.mem.indexOf(u8, func_name, sub) != null) {
-                // Only suppress if the function also has a factory-like prefix.
-                const factory_prefixes = [_][]const u8{
-                    "sqlite3",  "rowSet",    "alloc", "create",
-                    "vtab",     "attach",    "token",
-                    // Extended prefixes for broader coverage
-                    "curl_",
-                    "uv_",      "json_",     "xml_",  "ldap_",
-                    "avcodec_", "avformat_",
-                };
-                for (factory_prefixes) |prefix| {
-                    if (std.mem.startsWith(u8, func_name, prefix)) return true;
-                }
-                // Suppress callback/hook patterns regardless of prefix
-                if (std.mem.indexOf(u8, func_name, "Hook") != null or
-                    std.mem.indexOf(u8, func_name, "Callback") != null or
-                    std.mem.indexOf(u8, func_name, "Handler") != null or
-                    std.mem.indexOf(u8, func_name, "busy_handler") != null or
-                    std.mem.indexOf(u8, func_name, "_hook") != null)
-                {
-                    return true;
-                }
-            }
-        }
-
-        // Thread creation pattern - pthread_create legitimately takes stack addr
-        if (std.mem.indexOf(u8, func_name, "pthread_create") != null) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /// Check if a stack escape should be suppressed.
-    /// Callback/hook patterns legitimately receive stack pointers.
-    fn isStackEscapeSuppressed(callee_name: []const u8, _: PtrInfo) bool {
-        // Callback/Hook patterns that legitimately take stack pointers
-        const callback_patterns = [_][]const u8{
-            "Hook",         "Callback",    "Handler",       "Notifier", "Observer",
-            "busy_handler", "commit_hook", "rollback_hook", "wal_hook", "pthread_create",
-            "pthread_join",
-        };
-        for (callback_patterns) |pattern| {
-            if (std.mem.indexOf(u8, callee_name, pattern) != null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Checks if a value is a function parameter.
-    fn isFuncParam(val: c.LLVMValueRef, func: c.LLVMValueRef) bool {
-        const num_params = c.LLVMCountParams(func);
-        var i: u32 = 0;
-        while (i < num_params) : (i += 1) {
-            if (c.LLVMGetParam(func, i) == val) return true;
-        }
-        return false;
-    }
-
-    fn isNonPointerReturnType(ret_inst: c.LLVMValueRef) bool {
-        const ret_value = c.LLVMGetOperand(ret_inst, 0);
-        if (ret_value == null) return false;
-        const value_type = c.LLVMTypeOf(ret_value);
-        if (value_type == null) return false;
-        return c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind;
-    }
-
-    fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
-        const factory_prefixes = [_][]const u8{
-            "create", "Create", "CREATE",
-            "new",    "New",    "NEW",
-            "make",   "Make",   "MAKE",
-            "alloc",  "Alloc",  "ALLOC",
-            "malloc", "calloc", "realloc",
-            "open",   "Open",   "init",
-            "Init",   "dup",    "Dup",
-            "clone",  "Clone",  "copy",
-            "Copy",   "from",   "From",
-            "wrap",   "Wrap",   "build",
-            "Build",
-        };
-        for (factory_prefixes) |prefix| {
-            if (std.mem.startsWith(u8, func_name, prefix)) return true;
-        }
-        const factory_suffixes = [_][]const u8{
-            "_create", "_new",  "_make", "_alloc",
-            "_new_",   "_init", "_ctor", "_construct",
-            "_clone",  "_copy", "_dup",  "_from",
-        };
-        for (factory_suffixes) |suffix| {
-            if (std.mem.endsWith(u8, func_name, suffix)) return true;
-        }
-        return false;
-    }
-
-    fn isResourceCloseFunction(fn_name: []const u8) ?ResourceType {
-        if (std.mem.indexOf(u8, fn_name, "dlclose") != null) return .dlopen_handle;
-        if (std.mem.indexOf(u8, fn_name, "munmap") != null) return .mmap_region;
-        if (std.mem.indexOf(u8, fn_name, "fclose") != null) return .file_handle;
-        if (isSocketClose(fn_name)) return .socket_fd;
-        if (std.mem.indexOf(u8, fn_name, "DeleteGlobalRef") != null or
-            std.mem.indexOf(u8, fn_name, "DeleteLocalRef") != null) return .jni_ref;
-        if (std.mem.indexOf(u8, fn_name, "Py_DECREF") != null or
-            std.mem.indexOf(u8, fn_name, "Py_XDECREF") != null) return .python_obj;
-        return null;
-    }
-
-    fn isSameOrAlias(a: c.LLVMValueRef, b: c.LLVMValueRef) bool {
-        if (@intFromPtr(a) == @intFromPtr(b)) return true;
-        if (isDerivedFrom(a, b) or isDerivedFrom(b, a)) return true;
-        return false;
-    }
-
-    fn isDerivedFrom(value: c.LLVMValueRef, base: c.LLVMValueRef) bool {
-        if (@intFromPtr(value) == 0 or @intFromPtr(base) == 0) return false;
-        const opcode = c.LLVMGetInstructionOpcode(value);
-        if (opcode == c.LLVMBitCast or opcode == c.LLVMPtrToInt or
-            opcode == c.LLVMIntToPtr or opcode == c.LLVMAddrSpaceCast)
-        {
-            const src = c.LLVMGetOperand(value, 0);
-            if (@intFromPtr(src) == @intFromPtr(base)) return true;
-            if (isDerivedFrom(src, base)) return true;
-        }
-        if (opcode == c.LLVMGetElementPtr) {
-            const ptr_op = c.LLVMGetOperand(value, 0);
-            if (@intFromPtr(ptr_op) == @intFromPtr(base)) return true;
-            if (isDerivedFrom(ptr_op, base)) return true;
-        }
-        return false;
-    }
-
-    fn isSocketClose(fn_name: []const u8) bool {
-        const non_socket_patterns = [_][]const u8{
-            "file_",   "document", "database",  "db_",
-            "window",  "dir_",     "stream",    "buf_",
-            "mem_",    "str_",     "xml_",      "json_",
-            "log_",    "config",   "session",   "cache",
-            "mutex",   "lock",     "semaphore", "cond_",
-            "thread",  "process",  "handle",    "ref_",
-            "context", "scope",    "state",     "node",
-        };
-        for (non_socket_patterns) |np| {
-            if (std.mem.indexOf(u8, fn_name, np) != null and
-                std.mem.indexOf(u8, fn_name, "close") != null)
-            {
-                return false;
-            }
-        }
-
-        const exact_matches = [_][]const u8{
-            "close", "::close",
-        };
-        for (exact_matches) |m| {
-            if (std.mem.eql(u8, fn_name, m)) return true;
-        }
-        const socket_patterns = [_][]const u8{
-            "socket_close", "sock_close",  "fd_close",
-            "::close(",     "posix_close", "shutdown",
-        };
-        for (socket_patterns) |p| {
-            if (std.mem.indexOf(u8, fn_name, p) != null) return true;
-        }
-        if (std.mem.endsWith(u8, fn_name, "_close")) {
-            const prefix = fn_name[0 .. fn_name.len - 6];
-            const socket_prefixes = [_][]const u8{
-                "sock",   "fd_",    "conn", "pipe",
-                "listen", "accept",
-            };
-            for (socket_prefixes) |sp| {
-                if (std.mem.indexOf(u8, prefix, sp) != null) return true;
-            }
-        }
-        return false;
-    }
-
-    fn is_resource_alloc_function(fn_name: []const u8) ?ResourceType {
-        if (std.mem.indexOf(u8, fn_name, "dlopen") != null) return .dlopen_handle;
-        if (std.mem.indexOf(u8, fn_name, "mmap64") != null or
-            std.mem.indexOf(u8, fn_name, "mmap2") != null or
-            std.mem.indexOf(u8, fn_name, "mmap") != null) return .mmap_region;
-        if (std.mem.indexOf(u8, fn_name, "shm_open") != null) return .mmap_region;
-        if (std.mem.indexOf(u8, fn_name, "fopen") != null) return .file_handle;
-        if (std.mem.indexOf(u8, fn_name, "socket") != null) return .socket_fd;
-        if (std.mem.indexOf(u8, fn_name, "JNI_") != null or
-            std.mem.indexOf(u8, fn_name, "Java_") != null) return .jni_ref;
-        if (std.mem.startsWith(u8, fn_name, "Py")) return .python_obj;
-        return null;
-    }
-
-    fn get_resource_type(fn_name: []const u8) ?[]const u8 {
-        if (std.mem.indexOf(u8, fn_name, "dlopen") != null or std.mem.indexOf(u8, fn_name, "dlsym") != null) return "dlhandle";
-        if (std.mem.indexOf(u8, fn_name, "mmap") != null) return "mmap";
-        if (std.mem.indexOf(u8, fn_name, "fopen") != null or std.mem.indexOf(u8, fn_name, "FILE") != null) return "file";
-        if (std.mem.indexOf(u8, fn_name, "socket") != null) return "socket";
-        if (std.mem.indexOf(u8, fn_name, "JNI") != null) return "jni";
-        if (std.mem.indexOf(u8, fn_name, "Py_") != null) return "python";
-        return null;
     }
 };
 
@@ -1912,6 +1161,10 @@ pub const reportResourceUAF = report.reportResourceUAF;
 pub const reportHeapAmbiguous = report.reportHeapAmbiguous;
 pub const makeTrace = report.makeTrace;
 pub const reportHeapEscapeToFFI = report.reportHeapEscapeToFFI;
+pub const reportFFINullGuardMissing = report.reportFFINullGuardMissing;
+pub const reportBorrowEscapeFFI = report.reportBorrowEscapeFFI;
+pub const reportCrossLanguageFree = report.reportCrossLanguageFree;
+pub const reportFFITypeMismatch = report.reportFFITypeMismatch;
 
 // Tests are in ptr_lifetime_test.zig (imported to run tests)
 const _tests = @import("ptr_lifetime_test.zig");

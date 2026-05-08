@@ -851,12 +851,12 @@ test "FFIBodyCheckPass - format string vulnerability check" {
 
     // Create test analysis context
     const boundary = FFIBoundary{
-        .caller_name = "test_func",
-        .callee_name = "printf",
+        .id = 0,
+        .kind = undefined,
+        .caller_language = undefined,
+        .callee_language = undefined,
         .function_name = "printf",
         .location = Location.init("test.c:10"),
-        .boundary_kind = undefined,
-        .language = undefined,
     };
 
     var analysis_ctx = AnalysisContext{
@@ -890,12 +890,12 @@ test "FFIBodyCheckPass - command injection vulnerability check" {
 
     // Create test analysis context
     const boundary = FFIBoundary{
-        .caller_name = "test_func",
-        .callee_name = "system",
+        .id = 1,
+        .kind = undefined,
+        .caller_language = undefined,
+        .callee_language = undefined,
         .function_name = "system",
         .location = Location.init("test.c:10"),
-        .boundary_kind = undefined,
-        .language = undefined,
     };
 
     var analysis_ctx = AnalysisContext{

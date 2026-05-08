@@ -29,7 +29,7 @@
 |------|------|
 | Zone Classifier | 标记 Safe Zone / Escape Zone |
 | 跳过 Safe Zone | 语言已保证安全，不需要分析 |
-| 只分析 Escape Zone | unsafe/FFI 边界才是重点 |
+| 只分析 Escape Zone | unsafe/FFI Boundary才是重点 |
 
 ### 0.3 为什么之前走偏
 
@@ -37,17 +37,17 @@
 2. **扫描整个 IR** - 而不是只扫描 Escape Zone
 3. **噪音来源** - stdlib/runtime 代码产生了大量误报
 
-### 0.4 正确的方法
+### 0.4 正确的Method
 
 1. **Zone Classification** - 先分类，再分析
 2. **Selective Analysis** - 只分析 Escape Zone
-3. **High-Value Output** - 输出真正有价值的 bug
+3. **High-Value Output** - Output真正有价值的 bug
 
 ---
 
 ## 1. 测试项目汇总
 
-| # | 项目 | 语言 | 报告 | UAF | 误报率 |
+| # | 项目 | 语言 | 报告 | UAF | False Positive Rate |
 |---|------|------|------|-----|--------|
 | 1 | **blst** | Rust + C | [blst.md](blst.md) | 185 | ~65% |
 | 2 | **zkcrypto/bls12_381** | Rust | [zkcrypto_bls12_381.md](zkcrypto_bls12_381.md) | 1 | 100% |
@@ -59,7 +59,7 @@
 | 8 | **mbedtls** | C | [mbedtls.md](mbedtls.md) | 7 | 100% |
 | 9 | **boringssl** | C++ | [boringssl.md](boringssl.md) | 7 | 100% |
 
-**总计**: 9 个项目，212 个 UAF 报告，约 75% 误报率
+**总计**: 9 个项目，212 个 UAF 报告，约 75% False Positive Rate
 
 ---
 
@@ -88,14 +88,14 @@
 
 ## 3. 新方向：Zone Classification
 
-### 3.1 核心思想
+### 3.1 Core思想
 
 ```
 Safe Zone (跳过)     Escape Zone (分析)
      ↓                      ↓
   计数/忽略              深度分析
      ↓                      ↓
-  减少噪音              高价值输出
+  减少噪音              高价值Output
 ```
 
 ### 3.2 Zone 定义
@@ -104,12 +104,12 @@ Safe Zone (跳过)     Escape Zone (分析)
 |------|------|----------|
 | **safe** | 语言保证安全的代码 | 跳过或计数 |
 | **unsafe** | 显式 escape 的代码 | 深度分析 |
-| **ffi** | 跨语言边界 | 重点分析 |
+| **ffi** | Cross-Language边界 | 重点分析 |
 | **runtime_internal** | stdlib/runtime | 跳过 |
 
-### 3.3 预期效果
+### 3.3 Expected效果
 
-| 项目 | 当前分析函数 | 预期分析函数 | 减少比例 |
+| 项目 | 当前分析函数 | Expected分析函数 | 减少比例 |
 |------|-------------|-------------|----------|
 | blst | 416 | ~50 | ~88% |
 | ring | 410 | ~30 | ~93% |
@@ -142,7 +142,7 @@ Safe Zone (跳过)     Escape Zone (分析)
 
 - [ ] blst 回归测试
 - [ ] ring 回归测试
-- [ ] 验证误报率 < 20%
+- [ ] 验证False Positive Rate < 20%
 
 ---
 
@@ -156,7 +156,7 @@ Safe Zone (跳过)     Escape Zone (分析)
 | [rules.md](../../plan/rules/rules.md) | 编码规范 |
 | [skills.md](../../plan/rules/skills.md) | 开发技能 |
 
-### 5.2 测试环境
+### 5.2 测试Environment
 
 | 项目 | 值 |
 |------|-----|

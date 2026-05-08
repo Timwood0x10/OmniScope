@@ -26,7 +26,7 @@
 # 克隆项目
 git clone https://github.com/jedisct1/libsodium
 
-# 配置
+# Configuration
 ./configure --disable-shared
 
 # 编译单个文件生成 LLVM IR
@@ -49,7 +49,7 @@ clang -O2 -S -emit-llvm -I./src/libsodium/include \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -71,7 +71,7 @@ clang -O2 -S -emit-llvm -I./src/libsodium/include \
 [INFO] FFIUnsafe: Analyzed 0 boundaries, found 0 issues
 ```
 
-**结论**: libsodium 分析结果为 **0 问题**
+**Conclusion**: libsodium Analysis Results为 **0 问题**
 
 ---
 
@@ -171,7 +171,7 @@ int crypto_sign(
 
 ---
 
-### 4.3 内存安全设计
+### 4.3 Memory Safety设计
 
 **源码位置**: `src/libsodium/include/sodium/utils.h`
 
@@ -207,7 +207,7 @@ void sodium_free(void *ptr);
 | 栈分配 | 所有临时变量在栈上 | 无堆操作 |
 | 固定大小 | 编译时确定缓冲区大小 | 无动态分配 |
 | 调用者管理 | 缓冲区由调用者提供 | 无所有权问题 |
-| 无 FFI | 纯 C 实现 | 无跨语言问题 |
+| 无 FFI | 纯 C 实现 | 无Cross-Language问题 |
 
 ### 5.2 IR 层面表现
 
@@ -234,20 +234,20 @@ void sodium_free(void *ptr);
 
 ### 6.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **alloca 识别** | 区分 alloca 和 malloc | 更精确的内存分析 |
 | **固定大小分析** | 识别编译时常量大小 | 减少数组误报 |
 
 ---
 
-## 7. 结论
+## 7. Conclusion
 
 ### 7.1 libsodium 代码质量
 
 | 方面 | 评价 |
 |------|------|
-| 内存安全 | ✅ 优秀 - 零堆分配 |
+| Memory Safety | ✅ 优秀 - 零堆分配 |
 | 嵌入式友好 | ✅ 优秀 - 无动态内存 |
 | 常量时间 | ✅ 优秀 - 防止时序攻击 |
 | 安全清除 | ✅ 优秀 - sodium_memzero |
@@ -256,9 +256,9 @@ void sodium_free(void *ptr);
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
 | UAF 检测 | ✅ 无误报 |
 | C 语言支持 | ✅ 良好 |
 
-**总结**: libsodium 是 C 语言密码学库的优秀代表，采用零分配设计，所有操作在栈上进行。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析简单、规范的 C 代码时表现良好。
+**Summary**: libsodium 是 C 语言密码学库的优秀代表，采用零分配设计，所有操作在栈上进行。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析简单、规范的 C 代码时表现良好。

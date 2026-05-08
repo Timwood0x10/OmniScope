@@ -74,6 +74,9 @@ pub const SemanticRegistry = struct {
     const file_io = posix_io_reg.file_io_functions;
     const network_io = posix_io_reg.network_io_functions;
 
+    /// POSIX static buffer functions (return internal static storage)
+    const static_buffer = posix_io_reg.static_buffer_functions;
+
     /// POSIX thread/signal/process management
     const signal_handler = posix_thread_reg.signal_handler_functions;
     const thread_mgmt = posix_thread_reg.thread_mgmt_functions;
@@ -125,6 +128,9 @@ pub const SemanticRegistry = struct {
             if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
         }
         for (dynamic_loading) |sem| {
+            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+        }
+        for (static_buffer) |sem| {
             if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
         }
         return null;
@@ -204,7 +210,8 @@ pub const SemanticRegistry = struct {
     pub fn totalCount() usize {
         return layer1.len + layer2.len + layer3.len + layer4.len + layer5.len + layer6.len +
             jni.len + python_c_api.len + file_io.len + network_io.len +
-            signal_handler.len + thread_mgmt.len + process_mgmt.len + dynamic_loading.len;
+            signal_handler.len + thread_mgmt.len + process_mgmt.len + dynamic_loading.len +
+            static_buffer.len;
     }
 
     // ========================================================================
@@ -212,6 +219,9 @@ pub const SemanticRegistry = struct {
     // ========================================================================
 
     /// Registered analysis hooks (comptime-initialized for zero runtime cost).
+    /// NOTE: Not thread-safe — registerHook/runHooks must be called from a single
+    /// thread or externally synchronized. This is acceptable because hook registration
+    /// happens once during pass initialization before analysis begins.
     var hooks: [MAX_HOOKS]?types.AnalysisHook = [_]?types.AnalysisHook{null} ** MAX_HOOKS;
     var hook_count: usize = 0;
 
@@ -260,6 +270,7 @@ pub const SemanticRegistry = struct {
 
     /// Parse a language identifier string to Language enum.
     pub fn parseLanguage(lang_str: []const u8) Language {
+        if (lang_str.len > 64) return .unknown;
         var buf: [64]u8 = undefined;
         var len: usize = 0;
         for (lang_str) |c| {
@@ -362,19 +373,30 @@ pub const SemanticRegistry = struct {
 
     /// Check if a function name is a C deallocator (free, etc.)
     fn isCFree(name: []const u8) bool {
-        const free_patterns = [_][]const u8{
-            "dealloc", "destroy", "release",
-            "_ZdlPv",  "_ZdaPv",  "munmap",
+        // Specific patterns with low false-positive risk
+        const exact_patterns = [_][]const u8{
+            "_ZdlPv", "_ZdaPv", "munmap", "dealloc",
         };
-        // Check specific patterns first (no false positive risk)
-        for (free_patterns) |pat| {
+        for (exact_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;
         }
-        // Check "free" with compound word exclusion
-        const idx = std.mem.indexOf(u8, name, "free") orelse return false;
-        if (idx > 0 and isAlphaNum(name[idx - 1])) return false;
-        const after = idx + 4;
-        if (after < name.len and isAlphaNum(name[after])) return false;
+        // "destroy" / "release" need compound-word exclusion to avoid
+        // matching pthread_mutex_destroy, release_lock, sem_destroy, etc.
+        if (isWordMatch(name, "destroy")) return true;
+        if (isWordMatch(name, "release")) return true;
+        // "free" with compound word exclusion
+        if (isWordMatch(name, "free")) return true;
+        return false;
+    }
+
+    /// Check if `needle` appears as a whole word in `haystack`
+    /// (not surrounded by alphanumeric characters)
+    fn isWordMatch(haystack: []const u8, needle: []const u8) bool {
+        const idx = std.mem.indexOf(u8, haystack, needle) orelse return false;
+        const needle_len = needle.len;
+        if (idx > 0 and isAlphaNum(haystack[idx - 1])) return false;
+        const after = idx + needle_len;
+        if (after < haystack.len and isAlphaNum(haystack[after])) return false;
         return true;
     }
 
@@ -383,7 +405,8 @@ pub const SemanticRegistry = struct {
         const str_patterns = [_][]const u8{
             "strcpy",  "strncpy",  "strcat", "strncat",
             "sprintf", "snprintf", "strlen", "strcmp",
-            "strncpy", "strndup",
+            // R8-M10 FIX: Removed duplicate "strncpy" (was at end of array)
+            "strndup",
         };
         for (str_patterns) |pat| {
             if (std.mem.indexOf(u8, name, pat) != null) return true;

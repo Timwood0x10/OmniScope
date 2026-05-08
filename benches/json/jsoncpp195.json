@@ -1,0 +1,92 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: corpus/real_world/other/jsoncpp195.ll
+
+
+[INFO] Loaded: 2070 functions
+
+
+[INFO] LANG-DETECT: module language = cpp, confidence = 100.0%, method = personality
+[PERF] CallSiteIndex build: 12 ms
+[32m[INFO][0m CallGraph: extracted 888 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 2070 nodes, 5090 edges for BFS traversal
+[32m[INFO][0m [PERF] Pass 'call-graph: 183 ms
+[32m[INFO][0m RustFfiFilter: analyzed 1998 funcs, 0 findings (0 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m [PERF] Pass 'return-check: 47 ms
+[32m[INFO][0m BufferOverflow: Skipped (module has 1998 functions, >500 threshold)
+[32m[INFO][0m FFITypeMismatch: analyzed 6 calls, found 4 FFI boundaries, 0 issues
+[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 49 ms
+[32m[INFO][0m [P1-1] DangerSurfacePass: 888 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 888 cross-language edges from CallGraph
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 607ms total (track=0ms, check=0ms, postprocess=0ms) for 6 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 606 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m [PERF] Pass 'callback-escape: 252 ms
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 17 unfreed + 0 freed = 17 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 0 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 2 frees — total now 2
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 17 allocs, 2 frees
+[32m[INFO][0m RAII: 51 functions identified as RAII-managed (skipped)
+[32m[INFO][0m Meyers: 3 functions identified as singleton init (skipped)
+[32m[INFO][0m RC-Container: 1 functions identified as refcount-managed (skipped)
+[32m[INFO][0m PointerOwnership: Found 1 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 17 allocations, 2 frees, 0 tracked pointers
+[32m[INFO][0m PointerOwnership: 6 cross-FFI ownership transfers detected
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 17, reused: 0, in_use: 17
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    6210
+info:   Safe zone (skipped):         0 (1.0%)
+info:   Runtime internal (skipped):  63
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         369
+info:   Unknown zone:                5778
+info: 
+info:   Escape zone functions:       369 (5.9% of total)
+info:   Issues found:              1
+info:     Issue breakdown by category:
+info:       Memory leak:              1
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  1
+info:     Origin breakdown:
+info:       ✅ User code:                  1 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 1 actionable issues (1 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          1
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1       659.50    659503.67    659503.67
+detect                                  2         0.83       413.81       444.83
+total                                   1       659.51    659508.08    659508.08
+analysis                                1       240.25    240246.54    240246.54
+[32m[INFO][0m PointerOwnership: 4 ops, 1560.09ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 659 ms
+[INFO] Analysis complete
+
+[INFO] Functions processed: 2070
+
+[INFO] Facts generated: 14
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1778066604,"summary":{"functions":2070,"issues":1,"time_ms":1864},"issues":[
+  {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}}
+]}

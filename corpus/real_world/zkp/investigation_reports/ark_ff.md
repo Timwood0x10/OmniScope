@@ -43,7 +43,7 @@ rustc --emit=llvm-ir -O --edition 2021 \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -65,7 +65,7 @@ rustc --emit=llvm-ir -O --edition 2021 \
 [INFO] FFIUnsafe: Analyzed 0 boundaries, found 0 issues
 ```
 
-**结论**: ark-ff 分析结果为 **0 问题**
+**Conclusion**: ark-ff Analysis Results为 **0 问题**
 
 ---
 
@@ -219,7 +219,7 @@ where
 
 ---
 
-## 5. 内存安全设计
+## 5. Memory Safety设计
 
 ### 5.1 设计原则
 
@@ -233,7 +233,7 @@ where
 ### 5.2 类型系统保障
 
 ```rust
-// 所有核心类型都是 Copy
+// 所有Core类型都是 Copy
 impl<P, const N: usize> Copy for MontBackend<P, N> where P: MontConfig<N> {}
 impl<P, const N: usize> Clone for MontBackend<P, N> where P: MontConfig<N> {
     fn clone(&self) -> Self {
@@ -269,7 +269,7 @@ define void @MontBackend_mul(%MontBackend* noalias nocapture sret(%MontBackend) 
   
   ; ... 大整数乘法 ...
   
-  ; 结果通过 sret 参数返回
+  ; 结果通过 sret Parameters返回
   ret void
 }
 ```
@@ -281,7 +281,7 @@ define void @MontBackend_mul(%MontBackend* noalias nocapture sret(%MontBackend) 
 | Copy trait | 所有类型可复制 | 无所有权问题 |
 | const generic | 编译时大小 | 无动态分配 |
 | 栈分配 | 所有运算在栈上 | 无堆操作 |
-| sret 返回 | 通过指针返回 | 无内存泄漏 |
+| sret 返回 | 通过指针返回 | 无Memory Leak |
 
 ---
 
@@ -296,20 +296,20 @@ define void @MontBackend_mul(%MontBackend* noalias nocapture sret(%MontBackend) 
 
 ### 7.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **Rust 语义增强** | 识别 Copy trait 和 const generic | 更精确的 Rust 分析 |
 | **sret 识别** | 识别返回值优化模式 | 减少返回值误报 |
 
 ---
 
-## 8. 结论
+## 8. Conclusion
 
 ### 8.1 ark-ff 代码质量
 
 | 方面 | 评价 |
 |------|------|
-| 内存安全 | ✅ 优秀 - Copy trait 保障 |
+| Memory Safety | ✅ 优秀 - Copy trait 保障 |
 | 性能 | ✅ 优秀 - 栈上计算 |
 | 类型安全 | ✅ 优秀 - const generic |
 | 零成本抽象 | ✅ 优秀 - 编译时优化 |
@@ -318,9 +318,9 @@ define void @MontBackend_mul(%MontBackend* noalias nocapture sret(%MontBackend) 
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
 | UAF 检测 | ✅ 无误报 |
 | Rust 支持 | ✅ 良好 |
 
-**总结**: ark-ff 是 Rust 有限域库的优秀代表，完全使用 Copy trait 和 const generic 确保内存安全。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析使用 Rust 类型系统的代码时表现良好。
+**Summary**: ark-ff 是 Rust 有限域库的优秀代表，完全使用 Copy trait 和 const generic 确保Memory Safety。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析使用 Rust 类型系统的代码时表现良好。

@@ -14,6 +14,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const CrossLangEdge = @import("../pass.zig").CrossLangEdge;
 const ptr_types = @import("ptr_lifetime_types.zig");
 const language_detector = @import("../../semantics/language_detector.zig");
+const semantics_call_graph = @import("../../semantics/call_graph.zig");
 
 /// Classification of function origin in the call graph.
 /// Used to determine trust boundaries and FFI transitions.
@@ -145,20 +146,23 @@ pub const SOURCE_FUNCTIONS = &[_][]const u8{
     "read",
     "recv",
     "gets",
+    "fgets", // BUG-05/12 FIX: reads from stdin/file → taint source for command injection
     "scanf",
-    "main",
+    "getenv", // BUG-05 FIX: environment variable → taint source
+    "main", // argv parameters are user-controlled
 };
 
 /// Substring patterns that indicate dangerous sink functions.
 /// Used to detect potential vulnerability paths.
 pub const SINK_PATTERNS = &[_][]const u8{
-    "system",
-    "exec",
-    "popen",
-    "sprintf",
-    "snprintf",
-    "strcpy",
-    "strncpy",
+    "system", // command execution sink (BUG-05, BUG-12)
+    "exec", // exec* family command execution
+    "popen", // pipe+command execution sink (BUG-12)
+    "sprintf", // format string sink (also buffer overflow risk)
+    "snprintf", // format string sink (safer but still risky with tainted input)
+    "printf", // BUG-07 FIX: format string vulnerability when 1st arg is tainted
+    "strcpy", // buffer overflow / memory corruption sink
+    "strncpy", // buffer overflow sink
 };
 
 /// A node in the call graph representing a function.
@@ -226,6 +230,52 @@ pub const CallGraphPass = struct {
 
         // R8.2-b: Extract cross-language call edges for downstream passes.
         try extractCrossLangEdges(ctx, &nodes, &edges, diag);
+
+        // CRITICAL FIX for 0/73 benchmark: Build semantics-level CallGraph for BFS traversal.
+        {
+            var sg = semantics_call_graph.CallGraph.init(ctx.allocator) catch |err| {
+                diag.warn("CallGraph: failed to init semantics CallGraph: {}", .{err});
+                return;
+            };
+            errdefer sg.deinit();
+
+            var name_to_sg_id = std.StringHashMap(u64).init(ctx.allocator);
+            defer name_to_sg_id.deinit();
+
+            var node_fail_count: u32 = 0;
+            var edge_fail_count: u32 = 0;
+
+            for (nodes.items) |node| {
+                const is_ffi_boundary = node.kind == .external_unknown or isSink(node.name);
+                const node_id = sg.addNode(null, node.name, node.is_external, is_ffi_boundary) catch {
+                    node_fail_count += 1;
+                    continue;
+                };
+                try name_to_sg_id.put(node.name, node_id);
+            }
+
+            for (edges.items) |edge| {
+                if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
+                const caller_name = nodes.items[edge.caller].name;
+                const callee_name = nodes.items[edge.callee].name;
+                const caller_sg_id = name_to_sg_id.get(caller_name) orelse continue;
+                const callee_sg_id = name_to_sg_id.get(callee_name) orelse continue;
+                _ = sg.addEdge(caller_sg_id, callee_sg_id, null, callee_name) catch {
+                    edge_fail_count += 1;
+                    continue;
+                };
+            }
+
+            if (node_fail_count > 0 or edge_fail_count > 0) {
+                diag.warn("CallGraph: semantics graph built with {} node failures, {} edge failures", .{ node_fail_count, edge_fail_count });
+            }
+            if (sg.nodes.items.len == 0) {
+                diag.warn("CallGraph: semantics graph is EMPTY — reachesFFIBoundary will always return false", .{});
+            }
+
+            ctx.semantics_call_graph = sg;
+            diag.info("CallGraph: built semantics CallGraph with {} nodes, {} edges for BFS traversal", .{ sg.nodes.items.len, sg.edges.items.len });
+        }
     }
 
     fn buildNodes(allocator: std.mem.Allocator, mod: c.LLVMModuleRef, nodes: *std.ArrayList(Node)) !void {
@@ -326,6 +376,7 @@ pub const CallGraphPass = struct {
     }
 
     fn propagateTaint(allocator: std.mem.Allocator, nodes: *std.ArrayList(Node), edges: *std.ArrayList(Edge)) !void {
+        _ = allocator;
         var changed = true;
         var iterations: u32 = 0;
         const max_iterations: u32 = 8;
@@ -334,25 +385,17 @@ pub const CallGraphPass = struct {
             changed = false;
             iterations += 1;
 
-            // Track processed callees in this iteration to avoid redundant processing
-            var processed = std.AutoHashMap(u32, void).init(allocator);
-            defer processed.deinit();
-
             for (edges.items) |edge| {
                 if (edge.caller >= nodes.items.len or edge.callee >= nodes.items.len) continue;
 
                 const caller = &nodes.items[edge.caller];
                 const callee = &nodes.items[edge.callee];
 
-                // Only propagate taint if caller is tainted and callee is not yet tainted
                 if (caller.is_tainted and !callee.is_tainted) {
                     callee.is_tainted = true;
                     callee.tainted_by = caller.id;
                     changed = true;
                 }
-
-                // Mark callee as processed after handling to allow multiple paths to reach it
-                try processed.put(edge.callee, {});
             }
         }
     }
@@ -468,7 +511,9 @@ pub const CallGraphPass = struct {
 
             // Duplicate names into ctx.allocator so they outlive CallGraphPass's local nodes.
             const caller_name_owned = try ctx.allocator.dupe(u8, caller_node.name);
+            errdefer ctx.allocator.free(caller_name_owned);
             const callee_name_owned = try ctx.allocator.dupe(u8, callee_node.name);
+            errdefer ctx.allocator.free(callee_name_owned);
 
             const cross_edge = CrossLangEdge{
                 .caller_name = caller_name_owned,
@@ -587,9 +632,9 @@ test "isSink - no match" {
 }
 
 test "isSink - partial match edge cases" {
-    try std.testing.expect(CallGraphPass.isSink("system_call"));
-    try std.testing.expect(CallGraphPass.isSink("mysystem"));
     try std.testing.expect(!CallGraphPass.isSink("systematic"));
+    try std.testing.expect(!CallGraphPass.isSink("system_call"));
+    try std.testing.expect(!CallGraphPass.isSink("mysystem"));
 }
 
 test "FunctionKind - all kinds have values" {

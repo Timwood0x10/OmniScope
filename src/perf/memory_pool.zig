@@ -63,6 +63,8 @@ pub fn MemoryPool(comptime T: type) type {
             if (self.free_list) |node| {
                 self.free_list = node.next;
                 const item = node.item;
+                // C5 FIX: Clear next-pointer to prevent use-after-free if this node is reused
+                node.next = null;
                 self.total_reused += 1;
                 return item;
             }
@@ -90,6 +92,18 @@ pub fn MemoryPool(comptime T: type) type {
 
         /// Return an item to the pool
         pub fn free(self: *Self, item: *T) !void {
+            // C5 FIX: Check for double-free by scanning free_list for this item.
+            // This prevents the same item from being added multiple times to free_list,
+            // which would cause alloc() to return the same pointer multiple times.
+            var current = self.free_list;
+            while (current) |node| {
+                if (node.item == item) {
+                    // Item already in free_list - this is a double-free, ignore it
+                    return;
+                }
+                current = node.next;
+            }
+
             const node = try self.free_node_pool.addOne(self.allocator);
             node.* = .{
                 .next = self.free_list,

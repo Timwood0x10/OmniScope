@@ -6,28 +6,14 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const TaintState = @import("./taint_state.zig").TaintState;
+const CommonLocation = @import("../../diag/issue.zig").Location;
 
-/// Risk level for vulnerabilities
-pub const RiskLevel = enum(u8) {
-    /// Low risk - minor issues
-    low = 0,
-    /// Medium risk - potential issues that should be investigated
-    medium = 1,
-    /// High risk - significant vulnerabilities
-    high = 2,
-    /// Critical risk - severe vulnerabilities requiring immediate attention
-    critical = 3,
-};
+/// M8 FIX: Unified RiskLevel - re-export from noise_filter.zig for consistency.
+/// Both root.RiskLevel and root.NoiseRiskLevel now point to the same definition.
+pub const RiskLevel = @import("../../semantics/noise_filter.zig").RiskLevel;
 
-/// Source location in the IR
-pub const Location = struct {
-    /// File name (if available)
-    file: ?[]const u8,
-    /// Line number
-    line: u32,
-    /// Column number
-    column: u32,
-};
+/// Source location in the IR — reuses canonical Location from diag/issue.zig
+pub const Location = CommonLocation;
 
 /// Flow step in the data flow path
 pub const FlowStep = struct {
@@ -209,6 +195,7 @@ test "RiskLevel - all variants" {
 test "Location - structure" {
     const loc = Location{
         .file = "test.c",
+        .func = null,
         .line = 42,
         .column = 10,
     };
@@ -220,6 +207,7 @@ test "Location - structure" {
 test "Location - null file" {
     const loc = Location{
         .file = null,
+        .func = null,
         .line = 1,
         .column = 1,
     };
@@ -230,7 +218,7 @@ test "FlowStep - structure" {
     const step = FlowStep{
         .id = 1,
         .func_name = "test_func",
-        .location = .{ .file = null, .line = 0, .column = 0 },
+        .location = .{ .file = null, .func = null, .line = 0, .column = 0 },
         .taint_state = .tainted,
         .confidence = 0.95,
     };
@@ -252,7 +240,7 @@ test "FlowPath - add step" {
     const step = FlowStep{
         .id = 1,
         .func_name = "test",
-        .location = .{ .file = null, .line = 0, .column = 0 },
+        .location = .{ .file = null, .func = null, .line = 0, .column = 0 },
         .taint_state = .source,
         .confidence = 1.0,
     };
@@ -269,7 +257,7 @@ test "FlowPath - multiple steps" {
     const step1 = FlowStep{
         .id = 1,
         .func_name = "source",
-        .location = .{ .file = null, .line = 0, .column = 0 },
+        .location = .{ .file = null, .func = null, .line = 0, .column = 0 },
         .taint_state = .source,
         .confidence = 1.0,
     };
@@ -277,7 +265,7 @@ test "FlowPath - multiple steps" {
     const step2 = FlowStep{
         .id = 2,
         .func_name = "intermediate",
-        .location = .{ .file = null, .line = 0, .column = 0 },
+        .location = .{ .file = null, .func = null, .line = 0, .column = 0 },
         .taint_state = .tainted,
         .confidence = 0.9,
     };
@@ -356,7 +344,7 @@ test "FlowStep - confidence range" {
     const step = FlowStep{
         .id = 1,
         .func_name = "test",
-        .location = .{ .file = null, .line = 0, .column = 0 },
+        .location = .{ .file = null, .func = null, .line = 0, .column = 0 },
         .taint_state = .tainted,
         .confidence = 0.5,
     };

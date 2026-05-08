@@ -34,7 +34,7 @@ if [[ -z "$VERSION" ]] && [[ -f "$VERSION_FILE" ]]; then
 fi
 
 if [[ -z "$VERSION" ]]; then
-    VERSION="0.1.6"
+    VERSION="0.1.7"
 fi
 
 RED='\033[0;31m'

@@ -242,8 +242,11 @@ pub const DILocation = struct {
     /// Returns an array of inline frames from innermost to outermost.
     /// Caller owns the returned slice.
     pub fn buildInlineStack(self: DILocation, allocator: std.mem.Allocator) ![]InlineFrame {
-        var frames = std.ArrayList(InlineFrame).initCapacity(allocator, 4) catch
-            return &[_]InlineFrame{};
+        // C6 FIX: Use regular init (not initCapacity) to enable dynamic growth.
+        // Previous code used initCapacity(4) then appendAssumeCapacity, which overflows
+        // when there are >4 inline frames (max_depth=256).
+        var frames = std.ArrayList(InlineFrame).init(allocator);
+        errdefer frames.deinit();
 
         var loc = self;
         var depth: usize = 0;
@@ -265,7 +268,7 @@ pub const DILocation = struct {
                 location.directory = f.getDirectory();
             }
 
-            frames.appendAssumeCapacity(.{
+            try frames.append(.{
                 .location = location,
                 .function_name = null,
             });

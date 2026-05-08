@@ -163,13 +163,30 @@ pub const IRLoader = struct {
         var parse_result: c.LLVMBool = 0;
 
         if (is_ll_file) {
-            // Parse LLVM IR text format (.ll)
-            parse_result = c.LLVMParseIRInContext(
-                self.context.raw,
-                mem_buf,
-                &module_raw,
-                &err_msg,
-            );
+            // LLVM 22: LLVMParseIRInContext segfaults on text IR (address 0x8).
+            // Root cause: LLVM 22's IR text parser requires target/machine init
+            // that the C API context doesn't provide by default.
+            // Workaround: convert .ll → .bc via llvm-as, then load bitcode.
+            const bc_path = try self.allocator.dupeZ(u8, path);
+            defer self.allocator.free(bc_path);
+            // Replace .ll suffix with .bc
+            if (bc_path.len > 3 and std.mem.eql(u8, bc_path[bc_path.len - 3 ..], ".ll")) {
+                @memcpy(bc_path[bc_path.len - 3 ..], ".bc");
+            }
+            const result = std.process.Child.run(.{
+                .allocator = self.allocator,
+                .argv = &[_][]const u8{ "llvm-as", path, "-o", bc_path },
+            }) catch return Error.ParseFailed;
+            defer self.allocator.free(result.stdout);
+            defer self.allocator.free(result.stderr);
+            if (result.term.Exited != 0) {
+                std.log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
+                c.LLVMDisposeMemoryBuffer(mem_buf);
+                return Error.ParseFailed;
+            }
+            // Dispose original .ll buffer, load converted .bc
+            c.LLVMDisposeMemoryBuffer(mem_buf);
+            return self.loadFile(std.mem.sliceTo(bc_path, 0));
         } else {
             // Parse LLVM bitcode format (.bc)
             parse_result = c.LLVMParseBitcodeInContext2(
@@ -186,6 +203,9 @@ pub const IRLoader = struct {
         }
 
         self.module = .{ .raw = module_raw };
+        // L7 FIX: Dispose memory buffer on success path to prevent leak.
+        // Previous code only disposed on error path (line 184), leaking on success.
+        c.LLVMDisposeMemoryBuffer(mem_buf);
         return self.module.?;
     }
 
@@ -208,3 +228,47 @@ pub const IRLoader = struct {
         self.context.deinit();
     }
 };
+
+// ============================================================================
+// Helper Functions for LLVM Instruction Patterns
+// ============================================================================
+
+/// Get the number of arguments for a CallInst (excluding the callee).
+/// In LLVM C API, CallInst operands are: [arg0, arg1, ..., argN, callee]
+/// So num_args = num_operands - 1 (or 0 if no operands).
+///
+/// This standardizes the pattern used across multiple analysis passes
+/// to avoid inconsistency and bugs from incorrect operand indexing.
+pub fn getCallInstArgCount(inst: c.LLVMValueRef) u32 {
+    const num_ops: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+    return if (num_ops > 0) num_ops - 1 else 0;
+}
+
+/// Check if an instruction is a CallInst and return its argument count.
+/// Returns null if not a CallInst.
+pub fn getCallInstArgCountSafe(inst: c.LLVMValueRef) ?u32 {
+    const opcode = c.LLVMGetInstructionOpcode(inst);
+    if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return null;
+    return getCallInstArgCount(inst);
+}
+
+/// Issue2/3 IMPROVEMENT: Standardized helper to iterate call arguments safely.
+/// This eliminates duplicated patterns across analysis passes and ensures
+/// consistent operand indexing (args are operands 0..num_args-1, callee is last).
+/// Usage:
+///   const safe = @import("llvm_safe.zig");
+///   try safe.iterateCallArgs(inst, allocator, |arg, idx| {
+///       // Process each argument (arg is LLVMValueRef, idx is u32)
+///   });
+pub fn iterateCallArgs(
+    inst: c.LLVMValueRef,
+    comptime callback: fn (c.LLVMValueRef, u32) anyerror!void,
+) !void {
+    const num_args = getCallInstArgCount(inst);
+    var i: u32 = 0;
+    while (i < num_args) : (i += 1) {
+        const arg = c.LLVMGetOperand(inst, i);
+        if (@intFromPtr(arg) == 0) continue;
+        try callback(arg, i);
+    }
+}

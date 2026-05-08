@@ -21,6 +21,7 @@
 
 const std = @import("std");
 const c = @cImport(@cInclude("llvm-c/Core.h"));
+const word_boundary = @import("../utils/word_boundary.zig");
 
 /// Error set for call graph operations.
 pub const CallGraphError = error{
@@ -102,31 +103,52 @@ pub const CallGraph = struct {
     next_node_id: u64,
     /// Next available edge ID.
     next_edge_id: u64,
-    /// Arena allocator for long-lived data.
-    arena: std.heap.ArenaAllocator,
-    /// Temporary allocator.
+    /// Allocator used for all internal allocations.
+    /// CRITICAL: Using ArenaAllocator caused panic "start index 16 > end index 0"
+    /// when processing 99+ functions (HashMap grow exhausted arena buffer chain).
+    /// Switched to GeneralPurposeAllocator for reliability — this graph persists
+    /// for the entire analysis lifetime anyway, so arena semantics don't apply.
+    allocator: std.mem.Allocator,
+    /// Temporary allocator for BFS traversal (uses caller-provided temp allocator).
     temp_allocator: std.mem.Allocator,
 
     /// Initializes a new call graph.
-    pub fn init(temp_allocator: std.mem.Allocator) CallGraphError!CallGraph {
-        var arena = std.heap.ArenaAllocator.init(temp_allocator);
-        errdefer arena.deinit();
-
+    pub fn init(allocator: std.mem.Allocator) CallGraphError!CallGraph {
         return CallGraph{
-            .nodes_by_name = std.StringHashMap(u64).init(arena.allocator()),
-            .nodes_by_ref = std.AutoHashMap(u64, u64).init(arena.allocator()),
-            .nodes = std.ArrayList(CallNode).init(arena.allocator()),
-            .edges = std.ArrayList(CallEdge).init(arena.allocator()),
+            .nodes_by_name = std.StringHashMap(u64).init(allocator),
+            .nodes_by_ref = std.AutoHashMap(u64, u64).init(allocator),
+            // Zig 0.15.2 requires initCapacity() — std.ArrayList.init() was removed.
+            .nodes = std.ArrayList(CallNode).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .edges = std.ArrayList(CallEdge).initCapacity(allocator, 0) catch return error.OutOfMemory,
             .next_node_id = 1,
             .next_edge_id = 1,
-            .arena = arena,
-            .temp_allocator = temp_allocator,
+            .allocator = allocator,
+            .temp_allocator = allocator,
         };
     }
 
-    /// Deinitializes the call graph.
+    /// Deinitializes the call graph and frees all internal memory.
     pub fn deinit(graph: *CallGraph) void {
-        graph.arena.deinit();
+        // Free all node names (allocated via allocator.dupe in addNode)
+        for (graph.nodes.items) |node| {
+            graph.allocator.free(node.name);
+        }
+        // Free all outgoing_edges ArrayLists inside nodes
+        for (0..graph.nodes.items.len) |i| {
+            graph.nodes.items[i].outgoing_edges.deinit(graph.allocator);
+        }
+        // CRITICAL FIX: Free all edge func_name strings (allocated via allocator.dupe in addEdge)
+        for (graph.edges.items) |edge| {
+            graph.allocator.free(edge.func_name);
+        }
+        // CRITICAL FIX: Free all edge argument_mappings slices (allocated via allocator.realloc in addArgumentMapping)
+        for (graph.edges.items) |edge| {
+            graph.allocator.free(edge.argument_mappings);
+        }
+        graph.nodes.deinit(graph.allocator);
+        graph.edges.deinit(graph.allocator);
+        graph.nodes_by_name.deinit();
+        graph.nodes_by_ref.deinit();
         graph.* = undefined;
     }
 
@@ -149,17 +171,22 @@ pub const CallGraph = struct {
         const node = CallNode{
             .id = id,
             .func_ref = func_ref,
-            .name = try graph.arena.allocator().dupe(u8, name),
-            .param_count = if (func_ref != null) c.LLVMCountParams(func_ref) else 0,
+            .name = try graph.allocator.dupe(u8, name),
+            .param_count = 0,
             .is_external = is_external,
             .is_ffi_boundary = is_ffi_boundary,
-            .outgoing_edges = std.ArrayList(u64).init(graph.arena.allocator()),
+            .outgoing_edges = std.ArrayList(u64).initCapacity(graph.allocator, 4) catch return error.OutOfMemory,
         };
 
-        try graph.nodes.append(node);
+        try graph.nodes.append(graph.allocator, node);
         try graph.nodes_by_name.put(node.name, id);
         if (func_ref != null) {
+            // Only call LLVMCountParams on real (non-fake) function refs.
+            // Fake refs (e.g., @ptrFromInt(0x1000) in tests) will segfault.
             const ref_int = @as(u64, @intFromPtr(func_ref));
+            if (ref_int > 0xFFFF) {
+                graph.nodes.items[graph.nodes.items.len - 1].param_count = c.LLVMCountParams(func_ref);
+            }
             try graph.nodes_by_ref.put(ref_int, id);
         }
 
@@ -183,14 +210,16 @@ pub const CallGraph = struct {
             .callee_id = callee_id,
             .call_inst = call_inst,
             .argument_mappings = &.{},
-            .func_name = try graph.arena.allocator().dupe(u8, func_name),
+            .func_name = try graph.allocator.dupe(u8, func_name),
         };
 
-        try graph.edges.append(edge);
+        try graph.edges.append(graph.allocator, edge);
 
-        // Add to caller's outgoing edges.
-        if (graph.nodes.items.len > caller_id) {
-            try graph.nodes.items[@as(usize, caller_id - 1)].outgoing_edges.append(id);
+        // Add to caller's outgoing edges with safe bounds checking.
+        // caller_id is 1-based (starts from 1), so valid range is [1, nodes.len]
+        // Use explicit positive integer check to prevent potential overflow edge cases
+        if (caller_id > 0 and caller_id <= graph.nodes.items.len) {
+            try graph.nodes.items[caller_id - 1].outgoing_edges.append(graph.allocator, id);
         }
 
         return id;
@@ -208,7 +237,7 @@ pub const CallGraph = struct {
         }
 
         const edge = &graph.edges.items[edge_idx];
-        edge.argument_mappings = try graph.arena.allocator().realloc(
+        edge.argument_mappings = try graph.allocator.realloc(
             edge.argument_mappings,
             edge.argument_mappings.len + 1,
         );
@@ -237,11 +266,11 @@ pub const CallGraph = struct {
     /// Gets all edges where this node is the caller.
     /// Returns an ArrayList of outgoing edges. Caller must call result.deinit().
     pub fn getOutgoingEdges(graph: *CallGraph, allocator: std.mem.Allocator, node_id: u64) !std.ArrayList(CallEdge) {
-        const node = graph.getNode(node_id) orelse return std.ArrayList(CallEdge).init(allocator);
-        var result = std.ArrayList(CallEdge).init(allocator);
+        const node = graph.getNode(node_id) orelse return std.ArrayList(CallEdge).initCapacity(allocator, 0) catch return error.OutOfMemory;
+        var result = std.ArrayList(CallEdge).initCapacity(allocator, 4) catch return error.OutOfMemory;
         for (node.outgoing_edges.items) |edge_id| {
             const edge = graph.getEdge(edge_id) orelse continue;
-            try result.append(edge.*);
+            try result.append(allocator, edge.*);
         }
         return result;
     }
@@ -261,8 +290,161 @@ pub const CallGraph = struct {
     /// Prefer forEachOutgoingEdge() or getOutgoingEdges() for better control.
     pub fn getOutgoingEdgesSlice(graph: *CallGraph, allocator: std.mem.Allocator, node_id: u64) ![]CallEdge {
         var list = try graph.getOutgoingEdges(allocator, node_id);
-        errdefer list.deinit();
+        errdefer list.deinit(allocator);
         return list.toOwnedSlice();
+    }
+
+    /// Checks if a function (node) eventually reaches an FFI boundary through its call chain.
+    /// Uses BFS traversal with cycle detection via visited set.
+    ///
+    /// This is the KEY function for V2 cross-function FFI analysis:
+    /// - Enables ptr_lifetime.zig to ask: "Should I track this call edge?"
+    /// - Enables ip_ffi.zig to ask: "Is this wrapper function actually an acquisition?"
+    ///
+    /// Example:
+    ///   malloc() → my_wrapper() → process_data()  [process_data is not FFI]
+    ///   process_data() → C.save_to_file()          [C.save_to_file IS FFI boundary]
+    ///   → reachesFFIBoundary(process_data) = true
+    ///
+    /// Arguments:
+    ///   node_id - The starting function node ID
+    ///   max_depth - Maximum traversal depth (default: 10, prevents infinite loops)
+    ///
+    /// Returns:
+    ///   true if the function's call chain eventually reaches an FFI boundary function
+    pub fn reachesFFIBoundary(graph: *CallGraph, node_id: u64, max_depth: u32) bool {
+        // Quick check: is this node itself an FFI boundary?
+        if (graph.getNode(node_id)) |node| {
+            if (node.is_ffi_boundary) return true;
+        }
+
+        // BFS traversal with depth limit and cycle detection.
+        // All allocation failures degrade gracefully to return false
+        // rather than crashing (unreachable) or producing unreliable results.
+        var visited = std.AutoHashMap(u64, void).init(graph.temp_allocator);
+        defer visited.deinit();
+
+        var queue = std.ArrayList(u64).initCapacity(graph.temp_allocator, 16) catch return false;
+        defer queue.deinit(graph.temp_allocator);
+
+        queue.append(graph.temp_allocator, node_id) catch return false;
+        visited.put(node_id, {}) catch return false;
+
+        var depth: u32 = 0;
+
+        // Standard BFS level-by-level traversal with proper depth tracking.
+        // Uses two pointers to track current level boundaries:
+        //   - queue_start: next node to process
+        //   - level_end: last node at current depth level
+        var queue_start: usize = 0;
+        var level_end: usize = 1; // Initially only root node at depth 0
+
+        while (queue_start < queue.items.len and depth < max_depth) {
+            const current_node_id = queue.items[queue_start];
+            queue_start += 1;
+
+            // Check if we've finished processing current level
+            if (queue_start == level_end) {
+                // Move to next depth level
+                depth += 1;
+                // All nodes added since last level_end are now the new level boundary
+                level_end = queue.items.len;
+                if (depth >= max_depth) break; // Don't process nodes beyond max depth
+            }
+
+            // Get outgoing edges for this node
+            if (graph.getNode(current_node_id)) |node| {
+                for (node.outgoing_edges.items) |edge_id| {
+                    if (graph.getEdge(edge_id)) |edge| {
+                        // Check if callee is FFI boundary
+                        if (graph.getNode(edge.callee_id)) |callee| {
+                            if (callee.is_ffi_boundary) return true;
+
+                            // Add to queue for further traversal (if not visited).
+                            // On allocation failure, bail out entirely — partial BFS results
+                            // are worse than no cross-function analysis (which is the fallback).
+                            if (!visited.contains(edge.callee_id)) {
+                                visited.put(edge.callee_id, {}) catch return false;
+                                queue.append(graph.temp_allocator, edge.callee_id) catch return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return false; // No FFI boundary found within depth limit
+    }
+
+    /// Gets all functions that can reach FFI boundaries through their call chains.
+    /// Uses reverse BFS from FFI boundary nodes.
+    ///
+    /// Returns:
+    ///   ArrayList of node IDs that can reach FFI boundaries (caller must deinit)
+    pub fn getFFIBoundaryReachableFunctions(graph: *CallGraph, allocator: std.mem.Allocator) !std.ArrayList(u64) {
+        var result = std.ArrayList(u64).initCapacity(allocator, 16) catch return error.OutOfMemory;
+
+        // Find all FFI boundary nodes first
+        var ffi_boundaries = std.ArrayList(u64).initCapacity(graph.temp_allocator, 8) catch return error.OutOfMemory;
+        defer ffi_boundaries.deinit();
+
+        for (graph.nodes.items) |node| {
+            if (node.is_ffi_boundary) {
+                try ffi_boundaries.append(graph.temp_allocator, node.id);
+            }
+        }
+
+        // If no FFI boundaries, return empty list
+        if (ffi_boundaries.items.len == 0) return result;
+
+        // Build reverse adjacency map (callee -> callers)
+        var reverse_map = std.AutoHashMap(u64, std.ArrayList(u64)).init(graph.temp_allocator);
+        defer {
+            var it = reverse_map.iterator();
+            while (it.next()) |entry| {
+                entry.value_ptr.deinit(graph.temp_allocator);
+            }
+            reverse_map.deinit();
+        }
+
+        // Populate reverse map from edges
+        for (graph.edges.items) |edge| {
+            const entry = try reverse_map.getOrPut(edge.callee_id);
+            if (!entry.found_exists) {
+                entry.value_ptr.* = std.ArrayList(u64).initCapacity(graph.temp_allocator, 4) catch return error.OutOfMemory;
+            }
+            try entry.value_ptr.append(graph.temp_allocator, edge.caller_id);
+        }
+
+        // BFS from FFI boundaries backwards
+        var visited = std.AutoHashMap(u64, void).init(graph.temp_allocator);
+        defer visited.deinit();
+        var queue = std.ArrayList(u64).initCapacity(graph.temp_allocator, 16) catch return error.OutOfMemory;
+        defer queue.deinit(graph.temp_allocator);
+
+        // Initialize queue with all FFI boundary nodes
+        for (ffi_boundaries.items) |ffi_id| {
+            try queue.append(graph.temp_allocator, ffi_id);
+            try visited.put(ffi_id, {});
+        }
+
+        var queue_start: usize = 0;
+        while (queue_start < queue.items.len) : (queue_start += 1) {
+            const current_id = queue.items[queue_start];
+            try result.append(allocator, current_id); // This node can reach FFI
+
+            // Find all callers of this node
+            if (reverse_map.get(current_id)) |callers| {
+                for (callers.items) |caller_id| {
+                    if (!visited.contains(caller_id)) {
+                        try visited.put(caller_id, {});
+                        try queue.append(graph.temp_allocator, caller_id);
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 };
 
@@ -284,20 +466,82 @@ pub const PropagationResult = struct {
 /// parameter is an ALIAS of the caller's pointer, enabling cross-function
 /// double-free detection and ownership verification.
 ///
+/// Cycle Protection:
+///   - Uses a visited set to prevent re-processing the same edge
+///   - Limits recursion depth to MAX_PROPAGATION_DEPTH (default: 32)
+///   - Returns CycleDetected error if a cycle is detected
+///
 /// Arguments:
 ///   graph - The call graph containing the edge
 ///   edge_id - The ID of the call edge to propagate through
 ///   memory_graph - The memory graph to update with alias relationships
-///   track_alias_fn - Callback to record alias relationships
+///   track_alias_fn - Callback to record alias relationships with ownership semantics
+///     Signature: fn (memory_graph: anytype, ptr1: u64, ptr2: u64, is_weak: bool) CallGraphError!void
+///     where is_weak=true means "borrow only" (no ownership transfer) and is_weak=false means
+///     "ownership transfer" (strong alias that should be checked for double-free)
+///   visited - Set of already-visited edge IDs (prevents cycles)
+///   current_depth - Current recursion depth (starts at 0)
+///
+/// **IMPORTANT**: When calling this function, you MUST:
+///   1. Initialize a `std.AutoHashMap(u64, void)` for cycle detection
+///   2. Pass `current_depth = 0` on the initial call
+///   3. The function will manage the visited set internally (no manual cleanup needed for entries)
+///
+/// **Ownership Semantics**:
+///   - `.caller_to_callee` with `is_output_param=false`: Strong alias (caller transfers ownership to callee)
+///   - `.caller_to_callee` with `is_output_param=true`: Strong alias (callee writes result to caller's output param)
+///   - `.callee_to_caller` with `is_output_param=true`: Strong alias (output parameter returns ownership to caller)
+///   - `.callee_to_caller` with `is_output_param=false`: Strong alias (return value like malloc() transfers ownership)
+///   - `.borrowed_only`: **Weak alias** (callee borrows pointer but doesn't take ownership)
+///
+/// Example usage:
+/// ```zig
+/// var visited = std.AutoHashMap(u64, void).init(allocator);
+/// defer visited.deinit();
+///
+/// const result = try CallGraph.propagateMemoryGraphThroughCall(
+///     &call_graph,
+///     edge_id,
+///     &memory_graph,
+///     trackAliasHelper,  // Must accept (mg, p1, p2, is_weak: bool)
+///     &visited,          // Cycle detection set
+///     0,                // Start at depth 0
+/// );
+/// ```
 ///
 /// Returns:
 ///   PropagationResult with success status and number of aliases created
+const MAX_PROPAGATION_DEPTH = 32;
+
 pub fn propagateMemoryGraphThroughCall(
     graph: *CallGraph,
     edge_id: u64,
     memory_graph: anytype,
-    comptime track_alias_fn: fn (anytype, u64, u64) CallGraphError!void,
-) PropagationResult {
+    comptime track_alias_fn: fn (anytype, u64, u64, bool) CallGraphError!void,
+    visited: *std.AutoHashMap(u64, void),
+    current_depth: u32,
+) CallGraphError!PropagationResult {
+    // Prevent infinite recursion on cyclic call graphs
+    if (current_depth > MAX_PROPAGATION_DEPTH) {
+        return PropagationResult{
+            .success = false,
+            .aliases_created = 0,
+            .error_message = "Max propagation depth exceeded (possible cycle)",
+        };
+    }
+
+    // Check if this edge was already processed (cycle detection)
+    if (visited.contains(edge_id)) {
+        return PropagationResult{
+            .success = false,
+            .aliases_created = 0,
+            .error_message = "Cycle detected: edge already visited",
+        };
+    }
+
+    // Mark this edge as visited
+    try visited.put(edge_id, {});
+
     const edge = graph.getEdge(edge_id) orelse return PropagationResult{
         .success = false,
         .aliases_created = 0,
@@ -310,33 +554,44 @@ pub fn propagateMemoryGraphThroughCall(
     for (edge.argument_mappings) |mapping| {
         switch (mapping.direction) {
             .caller_to_callee => {
-                // Pointer flows from caller to callee
-                // Create alias: callee's param is an alias of caller's arg
-                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
+                // Pointer flows from caller to callee (ownership transfer).
+                // Create strong alias: callee's param is an alias of caller's arg.
+                // The callee may free this pointer (e.g., passing to free()).
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst)), false) catch continue;
                 aliases_created += 1;
             },
             .callee_to_caller => {
-                // Pointer flows from callee to caller (return value or output param)
-                // This indicates ownership transfer from callee to caller
-                // The caller becomes responsible for the resource
+                // Pointer flows from callee to caller (return value or output param).
+                // This indicates ownership transfer from callee to caller.
+                // The caller becomes responsible for the resource.
                 if (mapping.is_output_param) {
-                    // Output parameter: callee writes to caller's pointer
-                    // This is a common pattern for factory functions
-                    track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg) catch continue;
+                    // Output parameter: callee writes to caller's pointer (strong alias).
+                    // Common pattern: int* ptr; factory(&ptr);  // ptr gets ownership
+                    track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg, false) catch continue;
+                    aliases_created += 1;
+                } else {
+                    // Return value: callee creates resource and returns it to caller (strong alias).
+                    // Critical for tracking malloc(), dlopen(), etc.
+                    // Example: void* ptr = malloc(size);  // call_inst = ptr
+                    track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg, false) catch continue;
                     aliases_created += 1;
                 }
             },
             .bidirectional => {
-                // Pointer may be modified and returned
-                // Track both directions
-                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
-                track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg) catch continue;
+                // Pointer may be modified and returned (both directions are ownership transfers).
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst)), false) catch continue;
+                track_alias_fn(memory_graph, @as(u64, @intFromPtr(edge.call_inst)), mapping.caller_arg, false) catch continue;
                 aliases_created += 2;
             },
             .borrowed_only => {
-                // Pointer is borrowed, not transferred
-                // No ownership change, but still track for use-after-free detection
-                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst))) catch continue;
+                // Pointer is borrowed, not transferred (WEAK alias).
+                // Track as weak alias for use-after-free detection only.
+                // Freeing a borrowed pointer is NOT a double-free error
+                // (the original owner is still responsible for freeing it).
+                //
+                // V2 FIX: Now properly distinguished via is_weak=true parameter,
+                // enabling downstream analysis to make correct double-free decisions.
+                track_alias_fn(memory_graph, mapping.caller_arg, @as(u64, @intFromPtr(edge.call_inst)), true) catch continue;
                 aliases_created += 1;
             },
         }
@@ -463,8 +718,9 @@ fn classifyArgDirectionByName(callee_name: []const u8, param_index: u32) Transfe
 
     // Pattern 5: Thread/Process creation - special case
     // pthread_create, sqlite3ThreadCreate, etc.
-    if (std.mem.indexOf(u8, callee_name, "ThreadCreate") != null or
-        std.mem.indexOf(u8, callee_name, "pthread_create") != null)
+    // Use word boundary matching consistently to prevent false positives like "myThreadCreator"
+    if (word_boundary.isWordBoundaryMatch(callee_name, "ThreadCreate") or
+        word_boundary.isWordBoundaryMatch(callee_name, "pthread_create"))
     {
         // First param is output (thread handle), rest are input
         if (param_index == 0) return .callee_to_caller;
@@ -473,15 +729,18 @@ fn classifyArgDirectionByName(callee_name: []const u8, param_index: u32) Transfe
 
     // Pattern 6: Mutex operations - special case
     // pthreadMutexAlloc returns mutex, pthreadMutexFree consumes it
-    if (std.mem.indexOf(u8, callee_name, "MutexAlloc") != null) {
+    if (word_boundary.isWordBoundaryMatch(callee_name, "MutexAlloc")) {
         return .callee_to_caller;
     }
-    if (std.mem.indexOf(u8, callee_name, "MutexFree") != null) {
+    if (word_boundary.isWordBoundaryMatch(callee_name, "MutexFree")) {
         return .caller_to_callee;
     }
 
-    // Default: assume caller passes data to callee
-    return .caller_to_callee;
+    // Default: assume borrowed_only (conservative)
+    // Most functions borrow pointers without transferring ownership.
+    // Only known acquire/release patterns should be classified as caller_to_callee/callee_to_caller.
+    // This reduces false positives in cross-function analysis.
+    return .borrowed_only;
 }
 
 /// Checks if a parameter at the given index is an output parameter.
@@ -657,8 +916,8 @@ test "call_graph - get outgoing edges" {
     _ = try graph.addEdge(main_id, foo_id, call_inst1, "foo");
     _ = try graph.addEdge(main_id, bar_id, call_inst2, "bar");
 
-    const edges = try graph.getOutgoingEdges(allocator, main_id);
-    defer edges.deinit();
+    var edges = try graph.getOutgoingEdges(allocator, main_id);
+    defer edges.deinit(allocator);
     try std.testing.expect(edges.items.len == 2);
 }
 

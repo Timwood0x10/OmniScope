@@ -160,20 +160,20 @@ pub const Profiler = struct {
     pub fn report(self: *const Profiler) void {
         if (log.current_log_level == .quiet) return;
 
-        std.debug.print("\n=== Performance Profile Report ===\n\n", .{});
-        std.debug.print("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
+        std.log.info("\n=== Performance Profile Report ===\n\n", .{});
+        std.log.info("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
             "Operation",
             "Calls",
             "Total (ms)",
             "Avg (us)",
             "Max (us)",
         });
-        std.debug.print("{s:-<80}\n", .{""});
+        std.log.info("{s:-<80}\n", .{""});
 
         var iter = self.stats.iterator();
         while (iter.next()) |entry| {
             const s = entry.value_ptr.*;
-            std.debug.print("{s:<30} {d:>10} {d:>12.2} {d:>12.2} {d:>12.2}\n", .{
+            std.log.info("{s:<30} {d:>10} {d:>12.2} {d:>12.2} {d:>12.2}\n", .{
                 s.name,
                 s.call_count,
                 s.totalMs(),

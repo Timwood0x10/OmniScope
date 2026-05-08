@@ -15,28 +15,28 @@ pub fn setLogLevel(level: LogLevel) void {
 
 pub fn info(comptime fmt: []const u8, args: anytype) void {
     if (current_log_level != .quiet) {
-        std.debug.print("[INFO] " ++ fmt ++ "\n", args);
+        std.log.info("[INFO] " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn debug(comptime fmt: []const u8, args: anytype) void {
     if (current_log_level == .debug) {
-        std.debug.print("[DEBUG] " ++ fmt ++ "\n", args);
+        std.log.debug("[DEBUG] " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn warn(comptime fmt: []const u8, args: anytype) void {
     if (current_log_level != .quiet) {
-        std.debug.print("[WARN] " ++ fmt ++ "\n", args);
+        std.log.warn("[WARN] " ++ fmt ++ "\n", args);
     }
 }
 
 pub fn err(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print("[ERROR] " ++ fmt ++ "\n", args);
+    std.log.err("[ERROR] " ++ fmt ++ "\n", args);
 }
 
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     if (current_log_level != .quiet) {
-        std.debug.print(fmt, args);
+        std.log.info(fmt, args);
     }
 }

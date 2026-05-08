@@ -14,10 +14,12 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const memory_graph_mod = @import("../semantics/memory_graph.zig");
+const call_graph_mod = @import("../semantics/call_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
 const NoiseSeverity = noise_filter.Severity;
 const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
@@ -269,6 +271,12 @@ pub const PassContext = struct {
     /// Populated by addCrossLangEdge(). Used by ffi_boundary.checkCallForFFI.
     cross_edge_by_callee: std.StringHashMap(std.ArrayList(u32)),
 
+    /// CRITICAL FIX for 0/73 benchmark: Semantics-level CallGraph for BFS traversal.
+    /// Built by CallGraphPass, consumed by ptr_lifetime and other analysis passes
+    /// via reachesFFIBoundary() for cross-function FFI boundary reachability analysis.
+    /// Without this, reachesFFIBoundary() exists but is never called — causing 0% recall.
+    semantics_call_graph: ?call_graph_mod.CallGraph,
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -276,7 +284,7 @@ pub const PassContext = struct {
         fact_store: *FactStore,
         query_engine: *QueryEngine,
         data_flow_graph: *DataFlowGraph,
-    ) PassContext {
+    ) !PassContext {
         return .{
             .allocator = allocator,
             .module = module,
@@ -300,12 +308,13 @@ pub const PassContext = struct {
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
-            .memory_graph = memory_graph_mod.MemoryGraph.init(allocator) catch unreachable,
+            .memory_graph = try memory_graph_mod.MemoryGraph.init(allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
             .ffi_auto_relevant = std.AutoHashMap(u64, void).init(allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
             .CallSiteIndex = CallSiteIndex.init(allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
+            .semantics_call_graph = null,
         };
     }
 
@@ -447,38 +456,94 @@ pub const PassContext = struct {
     /// reported an issue with the same (function, kind) signature,
     /// this call is silently skipped to avoid duplicate alerts.
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
+        // 90/10 Priority分层: FFI boundary (90%) vs local-only (10%)
+        // Check if issue reaches FFI/unsafe boundary for priority classification
+        const on_danger_path = if (issue.ffi_boundary) |_| true else false;
+
         // P2-1: Risk weighting integration.
         // Classify the function origin and apply risk level adjustment.
         // Suppressed issues are silently dropped — no noise in output.
+        //
+        // EXCEPTION: CRITICAL severity issues are never suppressed.
+        // CRITICAL = confirmed FFI boundary bug (stack escape, UAF at boundary).
+        // These must always be reported regardless of function origin,
+        // because they represent real security vulnerabilities.
         const func_name = issue.location.func;
         const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
-        const risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
-        if (risk == .suppressed) {
+        var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
+        if (issue.severity != .critical and risk == .suppressed) {
             return;
+        }
+        // For CRITICAL issues, override suppression to at least .low
+        if (issue.severity == .critical and risk == .suppressed) {
+            risk = .critical;
         }
 
         const dedup_key = self.dedupKey(issue);
-        const gop = try self.reported_keys.getOrPut(dedup_key);
-        if (gop.found_existing) {
-            var dup = issue.*;
-            dup.deinit(self.allocator);
-            return;
+        // CRITICAL issues bypass dedup — they must always be reported
+        // even if a lower-severity issue exists for the same (func, kind).
+        if (issue.severity != .critical) {
+            const gop = try self.reported_keys.getOrPut(dedup_key);
+            if (gop.found_existing) {
+                // H1 FIX v2: On dedup, free owned memory to prevent leak.
+                // When issue.owned=true, the caller has transferred ownership to us.
+                // If we return without freeing, msg/trace allocated by the caller leak.
+                // The previous H1 fix avoided freeing to prevent double-free with callers
+                // that manage their own memory (owned=false). Now we respect the owned flag:
+                //   - owned=true:  we own it, we free it here (caller expects transfer)
+                //   - owned=false: caller owns it, caller will free it themselves
+                if (issue.owned) {
+                    var mutable_issue = issue.*;
+                    mutable_issue.deinit(self.allocator);
+                }
+                return;
+            }
         }
 
         // Adjust severity based on risk level when downgraded.
         var final_issue = issue.*;
-        if (@intFromEnum(risk) > @intFromEnum(issue.severity)) {
-            // Risk level is lower than original severity — downgrade.
-            // Map RiskLevel back to Severity for the issue.
-            final_issue.severity = switch (risk) {
-                .critical => .critical,
-                .high => .high,
-                .medium => .medium,
-                .low => .low,
-                .suppressed => unreachable, // handled above
-            };
+        // C1 FIX v2: Use explicit severity ordering comparison instead of fragile @intFromEnum.
+        // This is more readable and won't break if enum values are reordered in the future.
+        // Severity order (highest to lowest): critical > high > medium > low
+        // Downgrade only when risk level is strictly lower than issue's current severity.
+        const risk_severity: DiagSeverity = switch (risk) {
+            .critical => .critical,
+            .high => .high,
+            .medium => .medium,
+            .low => .low,
+            .suppressed => .low, // suppressed maps to lowest effective severity
+        };
+        // Explicit comparison: check if risk_severity should downgrade the issue
+        const should_downgrade = switch (issue.severity) {
+            .critical => risk_severity != .critical, // anything downgrades from critical
+            .high => risk_severity == .medium or risk_severity == .low,
+            .medium => risk_severity == .low,
+            .low => false, // already lowest
+        };
+        if (should_downgrade) {
+            final_issue.severity = risk_severity;
         }
 
+        // 90/10 Priority分层: Set classification based on FFI boundary reachability
+        // - ffi_boundary (90%): Issue reaches FFI/unsafe boundary → high priority
+        // - local_only (10%): Local memory issue → auxiliary priority
+        final_issue.classification = if (on_danger_path) .ffi_boundary else .local_only;
+
+        // H2 FIX v3: Only clone message if not already owned.
+        // Root cause of leak: previous code unconditionally cloned, causing double-allocation:
+        //   - Caller allocates msg A, sets owned=true
+        //   - This code clones A → C, sets owned=true (A is now orphaned!)
+        //   - dfg.addIssue deep-copies C → D, then frees C (correct)
+        //   - graph.deinit frees D (correct)
+        //   - But A (original) leaks! Nobody frees it.
+        //
+        // Fix: If caller already owns the message (owned=true), don't clone again.
+        // Let dfg.addIssue's deep-copy + ownership transfer handle it.
+        if (!final_issue.owned) {
+            const cloned_msg = try self.allocator.dupe(u8, final_issue.message);
+            final_issue.message = cloned_msg;
+            final_issue.owned = true;
+        }
         try self.data_flow_graph.addIssue(final_issue);
     }
 
@@ -793,6 +858,41 @@ pub const PassContext = struct {
         return self.ffi_auto_relevant.contains(ptr_val);
     }
 
+    /// P0: Full danger path validation using MemoryGraph + CallGraph analysis.
+    /// Performs complete path tracing: (b) ffi_arg, (c) ffi_ret,
+    /// (a/e) alloc zone+lang, (d) alias closure traversal.
+    /// Use this for issue reporting gates instead of isRelevantAlloc() for
+    /// stricter validation per todolist.md architecture requirements.
+    pub fn isOnDangerPathFull(self: *PassContext, ptr_val: u64) bool {
+        const raw_ffis = self.getCrossLangEdges();
+        if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
+
+        // Convert CrossLangEdge[] to MemoryGraph.DangerSurface[] for isOnDangerPath API
+        var danger_surfaces = self.allocator.alloc(memory_graph_mod.MemoryGraph.DangerSurface, raw_ffis.len) catch return false;
+        defer self.allocator.free(danger_surfaces);
+        for (raw_ffis, 0..) |ffe, i| {
+            danger_surfaces[i] = .{
+                .callee_name = ffe.callee_name,
+                .is_ffi_boundary = ffe.is_ffi_boundary,
+            };
+        }
+
+        // M1 FIX: Build ffi_set once here and pass to all recursive calls
+        // to avoid O(N) HashMap rebuild at each recursion level.
+        var ffi_set = std.StringHashMap(void).init(self.allocator);
+        defer ffi_set.deinit();
+        for (danger_surfaces) |ds| {
+            if (ds.is_ffi_boundary) {
+                ffi_set.put(ds.callee_name, {}) catch {};
+            }
+        }
+
+        var visited = std.AutoHashMap(u64, void).init(self.allocator);
+        defer visited.deinit();
+        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited, &ffi_set);
+        return result != .none;
+    }
+
     /// P1-1: Mark a pointer value as being on a danger path.
     /// Called by DangerSurfacePass during surface tracing.
     pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {
@@ -881,9 +981,9 @@ pub const DiagnosticWriter = struct {
 
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {
-            std.debug.print(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
+            std.log.info(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
         } else {
-            std.debug.print("[" ++ severity ++ "] " ++ format ++ "\n", args);
+            std.log.info("[" ++ severity ++ "] " ++ format ++ "\n", args);
         }
     }
 
@@ -908,7 +1008,7 @@ pub const DiagnosticWriter = struct {
     }
 };
 
-/// Print zone classification summary
+/// Print zone classification summary with 90/10 priority分层
 /// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
 pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) void {
     if (log.current_log_level == .quiet) return;
@@ -918,75 +1018,126 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
     const skip_ratio = stats.skipRatio();
     const issue_stats = dfg.getIssueStats();
 
-    std.debug.print("\n" ++ Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n", .{});
-    std.debug.print(Colors.bold ++ "Zone Classification Summary" ++ Colors.reset ++ "\n", .{});
-    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
-
-    std.debug.print("  Total functions analyzed:    {d}\n", .{total});
-    std.debug.print("  Safe zone (skipped):         {d} ({d:.1}%)\n", .{ stats.safe_count, skip_ratio * 100 });
-    std.debug.print("  Runtime internal (skipped):  {d}\n", .{stats.runtime_count});
-    std.debug.print("  Unsafe zone (analyzed):      {d}\n", .{stats.unsafe_count});
-    std.debug.print("  FFI zone (analyzed):         {d}\n", .{stats.ffi_count});
-    std.debug.print("  Unknown zone:                {d}\n", .{stats.unknown_count});
-    std.debug.print("\n", .{});
-
-    std.debug.print(Colors.green ++ "  Escape zone functions:       {d} ({d:.1}% of total)" ++ Colors.reset ++ "\n", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
-
-    if (issue_stats.total > 0) {
-        std.debug.print(Colors.yellow ++ "  Issues found:              {d}" ++ Colors.reset ++ "\n", .{issue_stats.total});
-
-        std.debug.print("\n    " ++ Colors.bold ++ "Issue breakdown by category:" ++ Colors.reset ++ "\n", .{});
-        if (issue_stats.memory_leak > 0) {
-            std.debug.print("      Memory leak:              {d}\n", .{issue_stats.memory_leak});
+    // Separate issues by classification (90/10 split)
+    var ffi_issues: u32 = 0;
+    var local_issues: u32 = 0;
+    for (dfg.issues.items) |issue| {
+        if (issue.classification == .ffi_boundary) {
+            ffi_issues += 1;
+        } else {
+            local_issues += 1;
         }
-        if (issue_stats.use_after_free > 0) {
-            std.debug.print("      Use after free:           {d}\n", .{issue_stats.use_after_free});
-        }
-        if (issue_stats.double_free > 0) {
-            std.debug.print("      Double free:               {d}\n", .{issue_stats.double_free});
-        }
-        if (issue_stats.ffi_unsafe > 0) {
-            std.debug.print("      FFI unsafe call:          {d}\n", .{issue_stats.ffi_unsafe});
-        }
-        if (issue_stats.command_injection > 0) {
-            std.debug.print("      Command injection:         {d}\n", .{issue_stats.command_injection});
-        }
-        if (issue_stats.buffer_overflow > 0) {
-            std.debug.print("      Buffer overflow:          {d}\n", .{issue_stats.buffer_overflow});
-        }
-        if (issue_stats.format_string > 0) {
-            std.debug.print("      Format string:            {d}\n", .{issue_stats.format_string});
-        }
-        if (issue_stats.type_mismatch > 0) {
-            std.debug.print("      Type mismatch:            {d}\n", .{issue_stats.type_mismatch});
-        }
-        if (issue_stats.borrow_escape > 0) {
-            std.debug.print("      Borrow escape:            {d}\n", .{issue_stats.borrow_escape});
-        }
-        if (issue_stats.null_dereference > 0) {
-            std.debug.print("      Null dereference:         {d}\n", .{issue_stats.null_dereference});
-        }
-        if (issue_stats.invalid_free > 0) {
-            std.debug.print("      Invalid free:             {d}\n", .{issue_stats.invalid_free});
-        }
-        if (issue_stats.unchecked_return > 0) {
-            std.debug.print("      Unchecked return:         {d}\n", .{issue_stats.unchecked_return});
-        }
-        if (issue_stats.malloc_unchecked > 0) {
-            std.debug.print("      Malloc unchecked:         {d}\n", .{issue_stats.malloc_unchecked});
-        }
-        if (issue_stats.callback_mismatch > 0) {
-            std.debug.print("      Callback mismatch:        {d}\n", .{issue_stats.callback_mismatch});
-        }
-        if (issue_stats.unknown > 0) {
-            std.debug.print("      Unknown:                  {d}\n", .{issue_stats.unknown});
-        }
-        std.debug.print("\n", .{});
-    } else {
-        std.debug.print(Colors.green ++ "  Issues found:                0" ++ Colors.reset ++ "\n\n", .{});
     }
 
-    std.debug.print(Colors.cyan ++ "═══════════════════════════════════════════════════════════════" ++ Colors.reset ++ "\n\n", .{});
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
+    std.log.info("Zone Classification Summary", .{});
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
+
+    std.log.info("  Total functions analyzed:    {d}", .{total});
+    std.log.info("  Safe zone (skipped):         {d} ({d:.1}%)", .{ stats.safe_count, skip_ratio * 100 });
+    std.log.info("  Runtime internal (skipped):  {d}", .{stats.runtime_count});
+    std.log.info("  Unsafe zone (analyzed):      {d}", .{stats.unsafe_count});
+    std.log.info("  FFI zone (analyzed):         {d}", .{stats.ffi_count});
+    std.log.info("  Unknown zone:                {d}", .{stats.unknown_count});
+    std.log.info("", .{});
+
+    std.log.info("  Escape zone functions:       {d} ({d:.1}% of total)", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
+
+    if (issue_stats.total > 0) {
+        std.log.info("  Issues found:              {d}", .{issue_stats.total});
+
+        std.log.info("    Issue breakdown by category:", .{});
+        if (issue_stats.memory_leak > 0) {
+            std.log.info("      Memory leak:              {d}", .{issue_stats.memory_leak});
+        }
+        if (issue_stats.use_after_free > 0) {
+            std.log.info("      Use after free:           {d}", .{issue_stats.use_after_free});
+        }
+        if (issue_stats.double_free > 0) {
+            std.log.info("      Double free:               {d}", .{issue_stats.double_free});
+        }
+        if (issue_stats.ffi_unsafe > 0) {
+            std.log.info("      FFI unsafe call:          {d}", .{issue_stats.ffi_unsafe});
+        }
+        if (issue_stats.command_injection > 0) {
+            std.log.info("      Command injection:         {d}", .{issue_stats.command_injection});
+        }
+        if (issue_stats.buffer_overflow > 0) {
+            std.log.info("      Buffer overflow:          {d}", .{issue_stats.buffer_overflow});
+        }
+        if (issue_stats.format_string > 0) {
+            std.log.info("      Format string:            {d}", .{issue_stats.format_string});
+        }
+        if (issue_stats.type_mismatch > 0) {
+            std.log.info("      Type mismatch:            {d}", .{issue_stats.type_mismatch});
+        }
+        if (issue_stats.borrow_escape > 0) {
+            std.log.info("      Borrow escape:            {d}", .{issue_stats.borrow_escape});
+        }
+        if (issue_stats.null_dereference > 0) {
+            std.log.info("      Null dereference:         {d}", .{issue_stats.null_dereference});
+        }
+        if (issue_stats.invalid_free > 0) {
+            std.log.info("      Invalid free:             {d}", .{issue_stats.invalid_free});
+        }
+        if (issue_stats.unchecked_return > 0) {
+            std.log.info("      Unchecked return:         {d}", .{issue_stats.unchecked_return});
+        }
+        if (issue_stats.malloc_unchecked > 0) {
+            std.log.info("      Malloc unchecked:         {d}", .{issue_stats.malloc_unchecked});
+        }
+        if (issue_stats.callback_mismatch > 0) {
+            std.log.info("      Callback mismatch:        {d}", .{issue_stats.callback_mismatch});
+        }
+        if (issue_stats.unknown > 0) {
+            std.log.info("      Unknown:                  {d}", .{issue_stats.unknown});
+        }
+
+        // 90/10 Priority分层报告
+        std.log.info("", .{});
+        std.log.info("    90/10 Priority Classification:", .{});
+        std.log.info("      FFI Boundary (90% core):     {d}", .{ffi_issues});
+        std.log.info("      Local Only (10% auxiliary):  {d}", .{local_issues});
+
+        // C4-4: FunctionOrigin grouping output
+        std.log.info("    Origin breakdown:", .{});
+        std.log.info("      ✅ User code:             {d:>6} (ACTION NEEDED)", .{issue_stats.user_code});
+        std.log.info("      📦 Third-party (FFI):     {d:>6}", .{issue_stats.third_party});
+        std.log.info("      📚 Stdlib (suppressed):  {d:>6}", .{issue_stats.stdlib_suppressed});
+        std.log.info("      🔧 Compiler (ignored):   {d:>6}", .{issue_stats.compiler_ignored});
+
+        const actionable = issue_stats.user_code + issue_stats.third_party;
+        if (actionable > 0) {
+            std.log.info("    → {d} actionable issues ({d} user, {d} FFI boundary)", .{
+                actionable,
+                issue_stats.user_code,
+                issue_stats.third_party,
+            });
+        }
+        std.log.info("", .{});
+
+        // E2-3c: Graph coverage metric
+        const graph_stats = dfg.getStats();
+        const coverage_pct: f64 = if (graph_stats.node_count > 0)
+            @as(f64, @floatFromInt(graph_stats.tainted_node_count)) / @as(f64, @floatFromInt(graph_stats.node_count)) * 100
+        else
+            0;
+        std.log.info("    Graph coverage:", .{});
+        std.log.info("      Total nodes analyzed:     {d}", .{graph_stats.node_count});
+        std.log.info("      Nodes on danger path:     {d} ({d:.1}%)", .{ graph_stats.tainted_node_count, coverage_pct });
+        std.log.info("      FFI boundaries tracked:   {d}", .{dfg.getFFIBoundaries().len});
+        std.log.info("      Issues in graph:          {d}", .{dfg.getIssues().len});
+
+        // E2-3b: Danger path depth hint (alias closure reach)
+        if (issue_stats.total > 0) {
+            const depth_hint = if (coverage_pct > 50) "deep alias analysis" else if (coverage_pct > 20) "moderate reach" else "shallow scan";
+            std.log.info("      Analysis depth:           {s}", .{depth_hint});
+        }
+    } else {
+        std.log.info("  Issues found:                0", .{});
+    }
+
+    std.log.info("═══════════════════════════════════════════════════════════════", .{});
 }
 
 fn getSeverityColor(comptime severity: []const u8) []const u8 {
@@ -1048,7 +1199,7 @@ test "PassContext - init and deinit" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1068,7 +1219,7 @@ test "PassContext - getNextId" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1094,7 +1245,7 @@ test "PassContext - setModule and hasModule" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1119,7 +1270,7 @@ test "PassContext - access to components" {
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
@@ -1140,7 +1291,7 @@ test "PassContext - getOrComputeZoneByName caching" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer ctx.deinit();
 
     // LLVM intrinsics → .runtime_internal
@@ -1177,7 +1328,7 @@ test "PassContext - getOrComputeZone null safety" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var ctx = PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
     defer ctx.deinit();
 
     // Valid pointer should return a valid zone (not crash)

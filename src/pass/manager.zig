@@ -146,8 +146,9 @@ pub const PassManager = struct {
         defer result.deinit(self.allocator);
 
         while (queue.items.len > 0) {
-            // Get next node (FIFO)
-            const node = queue.orderedRemove(0);
+            // DC-C7 FIX: Use swapRemove for O(1) performance instead of orderedRemove(0) O(N)
+            // Topological order may differ but dependency correctness is preserved
+            const node = queue.swapRemove(0);
             try result.append(self.allocator, node);
 
             // Reduce in-degree of neighbors
@@ -169,6 +170,8 @@ pub const PassManager = struct {
 
         // Build and cache execution names
         var names = try std.ArrayList([]const u8).initCapacity(self.allocator, num_passes);
+        // H3 FIX: Add defer to prevent leak if loop fails mid-way
+        defer names.deinit(self.allocator);
         for (self.resolved_order.?) |idx| {
             try names.append(self.allocator, self.passes.items[idx].name);
         }
@@ -268,7 +271,7 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
-    var ctx = PassContext.init(
+    var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,

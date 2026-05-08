@@ -1,7 +1,7 @@
-# blst 项目调查报告 v0.1.6
+# blst 项目调查报告 v0.1.7
 
-**测试日期**: 2026-05-04
-**测试版本**: v0.1.6 (Phase 1+2+3 修复后)
+**测试日期**: 2026-05-06
+**测试版本**: v0.1.7 (24 bugs fixed, 340/340 tests passing)
 **测试项目**: blst (BLS12-381 签名库)
 **测试文件**: corpus/real_world/crypto/blst.dll
 

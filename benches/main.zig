@@ -9,7 +9,6 @@ const OmniScope = @import("OmniScope");
 
 const lifetime = OmniScope.lifetime;
 const registry = OmniScope.registry;
-const mapper = OmniScope.lifetime;
 const noise_reduction = OmniScope.noise_reduction;
 
 fn benchmark(comptime name: []const u8, comptime func: fn () void, iterations: usize) !void {
@@ -93,23 +92,9 @@ fn benchRegistryGetSeverity() void {
 
 // ========================================
 // Semantic Mapper Benchmarks
+// NOTE: SemanticMapper removed as dead code (2026-05-04, see untodo.md DEAD-13)
+// Replaced with SemanticRegistry benchmarks above
 // ========================================
-
-fn benchMapperMapFunction() void {
-    _ = mapper.SemanticMapper.mapFunction("malloc");
-}
-
-fn benchMapperMapRustFunction() void {
-    _ = mapper.SemanticMapper.mapFunction("std::boxed::Box<T>::into_raw");
-}
-
-fn benchMapperIsAllocation() void {
-    _ = mapper.SemanticMapper.isAllocation("malloc");
-}
-
-fn benchMapperIsDeallocation() void {
-    _ = mapper.SemanticMapper.isDeallocation("free");
-}
 
 // ========================================
 // Phase 4: Noise Reduction Benchmarks
@@ -224,14 +209,7 @@ test "bench: Semantic Registry" {
     try benchmark("Registry GetSeverity", benchRegistryGetSeverity, 100000);
 }
 
-test "bench: Semantic Mapper" {
-    std.debug.print("\n=== Semantic Mapper Benchmarks ===\n", .{});
-
-    try benchmark("Mapper MapFunction (C)", benchMapperMapFunction, 100000);
-    try benchmark("Mapper MapFunction (Rust)", benchMapperMapRustFunction, 100000);
-    try benchmark("Mapper IsAllocation", benchMapperIsAllocation, 100000);
-    try benchmark("Mapper IsDeallocation", benchMapperIsDeallocation, 100000);
-}
+// NOTE: "bench: Semantic Mapper" test removed — SemanticMapper was dead code, removed 2026-05-04
 
 test "bench: Phase 4 Noise Reduction - Layer 1" {
     std.debug.print("\n=== Phase 4: Noise Reduction (Layer 1 Name Filter) ===\n", .{});

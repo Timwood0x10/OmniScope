@@ -43,7 +43,7 @@ rustc --emit=llvm-ir -O --edition 2021 \
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -103,7 +103,7 @@ impl G1Affine {
 
 ---
 
-### 4.2 核心数据结构
+### 4.2 Core数据结构
 
 **源码位置**: `src/field.rs`
 
@@ -136,7 +136,7 @@ impl Fp {
 **分析**:
 - 所有字段元素都是栈分配的固定大小数组
 - 无动态内存分配
-- 完全内存安全
+- 完全Memory Safety
 
 ---
 
@@ -166,12 +166,12 @@ impl G1Projective {
 
 **分析**:
 - 椭圆曲线运算完全在栈上进行
-- 无堆分配，无内存泄漏风险
+- 无堆分配，无Memory Leak风险
 - 这是 Rust 零成本抽象的体现
 
 ---
 
-## 5. 内存安全设计
+## 5. Memory Safety设计
 
 ### 5.1 设计原则
 
@@ -185,7 +185,7 @@ impl G1Projective {
 ### 5.2 类型系统保障
 
 ```rust
-// 所有核心类型都是 Copy
+// 所有Core类型都是 Copy
 impl Copy for Fp {}
 impl Copy for G1Affine {}
 impl Copy for G2Affine {}
@@ -221,7 +221,7 @@ impl Copy for Scalar {}
 
 ### 7.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **栈变量识别** | 识别 alloca 和栈分配 | 减少 30% 误报 |
 | **Copy 语义** | 识别 Copy trait 的类型 | 减少 20% 误报 |
@@ -229,13 +229,13 @@ impl Copy for Scalar {}
 
 ---
 
-## 8. 结论
+## 8. Conclusion
 
 ### 8.1 zkcrypto/bls12_381 代码质量
 
 | 方面 | 评价 |
 |------|------|
-| 内存安全 | ✅ 优秀 - 零堆分配 |
+| Memory Safety | ✅ 优秀 - 零堆分配 |
 | 性能 | ✅ 优秀 - 栈上计算 |
 | 常量时间 | ✅ 优秀 - 防止时序攻击 |
 | 类型安全 | ✅ 优秀 - Copy trait 保障 |
@@ -244,9 +244,9 @@ impl Copy for Scalar {}
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
-| UAF 检测 | ⚠️ 误报率 100% |
+| UAF 检测 | ⚠️ False Positive Rate 100% |
 | Rust 栈变量 | ❌ 需增强 |
 
-**总结**: zkcrypto/bls12_381 是纯 Rust 实现的密码学库，完全避免堆分配，使用 Copy trait 确保内存安全。OmniScope 报告的唯一问题是误报，原因是无法区分栈分配数组和堆分配内存。
+**Summary**: zkcrypto/bls12_381 是纯 Rust 实现的密码学库，完全避免堆分配，使用 Copy trait 确保Memory Safety。OmniScope 报告的唯一问题是误报，原因是无法区分栈分配数组和堆分配内存。

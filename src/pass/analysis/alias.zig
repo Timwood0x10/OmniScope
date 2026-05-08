@@ -17,7 +17,8 @@ const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
-const c = @import("../../ir/llvm_raw.zig");
+// R8-H7 FIX: Added .c suffix to import LLVM C bindings
+const c = @import("../../ir/llvm_raw.zig").c;
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
@@ -65,15 +66,16 @@ pub const AliasPass = struct {
 
     /// Deinitialize the pass
     pub fn deinit(self: *AliasPass, allocator: std.mem.Allocator) void {
+        _ = allocator; // AutoHashMap.deinit() doesn't need allocator
         self.query.deinit();
-        self.type_cache.deinit(allocator);
-        self.ptr_info_map.deinit(allocator);
+        self.type_cache.deinit();
+        self.ptr_info_map.deinit();
     }
 
     /// Reset internal state for re-analysis
     fn reset(self: *AliasPass, allocator: std.mem.Allocator) void {
-        self.type_cache.deinit(allocator);
-        self.ptr_info_map.deinit(allocator);
+        self.type_cache.deinit();
+        self.ptr_info_map.deinit();
         self.type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator);
         self.ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator);
         self.func_id = 0;
@@ -324,7 +326,7 @@ test "AliasPass - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const pass = AliasPass.init(&store);
+    const pass = AliasPass.init(std.testing.allocator, &store);
     _ = pass;
 }
 
@@ -365,7 +367,7 @@ test "AliasPass - emit alias_may fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit alias_may fact
@@ -384,7 +386,7 @@ test "AliasPass - emit alias_must fact" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit alias_must fact
@@ -403,7 +405,7 @@ test "AliasPass - multiple alias facts" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Emit multiple alias facts
@@ -428,7 +430,7 @@ test "AliasPass - function ID tracking" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 42;
 
     try pass.store.insert(.alias_may, 1, 2, 42);
@@ -441,7 +443,7 @@ test "AliasPass - type cache consistency" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create dummy types
@@ -464,7 +466,7 @@ test "AliasPass - pointer info map consistency" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create dummy pointers
@@ -502,7 +504,7 @@ test "AliasPass - complex alias graph" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    var pass = AliasPass.init(&store);
+    var pass = AliasPass.init(std.testing.allocator, &store);
     pass.func_id = 1;
 
     // Create a complex alias graph:

@@ -1,0 +1,431 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: corpus/real_world/zkp/ring.ll
+
+
+[INFO] Loaded: 410 functions
+
+
+[INFO] LANG-DETECT: module language = rust, confidence = 100.0%, method = personality
+[32m[INFO][0m CallGraph: extracted 5148 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 410 nodes, 5524 edges for BFS traversal
+[32m[INFO][0m [PERF] Pass 'call-graph: 152 ms
+[32m[INFO][0m RustFfiFilter: analyzed 278 funcs, 0 findings (4 stack escapes)
+[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 67 ms
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m [PERF] Pass 'return-check: 31 ms
+[32m[INFO][0m BufferOverflow: No buffer overflow issues detected
+[32m[INFO][0m FFITypeMismatch: analyzed 4540 calls, found 4242 FFI boundaries, 0 issues
+[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 24 ms
+[32m[INFO][0m [P1-1] DangerSurfacePass: 5148 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 5148 cross-language edges from CallGraph
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 159 funcs, tracked 841 ptrs, found 3 violations
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 356ms total (track=264ms, check=30ms, postprocess=5ms) for 159 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 356 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m [PERF] Pass 'callback-escape: 22 ms
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 2472 unfreed + 147 freed = 2619 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 24 records, 2 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 238 frees — total now 238
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 2472 allocs, 238 frees
+[32m[INFO][0m PointerOwnership: Found 5 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 2496 allocations, 357 frees, 24 tracked pointers
+[32m[INFO][0m PointerOwnership: 816 cross-FFI ownership transfers detected
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 2496, reused: 0, in_use: 2496
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    1230
+info:   Safe zone (skipped):         0 (7.3%)
+info:   Runtime internal (skipped):  90
+info:   Unsafe zone (analyzed):      336
+info:   FFI zone (analyzed):         321
+info:   Unknown zone:                483
+info: 
+info:   Escape zone functions:       657 (53.4% of total)
+info:   Issues found:              14
+info:     Issue breakdown by category:
+info:       Memory leak:              5
+info:       Use after free:           5
+info:       Borrow escape:            4
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  14
+info:     Origin breakdown:
+info:       ✅ User code:                  1 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):       13
+info:     → 1 actionable issues (1 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          14
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1      1140.97   1140974.71   1140974.71
+detect                                  2       101.59     50796.40     50849.96
+total                                   1      1140.98   1140980.63   1140980.63
+analysis                                1       830.36    830363.17    830363.17
+[32m[INFO][0m PointerOwnership: 4 ops, 3213.91ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 1141 ms
+[32m[INFO][0m GlobalAllocTracker: 22 memory leaks confirmed from 24 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 410
+
+[INFO] Facts generated: 1857
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.6","timestamp":1778066607,"summary":{"functions":410,"issues":16,"time_ms":1904},"issues":[
+  {"id":"OMI-001","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc()","location":{"function":"_ZN4ring10arithmetic6bigint3exp24elem_exp_consttime_inner28_$u7b$$u7b$closure$u7d$$u7d$17h19fc9ffcf7820921E"}},
+  {"id":"OMI-002","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc()","location":{"function":"_ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E"}},
+  {"id":"OMI-003","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc()","location":{"function":"_ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E"}},
+  {"id":"OMI-004","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ring_core_0_17_16000__aes_hw_set_encrypt_key_128() receives alloca-derived pointer","location":{"function":"_ZN4ring4aead4quic12aes_init_12817h227bf127913d9454E"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ring_core_0_17_16000__aes_hw_set_encrypt_key_256() receives alloca-derived pointer","location":{"function":"_ZN4ring4aead4quic12aes_init_25617hb2d402625cf45ec4E"}},
+  {"id":"OMI-006","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ring_core_0_17_16000__aes_hw_set_encrypt_key_128() receives alloca-derived pointer","location":{"function":"_ZN4ring4aead9algorithm16aes_gcm_init_12817h58dce0228cff8653E"}},
+  {"id":"OMI-007","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ring_core_0_17_16000__aes_hw_set_encrypt_key_256() receives alloca-derived pointer","location":{"function":"_ZN4ring4aead9algorithm16aes_gcm_init_25617h1831e299937dded2E"}},
+  {"id":"OMI-008","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc()","location":{"function":"_ZN4ring8testutil8TestCase12consume_bool17hc035b41f793c4407E"}},
+  {"id":"OMI-009","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc()","location":{"function":"_ZN4ring8testutil8TestCase18consume_digest_alg17h16a0c671bc0672bbE"}},
+  {"id":"OMI-010","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-011","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4ring3rsa7keypair7KeyPair16from_components_17h851f1fef3b559621E"}},
+  {"id":"OMI-012","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4ring8testutil8TestCase22consume_optional_bytes17ha2a6e1f4b7775532E"}},
+  {"id":"OMI-013","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4ring3rsa7keypair7KeyPair4sign17h4220f44d5a83f739E"}},
+  {"id":"OMI-014","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN4ring3rsa12verification6verify17h5a3b67de2cf1e661E"}},
+  {"id":"OMI-015","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in _ZN4ring8testutil15parse_test_case17h1e2dd8d412613f48E() was never freed","location":{"function":"_ZN4ring8testutil15parse_test_case17h1e2dd8d412613f48E"}},
+  {"id":"OMI-016","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in _ZN4ring8testutil8from_hex17h78f76dd0c48070d6E() was never freed","location":{"function":"_ZN4ring8testutil8from_hex17h78f76dd0c48070d6E"}}
+]}
+
+error(gpa): memory address 0x1056cda80 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2534:46: 0x10425e7fb in initCapacity (OmniScope)
+                .buffer = try allocator.alloc(u8, capacity),
+                                             ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:636:48: 0x10424a3ef in allocPrint__anon_29128 (OmniScope)
+    var aw = try Writer.Allocating.initCapacity(gpa, fmt.len);
+                                               ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:512:71: 0x104249897 in detectOwnershipTransferViolations (OmniScope)
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+
+error(gpa): memory address 0x1056cdb80 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a687 in allocPrint__anon_29133 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:517:71: 0x1042499b3 in detectOwnershipTransferViolations (OmniScope)
+                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056cdc00 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a87b in allocPrint__anon_29138 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:525:43: 0x104249aa3 in detectOwnershipTransferViolations (OmniScope)
+                    try std.fmt.allocPrint(
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056cdd80 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2534:46: 0x10425e7fb in initCapacity (OmniScope)
+                .buffer = try allocator.alloc(u8, capacity),
+                                             ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:636:48: 0x10424a3ef in allocPrint__anon_29128 (OmniScope)
+    var aw = try Writer.Allocating.initCapacity(gpa, fmt.len);
+                                               ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:512:71: 0x104249897 in detectOwnershipTransferViolations (OmniScope)
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+
+error(gpa): memory address 0x1056cde80 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a687 in allocPrint__anon_29133 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:517:71: 0x1042499b3 in detectOwnershipTransferViolations (OmniScope)
+                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056cdf00 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a87b in allocPrint__anon_29138 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:525:43: 0x104249aa3 in detectOwnershipTransferViolations (OmniScope)
+                    try std.fmt.allocPrint(
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056d0400 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2534:46: 0x10425e7fb in initCapacity (OmniScope)
+                .buffer = try allocator.alloc(u8, capacity),
+                                             ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:636:48: 0x10424a3ef in allocPrint__anon_29128 (OmniScope)
+    var aw = try Writer.Allocating.initCapacity(gpa, fmt.len);
+                                               ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:512:71: 0x104249897 in detectOwnershipTransferViolations (OmniScope)
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+
+error(gpa): memory address 0x1056d0500 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a687 in allocPrint__anon_29133 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:517:71: 0x1042499b3 in detectOwnershipTransferViolations (OmniScope)
+                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056d0580 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a87b in allocPrint__anon_29138 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:525:43: 0x104249aa3 in detectOwnershipTransferViolations (OmniScope)
+                    try std.fmt.allocPrint(
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056d0600 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2534:46: 0x10425e7fb in initCapacity (OmniScope)
+                .buffer = try allocator.alloc(u8, capacity),
+                                             ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:636:48: 0x10424a3ef in allocPrint__anon_29128 (OmniScope)
+    var aw = try Writer.Allocating.initCapacity(gpa, fmt.len);
+                                               ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:512:71: 0x104249897 in detectOwnershipTransferViolations (OmniScope)
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+
+error(gpa): memory address 0x1056d0700 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a687 in allocPrint__anon_29133 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:517:71: 0x1042499b3 in detectOwnershipTransferViolations (OmniScope)
+                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1056d0780 leaked: 
+/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:692:52: 0x1042b0533 in toOwnedSlice (OmniScope)
+            const new_memory = try gpa.alignedAlloc(T, alignment, self.items.len);
+                                                   ^
+/Users/scc/.zvm/0.15.2/lib/std/Io/Writer.zig:2603:33: 0x10425eab7 in toOwnedSlice (OmniScope)
+        return list.toOwnedSlice(a.allocator);
+                                ^
+/Users/scc/.zvm/0.15.2/lib/std/fmt.zig:641:27: 0x10424a87b in allocPrint__anon_29138 (OmniScope)
+    return aw.toOwnedSlice();
+                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:525:43: 0x104249aa3 in detectOwnershipTransferViolations (OmniScope)
+                    try std.fmt.allocPrint(
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+
+error(gpa): memory address 0x1066ea400 leaked: 
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:510:55: 0x10424975b in detectOwnershipTransferViolations (OmniScope)
+                const trace = try self.allocator.alloc(TraceEntry, 3);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:201:42: 0x1041d2cbb in run (OmniScope)
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                                         ^
+/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:153:34: 0x1041d56c7 in run (OmniScope)
+        try self.pass_manager.run(&ctx, &diag);
+                                 ^
+
+error(gpa): memory address 0x1066ea800 leaked: 
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:510:55: 0x10424975b in detectOwnershipTransferViolations (OmniScope)
+                const trace = try self.allocator.alloc(TraceEntry, 3);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:201:42: 0x1041d2cbb in run (OmniScope)
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                                         ^
+/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:153:34: 0x1041d56c7 in run (OmniScope)
+        try self.pass_manager.run(&ctx, &diag);
+                                 ^
+
+error(gpa): memory address 0x1066ef300 leaked: 
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:510:55: 0x10424975b in detectOwnershipTransferViolations (OmniScope)
+                const trace = try self.allocator.alloc(TraceEntry, 3);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:201:42: 0x1041d2cbb in run (OmniScope)
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                                         ^
+/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:153:34: 0x1041d56c7 in run (OmniScope)
+        try self.pass_manager.run(&ctx, &diag);
+                                 ^
+
+error(gpa): memory address 0x1066ef600 leaked: 
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:510:55: 0x10424975b in detectOwnershipTransferViolations (OmniScope)
+                const trace = try self.allocator.alloc(TraceEntry, 3);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:164:55: 0x10424dc87 in auditFunction (OmniScope)
+            try self.detectOwnershipTransferViolations(func, ctx, diag);
+                                                      ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:125:35: 0x10424df6b in audit (OmniScope)
+            try self.auditFunction(func, ctx, diag);
+                                  ^
+/Users/scc/code/zigcode/OmniScope/src/pass/analysis/rust_ffi_auditor.zig:109:43: 0x1041ce5f3 in run (OmniScope)
+        const findings = try auditor.audit(mod, ctx, diag);
+                                          ^
+/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:201:42: 0x1041d2cbb in run (OmniScope)
+            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+                                         ^
+/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:153:34: 0x1041d56c7 in run (OmniScope)
+        try self.pass_manager.run(&ctx, &diag);
+                                 ^
+
+warning: Memory leak detected!

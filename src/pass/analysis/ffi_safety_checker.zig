@@ -20,6 +20,7 @@ const IssueSeverity = @import("../../diag/issue.zig").Severity;
 const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 const RegistrySeverity = @import("../../registry/semantic_registry.zig").Severity;
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
+const type_checker = @import("ffi_type_checker.zig");
 
 /// Maximum number of instructions to scan for NULL guard patterns.
 const NULL_GUARD_SCAN_LIMIT: u32 = 20;
@@ -376,30 +377,7 @@ pub fn staticBufferIssueKind() IssueKind {
 /// Returns:
 ///   - Static string slice describing the type
 pub fn describeLLVMType(ty: c.LLVMTypeRef) []const u8 {
-    const type_kind = c.LLVMGetTypeKind(ty);
-    switch (type_kind) {
-        c.LLVMVoidTypeKind => return "void",
-        c.LLVMFloatTypeKind => return "float",
-        c.LLVMDoubleTypeKind => return "double",
-        c.LLVMX86_FP80TypeKind => return "fp80",
-        c.LLVMFP128TypeKind => return "fp128",
-        c.LLVMPPC_FP128TypeKind => return "ppc_fp128",
-        c.LLVMLabelTypeKind => return "label",
-        c.LLVMIntegerTypeKind => {
-            const bits = c.LLVMGetIntTypeWidth(ty);
-            if (bits == 1) return "i1";
-            if (bits == 8) return "i8";
-            if (bits == 16) return "i16";
-            if (bits == 32) return "i32";
-            if (bits == 64) return "i64";
-            return "integer";
-        },
-        c.LLVMFunctionTypeKind => return "function",
-        c.LLVMStructTypeKind => return "struct",
-        c.LLVMArrayTypeKind => return "array",
-        c.LLVMPointerTypeKind => return "pointer",
-        else => return "unknown",
-    }
+    return type_checker.describeLLVMType(ty);
 }
 
 /// Map a SemanticRegistry RiskKind to an IssueKind for reporting.

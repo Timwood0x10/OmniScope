@@ -266,12 +266,12 @@ pub const ABIMismatchPass = struct {
             const type_str = try getTypeString(ctx.allocator, arg_type);
 
             if (isPackedStructType(type_str)) {
-                try reportPackedStructFFI(ctx, func_name, callee_name, type_str, diag);
+                try reportPackedStructFFI(ctx, inst, func_name, callee_name, type_str, diag);
                 stats.packed_struct_violations += 1;
             }
 
             if (isEndianSensitive(type_str)) {
-                try reportEndiannessRisk(ctx, func_name, callee_name, type_str, diag);
+                try reportEndiannessRisk(ctx, inst, func_name, callee_name, type_str, diag);
                 stats.endianness_warnings += 1;
             }
 
@@ -279,7 +279,7 @@ pub const ABIMismatchPass = struct {
         }
 
         if (isVariadicFunction(callee_name)) {
-            try reportVariadicWarning(ctx, func_name, callee_name, diag);
+            try reportVariadicWarning(ctx, inst, func_name, callee_name, diag);
             stats.variadic_issues += 1;
         }
     }
@@ -317,13 +317,42 @@ pub const ABIMismatchPass = struct {
 // Reporting
 // ============================================================================
 
+/// Check if any call instruction argument pointer is on an FFI danger path.
+/// This is the unified MemoryGraph gate for all ABI mismatch reporting functions.
+/// Uses LLVMGetNumArgOperands to correctly iterate only call arguments
+/// (excluding the callee operand which is included in LLVMGetNumOperands).
+/// Returns true if at least one relevant pointer is found, false otherwise.
+fn hasRelevantPointerOnFFIPath(ctx: *PassContext, inst: c.LLVMValueRef) bool {
+    if (@intFromPtr(inst) == 0) return false; // No inst info, conservative: suppress reporting
+
+    var arg_idx: u32 = 0;
+    while (arg_idx < c.LLVMGetNumArgOperands(inst)) : (arg_idx += 1) {
+        const arg = c.LLVMGetOperand(inst, arg_idx);
+        if (@intFromPtr(arg) != 0) {
+            const ptr_val = @as(u64, @intFromPtr(arg));
+            if (ctx.isRelevantAlloc(ptr_val)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 fn reportPackedStructFFI(
     ctx: *PassContext,
+    inst: c.LLVMValueRef,
     func_name: []const u8,
     callee_name: []const u8,
     type_str: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1e: MemoryGraph gate - only report packed struct ABI mismatches when
+    // at least one call argument pointer is on an FFI danger path.
+    if (!hasRelevantPointerOnFFIPath(ctx, inst)) {
+        diag.debug("[PACKED-FFI SUPPRESSED] No relevant pointers on FFI path in {s} -> {s}", .{ func_name, callee_name });
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -352,11 +381,19 @@ fn reportPackedStructFFI(
 
 fn reportEndiannessRisk(
     ctx: *PassContext,
+    inst: c.LLVMValueRef,
     func_name: []const u8,
     callee_name: []const u8,
     type_str: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1e: MemoryGraph gate - only report endianness risks when at least
+    // one call argument pointer is on an FFI danger path.
+    if (!hasRelevantPointerOnFFIPath(ctx, inst)) {
+        diag.debug("[ENDIAN-RISK SUPPRESSED] No relevant pointers on FFI path in {s} -> {s}", .{ func_name, callee_name });
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -385,10 +422,18 @@ fn reportEndiannessRisk(
 
 fn reportVariadicWarning(
     ctx: *PassContext,
+    inst: c.LLVMValueRef,
     func_name: []const u8,
     callee_name: []const u8,
     diag: *DiagnosticWriter,
 ) !void {
+    // E2-1e: MemoryGraph gate - only report variadic warnings when at least
+    // one call argument pointer is on an FFI danger path.
+    if (!hasRelevantPointerOnFFIPath(ctx, inst)) {
+        diag.debug("[VARIADIC SUPPRESSED] No relevant pointers on FFI path in {s} -> {s}", .{ func_name, callee_name });
+        return;
+    }
+
     const location = Location.init(func_name);
 
     const trace = try ctx.allocator.alloc(TraceEntry, 2);

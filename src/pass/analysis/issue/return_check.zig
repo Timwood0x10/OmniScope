@@ -59,16 +59,25 @@ pub const ReturnCheckPass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
+        const noise_filter = @import("../../../semantics/noise_filter.zig");
+
         var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
         if (@intFromPtr(func) == 0) return;
 
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            // Skip safe zone / runtime internal functions
+            const func_name_raw = c.LLVMGetValueName(func);
+            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "";
+            if (func_name.len > 0) {
+                const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
+                if (!classification.origin.shouldReportByDefault()) continue;
+            }
+
             // Function-level error isolation
             const count = analyzeFunction(ctx, func, diag) catch |err| {
-                const func_name_raw = c.LLVMGetValueName(func);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                diag.warn("ReturnCheck: skipped function due to error: {} ({s})", .{ err, func_name });
+                const err_name = if (func_name.len > 0) func_name else "unknown";
+                diag.warn("ReturnCheck: skipped function due to error: {} ({s})", .{ err, err_name });
                 ctx.recordDegradedFunction();
                 continue;
             };

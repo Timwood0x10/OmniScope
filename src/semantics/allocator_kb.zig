@@ -253,13 +253,20 @@ pub const AllocatorKB = struct {
 
     /// Checks if a function returns a pointer to static internal storage.
     /// These functions must NOT be freed by the caller and are NOT thread-safe.
-    /// Returns the AllocatorInfo if found, null otherwise.
+    /// Returns the AllocatorInfo if found AND kind==.static_buffer, null otherwise.
+    ///
+    /// Issue6 IMPROVEMENT: This filter prevents false positives where malloc/calloc
+    /// functions were incorrectly classified as static buffer functions.
+    /// Without this check, any allocator entry would match, leading to incorrect
+    /// lifetime analysis (e.g., treating malloc() return as non-owning).
     pub fn isStaticBufferFunction(kb: *AllocatorKB, name: []const u8) ?AllocatorInfo {
-        return kb.allocators.get(name) orelse {
-            // Also check with _r suffix (reentrant variants are NOT static).
-            // ctime_r, asctime_r etc. use caller-provided buffers — safe.
-            return null;
-        };
+        // R8-H10 FIX: Only return info for .static_buffer kind, not malloc/calloc/etc.
+        if (kb.allocators.get(name)) |info| {
+            if (info.kind == .static_buffer) {
+                return info;
+            }
+        }
+        return null;
     }
 
     /// Checks if a function name is a known static buffer function.

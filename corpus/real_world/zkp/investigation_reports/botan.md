@@ -23,7 +23,7 @@
 ### 2.1 编译命令
 
 ```bash
-# 配置构建
+# Configuration构建
 ./configure.py --cc=clang --disable-shared --with-build-dir=build
 
 # AES 模块
@@ -36,7 +36,7 @@ clang++ -std=c++20 -O2 -S -emit-llvm \
   -I./build/build/include/public -I./build/build/include/internal -I./src/lib \
   src/lib/hash/sha2_32/sha2_32.cpp -o llvm_ir/sha2_32.ll
 
-# 其他核心模块
+# 其他Core模块
 clang++ -std=c++20 -O2 -S -emit-llvm ... src/lib/hash/blake2/blake2b.cpp -o llvm_ir/blake2b.ll
 ```
 
@@ -55,7 +55,7 @@ clang++ -std=c++20 -O2 -S -emit-llvm ... src/lib/hash/blake2/blake2b.cpp -o llvm
 
 ---
 
-## 3. OmniScope 检测结果
+## 3. OmniScope Detection Results
 
 ### 3.1 检测摘要
 
@@ -77,7 +77,7 @@ clang++ -std=c++20 -O2 -S -emit-llvm ... src/lib/hash/blake2/blake2b.cpp -o llvm
 [INFO] FFIUnsafe: Analyzed 974 boundaries, found 0 issues
 ```
 
-**结论**: botan 分析结果为 **0 问题**
+**Conclusion**: botan Analysis Results为 **0 问题**
 
 ---
 
@@ -138,7 +138,7 @@ void AES_128::clear()
 - 使用 `secure_vector<uint32_t>` 管理密钥内存
 - `resize()` 自动处理内存分配
 - `zap()` 函数安全清除敏感数据后释放
-- C++ RAII 模式确保内存安全
+- C++ RAII 模式确保Memory Safety
 
 ---
 
@@ -247,7 +247,7 @@ void validate_key_length(size_t length)
 **分析**:
 - 所有资源使用 RAII 管理
 - 异常抛出时自动清理资源
-- 无内存泄漏风险
+- 无Memory Leak风险
 
 ---
 
@@ -286,19 +286,19 @@ define void @_ZN5botan13secure_vectorIjE6resizeEm(%"class.botan::secure_vector"*
 | 不足 | 描述 | 影响 |
 |------|------|------|
 | **C++ RAII 识别不足** | 无法识别智能指针和容器的内存管理 | 可能漏报 C++ 特有问题 |
-| **析构函数追踪不完整** | 无法完整追踪析构函数中的释放 | 可能误判内存泄漏 |
+| **析构函数追踪不完整** | 无法完整追踪析构函数中的释放 | 可能误判Memory Leak |
 
 ### 6.2 改进方向
 
-| 方向 | 具体措施 | 预期效果 |
+| 方向 | 具体措施 | Expected效果 |
 |------|----------|----------|
 | **C++ 语义增强** | 识别 `std::unique_ptr`, `std::shared_ptr` | 更精确的 C++ 分析 |
-| **析构函数分析** | 追踪析构函数中的资源释放 | 减少内存泄漏误报 |
+| **析构函数分析** | 追踪析构函数中的资源释放 | 减少Memory Leak误报 |
 | **异常安全分析** | 识别异常处理路径 | 更完整的安全分析 |
 
 ---
 
-## 7. 结论
+## 7. Conclusion
 
 ### 7.1 botan 代码质量
 
@@ -313,9 +313,9 @@ define void @_ZN5botan13secure_vectorIjE6resizeEm(%"class.botan::secure_vector"*
 
 | 方面 | 评价 |
 |------|------|
-| FFI 边界检测 | ✅ 准确 |
+| FFI Boundary检测 | ✅ 准确 |
 | 内存分配追踪 | ✅ 有效 |
 | UAF 检测 | ✅ 无误报 |
 | C++ 支持 | ⚠️ 需增强 |
 
-**总结**: botan 是现代 C++ 密码学库的典范，完全使用 RAII 内存管理模式，无手动内存管理。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析 RAII 风格代码时表现良好。
+**Summary**: botan 是现代 C++ 密码学库的典范，完全使用 RAII 内存管理模式，无手动内存管理。OmniScope 正确识别了这一点，没有产生误报。这表明 OmniScope 在分析 RAII 风格代码时表现良好。

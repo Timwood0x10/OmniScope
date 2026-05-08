@@ -11,6 +11,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const CommonTypes = @import("../../common/types.zig");
+const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
+const Language = FFIBoundary.Language;
 
 const Pass = @import("../pass.zig").Pass;
 const PassContext = @import("../pass.zig").PassContext;
@@ -111,16 +113,6 @@ pub const FFIAnalysisPass = struct {
         language: Language,
         value_id: u64,
         inst_ptr: c.LLVMValueRef,
-    };
-
-    const Language = enum {
-        unknown,
-        c,
-        rust,
-        cpp,
-        zig,
-        swift,
-        go,
     };
 
     pub fn init(allocator: Allocator, store: *FactStore) FFIAnalysisPass {
@@ -236,7 +228,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -295,7 +287,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.8: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -333,8 +325,8 @@ pub const FFIAnalysisPass = struct {
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
                             };
-                            if (self.free_sites.get(ptr_value_id)) |list| {
-                                try list.append(free_info);
+                            if (self.free_sites.getPtr(ptr_value_id)) |list_ptr| {
+                                try list_ptr.append(free_info);
                             } else {
                                 var list = std.ArrayList(FreeInfo).init(self.allocator);
                                 errdefer list.deinit();
@@ -342,8 +334,8 @@ pub const FFIAnalysisPass = struct {
                                 try self.free_sites.put(ptr_value_id, list);
                             }
                             // v0.1.6: Track which BB this free is in
-                            if (self.free_bb_map.get(ptr_value_id)) |bb_list| {
-                                try bb_list.append(bb);
+                            if (self.free_bb_map.getPtr(ptr_value_id)) |bb_list_ptr| {
+                                try bb_list_ptr.append(bb);
                             } else {
                                 var bb_list = std.ArrayList(c.LLVMBasicBlockRef).init(self.allocator);
                                 errdefer bb_list.deinit();
@@ -382,16 +374,35 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn detectOwnershipMismatch(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
-        // Check for cross-language free mismatches
+        // H21 FIX: Optimize from O(N×M) Cartesian product to O(N+M) using HashMap index.
+        // Previous implementation nested loops over all allocations × all frees,
+        // comparing every pair regardless of pointer identity.
+        // New approach: Index free sites by pointer, only compare matching pairs.
+
+        // Build index: ptr_value → []FreeInfo
+        var free_index = std.AutoHashMap(u64, usize).init(self.allocator);
+        defer free_index.deinit();
+
+        {
+            var free_iter = self.free_sites.iterator();
+            var idx: usize = 0;
+            while (free_iter.next()) |entry| {
+                const ptr_val = entry.key_ptr.*;
+                try free_index.put(ptr_val, idx);
+                idx += 1;
+            }
+        }
+
+        // Now iterate allocations and check only matching frees
         var alloc_iter = self.allocation_sites.iterator();
         while (alloc_iter.next()) |alloc_entry| {
+            const ptr_val = alloc_entry.key_ptr.*;
             const alloc_info = alloc_entry.value_ptr.*;
 
-            var free_iter = self.free_sites.iterator();
-            while (free_iter.next()) |free_entry| {
-                const free_list = free_entry.value_ptr.*;
+            // Only check if this pointer has corresponding frees
+            if (free_index.get(ptr_val)) |free_idx| {
+                const free_list = self.free_sites.items[free_idx].value_ptr.*;
 
-                // Iterate through all FreeInfo entries for this pointer
                 for (free_list.items) |free_info| {
                     // Check if allocation and free are from different languages
                     if (alloc_info.language != free_info.language and
@@ -413,6 +424,7 @@ pub const FFIAnalysisPass = struct {
                     }
                 }
             }
+            // If no matching frees found, skip (no mismatch possible)
         }
     }
 
@@ -699,7 +711,9 @@ test "FFIAnalysisPass - name is ownership-violation" {
 }
 
 test "FFIAnalysisPass - detectLanguage fallback" {
-    var pass = FFIAnalysisPass.init(std.testing.allocator, undefined);
+    var fact_store = @import("../../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var pass = FFIAnalysisPass.init(std.testing.allocator, &fact_store);
     defer pass.deinit();
 
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_ZN4core3ptr"));

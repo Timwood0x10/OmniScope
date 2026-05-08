@@ -50,31 +50,31 @@ const known_fp_patterns = [_]KnownFPPattern{
     // These are duplicated here as defense-in-depth — if a pass bypasses
     // layer1_NameBasedFilter, the whitelist still catches them.
 
-    .{ .pattern = "llvm.threadlocal.address", .kind = .prefix, .reason = "Rust std TLS access (BLST #1 FP)", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.lifetime.start", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.lifetime.end", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.dbg.declare", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.dbg.value", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.assume", .kind = .prefix, .reason = "Optimizer hint intrinsic", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.expect", .kind = .prefix, .reason = "Branch prediction hint", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.coro.begin", .kind = .prefix, .reason = "Coroutine frame (Wasmtime)", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.coro.end", .kind = .prefix, .reason = "Coroutine cleanup (Wasmtime)", .since_version = "v0.1.8" },
-    .{ .pattern = "llvm.gc.root", .kind = .prefix, .reason = "GC root intrinsic", .since_version = "v0.1.8" },
+    .{ .pattern = "llvm.threadlocal.address", .kind = .prefix, .reason = "Rust std TLS access (BLST #1 FP)", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.lifetime.start", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.lifetime.end", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.dbg.declare", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.dbg.value", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.assume", .kind = .prefix, .reason = "Optimizer hint intrinsic", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.expect", .kind = .prefix, .reason = "Branch prediction hint", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.coro.begin", .kind = .prefix, .reason = "Coroutine frame (Wasmtime)", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.coro.end", .kind = .prefix, .reason = "Coroutine cleanup (Wasmtime)", .since_version = "v0.1.7" },
+    .{ .pattern = "llvm.gc.root", .kind = .prefix, .reason = "GC root intrinsic", .since_version = "v0.1.7" },
 
     // ── Category 2: Rust Standard Library Safe Primitives
 
-    .{ .pattern = "sync_channel::", .kind = .contains, .reason = "Rust std safe MPSC channel (BLST)", .since_version = "v0.1.8" },
-    .{ .pattern = "mpsc::channel::", .kind = .contains, .reason = "Rust std safe channel (BLST)", .since_version = "v0.1.8" },
-    .{ .pattern = "Arc::<", .kind = .contains, .reason = "Rust Arc shared ownership (BLST)", .since_version = "v0.1.8" },
-    .{ .pattern = "Waker::", .kind = .contains, .reason = "Rust async runtime Waker (Wasmtime)", .since_version = "v0.1.8" },
-    .{ .pattern = "RawVec::", .kind = .contains, .reason = "Rust Vec internals (various)", .since_version = "v0.1.8" },
-    .{ .pattern = "__rust_alloc", .kind = .contains, .reason = "Rust global allocator shim", .since_version = "v0.1.8" },
-    .{ .pattern = "__rust_dealloc", .kind = .contains, .reason = "Rust global deallocator shim", .since_version = "v0.1.8" },
+    .{ .pattern = "sync_channel::", .kind = .contains, .reason = "Rust std safe MPSC channel (BLST)", .since_version = "v0.1.7" },
+    .{ .pattern = "mpsc::channel::", .kind = .contains, .reason = "Rust std safe channel (BLST)", .since_version = "v0.1.7" },
+    .{ .pattern = "Arc::<", .kind = .contains, .reason = "Rust Arc shared ownership (BLST)", .since_version = "v0.1.7" },
+    .{ .pattern = "Waker::", .kind = .contains, .reason = "Rust async runtime Waker (Wasmtime)", .since_version = "v0.1.7" },
+    .{ .pattern = "RawVec::", .kind = .contains, .reason = "Rust Vec internals (various)", .since_version = "v0.1.7" },
+    .{ .pattern = "__rust_alloc", .kind = .contains, .reason = "Rust global allocator shim", .since_version = "v0.1.7" },
+    .{ .pattern = "__rust_dealloc", .kind = .contains, .reason = "Rust global deallocator shim", .since_version = "v0.1.7" },
 
     // ── Category 3: Project-Specific Contextual Patterns
 
-    .{ .pattern = "uv__socket", .kind = .contains, .reason = "libuv internal socket + caller closes (design choice)", .since_version = "v0.1.8" },
-    .{ .pattern = "sqlite3MemMalloc", .kind = .exact, .reason = "SQLite custom allocator (not system malloc)", .since_version = "v0.1.8" },
+    .{ .pattern = "uv__socket", .kind = .contains, .reason = "libuv internal socket + caller closes (design choice)", .since_version = "v0.1.7" },
+    .{ .pattern = "sqlite3MemMalloc", .kind = .exact, .reason = "SQLite custom allocator (not system malloc)", .since_version = "v0.1.7" },
 };
 
 /// Check if a function name matches any known false-positive pattern.

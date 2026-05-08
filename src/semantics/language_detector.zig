@@ -68,7 +68,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     const PERSONALITY_WEIGHT: f32 = 0.8;
     const GLOBALS_WEIGHT: f32 = 0.6;
 
-    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, swift, unknown]
+    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, swift, java, unknown]
 
     if (sampling_result) |r| {
         const lang_idx = langToIndex(r.language);
@@ -89,11 +89,21 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     var max_vote: f32 = 0;
     var dominant: Language = .unknown;
     var total_weight: f32 = 0;
+    // Track which detection method contributed most to the winning language
+    var winning_method: DetectionMethod = .sampling;
     for (weighted_votes, 0..) |vote, i| {
         total_weight += vote;
         if (vote > max_vote) {
             max_vote = vote;
             dominant = indexToLang(i);
+            // Determine which method(s) voted for this language
+            if (personality_result != null and personality_result.?.language == dominant) {
+                winning_method = .personality;
+            } else if (globals_result != null and globals_result.?.language == dominant) {
+                winning_method = .globals;
+            } else if (sampling_result != null and sampling_result.?.language == dominant) {
+                winning_method = .sampling;
+            }
         }
     }
 
@@ -109,7 +119,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     return .{
         .language = dominant,
         .confidence = confidence,
-        .method = .sampling, // Primary method for reporting
+        .method = winning_method,
     };
 }
 
@@ -121,7 +131,8 @@ fn langToIndex(lang: Language) usize {
         .cpp => 3,
         .c => 4,
         .swift => 5,
-        .unknown => 6,
+        .java => 6,
+        .unknown => 7,
     };
 }
 
@@ -133,6 +144,7 @@ fn indexToLang(idx: usize) Language {
         3 => .cpp,
         4 => .c,
         5 => .swift,
+        6 => .java,
         else => .unknown,
     };
 }
@@ -304,7 +316,7 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     };
 
     var max_count: u32 = 0;
-    var dominant: Language = .c;
+    var dominant: Language = .unknown;
     for (counts) |entry| {
         if (entry.count > max_count) {
             max_count = entry.count;
@@ -358,7 +370,7 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         // We scan for them by checking function names directly since
         // LLVM-C doesn't expose a direct "getPersonality" API in older versions.
 
-        if (std.mem.eql(u8, name, "@rust_eh_personality") or
+        if (std.mem.eql(u8, name, "rust_eh_personality") or
             std.mem.indexOf(u8, name, "rust_eh_personality") != null)
         {
             rust_score += PERSONALITY_WEIGHT;

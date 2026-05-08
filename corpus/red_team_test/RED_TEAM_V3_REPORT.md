@@ -18,7 +18,7 @@
 | **subtle\_unsafe\_rs.rs** (Rust) | **20**               | 1             | **6**           | **6**            | **\~30-40%**   | 🟡 **显著改善** |
 | **合计**                           | **40**               | 2             | **20**          | **24**           | **\~50%**      | —           |
 
-### 🟢 v3.1 → v3.2 变化 (本次修复)
+### 🟢 v3.1 → v3.2 变化 (本次Fix)
 
 | 指标                             | v3.1 (Before)        | v3.2 (After LG + QFix) | 变化                | 原因                  |
 | ------------------------------- | ------------------- | --------------------- | ----------------- | ------------------- |
@@ -27,16 +27,16 @@
 | **C: Zone Issues**              | 13                  | **14**                 | +1                | 分类微调              |
 | **Rust: Total Issues**          | 6                   | **6**                  | → 无变化           | 零回归                |
 | **Rust: CROSS-LANG MISMATCH**   | 3                   | **3**                  | → 保持            | Rule 3 对 Rust 照常运行  |
-| **GPA Memory Leak**             | 0                   | **0**                  | ✅ 保持            | catch unreachable 已修复 |
+| **GPA Memory Leak**             | 0                   | **0**                  | ✅ 保持            | catch unreachable 已Fix |
 | **zig build test**              | 358/358 PASS        | **358/358 PASS**       | ✅                | 全部回归通过           |
 
-### 核心发现
+### Core发现
 
 1. **Language Gate 是关键的 precision 提升**
    - `ctx.isRustModule()` 门控使 Rule 1/2/3/6/7 仅在 Rust 模块上运行
    - C 文件的 8 个 "Rust _Znwm allocation freed by C free" FP 完全消除
    - Rule 4(unsafe_ffi_call) 和 Rule 5(stack_escape) 作为通用规则继续对所有语言生效
-2. **Code Quality 修复提升鲁棒性**
+2. **Code Quality Fix提升鲁棒性**
    - `catch unreachable` → `error{OutOfMemory}!` (rust_ffi_auditor.zig L85)
    - `indexOf` → `eql \|\| endsWith` (free_validation.zig L368)
    - 消除了 OOM 时 UB 风险和 'my_custom_free' 匹配 'free' 的 FP 风险
@@ -51,7 +51,7 @@
 
 ### 检出矩阵
 
-| #       | Bug 名称                      | FFI 边界类型                                 | 检出?        | Issue 类别        | 映射证据                                                           | 判定                 |
+| #       | Bug 名称                      | FFI Boundary类型                                 | 检出?        | Issue 类别        | 映射证据                                                           | 判定                 |
 | ------- | --------------------------- | ---------------------------------------- | ---------- | --------------- | -------------------------------------------------------------- | ------------------ |
 | **01**  | `store_borrowed_ptr`        | Borrowed ptr stored globally             | ✅ **TP**   | Borrow escape   | g_borrowed = borrowed (param→global). BE ×3 之一                | **TP** ✅           |
 | **02**  | `size_truncation_copy`      | FFI usize→int truncation                 | ❌ **FN**   | —               | FFITypeMismatch: 0. trunc heuristic 未触发 (C IR 中可能无显式 trunc)    | **FN** 🔴          |
@@ -88,8 +88,8 @@ Total reported:   18 issues (was 26 in v3.1, -8 FP via Language Gate)
 **v3.1 → v3.2**: 26 → **18** (-8 FP, **precision ↑↑**)
 
 **消除的 8 个 FP**: 全部是 Rule 3 (`cross_lang_alloc_mismatch`) 在 C 代码上的误报：
-- 原因：Rule 3 检测 "Rust _Znwm allocation freed by C free"，但 C 代码中 `_Znwm` 实际就是 `malloc`
-- 修复：`if (is_rust)` 门控，Rule 3 仅对 `.language == .rust` 的模块运行
+- 原因：Rule 3 检测 "Rust _Znwm allocation freed by C free"，但 C 代码中 `_Znwm` Actual就是 `malloc`
+- Fix：`if (is_rust)` 门控，Rule 3 仅对 `.language == .rust` 的模块运行
 
 ***
 
@@ -156,7 +156,7 @@ FFI zone functions:      132
 Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 ```
 
-### 🟢 改善总结 (v3.0 → v3.2)
+### 🟢 改善Summary (v3.0 → v3.2)
 
 | 能力                        | v3.0 (Before) | v3.1 (P0-P1) | v3.2 (LG+QFix) | 贡献 Task    |
 | ------------------------- | ---------- | ---------- | ------------- | ---------- |
@@ -193,7 +193,7 @@ Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 
 ### ✅ 已完成 (Emergency Optimization P0-P2 + Quality Fixes)
 
-| #    | Task                           | 目标                   | 实际效果                          | 状态          |
+| #    | Task                           | Objective                   | Actual效果                          | 状态          |
 | ---- | ------------------------------ | -------------------- | ----------------------------- | ----------- |
 | P0-1 | Rust 分配器注册 (__rust_alloc*) | RS-01/02/04/15/18 可检 | **allocs: 0→5, UAF: 0→4**     | ✅ **PASS**  |
 | P0-2 | FREE_FUNCTIONS 扩展             | RS-14/18 可检          | **cross_lang mismatch: 0→3** | ✅ **PASS**  |
@@ -208,7 +208,7 @@ Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 
 ### 🔲 下一步 (P3 — 高价值)
 
-| #        | 修复项                                     | 目标 Bugs                                                    | 复杂度    | 预期收益                              |
+| #        | Fix项                                     | Objective Bugs                                                    | 复杂度    | Expected收益                              |
 | -------- | --------------------------------------- | ---------------------------------------------------------- | ------ | --------------------------------- |
 | **P3-1** | **FFI Return Value Tainting**           | RS-08(null ctx), RS-12(null deref), FFI-06(untrusted size) | ~50 行 | 标记 FFI 返回值需 validation/null-check |
 | **P3-2** | **Trunc Heuristic 增强**                  | RS-05(oversliced), FFI-02(size truncation)                 | ~30 行 | MIR 层或 debug info 补充截断检测          |
@@ -217,7 +217,7 @@ Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 
 ### 📊 投资回报率估算
 
-| 投资                          | 预期 Rust TP 提升   | 当前 TP | 目标 TP        |
+| 投资                          | Expected Rust TP 提升   | 当前 TP | Objective TP        |
 | --------------------------- | --------------- | ----- | ------------ |
 | 已完成 (P0-P2+LG+Q, ~320 行) | 0% → **30-40%** | 6/20  | 6-8/20       |
 | P3-1 + P3-2 (~80 行)        | → **45-55%**    | 6/20  | **9-11/20**  |
@@ -225,9 +225,9 @@ Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 
 ***
 
-## 六、结论
+## 六、Conclusion
 
-### OmniScope 当前真实准确率 (基于纯 FFI benchmark, v3.2)
+### OmniScope 当前真实Accuracy (基于纯 FFI benchmark, v3.2)
 
 | 维度                 | C FFI         | Rust FFI         | 综合                |
 | ------------------ | ------------- | ---------------- | ----------------- |
@@ -240,9 +240,9 @@ Total issues reported:   6 (all Zone, all genuine FFI boundary bugs)
 
 ### 最重要的一句话
 
-> **v3.2 通过 Language Gate 将 C 代码 precision 从 ~65% 提升到 ~78%（消除 8 个 cross_lang FP），同时通过 code quality fix 消除了 OOM UB 风险和 substring matching FP。OmniScope 现在真正做到了「专注于 FFI/unsafe boundary」— 所有报告的问题都是跨语言边界的安全问题。**
+> **v3.2 通过 Language Gate 将 C 代码 precision 从 ~65% 提升到 ~78%（消除 8 个 cross_lang FP），同时通过 code quality fix 消除了 OOM UB 风险和 substring matching FP。OmniScope 现在真正做到了「专注于 FFI/unsafe boundary」— 所有报告的问题都是Cross-Language边界的Security Issue。**
 
-### 已应用的完整修复清单
+### 已应用的完整Fix清单
 
 | 文件                                                                              | 改动                                                           | 版本    |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------- |
@@ -284,6 +284,6 @@ zig fmt --check src/  # clean
 - [subtle_ffi_bugs.ll](subtle_ffi_bugs.ll) — 945 lines IR
 - [subtle_unsafe_rs.rs](subtle_unsafe_rs.rs) — 20 unsafe+FFI bugs + 1 control (Rust source)
 - [subtle_unsafe_rs.ll](subtle_unsafe_rs.ll) — 4476 lines IR
-- [ROOT_CAUSE_DIAGNOSIS.md](ROOT_CAUSE_DIAGNOSIS.md) — 源码级根因诊断
+- [ROOT_CAUSE_DIAGNOSIS.md](ROOT_CAUSE_DIAGNOSIS.md) — 源码级Root Cause诊断
 - [rust_ffi_filter.md](../plan/lang_ffi_analysis/rust_ffi_filter.md) — Rust FFI 过滤规范 (Part II 更新)
 - [todolist.md](../../todolist.md) — Emergency Optimization 计划 + 实测报告

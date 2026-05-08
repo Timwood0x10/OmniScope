@@ -1,13 +1,13 @@
-# OmniScope Investigation Report Index v0.1.6
+# OmniScope Investigation Report Index v0.1.7
 
-**Last Updated**: 2026-05-04
-**Version**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**Last Updated**: 2026-05-06
+**Version**: v0.1.7 (24 Bugs Fixed)
 
 ---
 
 ## Report List
 
-All reports have been updated to **v0.1.6** with latest 17-file benchmark data.
+All reports have been updated to **v0.1.7** with 24 bugs fixed and 340/340 tests passing.
 
 ### 📊 Core Reports (Must Read)
 
@@ -17,6 +17,8 @@ All reports have been updated to **v0.1.6** with latest 17-file benchmark data.
 | [accuracy_validation](../zh/accuracy_validation.md) | ZH | 准确性验证报告 |
 | [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md) | EN | **Rust FFI Restoration** — Phase 1+2+3 fix details, TP 0%→20% |
 | [rust_ffi_restoration_v016](../zh/rust_ffi_restoration_v016.md) | ZH | Rust FFI 恢复调查报告 |
+| [v018_bug_fix_report](./v018_bug_fix_report.md) | EN | **v0.1.7 Bug Fix Report** — 24 bugs fixed, 340/340 tests pass |
+| [v018_bug_fix_report](../zh/v018_bug_fix_report.md) | ZH | v0.1.7 BugFix报告 |
 
 ### 🔬 Project-Specific Reports
 
@@ -32,27 +34,29 @@ All reports have been updated to **v0.1.6** with latest 17-file benchmark data.
 
 ---
 
-## v0.1.6 Key Metrics Summary
+## v0.1.7 Key Metrics Summary
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║              OmniScope v0.1.6 — Final Summary               ║
+║              OmniScope v0.1.7 — Bug Fix Summary              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                                ║
-║  📁 Test Files:        17 (Red Team 8 + FFI-Dense 3 + RW 6)   ║
-║  🐛 Total Issues:      548                                     ║
-║  👆 Ptrs Tracked:      27076                                   ║
-║  ⚠️  Violations:       251                                     ║
-║  🔗 FFI Boundaries:    9372                                    ║
+║  🐛 Bugs Identified:   24                                      ║
+║  ✅ Bugs Fixed:        24 (100%)                               ║
+║  🧪 Tests Passing:     340/340                                 ║
 ║                                                                ║
-║  🧪 Test Coverage:     92% (191 tests)                         ║
-║  🎯 Rust FFI TP Rate:  20% (4/20 subtle_unsafe_rs)             ║
-║  💯 Precision:         ~88% (overall)                          ║
-║  📉 FP Rate:           ~14%                                    ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ║
+║  CRITICAL Bugs:        3  →  0  (all fixed)                    ║
+║  HIGH Bugs:            5  →  0  (all fixed)                    ║
+║  MEDIUM Bugs:          7  →  0  (all fixed)                    ║
+║  LOW Bugs:             3  →  0  (all fixed)                    ║
+║  NEW in v0.1.7:        4  →  0  (all fixed)                    ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ║
 ║                                                                ║
-║  🔧 Fixes Applied:     14 (Phase 1+2+3)                        ║
-║  🗑️  Dead Code Removed: -700 lines                            ║
-║  📝 Reports Updated:    22 files (zh + en)                     ║
+║  🔧 Memory Safety:     get→getPtr, errdefer patterns           ║
+║  🔧 API Correctness:   deinit() fixes                          ║
+║  🔧 JSON Compliance:   lowercase hex (\uXXXX)                  ║
+║  🔧 Error Handling:    catch unreachable→try                   ║
 ║                                                                ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
@@ -65,12 +69,14 @@ All reports have been updated to **v0.1.6** with latest 17-file benchmark data.
 |---------|------|--------------|
 | v0.1.5 | 2026-04-15 | Initial release |
 | v0.1.6 | 2026-04-27 | FP suppression + Zone Classifier |
-| **v0.1.6** | **2026-05-04** | **Phase 1+2+3 comprehensive fixes + dead code cleanup + full benchmark** |
+| v0.1.6 | 2026-05-04 | Phase 1+2+3 comprehensive fixes + dead code cleanup |
+| **v0.1.7** | **2026-05-06** | **24 bugs fixed, 340/340 tests pass** |
 
 ---
 
 ## Quick Navigation
 
+- **v0.1.7 fix details?** → [v018_bug_fix_report](./v018_bug_fix_report.md)
 - **Overall effectiveness?** → [accuracy_validation](./accuracy_validation.md)
 - **Rust FFI fix details?** → [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md)
 - **Specific project data?** → Select project report above

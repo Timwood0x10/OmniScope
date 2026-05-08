@@ -89,11 +89,10 @@ pub const RustFfiAuditor = struct {
     }
 
     pub fn deinit(self: *RustFfiAuditor) void {
-        for (self.findings.items) |finding| {
-            // func_name and reason are allocator-owned slices from allocPrint/Location.init
-            self.allocator.free(finding.func_name);
-            self.allocator.free(finding.reason);
-        }
+        // C4 FIX: Don't free func_name and reason - they are NOT owned by this struct.
+        // - func_name comes from LLVMGetValueName (LLVM-owned, must not free)
+        // - reason is always a string literal (comptime, must not free)
+        // Only the findings ArrayList itself was allocated by us.
         self.findings.deinit(self.allocator);
     }
 
@@ -229,6 +228,9 @@ pub const RustFfiAuditor = struct {
 
     /// Detect cross-language allocation mismatch (Rust _Znwm → C free)
     fn detectCrossLangMismatch(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        var visited = std.AutoHashMap(usize, void).init(self.allocator);
+        defer visited.deinit();
+
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -246,6 +248,13 @@ pub const RustFfiAuditor = struct {
                 const name_slice = std.mem.sliceTo(callee_name, 0);
 
                 if (!isCFreeCall(name_slice)) continue;
+
+                // Get the pointer argument to free() and trace its origin
+                const ptr_arg = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(ptr_arg) == 0) continue;
+
+                // Only report if the pointer can be traced back to a Rust allocator
+                if (!ptrOriginatesFromRustAlloc(func, ptr_arg, &visited)) continue;
 
                 const func_name = getFunctionName(func);
                 self.stats.cross_lang_mismatches += 1;
@@ -371,31 +380,43 @@ pub const RustFfiAuditor = struct {
                             });
 
                             const trace = try self.allocator.alloc(TraceEntry, 3);
+                            errdefer self.allocator.free(trace);
                             trace[0] = TraceEntry.init("Stack address escapes across FFI boundary");
-                            trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+
+                            const desc1 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Argument {d} of {s} derived from alloca instruction",
                                 .{ arg_i, callee_name },
-                            ));
-                            trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                            );
+                            errdefer self.allocator.free(desc1);
+                            trace[1] = TraceEntry.initOwned(desc1);
+
+                            const desc2 = try std.fmt.allocPrint(
                                 self.allocator,
                                 "Callee may store pointer beyond caller's lifetime",
                                 .{},
-                            ));
+                            );
+                            errdefer self.allocator.free(desc2);
+                            trace[2] = TraceEntry.initOwned(desc2);
+
+                            const msg = try std.fmt.allocPrint(
+                                self.allocator,
+                                "Stack address escapes to FFI: {s}() receives alloca-derived pointer",
+                                .{callee_name},
+                            );
+                            errdefer self.allocator.free(msg);
 
                             const issue = Issue.initWithTrace(
                                 .borrow_escape,
-                                try std.fmt.allocPrint(
-                                    self.allocator,
-                                    "Stack address escapes to FFI: {s}() receives alloca-derived pointer",
-                                    .{callee_name},
-                                ),
+                                msg,
                                 Location.init(func_name),
                                 .high,
                                 0.80,
                                 trace,
                             );
-                            try ctx.addIssue(&issue);
+                            var mutable_issue = issue;
+                            mutable_issue.owned = true;
+                            try ctx.addIssue(&mutable_issue);
 
                             diag.warn("RustFfiFilter: stack escape in {s} → {s}() arg {d}", .{ func_name, callee_name, arg_i });
                         }
@@ -496,31 +517,45 @@ pub const RustFfiAuditor = struct {
                 self.stats.unpaired_into_raw += 1;
 
                 const trace = try self.allocator.alloc(TraceEntry, 3);
+                errdefer self.allocator.free(trace);
+
                 trace[0] = TraceEntry.init("Ownership violation: pointer transferred to FFI then freed");
-                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+
+                const desc1 = try std.fmt.allocPrint(
                     self.allocator,
                     "Pointer was passed to an FFI boundary call (ownership transfer out)",
                     .{},
-                ));
-                trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                );
+                errdefer self.allocator.free(desc1);
+                trace[1] = TraceEntry.initOwned(desc1);
+
+                const desc2 = try std.fmt.allocPrint(
                     self.allocator,
                     "Same pointer also passed to {s}() — potential double-free or cross-allocator-free",
                     .{free_entry.free_name},
-                ));
+                );
+                errdefer self.allocator.free(desc2);
+                trace[2] = TraceEntry.initOwned(desc2);
+
+                const msg = try std.fmt.allocPrint(
+                    self.allocator,
+                    "Ownership violation: FFI-transferred pointer freed by {s}()",
+                    .{free_entry.free_name},
+                );
+                errdefer self.allocator.free(msg);
 
                 const issue = Issue.initWithTrace(
                     .use_after_free,
-                    try std.fmt.allocPrint(
-                        self.allocator,
-                        "Ownership violation: FFI-transferred pointer freed by {s}()",
-                        .{free_entry.free_name},
-                    ),
+                    msg,
                     Location.init(func_name),
                     .high,
                     0.72,
                     trace,
                 );
-                try ctx.addIssue(&issue);
+                // Mark as owned so DataFlowGraph will free all allocated memory
+                var mutable_issue = issue;
+                mutable_issue.owned = true;
+                try ctx.addIssue(&mutable_issue);
 
                 diag.warn(
                     \\RustFfiFilter: ownership violation in {s}
@@ -542,7 +577,7 @@ pub const RustFfiAuditor = struct {
 
         if (a_unwrapped == b_unwrapped) return true;
         if (a_unwrapped != null and a_unwrapped.? == b) return true;
-        if (b_unwrapped != null and b_unwrapped.? == a) return false; // already checked a==b
+        if (b_unwrapped != null and b_unwrapped.? == a) return true;
 
         // Check if both are pointers to globals or allocations
         if (isSameBasePointer(a, b)) return true;
@@ -742,31 +777,43 @@ pub const RustFfiAuditor = struct {
                         self.stats.as_ptr_escapes += 1;
 
                         const trace = try self.allocator.alloc(TraceEntry, 3);
+                        errdefer self.allocator.free(trace);
                         trace[0] = TraceEntry.init("Dangling reference via as_ptr");
-                        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(
+
+                        const desc1 = try std.fmt.allocPrint(
                             self.allocator,
                             "Borrowed pointer (as_ptr/GEP field 0) from aggregate still used after parent dropped",
                             .{},
-                        ));
-                        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(
+                        );
+                        errdefer self.allocator.free(desc1);
+                        trace[1] = TraceEntry.initOwned(desc1);
+
+                        const desc2 = try std.fmt.allocPrint(
                             self.allocator,
                             "Parent dropped at instruction {d}, but pointer used again at instruction {d}",
                             .{ drop_idx, use_idx },
-                        ));
+                        );
+                        errdefer self.allocator.free(desc2);
+                        trace[2] = TraceEntry.initOwned(desc2);
+
+                        const msg = try std.fmt.allocPrint(
+                            self.allocator,
+                            "Dangling as_ptr: borrowed pointer used after parent deallocation in {s}",
+                            .{func_name},
+                        );
+                        errdefer self.allocator.free(msg);
 
                         const issue = Issue.initWithTrace(
                             .borrow_escape,
-                            try std.fmt.allocPrint(
-                                self.allocator,
-                                "Dangling as_ptr: borrowed pointer used after parent deallocation in {s}",
-                                .{func_name},
-                            ),
+                            msg,
                             Location.init(func_name),
                             .high,
                             0.78,
                             trace,
                         );
-                        try ctx.addIssue(&issue);
+                        var mutable_issue = issue;
+                        mutable_issue.owned = true;
+                        try ctx.addIssue(&mutable_issue);
 
                         diag.warn(
                             \\RustFfiFilter: dangling as_ptr in {s}
@@ -889,6 +936,23 @@ pub fn isCFreeCall(callee_name: []const u8) bool {
         std.mem.indexOf(u8, callee_name, "free@") != null;
 }
 
+/// Check if a callee name is a Rust allocator call (_Znwm, __rust_alloc, etc.)
+pub fn isRustAllocCall(callee_name: []const u8) bool {
+    const rust_alloc_patterns = [_][]const u8{
+        "_Znwm", // operator new(unsigned long) - Rust's default allocator
+        "_Znw", // operator new variants
+        "__rust_alloc",
+        "__rust_alloc_zeroed",
+        "alloc::alloc::alloc",
+        "alloc::alloc::alloc_zeroed",
+    };
+    for (rust_alloc_patterns) |pattern| {
+        if (std.mem.startsWith(u8, callee_name, pattern)) return true;
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
+    }
+    return false;
+}
+
 /// Check if a callee name looks like an extern "C" function
 pub fn isExternCCall(callee_name: []const u8) bool {
     if (callee_name.len == 0) return false;
@@ -896,6 +960,159 @@ pub fn isExternCCall(callee_name: []const u8) bool {
     if (std.mem.startsWith(u8, callee_name, "_Z")) return false;
     if (std.mem.startsWith(u8, callee_name, "_R")) return false;
     return true;
+}
+
+/// Check if function is from core::ffi crate (Rust standard FFI utilities)
+pub fn isCoreFfiFunction(callee_name: []const u8) bool {
+    // core::ffi functions commonly used in FFI
+    const core_ffi_patterns = [_][]const u8{
+        "c_void",
+        "c_char",
+        "c_int",
+        "c_long",
+        "c_uint",
+        "c_ulong",
+        "c_float",
+        "c_double",
+        "CStr",
+        "CString",
+        "from_raw", // *const T::from_raw()
+        "into_raw", // *mut T::into_raw()
+        "as_ptr", // CStr::as_ptr()
+        "to_ptr", // CString::to_ptr()
+        "to_str", // CStr::to_str()
+        "from_bytes_with_nul_unchecked",
+        "from_bytes_with_nul",
+    };
+
+    for (core_ffi_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Check if function is from libc crate (POSIX/C standard library bindings)
+pub fn isLibcFunction(callee_name: []const u8) bool {
+    // libc crate provides safe wrappers around C library functions
+    const libc_patterns = [_][]const u8{
+        // POSIX memory
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+        "memalign",
+        "posix_memalign",
+
+        // POSIX I/O
+        "open",
+        "read",
+        "write",
+        "close",
+        "fcntl",
+        "ioctl",
+        "fstat",
+        "lseek",
+        "mmap",
+        "munmap",
+
+        // POSIX threads
+        "pthread_create",
+        "pthread_join",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
+        "pthread_cond_wait",
+        "pthread_cond_signal",
+
+        // String operations
+        "strlen",
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "strcmp",
+        "strncmp",
+        "strdup",
+
+        // Network
+        "socket",
+        "bind",
+        "listen",
+        "accept",
+        "connect",
+        "send",
+        "recv",
+
+        // Time
+        "time",
+        "gettimeofday",
+        "clock_gettime",
+        "sleep",
+        "usleep",
+        "nanosleep",
+
+        // Environment
+        "getenv",
+        "setenv",
+        "unsetenv",
+
+        // Error handling
+        "errno",
+        "strerror",
+        "perror",
+    };
+
+    for (libc_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Classify Rust FFI boundary type for enhanced detection
+pub fn classifyFfiBoundaryType(
+    callee_name: []const u8,
+    module_name: ?[]const u8,
+) enum {
+    /// Standard extern "C" function
+    standard,
+    /// core::ffi utility (CStr, CString, etc.)
+    core_ffi,
+    /// libc crate wrapper
+    libc_crate,
+    /// OS-specific API (Win32, macOS, Linux)
+    os_api,
+    /// Unknown/custom FFI
+    unknown,
+} {
+    _ = module_name; // Reserved for future use
+
+    if (isCoreFfiFunction(callee_name)) return .core_ffi;
+    if (isLibcFunction(callee_name)) return .libc_crate;
+
+    // OS-specific APIs
+    const win32_patterns = [_][]const u8{ "CreateFile", "ReadFile", "WriteFile", "CloseHandle" };
+    const macos_patterns = [_][]const u8{ "CFStringCreate", "dispatch_async", "kqueue" };
+    const linux_patterns = [_][]const u8{ "epoll_create", "inotify_init", "signalfd" };
+
+    for (win32_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+    for (macos_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+    for (linux_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+
+    // Default to standard extern "C"
+    if (isExternCCall(callee_name)) return .standard;
+
+    return .unknown;
 }
 
 /// Detect Rust FFI pairing functions (populates into_raw/from_raw sets)
@@ -985,6 +1202,52 @@ pub fn isDerivedFromAlloca(val: c.LLVMValueRef) bool {
         const src = c.LLVMGetOperand(val, 0);
         return isDerivedFromAlloca(src);
     }
+    return false;
+}
+
+/// Check if a value originates from a Rust allocator call within the same function.
+/// Walks use-def chains through phi/select/bitcast/GEP instructions to find
+/// the ultimate source. Returns true if traced back to isRustAllocCall.
+pub fn ptrOriginatesFromRustAlloc(
+    func: c.LLVMValueRef,
+    val: c.LLVMValueRef,
+    visited: *std.AutoHashMap(usize, void),
+) bool {
+    if (@intFromPtr(val) == 0) return false;
+    if (visited.contains(@intFromPtr(val))) return false;
+    visited.put(@intFromPtr(val), {}) catch return false;
+
+    const opcode = c.LLVMGetInstructionOpcode(val);
+
+    // Check if this is a call instruction returning from a Rust allocator
+    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+        const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(val));
+        if (num_operands > 0) {
+            const callee = c.LLVMGetOperand(val, num_operands - 1);
+            if (@intFromPtr(callee) != 0) {
+                const callee_name = c.LLVMGetValueName(callee);
+                if (@intFromPtr(callee_name) != 0) {
+                    const name_slice = std.mem.sliceTo(callee_name, 0);
+                    if (isRustAllocCall(name_slice)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Follow phi, select, bitcast, GEP, ptrtoint/inttoptr chains
+    if (opcode == c.LLVMBitCast or opcode == c.LLVMGetElementPtr or
+        opcode == c.LLVMPHI or opcode == c.LLVMSelect or
+        opcode == c.LLVMPtrToInt or opcode == c.LLVMIntToPtr)
+    {
+        const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(val));
+        var i: c_uint = 0;
+        while (i < num_operands) : (i += 1) {
+            const op = c.LLVMGetOperand(val, i);
+            if (ptrOriginatesFromRustAlloc(func, op, visited)) return true;
+        }
+    }
+
     return false;
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OmniScope v0.1.6 FFI/Unsafe Audit Runner"""
+"""OmniScope v0.1.7 FFI/Unsafe Audit Runner"""
 import json
 import os
 import sys
@@ -19,7 +19,7 @@ ll_files = (
 )
 
 print("=" * 70)
-print("  OmniScope v0.1.6 - FFI/Unsafe Boundary Security Audit")
+print("  OmniScope v0.1.7 - FFI/Unsafe Boundary Security Audit")
 print(f"  Output: {OUTPUT_DIR}")
 print("=" * 70)
 print()
@@ -83,7 +83,7 @@ print("=" * 70)
 # Save summary
 with open(os.path.join(OUTPUT_DIR, "_audit_summary.json"), "w") as sf:
     json.dump({
-        "version": "0.1.6",
+        "version": "0.1.7",
         "total_files": len(results),
         "passed": passed,
         "failed": failed,

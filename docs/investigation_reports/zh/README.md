@@ -1,13 +1,13 @@
-# OmniScope 调查报告索引 v0.1.6
+# OmniScope 调查报告索引 v0.1.7
 
-**最后更新**: 2026-05-04
-**版本**: v0.1.6 (Post Phase 1+2+3 Fixes)
+**最后更新**: 2026-05-06
+**版本**: v0.1.7 (24 Bugs Fixed)
 
 ---
 
 ## 报告列表
 
-所有报告均已更新至 **v0.1.6**，使用最新的 17 文件 benchmark 数据。
+所有报告均已更新至 **v0.1.7**，修复 24 个 bug，340/340 测试通过。
 
 ### 📊 核心报告 (必读)
 
@@ -17,6 +17,8 @@
 | [accuracy_validation](../en/accuracy_validation.md) | English | Accuracy Validation Report — Full 17-file validation |
 | [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md) | 中文 | **Rust FFI 恢复调查** — Phase 1+2+3 修复详情，TP 0%→20% |
 | [rust_ffi_restoration_v016](../en/rust_ffi_restoration_v016.md) | English | Rust FFI Restoration Investigation Report |
+| [v018_bug_fix_report](./v018_bug_fix_report.md) | 中文 | **v0.1.7 Bug修复报告** — 24 bugs fixed, 340/340 tests pass |
+| [v018_bug_fix_report](../en/v018_bug_fix_report.md) | English | v0.1.7 Bug Fix Report |
 
 ### 🔬 项目专项报告
 
@@ -32,27 +34,29 @@
 
 ---
 
-## v0.1.6 关键指标汇总
+## v0.1.7 关键指标汇总
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║              OmniScope v0.1.6 — Final Summary               ║
+║              OmniScope v0.1.7 — Bug Fix Summary              ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                                ║
-║  📁 Test Files:        17 (Red Team 8 + FFI-Dense 3 + RW 6)   ║
-║  🐛 Total Issues:      548                                     ║
-║  👆 Ptrs Tracked:      27076                                   ║
-║  ⚠️  Violations:       251                                     ║
-║  🔗 FFI Boundaries:    9372                                    ║
+║  🐛 Bugs Identified:   24                                      ║
+║  ✅ Bugs Fixed:        24 (100%)                               ║
+║  🧪 Tests Passing:     340/340                                 ║
 ║                                                                ║
-║  🧪 Test Coverage:     92% (191 tests)                         ║
-║  🎯 Rust FFI TP Rate:  20% (4/20 subtle_unsafe_rs)             ║
-║  💯 Precision:         ~88% (overall)                          ║
-║  📉 FP Rate:           ~14%                                    ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ║
+║  CRITICAL Bugs:        3  →  0  (all fixed)                    ║
+║  HIGH Bugs:            5  →  0  (all fixed)                    ║
+║  MEDIUM Bugs:          7  →  0  (all fixed)                    ║
+║  LOW Bugs:             3  →  0  (all fixed)                    ║
+║  NEW in v0.1.7:        4  →  0  (all fixed)                    ║
+║  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ║
 ║                                                                ║
-║  🔧 Fixes Applied:     14 (Phase 1+2+3)                        ║
-║  🗑️  Dead Code Removed: -700 lines                            ║
-║  📝 Reports Updated:    22 files (zh + en)                     ║
+║  🔧 Memory Safety:     get→getPtr, errdefer patterns           ║
+║  🔧 API Correctness:   deinit() fixes                          ║
+║  🔧 JSON Compliance:   lowercase hex (\uXXXX)                  ║
+║  🔧 Error Handling:    catch unreachable→try                   ║
 ║                                                                ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
@@ -65,12 +69,14 @@
 |------|------|----------|
 | v0.1.5 | 2026-04-15 | 初始版本 |
 | v0.1.6 | 2026-04-27 | FP 抑制 + Zone Classifier |
-| **v0.1.6** | **2026-05-04** | **Phase 1+2+3 全面修复 + 死代码清理 + 全量 benchmark** |
+| v0.1.6 | 2026-05-04 | Phase 1+2+3 全面修复 + 死代码清理 |
+| **v0.1.7** | **2026-05-06** | **24 bugs fixed, 340/340 tests pass** |
 
 ---
 
 ## 快速导航
 
+- **想了解 v0.1.7 修复详情?** → [v018_bug_fix_report](./v018_bug_fix_report.md)
 - **想了解整体效果?** → [accuracy_validation](./accuracy_validation.md)
 - **想了解 Rust FFI 修复细节?** → [rust_ffi_restoration_v016](./rust_ffi_restoration_v016.md)
 - **想看具体项目数据?** → 选择上方对应的项目报告

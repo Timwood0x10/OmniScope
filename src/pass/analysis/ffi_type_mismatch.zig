@@ -17,6 +17,8 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+// Issue2 FIX: Import helper for standardized CallInst argument counting
+const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -67,6 +69,36 @@ pub const TypeMismatchInfo = struct {
     param_index: u32,
     description: []const u8,
 };
+
+/// Helper to check if LLVM API returned a valid (non-null) pointer.
+///
+/// **When to use**: For all LLVM C API return values (LLVMValueRef, LLVMTypeRef,
+/// LLVMBasicBlockRef, etc.). LLVM APIs return null on failure/invalid input.
+///
+/// **When NOT to use**: For non-LLVM pointers (Zig slices, optionals, user-defined types).
+/// Use direct comparison for those: `if (ptr == null) return;`
+///
+/// **Why this helper exists**: LLVM uses opaque pointer types (usize-sized handles) where
+/// null is represented as integer 0. This helper encapsulates the `@intFromPtr(ptr) != 0`
+/// pattern to improve readability and ensure consistent null-checking across the codebase.
+///
+/// Example:
+/// ```zig
+/// const val = c.LLVMGetOperand(inst, i);
+/// if (!llvmNotNull(val)) return;  // Clean, self-documenting
+///
+/// // Equivalent verbose form:
+/// if (@intFromPtr(val) == 0) return;
+/// ```
+///
+/// Arguments:
+///   ptr - Any LLVM API pointer type (comptime anytype for flexibility)
+///
+/// Returns:
+///   true if pointer is non-null (valid), false if null (invalid/error)
+inline fn llvmNotNull(ptr: anytype) bool {
+    return @intFromPtr(ptr) != 0;
+}
 
 /// Statistics for FFI type mismatch detection.
 pub const TypeMismatchStats = struct {
@@ -127,7 +159,7 @@ pub const FFITypeMismatchPass = struct {
         stats: *TypeMismatchStats,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_ptr) == 0) return;
+        if (!llvmNotNull(func_name_ptr)) return;
         const func_name = std.mem.span(func_name_ptr);
 
         // INTEGRATION: Use three-layer noise filter (name + path)
@@ -144,10 +176,10 @@ pub const FFITypeMismatchPass = struct {
         if (std.mem.startsWith(u8, func_name, "llvm.")) return;
 
         var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        while (llvmNotNull(bb)) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+            while (llvmNotNull(inst)) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (llvmNotNull(c.LLVMIsACallInst(inst))) {
                     try analyzeCallSite(ctx, func_name, inst, diag, stats);
                 }
             }
@@ -164,10 +196,10 @@ pub const FFITypeMismatchPass = struct {
         stats.total_calls_analyzed += 1;
 
         const called_val = c.LLVMGetCalledValue(call_inst);
-        if (@intFromPtr(called_val) == 0) return;
+        if (!llvmNotNull(called_val)) return;
 
         const callee_name_ptr = c.LLVMGetValueName(called_val);
-        if (@intFromPtr(callee_name_ptr) == 0) return;
+        if (!llvmNotNull(callee_name_ptr)) return;
         const callee_name = std.mem.span(callee_name_ptr);
 
         // Check if this is an FFI boundary
@@ -180,10 +212,11 @@ pub const FFITypeMismatchPass = struct {
         stats.ffi_boundaries_found += 1;
 
         // Check for type mismatches at each argument
-        const num_args = c.LLVMGetNumOperands(call_inst) - 1;
+        // Issue2 FIX: Use standardized helper for CallInst argument count.
+        const num_args = getCallInstArgCount(call_inst);
         var arg_idx: u32 = 0;
         while (arg_idx < num_args) : (arg_idx += 1) {
-            const arg = c.LLVMGetOperand(call_inst, arg_idx + 1);
+            const arg = c.LLVMGetOperand(call_inst, arg_idx);
             if (@intFromPtr(arg) == 0) continue;
 
             if (checkTypeMismatch(ctx, caller_name, callee_name, call_inst, arg, arg_idx, diag)) |mismatch| {
@@ -223,7 +256,7 @@ pub const FFITypeMismatchPass = struct {
         diag: *DiagnosticWriter,
     ) ?TypeMismatchInfo {
         const arg_type = c.LLVMTypeOf(arg);
-        if (@intFromPtr(arg_type) == 0) return null;
+        if (!llvmNotNull(arg_type)) return null;
 
         // Check 1: Size mismatch (e.g., usize vs size_t)
         if (detectSizeMismatch(arg_type, callee_name, param_index)) |mismatch| {
@@ -307,19 +340,19 @@ pub const FFITypeMismatchPass = struct {
 
         // Get the element type (what the pointer points to)
         const elem_type = c.LLVMGetElementType(arg_type);
-        if (@intFromPtr(elem_type) == 0) return null;
+        if (!llvmNotNull(elem_type)) return null;
 
         const elem_kind = c.LLVMGetTypeKind(elem_type);
 
         // Get DataLayout from module to compute type size
         const bb = c.LLVMGetInstructionParent(call_inst);
-        if (@intFromPtr(bb) == 0) return null;
+        if (!llvmNotNull(bb)) return null;
         const func = c.LLVMGetBasicBlockParent(bb);
-        if (@intFromPtr(func) == 0) return null;
+        if (!llvmNotNull(func)) return null;
         const module = c.LLVMGetGlobalParent(func);
-        if (@intFromPtr(module) == 0) return null;
+        if (!llvmNotNull(module)) return null;
         const dl = c.LLVMGetModuleDataLayout(module);
-        if (@intFromPtr(dl) == 0) return null;
+        if (!llvmNotNull(dl)) return null;
         const elem_size = c.LLVMABISizeOfType(dl, elem_type);
 
         // Pattern 1: Functions with alignment requirements in their name
@@ -433,11 +466,11 @@ pub const FFITypeMismatchPass = struct {
 
         // Get source and destination types of the trunc
         const src_val = c.LLVMGetOperand(def_inst, 0);
-        if (@intFromPtr(src_val) == 0) return null;
+        if (!llvmNotNull(src_val)) return null;
 
         const src_type = c.LLVMTypeOf(src_val);
         const dst_type = c.LLVMTypeOf(arg);
-        if (@intFromPtr(src_type) == 0 or @intFromPtr(dst_type) == 0) return null;
+        if (!llvmNotNull(src_type) or !llvmNotNull(dst_type)) return null;
 
         const src_kind = c.LLVMGetTypeKind(src_type);
         const dst_kind = c.LLVMGetTypeKind(dst_type);
@@ -484,7 +517,7 @@ pub const FFITypeMismatchPass = struct {
     /// Try to get the defining instruction of a value.
     /// Returns null if the value is not an instruction (e.g., constant, parameter).
     fn getDefiningInstruction(val: c.LLVMValueRef) ?c.LLVMValueRef {
-        if (@intFromPtr(val) == 0) return null;
+        if (!llvmNotNull(val)) return null;
         const val_kind = c.LLVMGetValueKind(val);
         if (val_kind != c.LLVMInstructionValueKind) return null;
         return val;
@@ -504,22 +537,78 @@ pub const FFITypeMismatchPass = struct {
     }
 
     /// Checks for Go pointer escape (Go pointer passed to C without KeepAlive).
+    /// When a Go heap object is passed to C via cgo, the GC must be prevented
+    /// from reclaiming it while C still holds the pointer. Without
+    /// runtime.KeepAlive, the GC may collect the object prematurely.
     fn checkGoPointerEscape(
         ctx: *PassContext,
         caller_name: []const u8,
         call_inst: c.LLVMValueRef,
         diag: *DiagnosticWriter,
     ) !bool {
-        _ = ctx;
-        _ = caller_name;
-        _ = call_inst;
-        _ = diag;
+        const num_args = c.LLVMGetNumArgOperands(call_inst);
+        var go_ptr_arg: bool = false;
 
-        // TODO: Implement Go cgo pointer escape detection
-        // This requires:
-        // 1. Detecting if the caller is Go code
-        // 2. Checking if any argument is a Go pointer
-        // 3. Verifying that runtime.KeepAlive is called after the FFI call
+        for (0..@as(usize, @intCast(num_args))) |i| {
+            const arg = c.LLVMGetOperand(call_inst, @intCast(i));
+            if (@intFromPtr(arg) == 0) continue;
+            const arg_name = c.LLVMGetValueName(arg);
+            if (@intFromPtr(arg_name) == 0) continue;
+            const name_str = std.mem.span(arg_name);
+
+            const go_alloc_patterns = [_][]const u8{
+                "runtime.newobject", "runtime.mallocgc", "C.malloc",
+                "C.CString",         "C.CBytes",         "_cgo_allocate",
+            };
+            for (go_alloc_patterns) |pat| {
+                if (std.mem.indexOf(u8, name_str, pat) != null) {
+                    go_ptr_arg = true;
+                    break;
+                }
+            }
+        }
+
+        if (!go_ptr_arg) return false;
+
+        var has_keepalive = false;
+        var next_inst = c.LLVMGetNextInstruction(call_inst);
+        const scan_limit: u32 = 10;
+        var scanned: u32 = 0;
+        while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
+            next_inst = c.LLVMGetNextInstruction(next_inst);
+            scanned += 1;
+        }) {
+            if (c.LLVMGetInstructionOpcode(next_inst) == c.LLVMCall) {
+                const callee = c.LLVMGetCalledValue(next_inst);
+                const callee_name = c.LLVMGetValueName(callee);
+                if (@intFromPtr(callee_name) != 0) {
+                    const cname = std.mem.span(callee_name);
+                    if (std.mem.indexOf(u8, cname, "KeepAlive") != null or
+                        std.mem.indexOf(u8, cname, "keepalive") != null or
+                        std.mem.indexOf(u8, cname, "KeepAlive_p") != null)
+                    {
+                        has_keepalive = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!has_keepalive) {
+            diag.warn("  [CGO] Go pointer passed to C without runtime.KeepAlive in {s}", .{caller_name});
+            diag.warn("    Risk: GC reclaims object while C still holds pointer (CWE-407)", .{});
+
+            const msg = try std.fmt.allocPrint(ctx.allocator, "Go cgo pointer escape: no KeepAlive after passing Go heap ptr to C in {s}", .{
+                caller_name,
+            });
+            defer ctx.allocator.free(msg);
+
+            const location = Location.init(caller_name);
+            const issue = Issue.init(.borrow_escape, msg, location, .high, 0.75);
+            try ctx.addIssue(&issue);
+
+            return true;
+        }
 
         return false;
     }
@@ -531,17 +620,104 @@ pub const FFITypeMismatchPass = struct {
         call_inst: c.LLVMValueRef,
         diag: *DiagnosticWriter,
     ) !bool {
-        _ = ctx;
-        _ = caller_name;
-        _ = call_inst;
-        _ = diag;
+        const called_val = c.LLVMGetCalledValue(call_inst);
+        if (!llvmNotNull(called_val)) return false;
+        const callee_name_ptr = c.LLVMGetValueName(called_val);
+        if (!llvmNotNull(callee_name_ptr)) return false;
+        const callee_name = std.mem.span(callee_name_ptr);
+        const is_incr = std.mem.eql(u8, callee_name, "Py_INCREF") or
+            std.mem.eql(u8, callee_name, "Py_XINCREF");
+        const is_decr = std.mem.eql(u8, callee_name, "Py_DECREF") or
+            std.mem.eql(u8, callee_name, "Py_XDECREF");
+        if (!is_incr and !is_decr) return false;
 
-        // TODO: Implement Python refcount checking
-        // This requires:
-        // 1. Detecting Py_INCREF/Py_DECREF calls
-        // 2. Tracking reference count balance
-        // 3. Reporting unbalanced INC/DEC
+        const py_obj = c.LLVMGetOperand(call_inst, 0);
+        if (!llvmNotNull(py_obj)) return false;
 
+        // Type safety: py_obj must be a pointer type (PyObject* is i8* in CPython ABI)
+        const obj_type = c.LLVMTypeOf(py_obj);
+        if (!llvmNotNull(obj_type)) return false;
+        if (c.LLVMGetTypeKind(obj_type) != c.LLVMPointerTypeKind) return false;
+
+        const decr_bb = c.LLVMGetInstructionParent(call_inst);
+        if (!llvmNotNull(decr_bb)) return false;
+        const func = c.LLVMGetBasicBlockParent(decr_bb);
+        if (!llvmNotNull(func)) return false;
+        const func_name_ptr = c.LLVMGetValueName(func);
+        const func_name = if (func_name_ptr) |p| std.mem.span(p) else "unknown";
+
+        if (is_decr) {
+            var use_iter = c.LLVMGetFirstUse(py_obj);
+            var has_prior_incr = false;
+            while (llvmNotNull(use_iter)) : (use_iter = c.LLVMGetNextUse(use_iter)) {
+                const user = c.LLVMGetUser(use_iter);
+                if (@intFromPtr(user) == 0 or user == call_inst) continue;
+                const user_opcode = c.LLVMGetInstructionOpcode(user);
+                if (user_opcode != c.LLVMCall and user_opcode != c.LLVMInvoke) continue;
+
+                // Control-flow safety: Py_INCREF must dominate Py_DECREF's basic block,
+                // OR be in the same basic block and appear before the Py_DECREF.
+                // Note: LLVM C API does not expose dominance analysis; use BB ordering
+                // as a safe approximation (conservative — may miss some detections but
+                // never produces false positives).
+                const user_bb = c.LLVMGetInstructionParent(user);
+                if (@intFromPtr(user_bb) == 0) continue;
+                const same_bb = @intFromPtr(user_bb) == @intFromPtr(decr_bb);
+                if (!same_bb and !basicBlockComesBefore(user_bb, decr_bb)) continue;
+                if (same_bb and !instructionComesBefore(user, call_inst)) continue;
+
+                const user_called_val = c.LLVMGetCalledValue(user);
+                if (@intFromPtr(user_called_val) == 0) continue;
+                const user_callee_ptr = c.LLVMGetValueName(user_called_val);
+                if (@intFromPtr(user_callee_ptr) == 0) continue;
+                const user_callee = std.mem.span(user_callee_ptr);
+                if (std.mem.eql(u8, user_callee, "Py_INCREF") or
+                    std.mem.eql(u8, user_callee, "Py_XINCREF"))
+                {
+                    has_prior_incr = true;
+                    break;
+                }
+            }
+            if (!has_prior_incr) {
+                const msg = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "[OMI-HIGH] Python FFI refcount imbalance in {s}(): Py{s}DECREF on object 0x{x} without matching Py_INCREF — potential UAF",
+                    .{ caller_name, if (std.mem.indexOfScalar(u8, callee_name, 'X') != null) "X" else "", @intFromPtr(py_obj) },
+                );
+                diag.warn("{s}", .{msg});
+                var issue = Issue.init(
+                    .use_after_free,
+                    msg,
+                    Location.init(func_name),
+                    .high,
+                    0.72,
+                );
+                try ctx.addIssue(&issue);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Check if instruction `a` appears before instruction `b` within the same basic block.
+    fn instructionComesBefore(a: c.LLVMValueRef, b: c.LLVMValueRef) bool {
+        var inst_a: ?c.LLVMValueRef = a;
+        while (inst_a) |cur| : (inst_a = c.LLVMGetNextInstruction(cur)) {
+            if (@intFromPtr(cur) == @intFromPtr(b)) return true;
+        }
+        return false;
+    }
+
+    /// Check if basic block `a` appears before `b` in the function's BB list.
+    /// Used as conservative approximation for dominance when LLVM C API
+    /// doesn't expose DominatorTree analysis. Safe for structured code.
+    fn basicBlockComesBefore(a: c.LLVMBasicBlockRef, b: c.LLVMBasicBlockRef) bool {
+        var bb: ?c.LLVMBasicBlockRef = c.LLVMGetFirstBasicBlock(c.LLVMGetBasicBlockParent(a));
+        var found_a = false;
+        while (bb) |cur| : (bb = c.LLVMGetNextBasicBlock(cur)) {
+            if (@intFromPtr(cur) == @intFromPtr(b)) return found_a;
+            if (@intFromPtr(cur) == @intFromPtr(a)) found_a = true;
+        }
         return false;
     }
 
@@ -550,10 +726,32 @@ pub const FFITypeMismatchPass = struct {
         ctx: *PassContext,
         caller_name: []const u8,
         callee_name: []const u8,
-        _: c.LLVMValueRef,
+        call_inst: c.LLVMValueRef,
         mismatch: TypeMismatchInfo,
         diag: *DiagnosticWriter,
     ) !void {
+        // E2-1b: MemoryGraph gate - only report type mismatches where at least one
+        // call argument pointer is on an FFI danger path. This prevents reporting
+        // type mismatches for internal/non-FFI-relevant calls.
+        if (@intFromPtr(call_inst) != 0) {
+            var has_relevant_ptr = false;
+            var arg_idx: u32 = 0;
+            while (arg_idx < c.LLVMGetNumArgOperands(call_inst)) : (arg_idx += 1) {
+                const arg = c.LLVMGetOperand(call_inst, arg_idx);
+                if (@intFromPtr(arg) != 0) {
+                    const ptr_val = @as(u64, @intFromPtr(arg));
+                    if (ctx.isRelevantAlloc(ptr_val)) {
+                        has_relevant_ptr = true;
+                        break;
+                    }
+                }
+            }
+            if (!has_relevant_ptr) {
+                diag.debug("[FFI-TYPE-MISMATCH SUPPRESSED] No relevant pointers on FFI path in {s} -> {s}", .{ caller_name, callee_name });
+                return;
+            }
+        }
+
         const location = Location.init(caller_name);
 
         const trace = try ctx.allocator.alloc(TraceEntry, 3);
@@ -615,6 +813,41 @@ pub const FFITypeMismatchPass = struct {
             }
         }
 
+        // F2-3: Signature-based disambiguation — check calling convention.
+        // Functions with C calling convention are more likely real FFI boundaries
+        // than internal wrappers with the same name pattern.
+        if (hasCCallingConvention(callee_name)) {
+            if (!isSameLanguagePair(caller_name, callee_name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    fn hasCCallingConvention(func_name: []const u8) bool {
+        const known_c_apis = [_][]const u8{
+            "malloc", "free",    "realloc",        "calloc",
+            "memcpy", "memmove", "memset",         "memcmp",
+            "strlen", "strcpy",  "strcat",         "strcmp",
+            "printf", "scanf",   "fopen",          "fread",
+            "fwrite", "fclose",  "pthread_create", "pthread_join",
+            "signal", "dlopen",  "dlsym",          "dlerror",
+        };
+        for (known_c_apis) |api| {
+            if (std.mem.eql(u8, func_name, api)) return true;
+        }
+        return false;
+    }
+
+    fn isSameLanguagePair(caller: []const u8, callee: []const u8) bool {
+        const rust_caller = std.mem.startsWith(u8, caller, "_ZN") or std.mem.startsWith(u8, caller, "_R");
+        const rust_callee = std.mem.startsWith(u8, callee, "_ZN") or std.mem.startsWith(u8, callee, "_R");
+        const go_caller = std.mem.indexOf(u8, caller, "_cgo_") != null;
+        const zig_caller = std.mem.startsWith(u8, caller, "zig.") or std.mem.startsWith(u8, caller, "main.");
+        if (rust_caller and rust_callee) return true;
+        if (go_caller and std.mem.indexOf(u8, callee, "_cgo_") != null) return true;
+        if (zig_caller and (std.mem.startsWith(u8, callee, "zig.") or std.mem.startsWith(u8, callee, "main."))) return true;
         return false;
     }
 

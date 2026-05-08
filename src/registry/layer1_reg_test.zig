@@ -12,10 +12,11 @@ const layer1_functions = layer1_reg.layer1_functions;
 // PHASE3-TASK-1 Core: Verify SSOT contains all critical dangerous functions
 // ============================================================================
 
-test "layer1_functions - total count is 43 (SSOT baseline)" {
+test "layer1_functions - total count is 65 (SSOT baseline)" {
     // CRITICAL: This is the Single Source of Truth count
+    // Updated: 43 → 65 (added Python C API + JNI FFI boundary functions)
     // All other files should reference this, not define their own lists
-    try std.testing.expectEqual(@as(usize, 43), layer1_functions.len);
+    try std.testing.expectEqual(@as(usize, 65), layer1_functions.len);
 }
 
 test "layer1_functions - contains critical memory functions" {

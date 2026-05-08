@@ -122,8 +122,9 @@ test "integration: sqlite_binding expected issues" {
         .total_expected = expected_count,
     };
 
-    // Simulated results (would come from actual analysis)
-    metrics.true_positives = expected_count; // Assume perfect detection for now
+    // DC-C18 TODO: Simulated results (would come from actual analysis)
+    // Currently hardcoded to assume perfect detection - needs real pipeline integration
+    metrics.true_positives = expected_count; 
     metrics.total_detected = expected_count;
 
     std.debug.print("\nResults:\n", .{});

@@ -159,6 +159,8 @@ pub const IssueKind = enum {
     ffi_type_mismatch,
     /// Memory leak across language boundary (CWE-401).
     cross_language_leak,
+    /// Cross-language free violation - alloc_lang != free_lang (CWE-763).
+    cross_language_free,
     /// General memory leak - allocated but never freed (CWE-401).
     memory_leak,
     /// Use after free across language boundary (CWE-416).
@@ -183,6 +185,10 @@ pub const IssueKind = enum {
     invalid_free,
     /// Static buffer misuse - thread-unsafe functions like ctime, strerror (CWE-242).
     static_buffer_misuse,
+    /// Data race - concurrent access without synchronization (CWE-362).
+    data_race,
+    /// Thread safety violation - lock ordering, deadlock risk (CWE-807).
+    thread_safety_violation,
     /// Unknown issue type (fallback for future extensibility).
     unknown,
 
@@ -196,6 +202,7 @@ pub const IssueKind = enum {
             .type_mismatch => "type_mismatch",
             .ffi_type_mismatch => "ffi_type_mismatch",
             .cross_language_leak => "cross_language_leak",
+            .cross_language_free => "cross_language_free",
             .memory_leak => "memory_leak",
             .use_after_free => "use_after_free",
             .command_injection => "command_injection",
@@ -208,6 +215,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "callback_signature_mismatch",
             .invalid_free => "invalid_free",
             .static_buffer_misuse => "static_buffer_misuse",
+            .data_race => "data_race",
+            .thread_safety_violation => "thread_safety_violation",
             .unknown => "unknown",
         };
     }
@@ -223,6 +232,7 @@ pub const IssueKind = enum {
             .type_mismatch => 704,
             .ffi_type_mismatch => 704,
             .cross_language_leak => 401,
+            .cross_language_free => 763, // Release of memory not allocated by same allocator
             .memory_leak => 401,
             .use_after_free => 416,
             .command_injection => 78,
@@ -235,6 +245,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => 688,
             .invalid_free => 590,
             .static_buffer_misuse => 242,
+            .data_race => 362,
+            .thread_safety_violation => 807,
             .unknown => 0,
         };
     }
@@ -249,6 +261,7 @@ pub const IssueKind = enum {
             .type_mismatch => "Type mismatch across FFI boundary",
             .ffi_type_mismatch => "FFI type mismatch (size, alignment, or signedness)",
             .cross_language_leak => "Memory leak across language boundary",
+            .cross_language_free => "Cross-language free violation - allocation and free in different languages",
             .memory_leak => "Memory allocated but never freed",
             .use_after_free => "Use after free across language boundary",
             .command_injection => "Command injection vulnerability",
@@ -261,6 +274,8 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
             .invalid_free => "Free called on non-malloc pointer",
             .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
+            .data_race => "Data race - concurrent access without synchronization",
+            .thread_safety_violation => "Thread safety violation - lock ordering issue or deadlock risk",
             .unknown => "Unknown issue type",
         };
     }
@@ -461,25 +476,25 @@ test "Severity - toString" {
 }
 
 test "IssueKind - count matches expected" {
-    // Verify we have exactly 18 issue kinds (17 known + 1 unknown)
+    // Verify we have exactly 19 issue kinds (18 known + 1 unknown)
     const kinds = [_]IssueKind{
-        .ffi_unsafe_call,      .unchecked_return, .type_mismatch,               .ffi_type_mismatch,
-        .cross_language_leak,  .memory_leak,      .use_after_free,              .command_injection,
-        .buffer_overflow,      .double_free,      .format_string,               .malloc_unchecked,
-        .null_dereference,     .borrow_escape,    .callback_signature_mismatch, .invalid_free,
-        .static_buffer_misuse, .unknown,
+        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
+        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
+        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
+        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
+        .invalid_free,        .static_buffer_misuse, .unknown,
     };
-    try std.testing.expectEqual(@as(usize, 18), kinds.len);
+    try std.testing.expectEqual(@as(usize, 19), kinds.len);
 }
 
 test "IssueKind - CWE mapping consistency" {
     // Each known issue should have a valid CWE ID (> 0)
     const known_kinds = [_]IssueKind{
-        .ffi_unsafe_call,      .unchecked_return, .type_mismatch,               .ffi_type_mismatch,
-        .cross_language_leak,  .memory_leak,      .use_after_free,              .command_injection,
-        .buffer_overflow,      .double_free,      .format_string,               .malloc_unchecked,
-        .null_dereference,     .borrow_escape,    .callback_signature_mismatch, .invalid_free,
-        .static_buffer_misuse,
+        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
+        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
+        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
+        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
+        .invalid_free,        .static_buffer_misuse,
     };
     for (known_kinds) |kind| {
         try std.testing.expect(kind.toCweId() > 0);

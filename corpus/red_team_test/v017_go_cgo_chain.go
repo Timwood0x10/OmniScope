@@ -1,0 +1,238 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  OmniScope v0.1.7 — Go cgo Chain Detection Test Cases            ║
+ * ║  Target: A2 — C.xxx / _cgo_ / _Cfunc_ / crosscall2 detection   ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * Intentional bugs: 8
+ * Control cases: 2
+ *
+ * Patterns tested:
+ *   - C.xxx function calls (import "C" wrapper)
+ *   - _cgo_xxx glue functions
+ *   - _Cfunc_xxx C function wrappers
+ *   - crosscall2 runtime bridge
+ *   - runtime.cgocall boundary
+ */
+
+package main
+
+/*
+#cgo CFLAGS: -I.
+#cgo LDFLAGS: -L. -lcgo_stubs
+#include <stdlib.h>
+#include <string.h>
+
+extern void*   cgo_malloc(size_t);
+extern void    cgo_free(void*);
+extern int     cgo_process_data(void* buf, int len);
+extern char*   cgo_get_string(void);
+extern void*   cgo_get_raw(int id);
+extern char*   cgo_process_string(char* str);
+extern void    cgo_register_callback(void* cb_fn, void* ctx);
+
+extern void* _cgo_allocate(size_t size, int flags);
+extern int   _cgo_expact_call(void* fn, void* arg);
+extern void  _Cfunc_process(void* ctx);
+
+extern void* sim_crosscall2(void* fn, void* arg);
+extern void  sim_runtime_cgocall(void* fn, int arg);
+*/
+import "C"
+import "unsafe"
+
+// ================================================================
+// BUG-GO-01: C.malloc without C.free — ownership leak at cgo boundary
+//
+// Go calls C.malloc() via import "C". The returned pointer is managed
+// by C's allocator but never freed. When Go GC runs, it doesn't know
+// about this C memory.
+// ================================================================
+
+func BugGo01_CMallocLeak() unsafe.Pointer {
+	ptr := C.cgo_malloc(1024) // C allocates 1024 bytes
+	// BUG: pointer escapes to Go heap, never freed
+	_ = C.cgo_process_data(ptr, 512) // Use it in FFI call
+	return unsafe.Pointer(ptr) // Return to caller — double escape
+}
+
+// ================================================================
+// BUG-GO-02: C.CString leak across cgo boundary
+//
+// CString converts Go string → C memory. Must be freed with C.free.
+// This leaks every invocation.
+// ================================================================
+
+func BugGo02_CStringLeak() []byte {
+	goStr := "sensitive_data_leaking_to_c"
+	cstr := C.CString(goStr) // Allocates C memory
+	_ = C.cgo_process_string(cstr) // Passes through FFI
+	// BUG: C.free(unsafe.Pointer(cstr)) missing
+	return nil
+}
+
+// ================================================================
+// BUG-GO-03: _cgo_allocate result stored globally — UAF risk
+//
+// _cgo_allocate is a cgo-generated glue function. Its result is
+// a C-managed pointer that may be invalidated between calls.
+// ================================================================
+
+var g_cgo_ptr unsafe.Pointer
+
+func BugGo03_CgoAllocateGlobalEscape() {
+	// _cgo_allocate returns C memory via cgo glue layer
+	raw := C._cgo_allocate(256, 0) // flags=0: normal allocation
+	g_cgo_ptr = unsafe.Pointer(raw) // Store globally
+
+	// Later call may invalidate this...
+	_ = C.cgo_get_string() // Could trigger GC or C-side cleanup
+}
+
+func BugGo03_UseAfterInvalidate() int {
+	if g_cgo_ptr != nil {
+		// UAF if C side freed/reallocated the backing store
+		val := *(*C.int)(g_cgo_ptr)
+		return int(val)
+	}
+	return -1
+}
+
+// ================================================================
+// BUG-GO-04: _Cfunc_process receives stack address — stack escape
+//
+// _Cfunc_xxx is a cgo-generated wrapper around a real C function.
+// Passing a Go stack variable's address into it means the C side
+// may hold a dangling pointer after return.
+// ================================================================
+
+func BugGo04_CFuncStackEscape() {
+	var counter C.int = 42
+	// _Cfunc_process takes &counter (stack address of Go local)
+	C._Cfunc_process(unsafe.Pointer(&counter)) // Stack addr escapes to C
+	// After return, &counter is invalid on C side if stored
+}
+
+// ================================================================
+// BUG-GO-05: crosscall2 bridge — async callback with captured ptr
+//
+// crosscall2 is Go's runtime mechanism for calling between goroutines
+// and C code. If we pass a pointer that gets used asynchronously,
+// it may outlive its valid lifetime.
+// ================================================================
+
+type AsyncHandler struct {
+	data unsafe.Pointer
+}
+
+//export crosscall2_callback_handler
+func crosscall2_callback_handler(ctx unsafe.Pointer) {
+	_ = ctx // Async callback — may fire after data is freed
+}
+
+func BugGo05_Crosscall2AsyncEscape(data []byte) {
+	handler := &AsyncHandler{
+		data: unsafe.Pointer(&data[0]), // Capture slice data pointer
+	}
+	// Pass handler through crosscall2 — async use after data moves
+	C.sim_crosscall2(unsafe.Pointer(handler), unsafe.Pointer(&data[0]))
+}
+
+// ================================================================
+// BUG-GO-06: runtime.cgocall with oversized buffer — overflow risk
+//
+// runtime.cgocall wraps a C function call from Go. If we pass
+// a buffer that's smaller than what the C function expects,
+// we get a buffer overflow at the FFI boundary.
+// ================================================================
+
+func BugGo06_CgocallBufferOverflow() {
+	C.sim_runtime_cgocall(nil, C.int(0)) // Returns untrusted ptr
+	// More realistic: pass small buffer to function that writes more
+	var tinyBuf [4]C.char
+	C.cgo_process_data(unsafe.Pointer(&tinyBuf[0]), 4096) // Write 4096 into 4-byte buf!
+}
+
+// ================================================================
+// BUG-GO-07: C.malloc + C.free mismatched — double-free candidate
+//
+// Allocate with C.malloc, then free with a different deallocator
+// (or free twice). Cross-language ownership confusion.
+// ================================================================
+
+func BugGo07_MismatchedFree() {
+	ptr := C.cgo_malloc(2048)
+	if ptr != nil {
+		C.cgo_free(ptr) // First free — correct
+		// ... complex logic ...
+		C.cgo_free(ptr) // BUG: double free! Ownership unclear
+	}
+}
+
+// ================================================================
+// BUG-GO-08: C.CBytes leak + callback registration
+//
+// C.CBytes creates a copy of Go byte slice in C memory.
+// Registering a callback that references it creates an indirect
+// escape path through the callback closure.
+// ================================================================
+
+type LeakCallback struct {
+	payload unsafe.Pointer
+}
+
+//export leak_callback_trampoline
+func leak_callback_trampoline(payload unsafe.Pointer) {
+	_ = payload // Callback holds reference to leaked C memory
+}
+
+func BugGo08_CBytesCallbackLeak() {
+	data := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE}
+	cbytes := C.CBytes(data) // C memory allocated
+	// Register callback that uses cbytes indirectly
+	cb := &LeakCallback{payload: unsafe.Pointer(cbytes)}
+	C.cgo_register_callback(nil, unsafe.Pointer(cb))
+	// BUG: cbytes never freed, callback holds reference to leaked memory
+}
+
+// ================================================================
+// CONTROL-C01: Correct C.malloc + C.free pattern
+// ================================================================
+
+func ControlC01_CorrectMallocFree() {
+	ptr := C.cgo_malloc(512)
+	if ptr != nil {
+		_ = C.cgo_process_data(ptr, 512)
+		C.cgo_free(ptr) // Correct: matched alloc/free
+	}
+}
+
+// ================================================================
+// CONTROL-C02: Correct C.CString + deferred C.free
+// ================================================================
+
+func ControlC02_CorrectCString() {
+	s := "safe_string"
+	cstr := C.CString(s)
+	defer C.free(unsafe.Pointer(cstr)) // Correct: deferred free
+	_ = C.cgo_process_string(cstr)
+}
+
+// ================================================================
+// Main entry — triggers all test cases
+// ================================================================
+
+func main() {
+	BugGo01_CMallocLeak()
+	BugGo02_CStringLeak()
+	BugGo03_CgoAllocateGlobalEscape()
+	BugGo03_UseAfterInvalidate()
+	BugGo04_CFuncStackEscape()
+	BugGo05_Crosscall2AsyncEscape([]byte{1, 2, 3, 4})
+	BugGo06_CgocallBufferOverflow()
+	BugGo07_MismatchedFree()
+	BugGo08_CBytesCallbackLeak()
+
+	ControlC01_CorrectMallocFree()
+	ControlC02_CorrectCString()
+}

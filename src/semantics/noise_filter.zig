@@ -112,10 +112,20 @@ const RUST_STDLIB_PREFIXES = [_][]const u8{
 
     // Compiler-generated patterns
     "__rust_",
-    "_RNv", // Rust name versioning
     "$LT$core", // Generic core types
     "$LT$alloc", // Generic alloc types
     "$LT$std", // Generic std types
+};
+
+/// Rust v0 mangling stdlib prefixes (_RNv + crate name).
+/// Only _RNv + core/alloc/std is stdlib — user crates like _RNvXs...MyCrate are user code.
+const RUST_V0_STDLIB_PREFIXES = [_][]const u8{
+    "_RNvN4core",
+    "_RNvN5alloc",
+    "_RNvN3std",
+    "_RNvXsX_N4core",
+    "_RNvXsX_N5alloc",
+    "_RNvXsX_N3std",
 };
 
 /// Rust standard library substrings to skip.
@@ -123,7 +133,8 @@ const RUST_STDLIB_SUBSTRINGS = [_][]const u8{
     "core::ptr::drop_in_place",
     "core::panicking::begin_panic",
     "alloc::raw_vec::RawVec",
-    "panic_",
+    "core::panicking::",
+    "alloc::alloc::",
     "<alloc::vec::Vec",
     "<core::slice",
     "::fmt::",
@@ -131,12 +142,16 @@ const RUST_STDLIB_SUBSTRINGS = [_][]const u8{
 
 /// Rust compiler-generated function patterns.
 const RUST_COMPILER_PATTERNS = [_][]const u8{
-    // Drop glue
+    // Drop glue - P0-3: Suppress compiler-generated destructors
     "drop_in_place",
+    "glue_drop",
+    "need_drop",
+    "drop_glue",
 
     // Panic infrastructure
     "begin_panic",
     "panic_fmt",
+    "panic_bounds_check",
 
     // Monomorphization artifacts
     "$LT$",
@@ -144,9 +159,16 @@ const RUST_COMPILER_PATTERNS = [_][]const u8{
     "$u20$",
     "$C$",
 
-    // Shims
+    // Shims and compiler internals
     "_ZN17alloc", // alloc internals
     "_ZN4core", // core internals
+    "__rust_",
+    "impl_drop",
+    "impl_clone",
+
+    // Opaque type wrappers
+    "opaque_type",
+    "dyn_drop",
 };
 
 // ============================================================================
@@ -175,12 +197,28 @@ const ZIG_STDLIB_SUBSTRINGS = [_][]const u8{
 
 /// Zig compiler-generated patterns.
 const ZIG_COMPILER_PATTERNS = [_][]const u8{
-    // Allocator wrappers
+    // Allocator wrappers - P0-3: Suppress compiler allocators
     "GeneralPurposeAllocator",
+    "FixedBufferAllocator",
+    "ArenaAllocator",
+    "ThreadSafeAllocator",
 
-    // Runtime
+    // Runtime internals
     "zig_start",
     "__zig_launch",
+    "start.main",
+    "callMain",
+
+    // Compiler-generated safety
+    "safety_panic",
+    "boundsCheck",
+    "sentinelCheck",
+    "fieldCheck",
+    "overflowCheck",
+
+    // Defer glue
+    "__defer",
+    "defer_",
 };
 
 // ============================================================================
@@ -205,9 +243,36 @@ const CPP_STDLIB_SUBSTRINGS = [_][]const u8{
 
 /// C++ compiler-generated patterns.
 const CPP_COMPILER_PATTERNS = [_][]const u8{
+    // Compiler-generated helpers - P0-3: Suppress
     "__clang_call_terminate",
+    "__cxa_pure_virtual",
+    "__cxa_deleted_virtual",
+    "__gxx_personality",
+
+    // STL template internals (already covered by stdlib, but extra safety)
     "_ZSt", // std template instantiations
     "_ZNSt", // std namespace mangled
+
+    // RAII/destructor glue
+    // Note: _ZN is NOT listed here — it matches all mangled user code.
+    // Destructor patterns D0Ev/D1Ev/D2Ev are sufficient for compiler-generated detection.
+    "D0Ev", // Deleting destructor
+    "D1Ev", // Complete object destructor
+    "D2Ev", // Base object destructor
+
+    // VTable and RTTI
+    "_ZTV", // Virtual table
+    "_ZTI", // Typeinfo
+    "_ZTS", // Typeinfo name
+
+    // Allocator internals (DC-H14 FIX: Use precise patterns to avoid false positives)
+    // OLD: "allocator" matched "my_custom_allocator_init" incorrectly
+    // NEW: Only match std:: allocator patterns and operator new/delete
+    "_ZN9__gnu_cxx13new_allocator", // GNU new_allocator<T>
+    "_ZNSt13__allocated", // std::allocated_ptr (libstdc++)
+    "_ZSt15get_new_handlerv", // std::get_new_handler
+    "_Znwm", // operator new
+    "_ZdlPv", // operator delete
 };
 
 // ============================================================================
@@ -419,7 +484,18 @@ pub const Language = enum(u8) {
 
 /// Classify a Rust function by name patterns.
 fn classifyRustFunction(func_name: []const u8) ClassificationResult {
-    // Check stdlib prefixes FIRST (more specific than compiler patterns)
+    // Check v0 mangling stdlib prefixes first (most specific for _RNv patterns)
+    for (RUST_V0_STDLIB_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .stdlib,
+                .risk_level = .low,
+                .reason = "Rust standard library (v0 mangling)",
+            };
+        }
+    }
+
+    // Check stdlib prefixes (legacy C++ mangling)
     for (RUST_STDLIB_PREFIXES) |prefix| {
         if (std.mem.startsWith(u8, func_name, prefix)) {
             return .{
@@ -960,4 +1036,44 @@ test "auto language detection - Rust" {
 test "auto language detection - C++" {
     const result = classifyFunction("_Z9myProcessv", null);
     try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "_RNv v0 mangling: user crate not classified as stdlib" {
+    const result = classifyFunction("_RNvXsX_NtNtCs7MyCrate3ffi4cb_handler", null);
+    try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "_RNv v0 mangling: core/alloc/std classified as stdlib" {
+    const core = classifyFunction("_RNvXsX_N4core3fmt3Debug", null);
+    try std.testing.expectEqual(FunctionOrigin.stdlib, core.origin);
+    const alloc = classifyFunction("_RNvXsX_N5alloc3ffi", null);
+    try std.testing.expectEqual(FunctionOrigin.stdlib, alloc.origin);
+}
+
+test "_ZN not in CPP_COMPILER_PATTERNS indexOf" {
+    const result = classifyCppFunction("_ZN4myapp4mainE");
+    try std.testing.expectEqual(FunctionOrigin.user, result.origin);
+}
+
+test "DC-H14: allocator pattern does not match custom allocators" {
+    const testing = std.testing;
+
+    // Should match (std:: allocator patterns)
+    try testing.expect(classifyFunction("_ZN9__gnu_cxx13new_allocatorIiE", .cpp).origin == .compiler_generated);
+    try testing.expect(classifyFunction("_Znwm", .cpp).origin == .compiler_generated);
+    try testing.expect(classifyFunction("_ZdlPv", .cpp).origin == .compiler_generated);
+
+    // Should NOT match (custom allocators)
+    const custom_cases = [_][]const u8{
+        "my_custom_allocator_init",
+        "get_allocator",
+        "allocator_pool_create",
+        "custom_allocator_dealloc",
+    };
+
+    for (custom_cases) |case| {
+        const result = classifyFunction(case, .cpp);
+        // Custom allocator code should be classified as user code, not suppressed
+        try testing.expect(result.origin != .compiler_generated);
+    }
 }

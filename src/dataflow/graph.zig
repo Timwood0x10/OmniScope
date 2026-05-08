@@ -16,6 +16,7 @@ const QueryEngine = @import("../fact/query.zig").QueryEngine;
 
 const Location = @import("../diag/issue.zig").Location;
 const Issue = @import("../diag/issue.zig").Issue;
+const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const IssueKind = @import("../diag/issue.zig").IssueKind;
 const Severity = @import("../diag/issue.zig").Severity;
 const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
@@ -164,23 +165,21 @@ pub const DataFlowGraph = struct {
         const edge_index = self.edges.items.len;
         try self.edges.append(self.allocator, edge);
 
-        // Update indices
+        // Update indices - allocate new list before freeing old
         if (self.outgoing_edges.get(edge.from)) |outgoing| {
             const new_list = try self.allocator.alloc(u32, outgoing.len + 1);
-            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..outgoing.len], outgoing);
             new_list[@intCast(outgoing.len)] = @intCast(edge_index);
-            self.allocator.free(outgoing);
             try self.outgoing_edges.put(edge.from, new_list);
+            self.allocator.free(outgoing); // Free old after successful put
         }
 
         if (self.incoming_edges.get(edge.to)) |incoming| {
             const new_list = try self.allocator.alloc(u32, incoming.len + 1);
-            errdefer self.allocator.free(new_list);
             @memcpy(new_list[0..incoming.len], incoming);
             new_list[@intCast(incoming.len)] = @intCast(edge_index);
-            self.allocator.free(incoming);
             try self.incoming_edges.put(edge.to, new_list);
+            self.allocator.free(incoming); // Free old after successful put
         }
     }
 
@@ -360,8 +359,22 @@ pub const DataFlowGraph = struct {
         errdefer self.allocator.free(message_copy);
 
         var func_copy: ?[]u8 = null;
+        var trace_copy: ?[]TraceEntry = null;
+
+        // ERRDEFER cleanup for partial allocations on OOM
+        // Only cleans up if function returns error (not on success path)
         errdefer {
-            if (func_copy) |f| self.allocator.free(f);
+            if (trace_copy) |t| {
+                for (t) |*entry| {
+                    if (entry.owned and entry.description.len > 0) {
+                        self.allocator.free(entry.description);
+                    }
+                }
+                self.allocator.free(t);
+            }
+            if (func_copy) |f| {
+                self.allocator.free(f);
+            }
         }
 
         var issue_copy = issue;
@@ -373,12 +386,40 @@ pub const DataFlowGraph = struct {
             issue_copy.function_owned = true;
         }
 
+        // Deep copy trace array if present, including owned descriptions
+        if (issue.trace) |trace| {
+            trace_copy = try self.allocator.dupe(TraceEntry, trace);
+            // Issue1 IMPROVEMENT: Use explicit ownership tracking array instead of index
+            // This makes cleanup logic clearer and less error-prone
+            var copied = try self.allocator.alloc(bool, trace.len);
+            @memset(copied, false);
+            errdefer {
+                for (copied, 0..) |was_copied, i| {
+                    if (was_copied and trace_copy.?[i].owned and trace_copy.?[i].description.len > 0) {
+                        self.allocator.free(trace_copy.?[i].description);
+                    }
+                }
+                self.allocator.free(copied);
+                if (trace_copy) |tc| self.allocator.free(tc);
+            }
+            for (trace_copy.?, 0..) |*entry, i| {
+                if (trace[i].owned and trace[i].description.len > 0) {
+                    entry.description = try self.allocator.dupe(u8, trace[i].description);
+                    copied[i] = true; // Mark as successfully copied
+                }
+            }
+            self.allocator.free(copied); // Free tracking array on success
+            issue_copy.trace = trace_copy.?;
+        }
+
         issue_copy.owned = true;
         try self.issues.append(self.allocator, issue_copy);
 
-        // Transfer ownership of original message (trace is shared via shallow copy).
-        if (issue.owned and issue.message.len > 0) {
-            self.allocator.free(issue.message);
+        // Transfer ownership: free original issue's owned memory
+        // The issue_copy now owns all deep copies
+        if (issue.owned) {
+            var mutable_issue = issue;
+            mutable_issue.deinit(self.allocator);
         }
     }
 
@@ -422,10 +463,21 @@ pub const DataFlowGraph = struct {
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
                 const message_copy = try self.allocator.dupe(u8, issue.message);
+                // DC-C9 FIX: Deep copy location.func to prevent dangling pointer
+                const func_copy = if (issue.location.func.len > 0)
+                    try self.allocator.dupe(u8, issue.location.func)
+                else
+                    issue.location.func;
+
                 result[index] = .{
                     .kind = issue.kind,
                     .message = message_copy,
-                    .location = issue.location,
+                    .location = .{
+                        .file = issue.location.file,
+                        .func = func_copy,
+                        .line = issue.location.line,
+                        .column = issue.location.column,
+                    },
                     .severity = issue.severity,
                     .confidence = issue.confidence,
                     .confidence_level = issue.confidence_level,
@@ -433,7 +485,7 @@ pub const DataFlowGraph = struct {
                     .ffi_boundary = issue.ffi_boundary,
                     .trace = null,
                     .owned = true,
-                    .function_owned = false,
+                    .function_owned = (func_copy.len > 0),
                 };
                 index += 1;
             }
@@ -516,8 +568,17 @@ pub const DataFlowGraph = struct {
         malloc_unchecked: usize,
         callback_mismatch: usize,
         cross_language_leak: usize,
+        cross_language_free: usize,
         static_buffer_misuse: usize,
+        data_race: usize,
+        thread_safety_violation: usize,
         unknown: usize,
+
+        /// C4-4: FunctionOrigin grouping for output summary
+        user_code: usize = 0,
+        stdlib_suppressed: usize = 0,
+        compiler_ignored: usize = 0,
+        third_party: usize = 0,
     };
 
     pub fn getIssueStats(self: *const DataFlowGraph) IssueStats {
@@ -538,7 +599,10 @@ pub const DataFlowGraph = struct {
             .malloc_unchecked = 0,
             .callback_mismatch = 0,
             .cross_language_leak = 0,
+            .cross_language_free = 0,
             .static_buffer_misuse = 0,
+            .data_race = 0,
+            .thread_safety_violation = 0,
             .unknown = 0,
         };
         for (self.issues.items) |issue| {
@@ -557,11 +621,63 @@ pub const DataFlowGraph = struct {
                 .unchecked_return => stats.unchecked_return += 1,
                 .malloc_unchecked => stats.malloc_unchecked += 1,
                 .callback_signature_mismatch => stats.callback_mismatch += 1,
+                .cross_language_free => stats.cross_language_free += 1,
                 .static_buffer_misuse => stats.static_buffer_misuse += 1,
+                .data_race => stats.data_race += 1,
+                .thread_safety_violation => stats.thread_safety_violation += 1,
                 .unknown => stats.unknown += 1,
+            }
+
+            // C4-4: Infer FunctionOrigin from issue location for grouping output
+            const fn_name = issue.location.func;
+            if (inferIsStdlib(fn_name)) {
+                stats.stdlib_suppressed += 1;
+            } else if (inferIsCompilerGenerated(fn_name)) {
+                stats.compiler_ignored += 1;
+            } else if (inferIsThirdParty(fn_name)) {
+                stats.third_party += 1;
+            } else {
+                stats.user_code += 1;
             }
         }
         return stats;
+    }
+
+    /// C4-4: Lightweight stdlib detection for origin grouping.
+    fn inferIsStdlib(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "std::", "boost::",  "__gnu",    "__cxa_",     "llvm.",
+            "std.",  "runtime.", "syscall.", "java.lang.",
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
+    }
+
+    /// C4-4: Lightweight compiler-generated detection for origin grouping.
+    fn inferIsCompilerGenerated(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "__",              "_Z",        "_GLOBAL__",           ".omp.",
+            "zig_assert_fail", "zig_panic", "zig_generic_resolve",
+            "llvm.dbg", // LLVM debug intrinsics (prefix-matched for consistency)
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
+    }
+
+    /// C4-4: Lightweight third-party detection for origin grouping.
+    fn inferIsThirdParty(fn_name: []const u8) bool {
+        const prefixes = [_][]const u8{
+            "C.",         "_cgo_",   "_Cfunc_", "Java_", "JNI_",
+            "crosscall2", "PyInit_", "Python_",
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, fn_name, p)) return true;
+        }
+        return false;
     }
 
     /// Graph statistics

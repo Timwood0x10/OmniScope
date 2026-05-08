@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const word_boundary = @import("../../utils/word_boundary.zig");
 
 const allocator_kb = @import("../../semantics/allocator_kb.zig");
 const intrinsic_filter = @import("../../semantics/intrinsic_filter.zig");
@@ -67,7 +68,7 @@ pub const PtrInfo = struct {
     escaped: bool = false,
     /// Whether this pointer has been freed
     freed: bool = false,
-    /// v0.1.8: Whether this pointer has been double-freed (freed twice)
+    /// v0.1.7: Whether this pointer has been double-freed (freed twice)
     double_free_detected: bool = false,
     /// Basic block where the pointer was allocated (for scope tracking)
     alloc_bb_id: usize = 0,
@@ -204,9 +205,9 @@ pub const KNOWN_DEALLOCATORS = struct {
 pub const RUST_ALLOC_INTRINSICS = struct {
     /// All 8 Rust allocator/deallocator intrinsics (alloc + dealloc combined)
     pub const all = [_][]const u8{
-        "__rust_alloc", "__rust_dealloc",  "__rust_realloc",
-        "__rdl_alloc",  "__rdl_dealloc",   "__rg_alloc",
-        "__rg_dealloc", "exchange_malloc",
+        "__rust_alloc",        "__rust_dealloc", "__rust_realloc",
+        "__rust_alloc_zeroed", "__rdl_alloc",    "__rdl_dealloc",
+        "__rg_alloc",          "__rg_dealloc",   "exchange_malloc",
     };
     /// Allocator-only subset (no deallocators)
     pub const alloc_only = [_][]const u8{
@@ -221,15 +222,22 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",          "calloc",         "realloc",      "aligned_alloc",
-    "valloc",          "pvalloc",        "memalign",     "operator new",
-    "operator new[]",  "into_raw",       "allocImpl",    "mmap",
-    "dlopen",          "fopen",          "socket",       "JNI_OnLoad",
-    "Py_Initialize",   "Py_BuildValue",  "PyTuple_New",  "PyList_New",
-    "PyDict_New",      "NewStringUTF",   "NewByteArray", "NewGlobalRef",
+    "malloc",         "calloc",       "realloc",      "aligned_alloc",
+    "valloc",         "pvalloc",      "memalign",     "operator new",
+    "operator new[]", "allocImpl",    "mmap",
+    // v0.1.7 FIX: Removed "into_raw" from this list.
+    // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
+    // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was
+    // recorded as a new allocation, and without matching from_raw, reported
+    // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
+    // which pairs into_raw/from_raw as transfer-out/transfer-in.
+            "dlopen",
+    "fopen",          "socket",       "JNI_OnLoad",   "Py_Initialize",
+    "Py_BuildValue",  "PyTuple_New",  "PyList_New",   "PyDict_New",
+    "NewStringUTF",   "NewByteArray", "NewGlobalRef",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
-    "__rust_alloc",    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",
-    "exchange_malloc",
+    "__rust_alloc",
+    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",   "exchange_malloc",
 };
 
 // ============================================================================
@@ -359,12 +367,15 @@ fn extractFunctionPrefix(func_name: []const u8) []const u8 {
 pub fn is_extern_function(name: []const u8) bool {
     if (name.len == 0) return false;
 
+    if (std.mem.startsWith(u8, name, "c_ffi_")) return true;
+    if (std.mem.startsWith(u8, name, "ffi_")) return true;
+
     for (FFI_RETAINING_FUNCTIONS) |func| {
-        if (std.mem.indexOf(u8, name, func) != null) return true;
+        if (word_boundary.isWordBoundaryMatch(name, func)) return true;
     }
 
     for (CALLBACK_TAKING_FUNCTIONS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
+        if (word_boundary.isWordBoundaryMatch(name, pattern)) return true;
     }
 
     return false;
@@ -375,7 +386,7 @@ pub fn is_extern_function(name: []const u8) bool {
 pub fn is_known_deallocator(func_name: []const u8) bool {
     inline for (.{ KNOWN_DEALLOCATORS.finalize_functions, KNOWN_DEALLOCATORS.close_functions, KNOWN_DEALLOCATORS.free_functions, KNOWN_DEALLOCATORS.destroy_functions }) |group| {
         for (group) |dealloc| {
-            if (std.mem.indexOf(u8, func_name, dealloc) != null) return true;
+            if (word_boundary.isWordBoundaryMatch(func_name, dealloc)) return true;
         }
     }
     return false;
@@ -400,7 +411,7 @@ pub fn is_intentional_free(func_name: []const u8) bool {
 
 /// Check if a function may store/retain its pointer argument.
 pub fn may_retain_pointer(callee_name: []const u8) bool {
-    // v0.1.8: Check if this is an LLVM intrinsic that should be suppressed.
+    // v0.1.7: Check if this is an LLVM intrinsic that should be suppressed.
     if (isIntrinsicNoise(callee_name)) return false;
 
     if (is_extern_function(callee_name)) return true;
@@ -408,10 +419,11 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
     const retaining_patterns = [_][]const u8{
         "register_", "add_",  "insert_", "push_",
         "store_",    "save_", "cache_",  "copy_",
+        "retain",    "keep",  "hold",    "pass",
     };
 
     for (retaining_patterns) |pat| {
-        if (std.mem.startsWith(u8, callee_name, pat)) return true;
+        if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
     }
 
     if (std.mem.startsWith(u8, callee_name, "set_")) {
@@ -423,7 +435,7 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
 }
 
 fn isOutputParamSetter(func_name: []const u8) bool {
-    // v0.1.8: Check for output parameter patterns.
+    // v0.1.7: Check for output parameter patterns.
 
     // Check if function has output parameters based on common patterns.
     const output_patterns = [_][]const u8{
@@ -449,7 +461,7 @@ fn isOutputParamSetter(func_name: []const u8) bool {
 // Allocation Site Detection
 // ============================================================================
 
-/// v0.1.8: Check if a function is a known heap allocator using Allocator KB.
+/// v0.1.7: Check if a function is a known heap allocator using Allocator KB.
 var g_allocator_kb: ?allocator_kb.AllocatorKB = null;
 var g_allocator_kb_init_failed: bool = false;
 var g_allocator_kb_lock = std.atomic.Value(bool).init(false);
@@ -467,7 +479,7 @@ pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
     if (g_allocator_kb != null) return &g_allocator_kb.?;
 
     g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
-        std.debug.print("[WARN] AllocatorKB init failed: {any}, falling back to legacy detection\n", .{err});
+        std.log.warn("AllocatorKB init failed: {any}, falling back to legacy detection", .{err});
         g_allocator_kb_init_failed = true;
         return null;
     };
@@ -486,7 +498,7 @@ pub fn isHeapAllocFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// v0.1.8: Check if a function is a known deallocator using Allocator KB.
+/// v0.1.7: Check if a function is a known deallocator using Allocator KB.
 pub fn isKnownDeallocFunction(func_name: []const u8) bool {
     if (getAllocatorKB()) |kb| {
         if (kb.isDeallocator(func_name)) return true;
@@ -499,7 +511,7 @@ pub fn isKnownDeallocFunction(func_name: []const u8) bool {
 // Intrinsic Filter
 // ============================================================================
 
-/// v0.1.8: Check if a function is an LLVM intrinsic that should be suppressed.
+/// v0.1.7: Check if a function is an LLVM intrinsic that should be suppressed.
 /// Note: IntrinsicFilter.init() does not return an error, so no error handling needed.
 var g_intrinsic_filter: ?intrinsic_filter.IntrinsicFilter = null;
 var g_intrinsic_filter_lock = std.atomic.Value(bool).init(false);

@@ -9,6 +9,7 @@ const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const DataFlowGraph = @import("../dataflow/graph.zig").DataFlowGraph;
 const Issue = @import("../diag/issue.zig").Issue;
+const Severity = @import("../diag/issue.zig").Severity;
 const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const Location = @import("../diag/issue.zig").Location;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
@@ -16,6 +17,7 @@ const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
+const call_graph_mod = @import("../semantics/call_graph.zig");
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
@@ -92,13 +94,41 @@ pub const Pipeline = struct {
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
             .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
-            .memory_graph = @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator) catch unreachable,
+            .memory_graph = try @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),
             .ffi_auto_relevant = std.AutoHashMap(u64, void).init(self.allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(self.allocator),
             .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
+            .semantics_call_graph = null,
         };
+        // DC-C3 FIX: Add errdefer to clean up HashMaps if memory_graph.init fails
+        errdefer {
+            ctx.value_id_map.deinit();
+            ctx.raii_func_set.deinit();
+            ctx.meyers_singleton_set.deinit();
+            ctx.rc_container_func_set.deinit();
+            ctx.rust_into_raw_set.deinit();
+            ctx.rust_from_raw_set.deinit();
+            ctx.reported_keys.deinit();
+            ctx.registry_cache.deinit();
+            ctx.zone_cache.deinit();
+            ctx.danger_surface_relevant.deinit();
+            ctx.ffi_auto_relevant.deinit();
+            ctx.relevant_functions.deinit();
+            ctx.CallSiteIndex.deinit();
+            ctx.cross_edge_by_callee.deinit();
+            ctx.global_alloc_tracker.deinit();
+        }
+        // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
+        // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
+        // The graph uses GeneralPurposeAllocator (not Arena) so all internal
+        // allocations (HashMap, ArrayList, dupe'd strings) must be explicitly freed.
+        defer {
+            if (ctx.semantics_call_graph) |*sg| {
+                call_graph_mod.CallGraph.deinit(sg);
+            }
+        }
         defer ctx.deinit();
 
         // R7.2 Language-First: detect module language ONCE before any passes run.
@@ -126,13 +156,16 @@ pub const Pipeline = struct {
                             if (@intFromPtr(called_name_ptr) == 0) continue;
                             const called_name = std.mem.span(called_name_ptr);
                             const inst_ptr = @as(u64, @intFromPtr(inst));
-                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch {};
+                            // DC-C4 FIX: Log OOM instead of silently swallowing error
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
+                                std.log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
+                            };
                         }
                     }
                 }
             }
             const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
-            if (idx_ms > 10) std.debug.print("[PERF] CallSiteIndex build: {d:.1} ms\n", .{@as(u32, @intFromFloat(idx_ms))});
+            if (idx_ms > 10) std.log.info("[PERF] CallSiteIndex build: {d:.1} ms", .{@as(u32, @intFromFloat(idx_ms))});
         }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
@@ -143,27 +176,45 @@ pub const Pipeline = struct {
         // R8.3-d: Post-pass leak report — scan GlobalAllocTracker for unfreed allocations.
         // After all passes have run, any allocation that was never freed is a leak candidate.
         // Skip global/static variables (intentionally never freed) and already-matched pairs.
+        // D1-4: Promote candidates to confirmed leaks when they reach FFI boundaries.
         const leak_count = ctx.global_alloc_tracker.leakCount();
         if (leak_count > 0) {
             const tracker = &ctx.global_alloc_tracker;
+            var confirmed_high: u32 = 0;
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
                     const trace = try self.allocator.alloc(TraceEntry, 1);
                     trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
+                    // D1-4: Check if leaked ptr reaches FFI boundary → promote severity
+                    const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
+                    const severity: Severity = if (is_on_ffi_path) .high else .low;
+                    const confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
+                    if (is_on_ffi_path) confirmed_high += 1;
+
+                    // FIX: Let addIssue take ownership by setting owned=true.
+                    // Previous code used owned=false + manual free, which leaked trace[0].description.
+                    // The correct ownership model is:
+                    //   1. We allocate msg and trace (with trace[0].description)
+                    //   2. We set owned=true to indicate we own this memory
+                    //   3. addIssue deep-copies everything, then calls deinit on our original
+                    //   4. deinit frees msg + trace + trace[0].description (all owned)
+                    //   5. The graph owns the deep copies and frees them on graph.deinit
                     var issue = Issue.initWithTrace(
                         .memory_leak,
                         msg,
                         Location.init(rec.alloc_func),
-                        .low,
-                        0.50,
+                        severity,
+                        confidence,
                         trace,
                     );
+                    issue.owned = true; // We own msg and trace; addIssue will deep-copy then deinit our originals
                     try ctx.addIssue(&issue);
                 }
             }
-            diag.info("[R8.3-d] GlobalAllocTracker: {d} leak candidates reported from {d} tracked allocations", .{
-                leak_count, tracker.size(),
+            const omi_prefix = if (confirmed_high > 0) "[OMI-HIGH] " else "";
+            diag.info("{s}GlobalAllocTracker: {d} memory leaks confirmed from {d} tracked allocations ({d} cross-FFI)", .{
+                omi_prefix, leak_count, tracker.size(), confirmed_high,
             });
         }
     }

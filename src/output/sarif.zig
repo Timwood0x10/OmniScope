@@ -74,7 +74,9 @@ pub const SarifOutput = struct {
             .ffi_unsafe_call,
             .unchecked_return,
             .type_mismatch,
+            .ffi_type_mismatch,
             .cross_language_leak,
+            .cross_language_free,
             .use_after_free,
             .command_injection,
             .buffer_overflow,
@@ -84,6 +86,8 @@ pub const SarifOutput = struct {
             .invalid_free,
             .null_dereference,
             .borrow_escape,
+            .callback_signature_mismatch,
+            .static_buffer_misuse,
             .unknown,
         };
         for (kinds, 0..) |kind, i| {
@@ -184,30 +188,14 @@ pub const SarifGenerator = struct {
     }
 
     pub fn generate(self: *SarifGenerator, issues: []const Issue) ![]const u8 {
-        var sarif = SarifOutput.init(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
+        var sarif = SarifOutput.initWithUri(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
         return try sarif.generate(issues);
     }
 
     pub fn writeToFile(self: *SarifGenerator, path: []const u8, issues: []const Issue) !void {
-        var sarif = SarifOutput.init(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
+        var sarif = SarifOutput.initWithUri(self.allocator, self.tool_info.name, self.tool_info.version, self.tool_info.information_uri);
         try sarif.writeToFile(path, issues);
     }
-};
-
-pub const SarifRule = struct {
-    id: []const u8,
-    name: []const u8,
-    short_description: []const u8,
-    default_level: []const u8,
-};
-
-pub const SarifResult = struct {
-    rule_id: []const u8,
-    level: []const u8,
-    message: []const u8,
-    file: []const u8,
-    line: u32,
-    column: u32,
 };
 
 pub const DEFAULT_TOOL_INFO = ToolInfo{
@@ -256,6 +244,6 @@ fn writeUint64(writer: anytype, v: u64) !void {
 
 fn writeFloat(writer: anytype, v: f64) !void {
     var buf: [32]u8 = undefined;
-    const result = std.fmt.bufPrint(&buf, "{d}", .{v}) catch unreachable;
+    const result = std.fmt.bufPrint(&buf, "{d}", .{v}) catch return error.OutOfMemory;
     try writer.writeAll(result);
 }

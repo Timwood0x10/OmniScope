@@ -2,7 +2,7 @@
 
 ### A Technical Whitepaper for People Who Debug Cross-Language Crashes at 2 AM
 
-**Version**: v0.1.6 | **Date**: 2026-05-04 | **Language**: Zig (LLVM 22)
+**Version**: v0.1.7 | **Date**: 2026-05-06 | **Language**: Zig (LLVM 22)
 
 ---
 
