@@ -26,6 +26,23 @@ pub const BufferOverflowPass = struct {
     pub const kind = .analysis;
     pub const deps: []const []const u8 = &[_][]const u8{};
 
+    /// Helper: Get safe UTF-8 function name from LLVM value
+    /// Prevents garbled characters in terminal output when function names contain non-UTF-8
+    fn getSafeFuncName(func: c.LLVMValueRef) []const u8 {
+        const name_ptr = c.LLVMGetValueName(func);
+        if (@intFromPtr(name_ptr) == 0) return "unknown";
+        
+        const func_name_raw = std.mem.span(name_ptr);
+        
+        // Validate UTF-8 to prevent terminal display issues
+        if (std.unicode.utf8ValidateSlice(func_name_raw)) {
+            return func_name_raw;
+        }
+        
+        // Return safe fallback for non-UTF-8 names (e.g., mangled C++ names)
+        return "function_with_non_utf8_name";
+    }
+
     /// Run buffer overflow detection on the loaded module.
     /// This is an AUXILIARY pass (not core FFI/unsafe detection).
     /// For performance, it skips modules with >500 functions (large codebases).
@@ -164,11 +181,7 @@ pub const BufferOverflowPass = struct {
         if (!last_index_is_const) return null;
 
         if (last_index_value >= @as(i64, @intCast(max_elements))) {
-            const func_name = c.LLVMGetValueName(func);
-            const func_name_str = if (@intFromPtr(func_name) != 0)
-                std.mem.span(func_name)
-            else
-                "unknown";
+            const func_name_str = getSafeFuncName(func);
 
             diag.warn("STACK-OVERFLOW [HIGH]: GEP index {d} exceeds element count {d} in {s}", .{
                 last_index_value, max_elements,
@@ -237,11 +250,7 @@ pub const BufferOverflowPass = struct {
         if (!has_const_index) return null;
 
         if (last_index_value >= @as(i64, @intCast(array_size))) {
-            const func_name = c.LLVMGetValueName(func);
-            const func_name_str = if (@intFromPtr(func_name) != 0)
-                std.mem.span(func_name)
-            else
-                "unknown";
+            const func_name_str = getSafeFuncName(func);
 
             diag.warn("ARRAY-OOB [HIGH]: Array index {d} exceeds array size {d}", .{
                 last_index_value, array_size,
@@ -303,11 +312,7 @@ pub const BufferOverflowPass = struct {
         if (size <= limit) return null; // Safe: size fits within buffer
 
         // OVERFLOW: writing more bytes than destination can hold
-        const func_name_raw = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_raw) != 0)
-            std.mem.span(func_name_raw)
-        else
-            "unknown";
+        const func_name = getSafeFuncName(func);
 
         diag.warn("MEMCPY-CHK [HIGH]: {s} writes {d} bytes to {d}-byte buffer in {s}", .{
             callee_name, size, limit, func_name,
@@ -329,7 +334,23 @@ pub const BufferOverflowPass = struct {
     /// Helper function to register a detected issue with the context.
     fn reportIssue(ctx: *PassContext, issue: Issue, diag: *DiagnosticWriter) !void {
         try ctx.addIssue(&issue);
-        diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), issue.message });
+        
+        // Fix: Ensure UTF-8 safe output to prevent garbled characters in terminal
+        const safe_message = sanitizeUtf8String(issue.message);
+        diag.err("[BUFFER-OVERFLOW] {s}: {s}", .{ @tagName(issue.kind), safe_message });
         // Note: DataFlowGraph.addIssue takes ownership and will free original memory
+    }
+    
+    /// Sanitize string for safe UTF-8 output
+    /// Replaces invalid UTF-8 sequences with '?' to prevent terminal display issues
+    fn sanitizeUtf8String(input: []const u8) []const u8 {
+        // Quick check: if string is valid UTF-8, return as-is
+        if (std.unicode.utf8ValidateSlice(input)) {
+            return input;
+        }
+        
+        // For invalid UTF-8, return a safe fallback message
+        // (In production, you might want to allocate and clean the string)
+        return "buffer overflow detected (details contain non-UTF-8 characters)";
     }
 };

@@ -45,18 +45,17 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        12.31     12313.92     12313.92
-detect                                  2         0.05        24.52        44.08
-total                                   1        12.32     12320.63     12320.63
-analysis                                1         9.49      9487.79      9487.79
-[32m[INFO][0m PointerOwnership: 4 ops, 34.17ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 12 ms
+init                                    1         0.56       563.54       563.54
+detect                                  2         0.03        15.56        24.13
+total                                   1         0.57       566.42       566.42
+analysis                                1         0.44       435.50       435.50
+[32m[INFO][0m PointerOwnership: 4 ops, 1.60ms total
 [INFO] Analysis complete
 
 [INFO] Functions processed: 21
 
 [INFO] Facts generated: 0
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158941,"summary":{"functions":21,"issues":0,"time_ms":20},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161701,"summary":{"functions":21,"issues":0,"time_ms":1},"issues":[
 
 ]}

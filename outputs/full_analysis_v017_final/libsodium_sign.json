@@ -65,17 +65,17 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         3.57      3569.83      3569.83
-detect                                  2         0.97       486.83       521.42
-total                                   1         3.58      3577.46      3577.46
-analysis                                1         2.64      2644.21      2644.21
-[32m[INFO][0m PointerOwnership: 4 ops, 10.77ms total
+init                                    1         0.24       237.75       237.75
+detect                                  2         0.07        33.67        54.92
+total                                   1         0.24       240.79       240.79
+analysis                                1         0.16       160.75       160.75
+[32m[INFO][0m PointerOwnership: 4 ops, 0.71ms total
 [INFO] Analysis complete
 
 [INFO] Functions processed: 19
 
 [INFO] Facts generated: 17
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158941,"summary":{"functions":19,"issues":1,"time_ms":11},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161701,"summary":{"functions":19,"issues":1,"time_ms":1},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}}
 ]}

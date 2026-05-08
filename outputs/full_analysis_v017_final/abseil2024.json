@@ -9,21 +9,17 @@
 [INFO] LANG-DETECT: module language = cpp, confidence = 100.0%, method = personality
 [32m[INFO][0m CallGraph: extracted 618 cross-language edges
 [32m[INFO][0m CallGraph: built semantics CallGraph with 1124 nodes, 2714 edges for BFS traversal
-[32m[INFO][0m [PERF] Pass 'call-graph: 97 ms
 [32m[INFO][0m RustFfiFilter: analyzed 1040 funcs, 0 findings (0 stack escapes)
 [32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
-[32m[INFO][0m [PERF] Pass 'return-check: 33 ms
 [32m[INFO][0m BufferOverflow: Skipped (module has 1040 functions, >500 threshold)
-[32m[INFO][0m [PERF] Pass 'pointer-flow: 214 ms
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 14 ms
 [32m[INFO][0m FFITypeMismatch: analyzed 1548 calls, found 422 FFI boundaries, 0 issues
-[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 37 ms
 [32m[INFO][0m [P1-1] DangerSurfacePass: 618 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 618 cross-language edges from CallGraph
 [32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 318 funcs, tracked 933 ptrs, found 4 violations
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 469ms total (track=89ms, check=29ms, postprocess=5ms) for 318 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 469 ms
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 28ms total (track=4ms, check=1ms, postprocess=0ms) for 318 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 27 ms
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
-[32m[INFO][0m [PERF] Pass 'callback-escape: 128 ms
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
 [32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 2558 unfreed + 0 freed = 2558 total nodes
@@ -75,18 +71,18 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1       752.50    752503.13    752503.13
-detect                                  2        49.97     24984.23     25015.83
-total                                   1       752.51    752513.58    752513.58
-analysis                                1       513.99    513992.46    513992.46
-[32m[INFO][0m PointerOwnership: 4 ops, 2068.98ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 752 ms
+init                                    1        43.95     43946.13     43946.13
+detect                                  2        10.51      5256.23      5276.75
+total                                   1        43.95     43950.79     43950.79
+analysis                                1        30.05     30046.96     30046.96
+[32m[INFO][0m PointerOwnership: 4 ops, 128.46ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 43 ms
 [INFO] Analysis complete
 
 [INFO] Functions processed: 1124
 
 [INFO] Facts generated: 1476
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158914,"summary":{"functions":1124,"issues":1,"time_ms":1789},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161697,"summary":{"functions":1124,"issues":1,"time_ms":105},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}}
 ]}

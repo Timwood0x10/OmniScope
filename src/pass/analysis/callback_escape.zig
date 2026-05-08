@@ -142,8 +142,56 @@ const C_RETAINING_FUNCTIONS = &[_][]const u8{
     "PyCapsule_SetDestructor", "dlopen",
 };
 
+/// Enhanced Go cgo boundary patterns (v0.1.8)
+/// Includes standard library, runtime, and common third-party patterns.
+const CGO_ENHANCED_PATTERNS = &[_][]const u8{
+    // Standard cgo glue (compiler-generated)
+    "_cgo_",
+    "_Cfunc_",
+    "_cgo_gotypes",
+    "crosscall2",
+
+    // Go runtime cgo support
+    "runtime_cgocall",
+    "runtime_iscgo",
+    "_cgo_runtime_cgocall",
+
+    // Common Go package prefixes
+    "golang_org.",
+    "google.golang.org.",
+    "github.com/",
+
+    // Go-specific FFI patterns
+    "__cgocallback",
+    "cgoexp_",
+    "_cgo_exp_",
+
+    // JNI/Python interop via cgo
+    "Java_", // cgo-JNI bridge
+    "PyInit_", // cgo-Python bridge
+    "Cython_", // cgo-Cython bridge
+};
+
+/// Go unsafe package patterns
+const GO_UNSAFE_PATTERNS = &[_][]const u8{
+    "unsafe.Pointer",
+    "unsafe.String",
+    "unsafe.Slice",
+    "unsafe.SliceData",
+    "unsafe.StringData",
+    "Add",
+    "Alignof",
+    "Offsetof",
+    "Sizeof",
+};
+
 /// Check if a function name indicates cgo boundary code.
 pub fn isCgoBoundary(func_name: []const u8) bool {
+    // First check enhanced patterns
+    for (CGO_ENHANCED_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
+    }
+
     for (CGO_GLUE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
     }
@@ -159,6 +207,72 @@ pub fn isCgoBoundary(func_name: []const u8) bool {
     }
 
     return false;
+}
+
+/// Check if instruction involves Go unsafe operations
+/// Enhanced with robust null safety and malformed IR protection
+pub fn isGoUnsafeOperation(inst: c.LLVMValueRef) bool {
+    // Safety check: ensure instruction is valid
+    if (@intFromPtr(inst) == 0) return false;
+
+    const called_val = c.LLVMGetCalledValue(inst);
+
+    // Null safety: handle LLVM API failure gracefully
+    if (@intFromPtr(called_val) == 0) {
+        // Log debug info for malformed IR (optional, can be removed for performance)
+        // std.log.debug("isGoUnsafeOperation: LLVMGetCalledValue returned null", .{});
+        return false;
+    }
+
+    const callee_name_ptr = c.LLVMGetValueName(called_val);
+
+    // Null safety: handle empty or invalid function names
+    if (@intFromPtr(callee_name_ptr) == 0) {
+        // std.log.debug("isGoUnsafeOperation: LLVMGetValueName returned null", .{});
+        return false;
+    }
+
+    // Safe span conversion with length validation
+    const callee_name = std.mem.span(callee_name_ptr);
+
+    // Additional safety: skip empty names to prevent false positives
+    if (callee_name.len == 0) return false;
+
+    // Pattern matching with bounds checking
+    for (GO_UNSAFE_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
+    }
+
+    return false;
+}
+
+/// Detect Go-specific memory management patterns that may cause issues
+pub fn detectGoMemoryPattern(func_name: []const u8) enum {
+    /// Standard Go memory (GC-managed, safe)
+    safe,
+    /// Uses runtime.KeepAlive (properly guarded)
+    keepalive_guarded,
+    /// Missing KeepAlive (potential GC issue)
+    missing_keepalive,
+    /// Uses C.malloc/C.free directly (manual memory)
+    manual_c_memory,
+    /// Mixed pattern (complex analysis needed)
+    mixed,
+} {
+    // Check for KeepAlive usage
+    if (std.mem.indexOf(u8, func_name, "KeepAlive") != null)
+        return .keepalive_guarded;
+
+    // Check for direct C memory functions
+    const has_malloc = std.mem.indexOf(u8, func_name, "C.malloc") != null or
+        std.mem.indexOf(u8, func_name, "C.calloc") != null;
+    const has_free = std.mem.indexOf(u8, func_name, "C.free") != null;
+
+    if (has_malloc and has_free) return .manual_c_memory;
+    if (has_malloc or has_free) return .mixed;
+
+    // Default to safe for pure Go code
+    return .safe;
 }
 
 /// Checks if a function name provides sufficient Go-specific evidence to be

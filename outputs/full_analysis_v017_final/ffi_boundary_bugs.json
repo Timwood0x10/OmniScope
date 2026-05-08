@@ -81,11 +81,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         9.62      9622.42      9622.42
-detect                                  2         1.76       880.83       907.92
-total                                   1         9.63      9626.67      9626.67
-analysis                                1         7.56      7563.00      7563.00
-[32m[INFO][0m PointerOwnership: 4 ops, 28.57ms total
+init                                    1         0.52       519.17       519.17
+detect                                  2         0.10        52.48        66.54
+total                                   1         0.52       519.29       519.29
+analysis                                1         0.38       378.88       378.88
+[32m[INFO][0m PointerOwnership: 4 ops, 1.52ms total
 [32m[INFO][0m GlobalAllocTracker: 12 memory leaks confirmed from 12 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -93,7 +93,7 @@ analysis                                1         7.56      7563.00      7563.00
 
 [INFO] Facts generated: 48
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158947,"summary":{"functions":37,"issues":12,"time_ms":28},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161702,"summary":{"functions":37,"issues":12,"time_ms":2},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_16_fork_fd_leak"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_17_mmap_cross_lang"}},

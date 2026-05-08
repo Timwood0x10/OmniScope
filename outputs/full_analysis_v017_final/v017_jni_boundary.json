@@ -17,150 +17,12 @@
 [32m[INFO][0m [P1-1] DangerSurfacePass: 13 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 13 cross-language edges from CallGraph
 [31m[ERROR][0m RISKY CALL [medium] allocator in Java_com_example_MyClass_nativeLeak: malloc
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=11
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %15 = getelementptr inbounds %struct.JNINativeInterface_, ptr %14, i32 0, i32 11'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[11] → DeleteLocalRef
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=6
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %22 = getelementptr inbounds %struct.JNINativeInterface_, ptr %21, i32 0, i32 6'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[6] → DeleteGlobalRef
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=10
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %29 = getelementptr inbounds %struct.JNINativeInterface_, ptr %28, i32 0, i32 10'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[10] → GetObjectArrayElement
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=3
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %8 = getelementptr inbounds %struct.InvokeInterface_, ptr %7, i32 0, i32 3'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.InvokeInterface_'
-[32m[INFO][0m INDIRECT-SKIP: unresolved call '  %11 = call i32 %9(ptr noundef %10, ptr noundef %5, i32 noundef 65544)' in JNI_OnLoad
 [31m[ERROR][0m RISKY CALL [medium] allocator in JNI_OnLoad: malloc
 [31m[ERROR][0m RISKY CALL [high] unchecked_copy in JNI_OnLoad: __strcpy_chk
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=13
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %15 = getelementptr inbounds %struct.JNINativeInterface_, ptr %14, i32 0, i32 13'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[13] → ExceptionDescribe
 [31m[ERROR][0m RISKY CALL [medium] allocator in Java_com_example_Utils_toUpperCase: malloc
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=12
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %75 = getelementptr inbounds %struct.JNINativeInterface_, ptr %74, i32 0, i32 12'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[12] → ExceptionCheck
 [31m[ERROR][0m RISKY CALL [medium] deallocator in Java_com_example_Utils_toUpperCase: free
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=4
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %11 = getelementptr inbounds %struct.JNINativeInterface_, ptr %10, i32 0, i32 4'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[4] → ReleaseStringUTFChars
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=5
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %17 = getelementptr inbounds %struct.JNINativeInterface_, ptr %16, i32 0, i32 5'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[5] → NewGlobalRef
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=5
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %24 = getelementptr inbounds %struct.JNINativeInterface_, ptr %23, i32 0, i32 5'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[5] → NewGlobalRef
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=7
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %31 = getelementptr inbounds %struct.JNINativeInterface_, ptr %30, i32 0, i32 7'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[7] → AttachCurrentThread
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=8
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %39 = getelementptr inbounds %struct.JNINativeInterface_, ptr %38, i32 0, i32 8'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[8] → GetByteArrayElements
 [31m[ERROR][0m RISKY CALL [medium] allocator in Java_com_example_Factory_createAndUseObject: GetByteArrayElements
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=15
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %14 = getelementptr inbounds %struct.JNINativeInterface_, ptr %13, i32 0, i32 15'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[15] → GetArrayLength
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=16
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %21 = getelementptr inbounds %struct.JNINativeInterface_, ptr %20, i32 0, i32 16'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[16] — unknown field (total: 16)
-[32m[INFO][0m INDIRECT-SKIP: unresolved call '  %25 = call ptr %22(ptr noundef %23, ptr noundef %24, ptr noundef null)' in Java_com_example_ArrayOps_sumArray
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=19
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %7 = getelementptr inbounds %struct.JNINativeInterface_, ptr %6, i32 0, i32 19'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[19] — unknown field (total: 16)
-[32m[INFO][0m INDIRECT-SKIP: unresolved call '  %10 = call i32 %8(ptr noundef %9, ptr noundef @g_cached_vm)' in Java_com_example_ThreadBridge_startWorker
 [31m[ERROR][0m RISKY CALL [low] thread_mgmt in Java_com_example_ThreadBridge_startWorker: pthread_create
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=13
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %12 = getelementptr inbounds %struct.JNINativeInterface_, ptr %11, i32 0, i32 13'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[13] → ExceptionDescribe
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=12
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %23 = getelementptr inbounds %struct.JNINativeInterface_, ptr %22, i32 0, i32 12'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[12] → ExceptionCheck
-[32m[INFO][0m RESOLVE-STEP1: passed, is load inst
-[32m[INFO][0m RESOLVE-STEP2: passed, is Load
-[32m[INFO][0m RESOLVE-STEP3: passed, got ptr_operand
-[32m[INFO][0m RESOLVE-STEP4: passed, is GEP
-[32m[INFO][0m RESOLVE-STEP5: passed, field_idx=14
-[32m[INFO][0m RESOLVE-DEBUG: GEP text='  %30 = getelementptr inbounds %struct.JNINativeInterface_, ptr %29, i32 0, i32 14'
-[32m[INFO][0m RESOLVE-STEP6: extracted struct='%struct.JNINativeInterface_'
-[32m[INFO][0m JNI-FIELD-MAP: JNINativeInterface[14] → ExceptionClear
 [32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 13 funcs, tracked 52 ptrs, found 1 violations
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
@@ -214,11 +76,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         5.04      5040.38      5040.38
-detect                                  2         1.87       933.48       960.42
-total                                   1         5.04      5044.54      5044.54
-analysis                                1         3.84      3844.13      3844.13
-[32m[INFO][0m PointerOwnership: 4 ops, 15.80ms total
+init                                    1         0.28       281.88       281.88
+detect                                  2         0.11        52.58        79.17
+total                                   1         0.28       281.96       281.96
+analysis                                1         0.21       208.83       208.83
+[32m[INFO][0m PointerOwnership: 4 ops, 0.88ms total
 [32m[INFO][0m GlobalAllocTracker: 3 memory leaks confirmed from 3 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -226,7 +88,7 @@ analysis                                1         3.84      3844.13      3844.13
 
 [INFO] Facts generated: 29
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158948,"summary":{"functions":21,"issues":11,"time_ms":18},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161703,"summary":{"functions":21,"issues":11,"time_ms":1},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":401,"message":"Allocate memory - returns ownership, check for null","location":{"function":"Java_com_example_MyClass_nativeLeak"}},
   {"id":"OMI-002","kind":"ffi_unsafe_call","severity":"medium","confidence":"EXPERIMENTAL","confidence_score":0.42,"cwe_id":668,"message":"FFI Boundary: Java_com_example_MyClass_nativeLeak (java) -> malloc (c)\nBoundary Kind: external_unknown","location":{"function":"Java_com_example_MyClass_nativeLeak"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":401,"message":"Allocate memory - returns ownership, check for null","location":{"function":"JNI_OnLoad"}},

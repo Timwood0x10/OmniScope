@@ -16,8 +16,6 @@
 [32m[INFO][0m FFITypeMismatch: analyzed 117 calls, found 110 FFI boundaries, 0 issues
 [32m[INFO][0m [P1-1] DangerSurfacePass: 171 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 171 cross-language edges from CallGraph
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 10ms total (track=3ms, check=1ms, postprocess=0ms) for 15 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 10 ms
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
@@ -68,12 +66,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        34.82     34815.00     34815.00
-detect                                  2         1.94       968.46       999.67
-total                                   1        34.82     34821.71     34821.71
-analysis                                1        24.98     24980.58     24980.58
-[32m[INFO][0m PointerOwnership: 4 ops, 96.55ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 34 ms
+init                                    1         1.71      1710.17      1710.17
+detect                                  2         0.13        65.42        80.21
+total                                   1         1.71      1713.21      1713.21
+analysis                                1         1.22      1223.33      1223.33
+[32m[INFO][0m PointerOwnership: 4 ops, 4.78ms total
 [32m[INFO][0m GlobalAllocTracker: 2 memory leaks confirmed from 3 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -81,7 +78,7 @@ analysis                                1        24.98     24980.58     24980.58
 
 [INFO] Facts generated: 27
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158920,"summary":{"functions":75,"issues":3,"time_ms":74},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161698,"summary":{"functions":75,"issues":3,"time_ms":4},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN13grep_searcher8searcher15SearcherBuilder5build17h2b0b201923db861dE"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"_ZN13grep_searcher8searcher8Encoding3new17hfc31225f8824cd7dE"}}

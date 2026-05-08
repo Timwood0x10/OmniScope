@@ -82,12 +82,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        21.38     21379.67     21379.67
-detect                                  2        13.39      6694.29      6724.83
-total                                   1        21.38     21384.00     21384.00
-analysis                                1        17.27     17268.79     17268.79
-[32m[INFO][0m PointerOwnership: 4 ops, 73.42ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 21 ms
+init                                    1         0.74       743.63       743.63
+detect                                  2         0.22       111.52       131.25
+total                                   1         0.74       743.71       743.71
+analysis                                1         0.56       555.00       555.00
+[32m[INFO][0m PointerOwnership: 4 ops, 2.27ms total
 [32m[INFO][0m GlobalAllocTracker: 14 memory leaks confirmed from 14 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -95,11 +94,11 @@ analysis                                1        17.27     17268.79     17268.79
 
 [INFO] Facts generated: 92
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158912,"summary":{"functions":35,"issues":15,"time_ms":43},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161697,"summary":{"functions":35,"issues":15,"time_ms":2},"issues":[
   {"id":"OMI-001","kind":"borrow_escape","severity":"critical","confidence":"HIGH","confidence_score":0.90,"cwe_id":704,"message":"Stack pointer (stack alloca) stored to global in store_ffi_ptr_global - dangling pointer after function returns (CWE-562)","location":{"function":"store_ffi_ptr_global"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"mixed_allocation_sources"}},
-  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
-  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"concurrent_ffi_allocs"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"concurrent_ffi_allocs"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"max_size_alloc"}},
   {"id":"OMI-006","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"buffer_near_overflow"}},
   {"id":"OMI-007","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"create_circular_ownership"}},

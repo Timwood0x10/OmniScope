@@ -67,12 +67,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        15.05     15052.88     15052.88
-detect                                  2         2.77      1384.31      1408.42
-total                                   1        15.06     15063.38     15063.38
-analysis                                1        11.12     11120.21     11120.21
-[32m[INFO][0m PointerOwnership: 4 ops, 44.01ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 15 ms
+init                                    1         0.77       768.88       768.88
+detect                                  2         0.17        86.38       100.88
+total                                   1         0.77       771.67       771.67
+analysis                                1         0.56       560.38       560.38
+[32m[INFO][0m PointerOwnership: 4 ops, 2.27ms total
 [32m[INFO][0m GlobalAllocTracker: 1 memory leaks confirmed from 1 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -80,7 +79,7 @@ analysis                                1        11.12     11120.21     11120.21
 
 [INFO] Facts generated: 33
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158937,"summary":{"functions":36,"issues":2,"time_ms":36},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161701,"summary":{"functions":36,"issues":2,"time_ms":2},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in _ZN6ark_ff10biginteger10arithmetic8find_naf17hb5df30b7e88862beE() was never freed","location":{"function":"_ZN6ark_ff10biginteger10arithmetic8find_naf17hb5df30b7e88862beE"}}
 ]}

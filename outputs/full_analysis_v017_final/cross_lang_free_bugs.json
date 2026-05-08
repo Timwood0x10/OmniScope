@@ -76,11 +76,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         5.96      5960.08      5960.08
-detect                                  2         2.41      1206.15      1230.04
-total                                   1         5.96      5964.33      5964.33
-analysis                                1         4.69      4694.04      4694.04
-[32m[INFO][0m PointerOwnership: 4 ops, 19.03ms total
+init                                    1         0.29       291.96       291.96
+detect                                  2         0.11        54.81        71.67
+total                                   1         0.29       292.00       292.00
+analysis                                1         0.22       223.96       223.96
+[32m[INFO][0m PointerOwnership: 4 ops, 0.92ms total
 [32m[INFO][0m GlobalAllocTracker: 5 memory leaks confirmed from 5 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -88,7 +88,7 @@ analysis                                1         4.69      4694.04      4694.04
 
 [INFO] Facts generated: 37
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158947,"summary":{"functions":22,"issues":7,"time_ms":16},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161702,"summary":{"functions":22,"issues":7,"time_ms":1},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"safe_c_alloc_c_free"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"bug_c_alloc_cpp_delete"}},

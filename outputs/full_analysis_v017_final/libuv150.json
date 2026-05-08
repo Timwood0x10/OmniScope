@@ -1,0 +1,163 @@
+[INFO] === OmniScope IR Analysis ===
+
+[INFO] File: /tmp/libuv150.bc
+
+
+[INFO] Loaded: 877 functions
+
+
+[INFO] LANG-DETECT: module language = c, confidence = 100.0%, method = sampling
+[31m[ERROR][0m VULNERABILITY OMI-001 [medium] [Confidence: MEDIUM]
+[31m[ERROR][0m Type: tainted_path_to_sink
+[31m[ERROR][0m Reason: Untrusted data flows to sensitive sink without validation
+[31m[ERROR][0m Path:
+[31m[ERROR][0m   [Sink] getenv()
+[32m[INFO][0m CallGraph: extracted 1193 cross-language edges
+[32m[INFO][0m CallGraph: built semantics CallGraph with 877 nodes, 2500 edges for BFS traversal
+[32m[INFO][0m RustFfiFilter: analyzed 647 funcs, 0 findings (8 stack escapes)
+[32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
+[32m[INFO][0m BufferOverflow: Skipped (module has 647 functions, >500 threshold)
+[32m[INFO][0m PointerFlow: Marked 1 parameters of 'getenv' as sources
+[32m[INFO][0m PointerFlow: Found 1 source functions
+[32m[INFO][0m PointerFlow: 38 values tracked after propagation
+[32m[INFO][0m FFITypeMismatch: analyzed 2558 calls, found 1231 FFI boundaries, 0 issues
+[32m[INFO][0m [P1-1] DangerSurfacePass: 1193 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
+[32m[INFO][0m FFIBoundary: consuming 1193 cross-language edges from CallGraph
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> uv__signal_unregister_handler() in uv__signal_stop
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_stop
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_start
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> uv__signal_register_handler() in uv__signal_start
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_create() in uv_thread_create_ex
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> semaphore_signal() in uv_sem_post
+[1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> pthread_cond_signal() in uv_cond_signal
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 637 funcs, tracked 2649 ptrs, found 85 violations
+[32m[INFO][0m [R8.3-f] Cross-function alias propagation: 1 allocations marked freed via alias chain
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 15ms total (track=8ms, check=2ms, postprocess=1ms) for 637 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 14 ms
+[32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
+[32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
+[32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
+[32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 13798 unfreed + 1575 freed = 15373 total nodes
+[32m[INFO][0m PointerOwnership: Source 2 (GlobalAllocTracker) — 51 records, 0 freed
+[32m[INFO][0m PointerOwnership: Source 3 (IR scan) added 1580 frees — total now 1580
+[32m[INFO][0m PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — 13798 allocs, 1580 frees
+[32m[INFO][0m PointerOwnership: Found 18 memory leaks (formalized as issues)
+[32m[INFO][0m PointerOwnership: Found 13829 allocations, 1582 frees, 31 tracked pointers
+[32m[INFO][0m PointerOwnership: No cross-language ownership violations detected
+[32m[INFO][0m   (Checks for Rust-alloc/C-free or C-alloc/Rust-free mismatches)
+[32m[INFO][0m PointerOwnership: Memory pool stats - allocated: 13829, reused: 0, in_use: 13829
+info: ═══════════════════════════════════════════════════════════════
+info: Zone Classification Summary
+info: ═══════════════════════════════════════════════════════════════
+info:   Total functions analyzed:    2631
+info:   Safe zone (skipped):         3 (40.4%)
+info:   Runtime internal (skipped):  1059
+info:   Unsafe zone (analyzed):      0
+info:   FFI zone (analyzed):         891
+info:   Unknown zone:                678
+info: 
+info:   Escape zone functions:       891 (33.9% of total)
+info:   Issues found:              32
+info:     Issue breakdown by category:
+info:       Memory leak:              19
+info:       Borrow escape:            13
+info: 
+info:     90/10 Priority Classification:
+info:       FFI Boundary (90% core):     0
+info:       Local Only (10% auxiliary):  32
+info:     Origin breakdown:
+info:       ✅ User code:                 32 (ACTION NEEDED)
+info:       📦 Third-party (FFI):          0
+info:       📚 Stdlib (suppressed):       0
+info:       🔧 Compiler (ignored):        0
+info:     → 32 actionable issues (32 user, 0 FFI boundary)
+info: 
+info:     Graph coverage:
+info:       Total nodes analyzed:     0
+info:       Nodes on danger path:     0 (0.0%)
+info:       FFI boundaries tracked:   0
+info:       Issues in graph:          32
+info:       Analysis depth:           shallow scan
+info: ═══════════════════════════════════════════════════════════════
+
+=== Performance Profile Report ===
+
+Operation                           Calls   Total (ms)     Avg (us)     Max (us)
+--------------------------------------------------------------------------------
+init                                    1        22.68     22677.33     22677.33
+detect                                  2        22.39     11194.46     11221.00
+total                                   1        22.68     22677.50     22677.50
+analysis                                1        19.03     19032.46     19032.46
+[32m[INFO][0m PointerOwnership: 4 ops, 86.78ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 22 ms
+[32m[INFO][0m GlobalAllocTracker: 51 memory leaks confirmed from 51 tracked allocations (0 cross-FFI)
+[INFO] Analysis complete
+
+[INFO] Functions processed: 877
+
+[INFO] Facts generated: 2007
+
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161697,"summary":{"functions":877,"issues":59,"time_ms":49},"issues":[
+  {"id":"OMI-001","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: uv__spawn_set_posix_spawn_attrs() receives alloca-derived pointer","location":{"function":"uv__spawn_and_init_child_posix_spawn"}},
+  {"id":"OMI-002","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: uv__udp_set_membership4() receives alloca-derived pointer","location":{"function":"uv_udp_set_membership"}},
+  {"id":"OMI-003","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: uv__udp_set_source_membership6() receives alloca-derived pointer","location":{"function":"uv_udp_set_source_membership"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"high","confidence":"MEDIUM","confidence_score":0.78,"cwe_id":401,"message":"Heap pointer (stack alloca) escapes to signal() in uv__process_child_init - ambiguous ownership transfer","location":{"function":"uv__process_child_init"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function uv__signal_unregister_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"uv__signal_stop"}},
+  {"id":"OMI-006","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function uv__signal_register_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"uv__signal_stop"}},
+  {"id":"OMI-007","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function uv__signal_register_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"uv__signal_start"}},
+  {"id":"OMI-008","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function uv__signal_register_handler() - pointer invalid after function returns (CWE-562)","location":{"function":"uv__signal_start"}},
+  {"id":"OMI-009","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_thread_create_ex"}},
+  {"id":"OMI-010","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_thread_create_ex"}},
+  {"id":"OMI-011","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_thread_create_ex"}},
+  {"id":"OMI-012","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_thread_create_ex"}},
+  {"id":"OMI-013","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function semaphore_signal() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_sem_post"}},
+  {"id":"OMI-014","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_cond_signal() - pointer invalid after function returns (CWE-562)","location":{"function":"uv_cond_signal"}},
+  {"id":"OMI-015","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-016","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_os_environ"}},
+  {"id":"OMI-017","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_default_loop"}},
+  {"id":"OMI-018","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"maybe_new_socket"}},
+  {"id":"OMI-019","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"maybe_resize"}},
+  {"id":"OMI-020","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_loop_new"}},
+  {"id":"OMI-021","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_pipe_bind2"}},
+  {"id":"OMI-022","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_spawn"}},
+  {"id":"OMI-023","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_tcp_init_ex"}},
+  {"id":"OMI-024","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"new_socket"}},
+  {"id":"OMI-025","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_utf16_to_wtf8"}},
+  {"id":"OMI-026","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"init_threads"}},
+  {"id":"OMI-027","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_fs_poll_start"}},
+  {"id":"OMI-028","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_socketpair"}},
+  {"id":"OMI-029","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_os_get_group"}},
+  {"id":"OMI-030","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_pipe_connect2"}},
+  {"id":"OMI-031","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_cpu_info"}},
+  {"id":"OMI-032","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"uv_loop_init"}},
+  {"id":"OMI-033","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__getpwuid_r() was never freed","location":{"function":"uv__getpwuid_r"}},
+  {"id":"OMI-034","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_dlopen() was never freed","location":{"function":"uv_dlopen"}},
+  {"id":"OMI-035","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__fs_opendir() was never freed","location":{"function":"uv__fs_opendir"}},
+  {"id":"OMI-036","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__fs_readlink() was never freed","location":{"function":"uv__fs_readlink"}},
+  {"id":"OMI-037","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__fs_realpath() was never freed","location":{"function":"uv__fs_realpath"}},
+  {"id":"OMI-038","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__fs_statfs() was never freed","location":{"function":"uv__fs_statfs"}},
+  {"id":"OMI-039","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_link() was never freed","location":{"function":"uv_fs_link"}},
+  {"id":"OMI-040","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_read() was never freed","location":{"function":"uv_fs_read"}},
+  {"id":"OMI-041","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_rename() was never freed","location":{"function":"uv_fs_rename"}},
+  {"id":"OMI-042","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_symlink() was never freed","location":{"function":"uv_fs_symlink"}},
+  {"id":"OMI-043","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_write() was never freed","location":{"function":"uv_fs_write"}},
+  {"id":"OMI-044","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_fs_copyfile() was never freed","location":{"function":"uv_fs_copyfile"}},
+  {"id":"OMI-045","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__process_init_stdio() was never freed","location":{"function":"uv__process_init_stdio"}},
+  {"id":"OMI-046","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__stream_queue_fd() was never freed","location":{"function":"uv__stream_queue_fd"}},
+  {"id":"OMI-047","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__stream_try_select() was never freed","location":{"function":"uv__stream_try_select"}},
+  {"id":"OMI-048","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_write2() was never freed","location":{"function":"uv_write2"}},
+  {"id":"OMI-049","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__tcp_bind() was never freed","location":{"function":"uv__tcp_bind"}},
+  {"id":"OMI-050","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__tcp_connect() was never freed","location":{"function":"uv__tcp_connect"}},
+  {"id":"OMI-051","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__tcp_listen() was never freed","location":{"function":"uv__tcp_listen"}},
+  {"id":"OMI-052","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__udp_bind() was never freed","location":{"function":"uv__udp_bind"}},
+  {"id":"OMI-053","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__udp_send() was never freed","location":{"function":"uv__udp_send"}},
+  {"id":"OMI-054","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__udp_init_ex() was never freed","location":{"function":"uv__udp_init_ex"}},
+  {"id":"OMI-055","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__strdup() was never freed","location":{"function":"uv__strdup"}},
+  {"id":"OMI-056","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__strndup() was never freed","location":{"function":"uv__strndup"}},
+  {"id":"OMI-057","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv__reallocf() was never freed","location":{"function":"uv__reallocf"}},
+  {"id":"OMI-058","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_recv_buffer_size() was never freed","location":{"function":"uv_recv_buffer_size"}},
+  {"id":"OMI-059","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in uv_send_buffer_size() was never freed","location":{"function":"uv_send_buffer_size"}}
+]}

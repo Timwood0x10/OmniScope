@@ -82,11 +82,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         8.56      8558.54      8558.54
-detect                                  2         1.71       854.15       879.25
-total                                   1         8.56      8562.83      8562.83
-analysis                                1         6.48      6477.54      6477.54
-[32m[INFO][0m PointerOwnership: 4 ops, 25.31ms total
+init                                    1         0.68       684.25       684.25
+detect                                  2         0.20        99.42       162.25
+total                                   1         0.68       684.63       684.63
+analysis                                1         0.54       539.04       539.04
+[32m[INFO][0m PointerOwnership: 4 ops, 2.11ms total
 [32m[INFO][0m GlobalAllocTracker: 12 memory leaks confirmed from 12 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -94,12 +94,12 @@ analysis                                1         6.48      6477.54      6477.54
 
 [INFO] Facts generated: 48
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158947,"summary":{"functions":37,"issues":12,"time_ms":24},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161702,"summary":{"functions":37,"issues":12,"time_ms":2},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_16_fork_fd_leak"}},
-  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_17_mmap_cross_lang"}},
-  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_04_c_alloc_go_free"}},
-  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_08_callback_to_freed"}},
+  {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_08_callback_to_freed"}},
+  {"id":"OMI-004","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_17_mmap_cross_lang"}},
+  {"id":"OMI-005","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_04_c_alloc_go_free"}},
   {"id":"OMI-006","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_22_cgo_pointer_leak"}},
   {"id":"OMI-007","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"FFI_05_ownership_leak"}},
   {"id":"OMI-008","kind":"memory_leak","severity":"low","confidence":"HEURISTIC","confidence_score":0.50,"cwe_id":401,"message":"Potential memory leak: heap allocation in FFI_01_dlopen_null_check() was never freed","location":{"function":"FFI_01_dlopen_null_check"}},

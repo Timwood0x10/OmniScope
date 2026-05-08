@@ -72,11 +72,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1         4.56      4560.29      4560.29
-detect                                  2         1.15       576.27       602.29
-total                                   1         4.56      4564.50      4564.50
-analysis                                1         3.42      3423.21      3423.21
-[32m[INFO][0m PointerOwnership: 4 ops, 13.70ms total
+init                                    1         0.33       331.21       331.21
+detect                                  2         0.10        48.29        75.00
+total                                   1         0.33       331.29       331.29
+analysis                                1         0.23       234.54       234.54
+[32m[INFO][0m PointerOwnership: 4 ops, 0.99ms total
 [32m[INFO][0m GlobalAllocTracker: 5 memory leaks confirmed from 5 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -84,7 +84,7 @@ analysis                                1         3.42      3423.21      3423.21
 
 [INFO] Facts generated: 35
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158948,"summary":{"functions":48,"issues":10,"time_ms":18},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161703,"summary":{"functions":48,"issues":10,"time_ms":1},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"high","confidence":"MEDIUM","confidence_score":0.75,"cwe_id":401,"message":"Heap pointer (dlsym-derived pointer from resource via dlopen()) stored to global in POSIX_03_dlclose_While_Pointers_Active - potential memory leak if never freed (CWE-401)","location":{"function":"POSIX_03_dlclose_While_Pointers_Active"}},
   {"id":"OMI-002","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_06_create_Thread_Dangling_Arg"}},
   {"id":"OMI-003","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function pthread_create() - pointer invalid after function returns (CWE-562)","location":{"function":"POSIX_06_create_Thread_Dangling_Arg"}},

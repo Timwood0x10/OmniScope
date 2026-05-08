@@ -962,6 +962,159 @@ pub fn isExternCCall(callee_name: []const u8) bool {
     return true;
 }
 
+/// Check if function is from core::ffi crate (Rust standard FFI utilities)
+pub fn isCoreFfiFunction(callee_name: []const u8) bool {
+    // core::ffi functions commonly used in FFI
+    const core_ffi_patterns = [_][]const u8{
+        "c_void",
+        "c_char",
+        "c_int",
+        "c_long",
+        "c_uint",
+        "c_ulong",
+        "c_float",
+        "c_double",
+        "CStr",
+        "CString",
+        "from_raw",       // *const T::from_raw()
+        "into_raw",       // *mut T::into_raw()
+        "as_ptr",         // CStr::as_ptr()
+        "to_ptr",         // CString::to_ptr()
+        "to_str",         // CStr::to_str()
+        "from_bytes_with_nul_unchecked",
+        "from_bytes_with_nul",
+    };
+    
+    for (core_ffi_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/// Check if function is from libc crate (POSIX/C standard library bindings)
+pub fn isLibcFunction(callee_name: []const u8) bool {
+    // libc crate provides safe wrappers around C library functions
+    const libc_patterns = [_][]const u8{
+        // POSIX memory
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+        "memalign",
+        "posix_memalign",
+        
+        // POSIX I/O
+        "open",
+        "read",
+        "write",
+        "close",
+        "fcntl",
+        "ioctl",
+        "fstat",
+        "lseek",
+        "mmap",
+        "munmap",
+        
+        // POSIX threads
+        "pthread_create",
+        "pthread_join",
+        "pthread_mutex_lock",
+        "pthread_mutex_unlock",
+        "pthread_cond_wait",
+        "pthread_cond_signal",
+        
+        // String operations
+        "strlen",
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "strcmp",
+        "strncmp",
+        "strdup",
+        
+        // Network
+        "socket",
+        "bind",
+        "listen",
+        "accept",
+        "connect",
+        "send",
+        "recv",
+        
+        // Time
+        "time",
+        "gettimeofday",
+        "clock_gettime",
+        "sleep",
+        "usleep",
+        "nanosleep",
+        
+        // Environment
+        "getenv",
+        "setenv",
+        "unsetenv",
+        
+        // Error handling
+        "errno",
+        "strerror",
+        "perror",
+    };
+    
+    for (libc_patterns) |pattern| {
+        if (std.mem.eql(u8, callee_name, pattern)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/// Classify Rust FFI boundary type for enhanced detection
+pub fn classifyFfiBoundaryType(
+    callee_name: []const u8,
+    module_name: ?[]const u8,
+) enum { 
+    /// Standard extern "C" function
+    standard,
+    /// core::ffi utility (CStr, CString, etc.)
+    core_ffi,
+    /// libc crate wrapper
+    libc_crate,
+    /// OS-specific API (Win32, macOS, Linux)
+    os_api,
+    /// Unknown/custom FFI
+    unknown,
+} {
+    _ = module_name; // Reserved for future use
+    
+    if (isCoreFfiFunction(callee_name)) return .core_ffi;
+    if (isLibcFunction(callee_name)) return .libc_crate;
+    
+    // OS-specific APIs
+    const win32_patterns = [_][]const u8{ "CreateFile", "ReadFile", "WriteFile", "CloseHandle" };
+    const macos_patterns = [_][]const u8{ "CFStringCreate", "dispatch_async", "kqueue" };
+    const linux_patterns = [_][]const u8{ "epoll_create", "inotify_init", "signalfd" };
+    
+    for (win32_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+    for (macos_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+    for (linux_patterns) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
+    }
+    
+    // Default to standard extern "C"
+    if (isExternCCall(callee_name)) return .standard;
+    
+    return .unknown;
+}
+
 /// Detect Rust FFI pairing functions (populates into_raw/from_raw sets)
 pub fn detectRustFfiPairingFunctions(
     func: c.LLVMValueRef,

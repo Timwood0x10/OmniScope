@@ -7,7 +7,6 @@
 
 
 [INFO] LANG-DETECT: module language = c, confidence = 61.0%, method = sampling
-info: [PERF] CallSiteIndex build: 10 ms
 [31m[ERROR][0m VULNERABILITY OMI-001 [medium] [Confidence: MEDIUM]
 [31m[ERROR][0m Type: tainted_path_to_sink
 [31m[ERROR][0m Reason: Untrusted data flows to sensitive sink without validation
@@ -15,27 +14,23 @@ info: [PERF] CallSiteIndex build: 10 ms
 [31m[ERROR][0m   [Sink] getenv()
 [32m[INFO][0m CallGraph: extracted 8092 cross-language edges
 [32m[INFO][0m CallGraph: built semantics CallGraph with 1108 nodes, 15303 edges for BFS traversal
-[32m[INFO][0m [PERF] Pass 'call-graph: 452 ms
+[32m[INFO][0m [PERF] Pass 'call-graph: 17 ms
 [32m[INFO][0m RustFfiFilter: analyzed 1009 funcs, 0 findings (0 stack escapes)
-[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 72 ms
 [32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
-[32m[INFO][0m [PERF] Pass 'return-check: 60 ms
 [32m[INFO][0m BufferOverflow: Skipped (module has 1009 functions, >500 threshold)
 [32m[INFO][0m PointerFlow: Marked 3 parameters of 'main' as sources
 [32m[INFO][0m PointerFlow: Marked 3 parameters of 'read' as sources
 [32m[INFO][0m PointerFlow: Marked 1 parameters of 'getenv' as sources
 [32m[INFO][0m PointerFlow: Found 3 source functions
 [32m[INFO][0m PointerFlow: 11 values tracked after propagation
-[32m[INFO][0m [PERF] Pass 'pointer-flow: 647 ms
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 34 ms
 [32m[INFO][0m FFITypeMismatch: analyzed 12598 calls, found 10067 FFI boundaries, 0 issues
-[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 89 ms
 [32m[INFO][0m [P1-1] DangerSurfacePass: 8092 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 8092 cross-language edges from CallGraph
 [32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 275 funcs, tracked 1853 ptrs, found 1 violations
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 383ms total (track=132ms, check=39ms, postprocess=10ms) for 275 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 382 ms
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 18ms total (track=5ms, check=2ms, postprocess=0ms) for 275 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 17 ms
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
-[32m[INFO][0m [PERF] Pass 'callback-escape: 64 ms
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
 [32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 4888 unfreed + 12 freed = 4900 total nodes
@@ -86,12 +81,12 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1      2775.99   2775985.38   2775985.38
-detect                                  2        99.20     49600.02     49630.46
-total                                   1      2775.99   2775991.83   2775991.83
-analysis                                1      2040.46   2040456.42   2040456.42
-[32m[INFO][0m PointerOwnership: 4 ops, 7691.63ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 2776 ms
+init                                    1       147.97    147969.42    147969.42
+detect                                  2        21.05     10524.00     10566.75
+total                                   1       147.97    147969.50    147969.50
+analysis                                1       112.21    112205.71    112205.71
+[32m[INFO][0m PointerOwnership: 4 ops, 429.19ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 147 ms
 [32m[INFO][0m GlobalAllocTracker: 5 memory leaks confirmed from 5 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -99,7 +94,7 @@ analysis                                1      2040.46   2040456.42   2040456.42
 
 [INFO] Facts generated: 1671
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158963,"summary":{"functions":1108,"issues":7,"time_ms":4705},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161705,"summary":{"functions":1108,"issues":7,"time_ms":235},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"debug.SelfInfo.mapWholeFile"}},
   {"id":"OMI-003","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"heap.PageAllocator.map"}},

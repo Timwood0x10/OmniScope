@@ -33,9 +33,7 @@
 [1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> ffi_process_buffer() in ffi_20_longjmp_bypasses_cleanup
 [1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> ffi_16_cast_away_const() in main
 [1m[31m[CRITICAL][0m [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> ffi_18_ffo_array_no_null_check() in main
-[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 29 funcs, tracked 77 ptrs, found 18 violations
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 12ms total (track=5ms, check=2ms, postprocess=0ms) for 29 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 12 ms
+[32m[INFO][0m [OMI-HIGH] PtrLifetime: analyzed 29 funcs, tracked 77 ptrs, found 12 violations
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
@@ -59,27 +57,26 @@ info:   FFI zone (analyzed):         129
 info:   Unknown zone:                6
 info: 
 info:   Escape zone functions:       129 (91.5% of total)
-info:   Issues found:              25
+info:   Issues found:              20
 info:     Issue breakdown by category:
 info:       Memory leak:              9
 info:       Borrow escape:            11
-info:       Unchecked return:         5
 info: 
 info:     90/10 Priority Classification:
 info:       FFI Boundary (90% core):     0
-info:       Local Only (10% auxiliary):  25
+info:       Local Only (10% auxiliary):  20
 info:     Origin breakdown:
-info:       ✅ User code:                 25 (ACTION NEEDED)
+info:       ✅ User code:                 20 (ACTION NEEDED)
 info:       📦 Third-party (FFI):          0
 info:       📚 Stdlib (suppressed):       0
 info:       🔧 Compiler (ignored):        0
-info:     → 25 actionable issues (25 user, 0 FFI boundary)
+info:     → 20 actionable issues (20 user, 0 FFI boundary)
 info: 
 info:     Graph coverage:
 info:       Total nodes analyzed:     0
 info:       Nodes on danger path:     0 (0.0%)
 info:       FFI boundaries tracked:   0
-info:       Issues in graph:          25
+info:       Issues in graph:          20
 info:       Analysis depth:           shallow scan
 info: ═══════════════════════════════════════════════════════════════
 
@@ -87,12 +84,11 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1        14.09     14094.25     14094.25
-detect                                  2         3.23      1613.52      1651.04
-total                                   1        14.10     14098.79     14098.79
-analysis                                1        10.95     10949.83     10949.83
-[32m[INFO][0m PointerOwnership: 4 ops, 42.37ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 14 ms
+init                                    1         0.65       649.08       649.08
+detect                                  2         0.17        83.56        97.50
+total                                   1         0.65       649.17       649.17
+analysis                                1         0.50       496.17       496.17
+[32m[INFO][0m PointerOwnership: 4 ops, 1.96ms total
 [32m[INFO][0m GlobalAllocTracker: 9 memory leaks confirmed from 9 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -100,30 +96,25 @@ analysis                                1        10.95     10949.83     10949.83
 
 [INFO] Facts generated: 70
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158948,"summary":{"functions":47,"issues":25,"time_ms":41},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161703,"summary":{"functions":47,"issues":20,"time_ms":2},"issues":[
   {"id":"OMI-001","kind":"borrow_escape","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":704,"message":"Stack address escapes to FFI: ffi_register_callback() receives alloca-derived pointer","location":{"function":"ffi_03_register_with_stack_ctx"}},
   {"id":"OMI-002","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_borrow_resource() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_01_store_borrowed_ptr"}},
-  {"id":"OMI-003","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function ffi_borrow_resource() return value not NULL-checked in ffi_01_store_borrowed_ptr - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"ffi_01_store_borrowed_ptr"}},
-  {"id":"OMI-004","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_register_callback() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_03_register_with_stack_ctx"}},
-  {"id":"OMI-005","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function ffi_get_string() return value not NULL-checked in ffi_05_stale_string_ref - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"ffi_05_stale_string_ref"}},
-  {"id":"OMI-006","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function ffi_05_stale_string_ref() return value not NULL-checked in ffi_05_use_stale - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"ffi_05_use_stale"}},
-  {"id":"OMI-007","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_init_context() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_07_null_deref_on_error"}},
-  {"id":"OMI-008","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_get_raw_pointer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_09_wrong_layout_cast"}},
-  {"id":"OMI-009","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function ffi_get_raw_pointer() return value not NULL-checked in ffi_09_wrong_layout_cast - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"ffi_09_wrong_layout_cast"}},
-  {"id":"OMI-010","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_10_unchecked_ffi_write"}},
-  {"id":"OMI-011","kind":"unchecked_return","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":252,"message":"FFI function ffi_get_raw_pointer() return value not NULL-checked in ffi_13_free_foreign_internal_buf - potential NULL dereference (CWE-252/CWE-476)","location":{"function":"ffi_13_free_foreign_internal_buf"}},
-  {"id":"OMI-012","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_14_undersized_buffer_to_ffi"}},
-  {"id":"OMI-013","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_do_work() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_17_circular_dependency"}},
-  {"id":"OMI-014","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_20_longjmp_bypasses_cleanup"}},
-  {"id":"OMI-015","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_16_cast_away_const() - pointer invalid after function returns (CWE-562)","location":{"function":"main"}},
-  {"id":"OMI-016","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_18_ffo_array_no_null_check() - pointer invalid after function returns (CWE-562)","location":{"function":"main"}},
-  {"id":"OMI-017","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
-  {"id":"OMI-018","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_04_double_free_via_ownership"}},
-  {"id":"OMI-019","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_06_untrusted_size_alloc"}},
-  {"id":"OMI-020","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_08_register_then_cleanup"}},
-  {"id":"OMI-021","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_20_longjmp_bypasses_cleanup"}},
-  {"id":"OMI-022","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"control_01_general_leak"}},
-  {"id":"OMI-023","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_12_thread_race_setup"}},
-  {"id":"OMI-024","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_02_size_truncation_alloc"}},
-  {"id":"OMI-025","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_11_allocator_mismatch"}}
+  {"id":"OMI-003","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_register_callback() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_03_register_with_stack_ctx"}},
+  {"id":"OMI-004","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_init_context() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_07_null_deref_on_error"}},
+  {"id":"OMI-005","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_get_raw_pointer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_09_wrong_layout_cast"}},
+  {"id":"OMI-006","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_10_unchecked_ffi_write"}},
+  {"id":"OMI-007","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_14_undersized_buffer_to_ffi"}},
+  {"id":"OMI-008","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_do_work() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_17_circular_dependency"}},
+  {"id":"OMI-009","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_process_buffer() - pointer invalid after function returns (CWE-562)","location":{"function":"ffi_20_longjmp_bypasses_cleanup"}},
+  {"id":"OMI-010","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_16_cast_away_const() - pointer invalid after function returns (CWE-562)","location":{"function":"main"}},
+  {"id":"OMI-011","kind":"borrow_escape","severity":"critical","confidence":"MEDIUM","confidence_score":0.88,"cwe_id":704,"message":"Stack pointer (stack alloca) escapes to FFI function ffi_18_ffo_array_no_null_check() - pointer invalid after function returns (CWE-562)","location":{"function":"main"}},
+  {"id":"OMI-012","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
+  {"id":"OMI-013","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_20_longjmp_bypasses_cleanup"}},
+  {"id":"OMI-014","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_06_untrusted_size_alloc"}},
+  {"id":"OMI-015","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_04_double_free_via_ownership"}},
+  {"id":"OMI-016","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_08_register_then_cleanup"}},
+  {"id":"OMI-017","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"control_01_general_leak"}},
+  {"id":"OMI-018","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_02_size_truncation_alloc"}},
+  {"id":"OMI-019","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_12_thread_race_setup"}},
+  {"id":"OMI-020","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"ffi_11_allocator_mismatch"}}
 ]}

@@ -9,23 +9,18 @@
 [INFO] LANG-DETECT: module language = c, confidence = 98.0%, method = sampling
 [32m[INFO][0m CallGraph: extracted 5850 cross-language edges
 [32m[INFO][0m CallGraph: built semantics CallGraph with 916 nodes, 8499 edges for BFS traversal
-[32m[INFO][0m [PERF] Pass 'call-graph: 239 ms
 [32m[INFO][0m RustFfiFilter: analyzed 838 funcs, 0 findings (0 stack escapes)
-[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 46 ms
 [32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
-[32m[INFO][0m [PERF] Pass 'return-check: 24 ms
 [32m[INFO][0m BufferOverflow: Skipped (module has 838 functions, >500 threshold)
 [32m[INFO][0m PointerFlow: 1 values tracked after propagation
-[32m[INFO][0m [PERF] Pass 'pointer-flow: 268 ms
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 13 ms
 [32m[INFO][0m FFITypeMismatch: analyzed 6307 calls, found 5221 FFI boundaries, 0 issues
-[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 49 ms
 [32m[INFO][0m [P1-1] DangerSurfacePass: 5850 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 5850 cross-language edges from CallGraph
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 359ms total (track=149ms, check=78ms, postprocess=3ms) for 587 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 359 ms
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 17ms total (track=7ms, check=3ms, postprocess=0ms) for 587 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 16 ms
 [32m[INFO][0m CallbackEscape: 205 Go→C/C++ cross-language edges available
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
-[32m[INFO][0m [PERF] Pass 'callback-escape: 39 ms
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
 [32m[INFO][0m PointerOwnership: Source 1 (MemoryGraph) — 1918 unfreed + 0 freed = 1918 total nodes
@@ -80,12 +75,12 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1      1173.08   1173076.42   1173076.42
-detect                                  2        43.13     21564.85     21590.08
-total                                   1      1173.08   1173082.50   1173082.50
-analysis                                1       863.58    863575.42    863575.42
-[32m[INFO][0m PointerOwnership: 4 ops, 3252.86ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 1173 ms
+init                                    1        63.33     63333.63     63333.63
+detect                                  2         9.41      4706.02      4727.63
+total                                   1        63.33     63333.67     63333.67
+analysis                                1        48.70     48699.29     48699.29
+[32m[INFO][0m PointerOwnership: 4 ops, 184.78ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 63 ms
 [32m[INFO][0m GlobalAllocTracker: 1 memory leaks confirmed from 1 tracked allocations (0 cross-FFI)
 [INFO] Analysis complete
 
@@ -93,7 +88,7 @@ analysis                                1       863.58    863575.42    863575.42
 
 [INFO] Facts generated: 698
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158941,"summary":{"functions":916,"issues":4,"time_ms":2305},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161701,"summary":{"functions":916,"issues":4,"time_ms":110},"issues":[
   {"id":"OMI-001","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}},
   {"id":"OMI-002","kind":"use_after_free","severity":"high","confidence":"MEDIUM","confidence_score":0.80,"cwe_id":416,"message":"Pointer used after being freed","location":{"function":"realloc"}},
   {"id":"OMI-003","kind":"null_dereference","severity":"critical","confidence":"MEDIUM","confidence_score":0.85,"cwe_id":476,"message":"Potential null dereference: pointer used without null check","location":{"function":"calloc"}},

@@ -9,22 +9,17 @@
 [INFO] LANG-DETECT: module language = rust, confidence = 100.0%, method = personality
 [32m[INFO][0m CallGraph: extracted 8520 cross-language edges
 [32m[INFO][0m CallGraph: built semantics CallGraph with 302 nodes, 10084 edges for BFS traversal
-[32m[INFO][0m [PERF] Pass 'call-graph: 188 ms
 [32m[INFO][0m RustFfiFilter: analyzed 259 funcs, 0 findings (0 stack escapes)
-[32m[INFO][0m [PERF] Pass 'rust-ffi-filter: 65 ms
 [32m[INFO][0m ReturnCheck: Analyzed functions, found 0 unchecked return values
-[32m[INFO][0m [PERF] Pass 'return-check: 41 ms
 [32m[INFO][0m BufferOverflow: No buffer overflow issues detected
 [32m[INFO][0m PointerFlow: 10 values tracked after propagation
-[32m[INFO][0m [PERF] Pass 'pointer-flow: 459 ms
+[32m[INFO][0m [PERF] Pass 'pointer-flow: 20 ms
 [32m[INFO][0m FFITypeMismatch: analyzed 7971 calls, found 6787 FFI boundaries, 0 issues
-[32m[INFO][0m [PERF] Pass 'ffi-type-mismatch: 24 ms
 [32m[INFO][0m [P1-1] DangerSurfacePass: 8520 FFI, 0 allocs, 0 funcs | Phase1=0ms (args=0 rets=0 alias_traces=0) Phase2=0ms (cross_lang_free=0)
 [32m[INFO][0m FFIBoundary: consuming 8520 cross-language edges from CallGraph
-[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 525ms total (track=339ms, check=57ms, postprocess=25ms) for 87 funcs
-[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 524 ms
+[32m[INFO][0m [PERF-DETAIL] PtrLifetime: 20ms total (track=12ms, check=3ms, postprocess=0ms) for 87 funcs
+[32m[INFO][0m [PERF] Pass 'ptr-lifetime: 19 ms
 [32m[INFO][0m CallbackEscape: analyzed 0 funcs, 0 cgo boundaries, 0 issues found
-[32m[INFO][0m [PERF] Pass 'callback-escape: 13 ms
 [32m[INFO][0m FFIBodyCheck: No FFI boundaries to analyze
 [32m[INFO][0m FFIUnsafe: No FFI boundaries to analyze
 [32m[INFO][0m TIP: Rebuild with -g for file/line diagnostics
@@ -76,19 +71,19 @@ info: ════════════════════════�
 
 Operation                           Calls   Total (ms)     Avg (us)     Max (us)
 --------------------------------------------------------------------------------
-init                                    1      1817.78   1817784.21   1817784.21
-detect                                  2       123.19     61593.79     61624.92
-total                                   1      1817.80   1817795.21   1817795.21
-analysis                                1      1310.79   1310788.79   1310788.79
-[32m[INFO][0m PointerOwnership: 4 ops, 5069.56ms total
-[32m[INFO][0m [PERF] Pass 'pointer-ownership: 1817 ms
+init                                    1        87.94     87940.75     87940.75
+detect                                  2        26.11     13054.94     13073.50
+total                                   1        87.95     87946.25     87946.25
+analysis                                1        66.14     66144.83     66144.83
+[32m[INFO][0m PointerOwnership: 4 ops, 268.14ms total
+[32m[INFO][0m [PERF] Pass 'pointer-ownership: 87 ms
 [INFO] Analysis complete
 
 [INFO] Functions processed: 302
 
 [INFO] Facts generated: 3808
 
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778158947,"summary":{"functions":302,"issues":2,"time_ms":3304},"issues":[
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7","timestamp":1778161702,"summary":{"functions":302,"issues":2,"time_ms":145},"issues":[
   {"id":"OMI-001","kind":"use_after_free","severity":"low","confidence":"MEDIUM","confidence_score":0.72,"cwe_id":416,"message":"Ownership violation: FFI-transferred pointer freed by __rust_dealloc()","location":{"function":"_ZN4core3ptr135drop_in_place$LT$$LT$bls12_381..pairings..G2Prepared$u20$as$u20$core..convert..From$LT$bls12_381..g2..G2Affine$GT$$GT$..from..Adder$GT$17hf314ab93c552dc17E"}},
   {"id":"OMI-002","kind":"memory_leak","severity":"medium","confidence":"MEDIUM","confidence_score":0.70,"cwe_id":401,"message":"Memory allocated but never freed","location":{"function":"memory_graph"}}
 ]}
