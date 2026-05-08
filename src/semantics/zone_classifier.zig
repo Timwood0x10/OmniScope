@@ -175,10 +175,12 @@ pub const ZIG_SAFE_PATTERNS = [_][]const u8{
     "std.mem.replace",
     "std.process",
 
-    // Allocator wrappers
-    "alloc",
-    "free",
-    "resize",
+    // Allocator wrappers - DC-C8 FIX: Use word boundary patterns to avoid false positives
+    // e.g., "my_custom_allocator_dealloc" should NOT be matched as safe "free"
+    ".allocator",  // Explicit allocator type
+    "@as(*std.mem.Allocator",  // Allocator cast pattern
+    "std.heap.page_allocator",  // Specific safe allocators
+    "std.heap.GeneralPurposeAllocator",
 
     // Defer patterns
     "defer",

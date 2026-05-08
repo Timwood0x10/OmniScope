@@ -269,12 +269,14 @@ pub fn checkFFIReturnNullGuard(
                 
                 const op = c.LLVMGetInstructionOpcode(scan_inst);
                 if (op == c.LLVMICmp) {
-                    // Found potential null check
+                    // Found potential null check - set guard and stop scanning
                     guard = true;
-                    // DC-C5 FIX: Don't set used here - track separately below
+                    // Issue2 FIX: Restore break to prevent false positives from continued scanning
+                    break;
                 }
                 
                 // DC-C5 FIX: Check if return value is used (store, call arg, etc.)
+                // This runs BEFORE finding the null guard to track usage patterns
                 if (op == c.LLVMStore or op == c.LLVMCall or op == c.LLVMInvoke) {
                     used = true;
                 }

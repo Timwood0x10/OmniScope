@@ -273,6 +273,8 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 logInfo("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
+            // DC-H1 NOTE: SarifOutput doesn't own heap memory (only const slices + allocator)
+            // No deinit needed - sarif_output is freed via defer allocator.free() below
             var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.7");
             const sarif_output = sarif.generate(issues) catch |err| {
                 std.log.err("Failed to generate SARIF output: {}", .{err});

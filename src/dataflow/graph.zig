@@ -463,10 +463,21 @@ pub const DataFlowGraph = struct {
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
                 const message_copy = try self.allocator.dupe(u8, issue.message);
+                // DC-C9 FIX: Deep copy location.func to prevent dangling pointer
+                const func_copy = if (issue.location.func.len > 0)
+                    try self.allocator.dupe(u8, issue.location.func)
+                else
+                    issue.location.func;
+                
                 result[index] = .{
                     .kind = issue.kind,
                     .message = message_copy,
-                    .location = issue.location,
+                    .location = .{
+                        .file = issue.location.file,
+                        .func = func_copy,
+                        .line = issue.location.line,
+                        .column = issue.location.column,
+                    },
                     .severity = issue.severity,
                     .confidence = issue.confidence,
                     .confidence_level = issue.confidence_level,
@@ -474,7 +485,7 @@ pub const DataFlowGraph = struct {
                     .ffi_boundary = issue.ffi_boundary,
                     .trace = null,
                     .owned = true,
-                    .function_owned = false,
+                    .function_owned = (func_copy.len > 0),
                 };
                 index += 1;
             }

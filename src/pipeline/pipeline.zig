@@ -156,7 +156,10 @@ pub const Pipeline = struct {
                             if (@intFromPtr(called_name_ptr) == 0) continue;
                             const called_name = std.mem.span(called_name_ptr);
                             const inst_ptr = @as(u64, @intFromPtr(inst));
-                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch {};
+                            // DC-C4 FIX: Log OOM instead of silently swallowing error
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
+                                std.log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
+                            };
                         }
                     }
                 }

@@ -146,8 +146,9 @@ pub const PassManager = struct {
         defer result.deinit(self.allocator);
 
         while (queue.items.len > 0) {
-            // Get next node (FIFO)
-            const node = queue.orderedRemove(0);
+            // DC-C7 FIX: Use swapRemove for O(1) performance instead of orderedRemove(0) O(N)
+            // Topological order may differ but dependency correctness is preserved
+            const node = queue.swapRemove(0);
             try result.append(self.allocator, node);
 
             // Reduce in-degree of neighbors
