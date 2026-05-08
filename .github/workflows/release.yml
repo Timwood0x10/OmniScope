@@ -53,7 +53,7 @@ jobs:
           echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Build Release
-        run: make build
+        run: zig build -Doptimize=ReleaseFast
 
       - name: Package
         run: |
@@ -89,7 +89,7 @@ jobs:
         run: brew install llvm@22 && echo "$(brew --prefix llvm@22)/bin" >> $GITHUB_PATH
 
       - name: Build Release
-        run: make build
+        run: zig build -Doptimize=ReleaseFast
 
       - name: Package
         run: |

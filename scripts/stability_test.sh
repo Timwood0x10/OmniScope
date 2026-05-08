@@ -167,7 +167,7 @@ main() {
     
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║       OmniScope v0.1.6 Stability & E2E Test Suite             ║"
+    echo "║       OmniScope v0.1.7 Stability & E2E Test Suite             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     

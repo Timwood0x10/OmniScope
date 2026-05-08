@@ -197,7 +197,7 @@ bench_all() {
     
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           OmniScope v0.1.6 Performance Benchmarks             ║"
+    echo "║           OmniScope v0.1.7 Performance Benchmarks             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     
