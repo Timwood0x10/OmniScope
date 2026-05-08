@@ -212,23 +212,20 @@ pub fn isCgoBoundary(func_name: []const u8) bool {
 /// Check if instruction involves Go unsafe operations
 /// Enhanced with robust null safety and malformed IR protection
 pub fn isGoUnsafeOperation(inst: c.LLVMValueRef) bool {
-    // Safety check: ensure instruction is valid
-    if (@intFromPtr(inst) == 0) return false;
+    // Safety check: ensure instruction is valid (Zig idiom: ptr == null)
+    if (inst == null) return false;
 
     const called_val = c.LLVMGetCalledValue(inst);
 
     // Null safety: handle LLVM API failure gracefully
-    if (@intFromPtr(called_val) == 0) {
-        // Log debug info for malformed IR (optional, can be removed for performance)
-        // std.log.debug("isGoUnsafeOperation: LLVMGetCalledValue returned null", .{});
+    if (called_val == null) {
         return false;
     }
 
     const callee_name_ptr = c.LLVMGetValueName(called_val);
 
     // Null safety: handle empty or invalid function names
-    if (@intFromPtr(callee_name_ptr) == 0) {
-        // std.log.debug("isGoUnsafeOperation: LLVMGetValueName returned null", .{});
+    if (callee_name_ptr == null) {
         return false;
     }
 

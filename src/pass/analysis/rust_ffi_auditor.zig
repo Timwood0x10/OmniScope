@@ -1065,7 +1065,7 @@ pub fn isLibcFunction(callee_name: []const u8) bool {
     };
     
     for (libc_patterns) |pattern| {
-        if (std.mem.eql(u8, callee_name, pattern)) {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
             return true;
         }
     }
