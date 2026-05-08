@@ -46,14 +46,12 @@ jobs:
 
       - name: Install LLVM
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
-          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       - name: Build Release
-        run: zig build -Doptimize=ReleaseFast
+        run: make build
 
       - name: Package
         run: |

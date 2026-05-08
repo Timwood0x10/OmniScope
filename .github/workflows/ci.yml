@@ -36,11 +36,10 @@ jobs:
 
       - name: Install LLVM
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
+          # Use LLVM 18 (stable on Ubuntu noble)
           sudo apt-get update
-          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
-          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       - name: Lint & Format Check
         run: make fmt
@@ -73,11 +72,10 @@ jobs:
 
       - name: Install LLVM
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
+          # Use LLVM 18 (stable on Ubuntu noble)
           sudo apt-get update
-          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
-          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       - name: Build
         run: make build
@@ -222,11 +220,10 @@ jobs:
 
       - name: Install LLVM
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
+          # Use LLVM 18 (stable on Ubuntu noble)
           sudo apt-get update
-          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
-          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       - name: Build
         run: make build
@@ -339,7 +336,7 @@ jobs:
       matrix:
         build_mode: [release]
     env:
-      LLVM_VERSION: "22"
+      LLVM_VERSION: "18"
     steps:
       - uses: actions/checkout@v4
 
@@ -355,11 +352,10 @@ jobs:
 
       - name: Install LLVM
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
+          # Use LLVM 18 (stable on Ubuntu noble)
           sudo apt-get update
-          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
-          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       - name: Build ReleaseFast
         run: zig build -Doptimize=ReleaseFast
@@ -551,7 +547,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
     env:
-      LLVM_VERSION: "22"
+      LLVM_VERSION: "18"
     steps:
       - uses: actions/checkout@v4
 
