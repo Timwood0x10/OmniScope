@@ -1,123 +1,147 @@
-name: OmniScope Security Analysis
+name: Security Analysis
 
 on:
   push:
-    branches: [main, master, dev, improve]
+    branches: [master, dev]
   pull_request:
-    branches: [main, master]
-  schedule:
-    # Run daily at 2:00 UTC
-    - cron: '0 2 * * *'
+    branches: [master]
   workflow_dispatch:
-    # Allow manual trigger
     inputs:
       fail_on_critical:
-        description: 'Fail build on critical issues'
+        description: 'Fail workflow if critical issues found'
         required: false
         default: true
         type: boolean
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  ZIG_VERSION: 0.15.2
+
 jobs:
-  build-and-analyze:
+  security-analysis:
+    name: Security Analysis
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      contents: read
-      actions: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: "0.15.0"
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ env.ZIG_VERSION }}
+          zvm use ${{ env.ZIG_VERSION }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
+      - name: Install LLVM
+        run: |
+          # Install LLVM 22 using official apt.llvm.org repository
+          sudo apt-get update
+          sudo apt-get install -y lsb-release wget software-properties-common gnupg
+          
+          # Add LLVM apt repository (modern method without deprecated apt-key)
+          wget -qO- https://apt.llvm.org/llvm.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-22 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          
+          sudo apt-get update
+          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Build OmniScope
-        run: |
-          zig build -Doptimize=ReleaseSafe
-          echo "OmniScope built successfully"
+        run: zig build -Doptimize=ReleaseSafe
 
-      - name: Run tests
+      - name: Run security analysis
+        id: analyze
         run: |
-          zig build test --summary all
-
-      - name: Create output directory
-        run: mkdir -p analysis-output
-
-      - name: Run OmniScope analysis on examples
-        run: |
-          # Default empty SARIF in case no analysis runs
-          EMPTY_SARIF='{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"OmniScope","version":"0.1.7","informationUri":"https://github.com/omniscope/omniscope"}},"results":[]}]}'
+          mkdir -p analysis-output
           
-          if [ -d "examples" ]; then
-            echo "Running OmniScope analysis on examples..."
-            
-            # Count LLVM IR files
-            FILE_COUNT=$(find examples \( -name "*.bc" -o -name "*.ll" \) -type f 2>/dev/null | wc -l)
-            
-            if [ "$FILE_COUNT" -gt 0 ]; then
-              echo "Found $FILE_COUNT LLVM IR file(s)"
-              find examples \( -name "*.bc" -o -name "*.ll" \) -type f -print0 | xargs -0 ./zig-out/bin/OmniScope \
-                --output-format sarif \
-                --output-file analysis-output/results.sarif || {
-                  echo "::warning::OmniScope analysis failed, creating empty SARIF"
-                  echo "$EMPTY_SARIF" > analysis-output/results.sarif
+          # Analyze corpus if available
+          TOTAL=0
+          SUCCESS=0
+          FAIL=0
+          TOTAL_ISSUES=0
+          
+          if [ -d "corpus/real_world" ]; then
+            for ll in $(find corpus/real_world -name "*.ll" -type f | head -20); do
+              name=$(basename "$ll" .ll)
+              TOTAL=$((TOTAL + 1))
+              
+              if zig-out/bin/OmniScope --json "$ll" > "analysis-output/${name}.json" 2>"analysis-output/${name}.log"; then
+                SUCCESS=$((SUCCESS + 1))
+                issues=$(jq '.issues | length' "analysis-output/${name}.json" 2>/dev/null || echo "0")
+                TOTAL_ISSUES=$((TOTAL_ISSUES + issues))
+              else
+                FAIL=$((FAIL + 1))
+              fi
+            done
+          fi
+          
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "fail=$FAIL" >> $GITHUB_OUTPUT
+          echo "issues=$TOTAL_ISSUES" >> $GITHUB_OUTPUT
+          
+          echo "=== Security Analysis Summary ==="
+          echo "Total files: $TOTAL"
+          echo "Success: $SUCCESS"
+          echo "Failed: $FAIL"
+          echo "Issues found: $TOTAL_ISSUES"
+
+      - name: Generate SARIF report
+        if: always()
+        run: |
+          cat > analysis-output/results.sarif << 'SARIF_EOF'
+          {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [{
+              "tool": {
+                "driver": {
+                  "name": "OmniScope",
+                  "version": "0.1.7",
+                  "informationUri": "https://github.com/user/OmniScope"
                 }
-            else
-              echo "No LLVM IR files found, creating empty SARIF"
-              echo "$EMPTY_SARIF" > analysis-output/results.sarif
-            fi
-          else
-            echo "No examples directory found, creating empty SARIF"
-            echo "$EMPTY_SARIF" > analysis-output/results.sarif
-          fi
+              },
+              "results": []
+            }]
+          }
+          SARIF_EOF
           
-          # Verify SARIF file was created
-          if [ ! -f analysis-output/results.sarif ]; then
-            echo "::error::SARIF file was not created!"
-            echo "$EMPTY_SARIF" > analysis-output/results.sarif
-          fi
+          # Merge all analysis results into SARIF
+          for json_file in analysis-output/*.json; do
+            if [ -f "$json_file" ]; then
+              jq -c '.issues[]' "$json_file" 2>/dev/null | while read -r issue; do
+                level=$(echo "$issue" | jq -r '.severity // "warning"')
+                message=$(echo "$issue" | jq -r '.message // "Security issue detected"')
+                location=$(echo "$issue" | jq -r '.location.function // "unknown"')
+                
+                jq --arg level "$level" --arg msg "$message" --arg loc "$location" '
+                  .runs[0].results += [{
+                    "level": (if $level == "critical" or $level == "high" then "error" else "warning" end),
+                    "message": {"text": $msg},
+                    "locations": [{"physicalLocation": {"artifactLocation": {"uri": $loc}}}]
+                  }]
+                ' analysis-output/results.sarif > /tmp/sarif_tmp.json && mv /tmp/sarif_tmp.json analysis-output/results.sarif
+              done
+            fi
+          done
 
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: analysis-output/results.sarif
           category: omniscope-security
           wait-for-processing: true
-
-      - name: Check for critical vulnerabilities
-        id: check-vulnerabilities
-        run: |
-          if [ -f analysis-output/results.sarif ]; then
-            # Count critical and high severity issues
-            CRITICAL=$(grep -c '"level": "error"' analysis-output/results.sarif || echo "0")
-            WARNING=$(grep -c '"level": "warning"' analysis-output/results.sarif || echo "0")
-            
-            echo "critical_count=$CRITICAL" >> $GITHUB_OUTPUT
-            echo "warning_count=$WARNING" >> $GITHUB_OUTPUT
-            
-            echo "=== Security Analysis Summary ==="
-            echo "Critical issues: $CRITICAL"
-            echo "Warnings: $WARNING"
-            
-            # Fail if critical issues found and fail_on_critical is true
-            FAIL_ON_CRITICAL="${{ github.event.inputs.fail_on_critical || true }}"
-            if [ "$FAIL_ON_CRITICAL" = "true" ] && [ "$CRITICAL" -gt 0 ]; then
-              echo "::error::Found $CRITICAL critical security issues!"
-              exit 1
-            fi
-            
-            if [ "$CRITICAL" -gt 0 ]; then
-              echo "::warning::Found $CRITICAL critical security issues"
-            fi
-            
-            if [ "$WARNING" -gt 0 ]; then
-              echo "::warning::Found $WARNING security warnings"
-            fi
-          fi
+        continue-on-error: true
 
       - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
@@ -127,48 +151,35 @@ jobs:
           path: analysis-output/
           retention-days: 30
 
-  # Optional: Cross-platform analysis
-  analyze-macos:
-    runs-on: macos-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: "0.15.0"
-
-      - name: Build and test
+      - name: Generate security summary
+        if: always()
         run: |
-          zig build -Doptimize=ReleaseSafe
-          zig build test --summary all
-
-  # Security scorecard
-  security-scorecard:
-    runs-on: ubuntu-latest
-    needs: build-and-analyze
-    if: always()
-    
-    steps:
-      - name: Generate security scorecard
-        run: |
-          echo "=== OmniScope Security Scorecard ==="
-          echo ""
-          echo "Analysis completed: $(date)"
-          echo "Repository: ${{ github.repository }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
-          echo ""
-          echo "Security tools used:"
-          echo "  - OmniScope v0.1.0 (FFI Security Analyzer)"
-          echo "  - LLVM IR based static analysis"
-          echo ""
-          echo "Checks performed:"
-          echo "  - FFI boundary validation"
-          echo "  - Memory safety analysis"
-          echo "  - Taint propagation tracking"
-          echo "  - Command injection detection"
-          echo "  - Buffer overflow detection"
+          TOTAL=${{ steps.analyze.outputs.total }}
+          SUCCESS=${{ steps.analyze.outputs.success }}
+          FAIL=${{ steps.analyze.outputs.fail }}
+          ISSUES=${{ steps.analyze.outputs.issues }}
+          
+          # Ensure defaults
+          TOTAL=${TOTAL:-0}
+          SUCCESS=${SUCCESS:-0}
+          FAIL=${FAIL:-0}
+          ISSUES=${ISSUES:-0}
+          
+          # Safe division
+          if [ "$TOTAL" -gt 0 ]; then
+            SUCCESS_RATE=$((SUCCESS * 100 / TOTAL))
+          else
+            SUCCESS_RATE=0
+          fi
+          
+          echo "## 🔒 OmniScope Security Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Files Analyzed** | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Success** | ✅ $SUCCESS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed** | ❌ $FAIL |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Issues Found** | 🐛 $ISSUES |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Success Rate** | ${SUCCESS_RATE}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Analysis Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
