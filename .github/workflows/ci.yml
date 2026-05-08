@@ -36,10 +36,11 @@ jobs:
 
       - name: Install LLVM
         run: |
-          # Use LLVM 18 (stable on Ubuntu noble)
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
-          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Lint & Format Check
         run: make fmt
@@ -72,10 +73,11 @@ jobs:
 
       - name: Install LLVM
         run: |
-          # Use LLVM 18 (stable on Ubuntu noble)
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
-          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Build
         run: make build
@@ -171,6 +173,7 @@ jobs:
   #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
   #
   #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
   #
   #     - name: Build
   #       run: make build
@@ -219,10 +222,11 @@ jobs:
 
       - name: Install LLVM
         run: |
-          # Use LLVM 18 (stable on Ubuntu noble)
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
           sudo apt-get update
-          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
-          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
+          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Build
         run: make build
@@ -304,6 +308,7 @@ jobs:
   #         echo "$HOME/.zvm/self" >> $GITHUB_PATH
   #
   #     - name: Install LLVM
+  #       run: brew install llvm@21 && echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
   #
   #     - name: Build
   #       run: make build
@@ -319,298 +324,6 @@ jobs:
   #
   #     - name: Run Real-World FFI Analysis
   #       run: make real-world-run
-
-  # ========================================
-  # OmniScope S级合规化增强分析 (from omniscope.yml)
-  # ========================================
-
-  analyze-corpus:
-    name: Analyze Corpus (${{ matrix.build_mode }})
-    needs: test-linux
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        build_mode: [release]
-    env:
-      LLVM_VERSION: "22"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm i ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-
-      - name: Install LLVM
-        run: |
-          # Use LLVM 18 (stable on Ubuntu noble)
-          sudo apt-get update
-          sudo apt-get install -y llvm-18-dev clang-18 libclang-18-dev
-          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
-
-      - name: Build ReleaseFast
-        run: zig build -Doptimize=ReleaseFast
-
-      - name: Run corpus analysis
-        run: |
-          LLVM_AS="llvm-as-${{ env.LLVM_VERSION }}"
-          
-          TOTAL=0
-          SUCCESS=0
-          FAIL=0
-          TOTAL_ISSUES=0
-          TOTAL_FUNCS=0
-          
-          mkdir -p outputs/corpus-analysis
-          
-          for ll in $(find corpus/ -name "*.ll" -type f | sort); do
-            name=$(basename "$ll" .ll)
-            
-            if file "$ll" | grep -q "LLVM bitcode"; then
-              bcfile="/tmp/${name}.bc"
-              cp "$ll" "$bcfile"
-            else
-              bcfile="/tmp/${name}.bc"
-              "$LLVM_AS" "$ll" -o "$bcfile" 2>/dev/null || continue
-            fi
-            
-            TOTAL=$((TOTAL + 1))
-            
-            result=$(./zig-out/bin/OmniScope "$bcfile" --json 2>/dev/null)
-            rc=$?
-            
-            if [ $rc -eq 0 ]; then
-              echo "$result" > "outputs/corpus-analysis/${name}.json"
-              
-              funcs=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('functions',0))" 2>/dev/null || echo "0")
-              issues=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('issues',[])))" 2>/dev/null || echo "0")
-              
-              printf "[OK] %-30s funcs=%-6s issues=%s\n" "$name" "$funcs" "$issues"
-              
-              SUCCESS=$((SUCCESS + 1))
-              TOTAL_FUNCS=$((TOTAL_FUNCS + funcs))
-              TOTAL_ISSUES=$((TOTAL_ISSUES + issues))
-            else
-              echo "[FAIL] $name (exit=$rc)"
-              FAIL=$((FAIL + 1))
-            fi
-            
-            rm -f "$bcfile"
-          done
-          
-          echo ""
-          echo "========================================="
-          echo "  Corpus Analysis Summary (${{ matrix.build_mode }})"
-          echo "========================================="
-          echo "  Total files:     $TOTAL"
-          echo "  ✅ Success:       $SUCCESS"
-          echo "  ❌ Failed:        $FAIL"
-          echo "  📊 Functions:     $TOTAL_FUNCS"
-          echo "  🐛 Issues:        $TOTAL_ISSUES"
-          echo "  Success Rate:    $(if [ $TOTAL -gt 0 ]; then echo $(( SUCCESS * 100 / TOTAL )); else echo 0; fi)%"
-          echo "========================================="
-
-      - name: Upload analysis results
-        uses: actions/upload-artifact@v4
-        with:
-          name: corpus-results-release
-          path: outputs/corpus-analysis/
-          retention-days: 30
-
-      - name: Generate summary
-        if: always()
-        run: |
-          echo "## 🔍 OmniScope Corpus Analysis Results (${{ matrix.build_mode }})" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Total Files** | $TOTAL |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Success** | ✅ $SUCCESS |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Failed** | ❌ $FAIL |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Functions** | $TOTAL_FUNCS |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Issues Found** | 🐛 $TOTAL_ISSUES |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Success Rate** | $(if [ $TOTAL -gt 0 ]; then echo $(( SUCCESS * 100 / TOTAL )); else echo 0; fi)% |" >> $GITHUB_STEP_SUMMARY
-
-  sarif-upload:
-    name: SARIF Report
-    needs: analyze-corpus
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download results
-        uses: actions/download-artifact@v4
-        with:
-          name: corpus-results-release
-          path: sarif-input/
-
-      - name: Merge JSON to SARIF
-        run: |
-          python3 << 'EOF'
-          import json, os
-          from datetime import datetime
-          
-          sarif = {
-            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
-            "version": "2.1.0",
-            "runs": [{
-              "tool": {
-                "driver": {
-                  "name": "OmniScope",
-                  "version": "0.1.7",
-                  "informationUri": "https://github.com/your-org/OmniScope",
-                  "rules": []
-                }
-              },
-              "results": [],
-              "invocations": [{
-                "executionSuccessful": True,
-                "endTimeUtc": datetime.utcnow().isoformat()
-              }]
-            }]
-          }
-          
-          rule_ids = set()
-          
-          for json_file in os.listdir("sarif-input/"):
-            if not json_file.endswith(".json"):
-              continue
-            
-            try:
-              with open(f"sarif-input/{json_file}") as f:
-                data = json.load(f)
-                
-                for issue in data.get("issues", []):
-                  result = {
-                    "ruleId": issue.get("kind", "unknown"),
-                    "level": _to_sarif_level(issue.get("severity", "medium")),
-                    "message": {"text": issue.get("message", "")},
-                    "locations": [{
-                      "physicalLocation": {
-                        "artifactLocation": {"uri": json_file},
-                        "region": {}
-                      }
-                    }],
-                    "properties": {
-                      "confidence": issue.get("confidence_score", 0),
-                      "cwe_id": issue.get("cwe_id", 0),
-                      "function": issue.get("location", {}).get("function", "")
-                    }
-                  }
-                  
-                  sarif["runs"][0]["results"].append(result)
-                  
-                  kind = issue.get("kind", "unknown")
-                  if kind not in rule_ids:
-                    rule_ids.add(kind)
-                    sarif["runs"][0]["tool"]["driver"]["rules"].append({
-                      "id": kind,
-                      "name": kind,
-                      "shortDescription": {"text": kind}
-                    })
-                    
-            except Exception as e:
-              print(f"Error processing {json_file}: {e}")
-          
-          with open("omniscope-results.sarif", "w") as f:
-            json.dump(sarif, f, indent=2)
-          
-          print(f"Generated SARIF with {len(sarif['runs'][0]['results'])} findings")
-          
-          def _to_sarif_level(severity):
-            mapping = {"critical": "error", "high": "error", "medium": "warning", "low": "note"}
-            return mapping.get(severity.lower(), "warning")
-          EOF
-
-      - name: Upload SARIF to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: omniscope-results.sarif
-        continue-on-error: true
-
-  performance-benchmark:
-    name: Performance Benchmark
-    needs: test-linux
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
-    env:
-      LLVM_VERSION: "22"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ZVM and Zig
-        run: |
-          curl -sSL https://www.zvm.app/install.sh | bash
-          export ZVM_INSTALL="$HOME/.zvm/self"
-          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
-          zvm i ${{ env.ZIG_VERSION }}
-          zvm use ${{ env.ZIG_VERSION }}
-          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
-          echo "$HOME/.zvm/self" >> $GITHUB_PATH
-
-      - name: Install LLVM
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm-${{ env.LLVM_VERSION }} time
-
-      - name: Build ReleaseFast
-        run: zig build -Doptimize=ReleaseFast
-
-      - name: Run performance benchmark
-        run: |
-          echo "# ⚡ OmniScope v0.1.7 Performance Benchmark" > benchmark.md
-          echo "" >> benchmark.md
-          echo "| File | Functions | Issues | Time (ms) | FFI Bounds |" >> benchmark.md
-          echo "|------|-----------|--------|-----------|------------|" >> benchmark.md
-          
-          LLVM_AS="llvm-as-${{ env.LLVM_VERSION }}"
-          
-          for ll in $(find corpus/real_world -name "*.ll" -type f | head -10); do
-            name=$(basename "$ll" .ll)
-            
-            if file "$ll" | grep -q "LLVM bitcode"; then
-              bcfile="/tmp/${name}.bc"
-              cp "$ll" "$bcfile"
-            else
-              bcfile="/tmp/${name}.bc"
-              "$LLVM_AS" "$ll" -o "$bcfile" 2>/dev/null || continue
-            fi
-            
-            START=$(date +%s%N)
-            result=$(./zig-out/bin/OmniScope "$bcfile" --json 2>/dev/null)
-            END=$(date +%s%N)
-            MS=$(( (END - START) / 1000000 ))
-            
-            funcs=$(echo "$result" | grep -o '"functions":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            issues=$(echo "$result" | grep -o '"issues":[0-9]*' | grep -o '[0-9]*' || echo "0")
-            ffi=$(echo "$result" | grep -o 'found .* FFI' | grep -o '[0-9]*' || echo "0")
-            
-            printf "| %s | %s | %s | %sms | %s |\n" "$name" "$funcs" "$issues" "$MS" "$ffi" >> benchmark.md
-            
-            rm -f "$bcfile"
-          done
-          
-          echo "" >> benchmark.md
-          echo "*Benchmark date: $(date)*" >> benchmark.md
-          echo "*Build mode: ReleaseFast*" >> benchmark.md
-          echo "*LLVM version: ${{ env.LLVM_VERSION }}*" >> benchmark.md
-
-      - name: Upload benchmark report
-        uses: actions/upload-artifact@v4
-        with:
-          name: performance-benchmark
-          path: benchmark.md
 
   ci-status:
     name: CI Status
