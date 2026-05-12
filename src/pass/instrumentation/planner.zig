@@ -60,11 +60,11 @@ pub const InstrumentationPlanner = struct {
     plan: InstrumentationPlan,
 
     /// Create a new instrumentation planner
-    pub fn init(allocator: std.mem.Allocator, store: *FactStore) InstrumentationPlanner {
+    pub fn init(allocator: std.mem.Allocator, store: *FactStore) !InstrumentationPlanner {
         return .{
             .store = store,
             .query = QueryEngine.init(store, allocator),
-            .plan = InstrumentationPlan.init(std.heap.page_allocator),
+            .plan = try InstrumentationPlan.init(std.heap.page_allocator),
         };
     }
 
@@ -356,10 +356,10 @@ pub const InstrumentationPlan = struct {
     };
 
     /// Create a new instrumentation plan
-    pub fn init(allocator: std.mem.Allocator) InstrumentationPlan {
+    pub fn init(allocator: std.mem.Allocator) !InstrumentationPlan {
         return .{
             .allocator = allocator,
-            .instrumentations = std.ArrayList(Instrumentation).initCapacity(allocator, 16) catch unreachable,
+            .instrumentations = try std.ArrayList(Instrumentation).initCapacity(allocator, 16),
         };
     }
 
@@ -515,7 +515,7 @@ pub const InstrumentationPlan = struct {
         var seen = std.AutoHashMap(u32, Instrumentation).init(self.allocator);
         defer seen.deinit();
 
-        var optimized = std.ArrayList(Instrumentation).initCapacity(self.allocator, 16) catch unreachable;
+        var optimized = try std.ArrayList(Instrumentation).initCapacity(self.allocator, 16);
 
         for (self.instrumentations.items) |inst| {
             // Check if we already have an instrumentation at this location
@@ -548,7 +548,7 @@ test "InstrumentationPlanner - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
 
-    const planner = InstrumentationPlanner.init(std.testing.allocator, &store);
+    const planner = try InstrumentationPlanner.init(std.testing.allocator, &store);
     _ = planner;
 }
 
@@ -567,13 +567,13 @@ test "InstrumentationPlanner - validate as Pass" {
 }
 
 test "InstrumentationPlan - init and deinit" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
     try std.testing.expectEqual(@as(usize, 0), plan.count());
 }
 
 test "InstrumentationPlan - add instrumentation" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     try plan.addInstrumentation(1, 42);
@@ -586,7 +586,7 @@ test "InstrumentationPlan - add instrumentation" {
 }
 
 test "InstrumentationPlan - get out of bounds" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     const inst = plan.get(0);
@@ -594,7 +594,7 @@ test "InstrumentationPlan - get out of bounds" {
 }
 
 test "InstrumentationPlan - clear" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     try plan.addInstrumentation(1, 42);
@@ -606,10 +606,10 @@ test "InstrumentationPlan - clear" {
 }
 
 test "InstrumentationPlan - merge" {
-    var plan1 = InstrumentationPlan.init(std.testing.allocator);
+    var plan1 = try InstrumentationPlan.init(std.testing.allocator);
     defer plan1.deinit();
 
-    var plan2 = InstrumentationPlan.init(std.testing.allocator);
+    var plan2 = try InstrumentationPlan.init(std.testing.allocator);
     defer plan2.deinit();
 
     try plan1.addInstrumentation(1, 42);
@@ -620,7 +620,7 @@ test "InstrumentationPlan - merge" {
 }
 
 test "InstrumentationPlan - optimize" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     // Add duplicate instrumentations with different priorities
@@ -640,7 +640,7 @@ test "InstrumentationPlan - optimize" {
 }
 
 test "InstrumentationPlan - large scale" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     const count = 10000;
@@ -661,7 +661,7 @@ test "InstrumentationPlan - large scale" {
 }
 
 test "InstrumentationPlan - priority sorting" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     // Add instrumentations with different priorities
@@ -690,7 +690,7 @@ test "InstrumentationPlan - priority sorting" {
 }
 
 test "InstrumentationPlan - selection with budget" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     // Add more than the default budget (1000)
@@ -725,7 +725,7 @@ test "InstrumentationPlan - selection with budget" {
 }
 
 test "InstrumentationPlan - instrumentation with score" {
-    var plan = InstrumentationPlan.init(std.testing.allocator);
+    var plan = try InstrumentationPlan.init(std.testing.allocator);
     defer plan.deinit();
 
     // Add instrumentations with same priority but different scores

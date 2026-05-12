@@ -372,8 +372,8 @@ zig build -Drelease-fast
 ```bibtex
 @tool{omniscope,
   title = {OmniScope: 跨语言 FFI 与内存安全静态分析器},
-  author = {OmniScope 团队},
+  author = {TimWood},
   year = {2026},
-  url = {https://github.com/your-org/OmniScope}
+  url = {https://github.com/Timwood0x10/OmniScope}
 }
 ```

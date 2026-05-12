@@ -370,9 +370,9 @@ If you use OmniScope in research, please cite:
 ```bibtex
 @tool{omniscope,
   title = {OmniScope: Cross-Language FFI and Memory Safety Static Analyzer},
-  author = {OmniScope Team},
+  author = {TimWood},
   year = {2026},
-  url = {https://github.com/your-org/OmniScope}
+  url = {https://github.com/Timwood0x10/OmniScope}
 }
 ```
 

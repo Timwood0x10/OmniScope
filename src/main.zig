@@ -13,25 +13,6 @@ const log = OmniScope.log;
 
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
-/// Log info message using project logger (per rules.md: use std.log not std.debug.print)
-fn logInfo(comptime fmt: []const u8, args: anytype) void {
-    log.info(fmt, args);
-}
-
-/// Log debug message using project logger
-fn logDebug(comptime fmt: []const u8, args: anytype) void {
-    log.debug(fmt, args);
-}
-
-fn logWarn(comptime fmt: []const u8, args: anytype) void {
-    log.warn(fmt, args);
-}
-
-/// Log error message using project logger
-fn logErr(comptime fmt: []const u8, args: anytype) void {
-    log.err(fmt, args);
-}
-
 /// Main entry point error set
 pub const MainError = error{
     NoInputFile,
@@ -131,11 +112,11 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             config.output_format = .sarif;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
             const output_file = args.next() orelse {
-                logErr("Error: --output requires a file path\n", .{});
+                log.err("Error: --output requires a file path\n", .{});
                 return error.InvalidOption;
             };
             if (output_file.len == 0) {
-                logErr("Error: --output requires a non-empty file path\n", .{});
+                log.err("Error: --output requires a non-empty file path\n", .{});
                 return error.InvalidOption;
             }
             config.output_file = try allocator.dupe(u8, output_file);
@@ -161,7 +142,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
 
 /// Show help message
 fn showHelp() void {
-    logInfo(
+    log.info(
         \\OmniScope - Universal LLVM Analysis Framework
         \\
         \\Usage: omniscope [options] <input.bc> [input2.bc] [...]
@@ -216,17 +197,17 @@ fn showHelp() void {
 ///   - InvalidIR: IR file is corrupted or invalid
 ///   - OutOfMemory: Memory allocation failed
 fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config: Config) !void {
-    logInfo("=== OmniScope IR Analysis ===\n", .{});
-    logInfo("File: {s}\n\n", .{path});
+    log.info("=== OmniScope IR Analysis ===\n", .{});
+    log.info("File: {s}\n\n", .{path});
 
     var loader = IRLoader.loadFile(allocator, path) catch |err| {
-        logErr("Failed to load IR file: {s}\n", .{@errorName(err)});
+        log.err("Failed to load IR file: {s}\n", .{@errorName(err)});
         return err;
     };
     defer loader.deinit();
 
     const func_count = loader.getFunctionCount();
-    logInfo("Loaded: {d} functions\n\n", .{func_count});
+    log.info("Loaded: {d} functions\n\n", .{func_count});
 
     var pipeline = try Pipeline.init(allocator);
     defer pipeline.deinit();
@@ -256,60 +237,60 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     const elapsed = std.time.milliTimestamp() - analysis_start;
     const analysis_time_ms: u64 = @intCast(@max(0, elapsed));
 
-    logInfo("Analysis complete\n", .{});
-    logInfo("Functions processed: {d}\n", .{func_count});
-    logInfo("Facts generated: {d}\n", .{result.fact_count});
+    log.info("Analysis complete\n", .{});
+    log.info("Functions processed: {d}\n", .{func_count});
+    log.info("Facts generated: {d}\n", .{result.fact_count});
 
     const issues = pipeline.getIssues();
 
     if (issues.len > 0 or config.output_format == .json or config.output_format == .sarif) {
         if (config.output_format == .json) {
             const json_output = formatIssuesAsJson(allocator, issues, func_count, analysis_time_ms) catch |err| {
-                logErr("Failed to format JSON output: {}", .{err});
+                log.err("Failed to format JSON output: {}", .{err});
                 return;
             };
             defer allocator.free(json_output);
 
             if (config.output_file) |output_path| {
                 const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
-                    logErr("Failed to create output file '{s}': {}", .{ output_path, err });
+                    log.err("Failed to create output file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 defer file.close();
                 file.writeAll(json_output) catch |err| {
-                    logErr("Failed to write to file '{s}': {}", .{ output_path, err });
+                    log.err("Failed to write to file '{s}': {}", .{ output_path, err });
                     return;
                 };
-                logInfo("Report saved to: {s}\n", .{output_path});
+                log.info("Report saved to: {s}\n", .{output_path});
             } else {
-                logInfo("{s}\n", .{json_output});
+                log.info("{s}\n", .{json_output});
             }
         } else if (config.output_format == .sarif) {
             // DC-H1 NOTE: SarifOutput doesn't own heap memory (only const slices + allocator)
             // No deinit needed - sarif_output is freed via defer allocator.free() below
             var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.7");
             const sarif_output = sarif.generate(issues) catch |err| {
-                logErr("Failed to generate SARIF output: {}", .{err});
+                log.err("Failed to generate SARIF output: {}", .{err});
                 return;
             };
             defer allocator.free(sarif_output);
 
             if (config.output_file) |output_path| {
                 const file = std.fs.cwd().createFile(output_path, .{}) catch |err| {
-                    logErr("Failed to create output file '{s}': {}", .{ output_path, err });
+                    log.err("Failed to create output file '{s}': {}", .{ output_path, err });
                     return;
                 };
                 defer file.close();
                 file.writeAll(sarif_output) catch |err| {
-                    logErr("Failed to write to file '{s}': {}", .{ output_path, err });
+                    log.err("Failed to write to file '{s}': {}", .{ output_path, err });
                     return;
                 };
-                logInfo("SARIF report saved to: {s}\n", .{output_path});
+                log.info("SARIF report saved to: {s}\n", .{output_path});
             } else {
-                logInfo("{s}\n", .{sarif_output});
+                log.info("{s}\n", .{sarif_output});
             }
         } else {
-            logInfo("Issues detected: {d}\n", .{issues.len});
+            log.info("Issues detected: {d}\n", .{issues.len});
         }
     }
 
@@ -348,9 +329,9 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
         const mem_html = try std.fmt.allocPrint(allocator, "{s}/memory.html", .{out_dir});
         defer allocator.free(mem_html);
 
-        logInfo("Generating memory graph: {s}\n", .{mem_html});
+        log.info("Generating memory graph: {s}\n", .{mem_html});
         viz.exportIssuesHtml(graph_issues, mem_json, mem_html) catch |err| {
-            logInfo("Warning: Failed to generate visualization: {s}\n", .{@errorName(err)});
+            log.info("Warning: Failed to generate visualization: {s}\n", .{@errorName(err)});
         };
     }
 }
@@ -396,15 +377,12 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     for (issues, 0..) |issue, idx| {
         if (idx > 0) try writer.writeAll(",\n");
 
-        const id_str = try std.fmt.allocPrint(allocator, "OMI-{d:0>3}", .{idx + 1});
-        defer allocator.free(id_str);
-
         const line_num = if (issue.location.line > 0) issue.location.line else null;
         const col_num = if (issue.location.column > 0) issue.location.column else null;
         const cwe_id = issue.kind.toCweId();
 
         try writer.writeAll("  {\"id\":\"");
-        try writer.writeAll(id_str);
+        try writer.print("OMI-{d:0>3}", .{idx + 1});
         try writer.writeAll("\",\"kind\":\"");
         try writer.writeAll(@tagName(issue.kind));
         try writer.writeAll("\",\"severity\":\"");
@@ -463,23 +441,11 @@ fn countFunction(func_ref: FunctionRef, count: *usize) !void {
 }
 
 /// Run analysis on multiple files (FFI mode)
-fn runMultiFileAnalysis(files: []const []const u8) !void {
-    logInfo("=== OmniScope Cross-Language FFI Analysis ===\n\n", .{});
-    logInfo("[*] FFI Mode: {d} files detected\n", .{files.len});
+fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8) !void {
+    log.info("=== OmniScope Cross-Language FFI Analysis ===\n\n", .{});
+    log.info("[*] FFI Mode: {d} files detected\n", .{files.len});
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        const leaked = gpa.deinit();
-        if (leaked == .leak) {
-            if (log.current_log_level != .quiet) {
-                std.log.warn("Memory leak detected in FFI analysis!\n", .{});
-            }
-        }
-    }
-
-    const allocator = gpa.allocator();
-
-    var loaders = std.ArrayList(IRLoader).initCapacity(allocator, files.len) catch return error.OutOfMemory;
+    var loaders = try std.ArrayList(IRLoader).initCapacity(allocator, files.len);
     defer {
         for (loaders.items) |*loader| {
             loader.deinit();
@@ -487,22 +453,22 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
         loaders.deinit(allocator);
     }
 
-    logInfo("[*] Loading IR files...\n", .{});
+    log.info("[*] Loading IR files...\n", .{});
     for (files, 0..) |file, i| {
-        logInfo("  [{d}/{d}] Loading: {s}\n", .{ i + 1, files.len, file });
+        log.info("  [{d}/{d}] Loading: {s}\n", .{ i + 1, files.len, file });
 
         var loader = try IRLoader.loadFile(allocator, file);
         errdefer loader.deinit();
 
         const func_count = loader.getFunctionCount();
-        logInfo("  [{d}/{d}] Loaded: {s} ({d} functions)\n", .{ i + 1, files.len, file, func_count });
+        log.info("  [{d}/{d}] Loaded: {s} ({d} functions)\n", .{ i + 1, files.len, file, func_count });
 
         try loaders.append(allocator, loader);
     }
 
-    logInfo("[*] All files loaded successfully\n\n", .{});
+    log.info("[*] All files loaded successfully\n\n", .{});
 
-    logInfo("[*] Initializing FFI matcher...\n", .{});
+    log.info("[*] Initializing FFI matcher...\n", .{});
 
     const FFIMatcher = OmniScope.cross_lang.FFIMatcher;
     const FFIMatcherFunctionInfo = OmniScope.cross_lang.FunctionInfo;
@@ -534,20 +500,20 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
         try loader.iterateFunctions(&callback_data, MatcherCallback.processFunction);
     }
 
-    logInfo("[*] Performing FFI function matching...\n", .{});
+    log.info("[*] Performing FFI function matching...\n", .{});
     try matcher.matchFunctions();
 
-    logInfo("[*] Found {d} FFI matches\n", .{matcher.matches.items.len});
+    log.info("[*] Found {d} FFI matches\n", .{matcher.matches.items.len});
 
     var vulnerabilities: std.ArrayList(OmniScope.cross_lang.FFIVulnerability) = try std.ArrayList(OmniScope.cross_lang.FFIVulnerability).initCapacity(allocator, 100);
     defer vulnerabilities.deinit(allocator);
 
-    logInfo("[*] Analyzing {d} FFI matches for vulnerabilities...\n", .{matcher.matches.items.len});
+    log.info("[*] Analyzing {d} FFI matches for vulnerabilities...\n", .{matcher.matches.items.len});
 
     for (matcher.matches.items, 0..) |*match, i| {
         if (!match.isValid()) continue;
 
-        logDebug("  [Match {d}] {s}\n", .{ i, match.name });
+        log.debug("  [Match {d}] {s}\n", .{ i, match.name });
 
         if (isDangerousFFIPattern(match)) {
             const vuln = OmniScope.cross_lang.FFIVulnerability{
@@ -564,32 +530,32 @@ fn runMultiFileAnalysis(files: []const []const u8) !void {
         }
     }
 
-    logInfo("[*] Running FFI vulnerability detection...\n", .{});
+    log.info("[*] Running FFI vulnerability detection...\n", .{});
 
     if (vulnerabilities.items.len > 0) {
-        logInfo("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
+        log.info("[!] Found {d} potential FFI vulnerabilities:\n", .{vulnerabilities.items.len});
         for (vulnerabilities.items) |vuln| {
-            logInfo("  [VULN #{d}] {s}\n", .{ vuln.id, @tagName(vuln.vuln_type) });
-            logInfo("    Severity: {s}\n", .{@tagName(vuln.severity)});
-            logInfo("    Description: {s}\n", .{vuln.description});
-            logInfo("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
-            logInfo("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
+            log.info("  [VULN #{d}] {s}\n", .{ vuln.id, @tagName(vuln.vuln_type) });
+            log.info("    Severity: {s}\n", .{@tagName(vuln.severity)});
+            log.info("    Description: {s}\n", .{vuln.description});
+            log.info("    Declaration: {s}\n", .{vuln.source_location orelse "unknown"});
+            log.info("    Definition: {s}\n", .{vuln.sink_location orelse "unknown"});
         }
     } else {
-        logInfo("[*] No FFI vulnerabilities detected\n", .{});
+        log.info("[*] No FFI vulnerabilities detected\n", .{});
     }
 
-    logInfo("=== FFI Analysis Summary ===\n", .{});
-    logInfo("Total files analyzed: {d}\n", .{files.len});
-    logInfo("Total functions: {d}\n", .{blk: {
+    log.info("=== FFI Analysis Summary ===\n", .{});
+    log.info("Total files analyzed: {d}\n", .{files.len});
+    log.info("Total functions: {d}\n", .{blk: {
         var total: usize = 0;
         for (loaders.items) |*loader| {
             total += loader.getFunctionCount();
         }
         break :blk total;
     }});
-    logInfo("FFI matches found: {d}\n", .{matcher.matches.items.len});
-    logInfo("Vulnerabilities detected: {d}\n", .{vulnerabilities.items.len});
+    log.info("FFI matches found: {d}\n", .{matcher.matches.items.len});
+    log.info("Vulnerabilities detected: {d}\n", .{vulnerabilities.items.len});
 }
 
 /// Check if an FFI match represents a dangerous pattern
@@ -663,19 +629,19 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        logInfo("OmniScope v0.1.7\n", .{});
+        log.info("OmniScope v0.1.7\n", .{});
         return;
     }
 
     if (config.input_files.items.len == 0) {
-        logInfo("Error: No input file specified\n", .{});
+        log.info("Error: No input file specified\n", .{});
         return error.NoInputFile;
     }
 
     if (config.input_files.items.len == 1) {
         try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
     } else {
-        try runMultiFileAnalysis(config.input_files.items);
+        try runMultiFileAnalysis(allocator, config.input_files.items);
     }
 }
 

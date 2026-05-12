@@ -108,7 +108,7 @@ pub const AllocatorKB = struct {
         var kb = AllocatorKB{
             .allocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
             .deallocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
-            .pairs = std.ArrayList(AllocatorPair).initCapacity(arena.allocator(), 0) catch unreachable,
+            .pairs = try std.ArrayList(AllocatorPair).initCapacity(arena.allocator(), 0),
             .arena = undefined,
             .temp_allocator = temp_allocator,
         };

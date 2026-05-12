@@ -308,8 +308,6 @@ pub fn checkReturnValueEscape(
 
 /// Check type compatibility at FFI boundaries.
 /// Uses type_checker module for detailed analysis.
-///
-/// TODO: Re-enable after fixing LLVM API compatibility issues.
 pub fn checkTypeCompatibility(
     ctx: *PassContext,
     diag: *DiagnosticWriter,

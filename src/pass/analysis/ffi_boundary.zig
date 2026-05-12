@@ -346,8 +346,7 @@ pub const FFIBoundaryPass = struct {
             .unknown, .ffi, .unsafe => {},
         }
 
-        // Legacy noise filter kept for edge cases not yet covered by zone classifier.
-        // TODO(R7.1): Remove entirely once zone coverage is complete.
+        // Legacy noise filter for edge cases not covered by zone classifier.
         if (is_dangerous) {
             if (noise_filter.isStlInternalFunction(caller_name)) {
                 return false;

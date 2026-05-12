@@ -35,10 +35,10 @@ pub const PassManager = struct {
     };
 
     /// Create a new pass manager
-    pub fn init(allocator: Allocator) PassManager {
+    pub fn init(allocator: Allocator) !PassManager {
         return .{
             .allocator = allocator,
-            .passes = std.ArrayList(PassEntry).initCapacity(allocator, 0) catch unreachable,
+            .passes = try std.ArrayList(PassEntry).initCapacity(allocator, 0),
             .pass_map = std.StringHashMap(usize).init(allocator),
             .resolved_order = null,
             .execution_names = null,
@@ -225,13 +225,13 @@ pub const PassManager = struct {
 };
 
 test "PassManager - init and deinit" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
     try std.testing.expectEqual(@as(usize, 0), manager.count());
 }
 
 test "PassManager - register pass" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const TestPass = struct {
@@ -249,7 +249,7 @@ test "PassManager - register pass" {
 }
 
 test "PassManager - run passes" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     var fact_store = try FactStore.init(std.testing.allocator);
@@ -284,7 +284,7 @@ test "PassManager - run passes" {
 }
 
 test "PassManager - resolve dependencies - simple chain" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const PassA = struct {
@@ -330,7 +330,7 @@ test "PassManager - resolve dependencies - simple chain" {
 }
 
 test "PassManager - resolve dependencies - diamond" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const PassA = struct {
@@ -395,7 +395,7 @@ test "PassManager - resolve dependencies - diamond" {
 }
 
 test "PassManager - detect cycle" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const PassA = struct {
@@ -426,7 +426,7 @@ test "PassManager - detect cycle" {
 }
 
 test "PassManager - missing dependency" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const PassA = struct {
@@ -446,7 +446,7 @@ test "PassManager - missing dependency" {
 }
 
 test "PassManager - get execution order" {
-    var manager = PassManager.init(std.testing.allocator);
+    var manager = try PassManager.init(std.testing.allocator);
     defer manager.deinit();
 
     const PassA = struct {

@@ -401,7 +401,7 @@ pub const FreeValidationPass = struct {
     /// Used to detect pointers returned from C/external functions, which carry
     /// cross-allocator free risk when passed to libc::free or __rust_dealloc.
     ///
-    /// TODO (CTX-3): Enhance with ctx.getCrossEdgeByCallee(callee) != null
+    /// Future enhancement: use ctx.getCrossEdgeByCallee(callee) != null
     /// to cover unmangled Rust wrappers (e.g., test_double_free_box).
     /// Requires refactoring this fn to accept PassContext parameter.
     fn isFFIBoundaryCall(func_name: []const u8) bool {

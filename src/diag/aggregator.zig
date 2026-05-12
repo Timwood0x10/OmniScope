@@ -65,10 +65,10 @@ pub const DiagnosticAggregator = struct {
     seen_keys: std.AutoHashMap(u64, void),
 
     /// Create a new diagnostic aggregator
-    pub fn init(allocator: std.mem.Allocator) DiagnosticAggregator {
+    pub fn init(allocator: std.mem.Allocator) !DiagnosticAggregator {
         return .{
             .allocator = allocator,
-            .diagnostics = std.ArrayList(Diagnostic).initCapacity(allocator, 0) catch unreachable,
+            .diagnostics = try std.ArrayList(Diagnostic).initCapacity(allocator, 0),
             .seen_keys = std.AutoHashMap(u64, void).init(allocator),
         };
     }
@@ -395,14 +395,14 @@ pub const SummaryReport = struct {
 };
 
 test "DiagnosticAggregator - init and deinit" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), aggregator.diagnostics.items.len);
 }
 
 test "DiagnosticAggregator - add diagnostic" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     const diag = Diagnostic{
@@ -418,7 +418,7 @@ test "DiagnosticAggregator - add diagnostic" {
 }
 
 test "DiagnosticAggregator - get by severity" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     try aggregator.add(Diagnostic{
@@ -452,7 +452,7 @@ test "DiagnosticAggregator - get by severity" {
 }
 
 test "DiagnosticAggregator - get by kind" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     try aggregator.add(Diagnostic{
@@ -478,7 +478,7 @@ test "DiagnosticAggregator - get by kind" {
 }
 
 test "DiagnosticAggregator - aggregate from events" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     var events = [_]MergedEvent{
@@ -506,7 +506,7 @@ test "DiagnosticAggregator - aggregate from events" {
 }
 
 test "DiagnosticAggregator - generate summary" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     try aggregator.add(Diagnostic{
@@ -542,7 +542,7 @@ test "DiagnosticAggregator - generate summary" {
 }
 
 test "DiagnosticAggregator - clear" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     try aggregator.add(Diagnostic{
@@ -561,7 +561,7 @@ test "DiagnosticAggregator - clear" {
 }
 
 test "DiagnosticAggregator - multiple diagnostics same severity" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     // Add multiple diagnostics with same severity
@@ -587,7 +587,7 @@ test "DiagnosticAggregator - multiple diagnostics same severity" {
 }
 
 test "DiagnosticAggregator - empty aggregation" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     // Get summary with no diagnostics
@@ -599,7 +599,7 @@ test "DiagnosticAggregator - empty aggregation" {
 }
 
 test "DiagnosticAggregator - cross-pass deduplication" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     // Create mock issue with location and kind
@@ -680,7 +680,7 @@ test "DiagnosticAggregator - cross-pass deduplication" {
 }
 
 test "DiagnosticAggregator - dedup with null fields" {
-    var aggregator = DiagnosticAggregator.init(std.testing.allocator);
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
     defer aggregator.deinit();
 
     const TestIssue = struct {
