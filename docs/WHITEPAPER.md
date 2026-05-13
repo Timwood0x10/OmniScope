@@ -382,11 +382,13 @@ The S+ Quality Audit completed the foundation:
 - **MemoryGraph function names**: Real names, not dedup strings (+383% detection)
 - **Dead code cleanup**: 5 files deleted, −1,161 lines
 - **CI/CD hardening**: `make fmt-check`, full integration test suite
+- **Rust GlobalAlloc in allocator_kb**: `__rust_alloc`/`__rust_dealloc` pairs registered
+- **Objective-C free classification**: `objc_free`, `objc_release` added to `FreeType` enum
+- **Multi-file analysis**: Runs full per-file pipeline + cross-language FFI matching + JSON/SARIF output
 
-### P0 — Remaining basics
+### P0 — No remaining basics
 
-- **`allocator_kb` bug fix**: Add Rust's `GlobalAlloc::alloc` trait implementations. Fix the `objc_free` mapping. This is maybe 5 lines of code. We just haven't done it yet.
-- **Multi-file analysis stability**: Current prototype requires manual `.bc` matching — needs automation for real CI/CD workflows.
+All P0 items from the v0.1.7 whitepaper have been addressed in v0.1.8.
 
 ### P1 — New analysis capabilities
 

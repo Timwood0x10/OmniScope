@@ -140,6 +140,8 @@ pub fn isFreeInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
     if (std.mem.indexOf(u8, callee_name, "from_raw") != null) return true;
     if (std.mem.indexOf(u8, callee_name, "drop_in_place") != null) return true;
     if (std.mem.indexOf(u8, callee_name, "operator delete") != null) return true;
+    if (std.mem.indexOf(u8, callee_name, "objc_free") != null) return true;
+    if (std.mem.indexOf(u8, callee_name, "objc_release") != null) return true;
 
     // General fallback: delegate to ptr_lifetime_classify for suffix-based matching
     // (c_free, cpp_delete, objc_release, etc.) and language-specific patterns.
@@ -168,6 +170,14 @@ pub fn classifyFree(inst: c.LLVMValueRef, opcode: c_uint) FreeType {
         return .cpp_delete;
     }
 
+    // Objective-C free/release patterns (must come before generic fallback).
+    if (std.mem.indexOf(u8, callee_name, "objc_free") != null) {
+        return .objc_free;
+    }
+    if (std.mem.indexOf(u8, callee_name, "objc_release") != null) {
+        return .objc_release;
+    }
+
     // General fallback: check ptr_lifetime_classify for suffix-based matching.
     if (ptr_classify.isFreeFunction(callee_name)) {
         return .free;
@@ -194,6 +204,8 @@ pub const FreeType = enum {
     rust_box_from_raw,
     rust_drop,
     cpp_delete,
+    objc_free,
+    objc_release,
     scope_exit,
     unknown,
 };

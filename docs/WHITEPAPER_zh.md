@@ -455,11 +455,13 @@ S+ 质量审计完成了基础工程：
 - **MemoryGraph 函数名**: 真实函数名，修复去重 bug
 - **死代码清理**: 5 文件删除，−1,161 行
 - **CI/CD 加固**: `make fmt-check`，完整集成测试套件
+- **Rust GlobalAlloc 注册**: `__rust_alloc`/`__rust_dealloc` 加入 allocator_kb
+- **Objective-C 释放分类**: `objc_free`、`objc_release` 加入 `FreeType` 枚举
+- **多文件分析**: 逐文件完整流水线 + 跨语言 FFI 匹配 + JSON/SARIF 统一输出
 
-### P0 — 残留基础任务
+### P0 — 无残留基础任务
 
-- **`allocator_kb` bug 修复**: 添加 Rust `GlobalAlloc::alloc` trait 实现；修复 `objc_free` 映射。
-- **多文件分析稳定性**: 当前原型需要手动 `.bc` 匹配，需要自动化 CI/CD 工作流支持。
+v0.1.7 白皮书中所有 P0 项目已在 v0.1.8 中全部完成。
 
 ### P1 — 新分析能力
 
