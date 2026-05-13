@@ -46,6 +46,7 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
         "__rdl_dealloc", "__rg_dealloc", "__rust_dealloc",
         "cfree",         "free",         "g_free",
         "kfree",         "realloc",      "vfree",
+        "c_free",        "c_malloc",
     };
     for (exact_fns) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;

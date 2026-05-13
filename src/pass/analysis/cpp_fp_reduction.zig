@@ -668,6 +668,12 @@ pub fn detectUseAfterFree(
             continue;
         }
 
+        // Skip functions with intentional/test pattern prefixes (correct_, valid_, etc.)
+        if (is_likely_intentional_pattern(free_info.func_name)) {
+            diag.debug("UAF-SKIP: {s} has known-safe function name prefix", .{free_info.func_name});
+            continue;
+        }
+
         const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_ZN") or
             std.mem.startsWith(u8, free_info.func_name, "_R");
         const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or

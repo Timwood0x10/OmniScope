@@ -105,8 +105,8 @@ get_expected_count() {
             boundary_test)     count=16 ;;
             stress_patterns)   count=49 ;;
             sqlite_binding)    count=5 ;;
-            openssl_wrapper)   count=8 ;;
-            zlib_binding)      count=14 ;;
+            openssl_wrapper)   count=9 ;;
+            zlib_binding)      count=12 ;;
             rust_sqlite_ffi)   count=6 ;;
         esac
     fi

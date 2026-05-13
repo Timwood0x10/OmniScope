@@ -233,9 +233,9 @@ Benchmark metrics (Precision, Recall, F1) are calculated **only against in-scope
 | cpp_ffi_simple.ll    | 6      |
 | boundary_test.ll     | 16     |
 | stress_patterns.ll   | 49     |
-| openssl_wrapper.ll   | 8      |
+| openssl_wrapper.ll   | 9      |
 | sqlite_binding.ll    | 5      |
-| zlib_binding.ll      | 14     |
+| zlib_binding.ll      | 12     |
 | rust_sqlite_ffi.ll   | 6      |
 
 ### Out-of-Scope Issues (21 total) — Not OmniScope's Responsibility

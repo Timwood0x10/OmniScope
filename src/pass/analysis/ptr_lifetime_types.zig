@@ -235,6 +235,7 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "fopen",          "socket",       "JNI_OnLoad",   "Py_Initialize",
     "Py_BuildValue",  "PyTuple_New",  "PyList_New",   "PyDict_New",
     "NewStringUTF",   "NewByteArray", "NewGlobalRef",
+    "c_malloc",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
     "__rust_alloc",
     "__rust_realloc", "__rdl_alloc",  "__rg_alloc",   "exchange_malloc",

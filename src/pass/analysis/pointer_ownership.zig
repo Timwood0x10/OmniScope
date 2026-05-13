@@ -61,6 +61,21 @@ fn truncateInstId(inst_id: u64) u32 {
     return @as(u32, @truncate(inst_id));
 }
 
+/// Resolve LLVM instruction pointer (u64) back to its containing function name.
+/// MemoryGraph stores instruction pointers as u64; this recovers the function name
+/// via LLVM's instruction→basic block→function chain.
+fn resolveInstFuncName(inst: u64) []const u8 {
+    if (inst == 0) return "memory_graph";
+    const inst_ref: c.LLVMValueRef = @ptrFromInt(inst);
+    const bb = c.LLVMGetInstructionParent(inst_ref);
+    if (@intFromPtr(bb) == 0) return "memory_graph";
+    const func = c.LLVMGetBasicBlockParent(bb);
+    if (@intFromPtr(func) == 0) return "memory_graph";
+    const name = c.LLVMGetValueName(func);
+    if (@intFromPtr(name) == 0) return "memory_graph";
+    return std.mem.span(name);
+}
+
 /// Ownership violation types detected by this pass.
 pub const OwnershipViolationType = enum(u8) {
     cross_lang_free_mismatch,
@@ -258,7 +273,7 @@ pub const PointerOwnershipPass = struct {
                     const inst_id_safe = truncateInstId(node.alloc_inst);
                     site.* = .{
                         .inst_id = inst_id_safe,
-                        .func_name = "memory_graph", // Source: MemoryGraph tracking
+                        .func_name = resolveInstFuncName(node.alloc_inst),
                         .lang = node.alloc_lang,
                         .alloc_type = .heap, // Default: heap allocation
                         .ptr_value_id = inst_id_safe,
@@ -279,7 +294,7 @@ pub const PointerOwnershipPass = struct {
                     const alloc_inst_id_safe = truncateInstId(node.alloc_inst);
                     fsite.* = .{
                         .inst_id = freed_inst_id_safe,
-                        .func_name = "memory_graph",
+                        .func_name = resolveInstFuncName(node.alloc_inst), // was "memory_graph"
                         .lang = node.free_lang orelse node.alloc_lang,
                         .free_type = .free, // Default: standard free
                         .ptr_value_id = alloc_inst_id_safe,
