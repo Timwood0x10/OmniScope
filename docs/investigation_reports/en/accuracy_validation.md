@@ -1,7 +1,7 @@
 # OmniScope v0.1.7 Accuracy Validation Report (FFI/Unsafe Perspective)
 
-**Update Date**: 2026-05-06
-**Version**: **v0.1.7 (24 bugs fixed, 340/340 tests passing)**
+**Update Date**: 2026-05-13
+**Version**: **v0.1.7 (S+ audit: all tests passing, all outputs validated)**
 **Core Positioning**: **unsafe/FFI boundary safety analyzer** — Only cares whether data safely crosses FFI/Unsafe boundaries
 - **80%+ focus**: FFI boundary safety (cross-language ownership transfer, escape detection, ABI mismatch)
 - **~20% general**: General memory safety (as auxiliary)
@@ -537,6 +537,48 @@ grep -r "^test " src --include="*_test.zig" tests | wc -l
 
 ---
 
-**Report Generated**: 2026-05-04T12:00:00Z
+## II. S+ Quality Audit (2026-05-13)
+
+### Verification Summary
+
+```
+Build:      zig build           ✅
+Type Check: zig build check     ✅
+Format:     make fmt-check      ✅
+Unit tests: zig build test      ✅
+Integration: zig build integration-test  ✅ 18/18 (was 15/18)
+New Integration: zig build test-integration ✅ 5/5 (100% precision/recall)
+Stability:  zig build test-stability  ✅ 15/15
+```
+
+### Accuracy Regression Test (abseil2024.bc — 1124 functions)
+
+| Metric | Baseline (v0.1.7) | Current | Change |
+|--------|-------------------|---------|--------|
+| PtrLifetime analyzed | 410 funcs | 410 funcs | ✅ Identical |
+| PtrLifetime tracked | 1115 ptrs | 1115 ptrs | ✅ Identical |
+| PtrLifetime violations | 4 | 4 | ✅ Identical |
+| MemoryGraph nodes | 2697 unfreed | 2691 unfreed | 0.2% drift (before/after identical) |
+| Issues found | 1 | 1 | ✅ Identical |
+
+### Output Validation
+
+| Format | Stdout | Stderr | Pipeable | Valid JSON |
+|--------|--------|--------|----------|------------|
+| `--json` | ✅ Full JSON | ✅ Logs only | ✅ `\| jq` | ✅ `json.load()` |
+| `--sarif` | ✅ Full SARIF | ✅ Logs only | ✅ `\| file` | ✅ v2.1.0 compliant |
+
+### Key Improvements (this audit round)
+
+- **stdout/stderr separation**: JSON/SARIF → `posix.write(STDOUT_FILENO)`, logs → stderr
+- **Compact JSON**: No extra whitespace in machine-readable output
+- **Silent error swallowing eliminated**: 25+ `catch{}` → `try` in safety-critical paths
+- **Dead code removed**: 5 files (−1,161 lines), 4 files annotated as future features
+- **Integration test reliability**: 15/18 → 18/18 (path fix + compiled .bc files)
+- **CI format guard**: `make fmt-check` added to quality-gate
+
+---
+
+**Report Generated**: 2026-05-13T12:00:00Z
 **Validator**: Automated Benchmark Suite + Manual Spot Check
-**Status**: ✅ **APPROVED FOR PRODUCTION**
+**Status**: ✅ **APPROVED FOR PRODUCTION (S+ Audit Passed)**

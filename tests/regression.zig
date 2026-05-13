@@ -6,6 +6,10 @@
 const std = @import("std");
 const OmniScope = @import("OmniScope");
 const registry = OmniScope.registry;
+const Issue = OmniScope.diag.Issue;
+const IssueKind = OmniScope.diag.IssueKind;
+const Severity = OmniScope.diag.Severity;
+const output = OmniScope.output;
 
 // ========================================
 // Regression: Semantic Registry Layer Counts
@@ -136,5 +140,84 @@ test "Regression: all languages detectable" {
             return error.LanguagePatternMissing;
         };
         try std.testing.expectEqual(entry[1], sem.kind);
+    }
+}
+
+// ========================================
+// Output Format Validation
+// ========================================
+
+test "Output: JSON escapes special characters" {
+    var buf = std.ArrayList(u8).initCapacity(std.testing.allocator, 64) catch return error.OutOfMemory;
+    defer buf.deinit(std.testing.allocator);
+    try output.writeJsonEscaped(buf.writer(), "hello\"world\\\n\r\t");
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "hello\\\"world") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\\\") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\r") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\t") != null);
+}
+
+test "Output: JSON control characters are hex escaped" {
+    var buf = std.ArrayList(u8).initCapacity(std.testing.allocator, 64) catch return error.OutOfMemory;
+    defer buf.deinit(std.testing.allocator);
+    try output.writeJsonEscaped(buf.writer(), "\x01\x1f");
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u0001") != null);
+    try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u001f") != null);
+}
+
+test "Output: JSON ascii passes through unchanged" {
+    var buf = std.ArrayList(u8).initCapacity(std.testing.allocator, 64) catch return error.OutOfMemory;
+    defer buf.deinit(std.testing.allocator);
+    try output.writeJsonEscaped(buf.writer(), "safe_text_123");
+    try std.testing.expectEqualStrings("safe_text_123", buf.items);
+}
+
+test "Output: SarifOutput generates valid JSON" {
+    const allocator = std.testing.allocator;
+    var sarif = output.SarifOutput.init(allocator, "test-tool", "0.1.8");
+    const loc = Issue.Location.init("test_func");
+    const issues = [_]Issue{
+        Issue.init(.memory_leak, "test leak", loc, .high, 0.9),
+    };
+    const result = try sarif.generate(&issues);
+    defer allocator.free(result);
+    // Verify it's valid JSON with expected fields
+    try std.testing.expect(std.mem.indexOf(u8, result, "\"version\": \"2.1.0\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "\"runs\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "memory_leak") != null);
+}
+
+test "Output: SarifOutput with multiple issues" {
+    const allocator = std.testing.allocator;
+    var sarif = output.SarifOutput.init(allocator, "test-tool", "0.1.8");
+    const loc = Issue.Location.init("test_func");
+    const issues = [_]Issue{
+        Issue.init(.memory_leak, "leak1", loc, .high, 0.9),
+        Issue.init(.double_free, "df1", loc, .critical, 0.95),
+        Issue.init(.buffer_overflow, "bo1", loc, .medium, 0.7),
+    };
+    const result = try sarif.generate(&issues);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "memory_leak") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "double_free") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "buffer_overflow") != null);
+}
+
+test "Output: SarifOutput severity mapping" {
+    const allocator = std.testing.allocator;
+    var sarif = output.SarifOutput.init(allocator, "test-tool", "0.1.8");
+    const loc = Issue.Location.init("test_func");
+    const levels = [_]struct { Severity, []const u8 }{
+        .{ .low, "note" },
+        .{ .medium, "warning" },
+        .{ .high, "error" },
+        .{ .critical, "error" },
+    };
+    inline for (levels) |entry| {
+        const issues = [_]Issue{Issue.init(.memory_leak, "test", loc, entry[0], 0.8)};
+        const result = try sarif.generate(&issues);
+        defer allocator.free(result);
+        try std.testing.expect(std.mem.indexOf(u8, result, entry[1]) != null);
     }
 }

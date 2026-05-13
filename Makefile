@@ -47,7 +47,7 @@ CPP_IR = $(EXAMPLES_DIR)/cpp_cffi/target
 GO_IR = $(EXAMPLES_DIR)/go_cffi/target
 ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 
-.PHONY: all fmt check test test-unit test-int test-all bench build run clean examples \
+.PHONY: all fmt fmt-check check test test-unit test-int test-all bench build run clean examples \
         baseline-check red-team-test \
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
@@ -122,6 +122,9 @@ test-all: test-unit test-int test-issues test-stability test-stress
 
 fmt:
 	$(ZIG) fmt src/
+
+fmt-check:
+	$(ZIG) fmt --check src/
 
 check:
 	@echo "╔════════════════════════════════════════════════════════════════╗"
@@ -699,6 +702,7 @@ help:
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make fmt         Format source code"
+	@echo "  make fmt-check   Check formatting (CI use)"
 	@echo "  make check       Type check the project"
 	@echo "  make build       Build the project"
 	@echo "  make clean       Clean all build artifacts"

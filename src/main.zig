@@ -10,6 +10,7 @@ const SarifOutput = OmniScope.output.SarifOutput;
 const Issue = OmniScope.diag.Issue;
 const IssueKind = OmniScope.diag.IssueKind;
 const log = OmniScope.log;
+const writeJsonEscaped = OmniScope.output.writeJsonEscaped;
 
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
@@ -65,25 +66,6 @@ const OutputFormat = enum {
     json,
     sarif,
 };
-
-fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
-    for (s) |c| {
-        switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => {
-                if (c < 0x20) {
-                    try writer.print("\\u{x:0>4}", .{c});
-                } else {
-                    try writer.writeByte(c);
-                }
-            },
-        }
-    }
-}
 
 /// Parse command line arguments
 fn parseArgs(allocator: std.mem.Allocator) !Config {
@@ -263,7 +245,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 };
                 log.info("Report saved to: {s}\n", .{output_path});
             } else {
-                log.info("{s}\n", .{json_output});
+                _ = try std.posix.write(std.posix.STDOUT_FILENO, json_output);
             }
         } else if (config.output_format == .sarif) {
             // DC-H1 NOTE: SarifOutput doesn't own heap memory (only const slices + allocator)
@@ -287,7 +269,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
                 };
                 log.info("SARIF report saved to: {s}\n", .{output_path});
             } else {
-                log.info("{s}\n", .{sarif_output});
+                _ = try std.posix.write(std.posix.STDOUT_FILENO, sarif_output);
             }
         } else {
             log.info("Issues detected: {d}\n", .{issues.len});
@@ -372,16 +354,16 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     try writer.print("{d}", .{timestamp});
     try writer.writeAll(",\"summary\":{");
     try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });
-    try writer.writeAll("},\"issues\":[\n");
+    try writer.writeAll("},\"issues\":[");
 
     for (issues, 0..) |issue, idx| {
-        if (idx > 0) try writer.writeAll(",\n");
+        if (idx > 0) try writer.writeAll(",");
 
         const line_num = if (issue.location.line > 0) issue.location.line else null;
         const col_num = if (issue.location.column > 0) issue.location.column else null;
         const cwe_id = issue.kind.toCweId();
 
-        try writer.writeAll("  {\"id\":\"");
+        try writer.writeAll("{\"id\":\"");
         try writer.print("OMI-{d:0>3}", .{idx + 1});
         try writer.writeAll("\",\"kind\":\"");
         try writer.writeAll(@tagName(issue.kind));
@@ -403,7 +385,6 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         try writer.writeAll(",\"message\":\"");
         try writeJsonEscaped(writer, issue.message);
         try writer.writeAll("\",\"location\":{");
-
         try writer.writeAll("\"function\":\"");
         try writeJsonEscaped(writer, issue.location.func);
         try writer.writeAll("\"");
@@ -425,7 +406,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         try writer.writeAll("}}");
     }
 
-    try writer.writeAll("\n]}\n");
+    try writer.writeAll("]}\n");
 
     return try output.toOwnedSlice();
 }

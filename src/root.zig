@@ -245,6 +245,7 @@ pub const output = struct {
     pub const OutputFormat = @import("output/formatter.zig").OutputFormat;
     pub const AnalysisResult = @import("output/formatter.zig").AnalysisResult;
     pub const Vulnerability = @import("output/formatter.zig").Vulnerability;
+    pub const writeJsonEscaped = @import("output/formatter.zig").writeJsonEscaped;
     pub const SarifOutput = @import("output/sarif.zig").SarifOutput;
 };
 
@@ -252,7 +253,7 @@ pub const output = struct {
 test "root.zig - module import test" {
     _ = .{
         ir.llvm_raw,           ir.llvm_safe,       ir.view,
-        ir.location,           pass.Pass,          pass.PassContext,
+        ir.debug_info,         pass.Pass,          pass.PassContext,
         pass.DiagnosticWriter, pass.PassKind,      pass.PassManager,
         fact.Fact,             fact.FactKind,      fact.FactStore,
         fact.QueryEngine,      pipeline.Pipeline,  pipeline.PipelineResult,

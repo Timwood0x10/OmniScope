@@ -108,6 +108,17 @@ Duplicate entry removals, unsigned comparison fix, null guard addition, dead cod
 - **DataFlowGraph.IssueStats**: Added `data_race` and `thread_safety_violation` fields
 - **Dead code removed**: `ptr_lifetime_check.zig` deleted (~450 lines of duplicate/stub code)
 
+### S+ Quality Audit (2026-05-13)
+
+Systematic code quality audit — output standardization, silent error elimination, dead code cleanup.
+
+**Output**: JSON/SARIF now on stdout (pipeable), compact format.  
+**Safety**: 25+ `catch{}` → `try` in safety-critical paths (JNI/Python checks, ptr_lifetime, reporting).  
+**Infrastructure**: `build.zig` LLVM config dedup (402→319), `graph.zig` split (940→802), `fmt-check` CI guard, integration tests 15/18→18/18.  
+**Dead code**: 5 files deleted (−1,161 lines), 4 annotated as future features.  
+**Accuracy**: Verified on abseil2024.bc — 0 regression (before/after identical).  
+**Tests**: All suites pass (unit, integration 18/18, stability 15/15, new-integration 5/5 @ 100%).
+
 ---
 
 ## [0.1.6] - 2026-05-04

@@ -19,9 +19,8 @@ const LoaderError = OmniScope.engine.LoaderError;
 const TEST_IR_DIR = "tests/ir";
 
 fn getTestIRPath(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-    return std.fmt.allocPrint(allocator, "{s}/{s}/{s}.bc", .{ cwd, TEST_IR_DIR, name });
+    _ = allocator;
+    return std.fmt.allocPrint(std.testing.allocator, "{s}/{s}.bc", .{ TEST_IR_DIR, name });
 }
 
 test "IR Integration - C control flow loads correctly" {

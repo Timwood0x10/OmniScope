@@ -275,7 +275,7 @@ print_summary() {
 
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         OmniScope FFI/Unsafe Benchmark (v0.1.7)          ║${NC}"
+    echo -e "${BLUE}║         OmniScope FFI/Unsafe Benchmark (v0.1.8)          ║${NC}"
     echo -e "${BLUE}╠════════════════════════════════════════════════════════════════╣${NC}"
     echo -e "${BLUE}║  Core Focus: FFI Boundary / Unsafe Memory / Command Exec  ║${NC}"
     echo -e "${BLUE}║  Secondary: Memory Leaks, UAF, Double-Free (FFI context)  ║${NC}"
@@ -333,7 +333,7 @@ print_summary() {
     fi
 
     echo ""
-    echo -e "FFI Focus Targets (v0.1.7):"
+    echo -e "FFI Focus Targets (v0.1.8):"
     echo -e "  FFI CRITICAL (command exec): >= $TARGET_FFI_CRITICAL  $(if $ffi_crit_pass; then echo "${GREEN}PASS${NC} ($TOTAL_FFI_CRITICAL detected)"; else echo "${RED}FAIL${NC} ($TOTAL_FFI_CRITICAL detected, need $TARGET_FFI_CRITICAL)"; fi)"
     echo -e "  FFI HIGH (risky FFI):         >= $TARGET_FFI_HIGH   $(if $ffi_high_pass; then echo "${GREEN}PASS${NC} ($TOTAL_FFI_HIGH detected)"; else echo "${RED}FAIL${NC} ($TOTAL_FFI_HIGH detected, need $TARGET_FFI_HIGH)"; fi)"
     echo ""
