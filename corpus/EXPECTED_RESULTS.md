@@ -226,6 +226,18 @@ Benchmark metrics (Precision, Recall, F1) are calculated **only against in-scope
 | null\_dereference / null\_deref | 3     | Null check guard recognition + CFG propagation |
 | dangling\_pointer               | 1     | Post-free pointer usage detection              |
 
+### In-Scope Issues by File (current v0.1.8)
+
+| File                 | Issues |
+| -------------------- | ------ |
+| cpp_ffi_simple.ll    | 6      |
+| boundary_test.ll     | 16     |
+| stress_patterns.ll   | 49     |
+| openssl_wrapper.ll   | 8      |
+| sqlite_binding.ll    | 5      |
+| zlib_binding.ll      | 14     |
+| rust_sqlite_ffi.ll   | 6      |
+
 ### Out-of-Scope Issues (21 total) — Not OmniScope's Responsibility
 
 | Category          | Count | Reason                       | Would Require          |

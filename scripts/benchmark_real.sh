@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# OmniScope v0.1.7 Real Benchmark
+# OmniScope v0.1.8 Real Benchmark
 # 收集真实运行数据，不用任何缓存或假设
 # Usage: cd /path/to/OmniScope && scripts/benchmark_real.sh
 
@@ -11,7 +11,7 @@ OUTPUT_FILE="$PROJECT_ROOT/benches/v017_real_data.txt"
 JSON_DIR="$PROJECT_ROOT/benches/json"
 BINARY="$PROJECT_ROOT/zig-out/bin/OmniScope"
 
-echo "=== OmniScope v0.1.7 Real Benchmark ===" | tee "$OUTPUT_FILE"
+echo "=== OmniScope v0.1.8 Real Benchmark ===" | tee "$OUTPUT_FILE"
 echo "Date: $(date -Iseconds)" | tee -a "$OUTPUT_FILE"
 echo "Binary: $(ls -lh "$BINARY" 2>/dev/null | awk '{print $5}' || echo 'not found')" | tee -a "$OUTPUT_FILE"
 echo "" | tee -a "$OUTPUT_FILE"

@@ -71,7 +71,7 @@ test_stress() {
     local large_ir="$PROJECT_ROOT/test_ir/real/wasmtime_sample.ll"
     if [ -f "$large_ir" ]; then
         for i in $(seq 1 5); do
-            timeout 30 ./build/OmniScope analyze --input "$large_ir" --output /dev/null 2>/dev/null || \
+            timeout 30 ./zig-out/bin/OmniScope "$large_ir" \
                 log_fail "Large IR test iteration $i"
         done
         log_pass "Large IR stress test (5 iterations)"
@@ -104,7 +104,7 @@ test_e2e() {
     for ir_file in "${test_files[@]}"; do
         if [ -f "$ir_file" ]; then
             local output="/tmp/e2e_output_$(basename "$ir_file").json"
-            if ./build/OmniScope analyze --input "$ir_file" --output "$output" 2>/dev/null; then
+            if ./zig-out/bin/OmniScope "$ir_file" 2>/dev/null; then
                 if [ -f "$output" ] && [ -s "$output" ]; then
                     pipeline_passed=$((pipeline_passed + 1))
                 fi
@@ -133,7 +133,7 @@ test_memory_safety() {
         local ir_file="$PROJECT_ROOT/test_ir/real/ring_sample.ll"
         if [ -f "$ir_file" ]; then
             if valgrind --leak-check=full --error-exitcode=1 \
-                ./build/OmniScope analyze --input "$ir_file" --output /dev/null 2>&1 | \
+                ./zig-out/bin/OmniScope "$ir_file" 2>&1 | \
                 grep -q "no leaks are possible"; then
                 log_pass "Valgrind: No memory leaks detected"
             else
@@ -167,7 +167,7 @@ main() {
     
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║       OmniScope v0.1.7 Stability & E2E Test Suite             ║"
+    echo "║       OmniScope v0.1.8 Stability & E2E Test Suite             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     

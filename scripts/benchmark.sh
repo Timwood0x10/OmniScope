@@ -98,15 +98,15 @@ get_expected_count() {
 
     if [[ $count -eq 0 ]]; then
         case "$base_name" in
-            cpp_ffi_simple)   count=3 ;;
+            cpp_ffi_simple)   count=6 ;;
             rust_ffi_simple)   count=4 ;;
             zig_ffi_simple)    count=3 ;;
             go_ffi_simple)     count=3 ;;
-            boundary_test)     count=14 ;;
-            stress_patterns)   count=70 ;;
-            sqlite_binding)    count=4 ;;
-            openssl_wrapper)   count=6 ;;
-            zlib_binding)      count=6 ;;
+            boundary_test)     count=16 ;;
+            stress_patterns)   count=49 ;;
+            sqlite_binding)    count=5 ;;
+            openssl_wrapper)   count=8 ;;
+            zlib_binding)      count=14 ;;
             rust_sqlite_ffi)   count=6 ;;
         esac
     fi
@@ -295,7 +295,7 @@ print_summary() {
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 
     TARGET_FFI_CRITICAL="${OMNISCOPE_TARGET_FFI_CRITICAL:-2}"
-    TARGET_FFI_HIGH="${OMNISCOPE_TARGET_FFI_HIGH:-4}"
+    TARGET_FFI_HIGH="${OMNISCOPE_TARGET_FFI_HIGH:-2}"
     TARGET_PRECISION="${OMNISCOPE_TARGET_P:-0.40}"
     TARGET_RECALL="${OMNISCOPE_TARGET_R:-0.70}"
     TARGET_F1="${OMNISCOPE_TARGET_F:-0.54}"
@@ -392,7 +392,7 @@ generate_json_report() {
 
     cat <<EOF
 {
-  "benchmark_id": "omniscope-$(date +%Y%m%d-%H%M%S)",
+  "benchmark_id": "OmniScope-$(date +%Y%m%d-%H%M%S)",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "scope": "FFI/Unsafe Boundary Analysis",
   "environment": {

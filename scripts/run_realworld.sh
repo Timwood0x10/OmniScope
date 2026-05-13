@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-#  OmniScope v0.1.7 - Real-World FFI/Unsafe Audit
+#  OmniScope v0.1.8 - Real-World FFI/Unsafe Audit
 # ============================================================================
 #  Scans corpus/real_world/**/*.ll for FFI boundary and unsafe memory issues.
 #
@@ -165,7 +165,7 @@ generate_summary() {
 
     {
         sep
-        echo "  ${BOLD}OmniScope v0.1.7 — Real-World FFI/Unsafe Audit${NC}"
+        echo "  ${BOLD}OmniScope v0.1.8 — Real-World FFI/Unsafe Audit${NC}"
         echo "  $ts"
         sep
         echo ""
@@ -220,7 +220,7 @@ generate_summary() {
 import json, datetime
 with open('$OUTPUT_DIR/_summary.json', 'w') as f:
     json.dump({
-        'version': '0.1.7',
+        'version': '0.1.8',
         'timestamp': datetime.datetime.utcnow().isoformat(),
         'total_files': $TOTAL,
         'passed': $PASS,
@@ -258,7 +258,7 @@ main() {
     setup_output
 
     sep
-    echo "  ${BOLD}OmniScope v0.1.7 — Real-World FFI/Unsafe Audit${NC}"
+    echo "  ${BOLD}OmniScope v0.1.8 — Real-World FFI/Unsafe Audit${NC}"
     echo "  Binary: $BINARY"
     echo "  Source: $LL_DIR/"
     echo "  Output: $OUTPUT_DIR/"
