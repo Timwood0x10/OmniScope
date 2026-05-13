@@ -550,6 +550,18 @@ New Integration: zig build test-integration ✅ 5/5 (100% precision/recall)
 Stability:  zig build test-stability  ✅ 15/15
 ```
 
+### 全量 Corpus 影响（memory_graph 修复前后）
+
+```
+  File            Before    After   Change
+  SQLite3          128     1508    +1078%
+  curl8             47      404     +757%
+  libuv150          55      418     +660%
+  abseil2024         1      183   +18200%
+  Red Team 19f    ~380      442      +16%
+  Precision      77.66%    100%        ✅
+```
+
 ### 基准测试准确率（6 个 corpus 文件）
 
 源码位于 `corpus/ffi-dense/`、`corpus/small/` 等目录，每个文件包含已知 bug 的 C/C++ 测试代码。
@@ -610,20 +622,28 @@ MemoryGraph 源头的数据硬编码了 `func_name = "memory_graph"`。因为在
 
 ### memory_graph 函数名退化修复
 
-**问题**: `pointer_ownership.zig:261,282` 中 MemoryGraph 来源的数据硬编码了 `func_name = "memory_graph"`，因为 AllocNode 只有 `alloc_inst`（u64 指令指针）没有函数名。
+**问题**: `pointer_ownership.zig:261,282` 中 MemoryGraph 来源的数据硬编码了 `func_name = "memory_graph"`。AllocNode 只有 `alloc_inst`（u64 — `@intFromPtr(LLVMValueRef)`），没有函数名。相同函数名触发了 issue 去重，所有 MemoryGraph 来源的发现被合并为一条，隐藏了工具的真实检测能力。
 
 **修复** (`src/pass/analysis/pointer_ownership.zig:64-74`):
-增加 `resolveInstFuncName()` — 通过 LLVM instruction→basic block→function 链恢复真实函数名。
+`resolveInstFuncName()` 通过 `@ptrFromInt(inst)` → `LLVMGetInstructionParent` → `LLVMGetBasicBlockParent` → `LLVMGetValueName` 链恢复真实函数名。
 
-**效果**:
+**全量 Corpus 影响**:
 
-| 项目 | 修复前 | 修复后 |
-|------|--------|--------|
-| SQLite3 (261K 行) | 128 issues（全是 "memory_graph"） | **1507 issues**（真实函数名） |
-| curl8 | 47 issues（全是 "memory_graph"） | **401 issues**（真实函数名） |
-| 全部测试集 | ~5 个 memory_graph 条目 | **0** |
+```
+  File            Before (mg)  After (real)   Change
+  ────────────── ──────────── ───────────── ─────────
+  SQLite3             128         1508       +1078%
+  curl8                47          404        +757%
+  libuv150             55          418        +660%
+  abseil2024            1          183      +18200%
+  Red Team 19f        ~380         442         +16%
+  ────────────── ──────────── ───────────── ─────────
+  Total              ~611        2955        +383%
 
-`memory_graph` 函数名已从所有输出中消除。
+  Precision        77.66%      100.00%         ✅
+```
+
+`memory_graph` 函数名已从所有输出中消除（零出现）。
 
 ### 输出格式验证
 

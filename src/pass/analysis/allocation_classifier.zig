@@ -13,6 +13,7 @@ const SemanticRegistry = @import("../../registry/semantic_registry.zig").Semanti
 const lifetime = @import("../../lifetime/root.zig");
 const ffi_utils = @import("ffi_utils.zig");
 const ptr_types = @import("ptr_lifetime_types.zig");
+const ptr_classify = @import("ptr_lifetime_classify.zig");
 
 /// Convert internal Language enum to lifetime.LanguageHint.
 pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
@@ -135,10 +136,14 @@ pub fn isFreeInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
     }
 
     // Fallback: check for known free patterns.
-    return std.mem.eql(u8, callee_name, "free") or
-        std.mem.indexOf(u8, callee_name, "from_raw") != null or
-        std.mem.indexOf(u8, callee_name, "drop_in_place") != null or
-        std.mem.indexOf(u8, callee_name, "operator delete") != null;
+    if (std.mem.eql(u8, callee_name, "free")) return true;
+    if (std.mem.indexOf(u8, callee_name, "from_raw") != null) return true;
+    if (std.mem.indexOf(u8, callee_name, "drop_in_place") != null) return true;
+    if (std.mem.indexOf(u8, callee_name, "operator delete") != null) return true;
+
+    // General fallback: delegate to ptr_lifetime_classify for suffix-based matching
+    // (c_free, cpp_delete, objc_release, etc.) and language-specific patterns.
+    return ptr_classify.isFreeFunction(callee_name);
 }
 
 /// Classify the type of free.
@@ -161,6 +166,11 @@ pub fn classifyFree(inst: c.LLVMValueRef, opcode: c_uint) FreeType {
     }
     if (std.mem.indexOf(u8, callee_name, "operator delete") != null) {
         return .cpp_delete;
+    }
+
+    // General fallback: check ptr_lifetime_classify for suffix-based matching.
+    if (ptr_classify.isFreeFunction(callee_name)) {
+        return .free;
     }
 
     return .free;

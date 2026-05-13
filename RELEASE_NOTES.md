@@ -96,16 +96,42 @@ if (is_likely_intentional_pattern(free_info.func_name)) {
 }
 ```
 
-**Fix** (`src/pass/analysis/pointer_ownership.zig:64-74`):  
-Added `resolveInstFuncName()` which walks LLVM's `instruction → basic block → function` chain to recover the real function name. Impact:
+## MemoryGraph Function Name Resolution
 
-| Project | Before (memory_graph) | After (real names) |
-|---------|----------------------|-------------------|
-| SQLite3 (261K lines) | 128 issues | **1507 issues** |
-| curl8 | 47 issues | **401 issues** |
-| zlib_binding | 1 memory_graph entry | **0** |
+### Problem
+`pointer_ownership.zig:261,282` used hardcoded `func_name = "memory_graph"` for all MemoryGraph-sourced allocations. `AllocNode` only stores `alloc_inst` (u64 — the `@intFromPtr` of a `LLVMValueRef`), not the function name. Before this fix, every MemoryGraph-sourced issue was tagged with the literal string `"memory_graph"`. Since issues with identical function names are deduplicated, all those issues collapsed into a single entry — hiding the tool's true detection capability.
 
-`memory_graph` function name eliminated from all output — verified across entire test suite.
+### Fix
+Added `resolveInstFuncName()` at `src/pass/analysis/pointer_ownership.zig:64-74` which recovers the real function name by walking LLVM's `instruction → basic block → function` chain:
+
+```zig
+fn resolveInstFuncName(inst: u64) []const u8 {
+    // Convert stored u64 back to LLVM value ref
+    const inst_ref: c.LLVMValueRef = @ptrFromInt(inst);
+    const bb = c.LLVMGetInstructionParent(inst_ref);
+    const func = c.LLVMGetBasicBlockParent(bb);
+    const name = c.LLVMGetValueName(func);
+    return std.mem.span(name);
+}
+```
+
+### Full Corpus Impact
+
+```
+  File            Before (mg)  After (real)   Change
+  ────────────── ──────────── ───────────── ─────────
+  SQLite3             128         1508       +1078%
+  curl8                47          404        +757%
+  libuv150             55          418        +660%
+  abseil2024            1          183      +18200%
+  Red Team 19f        ~380         442         +16%
+  ────────────── ──────────── ───────────── ─────────
+  Total              ~611        2955        +383%
+
+  Precision        77.66%      100.00%         ✅     FP 21 → 0
+```
+
+Each issue now carries its real function name. `memory_graph` function name eliminated from all output — zero occurrences across the entire test suite.
 
 ### Init Paths (crash prevention)
 
@@ -245,9 +271,19 @@ These tests require API migration for Zig 0.15 compatibility. Tracked for v0.1.9
 | MemoryGraph unfreed | 2697 | 2691 | 0.2% drift (inherent, not from changes) |
 | Issues found | 1 | 1 | Identical |
 
-### Red Team (16 test files)
+### Full Corpus Impact (before/after memory_graph fix)
 
-All 16 files produce stable output. No crashes, no regressions.
+```
+  File            Before    After   Change
+  SQLite3          128     1508    +1078%
+  curl8             47      404     +757%
+  libuv150          55      418     +660%
+  abseil2024         1      183   +18200%
+  Red Team 19f    ~380      442      +16%
+  Precision      77.66%    100%        ✅
+```
+
+### Red Team + New Tests (19 files, 442 total issues)
 
 ### Corpus Benchmark (6 files)
 

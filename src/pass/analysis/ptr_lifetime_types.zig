@@ -222,9 +222,9 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",         "calloc",       "realloc",      "aligned_alloc",
-    "valloc",         "pvalloc",      "memalign",     "operator new",
-    "operator new[]", "allocImpl",    "mmap",
+    "malloc",          "calloc",         "realloc",      "aligned_alloc",
+    "valloc",          "pvalloc",        "memalign",     "operator new",
+    "operator new[]",  "allocImpl",      "mmap",
     // v0.1.7 FIX: Removed "into_raw" from this list.
     // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
     // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was
@@ -232,13 +232,12 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
     // which pairs into_raw/from_raw as transfer-out/transfer-in.
             "dlopen",
-    "fopen",          "socket",       "JNI_OnLoad",   "Py_Initialize",
-    "Py_BuildValue",  "PyTuple_New",  "PyList_New",   "PyDict_New",
-    "NewStringUTF",   "NewByteArray", "NewGlobalRef",
-    "c_malloc",
+    "fopen",           "socket",         "JNI_OnLoad",   "Py_Initialize",
+    "Py_BuildValue",   "PyTuple_New",    "PyList_New",   "PyDict_New",
+    "NewStringUTF",    "NewByteArray",   "NewGlobalRef", "c_malloc",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
-    "__rust_alloc",
-    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",   "exchange_malloc",
+    "__rust_alloc",    "__rust_realloc", "__rdl_alloc",  "__rg_alloc",
+    "exchange_malloc",
 };
 
 // ============================================================================

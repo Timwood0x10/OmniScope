@@ -5,6 +5,67 @@ OmniScope 的所有重要变更都将记录在此文件。
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [0.1.8] - 2026-05-13
+
+### S+ 质量审计
+
+系统性的代码质量和安全审计。输出标准化、静默错误消除、memory_graph 修复、死代码清理。
+
+#### 输出标准化
+- JSON/SARIF 通过 `posix.write(STDOUT_FILENO)` 输出到 stdout（原为 `log.info()` → stderr）
+- 紧凑 JSON 格式，可管道：`omniscope --json 2>/dev/null | jq`
+- `writeJsonEscaped` 合并到 `formatter.zig`，删除 `ir/location.zig`
+
+#### 安全：静默错误消除
+- 25+ 处 `catch{}` → `try` 在安全关键路径（JNI/Python 检查、类型不匹配、FFI 追踪）
+- 3× `catch unreachable` → `try`（PassManager、Aggregator、AllocatorKB）
+- FP 修复：`detectUseAfterFree()` 增加 `is_likely_intentional_pattern` 过滤（Precision 77.66% → 100%）
+- `c_free`、`c_malloc` 加入分配/释放注册表
+- IR 扫描的 free 站点改用 `identifyLanguageFromCallee()` 获取正确语言属性
+
+#### MemoryGraph 函数名修复
+- 新增 `resolveInstFuncName()` — 通过 LLVM instruction→basic block→function 链恢复真实函数名
+- 消除了 `"memory_graph"` 去重 bug
+
+| 项目 | 修复前 | 修复后 | 变化 |
+|------|--------|--------|------|
+| SQLite3 | 128 | 1508 | +1078% |
+| curl8 | 47 | 404 | +757% |
+| libuv150 | 55 | 418 | +660% |
+| abseil2024 | 1 | 183 | +18200% |
+| 红队 19 文件 | ~380 | 442 | +16% |
+| **总计** | **~611** | **2955** | **+383%** |
+
+#### 死代码与重构
+- 删除 5 个文件 (−1,161 行)，4 个标注为未来功能
+- `build.zig`：抽取 `configureLLVM()`（402→319 行）
+- `graph.zig`：统计模块提取到 `stats.zig`（940→802 行）
+- 删除日志包装函数 (−20 行)，`runMultiFileAnalysis` GPA 去重
+
+#### CI/CD 与基础设施
+- `make fmt-check` 加入 CI quality-gate
+- 修复 `baseline_check.sh` 二进制名、`bench_perf.sh` CLI 参数、`stability_test.sh` 路径
+- 集成测试：15/18 → 18/18
+- 版本号：0.1.7 → 0.1.8（所有脚本 + 新增 3 个审计报告）
+- 新增 5 个输出格式测试（JSON 转义 + SARIF 验证）
+
+#### 新增红蓝队测试
+- **v018_cpp_ffi**（C++）：14 issues — 智能指针逃逸、虚表、跨语言释放
+- **v018_rust_ffi**（Rust）：9 issues — Arc/Mutex/ManuallyDrop → C FFI
+
+#### 基准测试
+- Precision：77.66% → 100.00%（21 FP → 0）
+- Recall：100.00%（不变）
+- 6 个 corpus 文件：96/96 TP，0 FP，0 FN
+
+---
+
+## [0.1.7] - 2026-05-06
+
+### 🛡️ 综合 Bug 修复版本（未翻译，参见英文版）
+
+---
+
 ## [0.1.6] - 2026-05-04
 
 ### 🎯 核心突破: Rust FFI 检测能力恢复 (TP Rate 0% → 20%)
@@ -115,9 +176,6 @@ OmniScope 的所有重要变更都将记录在此文件。
 
 ---
 
-## [0.1.7] - 2026-05-06
-
-### 🛡️ 全面 Bug 修复版本 (Round 7: 24 bugs)
 
 **全量代码审查发现并修复 24 个 CRITICAL/HIGH/MEDIUM/LOW 级别 Bug。**
 
