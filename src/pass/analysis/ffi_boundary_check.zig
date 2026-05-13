@@ -120,10 +120,7 @@ pub fn checkSpecializedBoundary(
         try checkDynamicLoadingSafety(ctx, diag, inst, caller_func, called_name);
     }
     if (zone_check.isJNIFunction(called_name)) {
-        checkJNIBoundarySafety(ctx, diag, inst, caller_func, called_name) catch {};
-    }
-    if (zone_check.isPythonCApiFunction(called_name)) {
-        checkPythonCApiSafety(ctx, diag, inst, caller_func, called_name) catch {};
+        try checkJNIBoundarySafety(ctx, diag, inst, caller_func, called_name);
     }
 }
 
@@ -152,7 +149,7 @@ fn checkDynamicLoadingSafety(
                     called_name, caller_name,
                 });
                 defer ctx.allocator.free(msg);
-                reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                try reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65);
             }
         }
     }
@@ -190,7 +187,7 @@ fn checkJNIBoundarySafety(
                         called_name, caller_name,
                     });
                     defer ctx.allocator.free(msg);
-                    reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65) catch {};
+                    try reportFFIIssue(ctx, .unchecked_return, msg, caller_name, .medium, 0.65);
                 }
             }
             break;
@@ -302,7 +299,7 @@ pub fn checkReturnValueEscape(
         defer ctx.allocator.free(msg);
 
         const severity: Severity = if (global_escape or ffi_reentry) .high else .medium;
-        reportFFIIssue(ctx, .borrow_escape, msg, caller_name, severity, 0.70) catch {};
+        try reportFFIIssue(ctx, .borrow_escape, msg, caller_name, severity, 0.70);
     }
 }
 
@@ -320,7 +317,7 @@ pub fn checkTypeCompatibility(
     _ = sem;
     return type_checker.checkTypeCompatibility(ctx, diag, inst, func, struct {
         pub fn report(caller_ctx: *PassContext, kind: IssueKind, msg: []const u8, fn_name: []const u8, sev: IssueSeverity, conf: f32) anyerror!void {
-            reportFFIIssue(caller_ctx, kind, msg, fn_name, sev, conf) catch {};
+            try reportFFIIssue(caller_ctx, kind, msg, fn_name, sev, conf);
         }
     }.report);
 }

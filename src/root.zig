@@ -250,22 +250,12 @@ pub const output = struct {
 
 // Simple test to verify test system works
 test "root.zig - module import test" {
-    // Verify that all modules can be imported
-    _ = ir.llvm_raw;
-    _ = ir.llvm_safe;
-    _ = ir.view;
-    _ = ir.location;
-    _ = pass.Pass;
-    _ = pass.PassContext;
-    _ = pass.DiagnosticWriter;
-    _ = pass.PassKind;
-    _ = pass.PassManager;
-    _ = fact.Fact;
-    _ = fact.FactKind;
-    _ = fact.FactStore;
-    _ = fact.QueryEngine;
-    _ = pipeline.Pipeline;
-    _ = pipeline.PipelineResult;
-    _ = engine.IRLoader;
-    _ = engine.LoaderError;
+    _ = .{
+        ir.llvm_raw,           ir.llvm_safe,       ir.view,
+        ir.location,           pass.Pass,          pass.PassContext,
+        pass.DiagnosticWriter, pass.PassKind,      pass.PassManager,
+        fact.Fact,             fact.FactKind,      fact.FactStore,
+        fact.QueryEngine,      pipeline.Pipeline,  pipeline.PipelineResult,
+        engine.IRLoader,       engine.LoaderError,
+    };
 }

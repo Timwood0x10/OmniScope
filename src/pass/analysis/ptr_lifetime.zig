@@ -403,7 +403,7 @@ pub const PtrLifetimePass = struct {
                                     // Sync MemoryGraph.freed: propagate from original freed node.
                                     if (mem_graph) |mg| {
                                         const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
-                                        _ = mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang) catch {};
+                                        _ = try mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang);
                                     }
                                     propagated += 1;
                                 }
@@ -557,7 +557,7 @@ pub const PtrLifetimePass = struct {
                 // v0.1.9: Sync alloca with MemoryGraph — mark as stack allocation.
                 if (mg_effective) |mg| {
                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, zone, lang) catch {};
+                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .alloca, zone, lang);
                 }
             },
 
@@ -604,7 +604,7 @@ pub const PtrLifetimePass = struct {
                                                 // Sync MemoryGraph.freed for Source 1 consistency.
                                                 if (mem_graph) |mg| {
                                                     const free_inst: u64 = @intFromPtr(inst);
-                                                    _ = mg.trackFree(free_inst, old_ptr_int, lang) catch {};
+                                                    _ = try mg.trackFree(free_inst, old_ptr_int, lang);
                                                 }
                                                 _ = &old_info;
                                             }
@@ -627,7 +627,7 @@ pub const PtrLifetimePass = struct {
                                 // v0.1.9: Sync with MemoryGraph — mark as heap allocation.
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
+                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }
 
@@ -636,7 +636,7 @@ pub const PtrLifetimePass = struct {
                                     const inst_ptr_val = @as(u64, @intFromPtr(inst));
                                     const fn_name_raw = c.LLVMGetValueName(func);
                                     const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                    global_tracker.insertAlloc(inst_ptr_val, fn_name, false) catch {};
+                                    _ = try global_tracker.insertAlloc(inst_ptr_val, fn_name, false);
                                 }
                                 break;
                             }
@@ -658,7 +658,7 @@ pub const PtrLifetimePass = struct {
 
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang) catch {};
+                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }
                             }
@@ -680,7 +680,7 @@ pub const PtrLifetimePass = struct {
                             // v0.1.9: Sync resource allocation with MemoryGraph.
                             if (mg_effective) |mg| {
                                 const inst_ptr = @as(u64, @intFromPtr(inst));
-                                _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, zone, lang) catch {};
+                                _ = try mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, zone, lang);
                                 mg.recordFuncAlloc(func_ptr);
                             }
                         }
@@ -714,7 +714,7 @@ pub const PtrLifetimePass = struct {
                                         if (mg_effective) |mg| {
                                             const inst_ptr = @as(u64, @intFromPtr(inst));
                                             const handle_ptr = @as(u64, @intFromPtr(handle_arg));
-                                            mg.trackAliasStrong(inst_ptr, handle_ptr) catch {};
+                                            try mg.trackAliasStrong(inst_ptr, handle_ptr);
                                         }
                                     }
                                 }
@@ -758,7 +758,7 @@ pub const PtrLifetimePass = struct {
                                 // trackFree() was never called. Now both data structures stay synchronized.
                                 if (mem_graph) |mg| {
                                     const free_inst: u64 = @intFromPtr(inst);
-                                    _ = mg.trackFree(free_inst, ptr_val, lang) catch {};
+                                    _ = try mg.trackFree(free_inst, ptr_val, lang);
                                 }
                             }
 
@@ -802,7 +802,7 @@ pub const PtrLifetimePass = struct {
                                         _ = global_tracker.markFreed(canon_inst, fn_name);
                                         // Sync MemoryGraph.freed for canonical alias free.
                                         const free_inst_canon: u64 = @intFromPtr(inst);
-                                        _ = mg.trackFree(free_inst_canon, canon_inst, lang) catch {};
+                                        _ = try mg.trackFree(free_inst_canon, canon_inst, lang);
                                     }
                                 }
                             }
@@ -855,12 +855,12 @@ pub const PtrLifetimePass = struct {
                                     if (@intFromPtr(arg) == 0) continue;
                                     const arg_ptr_val = @as(u64, @intFromPtr(arg));
                                     if (mg.nodes.get(arg_ptr_val) != null or pointer_map.contains(arg)) {
-                                        _ = mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i) catch {};
+                                        _ = try mg.trackCallArg(inst_ptr, callee_name, arg_ptr_val, arg_i);
                                     }
                                 }
                                 if (pointer_map.contains(inst)) {
                                     const ret_ptr_val = @as(u64, @intFromPtr(inst));
-                                    _ = mg.trackCallRet(inst_ptr, callee_name, ret_ptr_val) catch {};
+                                    _ = try mg.trackCallRet(inst_ptr, callee_name, ret_ptr_val);
                                 }
                             } // is_ffi_func: mem_graph
                         } // is_ffi_func
@@ -877,7 +877,7 @@ pub const PtrLifetimePass = struct {
                     const content_kind = mg.getContentSource(src_ptr);
                     if (content_kind != .unknown) {
                         const inst_ptr = @as(u64, @intFromPtr(inst));
-                        _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang) catch {};
+                        _ = try mg.trackAlloc(inst_ptr, inst_ptr, content_kind, zone, lang);
                     }
                 }
                 try propagateOrigin(inst, c.LLVMGetOperand(inst, 0), pointer_map, allocator, bb_id, mem_graph);
@@ -945,7 +945,7 @@ pub const PtrLifetimePass = struct {
                     if (mg_effective) |mg| {
                         const from_hash = @as(u64, @intFromPtr(dest));
                         const to_hash = @as(u64, @intFromPtr(value));
-                        mg.trackAliasStrong(from_hash, to_hash) catch {};
+                        try mg.trackAliasStrong(from_hash, to_hash);
                     }
                 } else {
                     // v0.1.6: Record content source even when value is not in pointer_map.
@@ -1144,7 +1144,7 @@ pub const PtrLifetimePass = struct {
             if (mem_graph) |mg| {
                 const from_hash = @as(u64, @intFromPtr(dst));
                 const to_hash = @as(u64, @intFromPtr(src));
-                mg.trackAliasStrong(from_hash, to_hash) catch {};
+                try mg.trackAliasStrong(from_hash, to_hash);
             }
         }
     }

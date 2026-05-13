@@ -78,7 +78,7 @@ pub const DangerSurfacePass = struct {
                 total_args += 1;
                 const arg_ptr_val = mg.call_args.items[arg_idx].arg_ptr;
                 try ctx.markRelevantAlloc(arg_ptr_val);
-                ctx.markFfiRelevant(arg_ptr_val) catch {}; // BUGFIX: wire up P2-8 infrastructure
+                try ctx.markFfiRelevant(arg_ptr_val); // BUGFIX: wire up P2-8 infrastructure
                 ctx.markFunctionFromInst(mg.call_args.items[arg_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
@@ -94,7 +94,7 @@ pub const DangerSurfacePass = struct {
                 total_rets += 1;
                 const ret_ptr_val = mg.call_rets.items[ret_idx].ret_ptr;
                 try ctx.markRelevantAlloc(ret_ptr_val);
-                ctx.markFfiRelevant(ret_ptr_val) catch {}; // BUGFIX: wire up P2-8 infrastructure
+                try ctx.markFfiRelevant(ret_ptr_val); // BUGFIX: wire up P2-8 infrastructure
                 ctx.markFunctionFromInst(mg.call_rets.items[ret_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
@@ -119,7 +119,7 @@ pub const DangerSurfacePass = struct {
             try ctx.markRelevantAlloc(ptr_val);
             const node = entry.value_ptr.*;
             try markFunctionFromInst(ctx, node.alloc_inst);
-            ctx.markFfiRelevant(ptr_val) catch {};
+            try ctx.markFfiRelevant(ptr_val);
             visited.clearRetainingCapacity();
             total_alias_traces += 1;
             traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {

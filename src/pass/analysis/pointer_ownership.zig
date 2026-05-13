@@ -685,7 +685,7 @@ pub const PointerOwnershipPass = struct {
     ) OwnershipError!void {
         const func_name = getFunctionName(func);
 
-        null_check_recognizer.recognizeInFunction(func, id_map) catch {};
+        null_check_recognizer.recognizeInFunction(func, id_map) catch {}; // error set mismatch; best-effort
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {

@@ -91,7 +91,7 @@ pub fn checkTypeCompatibility(
                     param_idx, caller_name,
                 });
                 defer ctx.allocator.free(msg);
-                report_fn(ctx, .type_mismatch, msg, caller_name, .high, 0.80) catch {};
+                try report_fn(ctx, .type_mismatch, msg, caller_name, .high, 0.80);
             }
         }
 
@@ -108,7 +108,7 @@ pub fn checkTypeCompatibility(
                         param_idx, arg_bits, param_bits, caller_name,
                     });
                     defer ctx.allocator.free(msg);
-                    report_fn(ctx, .type_mismatch, msg, caller_name, .medium, 0.70) catch {};
+                    try report_fn(ctx, .type_mismatch, msg, caller_name, .medium, 0.70);
                 }
             }
         }

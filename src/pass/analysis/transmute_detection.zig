@@ -1,5 +1,14 @@
 //! Transmute Lifetime Bypass Detection
 //!
+//! NOTE: This module is complete but NOT yet registered as a Pass in the
+//! analysis pipeline. The detection logic is validated against real-world
+//! cases (blst, ring crate). Next feature: register as a pipeline pass to
+//! catch transmute::<&'a T, &'static T> patterns that bypass Rust's borrow
+//! checker at FFI boundaries. Requires:
+//!   1. Wrapping detectTransmutes() as a Pass
+//!   2. Registering in pipeline.zig registerPass() calls
+//!   3. Adding IssueKind entries for transmute violations
+//!
 //! Detects unsafe transmute operations that bypass Rust's lifetime checking.
 //! Key insight from investigation reports:
 //! - blst: transmute::<Thunk<'scope>, Thunk<'static>> bypasses lifetime safety

@@ -453,7 +453,7 @@ pub const FFIBoundaryPass = struct {
                 const arg_type = c.LLVMTypeOf(arg);
                 if (@intFromPtr(arg_type) == 0) continue;
                 if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
-                    ctx.markFfiRelevant(@as(u64, @intFromPtr(arg))) catch {};
+                    try ctx.markFfiRelevant(@as(u64, @intFromPtr(arg)));
                 }
             }
         }

@@ -183,10 +183,10 @@ pub fn checkSpecializedBoundary(
         try checkDynamicLoadingSafety(ctx, diag, inst, caller_func, called_name);
     }
     if (is_jni_fn(called_name)) {
-        checkJNIBoundarySafety(ctx, diag, inst, caller_func, called_name) catch {};
+        try checkJNIBoundarySafety(ctx, diag, inst, caller_func, called_name);
     }
     if (is_python_fn(called_name)) {
-        checkPythonCApiSafety(ctx, diag, inst, caller_func, called_name) catch {};
+        try checkPythonCApiSafety(ctx, diag, inst, caller_func, called_name);
     }
 }
 
@@ -303,7 +303,7 @@ pub fn checkReturnValueEscape(
         );
         defer ctx.allocator.free(msg);
 
-        report_fn(ctx, .borrow_escape, msg, caller_name, .medium, 0.60) catch {};
+        try report_fn(ctx, .borrow_escape, msg, caller_name, .medium, 0.60);
     }
 }
 
