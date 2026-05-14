@@ -449,7 +449,7 @@ fn isDangerousFFIPattern(match: *const call_graph.FFIMatch) bool {
     const name = define_func.name;
 
     const dangerous_patterns = &[_][]const u8{
-        "system", "exec", "popen", "eval", "shell",
+        "system",      "exec",            "popen", "eval", "shell",
         "run_command", "execute_command",
     };
     for (dangerous_patterns) |pattern| {
