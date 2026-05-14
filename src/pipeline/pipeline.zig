@@ -47,7 +47,7 @@ pub const Pipeline = struct {
             .fact_store = fact_store,
             .query_engine = query_engine,
             .data_flow_graph = data_flow_graph,
-            .pass_manager = PassManager.init(allocator),
+            .pass_manager = try PassManager.init(allocator),
             .module = null,
         };
     }

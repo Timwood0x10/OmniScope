@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-#  OmniScope v0.1.7 - Unified FFI/Unsafe Audit Runner
+#  OmniScope v0.1.8 - Unified FFI/Unsafe Audit Runner
 # ============================================================================
 #  Usage:
 #    ./scripts/run_audit.sh               # Full audit (auto-builds corpus)
@@ -184,7 +184,7 @@ generate_summary() {
 
     {
         separator
-        echo "  ${BOLD}OmniScope v0.1.7 - FFI/Unsafe Boundary Security Audit${NC}"
+        echo "  ${BOLD}OmniScope v0.1.8 - FFI/Unsafe Boundary Security Audit${NC}"
         echo "  Generated: $timestamp"
         separator
         echo ""
@@ -228,7 +228,7 @@ generate_summary() {
 import json, datetime
 with open('$OUTPUT_DIR/_summary.json', 'w') as f:
     json.dump({
-        'version': '0.1.7',
+        'version': '0.1.8',
         'timestamp': datetime.datetime.utcnow().isoformat(),
         'total_files': $TOTAL,
         'passed': $PASS,
@@ -275,7 +275,7 @@ main() {
     setup_output
 
     separator
-    echo "  ${BOLD}OmniScope v0.1.7 - FFI/Unsafe Boundary Security Audit${NC}"
+    echo "  ${BOLD}OmniScope v0.1.8 - FFI/Unsafe Boundary Security Audit${NC}"
     echo "  Binary : $BINARY"
     echo "  Output : $OUTPUT_DIR/"
     separator

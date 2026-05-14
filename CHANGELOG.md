@@ -5,6 +5,61 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-05-13
+
+### S+ Quality Audit
+
+Systematic code quality and safety audit. Output standardization, silent error elimination, memory_graph fix, dead code cleanup.
+
+#### Output Standardization
+- JSON/SARIF routed to stdout via `posix.write(STDOUT_FILENO)` (was `log.info()` → stderr)
+- Compact JSON format, pipeable: `omniscope --json 2>/dev/null | jq`
+- `writeJsonEscaped` consolidated into `formatter.zig`, `ir/location.zig` deleted
+
+#### Safety: Silent Error Elimination
+- 25+ `catch{}` → `try` in safety-critical paths (JNI/Python checks, type mismatch, FFI tracking, ptr_lifetime)
+- 3× `catch unreachable` → `try` in init paths (PassManager, Aggregator, AllocatorKB)
+- FP fix: `detectUseAfterFree()` added `is_likely_intentional_pattern` filter (Precision 77.66% → 100%)
+- `c_free`, `c_malloc` added to alloc/free registries
+- IR-scan free sites use `identifyLanguageFromCallee()` for correct cross-language attribution
+
+#### MemoryGraph Function Name Fix
+- `resolveInstFuncName()` added — recovers real function names via LLVM instruction→basic block→function chain
+- Eliminated `"memory_graph"` deduplication bug
+
+| Project | Before | After | Change |
+|---------|--------|-------|--------|
+| SQLite3 | 128 | 1508 | +1078% |
+| curl8 | 47 | 404 | +757% |
+| libuv150 | 55 | 418 | +660% |
+| abseil2024 | 1 | 183 | +18200% |
+| Red Team 19f | ~380 | 442 | +16% |
+| **Total** | **~611** | **2955** | **+383%** |
+
+#### Dead Code & Refactoring
+- 5 files deleted (−1,161 lines), 4 annotated as future features
+- `build.zig`: `configureLLVM()` extracted (402→319 lines)
+- `graph.zig`: stats extracted to `stats.zig` (940→802 lines)
+- Log wrappers deleted (−20 lines), `runMultiFileAnalysis` GPA dedup
+
+#### CI/CD & Infrastructure
+- `make fmt-check` added to CI quality-gate
+- Fixed `baseline_check.sh` binary name, `bench_perf.sh` CLI flags, `stability_test.sh` paths
+- Integration tests: 15/18 → 18/18
+- Version: 0.1.7 → 0.1.8 across all scripts + 3 new auditors
+- Added 5 output format tests for JSON escaping + SARIF validation
+
+#### New Red Team Tests
+- **v018_cpp_ffi** (C++): 14 issues — smart pointer escape, vtable after destroy, cross-lang free
+- **v018_rust_ffi** (Rust): 9 issues — Arc/Mutex/ManuallyDrop → C FFI
+
+#### Benchmark
+- Precision: 77.66% → 100.00% (21 FP → 0)
+- Recall: 100.00% (unchanged)
+- 6 corpus files: 96/96 TP, 0 FP, 0 FN
+
+---
+
 ## [0.1.7] - 2026-05-06
 
 ### 🛡️ Comprehensive Bug Fix Release

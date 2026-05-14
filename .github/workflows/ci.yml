@@ -43,7 +43,7 @@ jobs:
           echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
 
       - name: Lint & Format Check
-        run: make fmt
+        run: make fmt-check
 
       - name: Type Check
         run: make check

@@ -1,5 +1,12 @@
 //! Enterprise Custom Rule Engine
 //!
+//! NOTE: This module is fully implemented but NOT yet wired into the analysis
+//! pipeline. The current system uses semantic_registry for rule matching.
+//! Next feature: integrate this as a pluggable rule layer to replace hardcoded
+//! severity/risk mappings in semantic_registry. Requires:
+//!   1. PassManager integration as a filter pass (after FactStore population)
+//!   2. TOML config loader wired to CLI --config option
+//!
 //! Phase 9: Custom rule configuration for team policies.
 //!
 //! Features:

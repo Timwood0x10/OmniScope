@@ -127,26 +127,6 @@ pub const Formatter = struct {
         return buffer.toOwnedSlice(self.allocator);
     }
 
-    /// Write a JSON-escaped string
-    fn writeEscapedString(writer: anytype, s: []const u8) !void {
-        for (s) |c| {
-            switch (c) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
-                else => {
-                    if (c < 0x20) {
-                        try writer.print("\\u{x:0>4}", .{c});
-                    } else {
-                        try writer.writeByte(c);
-                    }
-                },
-            }
-        }
-    }
-
     /// Format result as JSON
     fn formatJson(self: *Formatter, result: AnalysisResult) ![]u8 {
         var buffer = std.ArrayList(u8).initCapacity(self.allocator, 8192) catch return error.OutOfMemory;
@@ -169,18 +149,18 @@ pub const Formatter = struct {
             try buffer.appendSlice(self.allocator, "    {\n");
             try buffer.writer(self.allocator).print("      \"id\": \"VULN-{d}\",\n", .{vuln.id});
             try buffer.appendSlice(self.allocator, "      \"type\": \"");
-            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try writeJsonEscaped(buffer.writer(self.allocator), vuln.vuln_type);
             try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.appendSlice(self.allocator, "      \"severity\": \"");
-            try self.writeEscapedString(buffer.writer(self.allocator), vuln.severity);
+            try writeJsonEscaped(buffer.writer(self.allocator), vuln.severity);
             try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("      \"cwe_id\": {d},\n", .{vuln.cwe_id});
             try buffer.appendSlice(self.allocator, "      \"description\": \"");
-            try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
+            try writeJsonEscaped(buffer.writer(self.allocator), vuln.description);
             var needs_comma = false;
             if (vuln.source_location) |loc| {
                 try buffer.appendSlice(self.allocator, "\",\n      \"source_location\": \"");
-                try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                try writeJsonEscaped(buffer.writer(self.allocator), loc);
                 needs_comma = true;
             }
             if (vuln.sink_location) |loc| {
@@ -190,7 +170,7 @@ pub const Formatter = struct {
                     try buffer.appendSlice(self.allocator, "\",\n");
                 }
                 try buffer.appendSlice(self.allocator, "      \"sink_location\": \"");
-                try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                try writeJsonEscaped(buffer.writer(self.allocator), loc);
                 needs_comma = true;
             }
             if (vuln.line) |line| {
@@ -244,15 +224,15 @@ pub const Formatter = struct {
             if (i > 0) try buffer.appendSlice(self.allocator, ",\n");
             try buffer.appendSlice(self.allocator, "        {\n");
             try buffer.appendSlice(self.allocator, "          \"ruleId\": \"");
-            try self.writeEscapedString(buffer.writer(self.allocator), vuln.vuln_type);
+            try writeJsonEscaped(buffer.writer(self.allocator), vuln.vuln_type);
             try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.writer(self.allocator).print("          \"ruleIndex\": {d},\n", .{i});
             try buffer.appendSlice(self.allocator, "          \"level\": \"");
-            try self.writeEscapedString(buffer.writer(self.allocator), self.sarifSeverity(vuln.severity));
+            try writeJsonEscaped(buffer.writer(self.allocator), self.sarifSeverity(vuln.severity));
             try buffer.appendSlice(self.allocator, "\",\n");
             try buffer.appendSlice(self.allocator, "          \"message\": {\n");
             try buffer.writer(self.allocator).print("            \"text\": \"", .{});
-            try self.writeEscapedString(buffer.writer(self.allocator), vuln.description);
+            try writeJsonEscaped(buffer.writer(self.allocator), vuln.description);
             try buffer.appendSlice(self.allocator, "\"\n");
             try buffer.appendSlice(self.allocator, "          }");
             if (vuln.source_location != null or vuln.line != null) {
@@ -262,7 +242,7 @@ pub const Formatter = struct {
                 try buffer.appendSlice(self.allocator, "                \"artifactLocation\": {\n");
                 if (vuln.source_location) |loc| {
                     try buffer.appendSlice(self.allocator, "                  \"uri\": \"");
-                    try self.writeEscapedString(buffer.writer(self.allocator), loc);
+                    try writeJsonEscaped(buffer.writer(self.allocator), loc);
                     try buffer.appendSlice(self.allocator, "\"\n");
                 } else {
                     try buffer.appendSlice(self.allocator, "                  \"uri\": \"unknown\"\n");
@@ -302,6 +282,26 @@ pub const Formatter = struct {
         return "note";
     }
 };
+
+/// Write a JSON-escaped string (public, shared with main.zig)
+pub fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (c < 0x20) {
+                    try writer.print("\\u{x:0>4}", .{c});
+                } else {
+                    try writer.writeByte(c);
+                }
+            },
+        }
+    }
+}
 
 test "Formatter - text format" {
     const allocator = std.testing.allocator;

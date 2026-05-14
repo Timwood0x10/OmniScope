@@ -1,5 +1,5 @@
 #!/bin/bash
-# OmniScope v0.1.7 Full Corpus Analysis with LLVM 22 (Robust Version)
+# OmniScope v0.1.8 Full Corpus Analysis with LLVM 22 (Robust Version)
 set +e
 
 BINARY="./zig-out/bin/OmniScope"
@@ -9,7 +9,7 @@ rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
 # LLVM 22 tools
 LLVM22_AS="/opt/homebrew/opt/llvm@22/bin/llvm-as"
 
-echo "=== OmniScope v0.1.7 Full Corpus Analysis (LLVM 22) ==="
+echo "=== OmniScope v0.1.8 Full Corpus Analysis (LLVM 22) ==="
 echo "Date: $(date -Iseconds)"
 echo "LLVM Version: $($LLVM22_AS --version | head -1)"
 echo ""
@@ -94,7 +94,7 @@ done
 
 echo ""
 echo "========================================="
-echo "  OmniScope v0.1.7 Analysis Summary (LLVM 22)"
+echo "  OmniScope v0.1.8 Analysis Summary (LLVM 22)"
 echo "========================================="
 printf "  Total .ll files:     %d\n" $TOTAL_FILES
 printf "  Conversion failures: %d\n" $CONV_FAIL

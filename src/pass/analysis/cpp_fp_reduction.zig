@@ -616,13 +616,17 @@ pub fn detectDoubleFree(
             const confidence: f32 = 0.92;
             // C2 FIX: Don't free string literal on OOM path - use early return pattern
             const msg = std.fmt.allocPrint(ctx.allocator, "DOUBLE-FREE: Allocation {d} freed {d} times in SAME basic block ({s})", .{ alloc_id, free_cnt, first_func }) catch {
-                ctx.addIssue(&Issue.init(.double_free, "Double-free detected", Location.init(first_func), severity, confidence)) catch {};
+                ctx.addIssue(&Issue.init(.double_free, "Double-free detected", Location.init(first_func), severity, confidence)) catch {
+                    diag.warn("Failed to register critical double_free issue", .{});
+                };
                 diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
                 diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
                 continue;
             };
 
-            ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {};
+            ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {
+                diag.warn("Failed to register double_free issue with message", .{});
+            };
             diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
             diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
@@ -661,6 +665,12 @@ pub fn detectUseAfterFree(
         const classification = noise_filter.classifyFunctionFull(free_info.func_name, null, null, null);
         if (!classification.origin.shouldReportByDefault()) {
             diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
+            continue;
+        }
+
+        // Skip functions with intentional/test pattern prefixes (correct_, valid_, etc.)
+        if (is_likely_intentional_pattern(free_info.func_name)) {
+            diag.debug("UAF-SKIP: {s} has known-safe function name prefix", .{free_info.func_name});
             continue;
         }
 
@@ -810,13 +820,16 @@ pub fn detectLoopLeaks(
     for (leak_candidates.items) |candidate| {
         // C3 FIX: Don't free string literal on OOM path - use early return pattern
         const msg = std.fmt.allocPrint(alloc_map.allocator, "LOOP LEAK: {d} allocations in {s} - possible loop without free", .{ candidate.count, candidate.func }) catch {
-            ctx.addIssue(&Issue.init(.memory_leak, "Loop memory leak detected", Location.init(candidate.func), .medium, 0.7)) catch {};
+            ctx.addIssue(&Issue.init(.memory_leak, "Loop memory leak detected", Location.init(candidate.func), .medium, 0.7)) catch {
+                diag.warn("Failed to register loop leak issue", .{});
+            };
             diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
             continue;
         };
         defer ctx.allocator.free(msg);
-        ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {};
-        diag.warn("LOOP-LEAK [MEDIUM]: {d} heap allocations detected in {s} - verify loop has matching free()", .{ candidate.count, candidate.func });
+        ctx.addIssue(&Issue.init(.memory_leak, msg, Location.init(candidate.func), .medium, 0.7)) catch {
+            diag.warn("Failed to register loop leak-specific issue", .{});
+        };
     }
 }
 

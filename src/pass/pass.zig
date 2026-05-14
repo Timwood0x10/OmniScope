@@ -618,8 +618,8 @@ pub const PassContext = struct {
     /// so @TypeOf would always return *anyopaque (never c.LLVMValueRef). Runtime type
     /// validation of opaque pointers is not possible in Zig without unsafe assumptions.
     /// All callers are trusted to pass valid c.LLVMValueRef values cast to *anyopaque.
-    /// TODO: Re-evaluate after Zig upgrade — if the format string ambiguity is
-    /// resolved, switch to c.LLVMValueRef for proper type safety.
+    /// Known compiler limitation: Zig cannot resolve format string when
+    /// c.LLVMValueRef is used as parameter type; *anyopaque is the workaround.
     pub fn getOrComputeZone(self: *PassContext, func: *anyopaque, func_name: []const u8) zone_classifier.ZoneKind {
         const func_addr = @intFromPtr(func);
         if (func_addr == 0) return .unknown;

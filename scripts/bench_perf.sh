@@ -75,7 +75,7 @@ bench_blst() {
     fi
 
     # Measure time
-    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" analyze --input \"$IR_FILE\" --output \"$OUTPUT\"" "$TIME_RESULT")
+    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" \"$IR_FILE\"" "$TIME_RESULT")
     
     # Measure memory (approximate via /proc or similar)
     local mem_kb="N/A"
@@ -106,7 +106,7 @@ bench_ring() {
         return
     fi
 
-    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" analyze --input \"$IR_FILE\" --output \"$OUTPUT\"" "$TIME_RESULT")
+    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" \"$IR_FILE\"" "$TIME_RESULT")
     local mem_kb="N/A"
 
     log_pass "ring: ${time_ms}ms (target: <200ms)"
@@ -133,7 +133,7 @@ bench_wasmtime() {
         return
     fi
 
-    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" analyze --input \"$IR_FILE\" --output \"$OUTPUT\"" "$TIME_RESULT")
+    local time_ms=$(measure_time "\"$BUILD_DIR/OmniScope\" \"$IR_FILE\"" "$TIME_RESULT")
 
     log_pass "wasmtime: ${time_ms}ms (target: <1000ms)"
     
@@ -197,7 +197,7 @@ bench_all() {
     
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║           OmniScope v0.1.7 Performance Benchmarks             ║"
+    echo "║           OmniScope v0.1.8 Performance Benchmarks             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
     

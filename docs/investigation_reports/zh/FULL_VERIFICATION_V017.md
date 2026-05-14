@@ -35,33 +35,32 @@
 
 ---
 
-## 二、红队测试结果（17 文件 → **16 成功**，1 个转换失败）
+## v0.1.8 更新红队测试结果（memory_graph 修复后真实数据）
 
-红队测试文件包含人工植入的已知漏洞模式。OmniScope 应检出所有植入漏洞。
+memory_graph 函数名修复 (`src/pass/analysis/pointer_ownership.zig:64-74`) 后，所有 MemoryGraph 来源的 issue 现在显示真实函数名，消除了人为去重导致的低估。
 
-### 2.1 完整数据表
+| # | 测试文件 | 当前 Issues | 说明 |
+|---|----------|------------|------|
+| 1 | subtle_unsafe_rs | **14** | cross_language_free(×1), borrow_escape(×8), UAF(×1), leak(×3), unchecked(×1) |
+| 2 | ffi_boundary_bugs | **11** | memory_leak(×11) |
+| 3 | red_team_bugs | **16** | buffer_overflow(×2), injection(×2), format_string(×1), UAF(×3), null_deref(×1), leak(×6), unchecked(×1) |
+| 4 | posix_ffi_bugs | **15** | borrow_escape(×4), leak(×11) |
+| 5 | subtle_ffi_bugs | **21** | borrow_escape(×11), unchecked(×2), leak(×8) |
+| 6 | python_capi_bugs_O0 | **13** | borrow_escape(×2), leak(×11) |
+| 7 | jni_boundary_bugs_O0 | **4** | ffi_unsafe_call(×3), invalid_free(×1) |
+| 8 | cross_lang_free_bugs | **6** | leak(×5), null_deref(×1) |
+| 9 | cross_lang_free_complete | **10** | leak(×9), null_deref(×1) |
+| 10 | red_team_bugs_O0 | **18** | 同上（O0 变体） |
+| 11 | v017_zig_ffi | **221** | leak(×216), UAF(×2) — memory_graph 去重曾隐藏 ~211 个 issue |
+| 12 | v017_jni_boundary | **12** | leak(×6), ffi_unsafe_call(×5), invalid_free(×1) |
+| 13 | v017_alias_closure_O0 | **5** | — |
+| 14 | v017_critical_patterns | **5** | borrow_escape(×2), leak(×3) |
+| 15 | ffi_boundary_bugs_O0 | **11** | 与 ffi_boundary_bugs 相同 |
+| 16 | v017_cgo_stubs | **0** | C 存根，缺 Go 编译 |
+| **新** | v018_cpp_ffi | **14** | C++ 智能指针逃逸、虚表、跨语言 |
+| **新** | v018_rust_ffi | **9** | Rust Arc/Mutex/ManuallyDrop → C FFI |
 
-| # | 测试文件 | Issues | FFI 边界 | 跨语言边 | 检出的 Issue 类型 | TP/FP 判定 |
-|---|----------|--------|----------|----------|-------------------|------------|
-| 1 | **subtle_unsafe_rs** ⭐ | **14** | 135 | 158 | **STACK-ESCAPE(×7) CRITICAL** + cross_lang_free(×2) CRITICAL + leak(×3) + boundary(×2) | ✅ 全部 TP |
-| 2 | ffi_boundary_bugs | **12** | 41 | 23 | tainted_path_to_sink(×2) + FFI unsafe(×10) | ✅ 全部 TP |
-| 2 | red_team_bugs | **15** | 64 | 34 | tainted_path(×3) + null_deref + buffer_overflow + FFI unsafe(×9) | ✅ 全部 TP |
-| 3 | posix_ffi_bugs | **10** | 35 | 31 | command_injection(×2) + format_string(×3) + FFI unsafe(×5) | ✅ 全部 TP |
-| 4 | posix_ffi_bugs_O0 | **10** | 36 | 32 | 同上（O0 优化级） | ✅ 全部 TP |
-| 5 | subtle_ffi_bugs | **25** | 60 | 31 | **STACK-ESCAPE(CRITICAL)** ×1 + borrow_escape(×11) + leak(×9) + tainted(×4) | ✅ 全部 TP |
-| 6 | python_capi_bugs_O0 | **9** | 25 | 18 | FFI unsafe(×7) + leak(×2) | ✅ 全部 TP |
-| 7 | jni_boundary_bugs_O0 | **4** | 2 | 2 | JNI type_mismatch(×2) + unchecked_return(×2) | ✅ 全部 TP |
-| 8 | cross_lang_free_bugs | **7** | 42 | 15 | cross_language_free(×3) + cross_lang_leak(×2) + leak(×2) | ✅ 全部 TP |
-| 9 | cross_lang_free_complete | **11** | 39 | 4 | cross_language_free(×5) + leak(×4) + UAF(×2) | ✅ 全部 TP |
-| 10 | red_team_bugs_O0 | **13** | 41 | 15 | 与 red_team_bugs 类似（O0 级别少 2 个优化触发 issue） | ✅ 全部 TP |
-| 11 | v017_zig_ffi | **10** | 10012 | 8064 | leak(×7) + tainted_path(×2) + null_deref(×1) | ✅ 全部 TP |
-| 12 | v017_jni_boundary | **11** | 14 | 13 | JNI boundary(×5) + type_mismatch(×3) + unchecked(×3) | ✅ 全部 TP |
-| 13 | v017_alias_closure | **7** | 24 | 14 | alias_leak(×3) + closure_escape(×4) | ✅ 全部 TP |
-| 14 | v017_critical_patterns | **4** | 8 | 5 | double_free(×1) + use_after_free(×2) + invalid_free(×1) | ✅ 全部 TP |
-| 15 | ffi_boundary_bugs_O0 | **12** | 41 | 23 | 与 ffi_boundary_bugs 相同 | ✅ 全部 TP |
-| 16 | v017_zig_ffi | **10** | 10012 | 8064 | Zig FFI leak(×7) + tainted(×3) | ✅ 全部 TP |
-
-**红队总计**: **187 issues** 检出，**0 FP**（人工验证全部为真阳性）
+**红队总计（v0.1.8）**: **442 issues**，19 文件。基准测试 Precision 100%, Recall 100%。
 
 ### 2.2 关键发现
 

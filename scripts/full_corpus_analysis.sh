@@ -1,12 +1,12 @@
 #!/bin/bash
-# OmniScope v0.1.7 Full Corpus Analysis
+# OmniScope v0.1.8 Full Corpus Analysis
 set -e
 
 BINARY="./zig-out/bin/OmniScope"
 OUTDIR="outputs/full_analysis_v017"
 rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
 
-echo "=== OmniScope v0.1.7 Full Corpus Analysis ==="
+echo "=== OmniScope v0.1.8 Full Corpus Analysis ==="
 echo "Date: $(date -Iseconds)"
 echo ""
 
@@ -70,7 +70,7 @@ done
 
 echo ""
 echo "========================================="
-echo "  OmniScope v0.1.7 Full Analysis Summary"
+echo "  OmniScope v0.1.8 Full Analysis Summary"
 echo "========================================="
 printf "  Files analyzed OK:   %d / 39\n" $OK_COUNT
 printf "  Files crashed:       %d / 39\n" $CRASH_COUNT

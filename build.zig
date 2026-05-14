@@ -17,6 +17,19 @@ fn getDefaultLLVMVersion() []const u8 {
     return "22";
 }
 
+/// Configure a Step.Compile with LLVM include/library/rpath/link settings.
+fn configureLLVM(b: *std.Build, compile: *std.Build.Step.Compile, llvm_path: []const u8, llvm_version: []const u8) void {
+    const lib_name = b.fmt("LLVM-{s}", .{llvm_version});
+    const include = b.pathJoin(&.{ llvm_path, "include" });
+    const lib = b.pathJoin(&.{ llvm_path, "lib" });
+    compile.root_module.addIncludePath(.{ .cwd_relative = include });
+    compile.root_module.addLibraryPath(.{ .cwd_relative = lib });
+    compile.root_module.linkSystemLibrary("c", .{});
+    compile.root_module.linkSystemLibrary("z", .{});
+    compile.root_module.linkSystemLibrary(lib_name, .{});
+    compile.root_module.addRPath(.{ .cwd_relative = lib });
+}
+
 /// Build configuration for OmniScope
 pub fn build(b: *std.Build) void {
     // Parse build options
@@ -29,7 +42,6 @@ pub fn build(b: *std.Build) void {
     ) orelse false;
 
     // LLVM configuration
-    // Use --llvm-path option or fallback to OS-specific defaults
     const llvm_path = b.option(
         []const u8,
         "llvm-path",
@@ -48,7 +60,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
-    // Add LLVM include path to all steps
     lib_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
 
     // Build main executable
@@ -64,20 +75,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Add LLVM include path
-    exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-
-    // Add LLVM library path and link LLVM library
-    exe.root_module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    exe.root_module.linkSystemLibrary("c", .{});
-    exe.root_module.linkSystemLibrary("z", .{});
-
-    // Link LLVM library with version suffix
-    const llvm_lib_name = b.fmt("LLVM-{s}", .{llvm_version});
-    exe.root_module.linkSystemLibrary(llvm_lib_name, .{});
-
-    // Add rpath for runtime library loading
-    exe.root_module.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, exe, llvm_path, llvm_version);
 
     // Apply LTO if enabled
     if (enable_lto) {
@@ -99,12 +97,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    verify_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-    verify_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    verify_exe.linkSystemLibrary("c");
-    verify_exe.linkSystemLibrary("z");
-    verify_exe.linkSystemLibrary(llvm_lib_name);
-    verify_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, verify_exe, llvm_path, llvm_version);
     const verify_cmd = b.addRunArtifact(verify_exe);
     verify_step.dependOn(&verify_cmd.step);
 
@@ -121,12 +114,7 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    demo_exe.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-    demo_exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    demo_exe.linkSystemLibrary("c");
-    demo_exe.linkSystemLibrary("z");
-    demo_exe.linkSystemLibrary(llvm_lib_name);
-    demo_exe.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, demo_exe, llvm_path, llvm_version);
     const demo_cmd = b.addRunArtifact(demo_exe);
     demo_step.dependOn(&demo_cmd.step);
 
@@ -145,15 +133,7 @@ pub fn build(b: *std.Build) void {
         .root_module = lib_mod,
     });
 
-    // Add LLVM configuration to tests
-    lib_tests.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-    lib_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    lib_tests.linkSystemLibrary("c");
-    lib_tests.linkSystemLibrary("z");
-    lib_tests.linkSystemLibrary(llvm_lib_name);
-
-    // Add rpath for runtime library loading
-    lib_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, lib_tests, llvm_path, llvm_version);
 
     if (enable_lto) {
         lib_tests.want_lto = true;
@@ -221,11 +201,7 @@ pub fn build(b: *std.Build) void {
     const integration_tests = b.addTest(.{
         .root_module = integration_test_mod,
     });
-    integration_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    integration_tests.linkSystemLibrary("c");
-    integration_tests.linkSystemLibrary("z");
-    integration_tests.linkSystemLibrary(llvm_lib_name);
-    integration_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, integration_tests, llvm_path, llvm_version);
     if (enable_lto) {
         integration_tests.want_lto = true;
     }
@@ -296,11 +272,7 @@ pub fn build(b: *std.Build) void {
     const e2e_tests = b.addTest(.{
         .root_module = e2e_test_mod,
     });
-    e2e_tests.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
-    e2e_tests.linkSystemLibrary("c");
-    e2e_tests.linkSystemLibrary("z");
-    e2e_tests.linkSystemLibrary(llvm_lib_name);
-    e2e_tests.addRPath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "lib" }) });
+    configureLLVM(b, e2e_tests, llvm_path, llvm_version);
     if (enable_lto) {
         e2e_tests.want_lto = true;
     }

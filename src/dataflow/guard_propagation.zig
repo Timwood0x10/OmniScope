@@ -1,5 +1,12 @@
 //! CFG-Based Null Check Guard Propagation
 //!
+//! NOTE: This module is complete but NOT yet integrated. The existing
+//! null_check_guard.zig handles basic null guard inference. This module
+//! provides a more advanced CFG-based propagation that tracks constraints
+//! through phi nodes and merged control flow. Next feature: if path-sensitive
+//! null safety is needed in the analysis, integrate this to replace/reduce
+//! false positives from null_check_guard.zig.
+//!
 //! This module propagates null check constraints through the CFG to enable
 //! path-sensitive lifetime analysis.
 //!

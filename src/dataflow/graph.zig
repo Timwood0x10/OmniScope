@@ -28,6 +28,7 @@ const EdgeType = @import("edge.zig").EdgeType;
 
 const FFIMatcher = @import("../ffi/ffi_matcher.zig").FFIMatcher;
 const ArenaAllocator = @import("../perf/memory_pool.zig").ArenaAllocator;
+const stats = @import("stats.zig");
 
 /// Data Flow Graph
 ///
@@ -537,162 +538,23 @@ pub const DataFlowGraph = struct {
         return false;
     }
 
-    /// Get graph statistics
-    ///
-    /// Returns:
-    ///   - Graph statistics
-    pub fn getStats(self: *const DataFlowGraph) GraphStats {
-        return .{
-            .node_count = self.nodes.count(),
-            .edge_count = self.edges.items.len,
-            .tainted_node_count = self.tainted_nodes.items.len,
-            .ffi_boundary_count = self.ffi_boundaries.items.len,
-            .issue_count = self.issues.items.len,
-        };
+    pub fn getStats(self: *const DataFlowGraph) stats.GraphStats {
+        return stats.computeGraphStats(
+            self.nodes.count(),
+            self.edges.items.len,
+            self.tainted_nodes.items.len,
+            self.ffi_boundaries.items.len,
+            self.issues.items.len,
+        );
     }
 
-    pub const IssueStats = struct {
-        total: usize,
-        memory_leak: usize,
-        use_after_free: usize,
-        double_free: usize,
-        ffi_unsafe: usize,
-        command_injection: usize,
-        buffer_overflow: usize,
-        format_string: usize,
-        type_mismatch: usize,
-        borrow_escape: usize,
-        null_dereference: usize,
-        invalid_free: usize,
-        unchecked_return: usize,
-        malloc_unchecked: usize,
-        callback_mismatch: usize,
-        cross_language_leak: usize,
-        cross_language_free: usize,
-        static_buffer_misuse: usize,
-        data_race: usize,
-        thread_safety_violation: usize,
-        unknown: usize,
-
-        /// C4-4: FunctionOrigin grouping for output summary
-        user_code: usize = 0,
-        stdlib_suppressed: usize = 0,
-        compiler_ignored: usize = 0,
-        third_party: usize = 0,
-    };
+    pub const IssueStats = stats.IssueStats;
 
     pub fn getIssueStats(self: *const DataFlowGraph) IssueStats {
-        var stats = IssueStats{
-            .total = self.issues.items.len,
-            .memory_leak = 0,
-            .use_after_free = 0,
-            .double_free = 0,
-            .ffi_unsafe = 0,
-            .command_injection = 0,
-            .buffer_overflow = 0,
-            .format_string = 0,
-            .type_mismatch = 0,
-            .borrow_escape = 0,
-            .null_dereference = 0,
-            .invalid_free = 0,
-            .unchecked_return = 0,
-            .malloc_unchecked = 0,
-            .callback_mismatch = 0,
-            .cross_language_leak = 0,
-            .cross_language_free = 0,
-            .static_buffer_misuse = 0,
-            .data_race = 0,
-            .thread_safety_violation = 0,
-            .unknown = 0,
-        };
-        for (self.issues.items) |issue| {
-            switch (issue.kind) {
-                .memory_leak, .cross_language_leak => stats.memory_leak += 1,
-                .use_after_free => stats.use_after_free += 1,
-                .double_free => stats.double_free += 1,
-                .ffi_unsafe_call => stats.ffi_unsafe += 1,
-                .command_injection => stats.command_injection += 1,
-                .buffer_overflow => stats.buffer_overflow += 1,
-                .format_string => stats.format_string += 1,
-                .type_mismatch, .ffi_type_mismatch => stats.type_mismatch += 1,
-                .borrow_escape => stats.borrow_escape += 1,
-                .null_dereference => stats.null_dereference += 1,
-                .invalid_free => stats.invalid_free += 1,
-                .unchecked_return => stats.unchecked_return += 1,
-                .malloc_unchecked => stats.malloc_unchecked += 1,
-                .callback_signature_mismatch => stats.callback_mismatch += 1,
-                .cross_language_free => stats.cross_language_free += 1,
-                .static_buffer_misuse => stats.static_buffer_misuse += 1,
-                .data_race => stats.data_race += 1,
-                .thread_safety_violation => stats.thread_safety_violation += 1,
-                .unknown => stats.unknown += 1,
-            }
-
-            // C4-4: Infer FunctionOrigin from issue location for grouping output
-            const fn_name = issue.location.func;
-            if (inferIsStdlib(fn_name)) {
-                stats.stdlib_suppressed += 1;
-            } else if (inferIsCompilerGenerated(fn_name)) {
-                stats.compiler_ignored += 1;
-            } else if (inferIsThirdParty(fn_name)) {
-                stats.third_party += 1;
-            } else {
-                stats.user_code += 1;
-            }
-        }
-        return stats;
+        return stats.computeIssueStats(self.issues.items);
     }
 
-    /// C4-4: Lightweight stdlib detection for origin grouping.
-    fn inferIsStdlib(fn_name: []const u8) bool {
-        const prefixes = [_][]const u8{
-            "std::", "boost::",  "__gnu",    "__cxa_",     "llvm.",
-            "std.",  "runtime.", "syscall.", "java.lang.",
-        };
-        for (prefixes) |p| {
-            if (std.mem.startsWith(u8, fn_name, p)) return true;
-        }
-        return false;
-    }
-
-    /// C4-4: Lightweight compiler-generated detection for origin grouping.
-    fn inferIsCompilerGenerated(fn_name: []const u8) bool {
-        const prefixes = [_][]const u8{
-            "__",              "_Z",        "_GLOBAL__",           ".omp.",
-            "zig_assert_fail", "zig_panic", "zig_generic_resolve",
-            "llvm.dbg", // LLVM debug intrinsics (prefix-matched for consistency)
-        };
-        for (prefixes) |p| {
-            if (std.mem.startsWith(u8, fn_name, p)) return true;
-        }
-        return false;
-    }
-
-    /// C4-4: Lightweight third-party detection for origin grouping.
-    fn inferIsThirdParty(fn_name: []const u8) bool {
-        const prefixes = [_][]const u8{
-            "C.",         "_cgo_",   "_Cfunc_", "Java_", "JNI_",
-            "crosscall2", "PyInit_", "Python_",
-        };
-        for (prefixes) |p| {
-            if (std.mem.startsWith(u8, fn_name, p)) return true;
-        }
-        return false;
-    }
-
-    /// Graph statistics
-    pub const GraphStats = struct {
-        /// Total number of nodes
-        node_count: usize,
-        /// Total number of edges
-        edge_count: usize,
-        /// Number of tainted nodes
-        tainted_node_count: usize,
-        /// Number of FFI boundaries
-        ffi_boundary_count: usize,
-        /// Total number of issues
-        issue_count: usize,
-    };
+    pub const GraphStats = stats.GraphStats;
 
     /// Clear all data from the graph
     pub fn clear(self: *DataFlowGraph) void {
@@ -906,12 +768,12 @@ test "DataFlowGraph - getStats" {
     );
     try dfg.addIssue(issue);
 
-    const stats = dfg.getStats();
-    try std.testing.expectEqual(@as(usize, 2), stats.node_count);
-    try std.testing.expectEqual(@as(usize, 1), stats.edge_count);
-    try std.testing.expectEqual(@as(usize, 1), stats.tainted_node_count);
-    try std.testing.expectEqual(@as(usize, 1), stats.ffi_boundary_count);
-    try std.testing.expectEqual(@as(usize, 1), stats.issue_count);
+    const gs = dfg.getStats();
+    try std.testing.expectEqual(@as(usize, 2), gs.node_count);
+    try std.testing.expectEqual(@as(usize, 1), gs.edge_count);
+    try std.testing.expectEqual(@as(usize, 1), gs.tainted_node_count);
+    try std.testing.expectEqual(@as(usize, 1), gs.ffi_boundary_count);
+    try std.testing.expectEqual(@as(usize, 1), gs.issue_count);
 }
 
 test "DataFlowGraph - clear" {

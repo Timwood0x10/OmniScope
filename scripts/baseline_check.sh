@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-OMNISCOPE="./zig-out/bin/omniscope"
+OMNISCOPE="./zig-out/bin/OmniScope"
 CORPUS_DIR="corpus/real_world"
 
 RED='\033[0;31m'

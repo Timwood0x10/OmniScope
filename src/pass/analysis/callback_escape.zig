@@ -880,7 +880,7 @@ pub const CallbackEscapePass = struct {
 
         // CBytes escape detection: if a function calls C.CBytes and may also call
         // a retaining function (like storing to global, registering callback), report escape.
-        // Note: True next_call tracking requires call graph analysis (see TODO below).
+        // True next_call tracking requires call graph analysis for full precision.
         for (cgo_calls.items) |call| {
             if (isCBytesPattern(call.callee_name)) {
                 // R7.1-3: Language-aware retention check for CBytes escape

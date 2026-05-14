@@ -1,5 +1,5 @@
 #!/bin/bash
-# OmniScope v0.1.7 Full Corpus Analysis - Final Version (LLVM 22 + .bc support)
+# OmniScope v0.1.8 Full Corpus Analysis - Final Version (LLVM 22 + .bc support)
 set +e
 
 BINARY="./zig-out/bin/OmniScope"
@@ -9,7 +9,7 @@ rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
 # LLVM 22 tools
 LLVM22_AS="/opt/homebrew/opt/llvm@22/bin/llvm-as"
 
-echo "=== OmniScope v0.1.7 Final Analysis (LLVM 22 + .bc auto-detect) ==="
+echo "=== OmniScope v0.1.8 Final Analysis (LLVM 22 + .bc auto-detect) ==="
 echo "Date: $(date -Iseconds)"
 echo "LLVM Version: $($LLVM22_AS --version | head -1)"
 echo ""
@@ -111,7 +111,7 @@ done
 
 echo ""
 echo "========================================="
-echo "  OmniScope v0.1.7 Final Analysis Summary"
+echo "  OmniScope v0.1.8 Final Analysis Summary"
 echo "========================================="
 printf "  Total .ll files:       %d\n" $TOTAL_FILES
 printf "  Direct .bc files (★):  %d\n" $BC_DIRECT

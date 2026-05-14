@@ -1,5 +1,11 @@
 //! Steensgaard Points-To Analysis
 //!
+//! NOTE: This module is fully implemented but NOT yet wired into the analysis
+//! pipeline. The current alias analysis uses alias.zig (Andersen-style).
+//! Next feature: if alias analysis becomes a bottleneck on large IR files,
+//! swap to this O(n) Steensgaard algorithm (less precise but faster).
+//! Requires wrapping into a Pass and registering in pipeline.zig.
+//!
 //! Implements a flow-insensitive, context-insensitive points-to analysis
 //! based on Steensgaard's algorithm using union-find.
 //!
