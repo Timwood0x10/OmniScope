@@ -18,6 +18,7 @@ const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 const debug_info = @import("../ir/debug_info.zig");
 const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
+const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
 pub const Language = FFIBoundary.Language;
 
 /// Zone classification for code regions.
@@ -584,6 +585,8 @@ fn classifyRustFunction(func_name: []const u8) ZoneKind {
     // New behavior: use .unknown to let downstream passes (isRustFFIRelevantFunction,
     // DangerSurface, etc.) make the final decision based on IR-level analysis.
     // This fixes the "three-layer break" where zone gate filtered ALL Rust functions.
+    // Note: This function is only called when isRustFunction() returns true,
+    // so _ZN here is guaranteed to be Rust (not C++).
     if (std.mem.startsWith(u8, func_name, "_ZN") or
         std.mem.startsWith(u8, func_name, "_R"))
     {
@@ -697,18 +700,25 @@ fn classifyCppFunction(func_name: []const u8) ZoneKind {
 
 /// Detect if function is Rust.
 fn isRustFunction(func_name: []const u8) bool {
-    if (std.mem.startsWith(u8, func_name, "_ZN4core")) return true;
-    if (std.mem.startsWith(u8, func_name, "_ZN5alloc")) return true;
-    if (std.mem.startsWith(u8, func_name, "_ZN3std")) return true;
-    if (std.mem.startsWith(u8, func_name, "_ZN4ring")) return true;
+    // Check for Rust v0 mangling prefix (_R...)
     if (std.mem.startsWith(u8, func_name, "_R")) return true;
+
+    // Check for _ZN (Itanium nested name mangling) — could be Rust or C++
+    if (std.mem.startsWith(u8, func_name, "_ZN")) {
+        return ffi_language_classifier.isRustMangledName(func_name);
+    }
+
+    // Check for Rust-specific markers in mangled names
     if (std.mem.indexOf(u8, func_name, "$u20$") != null) return true;
     if (std.mem.indexOf(u8, func_name, "$LT$") != null) return true;
     if (std.mem.indexOf(u8, func_name, "$GT$") != null) return true;
     if (std.mem.indexOf(u8, func_name, "$C$") != null) return true;
+
+    // Check for Rust namespace patterns (demangled form)
     if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
     if (std.mem.indexOf(u8, func_name, "core::") != null) return true;
     if (std.mem.indexOf(u8, func_name, "alloc::") != null) return true;
+
     return false;
 }
 

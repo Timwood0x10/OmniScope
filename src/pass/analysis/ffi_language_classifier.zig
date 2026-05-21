@@ -549,7 +549,7 @@ pub fn isStlInternalFunction(func_name: []const u8) bool {
 ///   1. '$' presence — Rust uses $LT$, $GT$, $u20$, $RF$ etc.
 ///   2. Hash suffix — <digits>h<hex_digits>E (Rust v0 symbol versioning)
 ///   3. Known Rust crate prefixes in _ZN path (e.g., _ZN4core, _ZN3std)
-fn isRustMangledName(name: []const u8) bool {
+pub fn isRustMangledName(name: []const u8) bool {
     // Layer 1: '$' separator (fastest check)
     if (std.mem.indexOf(u8, name, "$") != null) return true;
 
@@ -588,8 +588,12 @@ fn isRustMangledName(name: []const u8) bool {
 // Tests
 // ═══════════════════════════════════════════════════════════════
 
-test "identifyLanguage - defaults to C" {
-    try std.testing.expectEqual(Language.c, identifyLanguage(undefined));
+test "identifyLanguage - defaults to C for normal functions" {
+    // Test that normal C function names are identified as C
+    // Note: We cannot test with undefined as it causes undefined behavior
+    // Instead, test with a typical C function name
+    const result = identifyCalleeLanguage("my_function");
+    try std.testing.expectEqual(Language.c, result);
 }
 
 test "isLibcFunction - known functions" {

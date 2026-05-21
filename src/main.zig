@@ -448,18 +448,13 @@ fn isDangerousFFIPattern(match: *const call_graph.FFIMatch) bool {
     const define_func = match.define_func orelse return false;
     const name = define_func.name;
 
+    // Dangerous patterns that indicate command execution or shell interaction.
+    // These are specific enough to avoid false positives on normal business logic.
     const dangerous_patterns = &[_][]const u8{
         "system",      "exec",            "popen", "eval", "shell",
         "run_command", "execute_command",
     };
     for (dangerous_patterns) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
-
-    const sensitive_patterns = &[_][]const u8{
-        "register", "batch",
-    };
-    for (sensitive_patterns) |pattern| {
         if (std.mem.indexOf(u8, name, pattern) != null) return true;
     }
 

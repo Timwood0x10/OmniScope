@@ -27,6 +27,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Location = @import("../../diag/issue.zig").Location;
 const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 
@@ -782,13 +783,21 @@ pub const FFITypeMismatchPass = struct {
     /// Checks if a call is an FFI boundary.
     fn isFFIBoundary(caller_name: []const u8, callee_name: []const u8) bool {
         // Pattern 1: Rust extern "C" functions
-        if (std.mem.startsWith(u8, caller_name, "_ZN") or // Rust mangled
-            std.mem.startsWith(u8, caller_name, "_R"))
-        {
+        const caller_is_rust = std.mem.startsWith(u8, caller_name, "_R") or
+            (std.mem.startsWith(u8, caller_name, "_ZN") and
+            ffi_language_classifier.isRustMangledName(caller_name));
+        if (caller_is_rust) {
+            // Callee is not mangled at all → Rust calling C
             if (!std.mem.startsWith(u8, callee_name, "_ZN") and
                 !std.mem.startsWith(u8, callee_name, "_R"))
             {
-                return true; // Rust → C
+                return true;
+            }
+            // Callee is C++ _ZN (not Rust) → Rust calling C++ FFI boundary
+            if (std.mem.startsWith(u8, callee_name, "_ZN") and
+                !ffi_language_classifier.isRustMangledName(callee_name))
+            {
+                return true;
             }
         }
 
@@ -841,8 +850,10 @@ pub const FFITypeMismatchPass = struct {
     }
 
     fn isSameLanguagePair(caller: []const u8, callee: []const u8) bool {
-        const rust_caller = std.mem.startsWith(u8, caller, "_ZN") or std.mem.startsWith(u8, caller, "_R");
-        const rust_callee = std.mem.startsWith(u8, callee, "_ZN") or std.mem.startsWith(u8, callee, "_R");
+        const rust_caller = std.mem.startsWith(u8, caller, "_R") or
+            (std.mem.startsWith(u8, caller, "_ZN") and ffi_language_classifier.isRustMangledName(caller));
+        const rust_callee = std.mem.startsWith(u8, callee, "_R") or
+            (std.mem.startsWith(u8, callee, "_ZN") and ffi_language_classifier.isRustMangledName(callee));
         const go_caller = std.mem.indexOf(u8, caller, "_cgo_") != null;
         const zig_caller = std.mem.startsWith(u8, caller, "zig.") or std.mem.startsWith(u8, caller, "main.");
         if (rust_caller and rust_callee) return true;
@@ -854,8 +865,8 @@ pub const FFITypeMismatchPass = struct {
     /// Checks if a function is a C function.
     fn isCFunction(func_name: []const u8) bool {
         // C functions typically don't have mangling prefixes
-        if (std.mem.startsWith(u8, func_name, "_Z") or // C++ mangled
-            std.mem.startsWith(u8, func_name, "_ZN") or // Rust mangled
+        if (std.mem.startsWith(u8, func_name, "_Z") or // C++/Rust Itanium ABI
+            std.mem.startsWith(u8, func_name, "_ZN") or // C++/Rust nested mangling
             std.mem.startsWith(u8, func_name, "_R")) // Rust v0 mangled
         {
             return false;
@@ -909,6 +920,12 @@ test "FFITypeMismatchPass - name and kind" {
 test "isFFIBoundary - Rust to C" {
     try std.testing.expect(FFITypeMismatchPass.isFFIBoundary("_ZN4core3fooE", "malloc"));
     try std.testing.expect(!FFITypeMismatchPass.isFFIBoundary("_ZN4core3fooE", "_ZN4core3barE"));
+    // C++ _ZN should NOT be treated as Rust FFI boundary
+    try std.testing.expect(!FFITypeMismatchPass.isFFIBoundary("_ZN4Base1fEv", "malloc"));
+    // Rust calling C++ _ZN should be FFI boundary
+    try std.testing.expect(FFITypeMismatchPass.isFFIBoundary("_ZN4core3fooE", "_ZNSt3__112basic_string"));
+    // Rust _R calling C++ _ZN should be FFI boundary
+    try std.testing.expect(FFITypeMismatchPass.isFFIBoundary("_RINvC1a4main", "_ZN4Base1fEv"));
 }
 
 test "isFFIBoundary - Go cgo" {

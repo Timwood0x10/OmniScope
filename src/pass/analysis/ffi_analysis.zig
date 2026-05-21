@@ -36,6 +36,7 @@ const RiskKind = @import("../../registry/semantic_registry.zig").RiskKind;
 const NoiseReduction = @import("noise_reduction.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const hooks = @import("../../registry/hooks.zig");
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 
 /// Error type for ownership analysis operations
 pub const FFIAnalysisError = error{
@@ -590,10 +591,17 @@ pub const FFIAnalysisPass = struct {
 
     fn detectLanguage(func_name: []const u8) Language {
         if (func_name.len >= 2) {
-            if (std.mem.startsWith(u8, func_name, "_ZN") or
-                std.mem.startsWith(u8, func_name, "_R"))
-            {
+            if (std.mem.startsWith(u8, func_name, "_R")) {
                 return .rust;
+            }
+
+            // _ZN is C++ Itanium ABI prefix, but Rust legacy v0 also used it.
+            // Use isRustMangledName to disambiguate.
+            if (std.mem.startsWith(u8, func_name, "_ZN")) {
+                if (ffi_language_classifier.isRustMangledName(func_name)) {
+                    return .rust;
+                }
+                return .cpp;
             }
 
             if (std.mem.startsWith(u8, func_name, "_Z")) {
@@ -701,6 +709,8 @@ test "FFIAnalysisPass - detectLanguage" {
 
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_ZN4core3ptr"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_R"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZN4Base1fEv"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZNSt3__110unique_ptr"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZSt"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.c, pass.detectLanguage("malloc"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.zig, pass.detectLanguage("Allocator.alloc"));
@@ -718,6 +728,7 @@ test "FFIAnalysisPass - detectLanguage fallback" {
 
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_ZN4core3ptr"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.rust, pass.detectLanguage("_R"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZN4Base1fEv"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZSt"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.c, pass.detectLanguage("malloc"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.zig, pass.detectLanguage("Allocator.alloc"));

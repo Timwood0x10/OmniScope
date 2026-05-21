@@ -14,6 +14,7 @@ const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
+const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
 
 /// How the language was detected
 pub const DetectionMethod = enum {
@@ -164,61 +165,7 @@ fn indexToLang(idx: usize) Language {
 const SAMPLE_SIZE: usize = 50;
 
 /// Multi-layer Rust mangled name detector for _ZN disambiguation.
-/// Returns true if the symbol is a Rust-mangled name, false for C++ Itanium.
-///
-/// Detection layers (ordered by reliability):
-///   1. '$' presence -- Rust uses $LT$, $GT$, $u20$, $RF$ etc.
-///   2. Hash suffix <N>h<hex>E -- Rust incremental compilation hash
-///   3. Double-dot path segments (..) -- Rust crate::module encoding
-fn isRustMangledName(name: []const u8) bool {
-    // Layer 1: '$' separator (fastest check, catches most Rust names)
-    if (std.mem.indexOf(u8, name, "$") != null) return true;
-
-    // Layer 2: Hash suffix pattern -- <digits>h<hex_digits>E
-    // Example: 17he1b7ec36415abac2E or h575f0ddf6ebefeccE
-    // This is unique to Rust's v0 mangling scheme for symbol versioning.
-    var i: usize = name.len;
-    if (i == 0) return false;
-    // Find trailing 'E'
-    if (name[i - 1] != 'E') {
-        // Also check lowercase 'e' (some toolchains emit this)
-        if (name[i - 1] != 'e') return false;
-    }
-    i -= 1;
-    if (i == 0) return false;
-
-    // Scan backward through hex digits
-    var hex_len: usize = 0;
-    while (i > 0) : (i -= 1) {
-        const ch = name[i - 1];
-        if (ch >= '0' and ch <= '9' or ch >= 'a' and ch <= 'f' or ch >= 'A' and ch <= 'F') {
-            hex_len += 1;
-        } else if (ch == 'h') {
-            // Found 'h' preceding hex digits -- verify length prefix
-            if (i > 1 and name[i - 2] >= '0' and name[i - 2] <= '9') {
-                return true;
-            }
-            return false;
-        } else {
-            break;
-        }
-    }
-
-    // Layer 3: Double-dot path segments (core..fmt..Debug style)
-    // Rust encodes :: as .. in mangled paths between crate/module/name parts
-    if (std.mem.indexOf(u8, name, "..") != null) {
-        // But exclude C++ patterns that might have ".." in rare cases
-        // by checking for Rust-std patterns like "core.." or "std.."
-        if (std.mem.indexOf(u8, name, "core..") != null or
-            std.mem.indexOf(u8, name, "std..") != null or
-            std.mem.indexOf(u8, name, "alloc..") != null)
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
+/// Delegates to ffi_language_classifier.isRustMangledName for consistency.
 
 fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var rust_count: u32 = 0;
@@ -522,4 +469,18 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
 /// Identify the language of a called function by name string.
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
     return @import("../pass/analysis/ffi_language_classifier.zig").identifyCalleeLanguage(func_name);
+}
+
+/// Multi-layer Rust mangled name detector for _ZN disambiguation.
+/// Returns true if the symbol is a Rust-mangled name, false for C++ Itanium.
+///
+/// Detection layers (ordered by reliability):
+///   1. '$' presence -- Rust uses $LT$, $GT$, $u20$, $RF$ etc.
+///   2. Hash suffix <N>h<hex>E -- Rust incremental compilation hash
+///   3. Known Rust namespace prefixes -- _ZN4core, _ZN3std, etc.
+///
+/// This function delegates to ffi_language_classifier.isRustMangledName
+/// to ensure consistent detection across the codebase.
+fn isRustMangledName(name: []const u8) bool {
+    return ffi_language_classifier.isRustMangledName(name);
 }

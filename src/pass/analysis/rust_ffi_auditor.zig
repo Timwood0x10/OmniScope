@@ -18,6 +18,7 @@ const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const CommonTypes = @import("../../common/types.zig");
 const ptr_types = @import("ptr_lifetime_types.zig");
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -1163,11 +1164,15 @@ pub fn detectRustFfiPairingFunctions(
 // Stack Escape Detection Helpers (Rule 5)
 // ============================================================================
 
-/// Check if function name has a Rust mangled name prefix (_ZN / _RNv / _R).
+/// Check if function name has a Rust mangled name prefix (_R / _ZN with disambiguation).
+/// _ZN is ambiguous between C++ Itanium ABI and Rust legacy v0 — uses
+/// ffi_language_classifier.isRustMangledName for disambiguation.
 pub fn isRustMangledName(func_name: []const u8) bool {
-    const rust_prefixes = [_][]const u8{ "_ZN", "_RNv", "_R" };
-    for (rust_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, func_name, prefix)) return true;
+    if (std.mem.startsWith(u8, func_name, "_R")) {
+        return true;
+    }
+    if (std.mem.startsWith(u8, func_name, "_ZN")) {
+        return ffi_language_classifier.isRustMangledName(func_name);
     }
     return false;
 }
@@ -1309,9 +1314,17 @@ test "isExternCCall - detection" {
 }
 
 test "isRustMangledName - detection" {
-    try std.testing.expect(isRustMangledName("_ZN9hello_world4mainE"));
+    // Rust v0 with hash suffix
+    try std.testing.expect(isRustMangledName("_ZN9hello_world4main17h1234567890abcdefE"));
+    // Rust new mangling
     try std.testing.expect(isRustMangledName("_RNvCsfLfy6EI15iL_7___rustc12___rust_alloc"));
     try std.testing.expect(isRustMangledName("_RINv"));
+    // Rust std/core namespaces
+    try std.testing.expect(isRustMangledName("_ZN4core3ptr13drop_in_place17h1234E"));
+    // C++ _ZN should NOT be detected as Rust
+    try std.testing.expect(!isRustMangledName("_ZN4Base1fEv"));
+    try std.testing.expect(!isRustMangledName("_ZNSt3__110unique_ptr"));
+    // Non-mangled names
     try std.testing.expect(!isRustMangledName("c_ffi_process_buffer"));
     try std.testing.expect(!isRustMangledName("malloc"));
 }

@@ -236,6 +236,159 @@ zig build -Drelease-fast
 
 ---
 
+## 如何解读分析报告
+
+OmniScope 输出三种格式：**Text**（人类可读）、**JSON**（CI/CD 集成）、**SARIF**（GitHub Code Scanning）。以下用 `corpus/` 测试套件中的真实报告配合源码，逐字段解读。
+
+### 文本输出：逐字段解读
+
+```text
+info: [INFO] LANG-DETECT: module language = cpp, confidence = 100.0%, method = personality
+│                          ─────────┬─────────   ────────┬────────   ────────┬────────
+│                                   │                     │                  │
+│                          从 DWARF personality      分析器的确信度       检测方法：
+│                          函数自动检测语言          （sampling 或       personality =
+│                                                   personality)        DWARF 调试信息
+
+info: [INFO] CallGraph: extracted 63 cross-language edges
+│                          ────────────┬────────────
+│                                      │
+│                          调用者和被调用者属于不同语言的调用
+│                          （如 C++ 调用 C 的 malloc）
+
+info: [CRITICAL] [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> c_register_callback()
+│              ──────────┬─────────   ──────────────┬────────────   ────────┬────────
+│                        │                           │                      │
+│                   严重级别                    问题类型               受影响的调用：
+│                   (CRITICAL/HIGH/          （出了什么问题）        栈上分配的指针
+│                   MEDIUM/LOW)                                    传给了 FFI 函数
+```
+
+### JSON 输出：关键字段
+
+```json
+{
+  "id": "OMI-001",
+  "kind": "borrow_escape",
+  "severity": "critical",
+  "confidence": "MEDIUM",
+  "confidence_score": 0.88,
+  "cwe_id": 704,
+  "message": "Stack pointer (stack alloca) escapes to FFI function c_register_callback()",
+  "location": {
+    "function": "_Z37bug_cpp_05_unique_ptr_callback_escapev"
+  }
+}
+```
+
+| 字段 | 含义 |
+|------|------|
+| `kind` | 问题类别（20 种：`memory_leak`、`borrow_escape` 等） |
+| `severity` | `critical` > `high` > `medium` > `low` |
+| `confidence` | `HIGH` / `MEDIUM` / `LOW` — 分析器的确信程度 |
+| `confidence_score` | 0.0–1.0 数值确信度 |
+| `cwe_id` | [CWE](https://cwe.mitre.org/) 漏洞编号 |
+| `location.function` | 包含问题的函数（mangled name） |
+
+### 真实案例 1：C++ `v018_cpp_ffi.ll`（红队测试）
+
+**源码**（`corpus/red_team_test/v018_cpp_ffi.cpp`）：
+
+```cpp
+void bug_cpp_05_unique_ptr_callback_escape() {
+    int stack_var = 42;
+    c_register_callback(some_callback, &stack_var);  // ← 栈指针逃逸！
+}
+```
+
+**OmniScope 输出**：
+
+```text
+[CRITICAL] [STACK-ESCAPE] stack alloca -> c_register_callback()
+  in _Z37bug_cpp_05_unique_ptr_callback_escapev
+```
+
+**解读**：C++ 函数（mangled 为 `_Z37...`）将栈指针传给 C 函数 `c_register_callback`。当 C 函数稍后调用回调时，`stack_var` 已离开作用域 → **未定义行为**。
+
+### 真实案例 2：C++ `abseil2024.ll`（生产级 C++ 库）
+
+**源码**：Google Abseil C++ 库（1,124 个函数）。
+
+**OmniScope 输出**（JSON 汇总）：
+
+```text
+总 issues: 183
+├── memory_leak: 183      ← Abseil 使用自定义分配器；大部分是预期行为
+├── borrow_escape: 0
+└── cross-lang-free: 0    ← 没有 Rust/C 边界问题（正确：这是纯 C++）
+```
+
+**解读**：所有 183 个 issue 都是 C++ 代码中的内存泄漏。零跨语言违规 — 正确，因为 Abseil 是纯 C++，没有 Rust FFI。
+
+### 真实案例 3：语言消歧（`_ZN` 前缀）
+
+`_ZN` 前缀被 **C++ Itanium ABI** 和 **Rust 旧版 v0 mangling** 共用。OmniScope 使用多层消歧：
+
+| 模式 | 语言 | 原因 |
+|------|------|------|
+| `_ZN4Base1fEv` | **C++** | 无 hash 后缀，`Base` 是 C++ 类 |
+| `_ZNSt3__110unique_ptr...` | **C++** | `St` = `std` 命名空间（libc++） |
+| `_ZN4core3ptr13drop_in_place17h1234E` | **Rust** | `core` 命名空间 + `17h` hash 后缀 |
+| `_ZN9my_crate4main17hdeadbeefE` | **Rust** | hash 后缀 `17h` 标记 Rust 符号版本化 |
+| `_RNvCsfLfy6EI15iL_7test_modE` | **Rust** | `_RNv` = 新版 Rust mangling（RFC 2603） |
+
+**为什么重要**：在 v0.1.8 之前，`_ZN` 被无条件归类为 Rust，在 C++ 语料库上产生 **1,618 个假阳性**。修复后 **0 假阳性** — 且 Rust 检测不受影响（1,230 个真阳性保留）。
+
+### 真实案例 4：带语言上下文的所有权违规
+
+**源码**（假设的 Rust + C FFI）：
+
+```rust
+// Rust 侧
+extern "C" { fn c_process(ptr: *mut u8); }
+unsafe {
+    let b = Box::new(42u8);
+    let raw = Box::into_raw(b);
+    c_process(raw);    // C 函数可能对此指针调用 free()
+    // Box::from_raw(raw) ← 如果 C 已经 free 了就是 double free！
+}
+```
+
+**OmniScope 输出**（v0.1.9 修复后）：
+
+```text
+Ownership transferred from Rust to C but never reclaimed
+```
+
+**修复前**（通用消息）：
+
+```text
+Ownership transferred but never reclaimed
+```
+
+**解读**：新消息告诉你**涉及哪些语言**，立即可操作。你知道要检查 Rust→C FFI 边界，而不是 Zig→C 或 Go→C 边界。
+
+### 严重级别指南
+
+| 严重级别 | 需要的动作 | 示例 |
+|----------|-----------|------|
+| `critical` | 立即修复 — 可利用的 UB | 栈逃逸到 FFI、use-after-free |
+| `high` | 发布前修复 — 内存损坏 | 跨语言 double free、null 解引用 |
+| `medium` | 需审查 — 潜在泄漏或逻辑错误 | 内存泄漏、孤立的所有权转移 |
+| `low` | 信息性 — 风格或低风险 | 未使用的分配、轻微 FFI 类型不匹配 |
+
+### 置信度指南
+
+| 置信度 | 含义 |
+|--------|------|
+| `HIGH` | 模式是确定性的（如 `free(malloc())` 循环） |
+| `MEDIUM` | 模式很可能但可能有假阳性 |
+| `LOW` | 启发式匹配 — 需要人工验证 |
+
+*完整 issue 类型参考*：[API 参考文档](./docs/API_REFERENCE.md)
+
+---
+
 ## 真实世界验证
 
 已在 **42 个真实项目 + 19 个对抗性测试** 上测试（v0.1.8，LLVM 22）：

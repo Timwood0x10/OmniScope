@@ -6,6 +6,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const call_graph = @import("./call_graph.zig");
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 
 /// FFI boundary type classification
 pub const FFIKind = enum {
@@ -113,7 +114,9 @@ pub const FFIBoundaryDetector = struct {
         if (std.mem.startsWith(u8, first_3, "Py_")) return .other;
         if (std.mem.startsWith(u8, first_7, "python_")) return .other;
 
-        if (std.mem.startsWith(u8, func_name, "_ZN")) return .rust_ffi;
+        if (std.mem.startsWith(u8, func_name, "_R")) return .rust_ffi;
+        if (std.mem.startsWith(u8, func_name, "_ZN") and
+            ffi_language_classifier.isRustMangledName(func_name)) return .rust_ffi;
         if (std.mem.startsWith(u8, func_name, "crossbeam_") or
             std.mem.startsWith(u8, func_name, "tokio_") or
             std.mem.startsWith(u8, func_name, "std_"))

@@ -53,6 +53,7 @@ pub const BoundaryViolation = boundary.BoundaryViolation;
 pub const BoundaryIssue = boundary.BoundaryIssue;
 pub const BoundaryDirection = boundary.BoundaryDirection;
 pub const AnalyzerStats = boundary.AnalyzerStats;
+pub const formatViolationMessage = boundary.formatViolationMessage;
 
 // Re-export types from engine
 pub const LanguageHint = engine.LanguageHint;

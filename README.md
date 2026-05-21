@@ -234,6 +234,212 @@ zig build -Drelease-fast
 
 ***
 
+## How to Read the Report
+
+OmniScope outputs three formats: **Text** (human-readable), **JSON** (CI/CD), **SARIF** (GitHub Code Scanning). Below we walk through real reports from the `corpus/` test suite, paired with source code, so you know exactly what each field means.
+
+### Text Output: Field-by-Field
+
+```text
+info: [INFO] LANG-DETECT: module language = cpp, confidence = 100.0%, method = personality
+│                          ─────────┬─────────   ────────┬────────   ────────┬────────
+│                                   │                     │                  │
+│                          Auto-detected from      How sure the         Detection
+│                          DWARF personality        analyzer is          method:
+│                          functions                (sampling or         personality =
+│                                                   personality)         DWARF debug info
+
+info: [INFO] CallGraph: extracted 63 cross-language edges
+│                          ────────────┬────────────
+│                                      │
+│                          Calls where caller and callee
+│                          are in different languages
+│                          (e.g., C++ calling C's malloc)
+
+info: [CRITICAL] [OMI-CRITICAL] [STACK-ESCAPE] stack alloca -> c_register_callback()
+│              ──────────┬─────────   ──────────────┬────────────   ────────┬────────
+│                        │                           │                      │
+│                   Severity level            Issue type              Affected call:
+│                   (CRITICAL/HIGH/          (what went wrong)       stack-allocated
+│                   MEDIUM/LOW)                                    pointer passed to
+│                                                                  FFI function
+```
+
+### JSON Output: Key Fields
+
+```json
+{
+  "id": "OMI-001",
+  "kind": "borrow_escape",
+  "severity": "critical",
+  "confidence": "MEDIUM",
+  "confidence_score": 0.88,
+  "cwe_id": 704,
+  "message": "Stack pointer (stack alloca) escapes to FFI function c_register_callback()",
+  "location": {
+    "function": "_Z37bug_cpp_05_unique_ptr_callback_escapev"
+  }
+}
+```
+
+| Field              | Meaning                                                            |
+| ------------------ | ------------------------------------------------------------------ |
+| `kind`             | Issue category (20 types: `memory_leak`, `borrow_escape`, etc.)    |
+| `severity`         | `critical` > `high` > `medium` > `low`                            |
+| `confidence`       | `HIGH` / `MEDIUM` / `LOW` — how certain the analyzer is           |
+| `confidence_score` | 0.0–1.0 numeric confidence                                         |
+| `cwe_id`           | [CWE](https://cwe.mitre.org/) weakness ID for vulnerability mapping |
+| `location.function`| Mangled name of the function containing the issue                  |
+
+### Real Example 1: C++ `v018_cpp_ffi.ll` (Red Team)
+
+**Source** (`corpus/red_team_test/v018_cpp_ffi.cpp`):
+
+```cpp
+void bug_cpp_05_unique_ptr_callback_escape() {
+    int stack_var = 42;
+    c_register_callback(some_callback, &stack_var);  // ← stack pointer escapes!
+}
+```
+
+**OmniScope output**:
+
+```text
+[CRITICAL] [STACK-ESCAPE] stack alloca -> c_register_callback()
+  in _Z37bug_cpp_05_unique_ptr_callback_escapev
+```
+
+**Interpretation**: The C++ function (mangled as `_Z37...`) passes a stack pointer to the C function `c_register_callback`. When the C function later invokes the callback, `stack_var` is already out of scope → **undefined behavior**.
+
+### Real Example 2: C++ `abseil2024.ll` (Production C++ Library)
+
+**Source**: Google's Abseil C++ library (1,124 functions).
+
+**OmniScope output** (JSON summary):
+
+```text
+Total issues: 183
+├── memory_leak: 183      ← Abseil uses custom allocators; many are intentional
+├── borrow_escape: 0
+└── cross-lang-free: 0    ← No Rust/C boundary issues (correct: this is pure C++)
+```
+
+**Interpretation**: All 183 issues are memory leaks in C++ code. Zero cross-language violations — correct, because Abseil is pure C++ with no Rust FFI.
+
+### Real Example 3: Language Disambiguation (`_ZN` prefix)
+
+The `_ZN` prefix is shared by **C++ Itanium ABI** and **Rust legacy v0 mangling**. OmniScope uses multi-layer disambiguation:
+
+| Pattern                              | Language | Reason                                          |
+| ------------------------------------ | -------- | ----------------------------------------------- |
+| `_ZN4Base1fEv`                       | **C++**  | No hash suffix, `Base` is a C++ class           |
+| `_ZNSt3__110unique_ptr...`           | **C++**  | `St` = `std` namespace (libc++)                 |
+| `_ZN4core3ptr13drop_in_place17h1234E`| **Rust** | `core` namespace + `17h` hash suffix            |
+| `_ZN9my_crate4main17hdeadbeefE`     | **Rust** | Hash suffix `17h` marks Rust symbol versioning  |
+| `_RNvCsfLfy6EI15iL_7test_modE`      | **Rust** | `_RNv` = new Rust mangling (RFC 2603)           |
+
+**Why this matters**: Before v0.1.8, `_ZN` was unconditionally classified as Rust, causing **1,618 false positives** on C++ corpus files. After the fix, **0 false positives** — with no loss of Rust detection (1,230 true positives preserved).
+
+### Real Example 4: Ownership Violation with Language Context
+
+**Source** (hypothetical Rust + C FFI):
+
+```rust
+// Rust side
+extern "C" { fn c_process(ptr: *mut u8); }
+unsafe {
+    let b = Box::new(42u8);
+    let raw = Box::into_raw(b);
+    c_process(raw);    // C function may call free() on this pointer
+    // Box::from_raw(raw) ← double free if C already freed it!
+}
+```
+
+**OmniScope output** (after v0.1.9 fix):
+
+```text
+Ownership transferred from Rust to C but never reclaimed
+```
+
+**Before fix** (generic message):
+
+```text
+Ownership transferred but never reclaimed
+```
+
+**Interpretation**: The new message tells you **which languages** are involved, making it immediately actionable. You know to check the Rust→C FFI boundary, not a Zig→C or Go→C boundary.
+
+### Real Example 5: Language Detection Fix Test
+
+**Source**: `corpus/red_team_test/language_detection_fix_test.c`
+
+This test demonstrates all language detection fixes in v0.1.8:
+
+**Test Coverage**:
+1. **_ZN Disambiguation**: Correctly distinguishes Rust vs C++ `_ZN` prefixes
+2. **_R Prefix Detection**: Detects Rust v0 mangling (`_R...`)
+3. **Cross-Language Violations**: Detects ownership mismatches between all language pairs
+4. **False Positive Reduction**: No spurious warnings for common function names
+
+**Run the test**:
+
+```bash
+# Generate LLVM IR
+cd corpus/red_team_test
+clang -emit-llvm -S -O0 language_detection_fix_test.c -o language_detection_fix_test.ll
+
+# Run OmniScope
+omniscope --json language_detection_fix_test.ll > report.json
+
+# View results
+jq '.summary' report.json
+```
+
+**Expected output**:
+
+```json
+{
+  "functions": 16,
+  "issues": 5,
+  "time_ms": 11
+}
+```
+
+**Issue breakdown**:
+- 4 memory leaks (cross-language ownership violations)
+- 1 unchecked return value (dangerous `system()` call)
+
+**Key findings**:
+- ✅ Rust `_ZN` functions correctly identified (not misclassified as C++)
+- ✅ C++ `_ZN` functions correctly identified (not misclassified as Rust)
+- ✅ Rust `_R` functions detected (v0 mangling support)
+- ✅ Cross-language violations detected for all language pairs
+- ✅ No false positives for `register_user`, `batch_process`, etc.
+- ✅ True positives for `dangerous_system_call`, `dangerous_exec_call`
+
+**Full report**: See `corpus/red_team_test/LANGUAGE_DETECTION_FIX_REPORT.md`
+
+### Severity Guide
+
+| Severity   | Action Required                            | Example                                      |
+| ---------- | ------------------------------------------ | -------------------------------------------- |
+| `critical` | Fix immediately — exploitable UB           | stack escape to FFI, use-after-free          |
+| `high`     | Fix before release — memory corruption     | cross-language double free, null deref       |
+| `medium`   | Review — potential leak or logic error     | memory leak, orphaned ownership transfer     |
+| `low`      | Informational — style or minor risk        | unused allocation, minor FFI type mismatch   |
+
+### Confidence Guide
+
+| Confidence | Meaning                                              |
+| ---------- | ---------------------------------------------------- |
+| `HIGH`     | Pattern is definitive (e.g., `free(malloc())` cycle) |
+| `MEDIUM`   | Pattern is likely but may have false positives        |
+| `LOW`      | Heuristic match — verify manually                     |
+
+*Full issue type reference*: [API Reference](./docs/API_REFERENCE.md)
+
+***
+
 ## Real-World Validation
 
 Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):

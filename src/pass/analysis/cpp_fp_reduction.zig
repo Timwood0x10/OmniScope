@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -674,8 +675,9 @@ pub fn detectUseAfterFree(
             continue;
         }
 
-        const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_ZN") or
-            std.mem.startsWith(u8, free_info.func_name, "_R");
+        const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_R") or
+            (std.mem.startsWith(u8, free_info.func_name, "_ZN") and
+            ffi_language_classifier.isRustMangledName(free_info.func_name));
         const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or
             std.mem.indexOf(u8, free_info.func_name, "unchecked") != null or
             std.mem.indexOf(u8, free_info.func_name, "raw") != null;
@@ -1215,7 +1217,9 @@ pub fn detectViolations(
                             @tagName(free_site.lang),
                             free_site.inst_id,
                         });
-                        diag.warn("  Description: {s}", .{violation.description});
+                        const desc = try lifetime.formatViolationMessage(ctx.allocator, violation.kind, violation.origin_lang, violation.action_lang);
+                        defer ctx.allocator.free(desc);
+                        diag.warn("  Description: {s}", .{desc});
                     } else {
                         diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
                         diag.warn("  Alloc: {s} ({s}) at inst {}", .{
