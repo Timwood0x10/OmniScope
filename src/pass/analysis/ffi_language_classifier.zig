@@ -550,6 +550,9 @@ pub fn isStlInternalFunction(func_name: []const u8) bool {
 ///   2. Hash suffix — <digits>h<hex_digits>E (Rust v0 symbol versioning)
 ///   3. Known Rust crate prefixes in _ZN path (e.g., _ZN4core, _ZN3std)
 pub fn isRustMangledName(name: []const u8) bool {
+    // Layer 0: _R prefix (Rust v0 mangling RFC 2603, Rust 1.37+)
+    if (std.mem.startsWith(u8, name, "_R")) return true;
+
     // Layer 1: '$' separator (fastest check)
     if (std.mem.indexOf(u8, name, "$") != null) return true;
 

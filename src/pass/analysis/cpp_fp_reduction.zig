@@ -677,7 +677,7 @@ pub fn detectUseAfterFree(
 
         const is_rust_mangled = std.mem.startsWith(u8, free_info.func_name, "_R") or
             (std.mem.startsWith(u8, free_info.func_name, "_ZN") and
-            ffi_language_classifier.isRustMangledName(free_info.func_name));
+                ffi_language_classifier.isRustMangledName(free_info.func_name));
         const is_explicitly_unsafe = std.mem.indexOf(u8, free_info.func_name, "unsafe") != null or
             std.mem.indexOf(u8, free_info.func_name, "unchecked") != null or
             std.mem.indexOf(u8, free_info.func_name, "raw") != null;

@@ -19,6 +19,7 @@
 const std = @import("std");
 const word_boundary = @import("../../utils/word_boundary.zig");
 const noise_reduction_mod = @import("noise_reduction.zig");
+const ffi_language_classifier = @import("ffi_language_classifier.zig");
 
 // ============================================================================
 // Rust Intrinsic Classification (Phase 5.1)
@@ -257,6 +258,7 @@ fn isRustStdlib(name: []const u8) bool {
 
 fn isRustMangledUser(name: []const u8) bool {
     if (!std.mem.startsWith(u8, name, "_ZN")) return false;
+    if (!ffi_language_classifier.isRustMangledName(name)) return false;
     if (isRustStdlib(name)) return false;
     if (isRustDropGlue(name)) return false;
     return true;
@@ -410,7 +412,7 @@ fn isCppMangled(name: []const u8) bool {
     if (name.len < 2) return false;
     if (name[0] == '_' and name[1] == 'Z' and name.len > 2 and name[2] != 'N')
         return true;
-    if (std.mem.startsWith(u8, name, "_ZN") and !isCppStdlib(name))
+    if (std.mem.startsWith(u8, name, "_ZN") and !ffi_language_classifier.isRustMangledName(name))
         return true;
     return false;
 }

@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const CommonTypes = @import("../common/types.zig");
+const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
 
 /// Re-export Severity for backward compatibility.
 /// New code should import from common/types.zig directly.
@@ -770,29 +771,9 @@ fn isLLVMIntrinsic(name: []const u8) bool {
 }
 
 /// Check if name looks like a Rust-mangled function.
-/// Rust reuses Itanium _ZN...E encoding but adds hash suffix ({N}h{hex}E).
+/// Delegates to ffi_language_classifier.isRustMangledName for consistency.
 fn isRustMangledName(name: []const u8) bool {
-    if (std.mem.startsWith(u8, name, "_R")) return true;
-    if (!std.mem.startsWith(u8, name, "_ZN")) return false;
-    // Detect Rust-specific hash suffix: _ZN...{digits}h{hex}E
-    // e.g., _ZN4main20hello_world17hE
-    // e.g., _ZN4myapp4main17h1234567890abcdefE
-    // C++ nested names (_ZN3foo3barE) don't have {N}h{hex}E pattern
-    if (name.len < 5) return false;
-    var i = name.len - 1;
-    if (name[i] != 'E') return false;
-    i -= 1;
-    // Skip trailing hex hash characters (if any)
-    while (i > 0 and ((name[i] >= '0' and name[i] <= '9') or
-        (name[i] >= 'a' and name[i] <= 'f') or
-        (name[i] >= 'A' and name[i] <= 'F')))
-    {
-        i -= 1;
-    }
-    // Must find 'h' preceded by at least one digit
-    if (i < 1 or name[i] != 'h') return false;
-    i -= 1;
-    return name[i] >= '0' and name[i] <= '9';
+    return ffi_language_classifier.isRustMangledName(name);
 }
 
 /// Check if name looks like a C++-mangled function (_Z...).

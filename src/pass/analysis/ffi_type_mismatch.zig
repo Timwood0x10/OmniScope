@@ -785,7 +785,7 @@ pub const FFITypeMismatchPass = struct {
         // Pattern 1: Rust extern "C" functions
         const caller_is_rust = std.mem.startsWith(u8, caller_name, "_R") or
             (std.mem.startsWith(u8, caller_name, "_ZN") and
-            ffi_language_classifier.isRustMangledName(caller_name));
+                ffi_language_classifier.isRustMangledName(caller_name));
         if (caller_is_rust) {
             // Callee is not mangled at all → Rust calling C
             if (!std.mem.startsWith(u8, callee_name, "_ZN") and

@@ -166,7 +166,6 @@ const SAMPLE_SIZE: usize = 50;
 
 /// Multi-layer Rust mangled name detector for _ZN disambiguation.
 /// Delegates to ffi_language_classifier.isRustMangledName for consistency.
-
 fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var rust_count: u32 = 0;
     var go_count: u32 = 0;
