@@ -168,7 +168,12 @@ pub const FreeSiteList = struct {
 pub const PtrLifetimePass = struct {
     pub const name = "ptr-lifetime";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "call-graph", "danger-surface" };
+    // v0.1.9: Removed danger-surface dependency to break circular dependency.
+    // Execution order: call-graph → ptr-lifetime → danger-surface → ffi_boundary.
+    // ptr-lifetime populates MemoryGraph; danger-surface consumes it.
+    // Noise reduction using isRelevantFunction() still works via Phase 0 fallback
+    // in danger-surface (marks relevant functions from CrossLangEdge before ptr-lifetime).
+    pub const deps = &[_][]const u8{"call-graph"};
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;

@@ -227,22 +227,53 @@ const ZIG_COMPILER_PATTERNS = [_][]const u8{
 // ============================================================================
 
 /// C++ standard library prefixes to skip.
+/// Ref: docs/C_CPP_IR_SPEC.md §9.2, §1.2
 const CPP_STDLIB_PREFIXES = [_][]const u8{
+    // libc++ (macOS default)
+    "_ZNSt3__1", // std::__1 namespace (libc++)
+    "_ZSt", // std template instantiations
+    "_ZNSt", // std namespace mangled
+    // libstdc++ (Linux default)
+    "_ZNS_", // std:: substitution
+    // GNU C++ library
     "std::__",
     "__gnu_cxx",
     "__cxa_",
+    // C standard library checked variants (fortified)
+    "__sprintf_chk",
+    "__strcpy_chk",
+    "__printf_chk",
+    "__fprintf_chk",
+    "__vsnprintf_chk",
+    "__memcpy_chk",
+    "__memmove_chk",
+    "__memset_chk",
 };
 
 /// C++ standard library substrings to skip.
+/// Ref: docs/C_CPP_IR_SPEC.md §4.4, §9.2
 const CPP_STDLIB_SUBSTRINGS = [_][]const u8{
+    // Exception handling runtime (IR SPEC §4.4)
     "__cxa_begin_catch",
     "__cxa_end_catch",
     "__cxa_throw",
+    "__cxa_rethrow",
+    "__cxa_allocate_exception",
+    "__cxa_free_exception",
+    "__cxa_guard_acquire",
+    "__cxa_guard_release",
+    "__cxa_guard_abort",
+    // STL internals
     "std::_Function_handler",
     "std::_Bind_back",
+    // Unwind infrastructure (IR SPEC §4.4)
+    "_Unwind_Resume",
+    "_Unwind_DeleteException",
+    "_Unwind_RaiseException",
 };
 
 /// C++ compiler-generated patterns.
+/// Ref: docs/C_CPP_IR_SPEC.md §1.2.3, §1.2.4, §5, §8, §9.2
 const CPP_COMPILER_PATTERNS = [_][]const u8{
     // Compiler-generated helpers - P0-3: Suppress
     "__clang_call_terminate",
@@ -254,26 +285,49 @@ const CPP_COMPILER_PATTERNS = [_][]const u8{
     "_ZSt", // std template instantiations
     "_ZNSt", // std namespace mangled
 
-    // RAII/destructor glue
+    // RAII/destructor glue (IR SPEC §1.2.3)
     // Note: _ZN is NOT listed here — it matches all mangled user code.
     // Destructor patterns D0Ev/D1Ev/D2Ev are sufficient for compiler-generated detection.
     "D0Ev", // Deleting destructor
     "D1Ev", // Complete object destructor
     "D2Ev", // Base object destructor
 
-    // VTable and RTTI
+    // VTable and RTTI (IR SPEC §5)
     "_ZTV", // Virtual table
     "_ZTI", // Typeinfo
     "_ZTS", // Typeinfo name
+    "_ZTT", // VTT (Virtual Table Table) (IR SPEC §5.5)
+
+    // Guard variables for thread-safe statics (IR SPEC §8.3)
+    "_ZGV", // Guard variable prefix
+
+    // Thunks for multiple inheritance (IR SPEC §8.2)
+    "_ZTh", // Adjustor thunk (non-virtual)
+    "_ZTv", // Virtual call thunk
+
+    // __cxxabiv1 runtime vtables (IR SPEC §5.6)
+    "_ZTVN10__cxxabiv1", // C++ ABI runtime vtable
+    "_ZTIN10__cxxabiv1", // C++ ABI runtime typeinfo
 
     // Allocator internals (DC-H14 FIX: Use precise patterns to avoid false positives)
-    // OLD: "allocator" matched "my_custom_allocator_init" incorrectly
-    // NEW: Only match std:: allocator patterns and operator new/delete
     "_ZN9__gnu_cxx13new_allocator", // GNU new_allocator<T>
     "_ZNSt13__allocated", // std::allocated_ptr (libstdc++)
     "_ZSt15get_new_handlerv", // std::get_new_handler
     "_Znwm", // operator new
     "_ZdlPv", // operator delete
+    "_Znam", // operator new[] (IR SPEC §3.2)
+    "_ZdaPv", // operator delete[] (IR SPEC §3.2)
+
+    // C runtime/compiler helpers
+    "__stack_chk_fail",
+    "__libc_start_main",
+    "_GLOBAL__",
+    "__cxx_global_var_init",
+    "__cxa_atexit",
+    "__dso_handle",
+    "_init",
+    "_fini",
+    "__tls_init",
 };
 
 // ============================================================================
@@ -298,6 +352,145 @@ const GO_COMPILER_PATTERNS = [_][]const u8{
     "init.",
     "gcWriteBarrier",
     "writeBarrier",
+};
+
+// ============================================================================
+// Swift Name Patterns
+// Ref: docs/SWIFT_IR_SPEC.md
+// ============================================================================
+
+/// Swift mangled name prefixes (IR SPEC §1.1).
+const SWIFT_MANGLED_PREFIXES = [_][]const u8{
+    "$s", // Swift 5+
+    "_$s", // Swift 5+ (underscore)
+    "$S", // Swift 4.x
+    "_$S", // Swift 4.x (underscore)
+    "_T0", // Swift 4
+    "$e", // Embedded Swift
+    "_$e", // Embedded Swift (underscore)
+};
+
+/// Swift ARC runtime prefixes to suppress (IR SPEC §2, §14).
+const SWIFT_ARC_PREFIXES = [_][]const u8{
+    "swift_retain",
+    "swift_release",
+    "swift_nonatomic_retain",
+    "swift_nonatomic_release",
+    "swift_unknownObjectRetain",
+    "swift_unknownObjectRelease",
+    "swift_bridgeObjectRetain",
+    "swift_bridgeObjectRelease",
+    "swift_errorRetain",
+    "swift_errorRelease",
+    "swift_weak",
+    "swift_unowned",
+};
+
+/// Swift compiler runtime prefixes to suppress (IR SPEC §3-7, §11-13).
+const SWIFT_COMPILER_PREFIXES = [_][]const u8{
+    // Metadata (IR SPEC §4)
+    "swift_get",
+    "swift_init",
+    "swift_checkMetadata",
+    "swift_allocateGeneric",
+    // Casting (IR SPEC §3)
+    "swift_dynamicCast",
+    "swift_conformsToProtocol",
+    // Witness tables (IR SPEC §5, §6)
+    "swift_getWitnessTable",
+    "swift_getAssociatedTypeWitness",
+    "swift_cvw_",
+    // Enum (IR SPEC §7)
+    "swift_getEnumTag",
+    "swift_storeEnumTag",
+    // Concurrency (IR SPEC §11)
+    "swift_task",
+    "swift_defaultActor",
+    "swift_continuation",
+    "swift_taskGroup",
+    "swift_asyncLet",
+    // Exclusivity (IR SPEC §12)
+    "swift_beginAccess",
+    "swift_endAccess",
+    // Registration (IR SPEC §13)
+    "swift_once",
+    "swift_register",
+    // Array/COW (IR SPEC §2.7, §2.8)
+    "swift_arrayInit",
+    "swift_arrayAssign",
+    "swift_arrayDestroy",
+    "swift_isUniquelyReferenced",
+    "swift_isEscapingClosure",
+    // Macro filenames (IR SPEC §1.1)
+    "@__swiftmacro_",
+};
+
+/// Swift FFI boundary patterns (IR SPEC §9).
+const SWIFT_FFI_PATTERNS = [_][]const u8{
+    "objc_msgSend",
+    "objc_allocWithZone",
+    "objc_getClass",
+    "object_getClass",
+    "sel_registerName",
+    "_Block_copy",
+    "_Block_release",
+    "swift_bridgeObject",
+    "swift_unknownObject",
+    "swift_allocObject",
+    "swift_deallocObject",
+};
+
+// ============================================================================
+// Python Name Patterns
+// Ref: docs/PYTHON_IR_SPEC.md
+// ============================================================================
+
+/// Python C API prefixes that indicate FFI boundary (IR SPEC §1, §5).
+const PYTHON_CAPI_PREFIXES = [_][]const u8{
+    "Py_INCREF",
+    "Py_DECREF",
+    "Py_XDECREF",
+    "Py_XINCREF",
+    "Py_NewRef",
+    "Py_CLEAR",
+    "PyObject_New",
+    "PyObject_GC_New",
+    "PyInit_",
+    "PyArg_ParseTuple",
+    "Py_BuildValue",
+    "PyCapsule_",
+    "PyObject_GetBuffer",
+    "PyBuffer_Release",
+};
+
+/// Python internal runtime prefixes to suppress (IR SPEC §8, §10).
+const PYTHON_RUNTIME_PREFIXES = [_][]const u8{
+    "_Py_Dealloc",
+    "_PyTrash_",
+    "_Py_ForgetReference",
+    "_PyReftracerTrack",
+    "_PyRuntime",
+    "_PyInterpreter",
+    "_PyThread",
+    "_PyStackRef",
+    "_Py_CODEUNIT",
+    "_Py_IDENTIFIER",
+    "_Py_static_string",
+    "_Py_IsImmortal",
+    "_Py_IsStaticImmortal",
+    "_Py_IMMORTAL",
+    "_PyObject_ClearFreeLists",
+    "_PyRuntimeState_Init",
+    "_PyGC_Init",
+};
+
+/// Python GC internals to suppress (IR SPEC §4).
+const PYTHON_GC_PATTERNS = [_][]const u8{
+    "update_refs",
+    "subtract_refs",
+    "move_unreachable",
+    "_Py_Dealloc",
+    "_PyTrash_",
 };
 
 // ============================================================================
@@ -336,7 +529,10 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ClassificationRe
             .rust => classifyRustFunction(func_name),
             .zig => classifyZigFunction(func_name),
             .go => classifyGoFunction(func_name),
-            .cpp, .c => classifyCppFunction(func_name),
+            .cpp => classifyCppFunction(func_name),
+            .c => classifyCFunction(func_name),
+            .swift => classifySwiftFunction(func_name),
+            .python => classifyPythonFunction(func_name),
             else => defaultClassification(func_name),
         };
     }
@@ -344,6 +540,9 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ClassificationRe
     // Auto-detect language from patterns
     if (isRustMangledName(func_name)) {
         return classifyRustFunction(func_name);
+    }
+    if (isSwiftMangledName(func_name)) {
+        return classifySwiftFunction(func_name);
     }
     if (isZigFunction(func_name)) {
         return classifyZigFunction(func_name);
@@ -353,6 +552,9 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ClassificationRe
     }
     if (isCppMangledName(func_name)) {
         return classifyCppFunction(func_name);
+    }
+    if (isPythonCExtension(func_name)) {
+        return classifyPythonFunction(func_name);
     }
 
     return defaultClassification(func_name);
@@ -473,6 +675,8 @@ pub const Language = enum(u8) {
     go,
     c,
     cpp,
+    swift,
+    python,
     unknown,
 };
 
@@ -664,7 +868,60 @@ fn classifyGoFunction(func_name: []const u8) ClassificationResult {
     };
 }
 
+/// Classify a C function by name patterns.
+/// Ref: docs/C_CPP_IR_SPEC.md §1.1, §6, §9.1, §9.2
+/// C functions appear in IR with plain names (no _Z prefix).
+/// We need to distinguish user C code from compiler builtins and runtime internals.
+fn classifyCFunction(func_name: []const u8) ClassificationResult {
+    // Check if this is a compiler builtin / runtime internal (IR SPEC §6, §9.2)
+    if (isCCompilerBuiltin(func_name)) {
+        return .{
+            .origin = .compiler_generated,
+            .risk_level = .suppressed,
+            .reason = "C compiler builtin/runtime",
+        };
+    }
+
+    // Check for C FFI boundary patterns (IR SPEC §1.1, §2.3)
+    if (isCFfiPattern(func_name)) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C FFI boundary function",
+        };
+    }
+
+    // Check for extern C patterns (cross-language boundary)
+    if (isExternCPattern(func_name)) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C extern boundary",
+        };
+    }
+
+    // C allocation functions are important FFI boundaries (IR SPEC §3.1)
+    if (std.mem.eql(u8, func_name, "malloc") or
+        std.mem.eql(u8, func_name, "calloc") or
+        std.mem.eql(u8, func_name, "realloc") or
+        std.mem.eql(u8, func_name, "free"))
+    {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C allocator - FFI memory boundary (IR SPEC §3.1)",
+        };
+    }
+
+    return .{
+        .origin = .user,
+        .risk_level = .medium,
+        .reason = "C user code",
+    };
+}
+
 /// Classify a C++ function by name patterns.
+/// Ref: docs/C_CPP_IR_SPEC.md §9.1, §9.2
 fn classifyCppFunction(func_name: []const u8) ClassificationResult {
     // Check stdlib prefixes FIRST
     for (CPP_STDLIB_PREFIXES) |prefix| {
@@ -677,7 +934,7 @@ fn classifyCppFunction(func_name: []const u8) ClassificationResult {
         }
     }
 
-    // Check stdlib substrings (includes _ZSt pattern)
+    // Check stdlib substrings (includes exception handling, unwind, etc.)
     for (CPP_STDLIB_SUBSTRINGS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .{
@@ -717,12 +974,61 @@ fn classifyCppFunction(func_name: []const u8) ClassificationResult {
         }
     }
 
+    // Check for C++ operator new/delete at FFI boundary (IR SPEC §3.2, §9.3)
+    // These are important for cross-language memory safety
+    if (std.mem.startsWith(u8, func_name, "_Znw")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C++ operator new - FFI memory boundary (IR SPEC §3.2)",
+        };
+    }
+    if (std.mem.startsWith(u8, func_name, "_Zdl")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C++ operator delete - FFI memory boundary (IR SPEC §3.2)",
+        };
+    }
+    if (std.mem.startsWith(u8, func_name, "_Zna")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C++ operator new[] - FFI memory boundary (IR SPEC §3.2)",
+        };
+    }
+    if (std.mem.startsWith(u8, func_name, "_Zda")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C++ operator delete[] - FFI memory boundary (IR SPEC §3.2)",
+        };
+    }
+
+    // Check for MSVC-mangled names (IR SPEC §1.3)
+    if (func_name.len > 0 and func_name[0] == '?') {
+        return .{
+            .origin = .compiler_generated,
+            .risk_level = .suppressed,
+            .reason = "MSVC-mangled C++ symbol (IR SPEC §1.3)",
+        };
+    }
+
     // Check for extern C patterns
     if (isExternCPattern(func_name)) {
         return .{
             .origin = .user,
             .risk_level = .high,
             .reason = "C++ extern C boundary",
+        };
+    }
+
+    // Check for C FFI library patterns (IR SPEC §1.1, §2.3)
+    if (isCFfiPattern(func_name)) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "C FFI boundary (IR SPEC §2.3)",
         };
     }
 
@@ -733,8 +1039,159 @@ fn classifyCppFunction(func_name: []const u8) ClassificationResult {
     };
 }
 
+/// Classify a Swift function by name patterns.
+/// Ref: docs/SWIFT_IR_SPEC.md §1.1, §2, §9, §14
+fn classifySwiftFunction(func_name: []const u8) ClassificationResult {
+    // Check ARC runtime prefixes - suppress (IR SPEC §2, §14)
+    for (SWIFT_ARC_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .compiler_generated,
+                .risk_level = .suppressed,
+                .reason = "Swift ARC runtime",
+            };
+        }
+    }
+
+    // Check compiler runtime prefixes - suppress (IR SPEC §3-7, §11-13)
+    for (SWIFT_COMPILER_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .compiler_generated,
+                .risk_level = .suppressed,
+                .reason = "Swift compiler runtime",
+            };
+        }
+    }
+
+    // Swift macro filenames - suppress (IR SPEC §1.1)
+    if (std.mem.startsWith(u8, func_name, "@__swiftmacro_")) {
+        return .{
+            .origin = .compiler_generated,
+            .risk_level = .suppressed,
+            .reason = "Swift macro filename (IR SPEC §1.1)",
+        };
+    }
+
+    // Allocation/deallocation as FFI boundary (IR SPEC §2.6)
+    if (std.mem.startsWith(u8, func_name, "swift_allocObject")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "Swift allocObject - FFI memory boundary (IR SPEC §2.6)",
+        };
+    }
+    if (std.mem.startsWith(u8, func_name, "swift_dealloc")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "Swift dealloc - FFI memory boundary (IR SPEC §2.6)",
+        };
+    }
+
+    // ObjC/FFI boundary patterns (IR SPEC §9)
+    for (SWIFT_FFI_PATTERNS) |pattern| {
+        if (std.mem.startsWith(u8, func_name, pattern)) {
+            return .{
+                .origin = .user,
+                .risk_level = .high,
+                .reason = "Swift ObjC/FFI boundary (IR SPEC §9)",
+            };
+        }
+    }
+
+    // Mangled Swift user symbols (IR SPEC §1.1)
+    if (isSwiftMangledName(func_name)) {
+        return .{
+            .origin = .user,
+            .risk_level = .medium,
+            .reason = "Swift user code",
+        };
+    }
+
+    return .{
+        .origin = .user,
+        .risk_level = .medium,
+        .reason = "Swift unclassified",
+    };
+}
+
+/// Classify a Python C extension function by name patterns.
+/// Ref: docs/PYTHON_IR_SPEC.md §1, §5, §8, §10
+fn classifyPythonFunction(func_name: []const u8) ClassificationResult {
+    // Check runtime internal prefixes - suppress (IR SPEC §8, §10)
+    for (PYTHON_RUNTIME_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .compiler_generated,
+                .risk_level = .suppressed,
+                .reason = "CPython runtime internal",
+            };
+        }
+    }
+
+    // Check GC internals - suppress (IR SPEC §4)
+    for (PYTHON_GC_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .{
+                .origin = .compiler_generated,
+                .risk_level = .suppressed,
+                .reason = "CPython GC internal",
+            };
+        }
+    }
+
+    // Module init functions - FFI boundary (IR SPEC §5)
+    if (std.mem.startsWith(u8, func_name, "PyInit_")) {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "Python C extension init (IR SPEC §5)",
+        };
+    }
+
+    // Reference counting - FFI boundary (IR SPEC §1.2, §10)
+    if (std.mem.startsWith(u8, func_name, "Py_INCREF") or
+        std.mem.startsWith(u8, func_name, "Py_DECREF") or
+        std.mem.startsWith(u8, func_name, "Py_XDECREF") or
+        std.mem.startsWith(u8, func_name, "Py_XINCREF"))
+    {
+        return .{
+            .origin = .user,
+            .risk_level = .high,
+            .reason = "Python refcount boundary (IR SPEC §1.2)",
+        };
+    }
+
+    // C API FFI boundary (IR SPEC §5, §6, §7)
+    for (PYTHON_CAPI_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return .{
+                .origin = .user,
+                .risk_level = .high,
+                .reason = "Python C API FFI boundary",
+            };
+        }
+    }
+
+    return .{
+        .origin = .user,
+        .risk_level = .medium,
+        .reason = "Python C extension code",
+    };
+}
+
 /// Default classification for unrecognized patterns.
 fn defaultClassification(func_name: []const u8) ClassificationResult {
+    // Check for C compiler builtins first (IR SPEC §6, §9.2)
+    if (isCCompilerBuiltin(func_name)) {
+        return .{
+            .origin = .compiler_generated,
+            .risk_level = .suppressed,
+            .reason = "C compiler builtin/runtime",
+        };
+    }
+
     // Heuristic: very long names are likely compiler-generated
     if (func_name.len > 100) {
         return .{
@@ -806,6 +1263,28 @@ fn isGoFunction(name: []const u8) bool {
     return false;
 }
 
+/// Check if name looks like a Swift-mangled function (IR SPEC §1.1).
+fn isSwiftMangledName(name: []const u8) bool {
+    for (SWIFT_MANGLED_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, name, prefix)) return true;
+    }
+    return false;
+}
+
+/// Check if name looks like a Python C extension function (IR SPEC §5, §10).
+fn isPythonCExtension(name: []const u8) bool {
+    // PyInit_ module init is the clearest indicator (IR SPEC §5)
+    if (std.mem.startsWith(u8, name, "PyInit_")) return true;
+    // Common C API patterns (IR SPEC §1.2, §10)
+    if (std.mem.startsWith(u8, name, "Py_INCREF") or
+        std.mem.startsWith(u8, name, "Py_DECREF") or
+        std.mem.startsWith(u8, name, "Py_XDECREF"))
+    {
+        return true;
+    }
+    return false;
+}
+
 /// Check for extern C / FFI boundary patterns.
 fn isExternCPattern(name: []const u8) bool {
     // libc patterns
@@ -837,6 +1316,61 @@ fn isGoFfiPattern(name: []const u8) bool {
     if (std.mem.indexOf(u8, name, "C.") != null) return true;
     if (std.mem.indexOf(u8, name, "unsafe.Pointer") != null) return true;
     if (std.mem.indexOf(u8, name, "uintptr(") != null) return true;
+    return false;
+}
+
+/// Check for C FFI boundary patterns (IR SPEC §1.1, §2.3).
+/// C functions called from C++ compilation units indicate cross-language boundaries.
+fn isCFfiPattern(name: []const u8) bool {
+    // Known C library API patterns that are FFI boundaries
+    // SQLite (IR SPEC §1.1)
+    if (std.mem.startsWith(u8, name, "sqlite3_")) return true;
+    // zlib (IR SPEC §1.1)
+    if (std.mem.startsWith(u8, name, "inflate")) return true;
+    if (std.mem.startsWith(u8, name, "deflate")) return true;
+    // OpenSSL (IR SPEC §1.1)
+    if (std.mem.startsWith(u8, name, "EVP_")) return true;
+    if (std.mem.startsWith(u8, name, "RSA_")) return true;
+    if (std.mem.startsWith(u8, name, "BIO_")) return true;
+    if (std.mem.startsWith(u8, name, "SSL_")) return true;
+    if (std.mem.startsWith(u8, name, "X509_")) return true;
+    if (std.mem.startsWith(u8, name, "PEM_")) return true;
+    // extern "C" wrappers (IR SPEC §1.4)
+    if (std.mem.startsWith(u8, name, "c_")) return true;
+    return false;
+}
+
+/// Check if a plain C name is a compiler builtin / runtime function
+/// that should be suppressed (IR SPEC §6, §9.2).
+/// These appear without _Z prefix but are still compiler infrastructure.
+fn isCCompilerBuiltin(name: []const u8) bool {
+    const builtin_patterns = [_][]const u8{
+        // C runtime internals
+        "__libc_start_main",
+        "__stack_chk_fail",
+        "__stack_chk_guard",
+        "__cxa_atexit",
+        "__dso_handle",
+        "_init",
+        "_fini",
+        "__tls_init",
+        // Fortified (checked) library functions - compiler injected
+        "__sprintf_chk",
+        "__strcpy_chk",
+        "__printf_chk",
+        "__fprintf_chk",
+        "__vsnprintf_chk",
+        "__memcpy_chk",
+        "__memmove_chk",
+        "__memset_chk",
+        // Compiler builtin prefixes (IR SPEC §6)
+        "__builtin_",
+        "__asm_",
+    };
+    for (builtin_patterns) |pattern| {
+        if (std.mem.startsWith(u8, name, pattern)) return true;
+        if (std.mem.eql(u8, name, pattern)) return true;
+    }
     return false;
 }
 

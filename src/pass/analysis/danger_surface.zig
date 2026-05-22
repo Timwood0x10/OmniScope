@@ -5,9 +5,10 @@
 //! (strict) analysis in the Graph-Driven architecture.
 //!
 //! **Execution order**: Must run AFTER call-graph (needs CrossLangEdge)
+//!                       and AFTER ptr-lifetime (needs populated MemoryGraph),
 //!                       and BEFORE callback_escape and other reporting passes.
-//! NOTE: MemoryGraph is initialized in pipeline.zig:L95 (not by ptr-lifetime pass),
-//!       so no explicit ptr-lifetime dependency needed.
+//! v0.1.9: Added ptr-lifetime dependency — ensures MemoryGraph has call_args/call_rets
+//!          populated before DangerSurfacePass reads them, eliminating Phase 0 fallback.
 //!
 //! **Algorithm (optimized O(E × avg_args) instead of O(N × B))**:
 //!   1. Collect all danger surfaces (FFI boundary CrossLangEdge)
@@ -25,14 +26,15 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
 const MemoryGraph = @import("../../semantics/memory_graph.zig").MemoryGraph;
 const DangerSurface = MemoryGraph.DangerSurface;
+const DangerPathKind = @import("../../semantics/memory_graph.zig").DangerPathKind;
 
 pub const DangerSurfacePass = struct {
     pub const name = "danger-surface";
     pub const kind = PassKind.analysis;
-    // NOTE: MemoryGraph is initialized in pipeline.zig:L95 (not in ptr-lifetime pass),
-    // so we only need call-graph for CrossLangEdges.
-    // ptr-lifetime POPULATES MemoryGraph but doesn't CREATE it.
-    pub const deps = &[_][]const u8{"call-graph"};
+    // v0.1.9: Added ptr-lifetime dependency — DangerSurfacePass needs MemoryGraph
+    // populated (call_args, call_rets) before it can trace danger surfaces.
+    // Without this, Phase 0 fallback was needed to compensate for empty MemoryGraph.
+    pub const deps = &[_][]const u8{ "call-graph", "ptr-lifetime" };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
@@ -70,26 +72,13 @@ pub const DangerSurfacePass = struct {
         var total_alias_traces: u64 = 0;
         var cross_lang_frees: u64 = 0;
 
-        // Phase 0 fallback: If MemoryGraph is empty (ptr_lifetime hasn't populated it yet),
-        // mark caller functions of cross-language edges as relevant directly from CrossLangEdge.
-        // This ensures FFIBoundaryPass can analyze functions even when MemoryGraph has no data.
+        // v0.1.9: Phase 0 fallback REMOVED — ptr-lifetime now runs BEFORE danger-surface,
+        // so MemoryGraph is guaranteed to be populated. No need for CrossLangEdge name-matching.
+        // If MemoryGraph is somehow still empty, that indicates a ptr-lifetime bug, not a
+        // danger-surface issue. Log a diagnostic warning instead.
         const mg_has_data = mg.call_args.items.len > 0 or mg.call_rets.items.len > 0;
         if (!mg_has_data) {
-            for (edges) |edge| {
-                if (!edge.is_ffi_boundary) continue;
-                // Find the caller function in the module and mark it as relevant.
-                // We scan by name match since CrossLangEdge stores caller_name, not func_ptr.
-                var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
-                while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-                    if (c.LLVMIsDeclaration(func) != 0) continue;
-                    const fn_name_ptr = c.LLVMGetValueName(func);
-                    if (@intFromPtr(fn_name_ptr) == 0) continue;
-                    const fn_name = std.mem.sliceTo(fn_name_ptr, 0);
-                    if (std.mem.indexOf(u8, fn_name, edge.caller_name) != null) {
-                        try ctx.markRelevantFunction(@as(u64, @intFromPtr(func)));
-                    }
-                }
-            }
+            diag.warn("[P1-1] DangerSurfacePass: MemoryGraph is empty despite ptr-lifetime dep — ptr-lifetime may have skipped this module", .{});
         }
 
         for (ffis) |surface| {
@@ -226,9 +215,9 @@ test "DangerSurfacePass - isOnDangerPath integration with FFI arg" {
 
     var visited = std.AutoHashMap(u64, void).init(allocator);
     defer visited.deinit();
-    const dpk = graph.isOnDangerPath(0xA001, &ffis, &visited);
+    const dpk = graph.isOnDangerPath(0xA001, &ffis, &visited, null);
 
-    try testing.expectEqual(MemoryGraph.DangerPathKind.ffi_arg, dpk);
+    try testing.expectEqual(DangerPathKind.ffi_arg, dpk);
 }
 
 test "DangerSurfacePass - zero FFI boundaries returns early" {
@@ -250,7 +239,7 @@ test "DangerSurfacePass - zero FFI boundaries returns early" {
 
     var visited = std.AutoHashMap(u64, void).init(allocator);
     defer visited.deinit();
-    const dpk = graph.isOnDangerPath(0xA001, &empty_ffis, &visited);
+    const dpk = graph.isOnDangerPath(0xA001, &empty_ffis, &visited, null);
 
-    try testing.expectEqual(MemoryGraph.DangerPathKind.none, dpk);
+    try testing.expectEqual(DangerPathKind.none, dpk);
 }

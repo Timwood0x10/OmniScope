@@ -18,25 +18,22 @@ const PassKind = @import("../pass.zig").PassKind;
 // FIX-4 Core: All FFI passes must declare correct dependencies
 // ============================================================================
 
-test "PtrLifetimePass - depends on call-graph and danger-surface (FIX-4 happy path)" {
-    // CRITICAL: After FIX-4, ptr_lifetime must depend on:
-    // - call-graph: provides CrossLangEdges for Rust FFI detection
-    // - danger-surface: provides relevant function markers
+test "PtrLifetimePass - depends on call-graph only (v0.1.9 circular dep fix)" {
+    // v0.1.9: Removed danger-surface dependency to break circular dependency.
+    // Execution order: call-graph → ptr-lifetime → danger-surface → ffi_boundary.
+    // ptr-lifetime no longer needs danger-surface to run first — it populates
+    // MemoryGraph independently, and danger-surface consumes it afterwards.
     const deps = PtrLifetimePass.deps;
 
-    // Must have exactly 2 dependencies
-    try std.testing.expectEqual(@as(usize, 2), deps.len, "ptr_lifetime should have 2 dependencies");
+    // Must have exactly 1 dependency (call-graph only)
+    try std.testing.expectEqual(@as(usize, 1), deps.len, "ptr_lifetime should have 1 dependency");
 
-    // Verify call-graph is declared
     var has_call_graph = false;
-    var has_danger_surface = false;
     for (deps) |dep| {
         if (std.mem.eql(u8, dep, "call-graph")) has_call_graph = true;
-        if (std.mem.eql(u8, dep, "danger-surface")) has_danger_surface = true;
     }
 
     try std.testing.expect(has_call_graph, "ptr_lifetime must depend on call-graph");
-    try std.testing.expect(has_danger_surface, "ptr_lifetime must depend on danger-surface");
 }
 
 test "FFIBoundaryPass - depends on call-graph and danger-surface (FIX-4 happy path)" {
@@ -71,8 +68,10 @@ test "CallbackEscapePass - depends on call-graph and danger-surface (FIX-4 happy
     try std.testing.expect(has_danger_surface, "callback_escape must depend on danger-surface");
 }
 
-test "DangerSurfacePass - depends on call-graph and ptr-lifetime (FIX-4 happy path)" {
-    // CRITICAL: danger_surface needs MemoryGraph from ptr_lifetime to be populated first
+test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.1.9 happy path)" {
+    // v0.1.9: Added ptr-lifetime dependency to ensure MemoryGraph is populated
+    // before DangerSurfacePass reads it. This eliminates the Phase 0 fallback
+    // that was needed when MemoryGraph was empty.
     const deps = DangerSurfacePass.deps;
 
     try std.testing.expectEqual(@as(usize, 2), deps.len, "danger_surface should have 2 dependencies");

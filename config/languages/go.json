@@ -1,1 +1,227 @@
-{"language": "go", "version": "1.0", "description": "Go language FFI boundary patterns - cgo allocator, pointer escape, runtime safety", "functions": [{"pattern": "_Cfunc_", "match_type": "contains", "kind": "go_cgo_alloc", "severity": "medium", "consumes_ownership": false, "transfers_ownership": false, "requires_null_check": true, "requires_taint_check": false, "description": "Go cgo wrapper function - FFI boundary"}, {"pattern": "runtime.mallocgc", "match_type": "exact", "kind": "go_cgo_alloc", "severity": "medium", "consumes_ownership": false, "transfers_ownership": true, "requires_null_check": true, "requires_taint_check": false, "description": "Go runtime GC-managed allocation for C interop"}, {"pattern": "runtime.cgoCheckPointer", "match_type": "exact", "kind": "go_cgo_alloc", "severity": "high", "consumes_ownership": false, "transfers_ownership": false, "requires_null_check": false, "requires_taint_check": true, "description": "Go cgo pointer escape check - indicates potential Go→C pointer leak"}, {"pattern": "runtime.cgoCheckResult", "match_type": "exact", "kind": "go_cgo_alloc", "severity": "high", "consumes_ownership": false, "transfers_ownership": false, "requires_null_check": false, "requires_taint_check": true, "description": "Go cgo result check - verifies C return values don't contain Go pointers"}], "escape_patterns": ["_Cfunc_", "_Cgo_ptr", "cgoCheckPointer", "cgoCheckResult"], "noise_prefixes": ["runtime.", "internal/", "reflect.", "sync."]}
+{
+  "language": "go",
+  "version": "1.0",
+  "description": "Go language FFI boundary patterns - cgo allocator, pointer escape, runtime safety (ref: GO_GC_IR_SPEC.md)",
+  "functions": [
+    {
+      "pattern": "_Cfunc_",
+      "match_type": "contains",
+      "kind": "go_cgo_alloc",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Go cgo wrapper function - FFI boundary"
+    },
+    {
+      "pattern": "runtime.mallocgc",
+      "match_type": "exact",
+      "kind": "go_cgo_alloc",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Go runtime GC-managed allocation for C interop"
+    },
+    {
+      "pattern": "runtime.cgoCheckPointer",
+      "match_type": "exact",
+      "kind": "go_cgo_alloc",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": true,
+      "description": "Go cgo pointer escape check - indicates potential Go\u2192C pointer leak"
+    },
+    {
+      "pattern": "runtime.cgoCheckResult",
+      "match_type": "exact",
+      "kind": "go_cgo_alloc",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": true,
+      "description": "Go cgo result check - verifies C return values don't contain Go pointers"
+    }
+  ],
+  "escape_patterns": [
+    "_Cfunc_",
+    "_Cgo_ptr",
+    "cgoCheckPointer",
+    "cgoCheckResult"
+  ],
+  "noise_prefixes": [
+    "go:",
+    "type:",
+    ".inittask",
+    "_Cgo_",
+    "__cgo_",
+    "crosscall2",
+    "runtime.writeBarrier",
+    "gcWriteBarrier",
+    "runtime.memmove",
+    "runtime.memclr",
+    "runtime.gopanic",
+    "type:.hash",
+    "type:.eq",
+    "type:.kind",
+    "init."
+  ],
+  "tinygo_cgo_patterns": [
+    "_Cgo_",
+    "_Cgo_static_",
+    "unionfield_",
+    "bitfield_",
+    "set_bitfield_",
+    "struct_",
+    "union_",
+    "enum_",
+    "_Ctype_",
+    "$union",
+    "$funcaddr"
+  ],
+  "tinygo_runtime_patterns": [
+    "runtime.alloc",
+    "runtime.free",
+    "runtime.realloc",
+    "runtime.trackPointer",
+    "runtime._panic",
+    "runtime._recover",
+    "runtime.setupDeferFrame",
+    "runtime.destroyDeferFrame",
+    "runtime.chanMake",
+    "runtime.chanSend",
+    "runtime.chanRecv",
+    "runtime.chanClose",
+    "runtime.hashmapMakeGeneric",
+    "runtime.stringConcat",
+    "runtime.typeAssert",
+    "runtime.sliceAppend",
+    "gc.stackobject",
+    "stackalloc"
+  ],
+  "stdlib_prefixes": [
+    "runtime.",
+    "internal/runtime/",
+    "internal/",
+    "reflect.",
+    "sync."
+  ],
+  "compiler_reserved": [
+    "go:",
+    "type:",
+    ".inittask",
+    "runtime.memhash",
+    "runtime.noescape",
+    "runtime.KeepAlive",
+    "runtime.KeepAliveNoexec",
+    "runtime.cmpstring",
+    "runtime.int64string",
+    "runtime.slicebytetostring",
+    "runtime.slicerunetostring",
+    "runtime.writeBarrier",
+    "gcWriteBarrier",
+    "gcWriteBarrier2"
+  ],
+  "runtime_reserved": [
+    "runtime.mallocgc",
+    "runtime.growslice",
+    "runtime.gopanic",
+    "runtime.gorecover",
+    "runtime.goexit",
+    "runtime.gosched",
+    "runtime.GC",
+    "runtime.memmove",
+    "runtime.memclrNoHeapPointers",
+    "runtime.memclrHasPointers",
+    "runtime.chanrecv1",
+    "runtime.chanrecv2",
+    "runtime.chansend1",
+    "runtime.makechan",
+    "runtime.closechan",
+    "runtime.mapaccess1",
+    "runtime.mapaccess2",
+    "runtime.mapassign",
+    "runtime.mapdelete",
+    "runtime.assertI2I",
+    "runtime.convI2I",
+    "runtime.convT2E",
+    "runtime.convT2I",
+    "runtime.raceread",
+    "runtime.racewrite",
+    "runtime.racereadrange",
+    "runtime.racewriterange"
+  ],
+  "ffi_boundary_patterns": [
+    "runtime.cgocall",
+    "runtime.cgo_yield",
+    "runtime.cgo_notify",
+    "_Cfunc_",
+    "_Cgo_",
+    "__cgo_",
+    "crosscall2",
+    "_cgo_"
+  ],
+  "memory_safety_patterns": [
+    {
+      "pattern": "runtime.mallocgc",
+      "kind": "heap_alloc",
+      "severity": "medium",
+      "description": "Heap allocation - escape analysis target (IR SPEC \u00a710)"
+    },
+    {
+      "pattern": "runtime.growslice",
+      "kind": "realloc",
+      "severity": "medium",
+      "description": "Slice growth may reallocate (IR SPEC \u00a710)"
+    },
+    {
+      "pattern": "runtime.writeBarrier",
+      "kind": "gc_barrier",
+      "severity": "low",
+      "description": "GC write barrier (IR SPEC \u00a76)"
+    },
+    {
+      "pattern": "runtime.memmove",
+      "kind": "raw_mem",
+      "severity": "low",
+      "description": "Raw memory operation (IR SPEC \u00a710)"
+    }
+  ],
+  "fp_suppression": [
+    {
+      "pattern": "runtime.",
+      "match_type": "prefix",
+      "reason": "Go runtime - compiler infrastructure (IR SPEC \u00a71.2, \u00a73)"
+    },
+    {
+      "pattern": "internal/runtime/",
+      "match_type": "prefix",
+      "reason": "Go runtime internals (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "type:",
+      "match_type": "prefix",
+      "reason": "Go type descriptor - compiler generated (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "go:",
+      "match_type": "prefix",
+      "reason": "Go reserved prefix (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": ".inittask",
+      "match_type": "suffix",
+      "reason": "Go init task - compiler generated (IR SPEC \u00a79)"
+    },
+    {
+      "pattern": "init.",
+      "match_type": "prefix",
+      "reason": "Go init function - compiler generated (IR SPEC \u00a79)"
+    }
+  ]
+}
