@@ -121,8 +121,7 @@ pub const PassManager = struct {
             for (pass.deps) |dep_name| {
                 // Find dependency index
                 const dep_idx = self.pass_map.get(dep_name) orelse {
-                    // Dependency not found - check if it's a special case
-                    // For now, we assume all dependencies must be registered
+                    std.log.err("PassManager: pass '{s}' depends on '{s}' which is not registered", .{ pass.name, dep_name });
                     return error.MissingDependency;
                 };
                 // Add edge: dep_idx -> i

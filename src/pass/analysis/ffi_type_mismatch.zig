@@ -364,7 +364,8 @@ pub const FFITypeMismatchPass = struct {
             // These functions require the alignment parameter to be a power of 2
             // and at least sizeof(void*). We can't verify the runtime value,
             // but we can flag if the alignment type is suspicious.
-            if (elem_size > 0 and elem_size < 64) {
+            // elem_size is in bits (from LLVMABISizeOfType), so 64 bytes = 512 bits
+            if (elem_size > 0 and elem_size < 512) {
                 return TypeMismatchInfo{
                     .kind = .alignment_mismatch,
                     .caller_type = "pointer (under-aligned)",

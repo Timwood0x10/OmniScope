@@ -65,6 +65,11 @@ pub const engine = struct {
 
 // Export cross-language analysis
 pub const cross_lang = struct {
+    // Foundation passes (required by multiple analysis passes)
+    pub const CFGPass = @import("pass/foundation/cfg.zig").CFGPass;
+    pub const DFGPass = @import("pass/foundation/dfg.zig").DFGPass;
+    pub const AliasPass = @import("pass/analysis/alias.zig").AliasPass;
+
     pub const FunctionKind = @import("pass/analysis/call_graph.zig").FunctionKind;
     pub const Node = @import("pass/analysis/call_graph.zig").Node;
     pub const Edge = @import("pass/analysis/call_graph.zig").Edge;
@@ -120,6 +125,10 @@ pub const cross_lang = struct {
     pub const EscapePattern = @import("pass/analysis/callback_escape.zig").EscapePattern;
     pub const EscapeStats = @import("pass/analysis/callback_escape.zig").EscapeStats;
     pub const isCgoBoundary = @import("pass/analysis/callback_escape.zig").isCgoBoundary;
+
+    pub const LockPass = @import("pass/analysis/lock.zig").LockPass;
+    pub const LockViolation = @import("pass/analysis/lock.zig").LockViolation;
+    pub const LockStats = @import("pass/analysis/lock.zig").LockStats;
 
     pub const ABIMismatchPass = @import("pass/analysis/abi_mismatch.zig").ABIMismatchPass;
     pub const ABIViolation = @import("pass/analysis/abi_mismatch.zig").ABIViolation;

@@ -151,6 +151,13 @@ fn showHelp() void {
 }
 
 fn registerAllPasses(pipeline: *Pipeline) !void {
+    // Foundation passes (required by analysis passes)
+    // NOTE: CFGPass, DFGPass, AliasPass are not yet fully implemented
+    // try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
+    // try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
+    // try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
+
+    // Core analysis passes
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
     try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
@@ -166,6 +173,14 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
     try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
     try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+
+    // Additional analysis passes
+    // NOTE: ABIMismatchPass, ThreadCrossingPass are not yet fully implemented
+    try pipeline.registerPass(OmniScope.cross_lang.LockPass);
+    // try pipeline.registerPass(OmniScope.cross_lang.ABIMismatchPass);
+    // try pipeline.registerPass(OmniScope.cross_lang.ThreadCrossingPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
 }
 
 fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader) !AnalyzeResult {
@@ -229,7 +244,7 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
             _ = try std.posix.write(std.posix.STDOUT_FILENO, json_output);
         }
     } else if (config.output_format == .sarif) {
-        var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.8");
+        var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.9");
         const sarif_output = sarif.generate(issues) catch |err| {
             log.err("Failed to generate SARIF output: {}\n", .{err});
             return;
@@ -493,7 +508,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     const timestamp = std.time.timestamp();
     const writer = output.writer();
 
-    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.8\",\"timestamp\":");
+    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.9\",\"timestamp\":");
     try writer.print("{d}", .{timestamp});
     try writer.writeAll(",\"summary\":{");
     try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });

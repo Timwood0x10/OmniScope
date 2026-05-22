@@ -461,7 +461,8 @@ pub const TaintPropagationPass = struct {
             var max_confidence: f32 = 0.0;
             var source_id: ?u32 = null;
 
-            var i: u32 = 0;
+            // Start from i=1 to skip the called function itself (operand 0)
+            var i: u32 = 1;
             while (i < num_operands) : (i += 1) {
                 const operand = c.LLVMGetOperand(inst, i);
                 const operand_val = @intFromPtr(operand);
@@ -519,7 +520,8 @@ pub const TaintPropagationPass = struct {
         var max_confidence: f32 = 0.0;
         var source_id: ?u32 = null;
 
-        var i: u32 = 0;
+        // Start from i=1 to skip the called function itself (operand 0)
+        var i: u32 = 1;
         while (i < num_operands) : (i += 1) {
             const operand = c.LLVMGetOperand(inst, i);
             const operand_val = @intFromPtr(operand);

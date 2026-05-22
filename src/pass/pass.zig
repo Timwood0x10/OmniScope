@@ -374,6 +374,7 @@ pub const PassContext = struct {
         for (self.cross_lang_edges.items) |edge| {
             self.allocator.free(edge.caller_name);
             self.allocator.free(edge.callee_name);
+            self.allocator.free(edge.ptr_args);
         }
         self.cross_lang_edges.deinit(self.allocator);
         self.global_alloc_tracker.deinit();

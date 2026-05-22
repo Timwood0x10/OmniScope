@@ -222,21 +222,34 @@ pub fn check_null_guard_after(call_inst: c.LLVMValueRef) bool {
         if (is_terminator and bb_stack_len < bb_stack.len and total_scanned < max_scan) {
             // For conditional branches, follow both successors
             if (opcode == c.LLVMBr) {
-                const then_bb = c.LLVMGetSuccessor(inst, 0);
-                const else_bb = c.LLVMGetSuccessor(inst, 1);
+                // Check if this is a conditional branch (2 successors) or unconditional (1 successor)
+                const num_successors = c.LLVMGetNumSuccessors(inst);
+                if (num_successors >= 2) {
+                    const then_bb = c.LLVMGetSuccessor(inst, 0);
+                    const else_bb = c.LLVMGetSuccessor(inst, 1);
 
-                // Queue successor blocks that haven't been visited yet
-                if (@intFromPtr(then_bb) != 0 and !isBBVisited(then_bb, &visited_bbs, visited_bbs_len)) {
-                    bb_stack[bb_stack_len] = then_bb;
-                    bb_stack_len += 1;
-                    visited_bbs[visited_bbs_len] = then_bb;
-                    visited_bbs_len += 1;
-                }
-                if (@intFromPtr(else_bb) != 0 and !isBBVisited(else_bb, &visited_bbs, visited_bbs_len)) {
-                    bb_stack[bb_stack_len] = else_bb;
-                    bb_stack_len += 1;
-                    visited_bbs[visited_bbs_len] = else_bb;
-                    visited_bbs_len += 1;
+                    // Queue successor blocks that haven't been visited yet
+                    if (@intFromPtr(then_bb) != 0 and !isBBVisited(then_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = then_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = then_bb;
+                        visited_bbs_len += 1;
+                    }
+                    if (@intFromPtr(else_bb) != 0 and !isBBVisited(else_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = else_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = else_bb;
+                        visited_bbs_len += 1;
+                    }
+                } else if (num_successors == 1) {
+                    // Unconditional branch - follow single successor
+                    const succ_bb = c.LLVMGetSuccessor(inst, 0);
+                    if (@intFromPtr(succ_bb) != 0 and !isBBVisited(succ_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = succ_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = succ_bb;
+                        visited_bbs_len += 1;
+                    }
                 }
             }
             // Don't break here — let the loop try to pop from stack first

@@ -194,6 +194,8 @@ pub const Edge = struct {
     caller: u32,
     /// ID of the callee function.
     callee: u32,
+    /// The call instruction (for extracting pointer arguments).
+    call_inst: u64,
 };
 
 /// Call graph analysis pass.
@@ -323,7 +325,11 @@ pub const CallGraphPass = struct {
                     if (@intFromPtr(called_name_ptr) != 0) {
                         const called_name = std.mem.span(called_name_ptr);
                         if (name_to_idx.get(called_name)) |callee_idx| {
-                            try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
+                            try edges.append(allocator, .{
+                                .caller = caller_idx,
+                                .callee = callee_idx,
+                                .call_inst = @intFromPtr(inst),
+                            });
                         }
                     } else {
                         const module = c.LLVMGetGlobalParent(caller_node.func_ref);
@@ -336,7 +342,11 @@ pub const CallGraphPass = struct {
                             if (@intFromPtr(candidate_name_ptr) == 0) continue;
                             const candidate_name = std.mem.span(candidate_name_ptr);
                             if (name_to_idx.get(candidate_name)) |callee_idx| {
-                                try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
+                                try edges.append(allocator, .{
+                                    .caller = caller_idx,
+                                    .callee = callee_idx,
+                                    .call_inst = @intFromPtr(inst),
+                                });
                             }
                         }
                     }
@@ -515,13 +525,38 @@ pub const CallGraphPass = struct {
             const callee_name_owned = try ctx.allocator.dupe(u8, callee_node.name);
             errdefer ctx.allocator.free(callee_name_owned);
 
+            // Extract pointer argument indices from the call instruction
+            var ptr_args_list = std.ArrayList(u32).initCapacity(ctx.allocator, 8) catch return;
+            defer ptr_args_list.deinit(ctx.allocator);
+
+            if (edge.call_inst != 0) {
+                const call_inst: c.LLVMValueRef = @ptrFromInt(edge.call_inst);
+                if (@intFromPtr(c.LLVMIsACallInst(call_inst)) != 0) {
+                    const num_ops = c.LLVMGetNumOperands(call_inst);
+                    // Start from 1 to skip the called function itself (operand 0)
+                    var i: u32 = 1;
+                    while (i < num_ops) : (i += 1) {
+                        const op = c.LLVMGetOperand(call_inst, i);
+                        if (@intFromPtr(op) == 0) continue;
+                        const op_type = c.LLVMTypeOf(op);
+                        if (@intFromPtr(op_type) == 0) continue;
+                        const type_kind = c.LLVMGetTypeKind(op_type);
+                        if (type_kind == c.LLVMPointerTypeKind) {
+                            try ptr_args_list.append(ctx.allocator, i - 1); // Store arg index (0-based)
+                        }
+                    }
+                }
+            }
+
+            const ptr_args_owned = try ptr_args_list.toOwnedSlice(ctx.allocator);
+
             const cross_edge = CrossLangEdge{
                 .caller_name = caller_name_owned,
                 .callee_name = callee_name_owned,
                 .caller_lang = caller_lang,
                 .callee_lang = callee_lang,
                 .is_ffi_boundary = is_cross,
-                .ptr_args = &.{},
+                .ptr_args = ptr_args_owned,
             };
             try ctx.addCrossLangEdge(cross_edge);
             cross_count += 1;

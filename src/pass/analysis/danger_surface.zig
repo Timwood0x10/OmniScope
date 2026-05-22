@@ -68,7 +68,7 @@ pub const DangerSurfacePass = struct {
         var total_args: u64 = 0;
         var total_rets: u64 = 0;
         var total_alias_traces: u64 = 0;
-        const cross_lang_frees: u64 = 0;
+        var cross_lang_frees: u64 = 0;
 
         for (ffis) |surface| {
             // Phase 1 args: callee is already a known FFI boundary →
@@ -120,6 +120,12 @@ pub const DangerSurfacePass = struct {
             const node = entry.value_ptr.*;
             try markFunctionFromInst(ctx, node.alloc_inst);
             try ctx.markFfiRelevant(ptr_val);
+
+            // Detect cross-language free: allocation and free in different languages
+            if (node.freed and node.free_lang != null and node.alloc_lang != node.free_lang.?) {
+                cross_lang_frees += 1;
+            }
+
             visited.clearRetainingCapacity();
             total_alias_traces += 1;
             traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {

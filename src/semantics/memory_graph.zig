@@ -306,6 +306,8 @@ pub const MemoryGraph = struct {
         try graph.nodes.put(ret_value_ptr, node);
         errdefer {
             _ = graph.nodes.remove(ret_value_ptr);
+            node.aliases.deinit();
+            graph.allocator.destroy(node);
         }
         try graph.node_store.append(graph.allocator, node);
 

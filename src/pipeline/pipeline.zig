@@ -102,24 +102,6 @@ pub const Pipeline = struct {
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
             .semantics_call_graph = null,
         };
-        // DC-C3 FIX: Add errdefer to clean up HashMaps if memory_graph.init fails
-        errdefer {
-            ctx.value_id_map.deinit();
-            ctx.raii_func_set.deinit();
-            ctx.meyers_singleton_set.deinit();
-            ctx.rc_container_func_set.deinit();
-            ctx.rust_into_raw_set.deinit();
-            ctx.rust_from_raw_set.deinit();
-            ctx.reported_keys.deinit();
-            ctx.registry_cache.deinit();
-            ctx.zone_cache.deinit();
-            ctx.danger_surface_relevant.deinit();
-            ctx.ffi_auto_relevant.deinit();
-            ctx.relevant_functions.deinit();
-            ctx.CallSiteIndex.deinit();
-            ctx.cross_edge_by_callee.deinit();
-            ctx.global_alloc_tracker.deinit();
-        }
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
         // The graph uses GeneralPurposeAllocator (not Arena) so all internal

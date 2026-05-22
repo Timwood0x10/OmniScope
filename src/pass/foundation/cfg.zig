@@ -27,7 +27,7 @@ pub const CFGPass = struct {
     diag: *DiagnosticWriter,
     store: *FactStore,
     // Basic block ID mapping
-    bb_id_map: std.AutoHashMap(c.LLVMBasicBlockRef, u32),
+    bb_id_map: std.AutoHashMap(BasicBlockRef, u32),
     // Function ID
     func_id: u32,
 
@@ -37,7 +37,7 @@ pub const CFGPass = struct {
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(allocator),
+            .bb_id_map = std.AutoHashMap(BasicBlockRef, u32).init(allocator),
             .func_id = 0,
         };
     }
