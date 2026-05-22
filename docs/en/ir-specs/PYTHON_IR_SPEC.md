@@ -1,6 +1,6 @@
 # CPython C Extension & Runtime Patterns for Static Analysis (OmniScope)
 
-**Source**: `/Users/scc/code/researcher/cpython/` (main branch, CPython 3.15-dev)
+**Source**: `~/code/researcher/cpython/` (main branch, CPython 3.15-dev)
 **Date**: 2026-05-22
 **Purpose**: Distinguish CPython runtime internals, C extension FFI boundaries, and user-defined code for static analysis tools (e.g., OmniScope)
 

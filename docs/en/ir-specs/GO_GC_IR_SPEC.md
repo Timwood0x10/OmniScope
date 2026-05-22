@@ -1,6 +1,6 @@
 # Go Standard Compiler (gc) IR Specification: Compiler-Reserved vs User-Defined
 
-**Source**: `/Users/scc/code/researcher/go/src/cmd/compile/internal/` (Go 1.24+)
+**Source**: `~/code/researcher/go/src/cmd/compile/internal/` (Go 1.24+)
 **Date**: 2026-05-22
 **Purpose**: Distinguish compiler-reserved IR patterns from user-defined symbols for static analysis tools (e.g., OmniScope)
 

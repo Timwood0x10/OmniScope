@@ -3,7 +3,7 @@
 ## Run the Test
 
 ```bash
-cd /Users/scc/code/zigcode/OmniScope
+cd ~/code/zigcode/OmniScope
 ./zig-out/bin/OmniScope ./corpus/red_team_test/language_detection_fix_test_complete.bc
 ```
 

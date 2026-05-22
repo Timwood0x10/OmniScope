@@ -12,7 +12,7 @@ echo "=========================================="
 echo ""
 
 # Change to project root
-cd /Users/scc/code/zigcode/OmniScope
+cd ~/code/zigcode/OmniScope
 
 # Step 1: Verify test files exist
 echo "Step 1: Checking test files..."

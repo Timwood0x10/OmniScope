@@ -3,9 +3,9 @@
   2026-04-30 13:39:56
 [0;36m────────────────────────────────────────────────────────────────────────[0m
 
-  Binary: /Users/scc/code/zigcode/OmniScope/zig-out/bin/OmniScope
-  Source: /Users/scc/code/zigcode/OmniScope/corpus/real_world/
-  Output: /Users/scc/code/zigcode/OmniScope/outputs/realworld/
+  Binary: ~/code/zigcode/OmniScope/zig-out/bin/OmniScope
+  Source: ~/code/zigcode/OmniScope/corpus/real_world/
+  Output: ~/code/zigcode/OmniScope/outputs/realworld/
 
   ╔══════════════════╦══════╦════════╦════════════════════╗
   ║ Metric           ║ Count║        ║                    ║

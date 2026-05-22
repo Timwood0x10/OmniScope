@@ -1,6 +1,6 @@
 # Zig LLVM IR 规范：编译器保留符号 vs 用户定义符号
 
-**源码**: `/Users/scc/code/zigcode/zig/src/` (dev 分支)
+**源码**: `~/code/zigcode/zig/src/` (dev 分支)
 **日期**: 2026-05-22
 **目的**: 为静态分析工具（如 OmniScope）区分编译器保留的 IR 模式与用户定义的符号
 

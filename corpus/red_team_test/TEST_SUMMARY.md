@@ -123,7 +123,7 @@ Analysis time: 11ms
 ### Step 1: Run the Test
 
 ```bash
-cd /Users/scc/code/zigcode/OmniScope
+cd ~/code/zigcode/OmniScope
 
 # Generate LLVM IR (if not already done)
 clang -emit-llvm -S -O0 corpus/red_team_test/language_detection_fix_test.c \

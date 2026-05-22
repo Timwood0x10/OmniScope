@@ -1,6 +1,6 @@
 # TinyGo LLVM IR 规范：编译器保留 vs 用户定义
 
-**源码**: `/Users/scc/code/researcher/tinygo` (main 分支)
+**源码**: `~/code/researcher/tinygo` (main 分支)
 **日期**: 2026-05-22
 **目的**: 为静态分析工具（如 OmniScope）区分编译器保留的 IR 模式和用户定义的符号
 

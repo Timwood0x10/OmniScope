@@ -1,6 +1,6 @@
 # OpenJDK HotSpot IR Specification: Compiler-Reserved vs User-Defined
 
-**Source**: `/Users/scc/code/researcher/jdk` (mainline)
+**Source**: `~/code/researcher/jdk` (mainline)
 **Date**: 2026-05-22
 **Purpose**: Distinguish compiler-reserved IR patterns from user-defined symbols for static analysis tools (e.g., OmniScope)
 

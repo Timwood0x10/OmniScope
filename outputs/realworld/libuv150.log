@@ -1,21 +1,21 @@
 [INFO] === OmniScope IR Analysis ===
 
-[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
+[INFO] File: ~/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
 
 
-[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
+[DEBUG] Loading file: ~/code/zigcode/OmniScope/corpus/real_world/other/libuv150.ll
 Segmentation fault at address 0x8
 ???:?:?: 0x1108bbe78 in ??? (libLLVM.dylib)
-/Users/scc/code/zigcode/OmniScope/src/engine/loader.zig:56:33: 0x102325d5f in loadFile (OmniScope)
+~/code/zigcode/OmniScope/src/engine/loader.zig:56:33: 0x102325d5f in loadFile (OmniScope)
         _ = safe_loader.loadFile(path) catch |err| {
                                 ^
-/Users/scc/code/zigcode/OmniScope/src/main.zig:205:35: 0x1023244ef in runSingleFileAnalysis (OmniScope)
+~/code/zigcode/OmniScope/src/main.zig:205:35: 0x1023244ef in runSingleFileAnalysis (OmniScope)
     var loader = IRLoader.loadFile(allocator, path) catch |err| {
                                   ^
-/Users/scc/code/zigcode/OmniScope/src/main.zig:655:34: 0x10232b117 in main (OmniScope)
+~/code/zigcode/OmniScope/src/main.zig:655:34: 0x10232b117 in main (OmniScope)
         try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
                                  ^
-/Users/scc/.zvm/0.15.2/lib/std/start.zig:627:37: 0x10232b79f in main (OmniScope)
+~/.zvm/0.15.2/lib/std/start.zig:627:37: 0x10232b79f in main (OmniScope)
             const result = root.main() catch |err| {
                                     ^
 ???:?:?: 0x196f92b97 in ??? (???)

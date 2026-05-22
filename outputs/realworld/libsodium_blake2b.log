@@ -1,9 +1,9 @@
 [INFO] === OmniScope IR Analysis ===
 
-[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
+[INFO] File: ~/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
 
 
-[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
+[DEBUG] Loading file: ~/code/zigcode/OmniScope/corpus/real_world/zkp/libsodium_blake2b.ll
 [INFO] Loaded: 21 functions
 
 
@@ -81,1185 +81,1185 @@ analysis                                1         8.66      8659.54      8659.54
 
 [INFO] Facts generated: 0
 
-[INFO] Report saved to: /Users/scc/code/zigcode/OmniScope/outputs/realworld/libsodium_blake2b.json
+[INFO] Report saved to: ~/code/zigcode/OmniScope/outputs/realworld/libsodium_blake2b.json
 
 error(gpa): memory address 0x1037600f0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103760110 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103760130 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103760150 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103760170 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103760190 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037601a0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037601b0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037601c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037601d0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720040 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037200a0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720120 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720140 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720180 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037201c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720200 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720220 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720260 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720280 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037202c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720300 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720340 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037203c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720400 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720440 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037205c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037205e0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720620 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720640 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720680 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037206c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720700 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720740 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720760 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720780 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037208c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037208e0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720900 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720920 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720940 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720960 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720980 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037209c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720a00 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103720a40 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740100 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740240 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740280 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037402c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740300 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740340 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740380 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037403c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740400 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740440 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x103740480 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1037404c0 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
+~/.zvm/0.15.2/lib/std/mem/Allocator.zig:436:40: 0x102f45ff7 in dupe__anon_5732 (OmniScope)
     const new_buf = try allocator.alloc(T, m.len);
                                        ^
-/Users/scc/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
+~/code/zigcode/OmniScope/src/semantics/memory_relations.zig:102:41: 0x103033a6b in recordCall (OmniScope)
         const caller_copy = try gpa.dupe(u8, caller_func);
                                         ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:77:53: 0x10303491f in buildRelations (OmniScope)
                             try relations.recordCall(func_name, called_name);
                                                     ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:45:31: 0x102fd07bf in run (OmniScope)
             try buildRelations(func, &relations);
                               ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
 
 error(gpa): memory address 0x1034c1000 leaked: 
-/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:1231:56: 0x10306b397 in ensureTotalCapacityPrecise (OmniScope)
+~/.zvm/0.15.2/lib/std/array_list.zig:1231:56: 0x10306b397 in ensureTotalCapacityPrecise (OmniScope)
                 const new_memory = try gpa.alignedAlloc(T, alignment, new_capacity);
                                                        ^
-/Users/scc/.zvm/0.15.2/lib/std/array_list.zig:637:48: 0x103026d27 in initCapacity (OmniScope)
+~/.zvm/0.15.2/lib/std/array_list.zig:637:48: 0x103026d27 in initCapacity (OmniScope)
             try self.ensureTotalCapacityPrecise(gpa, num);
                                                ^
-/Users/scc/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:40:78: 0x102fd0633 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/analysis/issue/memory_safety.zig:40:78: 0x102fd0633 in run (OmniScope)
         var first_pass_funcs = try std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 64);
                                                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
+~/code/zigcode/OmniScope/src/pass/manager.zig:198:46: 0x102fd37f3 in run (OmniScope)
             try self.passes.items[idx].run_fn(ctx, diag);
                                              ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:88:34: 0x102fd3abf in run (OmniScope)
         try self.pass_manager.run(&ctx, &diag);
                                  ^
-/Users/scc/code/zigcode/OmniScope/src/pipeline/pipeline.zig:96:21: 0x102fd3fa3 in runStaticAnalysis (OmniScope)
+~/code/zigcode/OmniScope/src/pipeline/pipeline.zig:96:21: 0x102fd3fa3 in runStaticAnalysis (OmniScope)
         try self.run();
                     ^
 

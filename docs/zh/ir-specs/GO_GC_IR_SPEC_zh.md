@@ -1,6 +1,6 @@
 # Go 标准编译器 (gc) IR 规范：编译器保留 vs 用户定义
 
-**源码**: `/Users/scc/code/researcher/go/src/cmd/compile/internal/` (Go 1.24+)
+**源码**: `~/code/researcher/go/src/cmd/compile/internal/` (Go 1.24+)
 **日期**: 2026-05-22
 **目的**: 为静态分析工具（如 OmniScope）区分编译器保留的 IR 模式和用户定义的符号
 
