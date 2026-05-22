@@ -12,7 +12,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 
-const c = @import("../../ir/llvm_raw.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
@@ -27,7 +27,7 @@ pub const DFGPass = struct {
     diag: *DiagnosticWriter,
     store: *FactStore,
     // Instruction ID mapping
-    inst_id_map: std.AutoHashMap(c.LLVMValueRef, u32),
+    inst_id_map: std.AutoHashMap(ValueRef, u32),
     // Function ID
     func_id: u32,
 
@@ -37,29 +37,33 @@ pub const DFGPass = struct {
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator),
+            .inst_id_map = std.AutoHashMap(ValueRef, u32).init(allocator),
             .func_id = 0,
         };
     }
 
     /// Deinitialize the pass
-    pub fn deinit(self: *DFGPass, allocator: std.mem.Allocator) void {
-        self.inst_id_map.deinit(allocator);
+    pub fn deinit(self: *DFGPass) void {
+        self.inst_id_map.deinit();
     }
 
     /// Reset internal state for re-analysis
     fn reset(self: *DFGPass, allocator: std.mem.Allocator) void {
-        self.inst_id_map.deinit(allocator);
-        self.inst_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator);
+        self.inst_id_map.deinit();
+        self.inst_id_map = std.AutoHashMap(ValueRef, u32).init(allocator);
         self.func_id = 0;
     }
 
     /// Run the DFG pass on a module
     pub fn run(
-        self: *DFGPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        var fact_store = try FactStore.init(ctx.allocator);
+        defer fact_store.deinit();
+        var self = DFGPass.init(ctx.allocator, &fact_store);
+        defer self.deinit();
+
         self.ctx = ctx;
         self.diag = diag;
 
@@ -102,7 +106,7 @@ pub const DFGPass = struct {
             while (@intFromPtr(inst) != 0) {
                 // Assign ID to instruction (pointer-based for LLVM values)
                 const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch continue;
-                try self.inst_id_map.put(inst, inst_id);
+                try self.inst_id_map.put(ValueRef{ .raw = inst }, inst_id);
 
                 // Analyze instruction
                 try self.analyzeInstruction(inst, inst_id);
@@ -133,7 +137,7 @@ pub const DFGPass = struct {
             const operand = c.LLVMGetOperand(inst, @intCast(i));
 
             // Get operand ID if it's an instruction
-            if (self.inst_id_map.get(operand)) |operand_id| {
+            if (self.inst_id_map.get(ValueRef{ .raw = operand })) |operand_id| {
                 // Emit dfg_edge: operand -> instruction
                 try self.store.insert(.dfg_edge, operand_id, inst_id, self.func_id);
             }
@@ -151,7 +155,7 @@ pub const DFGPass = struct {
             const incoming_value = c.LLVMGetIncomingValue(phi, @intCast(i));
             _ = c.LLVMGetIncomingBlock(phi, @intCast(i));
 
-            if (self.inst_id_map.get(incoming_value)) |operand_id| {
+            if (self.inst_id_map.get(ValueRef{ .raw = incoming_value })) |operand_id| {
                 try self.store.insert(.dfg_edge, operand_id, inst_id, self.func_id);
             }
         }

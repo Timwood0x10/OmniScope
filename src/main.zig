@@ -152,10 +152,9 @@ fn showHelp() void {
 
 fn registerAllPasses(pipeline: *Pipeline) !void {
     // Foundation passes (required by analysis passes)
-    // NOTE: CFGPass, DFGPass, AliasPass are not yet fully implemented
-    // try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
-    // try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
-    // try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
 
     // Core analysis passes
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);

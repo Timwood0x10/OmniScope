@@ -83,10 +83,14 @@ pub const AliasPass = struct {
 
     /// Run the alias analysis pass
     pub fn run(
-        self: *AliasPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        var fact_store = try FactStore.init(ctx.allocator);
+        defer fact_store.deinit();
+        var self = AliasPass.init(ctx.allocator, &fact_store);
+        defer self.deinit(ctx.allocator);
+
         self.ctx = ctx;
         self.diag = diag;
 
@@ -124,21 +128,20 @@ pub const AliasPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Analyze based on opcode
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-                switch (opcode_enum) {
-                    .Alloca => {
+                switch (opcode) {
+                    c.LLVMAlloca => {
                         // Alloca creates a new pointer
                         try self.collectPointer(inst);
                     },
-                    .Load => {
+                    c.LLVMLoad => {
                         // Load is a memory operation
                         try self.analyzeMemoryOperation(inst);
                     },
-                    .Store => {
+                    c.LLVMStore => {
                         // Store is a memory operation
                         try self.analyzeMemoryOperation(inst);
                     },
-                    .GetElementPtr => {
+                    c.LLVMGetElementPtr => {
                         // GEP creates a derived pointer
                         try self.collectPointer(inst);
                     },
@@ -168,7 +171,7 @@ pub const AliasPass = struct {
         const type_kind = c.LLVMGetTypeKind(inst_type);
 
         // Check if this is a pointer type
-        if (type_kind != .Pointer) return;
+        if (type_kind != c.LLVMPointerTypeKind) return;
 
         // Get or create type ID
         const type_id = try self.getTypeId(inst_type);
@@ -193,13 +196,12 @@ pub const AliasPass = struct {
         var ptr_operand: c.LLVMValueRef = undefined;
 
         // Get pointer operand
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-        switch (opcode_enum) {
-            .Load => {
+        switch (opcode) {
+            c.LLVMLoad => {
                 // Load: first operand is the pointer
                 ptr_operand = c.LLVMGetOperand(inst, 0);
             },
-            .Store => {
+            c.LLVMStore => {
                 // Store: second operand is the pointer
                 ptr_operand = c.LLVMGetOperand(inst, 1);
             },
@@ -229,7 +231,7 @@ pub const AliasPass = struct {
             while (iter.next()) |entry| {
                 entry.value_ptr.deinit(allocator);
             }
-            type_groups.deinit(allocator);
+            type_groups.deinit();
         }
 
         // Group pointers
@@ -238,9 +240,9 @@ pub const AliasPass = struct {
             const ptr_info = entry.value_ptr.*;
             const gop = try type_groups.getOrPut(ptr_info.type_id);
             if (!gop.found_existing) {
-                gop.value_ptr.* = std.ArrayList(PointerInfo).init(allocator);
+                gop.value_ptr.* = std.ArrayList(PointerInfo).initCapacity(allocator, 8) catch return;
             }
-            try gop.value_ptr.append(ptr_info);
+            try gop.value_ptr.append(allocator, ptr_info);
         }
 
         // For each type group, emit alias facts

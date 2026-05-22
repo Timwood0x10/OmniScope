@@ -9,7 +9,6 @@ pub const ir = struct {
     pub const llvm_raw = @import("ir/llvm_raw.zig");
     pub const llvm_safe = @import("ir/llvm_safe.zig");
     pub const view = @import("ir/view.zig");
-    pub const location = @import("ir/location.zig");
     pub const debug_info = @import("ir/debug_info.zig");
 };
 
@@ -268,4 +267,14 @@ test "root.zig - module import test" {
         fact.QueryEngine,      pipeline.Pipeline,  pipeline.PipelineResult,
         engine.IRLoader,       engine.LoaderError,
     };
+}
+
+// Wire up previously disconnected test modules
+test {
+    _ = @import("pass/analysis/callback_escape_enhanced_test.zig");
+    _ = @import("pass/analysis/ffi_type_mismatch_test.zig");
+    _ = @import("pass/analysis/free_function_test.zig");
+    _ = @import("pass/analysis/noise_reduction_test.zig");
+    _ = @import("pass/analysis/pipeline_deps_test.zig");
+    _ = @import("pass/analysis/rust_ffi_auditor_test.zig");
 }
