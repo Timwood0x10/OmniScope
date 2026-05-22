@@ -12,6 +12,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Location = @import("../../diag/issue.zig").Location;
 const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
+const IssueClassification = @import("../../diag/issue.zig").IssueClassification;
 const IssueSeverity = @import("../../diag/issue.zig").Severity;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 const BoundaryKind = @import("../../diag/issue.zig").FFIBoundary.BoundaryKind;
@@ -30,6 +31,7 @@ const safety_checker = @import("ffi_safety_checker.zig");
 pub const OWNERSHIP_CHAIN_SCAN_LIMIT: u32 = 15;
 
 /// Report an FFI issue with standardized formatting.
+/// Sets classification to .ffi_boundary for 90/10 priority reporting.
 pub fn reportFFIIssue(
     ctx: *PassContext,
     kind: IssueKind,
@@ -39,7 +41,8 @@ pub fn reportFFIIssue(
     confidence: f32,
 ) !void {
     const location = Location.init(func_name);
-    const issue = Issue.init(kind, message, location, severity, confidence);
+    var issue = Issue.init(kind, message, location, severity, confidence);
+    issue.classification = .ffi_boundary;
     try ctx.addIssue(&issue);
 }
 

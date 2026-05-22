@@ -1401,8 +1401,12 @@ pub fn isRustAsPtrCall(callee_name: []const u8) bool {
 }
 
 /// Detect cross-language allocation/deallocation mismatches (Task 9.3d).
-/// Pattern 1: Rust global alloc (_Znwm) result freed by C free()
+/// Pattern 1: Rust global alloc (_Znwm/__rust_alloc) result freed by C free()
 /// Pattern 2: C malloc() result reclaimed by Box::from_raw (correct but worth noting)
+///
+/// fix: Also detect Rust-alloc/C-free when the alloc is classified as .cpp
+/// (because _Znwm is shared between Rust and C++ — in a Rust module, _Znwm is Rust).
+/// Uses module language from PassContext to disambiguate.
 pub fn detectCrossLangAllocMismatch(
     ctx: *PassContext,
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
@@ -1410,11 +1414,21 @@ pub fn detectCrossLangAllocMismatch(
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     diag: *DiagnosticWriter,
 ) void {
+    // Determine if _Znwm (classified as .cpp) should be treated as Rust.
+    // This happens when the module language is Rust — Rust's std::alloc::alloc
+    // compiles to _Znwm at LLVM IR level.
+    const module_lang = ctx.module_language.language;
+    const rust_alloc_via_cpp = (module_lang == .rust);
+
     var alloc_iter = alloc_map.iterator();
     while (alloc_iter.next()) |entry| {
         const alloc = entry.value_ptr.*;
 
-        if (alloc.lang != .rust) continue;
+        // Accept alloc if it's explicitly .rust, or if it's .cpp in a Rust module
+        // (where _Znwm is actually Rust's global allocator, not C++ operator new).
+        const is_rust_alloc = alloc.lang == .rust or
+            (alloc.lang == .cpp and rust_alloc_via_cpp);
+        if (!is_rust_alloc) continue;
 
         var free_iter = free_map.iterator();
         while (free_iter.next()) |free_entry| {

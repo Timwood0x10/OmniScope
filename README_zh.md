@@ -25,7 +25,7 @@
 | **Memory leak** | ✅ 稳定检出 | 跨语言/单语言都能检出 |
 | **Null dereference** | ✅ 稳定检出 | malloc 返回值未检查 |
 | **Taint analysis** | ✅ 稳定检出 | 用户输入到 sink 的数据流 |
-| **cross_lang_free_mismatch** | ❌ 未工作 | 检测函数太窄，全量为 0 |
+| **cross_lang_free_mismatch** | ⚠️ 部分工作 | C分配/Rust释放 可检出；Rust分配/C释放 未检出 |
 | **FFI Boundary issue** | ❌ 未工作 | 从未被任何 pass 生成 |
 
 **适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析。纯 C/C++ 库（无 FFI 边界）不适用。
@@ -33,7 +33,7 @@
 *以上数据基于 v0.1.9 实测，详见 [VALIDATION_REPORT.md](./VALIDATION_REPORT.md)。*
 
 **v0.2.0 路线图**：
-- 修复 `cross_lang_free_mismatch` 检测（当前仅 Rust→C，依赖错误符号）
+- 完善 `cross_lang_free_mismatch` 检测（Rust分配/C释放 方向）
 - 添加自定义分配器识别（sqlite3_malloc、curl_easy_cleanup 等）
 - 添加 FFI Boundary issue 类型生成
 

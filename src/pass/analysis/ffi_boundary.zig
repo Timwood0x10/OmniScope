@@ -113,10 +113,16 @@ pub const FFIBoundaryPass = struct {
             diag.info("FFIBoundary: consuming {} cross-language edges from CallGraph", .{cross_edges.len});
         }
 
+        // Diagnostic counters for understanding why issues are/aren't generated
+        var total_funcs: u32 = 0;
+        var skipped_irrelevant: u32 = 0;
+        var issues_generated: u32 = 0;
+
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) == 0) {
+                total_funcs += 1;
                 // P0-2: Function-level gate — skip functions with no danger-surface-relevant pointers.
                 // EXCEPTION: Always analyze JNI_*/Java_/Py_* functions for FFI boundary detection,
                 // even if DangerSurfacePass didn't mark them as relevant (indirect calls via function
@@ -131,11 +137,17 @@ pub const FFIBoundaryPass = struct {
                     std.mem.startsWith(u8, func_name, "Py_")); // Python C API functions use Py_ prefix (e.g., Py_Init, Py_BuildValue)
 
                 if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func))) and !is_ffi_boundary_func) {
+                    skipped_irrelevant += 1;
                     continue;
                 }
-                _ = try @This().analyze(ctx, func, diag);
+                const result = try @This().analyze(ctx, func, diag);
+                issues_generated += result.count;
             }
         }
+
+        diag.info("FFIBoundary: {d}/{d} funcs analyzed, {d} skipped (irrelevant), {d} issues generated", .{
+            total_funcs - skipped_irrelevant, total_funcs, skipped_irrelevant, issues_generated,
+        });
     }
 
     /// Analyze a single function for FFI boundaries.
@@ -396,11 +408,12 @@ pub const FFIBoundaryPass = struct {
         const base_confidence: f32 = if (semantics != null) 0.7 else 0.5;
 
         //  Zone-aware confidence adjustment.
-        // Unknown-zone callers get lower confidence (may be auto-generated code).
+        // Unknown-zone callers get mild reduction (not 0.6x — we already confirmed
+        // FFI boundaries exist via early_exit check, so .unknown zone is still relevant).
         // FFI/unsafe zone callers get full confidence (explicit escape hatch).
         const severity = base_severity;
         const confidence: f32 = switch (caller_zone) {
-            .unknown => base_confidence * 0.6, // Uncertain origin → lower confidence
+            .unknown => base_confidence * 0.85, // Mild reduction — still FFI-relevant
             .safe, .runtime_internal => 0.0, // Should have been gated in analyze()
             .ffi, .unsafe => base_confidence, // Explicit FFI zone → full confidence
         };

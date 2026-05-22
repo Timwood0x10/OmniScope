@@ -70,6 +70,28 @@ pub const DangerSurfacePass = struct {
         var total_alias_traces: u64 = 0;
         var cross_lang_frees: u64 = 0;
 
+        // Phase 0 fallback: If MemoryGraph is empty (ptr_lifetime hasn't populated it yet),
+        // mark caller functions of cross-language edges as relevant directly from CrossLangEdge.
+        // This ensures FFIBoundaryPass can analyze functions even when MemoryGraph has no data.
+        const mg_has_data = mg.call_args.items.len > 0 or mg.call_rets.items.len > 0;
+        if (!mg_has_data) {
+            for (edges) |edge| {
+                if (!edge.is_ffi_boundary) continue;
+                // Find the caller function in the module and mark it as relevant.
+                // We scan by name match since CrossLangEdge stores caller_name, not func_ptr.
+                var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
+                while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+                    if (c.LLVMIsDeclaration(func) != 0) continue;
+                    const fn_name_ptr = c.LLVMGetValueName(func);
+                    if (@intFromPtr(fn_name_ptr) == 0) continue;
+                    const fn_name = std.mem.sliceTo(fn_name_ptr, 0);
+                    if (std.mem.indexOf(u8, fn_name, edge.caller_name) != null) {
+                        try ctx.markRelevantFunction(@as(u64, @intFromPtr(func)));
+                    }
+                }
+            }
+        }
+
         for (ffis) |surface| {
             // Phase 1 args: callee is already a known FFI boundary →
             // isOnDangerPath would always return .ffi_arg. Skip the expensive call.

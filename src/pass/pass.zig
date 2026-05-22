@@ -531,10 +531,23 @@ pub const PassContext = struct {
             final_issue.severity = risk_severity;
         }
 
-        // 90/10 Priority分层: Set classification based on FFI boundary reachability
-        // - ffi_boundary (90%): Issue reaches FFI/unsafe boundary → high priority
-        // - local_only (10%): Local memory issue → auxiliary priority
-        final_issue.classification = if (on_danger_path) .ffi_boundary else .local_only;
+        // 90/10 Priority classification:
+        // - ffi_boundary (90%): Issue is an FFI boundary type OR reaches FFI/unsafe boundary
+        // - local_only (10%): Local memory issue that doesn't reach any FFI boundary
+        // Pre-set classification from the reporting pass is preserved for FFI issue kinds
+        // (ffi_unsafe_call, cross_language_leak, etc.) because they are inherently FFI-boundary
+        // issues regardless of danger path reachability.
+        const is_ffi_kind = switch (issue.kind) {
+            .ffi_unsafe_call,
+            .ffi_type_mismatch,
+            .type_mismatch,
+            .cross_language_leak,
+            .cross_language_free,
+            .borrow_escape,
+            => true,
+            else => false,
+        };
+        final_issue.classification = if (is_ffi_kind or on_danger_path) .ffi_boundary else .local_only;
 
         // H2 FIX v3: Only clone message if not already owned.
         // Root cause of leak: previous code unconditionally cloned, causing double-allocation:

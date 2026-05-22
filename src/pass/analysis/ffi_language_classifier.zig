@@ -16,6 +16,9 @@ const c = @import("../../ir/llvm_raw.zig").c;
 /// Re-export ffi_utils for unified STL/ABI pattern matching (single source of truth).
 const ffi_utils = @import("ffi_utils.zig");
 
+/// Rust allocator intrinsic patterns — single source of truth from ptr_types.
+const ptr_types = @import("ptr_lifetime_types.zig");
+
 const FFIBoundary = @import("../../diag/issue.zig").FFIBoundary;
 const Language = FFIBoundary.Language;
 const BoundaryKind = FFIBoundary.BoundaryKind;
@@ -100,11 +103,19 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
         if (std.mem.indexOf(u8, func_name, p) != null) return .rust;
     }
 
+    // Rust allocator intrinsics — __rust_alloc, __rdl_alloc, __rg_alloc, exchange_malloc.
+    // These appear in mangled names like _RNvCsfLfy6EI15iL_7___rustc12___rust_alloc
+    // and must be classified as .rust, not .c (which causes cross_lang_free_mismatch to miss them).
+    for (ptr_types.RUST_ALLOC_INTRINSICS.all) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return .rust;
+    }
+
     // C++ Itanium mangling (_Z prefix) — but NOT _ZN which is ambiguous.
     if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z' and
         !(func_name.len > 3 and func_name[2] == 'N')) return .cpp;
 
     // _ZN ambiguity resolution: could be Rust or C++ Itanium nested name.
+    // _ZN5alloc9alloc18alloc_global17h... is Rust, not C++.
     if (func_name.len > 3 and func_name[0] == '_' and func_name[1] == 'Z' and func_name[2] == 'N') {
         if (isRustMangledName(func_name)) return .rust;
         return .cpp;
@@ -210,6 +221,12 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
     const rust_ownership = [_][]const u8{ "into_raw", "from_raw", "drop_in_place" };
     for (rust_ownership) |p| {
         if (std.mem.indexOf(u8, func_name, p) != null) return .rust;
+    }
+
+    // Rust allocator intrinsics — __rust_alloc, __rdl_alloc, __rg_alloc, exchange_malloc.
+    // Must be classified as .rust, not .c (otherwise cross_lang_free_mismatch misses them).
+    for (ptr_types.RUST_ALLOC_INTRINSICS.all) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return .rust;
     }
 
     // C++ Itanium mangling (_Z prefix) — but NOT _ZN which is ambiguous

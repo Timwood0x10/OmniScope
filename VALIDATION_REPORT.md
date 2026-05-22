@@ -28,7 +28,7 @@ This report validates OmniScope v0.1.9 against real test cases with source-level
 | **Memory leak (general)** | ✅ Working | Cross-language and single-language |
 | **Null dereference** | ✅ Working | Unchecked malloc return values |
 | **Taint analysis** | ✅ Working | tainted_path_to_sink detected |
-| **cross_lang_free_mismatch** | ❌ Not working | `cross_lang_free=0`, detection too narrow (Rust→C only, wrong symbol) |
+| **cross_lang_free_mismatch** | ⚠️ Partial | C-alloc/Rust-free works; Rust-alloc/C-free not yet detected |
 | **FFI Boundary issue type** | ❌ Not working | `FFI Boundary (90% core): 0`, never generated |
 | **Pure C/C++ library analysis** | ⚠️ Not applicable | OmniScope is an FFI analyzer, not a general C/C++ static analyzer |
 
@@ -190,15 +190,17 @@ void FFI_09_fp_to_unloaded_code(void) {
 
 **File**: `corpus/large/stress_patterns.c` → `corpus/large/output/stress_patterns.ll`
 **Compiled**: `clang -O0 -emit-llvm -S` (recompiled for validation)
-**Detected (v0.1.9 actual)**: **73 issues** (49 memory_leak + 24 malloc_unchecked)
+**Detected (v0.1.9 actual)**: **78 issues** (51 memory_leak + 25 malloc_unchecked + 1 cross_language_free + 1 null_dereference)
 
 ### 2.1 Source Analysis
 
-Source contains 79 functions simulating various FFI patterns:
+Source contains 81 functions simulating various FFI patterns:
 - `ffi_alloc_01~20`: Rust allocator leaks (20 functions)
 - `ffi_chain_01~20`: Rust+Zig+CGO triple leaks (3 per function, 60 total)
 - `ffi_mismatch_01~20`: C alloc / Rust free mismatch (20) + malloc unchecked (20)
 - 4 manual mismatch functions (C++→Rust, Rust→C, Zig→C, C→Zig)
+- `rust_alloc_c_free_mismatch`: `__rust_alloc` → C `free()` (Rust-alloc/C-free)
+- `c_malloc_rust_dealloc_mismatch`: `malloc` → `__rust_dealloc` (C-alloc/Rust-free)
 - `create_ffi_bundle`: bundle leak + malloc unchecked
 - `recursive_ffi_alloc(10)`: 10 recursive leaks
 - `loop_ffi_alloc(100)`: 100 loop leaks
@@ -208,21 +210,21 @@ Source contains 79 functions simulating various FFI patterns:
 
 | Issue Type | Count | Notes |
 |-----------|-------|-------|
-| **memory_leak** | 49 | Leaks detected (by allocation site, not runtime instances) |
-| **malloc_unchecked** | 24 | Unchecked malloc return values |
-| **cross_lang_free_mismatch** | 0 | ❌ Not detected (detection too narrow) |
-| **FFI Boundary** | 0 | ❌ Not generated (issue type not implemented) |
+| **memory_leak** | 51 | Leaks detected (by allocation site, not runtime instances) |
+| **malloc_unchecked** | 25 | Unchecked malloc return values |
+| **cross_language_free** | 1 | C-alloc/Rust-free detected (`c_malloc_rust_dealloc_mismatch`) |
+| **null_dereference** | 1 | Null pointer dereference |
 
-**FFI boundary identification**: 126 cross-language edges extracted, 155 FFI boundaries identified — but no corresponding issues generated.
+**FFI boundary identification**: 130 cross-language edges extracted, 159 FFI boundaries identified.
 
 ### 2.3 Analysis
 
-- **memory_leak 49 vs ~110+ expected**: Counted by allocation site (not runtime instances); recursive/loop count as 1 site
-- **malloc_unchecked 24**: All 24 `malloc()` calls flagged as unchecked
-- **cross_lang_free_mismatch 0**: Source has 24 explicit cross-lang alloc/free mismatches, but `detectCrossLangAllocMismatch` missed all
+- **memory_leak 51 vs ~110+ expected**: Counted by allocation site (not runtime instances); recursive/loop count as 1 site
+- **malloc_unchecked 25**: All `malloc()` calls flagged as unchecked
+- **cross_language_free 1**: C-alloc/Rust-free direction works via `ptr_lifetime_violations`. Rust-alloc/C-free direction not detected (may need `mem_graph` or `pointer_map` to track `__rust_alloc` return values)
 - **Use-after-free / Double free**: 0 — source contains no such patterns
 
-**Verdict**: memory_leak and malloc_unchecked detection working. cross_lang_free_mismatch still not working.
+**Verdict**: memory_leak, malloc_unchecked, and cross_language_free (C→Rust direction) all working. Rust→C direction needs investigation.
 
 ---
 
@@ -574,7 +576,7 @@ jobject global_ref = (*env)->NewGlobalRef(env, obj);
 
 | Language | Actual Detection Types | cross_lang_free | FFI Boundary | Status |
 |----------|----------------------|----------------|--------------|--------|
-| **Rust FFI** | STACK-ESCAPE, memory_leak, taint | 0 | 0 | ✅ FFI boundary analysis usable |
+| **Rust FFI** | STACK-ESCAPE, memory_leak, taint, cross_lang_free | 0 | 0 | ✅ FFI boundary analysis usable |
 | **Zig FFI** | STACK-ESCAPE, memory_leak | 0 | 0 | ✅ FFI boundary analysis usable |
 | **Python C Ext** | tainted_path_to_sink, memory_leak | 0 | 0 | ✅ Usable |
 | **Java JNI** | memory_leak | 0 | 0 | ⚠️ Limited detection |
@@ -583,7 +585,7 @@ jobject global_ref = (*env)->NewGlobalRef(env, obj);
 | **C/C++ libraries** | memory_leak, null_deref (many) | 0 | 0 | ⚠️ Not applicable (no FFI boundary) |
 
 **Key findings**:
-- `cross_lang_free_mismatch` detection: **zero across all files**. `detectCrossLangAllocMismatch` only checks Rust→C direction and depends on wrong symbol (`_Znwm` is C++ `new`, not Rust allocator)
+- `cross_lang_free_mismatch` detection: **partially working**. C-alloc/Rust-free detected via `ptr_lifetime_violations` (uses `mem_graph` and `pointer_map`). Rust-alloc/C-free not yet detected. Legacy `detectCrossLangAllocMismatch` function has broken flow graph reachability.
 - `FFI Boundary` issue type: **zero across all files**. This issue type has never been generated by any pass
 - Actually working FFI detection: **STACK-ESCAPE** (stack pointer escapes to FFI function) — this is the genuinely valuable cross-language safety detection
 
@@ -599,7 +601,7 @@ jobject global_ref = (*env)->NewGlobalRef(env, obj);
 | STACK-ESCAPE | ✅ Working | Genuine FFI boundary safety detection |
 | Null Deref | ✅ Working | Unchecked malloc return values |
 | Taint | ✅ Working | User input to sink data flow |
-| cross_lang_free_mismatch | ❌ Not detected | Detection too narrow, zero across all files |
+| cross_lang_free_mismatch | ⚠️ Partial | C-alloc/Rust-free works; Rust-alloc/C-free not detected |
 | FFI Boundary (issue type) | ❌ Not detected | Never generated by any pass |
 | Use-After-Free | ⚠️ Limited | Single-lang usable, cross-lang unverified |
 | Double Free | ⚠️ Limited | Same as above |
@@ -690,7 +692,7 @@ jobject global_ref = (*env)->NewGlobalRef(env, obj);
 
 ### 10.2 Known Limitations
 
-❌ **cross_lang_free_mismatch**: Detection too narrow (Rust→C only, wrong symbol), zero across all files
+⚠️ **cross_lang_free_mismatch**: C-alloc/Rust-free works (via `ptr_lifetime_violations`); Rust-alloc/C-free not yet detected
 ❌ **FFI Boundary issue type**: Never generated by any pass
 ⚠️ **Custom Allocators**: Does not recognize project-specific memory pools (sqlite3_malloc, curl_easy_cleanup, etc.)
 ⚠️ **RAII**: unique_ptr/shared_ptr modeled, but complex C++ libraries still have many false positives
