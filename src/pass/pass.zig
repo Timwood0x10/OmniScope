@@ -237,6 +237,11 @@ pub const PassContext = struct {
     /// FFI boundary detection with language-aware context.
     cross_lang_edges: std.ArrayList(CrossLangEdge),
 
+    /// Early exit flag: set by CallGraphPass when no cross-language edges found.
+    /// PassManager checks this after each pass and stops execution when true.
+    /// Pure single-language projects (C/C++ without FFI) skip heavy analysis passes.
+    early_exit: bool,
+
     /// R8.3: Global allocation tracker for cross-function leak detection.
     /// Tracks malloc/free across function boundaries to reduce FP leaks.
     global_alloc_tracker: GlobalAllocTracker,
@@ -307,6 +312,7 @@ pub const PassContext = struct {
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
+            .early_exit = false,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
             .memory_graph = try memory_graph_mod.MemoryGraph.init(allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),

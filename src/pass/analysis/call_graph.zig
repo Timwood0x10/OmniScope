@@ -233,6 +233,14 @@ pub const CallGraphPass = struct {
         // R8.2-b: Extract cross-language call edges for downstream passes.
         try extractCrossLangEdges(ctx, &nodes, &edges, diag);
 
+        // Early exit: no cross-language edges means pure single-language project.
+        // Skip remaining heavy passes (pointer_ownership, taint, ffi_boundary, etc.)
+        if (ctx.cross_lang_edges.items.len == 0) {
+            diag.info("CallGraph: no cross-language edges — single-language project, skipping FFI passes", .{});
+            ctx.early_exit = true;
+            return;
+        }
+
         // CRITICAL FIX for 0/73 benchmark: Build semantics-level CallGraph for BFS traversal.
         {
             var sg = semantics_call_graph.CallGraph.init(ctx.allocator) catch |err| {

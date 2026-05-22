@@ -157,6 +157,11 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
     try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
 
+    // Independent pre-passes (no deps — run before CallGraph for early exit support)
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+
     // Core analysis passes
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
     try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
@@ -172,15 +177,12 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
     try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
-    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
 
     // Additional analysis passes
     // NOTE: ABIMismatchPass, ThreadCrossingPass are not yet fully implemented
     try pipeline.registerPass(OmniScope.cross_lang.LockPass);
     // try pipeline.registerPass(OmniScope.cross_lang.ABIMismatchPass);
     // try pipeline.registerPass(OmniScope.cross_lang.ThreadCrossingPass);
-    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
-    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
 }
 
 fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader) !AnalyzeResult {

@@ -93,6 +93,7 @@ pub const Pipeline = struct {
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(@import("../pass/pass.zig").CrossLangEdge).empty,
+            .early_exit = false,
             .global_alloc_tracker = @import("../pass/pass.zig").GlobalAllocTracker.init(self.allocator),
             .memory_graph = try @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(self.allocator),

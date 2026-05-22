@@ -11,11 +11,31 @@
                                                                    `..
 ```
 
-**跨语言 FFI 与内存安全静态分析器** · **S+ 质量审计** ✅
+**跨语言 FFI 与内存安全静态分析器**
 
-唯一在 **LLVM IR 层面** 检测**跨语言边界内存安全漏洞**的静态分析工具。
+一款专注于在 **LLVM IR 层面** 检测**跨语言边界内存安全漏洞**的静态分析工具。
 
-支持 **C / C++ / Rust / Zig / Go** 五种语言。精度 **100%**，召回率 **100%**（v0.1.8）。
+支持 **C / C++ / Rust / Zig / Go / Python / Java** 七种语言。
+
+### 检测能力（v0.1.9 实测）
+
+| 能力 | 实测状态 | 说明 |
+|------|---------|------|
+| **Stack escape to FFI** | ✅ 稳定检出 | 栈指针逃逸到 FFI 函数 |
+| **Memory leak** | ✅ 稳定检出 | 跨语言/单语言都能检出 |
+| **Null dereference** | ✅ 稳定检出 | malloc 返回值未检查 |
+| **Taint analysis** | ✅ 稳定检出 | 用户输入到 sink 的数据流 |
+| **cross_lang_free_mismatch** | ❌ 未工作 | 检测函数太窄，全量为 0 |
+| **FFI Boundary issue** | ❌ 未工作 | 从未被任何 pass 生成 |
+
+**适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析。纯 C/C++ 库（无 FFI 边界）不适用。
+
+*以上数据基于 v0.1.9 实测，详见 [VALIDATION_REPORT.md](./VALIDATION_REPORT.md)。*
+
+**v0.2.0 路线图**：
+- 修复 `cross_lang_free_mismatch` 检测（当前仅 Rust→C，依赖错误符号）
+- 添加自定义分配器识别（sqlite3_malloc、curl_easy_cleanup 等）
+- 添加 FFI Boundary issue 类型生成
 
 [English](./README.md) | 简体中文
 
@@ -320,9 +340,9 @@ make corpus-test    # 两个都跑
 
 **总计**：20,000+ 个函数已分析，**2,955+ 个问题**被检出，**70,000+ 个 FFI 边界**被识别
 
-**成功率**：95.2%（40/42 文件），0 次崩溃。**精度：100%**（S+ 质量审计）。
+**成功率**：95.2%（40/42 文件），0 次崩溃。
 
-*完整验证报告*: [验证报告 v0.1.8](./docs/investigation_reports/zh/FULL_VERIFICATION_V018.md)（**S+ 评级**，100% 精度，100% 召回率）
+*验证报告*: [VALIDATION_REPORT.md](./VALIDATION_REPORT.md) — v0.1.9 实测结果
 
 ---
 
@@ -333,8 +353,8 @@ make corpus-test    # 两个都跑
 | **分析速度** | ~150ms / 千函数（ReleaseFast） | sqlite3（3.3K 函数）：~12s |
 | **内存占用** | ~120MB / 千函数（Release） | Debug 模式：~400MB |
 | **成功率** | 95.2%（40/42 文件） | LLVM 22 兼容 |
-| **误报率** | **0%（S+ 审计认证）** | 6 文件基准：96 TP，0 FP |
-| **漏报率** | **0%（S+ 审计认证）** | 对抗测试 0 FN |
+| **精度（FFI）** | **~100%** Rust/Zig FFI 项目 | wasmtime, ring, blst, ripgrep 等 |
+| **精度（C/C++）** | **2-5%** 纯 C/C++ 库 | 不适用场景（无 FFI 边界），非工具缺陷 |
 
 | 文件规模 | Debug 模式 | ReleaseFast |
 |----------|-----------|-------------|
@@ -381,9 +401,8 @@ make corpus-test    # 两个都跑
 
 | 文档 | 内容 |
 |------|------|
-| **[完整验证报告 v0.1.8](./docs/investigation_reports/zh/FULL_VERIFICATION_V018.md)** | **S+ 质量审计** — 100% 精度，100% 召回率 |
-| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** | v0.1.8 发布详情 |
-| **[S+ 审计报告](./docs/investigation_reports/zh/)** | 12 份 41 项目审计报告 |
+| **[VALIDATION_REPORT.md](./VALIDATION_REPORT.md)** | v0.1.9 实测结果 — 检测能力与已知限制 |
+| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** | v0.1.9 发布详情 |
 
 ### 概念文档
 

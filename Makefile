@@ -646,7 +646,8 @@ red-team: build
 		total_files=$$((total_files + 1)); \
 		name=$$(basename "$$f"); \
 		output=$$( $(OMNISCOPE) "$$f" 2>&1 ); \
-		count=$$(echo "$$output" | grep -c "^\[" || echo 0); \
+		count=$$(echo "$$output" | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		count=$${count:-0}; \
 		total_issues=$$((total_issues + count)); \
 		if [ "$$count" -gt 0 ]; then \
 			printf "  ✅ %-40s %3d issues\n" "$$name" "$$count"; \
@@ -678,7 +679,8 @@ blue-team: corpus-ir build
 	small_count=0; \
 	for f in $(CORPUS_SMALL)/output/*.ll; do \
 		if [ ! -f "$$f" ]; then continue; fi; \
-		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
 		small_count=$$((small_count + c)); \
 	done; \
 	if [ "$$small_count" -le 20 ]; then \
@@ -693,7 +695,8 @@ blue-team: corpus-ir build
 	med_count=0; \
 	for f in $(CORPUS_MEDIUM)/output/*.ll; do \
 		if [ ! -f "$$f" ]; then continue; fi; \
-		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
 		med_count=$$((med_count + c)); \
 	done; \
 	if [ "$$med_count" -le 30 ]; then \
@@ -708,7 +711,8 @@ blue-team: corpus-ir build
 	dense_count=0; \
 	for f in $(CORPUS_FFI_DENSE)/output/*.ll; do \
 		if [ ! -f "$$f" ]; then continue; fi; \
-		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
 		dense_count=$$((dense_count + c)); \
 	done; \
 	if [ "$$dense_count" -le 40 ]; then \
