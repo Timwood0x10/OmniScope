@@ -391,11 +391,11 @@ make corpus-test    # 两个都跑
 
 | 文档 | 适合读者 | 预计时间 |
 |------|----------|----------|
-| **[快速入门指南](./docs/QUICK_START.md)** ⭐ | 新用户 | 10 分钟 |
-| **[API 参考文档](./docs/API_REFERENCE.md)** | 集成开发者 | 30 分钟 |
-| **[使用示例](./docs/EXAMPLES.md)** | 实践应用 | 15 分钟 |
-| **[架构文档](./docs/architecture.md)** | 架构师 | 20 分钟 |
+| **[快速入门指南](./docs/zh/QUICK_START.md)** ⭐ | 新用户 | 10 分钟 |
+| **[API 参考文档](./docs/zh/API_REFERENCE.md)** | 集成开发者 | 30 分钟 |
+| **[架构文档](./docs/zh/architecture.md)** | 架构师 | 20 分钟 |
 | **[开发者指南](./docs/zh/developer_guide.md)** | 贡献者 | 15 分钟 |
+| **[IR 规范文档](./docs/zh/ir-specs/)** | 编译器分析 | — |
 
 ### 报告与基准测试
 
@@ -403,19 +403,33 @@ make corpus-test    # 两个都跑
 |------|------|
 | **[VALIDATION_REPORT.md](./VALIDATION_REPORT.md)** | v0.1.9 实测结果 — 检测能力与已知限制 |
 | **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** | v0.1.9 发布详情 |
+| **[性能基准](./docs/zh/BENCHMARK.md)** | 性能基准测试 |
+| **[语料库分析](./docs/zh/reports/CORPUS_ANALYSIS.md)** | 全量语料库测试结果 |
+
+### IR 规范文档（8 个编译器）
+
+| 文档 | 语言 |
+|------|------|
+| **[C/C++](./docs/zh/ir-specs/C_CPP_IR_SPEC.md)** | C / C++ |
+| **[Rust](./docs/zh/ir-specs/RUST_IR_SPEC.md)** | Rust |
+| **[Zig](./docs/zh/ir-specs/ZIG_IR_SPEC.md)** | Zig |
+| **[Go (gc)](./docs/zh/ir-specs/GO_GC_IR_SPEC.md)** | Go |
+| **[TinyGo](./docs/zh/ir-specs/TINYGO_IR_SPEC.md)** | Go (TinyGo) |
+| **[JDK](./docs/zh/ir-specs/JDK_IR_SPEC.md)** | Java |
+| **[Python](./docs/zh/ir-specs/PYTHON_IR_SPEC.md)** | Python |
+| **[Swift](./docs/zh/ir-specs/SWIFT_IR_SPEC.md)** | Swift |
 
 ### 概念文档
 
 | 文档 | 主题 |
 |------|------|
-| **[技术白皮书](./docs/WHITEPAPER.md)** | 技术深度解析 |
-| **[Zone Classification 理念](./docs/ZONE_CLASSIFICATION.md)** | 核心创新详解 |
+| **[技术白皮书](./docs/zh/WHITEPAPER.md)** | 技术深度解析 |
 | **[写给用户的信](./docs/TOUSER/zh.md)** | 项目存在意义 |
 
 ### 多语言支持
 
-- 🇺🇸 English: [English README](./README.md) + `docs/en/`
-- 🇨🇳 简体中文: 本文件 + `docs/zh/`
+- 🇺🇸 English: [English README](./README.md) + [`docs/en/`](./docs/en/)
+- 🇨🇳 简体中文: 本文件 + [`docs/zh/`](./docs/zh/)
 
 ---
 

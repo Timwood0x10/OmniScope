@@ -70,7 +70,7 @@ fn zig_bug_02_wrong_length() void {
 // ZIG-BUG-03: Sentinel mismatch from C string
 //
 // Zig expects a sentinel-terminated string from C, but the C
- * function returns a non-sentinel buffer or wrong sentinel.
+// function returns a non-sentinel buffer or wrong sentinel.
 //
 // Expected: buffer_overflow / null_dereference
 // ================================================================
@@ -157,14 +157,12 @@ fn zig_bug_06_intcast_overflow() void {
 // Expected: alignment_violation
 // ================================================================
 
-fn zig_bug_07_alignment() void {
-    // Simulate C returning a misaligned handle
-    const handle: usize = 7; // Not aligned to any reasonable boundary
-
-    // [BUG] @ptrCast from misaligned integer
-    const ptr: *u32 = @ptrFromInt(handle);
+fn zig_bug_07_alignment(c_handle: usize) void {
+    // C returns a handle that may not be aligned for u32
+    // [BUG] @ptrCast from potentially misaligned integer
+    const ptr: *align(1) u32 = @ptrFromInt(c_handle);
     _ = ptr;
-    // Dereferencing would be UB due to alignment
+    // Dereferencing would be UB if c_handle is not 4-byte aligned
 }
 
 // ================================================================
@@ -204,6 +202,6 @@ pub fn main() void {
     zig_bug_04_wrong_allocator();
     zig_bug_05_unchecked_c_error();
     zig_bug_06_intcast_overflow();
-    zig_bug_07_alignment();
+    zig_bug_07_alignment(7); // Misaligned handle from C
     zig_bug_08_no_sentinel();
 }

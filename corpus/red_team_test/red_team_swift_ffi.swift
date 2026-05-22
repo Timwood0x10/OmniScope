@@ -11,23 +11,10 @@ import Foundation
 //   - UnsafeMutableRawPointer misuse
 
 // ================================================================
-// FFI declarations — C functions Swift calls
+// FFI declarations — imported via bridging header
+// C functions: c_ffi_alloc, c_ffi_free, c_ffi_store_pointer,
+//              c_ffi_retrieve_pointer, c_ffi_register_callback
 // ================================================================
-
-@_silgenName("c_ffi_alloc")
-func c_ffi_alloc(_ size: Int) -> UnsafeMutableRawPointer?
-
-@_silgenName("c_ffi_free")
-func c_ffi_free(_ ptr: UnsafeMutableRawPointer)
-
-@_silgenName("c_ffi_store_pointer")
-func c_ffi_store_pointer(_ ptr: UnsafePointer<UInt8>)
-
-@_silgenName("c_ffi_retrieve_pointer")
-func c_ffi_retrieve_pointer() -> UnsafeMutablePointer<UInt8>
-
-@_silgenName("c_ffi_register_callback")
-func c_ffi_register_callback(_ cb: @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void, _ ctx: UnsafeMutableRawPointer?)
 
 // ================================================================
 // SWIFT-BUG-01: Unowned reference to deallocated object

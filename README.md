@@ -394,13 +394,13 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 
 ### Getting Started (Recommended Reading Order)
 
-| Document                                            | For             | Time   |
-| --------------------------------------------------- | --------------- | ------ |
-| **[Quick Start Guide](./docs/QUICK_START.md)** ⭐    | New users       | 10 min |
-| **[API Reference](./docs/API_REFERENCE.md)**        | Integrators     | 30 min |
-| **[Examples](./docs/EXAMPLES.md)**                  | Practical usage | 15 min |
-| **[Architecture](./docs/architecture.md)**          | Architects      | 20 min |
-| **[Developer Guide](./docs/en/developer_guide.md)** | Contributors    | 15 min |
+| Document                                                   | For             | Time   |
+| ---------------------------------------------------------- | --------------- | ------ |
+| **[Quick Start Guide](./docs/en/QUICK_START.md)** ⭐       | New users       | 10 min |
+| **[API Reference](./docs/en/API_REFERENCE.md)**            | Integrators     | 30 min |
+| **[Architecture](./docs/en/architecture.md)**              | Architects      | 20 min |
+| **[Developer Guide](./docs/en/developer_guide.md)**        | Contributors    | 15 min |
+| **[IR Specifications](./docs/en/ir-specs/)**               | Compiler analysis | —    |
 
 ### Reports & Benchmarks
 
@@ -408,19 +408,33 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | **[VALIDATION_REPORT.md](./VALIDATION_REPORT.md)** | v0.1.9 actual test results — detection capabilities and known limitations |
 | **[RELEASE_NOTES.md](./RELEASE_NOTES.md)**                                                | v0.1.9 release details                                |
+| **[Benchmarks](./docs/en/BENCHMARK.md)**                                                  | Performance benchmarks                                |
+| **[Corpus Analysis](./docs/en/reports/CORPUS_ANALYSIS.md)**                               | Full corpus test results                              |
+
+### IR Specifications (8 Compilers)
+
+| Document                                                                | Language   |
+| ----------------------------------------------------------------------- | ---------- |
+| **[C/C++](./docs/en/ir-specs/C_CPP_IR_SPEC.md)**                       | C / C++    |
+| **[Rust](./docs/en/ir-specs/RUST_IR_SPEC.md)**                         | Rust       |
+| **[Zig](./docs/en/ir-specs/ZIG_IR_SPEC.md)**                           | Zig        |
+| **[Go (gc)](./docs/en/ir-specs/GO_GC_IR_SPEC.md)**                     | Go         |
+| **[TinyGo](./docs/en/ir-specs/TINYGO_IR_SPEC.md)**                     | Go (TinyGo)|
+| **[JDK](./docs/en/ir-specs/JDK_IR_SPEC.md)**                           | Java       |
+| **[Python](./docs/en/ir-specs/PYTHON_IR_SPEC.md)**                     | Python     |
+| **[Swift](./docs/en/ir-specs/SWIFT_IR_SPEC.md)**                       | Swift      |
 
 ### Concept Papers
 
 | Document                                                            | Topic                     |
 | ------------------------------------------------------------------- | ------------------------- |
-| **[White Paper](./docs/WHITEPAPER.md)**                             | Technical deep-dive       |
-| **[Zone Classification Philosophy](./docs/ZONE_CLASSIFICATION.md)** | Core innovation explained |
+| **[White Paper](./docs/en/WHITEPAPER.md)**                          | Technical deep-dive       |
 | **[Letter to Users](./docs/TOUSER/en.md)**                          | Why this project exists   |
 
 ### Multi-Language Support
 
-- 🇺🇸 English: This README + `docs/en/`
-- 🇨🇳 简体中文: [README\_zh.md](./README_zh.md) + `docs/zh/`
+- 🇺🇸 English: This README + [`docs/en/`](./docs/en/)
+- 🇨🇳 简体中文: [README\_zh.md](./README_zh.md) + [`docs/zh/`](./docs/zh/)
 
 ***
 
