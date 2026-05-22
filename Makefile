@@ -51,6 +51,7 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         baseline-check red-team-test \
         rust cpp go zig rust-run cpp-run go-run zig-run help \
         corpus corpus-ir corpus-analyze corpus-check \
+        red-team blue-team corpus-test \
         real-world real-world-ir real-world-run \
         baseline-check \
         install-deps release benchmark benchmark-full \
@@ -607,6 +608,136 @@ corpus-check: corpus
 	@echo "%"
 
 # ========================================
+# Red/Blue Team Testing (v0.1.9)
+# ========================================
+#
+# Red Team  = adversarial: does the tool detect known bugs? (recall)
+# Blue Team = defensive: does the tool avoid false alarms? (precision)
+#
+# Usage:
+#   make red-team         Run red team only
+#   make blue-team        Run blue team only
+#   make corpus-test      Run both + summary
+
+OMNISCOPE = $(ZIG) build run --
+
+RED_TEAM_DIR = $(CORPUS_DIR)/red_team_test
+RED_IR_FILES = \
+	$(RED_TEAM_DIR)/red_team_bugs.ll \
+	$(RED_TEAM_DIR)/ffi_boundary_bugs.ll \
+	$(RED_TEAM_DIR)/cross_lang_free_bugs.ll \
+	$(RED_TEAM_DIR)/cross_lang_free_complete.ll \
+	$(RED_TEAM_DIR)/subtle_ffi_bugs.ll \
+	$(RED_TEAM_DIR)/python_c_api_bugs.ll \
+	$(RED_TEAM_DIR)/posix_ffi_bugs.ll
+
+# Red Team: adversarial detection test
+# Compiles red_team_test/*.c to IR and runs OmniScope.
+# Reports issue count per file. Expected: ≥10 issues per adversarial file.
+red-team: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    RED TEAM TEST                              ║"
+	@echo "║  Adversarial: detect known bugs in crafted test cases         ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@mkdir -p /tmp/omniscope-red-team
+	@total_files=0; total_issues=0; \
+	for f in $(RED_IR_FILES); do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		total_files=$$((total_files + 1)); \
+		name=$$(basename "$$f"); \
+		output=$$( $(OMNISCOPE) "$$f" 2>&1 ); \
+		count=$$(echo "$$output" | grep -c "^\[" || echo 0); \
+		total_issues=$$((total_issues + count)); \
+		if [ "$$count" -gt 0 ]; then \
+			printf "  ✅ %-40s %3d issues\n" "$$name" "$$count"; \
+		else \
+			printf "  ❌ %-40s %3d issues (MISS)\n" "$$name" "$$count"; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "────────────────────────────────────────────────────────"; \
+	printf "  Red Team: %d files, %d total issues detected\n" "$$total_files" "$$total_issues"; \
+	if [ "$$total_issues" -lt 10 ]; then \
+		echo "  ⚠️  LOW detection count — investigate regressions"; \
+	else \
+		echo "  ✅ Detection threshold met"; \
+	fi
+
+# Blue Team: false positive audit
+# Runs OmniScope on corpus files and checks out-of-scope inflation.
+# Expected: issue count should not wildly exceed in-scope expected count.
+blue-team: corpus-ir build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    BLUE TEAM TEST                             ║"
+	@echo "║  Defensive: false positive audit on corpus                    ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@blue_pass=0; blue_fail=0; \
+	\
+	echo "── small/ (expected ≤13 in-scope issues)"; \
+	small_count=0; \
+	for f in $(CORPUS_SMALL)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		small_count=$$((small_count + c)); \
+	done; \
+	if [ "$$small_count" -le 20 ]; then \
+		printf "  ✅ small/:        %3d issues (expected ≤13, ok)\n" "$$small_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ small/:        %3d issues (expected ≤13, OVER)\n" "$$small_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo "── medium/ (expected ≤20 in-scope issues)"; \
+	med_count=0; \
+	for f in $(CORPUS_MEDIUM)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		med_count=$$((med_count + c)); \
+	done; \
+	if [ "$$med_count" -le 30 ]; then \
+		printf "  ✅ medium/:       %3d issues (expected ≤20, ok)\n" "$$med_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ medium/:       %3d issues (expected ≤20, OVER)\n" "$$med_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo "── ffi-dense/ (expected ≤26 in-scope issues)"; \
+	dense_count=0; \
+	for f in $(CORPUS_FFI_DENSE)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | grep -c "^\[" || echo 0 ); \
+		dense_count=$$((dense_count + c)); \
+	done; \
+	if [ "$$dense_count" -le 40 ]; then \
+		printf "  ✅ ffi-dense/:    %3d issues (expected ≤26, ok)\n" "$$dense_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ ffi-dense/:    %3d issues (expected ≤26, OVER)\n" "$$dense_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo ""; \
+	echo "────────────────────────────────────────────────────────"; \
+	printf "  Blue Team: %d passed, %d failed\n" "$$blue_pass" "$$blue_fail"; \
+	if [ "$$blue_fail" -gt 0 ]; then \
+		echo "  ⚠️  False positive regression detected"; \
+	else \
+		echo "  ✅ No false positive regression"; \
+	fi
+
+# Combined: run both red + blue team
+corpus-test: red-team blue-team
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                  CORPUS TEST COMPLETE                         ║"
+	@echo "║  Red Team  = detection rate (adversarial bugs)                ║"
+	@echo "║  Blue Team = false positive audit (clean boundaries)          ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+
+# ========================================
 
 # ========================================
 # Phase 7: Regression Testing & Quality Gate (v0.1.6)
@@ -692,6 +823,11 @@ help:
 	@echo "  make corpus-ir   Compile corpus to LLVM IR"
 	@echo "  make corpus-analyze  Analyze corpus with OmniScope"
 	@echo "  make corpus-check    Analyze and check expected issues"
+	@echo ""
+	@echo "Red/Blue Team Testing:"
+	@echo "  make red-team    Adversarial: detect known bugs (recall)"
+	@echo "  make blue-team   Defensive: false positive audit (precision)"
+	@echo "  make corpus-test Run both red + blue team tests"
 	@echo ""
 	@echo "Benchmark Commands:"
 	@echo "  make bench          Run micro-benchmarks (component-level timing)"

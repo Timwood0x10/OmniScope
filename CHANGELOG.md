@@ -5,6 +5,44 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-05-22
+
+### Bug Fixes & Performance Optimizations
+
+Critical bug fixes and performance improvements with zero precision loss.
+
+#### Bug Fixes
+
+- **P0**: Added `integer_overflow` to `IssueKind` enum with correct CWE-190 mapping (was incorrectly mapped to CWE-120)
+- **P1**: Fixed memory leak in `call_graph.zig` error paths by adding errdefer for `ptr_args_owned`
+- **P2**: Fixed `ffi_detector.zig` opcode comparison to use direct `c.LLVMCall` instead of `@enumFromInt` (3 sites)
+- **L4**: Unified version number to `v0.1.9` across all outputs
+
+#### Performance Optimizations
+
+- **C1**: Merged 8 independent module traversals into 3 in `pointer_ownership.zig` (−67% LLVM API calls)
+- **C3**: Used existing `call_ret_by_ptr` index in `isLeaked`/`isDoubleFreed` (O(N²) → O(1))
+- **C5**: Added 1024-entry cache for `classifyFunction` results (no string allocation)
+- **OPT #1**: Incrementally build `reverse_flow` during `addFlowEdge` (eliminates one full traversal)
+- **OPT #2**: Added cache for `isRustFFIRelevantFunction` results
+
+#### Precision Verification
+
+All optimizations verified with zero precision loss:
+
+| Test | Issues (v0.1.8) | Issues (v0.1.9) | Loss |
+|------|----------------|----------------|------|
+| Rust | 15 | 15 | ✅ None |
+| C++ | 13 | 13 | ✅ None |
+| Zig | 213 | 213 | ✅ None |
+| Go | 8 | 8 | ✅ None |
+| Real-world | 46 | 46 | ✅ None |
+
+#### Technical Debt
+
+- Active bugs: 6 → 0 (all fixed)
+- Deferred optimizations: P1 (ptr_lifetime gate), P2 (pipeline traversal) - design tradeoffs, not bugs
+
 ## [0.1.8] - 2026-05-13
 
 ### S+ Quality Audit

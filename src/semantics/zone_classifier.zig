@@ -25,14 +25,12 @@ pub const Language = FFIBoundary.Language;
 // This is a pure function that was being called repeatedly with the same inputs
 // Cache size: 1024 entries (covers most common function patterns)
 const CacheSize = 1024;
-threadlocal var classify_cache: ?std.StringHashMap(ZoneKind) = null;
-threadlocal var cache_allocator: ?std.mem.Allocator = null;
+threadlocal var classify_cache: ?std.AutoHashMap(usize, ZoneKind) = null;
 
 /// Initialize the thread-local cache (call once per thread)
 pub fn initCache(allocator: std.mem.Allocator) void {
     if (classify_cache == null) {
-        classify_cache = std.StringHashMap(ZoneKind).init(allocator);
-        cache_allocator = allocator;
+        classify_cache = std.AutoHashMap(usize, ZoneKind).init(allocator);
     }
 }
 
@@ -41,7 +39,6 @@ pub fn deinitCache() void {
     if (classify_cache) |*cache| {
         cache.deinit();
         classify_cache = null;
-        cache_allocator = null;
     }
 }
 
@@ -377,9 +374,10 @@ fn isAlphaNumeric(ch: u8) bool {
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
 
-    // C5 FIX: Check cache first
+    // C5 FIX: Check cache first (use pointer as key to avoid string allocation)
+    const name_ptr = @intFromPtr(func_name.ptr);
     if (classify_cache) |*cache| {
-        if (cache.get(func_name)) |cached_result| {
+        if (cache.get(name_ptr)) |cached_result| {
             return cached_result;
         }
     }
@@ -427,17 +425,10 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         }
     }
 
-    // C5 FIX: Cache the result (limit cache size to prevent unbounded growth)
+    // C5 FIX: Cache the result using pointer as key
     if (classify_cache) |*cache| {
         if (cache.count() < CacheSize) {
-            if (cache_allocator) |allocator| {
-                // Dupe the key since func_name is borrowed
-                const owned_key = allocator.dupe(u8, func_name) catch return result;
-                cache.put(owned_key, result) catch {
-                    allocator.free(owned_key);
-                    return result;
-                };
-            }
+            cache.put(name_ptr, result) catch {};
         }
     }
 

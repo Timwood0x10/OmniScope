@@ -116,6 +116,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Config {
             return error.InvalidOption;
         } else {
             const arg_copy = try allocator.dupe(u8, arg);
+            errdefer allocator.free(arg_copy);
             try config.input_files.append(allocator, arg_copy);
         }
     }

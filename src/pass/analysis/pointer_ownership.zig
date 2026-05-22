@@ -226,6 +226,16 @@ pub const PointerOwnershipPass = struct {
             flow_graph.deinit();
         }
 
+        // OPT #1: Build reverse_flow incrementally during main pass
+        var reverse_flow = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
+        defer {
+            var rf_iter = reverse_flow.iterator();
+            while (rf_iter.next()) |entry| {
+                entry.value_ptr.deinit();
+            }
+            reverse_flow.deinit();
+        }
+
         var boundary_analyzer = lifetime.BoundaryAnalyzer.init(ctx.allocator);
         errdefer boundary_analyzer.deinit();
         defer boundary_analyzer.deinit();
@@ -236,6 +246,10 @@ pub const PointerOwnershipPass = struct {
 
         var null_check_recognizer = NullCheckRecognizer.init(ctx.allocator);
         defer null_check_recognizer.deinit();
+
+        // OPT #2: Cache for isRustFFIRelevantFunction (pure function, LLVM IR immutable)
+        var ffi_relevant_cache = std.AutoHashMap(usize, bool).init(ctx.allocator);
+        defer ffi_relevant_cache.deinit();
 
         const mod = ctx.module.?.raw;
 
@@ -456,7 +470,14 @@ pub const PointerOwnershipPass = struct {
                 continue;
             }
 
-            if (!isRustFFIRelevantFunction(func)) continue;
+            // OPT #2: Use cached isRustFFIRelevantFunction result
+            const func_ptr = @as(usize, @intFromPtr(func));
+            const is_ffi_relevant = if (ffi_relevant_cache.get(func_ptr)) |cached| cached else blk: {
+                const result = isRustFFIRelevantFunction(func);
+                ffi_relevant_cache.put(func_ptr, result) catch {};
+                break :blk result;
+            };
+            if (!is_ffi_relevant) continue;
 
             if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
                 // v0.1.7 FIX (break point 5): Fallback for when DangerSurfacePass produced
@@ -480,6 +501,7 @@ pub const PointerOwnershipPass = struct {
                 &alloc_map,
                 &free_map,
                 &flow_graph,
+                &reverse_flow,
                 &stats,
                 has_debug_info,
                 &id_map,
@@ -511,32 +533,8 @@ pub const PointerOwnershipPass = struct {
             detectAsPtrBorrowEscape(ctx, func, diag);
         }
 
+        // OPT #1: reverse_flow already built incrementally, now check ownership transfer
         {
-            var reverse_flow = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
-            defer {
-                var rf_iter = reverse_flow.iterator();
-                while (rf_iter.next()) |entry| {
-                    entry.value_ptr.*.deinit();
-                }
-                reverse_flow.deinit();
-            }
-
-            {
-                var fg_iter = flow_graph.iterator();
-                while (fg_iter.next()) |entry| {
-                    const source_id = entry.key_ptr.*;
-                    var dest_iter = entry.value_ptr.*.iterator();
-                    while (dest_iter.next()) |dest_entry| {
-                        const dest_id = dest_entry.key_ptr.*;
-                        const rf_entry = reverse_flow.getOrPut(dest_id) catch continue;
-                        if (!rf_entry.found_existing) {
-                            rf_entry.value_ptr.* = std.AutoHashMap(u32, void).init(ctx.allocator);
-                        }
-                        rf_entry.value_ptr.*.put(source_id, {}) catch {};
-                    }
-                }
-            }
-
             var func2 = c.LLVMGetFirstFunction(mod);
             while (@intFromPtr(func2) != 0) : (func2 = c.LLVMGetNextFunction(func2)) {
                 if (c.LLVMIsDeclaration(func2) != 0) continue;
@@ -643,6 +641,7 @@ pub const PointerOwnershipPass = struct {
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
         free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
         id_map: *ValueIdMap,
@@ -665,6 +664,7 @@ pub const PointerOwnershipPass = struct {
                     alloc_map,
                     free_map,
                     flow_graph,
+                    reverse_flow,
                     stats,
                     has_debug_info,
                     id_map,
@@ -840,6 +840,7 @@ pub const PointerOwnershipPass = struct {
         alloc_map: *std.AutoHashMap(u32, *AllocSite),
         free_map: *std.AutoHashMap(u32, *FreeSite),
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         stats: *OwnershipStats,
         has_debug_info: bool,
         id_map: *ValueIdMap,
@@ -850,7 +851,7 @@ pub const PointerOwnershipPass = struct {
         const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
         _ = has_debug_info;
 
-        try buildFlowGraph(allocator, inst, opcode, flow_graph, id_map);
+        try buildFlowGraph(allocator, inst, opcode, flow_graph, reverse_flow, id_map);
 
         // Hook dispatch for call instructions (fixes break point 2+3: dead hook code).
         // Previously rustOwnershipHook was never called because analyzeInstructionForOwnership
@@ -944,6 +945,7 @@ pub const PointerOwnershipPass = struct {
         inst: c.LLVMValueRef,
         opcode: c_uint,
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
         id_map: *ValueIdMap,
     ) OwnershipError!void {
         const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
@@ -955,7 +957,7 @@ pub const PointerOwnershipPass = struct {
                 if (@intFromPtr(value) != 0 and @intFromPtr(ptr) != 0) {
                     const value_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
                     const ptr_id = id_map.getOrPutId(@intFromPtr(ptr)) catch return;
-                    try addFlowEdge(allocator, value_id, ptr_id, flow_graph);
+                    try addFlowEdge(allocator, value_id, ptr_id, flow_graph, reverse_flow);
                 }
             },
             c.LLVMLoad => {},
@@ -963,7 +965,7 @@ pub const PointerOwnershipPass = struct {
                 const operand = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(operand) != 0) {
                     const operand_id = id_map.getOrPutId(@intFromPtr(operand)) catch return;
-                    try addFlowEdge(allocator, operand_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, operand_id, inst_id, flow_graph, reverse_flow);
                 }
             },
             c.LLVMCall => {
@@ -973,7 +975,7 @@ pub const PointerOwnershipPass = struct {
                     const op = c.LLVMGetOperand(inst, i);
                     if (@intFromPtr(op) != 0) {
                         const op_id = id_map.getOrPutId(@intFromPtr(op)) catch continue;
-                        try addFlowEdge(allocator, op_id, inst_id, flow_graph);
+                        try addFlowEdge(allocator, op_id, inst_id, flow_graph, reverse_flow);
                     }
                 }
             },
@@ -984,7 +986,7 @@ pub const PointerOwnershipPass = struct {
                     const incoming = c.LLVMGetIncomingValue(inst, i);
                     if (@intFromPtr(incoming) != 0) {
                         const incoming_id = id_map.getOrPutId(@intFromPtr(incoming)) catch continue;
-                        try addFlowEdge(allocator, incoming_id, inst_id, flow_graph);
+                        try addFlowEdge(allocator, incoming_id, inst_id, flow_graph, reverse_flow);
                     }
                 }
             },
@@ -993,25 +995,25 @@ pub const PointerOwnershipPass = struct {
                 const false_val = c.LLVMGetOperand(inst, 2);
                 if (@intFromPtr(true_val) != 0) {
                     const true_id = id_map.getOrPutId(@intFromPtr(true_val)) catch return;
-                    try addFlowEdge(allocator, true_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, true_id, inst_id, flow_graph, reverse_flow);
                 }
                 if (@intFromPtr(false_val) != 0) {
                     const false_id = id_map.getOrPutId(@intFromPtr(false_val)) catch return;
-                    try addFlowEdge(allocator, false_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, false_id, inst_id, flow_graph, reverse_flow);
                 }
             },
             c.LLVMGetElementPtr => {
                 const base_ptr = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(base_ptr) != 0) {
                     const base_id = id_map.getOrPutId(@intFromPtr(base_ptr)) catch return;
-                    try addFlowEdge(allocator, base_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, base_id, inst_id, flow_graph, reverse_flow);
                 }
             },
             c.LLVMExtractValue => {
                 const aggregate = c.LLVMGetOperand(inst, 0);
                 if (@intFromPtr(aggregate) != 0) {
                     const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
-                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph, reverse_flow);
                 }
             },
             c.LLVMInsertValue => {
@@ -1019,11 +1021,11 @@ pub const PointerOwnershipPass = struct {
                 const value = c.LLVMGetOperand(inst, 1);
                 if (@intFromPtr(aggregate) != 0) {
                     const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
-                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph, reverse_flow);
                 }
                 if (@intFromPtr(value) != 0) {
                     const val_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
-                    try addFlowEdge(allocator, val_id, inst_id, flow_graph);
+                    try addFlowEdge(allocator, val_id, inst_id, flow_graph, reverse_flow);
                 }
             },
             else => {},
@@ -1036,14 +1038,25 @@ pub const PointerOwnershipPass = struct {
         from: u32,
         to: u32,
         flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     ) !void {
         if (from == to) return; // Skip self-edges
 
+        // Add forward edge
         const entry = try flow_graph.getOrPut(from);
         if (!entry.found_existing) {
             entry.value_ptr.* = std.AutoHashMap(u32, void).init(allocator);
         }
         try entry.value_ptr.put(to, {});
+
+        // OPT #1: Incrementally build reverse_flow
+        if (reverse_flow) |rf| {
+            const rf_entry = try rf.getOrPut(to);
+            if (!rf_entry.found_existing) {
+                rf_entry.value_ptr.* = std.AutoHashMap(u32, void).init(allocator);
+            }
+            try rf_entry.value_ptr.put(from, {});
+        }
     }
 
     /// Check if a value can reach another value through the flow graph.

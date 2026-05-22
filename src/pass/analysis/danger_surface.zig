@@ -82,7 +82,7 @@ pub const DangerSurfacePass = struct {
                 ctx.markFunctionFromInst(mg.call_args.items[arg_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
-                traceAliasClosure(mg, arg_ptr_val, ctx, diag, &visited) catch |err| {
+                traceAliasClosure(mg, arg_ptr_val, ctx, diag, &visited, 0) catch |err| {
                     diag.debug("[P1-1] Alias propagation error for ptr 0x{x}: {}", .{ arg_ptr_val, err });
                 };
             }
@@ -98,7 +98,7 @@ pub const DangerSurfacePass = struct {
                 ctx.markFunctionFromInst(mg.call_rets.items[ret_idx].caller_inst);
                 visited.clearRetainingCapacity();
                 total_alias_traces += 1;
-                traceAliasClosure(mg, ret_ptr_val, ctx, diag, &visited) catch |err| {
+                traceAliasClosure(mg, ret_ptr_val, ctx, diag, &visited, 0) catch |err| {
                     diag.debug("[P1-1] Alias propagation error for ptr 0x{x}: {}", .{ ret_ptr_val, err });
                 };
             }
@@ -128,7 +128,7 @@ pub const DangerSurfacePass = struct {
 
             visited.clearRetainingCapacity();
             total_alias_traces += 1;
-            traceAliasClosure(mg, ptr_val, ctx, diag, &visited) catch |err| {
+            traceAliasClosure(mg, ptr_val, ctx, diag, &visited, 0) catch |err| {
                 diag.debug("[P1-1] Alias propagation error for danger ptr 0x{x}: {}", .{ ptr_val, err });
             };
         }
@@ -147,13 +147,17 @@ pub const DangerSurfacePass = struct {
     }
 };
 
+const max_alias_depth: u32 = 32;
+
 fn traceAliasClosure(
     mg: *MemoryGraph,
     ptr_val: u64,
     ctx: *PassContext,
     diag: *DiagnosticWriter,
     visited: *std.AutoHashMap(u64, void),
+    depth: u32,
 ) !void {
+    if (depth >= max_alias_depth) return;
     if (ctx.isRelevantAlloc(ptr_val)) return;
     const node = mg.nodes.get(ptr_val) orelse return;
     var iter = node.aliases.iterator();
@@ -163,7 +167,7 @@ fn traceAliasClosure(
         try visited.put(alias_ptr, {});
         try ctx.markRelevantAlloc(alias_ptr);
         ctx.markFfiRelevant(alias_ptr) catch {}; // BUGFIX: aliases of FFI ptrs are also FFI-relevant
-        traceAliasClosure(mg, alias_ptr, ctx, diag, visited) catch |err| {
+        traceAliasClosure(mg, alias_ptr, ctx, diag, visited, depth + 1) catch |err| {
             diag.debug("[P1-1] Recursive alias error for 0x{x} -> 0x{x}: {}", .{ ptr_val, alias_ptr, err });
         };
     }
