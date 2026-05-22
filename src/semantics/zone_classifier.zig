@@ -115,7 +115,7 @@ pub const RUST_SAFE_PATTERNS = [_][]const u8{
 
 /// Rust escape triggers - focus analysis.
 pub const RUST_ESCAPE_PATTERNS = [_][]const u8{
-    // Unsafe blocks
+    // Unsafe blocks (source-level)
     "unsafe",
 
     // FFI (source-level — may not match mangled names but kept for demangled paths)
@@ -123,6 +123,11 @@ pub const RUST_ESCAPE_PATTERNS = [_][]const u8{
     "extern \"system\"",
     "libc::",
     "nix::",
+
+    // Mangled name patterns for unsafe/FFI (LLVM IR level)
+    "$u20$unsafe", // Rust mangled: " unsafe" in name
+    "_ZN.*4ffi", // C++ mangled: contains "ffi"
+    "_ZN.*7extern", // C++ mangled: contains "extern"
 
     // Raw pointer operations
     "*mut ",
