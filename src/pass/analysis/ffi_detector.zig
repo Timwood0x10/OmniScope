@@ -440,9 +440,8 @@ pub const FFIDetector = struct {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
-                if (opcode_enum == .Call) {
+                if (opcode == c.LLVMCall) {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);
@@ -479,9 +478,8 @@ pub const FFIDetector = struct {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
-                if (opcode_enum == .Call) {
+                if (opcode == c.LLVMCall) {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);
@@ -552,16 +550,16 @@ pub const FFIDetector = struct {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
-                switch (opcode_enum) {
-                    .Add, .Sub, .Mul, .UDiv, .SDiv, .URem, .SRem => {
-                        const num_ops = c.LLVMGetNumOperands(inst);
-                        if (num_ops >= 2) {
-                            return true;
-                        }
-                    },
-                    else => {},
+                if (opcode == c.LLVMAdd or opcode == c.LLVMSub or
+                    opcode == c.LLVMMul or opcode == c.LLVMUDiv or
+                    opcode == c.LLVMSDiv or opcode == c.LLVMURem or
+                    opcode == c.LLVMSRem)
+                {
+                    const num_ops = c.LLVMGetNumOperands(inst);
+                    if (num_ops >= 2) {
+                        return true;
+                    }
                 }
 
                 inst = c.LLVMGetNextInstruction(inst);

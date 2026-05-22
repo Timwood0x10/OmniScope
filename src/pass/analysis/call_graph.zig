@@ -526,7 +526,7 @@ pub const CallGraphPass = struct {
             errdefer ctx.allocator.free(callee_name_owned);
 
             // Extract pointer argument indices from the call instruction
-            var ptr_args_list = std.ArrayList(u32).initCapacity(ctx.allocator, 8) catch return;
+            var ptr_args_list = std.ArrayList(u32).initCapacity(ctx.allocator, 8) catch |e| return e;
             defer ptr_args_list.deinit(ctx.allocator);
 
             if (edge.call_inst != 0) {
@@ -549,6 +549,7 @@ pub const CallGraphPass = struct {
             }
 
             const ptr_args_owned = try ptr_args_list.toOwnedSlice(ctx.allocator);
+            errdefer ctx.allocator.free(ptr_args_owned);
 
             const cross_edge = CrossLangEdge{
                 .caller_name = caller_name_owned,

@@ -169,6 +169,8 @@ pub const IssueKind = enum {
     command_injection,
     /// Buffer overflow vulnerability (CWE-120).
     buffer_overflow,
+    /// Integer overflow or underflow (CWE-190/191).
+    integer_overflow,
     /// Double free across language boundary (CWE-415).
     double_free,
     /// Format string vulnerability (CWE-134).
@@ -207,6 +209,7 @@ pub const IssueKind = enum {
             .use_after_free => "use_after_free",
             .command_injection => "command_injection",
             .buffer_overflow => "buffer_overflow",
+            .integer_overflow => "integer_overflow",
             .double_free => "double_free",
             .format_string => "format_string",
             .malloc_unchecked => "malloc_unchecked",
@@ -237,6 +240,7 @@ pub const IssueKind = enum {
             .use_after_free => 416,
             .command_injection => 78,
             .buffer_overflow => 120,
+            .integer_overflow => 190, // Integer Overflow or Wrap-around
             .double_free => 415,
             .format_string => 134,
             .malloc_unchecked => 252,
@@ -266,6 +270,7 @@ pub const IssueKind = enum {
             .use_after_free => "Use after free across language boundary",
             .command_injection => "Command injection vulnerability",
             .buffer_overflow => "Buffer overflow vulnerability",
+            .integer_overflow => "Integer overflow or underflow",
             .double_free => "Double free across language boundary",
             .format_string => "Format string vulnerability",
             .malloc_unchecked => "Malloc result used without null check",

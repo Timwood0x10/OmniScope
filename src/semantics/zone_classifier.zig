@@ -21,6 +21,30 @@ const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
 const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
 pub const Language = FFIBoundary.Language;
 
+// C5 FIX: Add thread-local cache for classifyFunction results
+// This is a pure function that was being called repeatedly with the same inputs
+// Cache size: 1024 entries (covers most common function patterns)
+const CacheSize = 1024;
+threadlocal var classify_cache: ?std.StringHashMap(ZoneKind) = null;
+threadlocal var cache_allocator: ?std.mem.Allocator = null;
+
+/// Initialize the thread-local cache (call once per thread)
+pub fn initCache(allocator: std.mem.Allocator) void {
+    if (classify_cache == null) {
+        classify_cache = std.StringHashMap(ZoneKind).init(allocator);
+        cache_allocator = allocator;
+    }
+}
+
+/// Clear the thread-local cache
+pub fn deinitCache() void {
+    if (classify_cache) |*cache| {
+        cache.deinit();
+        classify_cache = null;
+        cache_allocator = null;
+    }
+}
+
 /// Zone classification for code regions.
 pub const ZoneKind = enum(u8) {
     /// Safe zone - language guarantees apply.
@@ -353,6 +377,13 @@ fn isAlphaNumeric(ch: u8) bool {
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
 
+    // C5 FIX: Check cache first
+    if (classify_cache) |*cache| {
+        if (cache.get(func_name)) |cached_result| {
+            return cached_result;
+        }
+    }
+
     // LLVM intrinsics (llvm.* prefix) are always runtime_internal.
     // Check this before language-specific patterns to prevent misclassification
     // (e.g., llvm.threadlocal.address.p0 matching "threadlocal" zig_allocator).
@@ -368,25 +399,49 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         return .runtime_internal;
     }
 
+    var result: ZoneKind = undefined;
+
     // Check language-specific patterns
     if (lang) |l| {
-        return switch (l) {
+        result = switch (l) {
             .rust => classifyRustFunction(func_name),
             .zig => classifyZigFunction(func_name),
             .go => classifyGoFunction(func_name),
             .cpp, .c => classifyCppFunction(func_name),
             else => .unknown,
         };
+    } else {
+        // Auto-detect language from patterns
+        if (isRustFunction(func_name)) {
+            result = classifyRustFunction(func_name);
+        } else if (isZigFunction(func_name)) {
+            result = classifyZigFunction(func_name);
+        } else if (isGoFunction(func_name)) {
+            result = classifyGoFunction(func_name);
+        } else if (isCppFunction(func_name)) {
+            result = classifyCppFunction(func_name);
+        } else if (isCFunction(func_name)) {
+            result = classifyCFunction(func_name);
+        } else {
+            result = .unknown;
+        }
     }
 
-    // Auto-detect language from patterns
-    if (isRustFunction(func_name)) return classifyRustFunction(func_name);
-    if (isZigFunction(func_name)) return classifyZigFunction(func_name);
-    if (isGoFunction(func_name)) return classifyGoFunction(func_name);
-    if (isCppFunction(func_name)) return classifyCppFunction(func_name);
-    if (isCFunction(func_name)) return classifyCFunction(func_name);
+    // C5 FIX: Cache the result (limit cache size to prevent unbounded growth)
+    if (classify_cache) |*cache| {
+        if (cache.count() < CacheSize) {
+            if (cache_allocator) |allocator| {
+                // Dupe the key since func_name is borrowed
+                const owned_key = allocator.dupe(u8, func_name) catch return result;
+                cache.put(owned_key, result) catch {
+                    allocator.free(owned_key);
+                    return result;
+                };
+            }
+        }
+    }
 
-    return .unknown;
+    return result;
 }
 
 /// Classify a function using LLVM metadata (more precise than string matching).

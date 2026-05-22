@@ -809,16 +809,19 @@ pub const MemoryGraph = struct {
         const arg_indices = graph.getCallArgsForPtr(ptr_val);
         if (arg_indices.len == 0) return false;
 
-        for (arg_indices) |idx| {
-            const arg_edge = &graph.call_args.items[idx];
+        // C3 FIX: Use call_ret_by_ptr index instead of O(N) scan
+        // Previously: for (graph.call_rets.items) - scans ALL returns
+        // Now: Only check returns for this specific pointer
+        const ret_indices = graph.call_ret_by_ptr.get(ptr_val) orelse return true;
+
+        for (arg_indices) |arg_idx| {
+            const arg_edge = &graph.call_args.items[arg_idx];
             var returned = false;
-            for (graph.call_rets.items) |ret_edge| {
+
+            for (ret_indices.items) |ret_idx| {
+                const ret_edge = &graph.call_rets.items[ret_idx];
                 // FIX-4 (CTX-2): Also match ret_ptr to reduce false positives
-                // Issue2 fix: Add null check for ret_ptr to avoid false matches
-                if (ret_edge.caller_inst == arg_edge.caller_inst and
-                    ret_edge.ret_ptr != 0 and
-                    ret_edge.ret_ptr == ptr_val)
-                {
+                if (ret_edge.caller_inst == arg_edge.caller_inst) {
                     returned = true;
                     break;
                 }
@@ -851,19 +854,22 @@ pub const MemoryGraph = struct {
             if (alias_node.freed and alias_node.id == node.id) return true;
         }
 
+        // C3 FIX: Use call_ret_by_ptr index instead of O(N) scan
+        // Previously: for (graph.call_rets.items) - scans ALL returns
+        // Now: Only check returns for this specific pointer
         const arg_indices = graph.getCallArgsForPtr(ptr_val);
-        for (arg_indices) |idx| {
-            const arg_edge = &graph.call_args.items[idx];
-            for (graph.call_rets.items) |ret_edge| {
-                // H22 FIX: Fix inverted logic. Previous condition was:
-                //   if (ret_ptr == 0 or caller_inst matches) → return true
-                // This is wrong because:
-                //   1. ret_ptr == 0 means null pointer, NOT double-freed
-                //   2. Same caller_inst only means same call site, not double-free
-                // Correct logic: check if the returned pointer WAS freed AND matches our node.
-                if (ret_edge.ret_ptr != 0 and ret_edge.caller_inst == arg_edge.caller_inst) {
-                    const ret_node = graph.nodes.get(ret_edge.ret_ptr) orelse continue;
-                    if (ret_node.freed and ret_node.id == node.id) return true;
+        for (arg_indices) |arg_idx| {
+            const arg_edge = &graph.call_args.items[arg_idx];
+
+            // Check if this pointer was returned from the same call site
+            if (graph.call_ret_by_ptr.get(ptr_val)) |ret_indices| {
+                for (ret_indices.items) |ret_idx| {
+                    const ret_edge = &graph.call_rets.items[ret_idx];
+                    // H22 FIX: Check if the returned pointer WAS freed AND matches our node
+                    if (ret_edge.caller_inst == arg_edge.caller_inst) {
+                        const ret_node = graph.nodes.get(ret_edge.ret_ptr) orelse continue;
+                        if (ret_node.freed and ret_node.id == node.id) return true;
+                    }
                 }
             }
         }

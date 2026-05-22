@@ -109,6 +109,8 @@ pub const AliasPass = struct {
 
                 // Analyze function
                 try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+                // Clear per-function state — cross-function alias pairs are meaningless
+                self.ptr_info_map.clearRetainingCapacity();
             }
             func = c.LLVMGetNextFunction(func);
         }
@@ -145,10 +147,11 @@ pub const AliasPass = struct {
                         // GEP creates a derived pointer
                         try self.collectPointer(inst);
                     },
-                    else => {
-                        // Other instructions may create pointers
+                    c.LLVMCall, c.LLVMInvoke, c.LLVMSelect, c.LLVMPHI => {
+                        // These may produce pointer values
                         try self.collectPointer(inst);
                     },
+                    else => {},
                 }
 
                 // Move to next instruction
@@ -246,13 +249,17 @@ pub const AliasPass = struct {
         }
 
         // For each type group, emit alias facts
+        // Cap group size to prevent O(N²) explosion on large modules
+        const MAX_GROUP_SIZE: usize = 64;
         var group_iter = type_groups.iterator();
         while (group_iter.next()) |entry| {
             const ptrs = entry.value_ptr.items;
+            const limit = @min(ptrs.len, MAX_GROUP_SIZE);
 
-            // Emit alias_may for all pairs
-            for (ptrs, 0..) |ptr1, i| {
-                for (i + 1..ptrs.len) |j| {
+            // Emit alias_may for pairs (capped)
+            for (0..limit) |i| {
+                for (i + 1..limit) |j| {
+                    const ptr1 = ptrs[i];
                     const ptr2 = ptrs[j];
 
                     // May alias (same type)

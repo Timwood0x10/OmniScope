@@ -491,6 +491,7 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .type_mismatch, .ffi_type_mismatch => .type_mismatch,
         .command_injection => .command_injection,
         .buffer_overflow => .buffer_overflow,
+        .integer_overflow => .other,
         .format_string => .format_string,
         .callback_signature_mismatch => .callback_signature_mismatch,
         .static_buffer_misuse => .static_buffer_misuse,
@@ -586,6 +587,10 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
+    // C5 FIX: Initialize zone_classifier cache
+    OmniScope.semantics.initZoneCache(allocator);
+    defer OmniScope.semantics.deinitZoneCache();
+
     var config = try parseArgs(allocator);
     defer config.deinit(allocator);
 
@@ -605,7 +610,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        log.info("OmniScope v0.1.8\n", .{});
+        log.info("OmniScope v0.1.9\n", .{});
         return;
     }
 

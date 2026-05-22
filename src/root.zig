@@ -187,6 +187,8 @@ pub const semantics = struct {
     pub const classifyZig = @import("semantics/zone_classifier.zig").classifyZig;
     pub const classifyGo = @import("semantics/zone_classifier.zig").classifyGo;
     pub const classifyCpp = @import("semantics/zone_classifier.zig").classifyCpp;
+    pub const initZoneCache = @import("semantics/zone_classifier.zig").initCache;
+    pub const deinitZoneCache = @import("semantics/zone_classifier.zig").deinitCache;
 
     pub const NoiseFunctionOrigin = @import("semantics/noise_filter.zig").FunctionOrigin;
     // M8 FIX: NoiseRiskLevel is now an alias for RiskLevel (unified definition)

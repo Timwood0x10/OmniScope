@@ -83,7 +83,7 @@ pub const IntegerOverflowPass = struct {
                 );
 
                 const issue = Issue.init(
-                    .buffer_overflow, // Use buffer_overflow as closest match
+                    .integer_overflow, // Integer overflow or underflow (CWE-190/191)
                     message,
                     location,
                     .medium,
