@@ -471,6 +471,21 @@ pub fn classifyFunctionFromLLVM(
             if (isLikelyRuntimeInternal(func_name)) {
                 return .runtime_internal;
             }
+            // P1 FIX: Rust allocator intrinsics embedded in mangled names.
+            // E.g., _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc is a compiler-
+            // generated shim for the global allocator, NOT an FFI boundary.
+            // isLikelyRuntimeInternal uses startsWith("__rust_") which misses
+            // these because they start with _R. Must use indexOf for substring.
+            const rust_alloc_patterns = [_][]const u8{
+                "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
+                "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
+                "__rg_alloc",     "__rg_realloc",
+            };
+            for (rust_alloc_patterns) |pat| {
+                if (std.mem.indexOf(u8, func_name, pat) != null) {
+                    return .runtime_internal;
+                }
+            }
             return .ffi; // External declarations are FFI boundaries
         }
 
@@ -586,6 +601,18 @@ fn isLikelyRuntimeInternal(name: []const u8) bool {
 
     for (rust_stdlib_patterns) |pat| {
         if (std.mem.startsWith(u8, name, pat)) return true;
+    }
+
+    // P1 FIX: Rust allocator intrinsics can appear as substrings in mangled names.
+    // E.g., _RNv...__rust_dealloc is a compiler shim, not user FFI code.
+    // startsWith("__rust_") misses these because the prefix is _R, not __rust.
+    const rust_alloc_substrings = [_][]const u8{
+        "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
+        "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
+        "__rg_alloc",     "__rg_realloc",
+    };
+    for (rust_alloc_substrings) |pat| {
+        if (std.mem.indexOf(u8, name, pat) != null) return true;
     }
 
     // Go runtime patterns
