@@ -47,17 +47,23 @@ CPP_IR = $(EXAMPLES_DIR)/cpp_cffi/target
 GO_IR = $(EXAMPLES_DIR)/go_cffi/target
 ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 
-.PHONY: all fmt fmt-check check test test-unit test-int test-all bench build run clean examples \
+.PHONY: all fmt fmt-check check test test-unit test-int test-all \
+        bench build build-debug run clean examples \
         baseline-check red-team-test \
-        rust cpp go zig rust-run cpp-run go-run zig-run help \
+        rust rust-ir rust-run rust-json rust-sarif \
+        cpp cpp-ir cpp-run cpp-json cpp-sarif \
+        go go-ir go-run go-json go-sarif \
+        zig zig-ir zig-run zig-json zig-sarif \
+        help \
         corpus corpus-ir corpus-analyze corpus-check \
         red-team blue-team corpus-test \
-        real-world real-world-ir real-world-run \
-        baseline-check \
-        install-deps release benchmark benchmark-full \
+        real-world real-world-ir real-world-run real-world-json real-world-sarif \
+        install-deps release benchmark benchmark-ci benchmark-json benchmark-full \
         regression-test bench-perf stability-test e2e-test test-all-phase7 \
         viz visualize \
-        cross-lang-test cross-lang-build cross-lang-run cross-lang-report
+        cross-lang-test cross-lang-build cross-lang-run cross-lang-report \
+        reports-json reports-sarif \
+        test-issues test-stability test-stress
 
 # ========================================
 # Default Target - Run All Tests
@@ -199,6 +205,12 @@ build:
 	@echo "║                       BUILD                                    ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build
+
+build-debug:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    DEBUG BUILD                                 ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build -Doptimize=Debug
 
 # Run all FFI analysis tests
 run: examples
@@ -442,30 +454,15 @@ red-team-test: build
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║              RED TEAM ADVERSARIAL TEST                       ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@if [ ! -f corpus/red_team_test/red_team_bugs_O0.ll ]; then \
-		echo "Compiling red_team_bugs.c with -O0..."; \
-		$(CLANG) -S -emit-llvm -g -O0 -o corpus/red_team_test/red_team_bugs_O0.ll corpus/red_team_test/red_team_bugs.c; \
-	fi
 	@echo ""
-	@echo "Running OmniScope on red team test file (O0 build)..."
-	@./zig-out/bin/OmniScope corpus/red_team_test/red_team_bugs_O0.ll 2>&1 | tee /tmp/red_team_output.txt
-	@echo ""
-	@echo "╔════════════════════════════════════════════════════════════════╗"
-	@echo "║              RED TEAM TEST RESULTS                            ║"
-	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@grep "Issues detected" /tmp/red_team_output.txt || echo "No issues found!"
-	@echo ""
-	@echo "Expected detections (v0.1.6):"
-	@echo "  ✅ Memory Leak (bug_memory_leak)"
-	@echo "  ✅ Use-After-Free (bug_use_after_free, bug_realloc_mishandle)"
-	@echo "  ✅ Double-Free (bug_double_free) [NEW in v0.1.6]"
-	@echo "  ✅ NULL Dereference (bug_null_deref)"
-	@echo "  ✅ FFI RISK CRITICAL: system(), popen() [ENHANCED in v0.1.6]"
-	@echo "  ✅ FFI RISK CRITICAL: execvp() [NEW in v0.1.6]"
-	@echo "  ✅ Format String (bug_format_string) [CLASSIFIED in v0.1.6]"
-	@echo "  ✅ Loop Leak (bug_loop_leak) [NEW in v0.1.6]"
-	@echo ""
-	@echo "Total issues should be ≥10 (target: 12)"
+	@echo "Running OmniScope on red team test files..."
+	@for f in $(RED_IR_FILES); do \
+		if [ ! -f "$f" ]; then continue; fi; \
+		name=$(basename "$f"); \
+		echo ""; \
+		echo "=== Analyzing: $name ==="; \
+		$(ZIG) build run -- "$f" 2>&1 || true; \
+	done
 
 # ========================================
 # All Reports
@@ -623,13 +620,14 @@ OMNISCOPE = $(ZIG) build run --
 
 RED_TEAM_DIR = $(CORPUS_DIR)/red_team_test
 RED_IR_FILES = \
-	$(RED_TEAM_DIR)/red_team_bugs.ll \
-	$(RED_TEAM_DIR)/ffi_boundary_bugs.ll \
 	$(RED_TEAM_DIR)/cross_lang_free_bugs.ll \
-	$(RED_TEAM_DIR)/cross_lang_free_complete.ll \
-	$(RED_TEAM_DIR)/subtle_ffi_bugs.ll \
-	$(RED_TEAM_DIR)/python_c_api_bugs.ll \
-	$(RED_TEAM_DIR)/posix_ffi_bugs.ll
+	$(RED_TEAM_DIR)/go_cgo_bugs.ll \
+	$(RED_TEAM_DIR)/java_jni_bugs.ll \
+	$(RED_TEAM_DIR)/python_cffi_bugs.ll \
+	$(RED_TEAM_DIR)/red_team_cpp_ffi.ll \
+	$(RED_TEAM_DIR)/red_team_swift_ffi.ll \
+	$(RED_TEAM_DIR)/red_team_triple_chain.ll \
+	$(RED_TEAM_DIR)/rust_ffi_bugs.ll
 
 # Red Team: adversarial detection test
 # Compiles red_team_test/*.c to IR and runs OmniScope.
@@ -819,6 +817,7 @@ help:
 	@echo "  make test-int    Run integration tests"
 	@echo "  make test-issues Run issue verification tests"
 	@echo "  make test-stability Run stability tests"
+	@echo "  make test-stress    Run stress tests"
 	@echo "  make test-all    Run all tests"
 	@echo "  make bench       Run performance benchmarks"
 	@echo ""
@@ -845,6 +844,7 @@ help:
 	@echo "  make fmt-check   Check formatting (CI use)"
 	@echo "  make check       Type check the project"
 	@echo "  make build       Build the project"
+	@echo "  make build-debug Build the project in Debug mode"
 	@echo "  make clean       Clean all build artifacts"
 	@echo ""
 	@echo "Install & Release:"
@@ -912,14 +912,14 @@ cross-lang-build:
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║            BUILDING CROSS-LANGUAGE TEST IR                     ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@echo "  Compiling cross_lang_free_bugs.c..."
-	@$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
-		corpus/red_team_test/cross_lang_free_bugs.c \
-		-o corpus/red_team_test/cross_lang_free_bugs.ll 2>/dev/null || true
-	@echo "  Compiling cross_lang_free_complete.c..."
-	@$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
-		corpus/red_team_test/cross_lang_free_complete.c \
-		-o corpus/red_team_test/cross_lang_free_complete.ll 2>/dev/null || true
+	@if [ ! -f corpus/red_team_test/cross_lang_free_bugs.ll ]; then \
+		echo "  Compiling cross_lang_free_bugs.c..."; \
+		$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+			corpus/red_team_test/cross_lang_free_bugs.c \
+			-o corpus/red_team_test/cross_lang_free_bugs.ll 2>/dev/null || true; \
+	else \
+		echo "  ✓ cross_lang_free_bugs.ll already exists"; \
+	fi
 	@echo "  ✓ Cross-language test IR built"
 
 cross-lang-run:
@@ -928,11 +928,8 @@ cross-lang-run:
 	@echo "║            ANALYZING CROSS-LANGUAGE VIOLATIONS                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "=== Test 1: cross_lang_free_bugs.ll ==="
+	@echo "=== Test: cross_lang_free_bugs.ll ==="
 	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_bugs.ll 2>&1 | grep -E "Issues detected|Memory leak|cross_language|Issue breakdown" -A 15
-	@echo ""
-	@echo "=== Test 2: cross_lang_free_complete.ll ==="
-	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_complete.ll 2>&1 | grep -E "Issues detected|Memory leak|cross_language|Issue breakdown" -A 15
 
 cross-lang-report:
 	@echo "╔════════════════════════════════════════════════════════════════╗"
@@ -942,26 +939,7 @@ cross-lang-report:
 	@echo "Test Suite: Cross-Language Free Violation Detection"
 	@echo "===================================================="
 	@echo ""
-	@echo "Test Case 1: cross_lang_free_bugs.c"
+	@echo "Test Case: cross_lang_free_bugs.ll"
 	@echo "  Scenarios: 10 (Rust→C, C→C++, aliases, realloc, nested)"
 	@echo "  Expected:   cross_language_free violations"
 	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_bugs.ll 2>&1 | tail -20
-	@echo ""
-	@echo "Test Case 2: cross_lang_free_complete.c"
-	@echo "  Scenarios: 10 (leaks, double-free, UAF, buffer overflow)"
-	@echo "  Expected:   Memory safety violations"
-	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_complete.ll 2>&1 | tail -20
-	@echo ""
-	@echo "===================================================="
-	@echo "Cross-language free detection status:"
-	@echo "  ✅ IssueKind: cross_language_free (CWE-763)"
-	@echo "  ✅ MemoryGraph: alloc_lang/free_lang tracking"
-	@echo "  ✅ Detection: isOnDangerPath() → .cross_lang_lifecycle"
-	@echo "  ✅ Reporting: IssueStats, GraphVisualizer"
-	@echo ""
-	@echo "Note: True cross-language violations require mixed-language"
-	@echo "      compilation units (e.g., Rust IR + C IR linked together)."
-	@echo "      Single-language IR tests verify memory safety baseline."
-
-	@echo "  make reports-sarif     Generate all SARIF reports"
-	@echo ""

@@ -103,6 +103,7 @@ pub const Pipeline = struct {
             .CallSiteIndex = @import("../pass/pass.zig").CallSiteIndex.init(self.allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
             .semantics_call_graph = null,
+            .ffi_set_cache = null,
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

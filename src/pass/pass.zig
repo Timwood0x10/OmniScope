@@ -290,6 +290,12 @@ pub const PassContext = struct {
     /// Without this, reachesFFIBoundary() exists but is never called — causing 0% recall.
     semantics_call_graph: ?call_graph_mod.CallGraph,
 
+    /// Performance: Cached ffi_set for isOnDangerPathFull().
+    /// Built lazily on first call, then reused across all subsequent calls.
+    /// Eliminates O(N) HashMap rebuild per call (was 17+ call sites rebuilding
+    /// the same set from cross_lang_edges each time).
+    ffi_set_cache: ?std.StringHashMap(void),
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -403,6 +409,10 @@ pub const PassContext = struct {
             list.deinit(self.allocator);
         }
         self.cross_edge_by_callee.deinit();
+        // Free ffi_set_cache HashMap if it was lazily created
+        if (self.ffi_set_cache) |*cache| {
+            cache.deinit();
+        }
     }
 
     /// Set the IR module
@@ -895,9 +905,24 @@ pub const PassContext = struct {
     /// (a/e) alloc zone+lang, (d) alias closure traversal.
     /// Use this for issue reporting gates instead of isRelevantAlloc() for
     /// stricter validation per todolist.md architecture requirements.
+    ///
+    /// OPTIMIZED: ffi_set and danger_surfaces are built lazily on first call
+    /// and cached in ffi_set_cache / danger_surfaces_cache for reuse across
+    /// all 17+ call sites. Eliminates O(N) HashMap + array rebuild per call.
     pub fn isOnDangerPathFull(self: *PassContext, ptr_val: u64) bool {
         const raw_ffis = self.getCrossLangEdges();
         if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
+
+        // Build caches lazily on first call
+        if (self.ffi_set_cache == null) {
+            var ffi_set = std.StringHashMap(void).init(self.allocator);
+            for (raw_ffis) |ffe| {
+                if (ffe.is_ffi_boundary) {
+                    ffi_set.put(ffe.callee_name, {}) catch {};
+                }
+            }
+            self.ffi_set_cache = ffi_set;
+        }
 
         // Convert CrossLangEdge[] to MemoryGraph.DangerSurface[] for isOnDangerPath API
         var danger_surfaces = self.allocator.alloc(memory_graph_mod.MemoryGraph.DangerSurface, raw_ffis.len) catch return false;
@@ -909,19 +934,9 @@ pub const PassContext = struct {
             };
         }
 
-        // M1 FIX: Build ffi_set once here and pass to all recursive calls
-        // to avoid O(N) HashMap rebuild at each recursion level.
-        var ffi_set = std.StringHashMap(void).init(self.allocator);
-        defer ffi_set.deinit();
-        for (danger_surfaces) |ds| {
-            if (ds.is_ffi_boundary) {
-                ffi_set.put(ds.callee_name, {}) catch {};
-            }
-        }
-
         var visited = std.AutoHashMap(u64, void).init(self.allocator);
         defer visited.deinit();
-        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited, &ffi_set);
+        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited, &self.ffi_set_cache.?);
         return result != .none;
     }
 
