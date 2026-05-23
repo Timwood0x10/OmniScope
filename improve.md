@@ -1,449 +1,454 @@
-我明白你的真实目标了。
+这次你问到核心了。
 
-你现在其实不是在解决：
+如果你的目标是：
 
-“如何检测 FFI crate”
+OmniScope = Cross-language LLVM IR analyzer
 
-你是在解决一个更底层的问题：
+那么答案必须是：
 
-Rust LLVM IR 中，如何通用识别 compiler/runtime generated noise，并在 pipeline 最早阶段剪枝。
+不能做 Rust-special filtering。
 
-这个问题非常合理。
+否则你以后会陷入：
 
-因为你说的规模是对的。
+rust_noise.zig
+cpp_noise.zig
+zig_noise.zig
+go_noise.zig
+swift_noise.zig
 
-真实 Rust LLVM IR：
+最后维护地狱。
 
-20M IR
+你真正需要的是：
 
-里面通常：
+Language-Agnostic IR Noise Classification
 
-core
-alloc
-std
-panic runtime
-drop glue
-monomorphized iterator chains
-serde derives
-fmt machinery
-compiler shims
-lang items
+也就是：
 
-可能占绝大部分。
+不识别“Rust 编译器产物”。
 
-如果不做早期 pruning：
+而是识别：
 
-后面的：
+“哪些 IR 在 ownership / FFI 分析里本质属于低价值噪声”。
 
-MemoryGraph
-DangerSurface
-Ownership
-CrossLangEdge
-
-都会被拖死。
-
-所以：
-
-必须 Early Skip。
-
-这个方向没问题。
-
-但重点来了：
+这是不同的问题。
 
 ⸻
 
-你想要：
+一、先定义真正的分类维度
 
-不靠 regex
-不靠无限 whitelist
+不要按语言分类。
 
-这是对的。
+不要：
 
-因为：
+Rust stdlib
+C++ STL
+Go runtime
 
-_ZN4core
-_ZN5alloc
-_ZN3std
+这样做。
 
-最终一定变成：
+改成：
 
-tokio
-serde
-ring
-cranelift
-wasmtime
-smallvec
-hashbrown
-...
+IR Semantic Origin
 
-无限维护。
-
-不可做。
-
-⸻
-
-真正可扩展的做法：Origin-Based Classification
-
-不是名字。
-
-是：
-
-编译来源（origin）分类。
-
-LLVM IR 已经有线索。
-
-⸻
-
-方案1（我认为最靠谱）
-
-Debug Origin Filtering
-
-利用：
-
-LLVM DISubprogram。
-
-不是 DWARF 后处理。
-
-是 IR metadata。
-
-⸻
-
-IR 里通常有：
-
-define void @_ZN... !dbg !123
-
-对应：
-
-!123 = distinct !DISubprogram(
-    file: !456
-)
-
-file:
-
-/home/user/project/src/main.rs
-
-或者：
-
-/home/user/.cargo/registry/...
-
-或者：
-
-/rustc/<hash>/library/core/src/...
-
-⸻
-
-然后做：
-
-SourceOrigin Classification
-
-⸻
-
-USER_CODE
-
-workspace/src
-
-⸻
-
-STDLIB
-
-rustc/.../library/
-
-⸻
-
-DEPENDENCY
-
-.cargo/registry
-
-⸻
-
-BUILD_GENERATED
-
-target/build
-
-⸻
-
-UNKNOWN
-
-missing dbg.
-
-⸻
-
-得到：
-
-FunctionOrigin
-
-⸻
-
-然后：
-
-Rust pipeline 最开始：
-
-switch(origin) {
-    .USER_CODE => KEEP
-    .STDLIB => SKIP
-    .DEPENDENCY => LOWER_PRIORITY
-    .BUILD_GENERATED => SKIP
-}
-
-⸻
-
-这不是 whitelist。
-
-也不是 regex 函数名。
-
-这是：
-
-provenance filtering.
-
-非常稳。
-
-⸻
-
-而且语言无关。
-
-C++：
-
-STL。
-
-Go：
-
-generated bindings。
-
-Zig：
-
-std.
-
-都能复用。
-
-⸻
-
-方案2（更 LLVM-native）
-
-Linkage + COMDAT + internality heuristic
-
-很多 compiler noise 有特征。
+跨语言统一。
 
 例如：
 
+pub const IRSurface = enum {
+    UserCode,
+    Dependency,
+    Runtime,
+    StandardLibrary,
+    CompilerGenerated,
+    Boundary,
+    Unknown,
+};
+
+这套东西：
+
+Rust/C++/Go/Zig 全能用。
+
 ⸻
 
-drop glue
+二、哪些信号跨语言天然存在？
 
-panic helpers
+LLVM IR 已经给你很多统一特征。
 
-monomorphized internals
+这才是关键。
 
 ⸻
 
-通常：
+1. Debug Provenance（最强）
+
+所有语言都能用。
+
+⸻
+
+Rust:
+
+/rustc/.../library/core/
+
+⸻
+
+C++:
+
+/usr/include/c++
+
+⸻
+
+Go:
+
+GOROOT/src/runtime/
+
+⸻
+
+Zig:
+
+zig/lib/std/
+
+⸻
+
+Swift:
+
+swift/stdlib/
+
+⸻
+
+IR：
+
+!DISubprogram
+!DIFile
+
+统一。
+
+⸻
+
+分类：
+
+workspace path      → UserCode
+package cache       → Dependency
+compiler stdlib     → StandardLibrary
+runtime source      → Runtime
+
+⸻
+
+语言无关。
+
+⸻
+
+2. Linkage / Visibility signals
+
+跨语言。
+
+⸻
+
+LLVM attributes:
 
 internal
 private
 linkonce_odr
 available_externally
+weak_odr
 
 ⸻
 
-你可以建立：
+大量 compiler-generated code 都会出现。
 
-CompilerArtifactScore.
+Rust。
+
+Clang。
+
+Swift。
+
+Zig。
+
+Go LLVM backend。
+
+全部有。
 
 ⸻
 
 例：
 
-internal + linkonce_odr + no user dbg
-→ likely compiler artifact
+private + internal + no debug
+
+→ high generated score
 
 ⸻
 
-这不是100%。
+3. ABI / Boundary markers
 
-但能砍很多。
-
-⸻
-
-方案3（我觉得最符合你思路）
-
-User-Reachable Analysis
-
-这个可能最接近你想要的。
+统一。
 
 ⸻
 
-先定义：
+extern ABI:
 
-User Root Functions
-
-Rust 用户入口。
-
-例如：
+extern "C"
+cc 10
+cc 11
 
 ⸻
 
-public API
+exported symbol.
 
 ⸻
 
-extern exports
+foreign declaration.
 
 ⸻
 
-workspace source files
+这些天然是：
+
+Boundary signal
+
+不依赖语言。
 
 ⸻
 
-main/lib user module
+4. Reachability
+
+这个最重要。
+
+跨语言通吃。
 
 ⸻
 
-然后：
-
-CallGraph forward walk.
+CallGraph.
 
 ⸻
 
-保留：
+从：
 
-reachable_from_user
+export
+extern
+entry
+CrossLangEdge
 
-⸻
-
-剪掉：
-
-never touched compiler runtime islands
-
-⸻
-
-效果非常强。
+传播。
 
 ⸻
 
-比如：
+如果函数：
 
-保留：
+never boundary reachable
 
-wasmtime::runtime::*
-
-⸻
-
-丢掉：
-
-core::fmt::Formatter
-alloc::raw_vec
-panic_unwind
+分析优先级下降。
 
 ⸻
 
-无需名字。
+Rust.
+
+C++.
+
+Zig.
+
+Go.
+
+一样。
 
 ⸻
 
-为什么我不建议“只看用户函数”
+三、不要做“白名单”，做“评分系统”
 
-这里有个坑。
+这一步非常重要。
 
-你说：
+因为：
 
-只关心用户自定义函数。
-
-这句话需要小心。
-
-因为很多真实 ownership bug：
-
-发生在 dependency crate。
-
-举例：
+classification 比 binary whitelist 稳。
 
 ⸻
 
-用户：
+不要：
 
-myproj
-
-依赖：
-
-ring
-openssl-sys
-libsqlite3-sys
+if(name.contains("_ZN4core"))
+    skip;
 
 ⸻
 
-FFI boundary 很可能在：
+做：
 
-*-sys crates
-
-不是用户 crate。
+score = 0;
 
 ⸻
 
-如果：
+Example
 
-workspace-only
+Debug provenance
 
-过滤。
+stdlib:
 
-你会漏很多。
++40
 
-⸻
+runtime:
 
-所以更安全的是：
++35
 
-⸻
+generated build:
 
-KEEP：
-
-USER_CODE
-FFI_RELEVANT_DEPENDENCY
-EXTERN_EXPORTS
-BOUNDARY_REACHABLE
++30
 
 ⸻
 
-SKIP：
+linkage
 
-STDLIB
-PANIC_RUNTIME
-PURE_INTERNAL_GENERATED
+private:
 
-⸻
++10
 
-这才比较稳。
+linkonce_odr:
 
-⸻
-
-我给你的最终建议
-
-不要做：
-
-名字过滤
-
-不要做：
-
-crate whitelist
-
-不要做：
-
-extern-scan-per-function
++15
 
 ⸻
 
-做一个统一系统：
+boundary
 
-Semantic Origin Filter
+extern export:
 
-结构大概：
+-50
 
-pub const FunctionOrigin = enum {
-    user,
-    dependency,
-    stdlib,
-    generated,
-    runtime,
-    unknown,
+CrossLangEdge:
+
+-80
+
+⸻
+
+user workspace path
+
+-60
+
+⸻
+
+最终：
+
+if(score > threshold)
+    skip;
+
+⸻
+
+这比 whitelist 强太多。
+
+⸻
+
+四、跨语言实际长什么样
+
+举几个例子。
+
+⸻
+
+Rust
+
+rustc/.../library/alloc
+private
+linkonce_odr
+not boundary reachable
+
+⸻
+
+score:
+
+90
+
+SKIP
+
+⸻
+
+C++ STL
+
+/usr/include/c++
+linkonce_odr
+template expansion
+
+⸻
+
+score:
+
+85
+
+SKIP
+
+⸻
+
+Zig std
+
+zig/lib/std
+internal
+
+⸻
+
+score:
+
+80
+
+SKIP
+
+⸻
+
+Go runtime
+
+GOROOT/runtime
+
+⸻
+
+score:
+
+95
+
+SKIP
+
+⸻
+
+user ffi wrapper
+
+Rust:
+
+pub extern "C" fn make()
+
+⸻
+
+signals:
+
+workspace path
+boundary export
+
+⸻
+
+score:
+
+−100
+
+KEEP
+
+⸻
+
+统一成立。
+
+⸻
+
+五、最符合 OmniScope 的版本
+
+我甚至觉得你应该正式做一个：
+
+SurfaceClassifierPass
+
+早于所有 analysis。
+
+结构：
+
+pub const SurfaceKind = enum {
+    CriticalBoundary,
+    UserCode,
+    Dependency,
+    StandardLibrary,
+    Runtime,
+    CompilerGenerated,
+    Unknown,
 };
 
-来源：
+⸻
+
+输入：
 
 ⸻
 
@@ -451,7 +456,11 @@ debug metadata
 
 ⸻
 
-module path
+callgraph
+
+⸻
+
+ABI
 
 ⸻
 
@@ -459,55 +468,121 @@ linkage
 
 ⸻
 
-ABI markers
+language detector hints
 
 ⸻
 
-callgraph reachability
+CrossLangEdge
 
 ⸻
 
-然后：
+输出：
 
-pipeline very early:
-
-if (lang == .rust) {
-    if (origin == .stdlib)
-        continue;
-    if (origin == .generated)
-        continue;
-}
+FunctionSurface
 
 ⸻
 
-这就是你要的：
-
-20M IR 开头直接砍掉 10M。
-
-而且：
-
-不靠巨量白名单。
-
-不靠 crate 名。
-
-不靠维护 regex。
+然后所有 pass 用它。
 
 ⸻
 
-我甚至觉得，这个东西可以成为 OmniScope 一个正式组件：
+PointerOwnership:
 
-OriginClassifierPass
+if(surface.isNoise())
+    continue;
 
-和：
+⸻
 
-LanguageDetector
-DangerSurface
-MemoryGraph
+DangerSurface:
 
-同级。
+surface.boostBoundary();
 
-因为这不是 noise hack。
+⸻
 
-这是：
+MemoryGraph:
 
-analysis scope reduction infrastructure。
+surface.adjustPriority();
+
+⸻
+
+你就彻底摆脱：
+
+维护语言白名单。
+
+⸻
+
+六、唯一需要承认的现实
+
+完全 0 language awareness 很难。
+
+我要实话实说。
+
+因为：
+
+stdlib 路径模式确实不同。
+
+⸻
+
+Rust:
+
+/rustc/
+
+⸻
+
+C++:
+
+/usr/include/c++
+
+⸻
+
+Go:
+
+GOROOT/
+
+⸻
+
+Zig:
+
+zig/lib/std
+
+⸻
+
+但这不叫“巨额白名单”。
+
+这叫：
+
+small provenance adapters.
+
+几十行。
+
+不是几万行 regex。
+
+⸻
+
+差别非常大。
+
+⸻
+
+一句话总结：
+
+你要构建的不是：
+
+Rust compiler artifact filter.
+
+而是：
+
+Cross-language IR Surface Classifier.
+
+用：
+
+* provenance
+* linkage
+* ABI
+* reachability
+* boundary signals
+
+做统一评分。
+
+这样 Rust / C++ / Zig / Go 都能复用。
+
+而且不用维护巨型名字白名单。

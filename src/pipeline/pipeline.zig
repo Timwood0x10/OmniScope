@@ -106,6 +106,7 @@ pub const Pipeline = struct {
             .ffi_set_cache = null,
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
+            .function_origin = std.AutoHashMap(u64, @import("../semantics/origin_classifier.zig").FunctionOrigin).init(self.allocator),
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

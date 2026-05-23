@@ -11,9 +11,11 @@
                                                                    `..
 ```
 
-**Cross-Language FFI & Memory Safety Static Analyzer**
+**LLVM IR Cross-Language FFI Security Auditor**
 
-A static analysis tool focused on detecting memory safety vulnerabilities **across language boundaries** at the LLVM IR level.
+OmniScope is a specialized LLVM IR auditor for **cross-language FFI boundaries**.
+It is designed to surface high-confidence risks with traceable evidence, not to
+prove every possible vulnerability in a general-purpose static analysis sense.
 
 Supports **C / C++ / Rust / Zig / Go / Python / Java**.
 
@@ -28,7 +30,16 @@ Supports **C / C++ / Rust / Zig / Go / Python / Java**.
 | **cross_lang_free_mismatch** | ✅ Working | Both C-alloc/Rust-free and Rust-alloc/C-free directions detected |
 | **FFI Boundary issue** | ✅ Working | Generated after dependency chain fix (v0.1.9) |
 
-**Best for**: Rust↔C, Zig↔C, Python C extensions, JNI boundaries. Not suitable for pure C/C++ libraries without FFI boundaries.
+**Best for**: Rust↔C, Zig↔C, Python C extensions, JNI boundaries, and other cross-language ownership boundaries.
+
+**What it reports**:
+- which function is the boundary
+- which pointer crosses the boundary
+- who allocates and who frees
+- why ownership does not match
+- which call chain makes the risk reachable
+
+**Not a general-purpose static analyzer**: OmniScope focuses on FFI security auditing, not broad source-level bug finding.
 
 *All data based on v0.1.9 actual tests. See [VALIDATION_REPORT.md](./VALIDATION_REPORT.md).*
 

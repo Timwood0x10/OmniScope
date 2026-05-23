@@ -1,5 +1,7 @@
 # OmniScope 优化方案
 
+编码风格：./plan/rules/rules.md 
+
 ---
 
 ## 已完成的优化

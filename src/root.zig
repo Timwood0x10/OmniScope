@@ -76,6 +76,7 @@ pub const cross_lang = struct {
     pub const SOURCE_FUNCTIONS = @import("pass/analysis/call_graph.zig").SOURCE_FUNCTIONS;
     pub const SINK_PATTERNS = @import("pass/analysis/call_graph.zig").SINK_PATTERNS;
     pub const CallGraphPass = @import("pass/analysis/call_graph.zig").CallGraphPass;
+    pub const OriginClassifierPass = @import("pass/analysis/origin_classifier.zig").OriginClassifierPass;
     pub const DangerSurfacePass = @import("pass/analysis/danger_surface.zig").DangerSurfacePass;
     pub const TaintPropagationPass = @import("pass/analysis/taint_propagation.zig").TaintPropagationPass;
     pub const FFIBoundaryPass = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryPass;

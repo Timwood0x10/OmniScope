@@ -11,9 +11,10 @@
                                                                    `..
 ```
 
-**跨语言 FFI 与内存安全静态分析器**
+**LLVM IR 层跨语言 FFI 安全审计工具**
 
-一款专注于在 **LLVM IR 层面** 检测**跨语言边界内存安全漏洞**的静态分析工具。
+OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具。
+它的目标是输出高置信风险和可追踪证据链，而不是作为通用静态分析器证明所有漏洞。
 
 支持 **C / C++ / Rust / Zig / Go / Python / Java** 七种语言。
 
@@ -28,7 +29,16 @@
 | **cross_lang_free_mismatch** | ⚠️ 部分工作 | C分配/Rust释放 可检出；Rust分配/C释放 未检出 |
 | **FFI Boundary issue** | ❌ 未工作 | 从未被任何 pass 生成 |
 
-**适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析。纯 C/C++ 库（无 FFI 边界）不适用。
+**适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析，以及其他跨语言所有权边界。
+
+**核心输出**：
+- 哪个函数是 boundary
+- 哪个 pointer 跨过边界
+- 谁分配、谁释放
+- 为什么 ownership 不匹配
+- 哪条调用链让风险 reachable
+
+**不是通用静态分析器**：OmniScope 聚焦 FFI 安全审计，不做广义源码级缺陷检测。
 
 *以上数据基于 v0.1.9 实测，详见 [VALIDATION_REPORT.md](./VALIDATION_REPORT.md)。*
 
