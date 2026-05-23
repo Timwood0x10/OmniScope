@@ -410,7 +410,16 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         };
     } else {
         // Auto-detect language from patterns
-        if (isRustFunction(func_name)) {
+        // P0 FIX: Check __rust_ prefix BEFORE Rust mangled name patterns.
+        // __rust_dealloc/__rust_alloc/__rust_realloc are Rust compiler intrinsics
+        // that don't have _ZN/_R prefixes and would otherwise be misclassified
+        // as C/C++ functions, causing false positives in FFIBoundary analysis.
+        if (std.mem.startsWith(u8, func_name, "__rust_") or
+            std.mem.startsWith(u8, func_name, "__rdl_") or
+            std.mem.startsWith(u8, func_name, "__rg_"))
+        {
+            result = .runtime_internal;
+        } else if (isRustFunction(func_name)) {
             result = classifyRustFunction(func_name);
         } else if (isZigFunction(func_name)) {
             result = classifyZigFunction(func_name);
@@ -604,6 +613,22 @@ fn isLikelyRuntimeInternal(name: []const u8) bool {
 
 /// Classify a Rust function.
 fn classifyRustFunction(func_name: []const u8) ZoneKind {
+    // P0 FIX: Rust global allocator intrinsics are runtime internal.
+    // These appear as _RNv...__rust_dealloc or __rust_dealloc in LLVM IR.
+    // They are compiler-generated shims, NOT FFI boundaries.
+    // Without this check, they are classified as .unknown and generate
+    // false "FFI unsafe call" and "invalid free" reports.
+    const rust_allocator_patterns = [_][]const u8{
+        "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
+        "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
+        "__rg_alloc",     "__rg_realloc",
+    };
+    for (rust_allocator_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return .runtime_internal;
+        }
+    }
+
     // Check escape triggers first
     for (RUST_ESCAPE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {

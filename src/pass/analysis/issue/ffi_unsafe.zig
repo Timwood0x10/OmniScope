@@ -21,6 +21,13 @@ pub const FFIUnsafePass = struct {
     pub const kind = PassKind.analysis;
     pub const deps = &[_][]const u8{"ffi-boundary"};
 
+    // Patterns that are genuinely dangerous at FFI boundaries.
+    // NOTE: malloc/free/realloc/calloc are REMOVED from this list because:
+    //   - They are legitimate memory management functions, not security hazards.
+    //   - Cross-allocator mismatches (malloc+delete, new+free) are already handled
+    //     by FreeValidationPass.isCrossAllocatorFree() with proper domain awareness.
+    //   - Flagging every malloc/free at an FFI boundary as "unsafe" creates massive
+    //     false positive noise that obscures real vulnerabilities.
     const DangerousPatterns = &[_][]const u8{
         "system",      "popen",
         "exec",        "execve",
@@ -28,8 +35,6 @@ pub const FFIUnsafePass = struct {
         "execl",       "execlp",
         "execle",      "fexecve",
         "posix_spawn", "posix_spawnp",
-        "malloc",      "free",
-        "realloc",     "calloc",
         "strcpy",      "strcat",
         "gets",        "sprintf",
         // C setjmp/longjmp — control flow violation at FFI boundary

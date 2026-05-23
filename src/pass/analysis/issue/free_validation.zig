@@ -401,19 +401,54 @@ pub const FreeValidationPass = struct {
     /// Used to detect pointers returned from C/external functions, which carry
     /// cross-allocator free risk when passed to libc::free or __rust_dealloc.
     ///
+    /// IMPORTANT: Standard C library functions and compiler intrinsics are NOT
+    /// FFI boundary calls — they are same-language runtime functions. Including
+    /// them would cause massive false positives (every malloc pointer treated
+    /// as "FFI-originated" when freed by free()).
+    ///
     /// Future enhancement: use ctx.getCrossEdgeByCallee(callee) != null
     /// to cover unmangled Rust wrappers (e.g., test_double_free_box).
     /// Requires refactoring this fn to accept PassContext parameter.
     fn isFFIBoundaryCall(func_name: []const u8) bool {
         if (func_name.len < 2) return false;
-        // Rust-internal functions use _ZN / _RNv / _R mangled prefixes.
-        // LLVM intrinsics start with "llvm.".
-        // Anything else that doesn't start with these is likely an extern "C" FFI call.
+
+        // Rust-internal functions: _ZN (legacy), _RNv / _R (v0 mangling)
         const rust_prefixes = [_][]const u8{ "_ZN", "_RNv", "_R" };
         for (rust_prefixes) |prefix| {
             if (std.mem.startsWith(u8, func_name, prefix)) return false;
         }
+
+        // LLVM intrinsics
         if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
+
+        // Rust compiler intrinsics (__rust_alloc, __rust_dealloc, etc.)
+        if (std.mem.startsWith(u8, func_name, "__rust_")) return false;
+        if (std.mem.startsWith(u8, func_name, "__rdl_")) return false;
+        if (std.mem.startsWith(u8, func_name, "__rg_")) return false;
+
+        // Standard C library alloc/free functions — these are NOT FFI boundaries.
+        // They are same-language runtime calls; cross-allocator detection is
+        // handled separately by isCrossAllocatorFree().
+        const libc_functions = [_][]const u8{
+            "malloc",        "calloc",         "realloc",  "free",
+            "aligned_alloc", "posix_memalign", "memalign", "pvalloc",
+            "valloc",        "strdup",         "strndup",
+        };
+        for (libc_functions) |libc_fn| {
+            if (std.mem.eql(u8, func_name, libc_fn)) return false;
+        }
+
+        // C++ operator new/delete — same-language runtime, not FFI boundary
+        if (std.mem.startsWith(u8, func_name, "operator new")) return false;
+        if (std.mem.startsWith(u8, func_name, "operator delete")) return false;
+
+        // Common C runtime wrappers that are NOT cross-language boundaries
+        if (std.mem.startsWith(u8, func_name, "memcpy")) return false;
+        if (std.mem.startsWith(u8, func_name, "memset")) return false;
+        if (std.mem.startsWith(u8, func_name, "memmove")) return false;
+        if (std.mem.startsWith(u8, func_name, "__cxa_")) return false;
+        if (std.mem.startsWith(u8, func_name, "_Unwind_")) return false;
+
         return true;
     }
 

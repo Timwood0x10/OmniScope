@@ -389,6 +389,21 @@ pub const FFIBoundaryPass = struct {
             return false;
         }
 
+        // P1 FIX: Skip C↔C++ bridge calls (same language family).
+        // C calling C++ (or vice versa) is NOT a dangerous FFI boundary —
+        // they share the same memory model (malloc/free, new/delete), same ABI
+        // conventions, and same runtime (libc). The only real risk is
+        // cross-allocator mismatches (malloc+delete, new+free), which are
+        // already handled by FreeValidationPass.isCrossAllocatorFree().
+        // Reporting every C→C++ call as "FFI unsafe" creates massive FP noise.
+        if (!cross_edge_matched and
+            ((caller_lang == .c and callee_lang == .cpp) or
+                (caller_lang == .cpp and callee_lang == .c)))
+        {
+            diag.debug("C-CPP-SKIP: {s} -> {s} (same language family)", .{ caller_name, called_name });
+            return false;
+        }
+
         // Report risky libc functions only after same-language check passes.
         // This prevents POSIX API (pthread_*, setsockopt, etc.) in pure C code
         // from being flagged as risky when they're not on an FFI boundary.
