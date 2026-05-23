@@ -12,7 +12,7 @@ const SurfaceHint = @import("surface_classifier.zig").SurfaceHint;
 const FunctionSurface = @import("surface_classifier.zig").FunctionSurface;
 
 /// Source provenance determined from DIFile path.
-const SourceProvenance = enum {
+pub const SourceProvenance = enum {
     user_code,
     stdlib,
     dependency,
@@ -116,4 +116,66 @@ pub fn classifySourcePath(dir: []const u8, filename: []const u8) SourceProvenanc
     if (std.mem.indexOf(u8, dir, "/src/") != null) return .user_code;
 
     return .unknown;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "classifySourcePath - Rust stdlib paths" {
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/rustc/a1b2c3d/library/core", "any.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/home/user/.rustup/toolchains/stable/library/alloc", "any.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/usr/lib/rustlib/src/library/std", "any.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/cargo/registry/src/library/core", "any.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/old/src/libcore/str.rs", "str.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/old/src/liballoc/alloc.rs", "alloc.rs"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/old/src/libstd/io.rs", "io.rs"));
+}
+
+test "classifySourcePath - C++ STL paths" {
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/usr/include/c++/12", "vector"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/include/c++/v1", "string"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/usr/lib/gcc/x86_64-linux-gnu/12/include", "stddef.h"));
+}
+
+test "classifySourcePath - Zig stdlib paths" {
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/home/user/lib/zig/std", "mem.zig"));
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/opt/zig/lib/std", "ArrayList.zig"));
+}
+
+test "classifySourcePath - Go stdlib paths" {
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/usr/local/go/src/fmt", "print.go"));
+}
+
+test "classifySourcePath - dependency paths" {
+    try std.testing.expectEqual(SourceProvenance.dependency, classifySourcePath("/home/user/.cargo/registry/src/index.crates.io-xxx/serde-1.0", "lib.rs"));
+    try std.testing.expectEqual(SourceProvenance.dependency, classifySourcePath("/cargo/registry/src/serde-1.0", "lib.rs"));
+}
+
+test "classifySourcePath - build-generated paths" {
+    try std.testing.expectEqual(SourceProvenance.build_generated, classifySourcePath("/project/target/build/out", "generated.rs"));
+    try std.testing.expectEqual(SourceProvenance.build_generated, classifySourcePath("/project/build/out/derive", "derive.rs"));
+}
+
+test "classifySourcePath - user code paths" {
+    try std.testing.expectEqual(SourceProvenance.user_code, classifySourcePath("/home/user/project/src/main.rs", "main.rs"));
+    try std.testing.expectEqual(SourceProvenance.user_code, classifySourcePath("/workspace/myapp/src/lib.rs", "lib.rs"));
+}
+
+test "classifySourcePath - unknown paths" {
+    try std.testing.expectEqual(SourceProvenance.unknown, classifySourcePath("/tmp", "test.rs"));
+    try std.testing.expectEqual(SourceProvenance.unknown, classifySourcePath("/", "main.c"));
+}
+
+test "classifySourcePath - filename is not used for classification" {
+    // Classification is based on directory path, not filename
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/rustc/abc/library/core", "anything.xyz"));
+    try std.testing.expectEqual(SourceProvenance.user_code, classifySourcePath("/home/user/src", "anything.xyz"));
+}
+
+test "classifySourcePath - ordering priority matters" {
+    // /src/ matches user_code, but /rustc/ should match stdlib first
+    try std.testing.expectEqual(SourceProvenance.stdlib, classifySourcePath("/rustc/abc/src/libcore", "lib.rs"));
+    // cargo/registry/ matches dependency, not user_code even if /src/ is present
+    try std.testing.expectEqual(SourceProvenance.dependency, classifySourcePath("/cargo/registry/src/serde", "lib.rs"));
 }

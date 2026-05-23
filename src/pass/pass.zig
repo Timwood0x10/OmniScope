@@ -826,7 +826,7 @@ pub const PassContext = struct {
         self.module_language = language_detector.detectModuleLanguage(llvm_module);
         self.language_detected = true;
 
-        log.info("LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
+        log.debug("LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
             @tagName(self.module_language.language),
             self.module_language.confidence * 100,
             @tagName(self.module_language.method),
@@ -1134,8 +1134,13 @@ pub const DiagnosticWriter = struct {
     pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
         if (log.current_log_level == .quiet) return;
         if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
+        // INFO messages only show in verbose mode or higher (not normal mode)
+        // This separates pipeline telemetry from the structured user report.
+        // Normal mode: only the structured report (Findings/Coverage/Summary).
+        // Verbose mode: + pipeline pass statistics.
+        // Debug mode: + internal debug traces.
+        if (std.mem.eql(u8, severity, "INFO") and log.current_log_level == .normal) return;
         // WARN messages only show in verbose mode or higher (not normal mode)
-        // This reduces noise: normal mode shows only issues, verbose shows analysis details
         if (std.mem.eql(u8, severity, "WARN") and log.current_log_level == .normal) return;
 
         const color = comptime getSeverityColor(severity);
@@ -1170,7 +1175,9 @@ pub const DiagnosticWriter = struct {
 /// Print zone classification summary with 90/10 priority分层
 /// Output format: "Analyzed 987 functions, 42 in unsafe/FFI zones, found 3 real issues"
 pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) void {
-    if (log.current_log_level == .quiet) return;
+    // Zone summary is pipeline telemetry — only show in verbose/debug mode.
+    // Normal mode gets the structured report via emitStructuredReport().
+    if (log.current_log_level != .verbose and log.current_log_level != .debug) return;
 
     const total = stats.total();
     const escape_count = stats.unsafe_count + stats.ffi_count;

@@ -269,3 +269,37 @@ test "functionSurfaceToOrigin - mapping" {
     try std.testing.expectEqual(FunctionOrigin.stdlib, functionSurfaceToOrigin(.runtime));
     try std.testing.expectEqual(FunctionOrigin.unknown, functionSurfaceToOrigin(.unknown));
 }
+
+test "FunctionSurface.shouldAnalyze - boundary and unknown preserved" {
+    // These are critical: boundary and unknown must never be suppressed
+    try std.testing.expect(FunctionSurface.boundary.shouldAnalyze());
+    try std.testing.expect(FunctionSurface.unknown.shouldAnalyze());
+}
+
+test "FunctionSurface.shouldAnalyze - runtime and stdlib skipped" {
+    try std.testing.expect(!FunctionSurface.runtime.shouldAnalyze());
+    try std.testing.expect(!FunctionSurface.standard_library.shouldAnalyze());
+    try std.testing.expect(!FunctionSurface.compiler_generated.shouldAnalyze());
+}
+
+test "functionSurfaceToOrigin + getRiskLevel - boundary treated as user" {
+    // Boundary surfaces should get user-level risk (not suppressed)
+    const origin = functionSurfaceToOrigin(.boundary);
+    try std.testing.expectEqual(FunctionOrigin.user, origin);
+    try std.testing.expectEqual(RiskLevel.critical, getRiskLevel(origin, .critical));
+    try std.testing.expectEqual(RiskLevel.high, getRiskLevel(origin, .high));
+}
+
+test "functionSurfaceToOrigin + getRiskLevel - dependency treated as third_party" {
+    const origin = functionSurfaceToOrigin(.dependency);
+    try std.testing.expectEqual(FunctionOrigin.third_party, origin);
+    try std.testing.expectEqual(RiskLevel.high, getRiskLevel(origin, .critical));
+    try std.testing.expectEqual(RiskLevel.medium, getRiskLevel(origin, .high));
+}
+
+test "functionSurfaceToOrigin + getRiskLevel - runtime treated as stdlib" {
+    const origin = functionSurfaceToOrigin(.runtime);
+    try std.testing.expectEqual(FunctionOrigin.stdlib, origin);
+    try std.testing.expectEqual(RiskLevel.low, getRiskLevel(origin, .critical));
+    try std.testing.expectEqual(RiskLevel.suppressed, getRiskLevel(origin, .medium));
+}

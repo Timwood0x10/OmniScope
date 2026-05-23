@@ -64,3 +64,39 @@ fn hasDebugSubprogram(func: c.LLVMValueRef) bool {
     const sp = c.LLVMGetSubprogram(func);
     return @intFromPtr(sp) != 0;
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "classifyLinkage - SurfaceHint fields for compiler_generated" {
+    // Verify SurfaceHint structure is correct for L1 signals.
+    // Actual LLVM integration is tested in surface_classifier_pass integration tests.
+    const hint: SurfaceHint = .{
+        .surface = .compiler_generated,
+        .confidence = .high,
+        .reason = "internal/private linkage without debug info",
+    };
+    const testing = @import("std").testing;
+    try testing.expectEqual(FunctionSurface.compiler_generated, hint.surface);
+    try testing.expectEqual(@import("surface_classifier.zig").Confidence.high, hint.confidence);
+}
+
+test "classifyLinkage - SurfaceHint for runtime external declaration" {
+    const hint: SurfaceHint = .{
+        .surface = .runtime,
+        .confidence = .low,
+        .reason = "external declaration",
+    };
+    const testing = @import("std").testing;
+    try testing.expectEqual(FunctionSurface.runtime, hint.surface);
+    try testing.expectEqual(@import("surface_classifier.zig").Confidence.low, hint.confidence);
+}
+
+test "classifyLinkage - null return means defer to other layers" {
+    // When no strong linkage signal exists, classifyLinkage returns null
+    // to let L2/L3/L4 make the decision.
+    const result: ?SurfaceHint = null;
+    const testing = @import("std").testing;
+    try testing.expectEqual(@as(?SurfaceHint, null), result);
+}

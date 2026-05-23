@@ -110,7 +110,7 @@ pub const RustFfiAuditor = struct {
         const findings = try auditor.audit(mod, ctx, diag);
         ctx.allocator.free(findings);
 
-        diag.info("RustFfiFilter: analyzed {d} funcs, {d} findings ({d} stack escapes)", .{ auditor.stats.total_functions_analyzed, auditor.findings.items.len, auditor.stats.stack_escapes });
+        diag.info("FFIAuditor: analyzed {d} funcs, {d} findings ({d} stack escapes)", .{ auditor.stats.total_functions_analyzed, auditor.findings.items.len, auditor.stats.stack_escapes });
     }
 
     /// Run full audit on an LLVM module
@@ -420,7 +420,7 @@ pub const RustFfiAuditor = struct {
                             mutable_issue.owned = true;
                             try ctx.addIssue(&mutable_issue);
 
-                            diag.warn("RustFfiFilter: stack escape in {s} → {s}() arg {d}", .{ func_name, callee_name, arg_i });
+                            diag.warn("FFIAuditor: stack escape in {s} → {s}() arg {d}", .{ func_name, callee_name, arg_i });
                         }
                     }
                 }
@@ -560,7 +560,7 @@ pub const RustFfiAuditor = struct {
                 try ctx.addIssue(&mutable_issue);
 
                 diag.warn(
-                    \\RustFfiFilter: ownership violation in {s}
+                    \\FFIAuditor: ownership violation in {s}
                     \\  → pointer transferred to FFI, then freed by {s}()
                 , .{ func_name, free_entry.free_name });
             }
@@ -830,7 +830,7 @@ pub const RustFfiAuditor = struct {
                         try ctx.addIssue(&mutable_issue);
 
                         diag.warn(
-                            \\RustFfiFilter: dangling as_ptr in {s}
+                            \\FFIAuditor: dangling as_ptr in {s}
                             \\  → borrowed pointer used after parent was dropped
                         , .{func_name});
                     }

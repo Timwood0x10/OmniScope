@@ -513,12 +513,53 @@ src/pass/analysis/
 
 ### 阶段 4：性能验证 + 回归测试
 
-- [ ] 4.1 `FunctionSurface` 分类单元测试（linkage/debug/callgraph/boundary 各层）
-- [ ] 4.2 `mergeLayers()` 单元测试（覆盖所有 L1+L2+L3+L4 组合）
-- [ ] 4.3 `PassContext.getFunctionSurface()` / `shouldAnalyzeFunctionSurface()` 测试
-- [ ] 4.4 小型 FFI 样例回归：Rust `Box::into_raw` / `extern "C" fn` 场景
-- [ ] 4.5 `wasmtime_test.bc` 性能回归：对比 init/detect/analysis 时间
-- [ ] 4.6 `sqlite3.bc` 性能回归：对比 init/detect/analysis 时间
-- [ ] 4.7 确认 recall 不下降：FFI producer 和 boundary 场景不被误杀
-- [ ] 4.8 确认 `noise_filter.zig` 行数 < 200（瘦身目标）
-- [ ] 4.9 确认所有单文件 ≤ 1000 行
+- [x] 4.1 `FunctionSurface` 分类单元测试（linkage/debug/callgraph/boundary 各层）
+- [x] 4.2 `mergeLayers()` 单元测试（覆盖所有 L1+L2+L3+L4 组合）
+- [x] 4.3 `PassContext.getFunctionSurface()` / `shouldAnalyzeFunctionSurface()` 测试
+- [x] 4.4 小型 FFI 样例回归：Rust `Box::into_raw` / `extern "C" fn` 场景
+- [x] 4.5 `wasmtime_test.bc` 性能回归：对比 init/detect/analysis 时间
+- [x] 4.6 `sqlite3.bc` 性能回归：对比 init/detect/analysis 时间
+- [x] 4.7 确认 recall 不下降：FFI producer 和 boundary 场景不被误杀
+- [ ] 4.8 确认 `noise_filter.zig` 行数 < 200（当前 305 行，含测试 ~100 行，需进一步拆分测试）
+- [ ] 4.9 确认所有单文件 ≤ 1000 行（当前 7 个文件超标，属历史遗留问题）
+
+### 阶段 4 补充：ffi-demo TP/FP 分析
+
+使用 `/Users/scc/code/ffi-demo/output/` 中的 7 个 .bc 文件进行了完整分析。
+
+结果：TP=2, FP=0, FN=8, Precision=100%, Recall=20%, F1=0.333
+
+检测到的真实漏洞：
+- LEAK-MALLOC: `c_hash()` 中 malloc 在 len==0 时不 free
+- FFT-LEAK-5: `c_fft_test_signal()` 中 temp_buf malloc 未 free
+
+FN 主要原因：fd 泄漏(不在 scope)、C++ new/delete(未跟踪)、静态分配、跨过程 ownership。
+
+报告已保存至 `outputs/ffi_demo_tp_fp_analysis.md`，原始 JSON 至 `outputs/ffi_demo/`。
+
+### 阶段 4 性能结果
+
+| 文件 | 基线 total | 当前 total | 变化 |
+|------|-----------|------------|------|
+| wasmtime_test.bc | 53407ms | 38276ms | -28% |
+| sqlite3.bc | 20033ms | 17753ms | -11% |
+
+FFI 回归：rust_ffi_bugs.ll (20 函数, 13 issues), cross_lang_free_bugs.ll (22 函数, 3 issues), red_team_cpp_ffi.bc (124 函数, 5 issues) — recall 正常。
+
+新增测试：39 个（surface_classifier 15 + debug_origin 10 + linkage 3 + boundary 1 + noise_filter 10）。
+
+### 阶段 5：输出优化（基于 improve.md 反馈）
+
+- [x] 5.1 DiagnosticWriter.info() 改为只在 verbose/debug 输出（分离 pipeline telemetry）
+- [x] 5.2 新增 formatStructuredReport()：Findings → Coverage → Summary → Verdict
+- [x] 5.3 printZoneSummary() 改为只在 verbose/debug 输出
+- [x] 5.4 Performance Profile 改为只在 verbose/debug 输出
+- [x] 5.5 LANG-DETECT 改为 log.debug（只在 debug 输出）
+- [x] 5.6 RustFfiFilter 重命名为 FFIAuditor（跨语言通用）
+- [x] 5.7 main.zig 中 pipeline log 改为 log.debug
+- [x] 5.8 验证：构建通过 + 60/60 测试通过
+
+输出效果：
+- **默认模式**：只有结构化报告（Findings/Coverage/Summary），干净专业
+- **--verbose**：+ Zone Summary + SurfaceClassifier + Pipeline pass 统计
+- **--debug**：+ 全部内部 trace

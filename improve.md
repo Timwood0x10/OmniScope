@@ -1,588 +1,540 @@
-这次你问到核心了。
+我认真看了。
 
-如果你的目标是：
+先给结论：
 
-OmniScope = Cross-language LLVM IR analyzer
+这已经比上一版完整很多了。
 
-那么答案必须是：
+而且开始出现了 “用户视角报告” 的雏形。
 
-不能做 Rust-special filtering。
+尤其这些：
 
-否则你以后会陷入：
+Issue breakdown by category
+Origin breakdown
+90/10 Priority Classification
+ACTION NEEDED
 
-rust_noise.zig
-cpp_noise.zig
-zig_noise.zig
-go_noise.zig
-swift_noise.zig
+方向是对的。
 
-最后维护地狱。
+但现在还有一个明显问题：
 
-你真正需要的是：
+你把「用户报告」和「引擎 telemetry/debug」混在一起了。
 
-Language-Agnostic IR Noise Classification
+所以读起来还是有点“CPU trace”。
 
-也就是：
-
-不识别“Rust 编译器产物”。
-
-而是识别：
-
-“哪些 IR 在 ownership / FFI 分析里本质属于低价值噪声”。
-
-这是不同的问题。
+我具体说。
 
 ⸻
 
-一、先定义真正的分类维度
+一、现在的结构已经接近正确了
 
-不要按语言分类。
+我先说好的地方。
 
-不要：
+1. Zone Summary 已经有价值了
 
-Rust stdlib
-C++ STL
-Go runtime
+这个：
 
-这样做。
+Zone Classification Summary
 
-改成：
+比以前好多了。
 
-IR Semantic Origin
+因为它回答了：
 
-跨语言统一。
+Analyzer actually focused where?
 
-例如：
-
-pub const IRSurface = enum {
-    UserCode,
-    Dependency,
-    Runtime,
-    StandardLibrary,
-    CompilerGenerated,
-    Boundary,
-    Unknown,
-};
-
-这套东西：
-
-Rust/C++/Go/Zig 全能用。
+用户能理解。
 
 ⸻
 
-二、哪些信号跨语言天然存在？
+尤其：
 
-LLVM IR 已经给你很多统一特征。
+Origin breakdown:
+User code: 2
+Third-party: 0
+Stdlib: 0
+Compiler: 0
 
-这才是关键。
+这个很强。
 
-⸻
+这是 真正用户关心的信息。
 
-1. Debug Provenance（最强）
+因为它回答：
 
-所有语言都能用。
-
-⸻
-
-Rust:
-
-/rustc/.../library/core/
+我要不要修？
 
 ⸻
 
-C++:
+2. 90/10 Classification 很 OmniScope
 
-/usr/include/c++
+这个：
 
-⸻
+FFI Boundary (90% core)
+Local Only (10% auxiliary)
 
-Go:
+挺好。
 
-GOROOT/src/runtime/
+很像：
 
-⸻
+signal prioritization layer
 
-Zig:
+符合你项目定位。
 
-zig/lib/std/
-
-⸻
-
-Swift:
-
-swift/stdlib/
+建议保留。
 
 ⸻
 
-IR：
+3. actionable issues 非常重要
 
-!DISubprogram
-!DIFile
+这句：
 
-统一。
+2 actionable issues
 
-⸻
+很好。
 
-分类：
-
-workspace path      → UserCode
-package cache       → Dependency
-compiler stdlib     → StandardLibrary
-runtime source      → Runtime
+很多 analyzer 缺这个。
 
 ⸻
 
-语言无关。
+4. SurfaceClassifier 开始有存在感
+
+这句：
+
+user=7 dep=0 bnd=9
+
+说明你的分类系统开始成型。
+
+很好。
 
 ⸻
 
-2. Linkage / Visibility signals
+二、但现在还有一个“大问题”
 
-跨语言。
+最重要的问题没有在最前面。
 
-⸻
-
-LLVM attributes:
-
-internal
-private
-linkonce_odr
-available_externally
-weak_odr
+用户打开看到：
 
 ⸻
 
-大量 compiler-generated code 都会出现。
-
-Rust。
-
-Clang。
-
-Swift。
-
-Zig。
-
-Go LLVM backend。
-
-全部有。
+ReturnCheck
+RustFfiFilter
+CallGraph
+IntegerOverflow
+FFITypeMismatch
+DangerSurface
+PointerFlow
 
 ⸻
 
-例：
+然后 40 行之后才看到：
 
-private + internal + no debug
+VULNERABILITY OMI-001
 
-→ high generated score
-
-⸻
-
-3. ABI / Boundary markers
-
-统一。
+这是反的。
 
 ⸻
 
-extern ABI:
+安全工具用户通常第一件事看：
 
-extern "C"
-cc 10
-cc 11
+有没有洞？
 
-⸻
+不是：
 
-exported symbol.
+PointerFlow tracked 5 values.
 
 ⸻
 
-foreign declaration.
+建议：
+
+把 Findings 提到最上面。
 
 ⸻
 
-这些天然是：
+应该像：
 
-Boundary signal
-
-不依赖语言。
-
-⸻
-
-4. Reachability
-
-这个最重要。
-
-跨语言通吃。
-
-⸻
-
-CallGraph.
-
-⸻
-
-从：
-
-export
-extern
-entry
-CrossLangEdge
-
-传播。
+══════════════════════════════
+OmniScope Analysis Result
+══════════════════════════════
+File:
+  examples/go_cffi/target/combined.bc
+Language:
+  C (100%)
+Result:
+  5 issues detected
+  2 actionable issues
+Critical
+────────
+OMI-001
+Type:
+  Null Dereference
+Severity:
+  Critical
+Reason:
+  allocation may return NULL,
+  used without null guard
+Confidence:
+  Medium
 
 ⸻
 
-如果函数：
+然后再：
 
-never boundary reachable
+Coverage.
 
-分析优先级下降。
+Zone.
 
-⸻
-
-Rust.
-
-C++.
-
-Zig.
-
-Go.
-
-一样。
+Pipeline.
 
 ⸻
 
-三、不要做“白名单”，做“评分系统”
-
-这一步非常重要。
-
-因为：
-
-classification 比 binary whitelist 稳。
+用户体验会差很多。
 
 ⸻
 
-不要：
+三、你已经可以正式做 “Report Modes” 了
 
-if(name.contains("_ZN4core"))
-    skip;
-
-⸻
-
-做：
-
-score = 0;
+我现在强烈建议。
 
 ⸻
 
-Example
+1. Default Mode
 
-Debug provenance
-
-stdlib:
-
-+40
-
-runtime:
-
-+35
-
-generated build:
-
-+30
-
-⸻
-
-linkage
-
-private:
-
-+10
-
-linkonce_odr:
-
-+15
-
-⸻
-
-boundary
-
-extern export:
-
--50
-
-CrossLangEdge:
-
--80
-
-⸻
-
-user workspace path
-
--60
-
-⸻
-
-最终：
-
-if(score > threshold)
-    skip;
-
-⸻
-
-这比 whitelist 强太多。
-
-⸻
-
-四、跨语言实际长什么样
-
-举几个例子。
-
-⸻
-
-Rust
-
-rustc/.../library/alloc
-private
-linkonce_odr
-not boundary reachable
-
-⸻
-
-score:
-
-90
-
-SKIP
-
-⸻
-
-C++ STL
-
-/usr/include/c++
-linkonce_odr
-template expansion
-
-⸻
-
-score:
-
-85
-
-SKIP
-
-⸻
-
-Zig std
-
-zig/lib/std
-internal
-
-⸻
-
-score:
-
-80
-
-SKIP
-
-⸻
-
-Go runtime
-
-GOROOT/runtime
-
-⸻
-
-score:
-
-95
-
-SKIP
-
-⸻
-
-user ffi wrapper
-
-Rust:
-
-pub extern "C" fn make()
-
-⸻
-
-signals:
-
-workspace path
-boundary export
-
-⸻
-
-score:
-
-−100
-
-KEEP
-
-⸻
-
-统一成立。
-
-⸻
-
-五、最符合 OmniScope 的版本
-
-我甚至觉得你应该正式做一个：
-
-SurfaceClassifierPass
-
-早于所有 analysis。
-
-结构：
-
-pub const SurfaceKind = enum {
-    CriticalBoundary,
-    UserCode,
-    Dependency,
-    StandardLibrary,
-    Runtime,
-    CompilerGenerated,
-    Unknown,
-};
-
-⸻
-
-输入：
-
-⸻
-
-debug metadata
-
-⸻
-
-callgraph
-
-⸻
-
-ABI
-
-⸻
-
-linkage
-
-⸻
-
-language detector hints
-
-⸻
-
-CrossLangEdge
+用户。
 
 ⸻
 
 输出：
 
-FunctionSurface
+Executive Summary
+
+Findings
+
+Coverage
+
+Final Verdict
 
 ⸻
 
-然后所有 pass 用它。
+不显示：
+
+PointerFlow
+DangerSurface alias traces
+CallGraph node count
 
 ⸻
 
-PointerOwnership:
-
-if(surface.isNoise())
-    continue;
+例如：
 
 ⸻
 
-DangerSurface:
-
-surface.boostBoundary();
-
-⸻
-
-MemoryGraph:
-
-surface.adjustPriority();
-
-⸻
-
-你就彻底摆脱：
-
-维护语言白名单。
-
-⸻
-
-六、唯一需要承认的现实
-
-完全 0 language awareness 很难。
-
-我要实话实说。
-
-因为：
-
-stdlib 路径模式确实不同。
+OmniScope Report
+──────────────────────────
+Input:
+  combined.bc
+Language:
+  C (100%)
+Coverage:
+  16 functions
+  5 FFI edges
+  3 deep-analysis funcs
+Results:
+Critical:
+  1 null dereference
+Warnings:
+  1 unchecked return
+  3 unchecked allocations
+  1 memory leak
+Actionable:
+  2 user-code issues
+Time:
+  8 ms
 
 ⸻
 
-Rust:
-
-/rustc/
+这就很好。
 
 ⸻
 
-C++:
+2. –verbose
 
-/usr/include/c++
-
-⸻
-
-Go:
-
-GOROOT/
+工程师。
 
 ⸻
 
-Zig:
+增加：
 
-zig/lib/std
-
-⸻
-
-但这不叫“巨额白名单”。
-
-这叫：
-
-small provenance adapters.
-
-几十行。
-
-不是几万行 regex。
+CallGraph
+DangerSurface
+SurfaceClassifier
+ZoneSummary
 
 ⸻
 
-差别非常大。
+3. –debug
+
+开发者。
 
 ⸻
 
-一句话总结：
+全部保留。
 
-你要构建的不是：
+现在这份。
 
-Rust compiler artifact filter.
+⸻
 
-而是：
+这样你的输出会立刻专业很多。
 
-Cross-language IR Surface Classifier.
+⸻
 
-用：
+四、几个具体问题
 
-* provenance
-* linkage
-* ABI
-* reachability
-* boundary signals
+⸻
 
-做统一评分。
+问题1
 
-这样 Rust / C++ / Zig / Go 都能复用。
+这个：
 
-而且不用维护巨型名字白名单。
+LANG-DETECT:
+module language = c
+
+但文件：
+
+go_cffi
+
+容易让用户困惑。
+
+⸻
+
+应该改成：
+
+⸻
+
+Primary IR language:
+  C (LLVM observation)
+Detected ecosystems:
+  Go+C FFI
+
+⸻
+
+或者：
+
+Language Profile:
+  Mixed (Go/C boundary)
+
+⸻
+
+否则用户会问：
+
+我明明分析 Go，为什么你说是 C？
+
+⸻
+
+问题2
+
+这个：
+
+RustFfiFilter
+
+在 Go testcase 里出现。
+
+有点奇怪。
+
+⸻
+
+如果真的是通用 pipeline。
+
+建议：
+
+⸻
+
+不要：
+
+RustFfiFilter
+
+⸻
+
+改：
+
+LanguageFilter
+
+或：
+
+SurfaceFilter
+
+⸻
+
+否则会给人：
+
+Rust-hardcoded architecture.
+
+⸻
+
+这很重要。
+
+⸻
+
+问题3
+
+这里：
+
+Graph coverage:
+Total nodes analyzed: 0
+Danger path: 0
+FFI boundaries tracked: 0
+Issues in graph: 2
+
+看着像 bug。
+
+因为上面明明：
+
+⸻
+
+5 cross-language edges
+11 FFI boundaries
+
+⸻
+
+但这里：
+
+tracked=0
+
+用户会 confused。
+
+⸻
+
+可能是：
+
+graph pass skipped。
+
+但输出需要解释。
+
+⸻
+
+例如：
+
+⸻
+
+Graph Analysis
+not applicable
+(no eligible ownership graph nodes)
+
+⸻
+
+比：
+
+0
+0
+0
+
+舒服很多。
+
+⸻
+
+问题4
+
+这个：
+
+Functions analyzed: 48
+Loaded:16
+
+还是有点 confusing。
+
+建议统一。
+
+⸻
+
+例如：
+
+⸻
+
+Functions Loaded:
+ 16
+Pass Visits:
+ 48
+
+⸻
+
+非常清晰。
+
+⸻
+
+五、我会这样组织最终版
+
+给你一个接近 production 的布局。
+
+⸻
+
+══════════════════════════════════════
+OmniScope — Cross-Language Memory Analysis
+══════════════════════════════════════
+Input
+─────
+File:
+  combined.bc
+Language:
+  Mixed Go/C boundary
+Coverage
+────────
+Functions:      16
+FFI Edges:       5
+Deep Analysis:   3
+Findings
+────────
+[CRITICAL] OMI-001
+Null Dereference
+Confidence: Medium
+Reason:
+allocation may return NULL
+used without null guard
+Warnings
+────────
+Unchecked Return Values: 1
+Unchecked Allocations:   3
+Memory Leaks:            1
+Issue Attribution
+─────────────────
+Actionable:
+  2 user-code issues
+Suppressed:
+  0 stdlib
+  0 compiler
+  0 third-party
+Analysis Summary
+────────────────
+Cross-language ownership:
+  PASS
+Buffer Safety:
+  PASS
+FFI Safety:
+  PASS
+Performance
+───────────
+Time: 8 ms
+(use --verbose for pipeline metrics)
+══════════════════════════════════════
+
+⸻
+
+--verbose：
+
+再输出：
+
+CallGraph
+DangerSurface
+PointerOwnership
+SurfaceClassifier
+ZoneSummary
+
+⸻
+
+我的整体评价：
+
+架构已经成熟很多了。
+
+我甚至能看出来：
+
+你已经开始从 pass-centric logging 向 analysis report 转型了。
+
+现在差的主要是：
+
+把 pipeline telemetry 从默认输出里分离出去。
+
+做完这一层，观感会直接上一个档次。

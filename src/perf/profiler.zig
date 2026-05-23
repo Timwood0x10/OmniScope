@@ -156,9 +156,10 @@ pub const Profiler = struct {
         return @as(f64, @floatFromInt(total)) / 1_000_000.0;
     }
 
-    /// Print report to stderr
+    /// Print report to stderr (only in verbose/debug mode)
     pub fn report(self: *const Profiler) void {
-        if (log.current_log_level == .quiet) return;
+        // Performance profile is pipeline telemetry — only show in verbose/debug
+        if (log.current_log_level != .verbose and log.current_log_level != .debug) return;
 
         std.log.info("\n=== Performance Profile Report ===\n\n", .{});
         std.log.info("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{

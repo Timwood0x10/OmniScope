@@ -205,11 +205,11 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader) !AnalyzeRe
     const issues = pipeline.getIssues();
     const func_count = loader.getFunctionCount();
 
-    // Log results while pipeline is alive
-    log.info("Analysis complete\n", .{});
-    log.info("Functions processed: {d}\n", .{func_count});
-    log.info("Facts generated: {d}\n", .{pipeline_result.fact_count});
-    log.info("Time: {d}ms\n", .{time_ms});
+    // Pipeline telemetry — only in verbose/debug mode
+    log.debug("Analysis complete\n", .{});
+    log.debug("Functions processed: {d}\n", .{func_count});
+    log.debug("Facts generated: {d}\n", .{pipeline_result.fact_count});
+    log.debug("Time: {d}ms\n", .{time_ms});
 
     return AnalyzeResult{
         .issues = issues,
@@ -226,8 +226,6 @@ fn deinitAnalyzeResult(res: *AnalyzeResult) void {
 }
 
 fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config) !void {
-    if (issues.len == 0 and config.output_format == .text) return;
-
     if (config.output_format == .json) {
         const json_output = formatIssuesAsJson(allocator, issues, func_count, time_ms) catch |err| {
             log.err("Failed to format JSON output: {}\n", .{err});
@@ -272,15 +270,133 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
             _ = try std.posix.write(std.posix.STDOUT_FILENO, sarif_output);
         }
     } else {
-        if (issues.len > 0) {
-            log.info("Issues detected: {d}\n", .{issues.len});
-        }
+        // Text mode: emit structured report
+        const report = formatStructuredReport(allocator, issues, func_count, time_ms) catch |err| {
+            log.err("Failed to format report: {}\n", .{err});
+            return;
+        };
+        defer allocator.free(report);
+        _ = try std.posix.write(std.posix.STDOUT_FILENO, report);
     }
 }
 
+/// Format a structured report for text mode.
+/// Layout: Findings → Coverage → Summary → Verdict
+fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
+    var buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch return error.OutOfMemory;
+    defer buf.deinit(allocator);
+    const w = buf.writer(allocator);
+
+    // ── Header ──
+    try w.writeAll("═══════════════════════════════════════════════════════════════\n");
+    try w.writeAll("  OmniScope — Cross-Language Memory Safety Analysis\n");
+    try w.writeAll("═══════════════════════════════════════════════════════════════\n\n");
+
+    // ── Coverage ──
+    try w.writeAll("Coverage\n");
+    try w.writeAll("───────────────────────────────────────────────────────────────\n");
+    try w.print("  Functions:          {d}\n", .{func_count});
+    try w.print("  Issues detected:    {d}\n", .{issues.len});
+
+    // Count actionable vs suppressed
+    var actionable: usize = 0;
+    var critical_count: usize = 0;
+    var high_count: usize = 0;
+    var medium_count: usize = 0;
+    var low_count: usize = 0;
+    var kind_counts = std.EnumMap(IssueKind, usize){};
+    for (issues) |issue| {
+        const entry = kind_counts.getPtr(issue.kind);
+        if (entry) |e| e.* += 1;
+        switch (issue.severity) {
+            .critical => {
+                critical_count += 1;
+                actionable += 1;
+            },
+            .high => {
+                high_count += 1;
+                actionable += 1;
+            },
+            .medium => medium_count += 1,
+            .low => low_count += 1,
+        }
+    }
+    try w.print("  Actionable:         {d}\n", .{actionable});
+    try w.writeAll("\n");
+
+    // ── Findings ──
+    if (issues.len == 0) {
+        try w.writeAll("Findings\n");
+        try w.writeAll("───────────────────────────────────────────────────────────────\n");
+        try w.writeAll("  No issues detected.\n\n");
+    } else {
+        try w.writeAll("Findings\n");
+        try w.writeAll("───────────────────────────────────────────────────────────────\n");
+
+        // Issue category summary
+        var first_kind = true;
+        var it = kind_counts.iterator();
+        while (it.next()) |entry| {
+            if (entry.value.* == 0) continue;
+            if (!first_kind) try w.writeAll(", ");
+            first_kind = false;
+            try w.print("{s}: {d}", .{ @tagName(entry.key), entry.value.* });
+        }
+        if (!first_kind) try w.writeAll("\n");
+
+        // Severity summary
+        if (critical_count > 0) try w.print("  Critical: {d}\n", .{critical_count});
+        if (high_count > 0) try w.print("  High:     {d}\n", .{high_count});
+        if (medium_count > 0) try w.print("  Medium:   {d}\n", .{medium_count});
+        if (low_count > 0) try w.print("  Low:      {d}\n", .{low_count});
+        try w.writeAll("\n");
+
+        // Individual issues
+        for (issues, 0..) |issue, idx| {
+            const sev_tag = switch (issue.severity) {
+                .critical => "CRITICAL",
+                .high => "HIGH",
+                .medium => "MEDIUM",
+                .low => "LOW",
+            };
+            try w.print("  [{s}] OMI-{d:0>3}\n", .{ sev_tag, idx + 1 });
+            try w.print("    Type:       {s}\n", .{@tagName(issue.kind)});
+            try w.print("    Confidence: {s} ({d:.0}%)\n", .{ issue.confidence_level.toString(), issue.confidence * 100 });
+            try w.print("    Function:   {s}\n", .{issue.location.func});
+            if (issue.reason.len > 0) {
+                try w.print("    Reason:     {s}\n", .{issue.reason});
+            }
+            if (issue.message.len > 0 and !std.mem.eql(u8, issue.message, issue.reason)) {
+                try w.print("    Detail:     {s}\n", .{issue.message});
+            }
+            try w.writeAll("\n");
+        }
+    }
+
+    // ── Verdict ──
+    try w.writeAll("Summary\n");
+    try w.writeAll("───────────────────────────────────────────────────────────────\n");
+    if (critical_count > 0) {
+        try w.print("  {d} CRITICAL issue(s) require immediate attention.\n", .{critical_count});
+    } else if (high_count > 0) {
+        try w.print("  {d} high-severity issue(s) found.\n", .{high_count});
+    } else if (medium_count > 0) {
+        try w.print("  {d} medium-severity issue(s) found. Review recommended.\n", .{medium_count});
+    } else if (low_count > 0) {
+        try w.print("  {d} low-severity finding(s). No immediate action required.\n", .{low_count});
+    } else {
+        try w.writeAll("  No issues detected. Analysis clean.\n");
+    }
+    try w.print("  Analysis time: {d} ms\n", .{time_ms});
+    try w.writeAll("  (use --verbose for pipeline metrics, --debug for full trace)\n");
+    try w.writeAll("═══════════════════════════════════════════════════════════════\n");
+
+    return buf.toOwnedSlice(allocator);
+}
+
 fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config: Config) !void {
-    log.info("=== OmniScope IR Analysis ===\n", .{});
-    log.info("File: {s}\n\n", .{path});
+    log.debug("=== OmniScope IR Analysis ===\n", .{});
+    log.debug("File: {s}\n\n", .{path});
 
     var loader = IRLoader.loadFile(allocator, path) catch |err| {
         log.err("Failed to load IR file: {s}\n", .{@errorName(err)});
@@ -288,7 +404,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     };
     defer loader.deinit();
 
-    log.info("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
+    log.debug("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
 
     var result = try runModulePipeline(allocator, &loader);
     defer deinitAnalyzeResult(&result);
