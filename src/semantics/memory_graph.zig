@@ -112,6 +112,18 @@ pub const CallRetEdge = struct {
     ret_ptr: u64,
 };
 
+/// Per-free-site record for path-sensitive double-free analysis.
+/// Each free() call on the same allocation is recorded separately,
+/// along with its basic block ID for control-flow reachability analysis.
+pub const FreeRecord = struct {
+    /// The instruction that performed the free (raw pointer value).
+    free_inst: u64,
+    /// Basic block ID where this free occurred (0 = unknown).
+    bb_id: u32,
+    /// Language of the free site.
+    free_lang: Language,
+};
+
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
 const AllocNode = struct {
     /// Unique identifier for this allocation.
@@ -122,9 +134,11 @@ const AllocNode = struct {
     merkle_root: u64,
     /// Set of all pointer values that alias to this allocation.
     aliases: std.AutoHashMap(u64, void),
-    /// Whether this allocation has been freed.
+    /// Whether this allocation has been freed (at least once).
     freed: bool,
     /// The instruction that freed this allocation (raw pointer value).
+    /// DEPRECATED: Use free_sites for path-sensitive analysis.
+    /// Kept for backward compatibility with downstream passes.
     freed_by: ?u64,
     /// How this allocation was created.
     source_kind: SourceKind,
@@ -134,6 +148,10 @@ const AllocNode = struct {
     alloc_lang: Language = .unknown,
     /// Language of the module/function where this was freed (? = not yet freed).
     free_lang: ?Language = null,
+    /// All free operations on this allocation (path-sensitive).
+    /// Multiple entries = potential double-free; use isDoubleFreedOnSamePath
+    /// to distinguish same-path (real bug) from multi-path cleanup (not a bug).
+    free_sites: std.ArrayList(FreeRecord),
 };
 
 /// Result of isOnDangerPath — why a pointer matters (or doesn't).
@@ -191,6 +209,12 @@ pub const MemoryGraph = struct {
     /// A pointer in this set was borrowed, not owned, so freeing it is not a double-free error.
     weak_aliases: std.AutoHashMap(u64, void),
 
+    /// BB control-flow edges: maps bb_id → set of successor bb_ids.
+    /// Built by buildCFG(). Used for path-sensitive double-free analysis:
+    /// if free_A.bb can reach free_B.bb via BB edges, they're on the same
+    /// execution path → real double-free. If not reachable → multi-path cleanup.
+    bb_edges: std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
         return MemoryGraph{
@@ -208,6 +232,7 @@ pub const MemoryGraph = struct {
             .call_ret_by_ptr = std.AutoHashMap(u64, std.ArrayList(u32)).init(allocator),
             .alias_to_canonical = std.AutoHashMap(u64, u64).init(allocator),
             .weak_aliases = std.AutoHashMap(u64, void).init(allocator),
+            .bb_edges = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator),
         };
     }
 
@@ -215,6 +240,7 @@ pub const MemoryGraph = struct {
     pub fn deinit(graph: *MemoryGraph) void {
         for (graph.node_store.items) |node| {
             node.aliases.deinit();
+            node.free_sites.deinit(graph.allocator);
             graph.allocator.destroy(node);
         }
         graph.node_store.deinit(graph.allocator);
@@ -258,6 +284,7 @@ pub const MemoryGraph = struct {
 
         graph.alias_to_canonical.deinit();
         graph.weak_aliases.deinit(); // V2: Clean up weak aliases set
+        graph.bb_edges.deinit();
 
         graph.* = undefined;
     }
@@ -299,9 +326,9 @@ pub const MemoryGraph = struct {
             .source_kind = kind,
             .zone = alloc_zone,
             .alloc_lang = alloc_lang,
+            .free_sites = std.ArrayList(FreeRecord).empty,
         };
         errdefer node.aliases.deinit();
-
         try node.aliases.put(ret_value_ptr, {});
         try graph.nodes.put(ret_value_ptr, node);
         errdefer {
@@ -352,24 +379,32 @@ pub const MemoryGraph = struct {
 
     /// Records a free operation and checks for double-free.
     /// Returns true if double-free detected, false otherwise.
+    /// bb_id: basic block ID where this free occurred (0 = unknown).
     pub fn trackFree(
         graph: *MemoryGraph,
         free_inst_ptr: u64,
         ptr_val: u64,
         free_lang: Language,
+        bb_id: u32,
     ) MemoryGraphError!bool {
         const node = graph.nodes.get(ptr_val) orelse {
             return false;
         };
 
-        if (node.freed) {
-            return true;
-        }
+        // Append to free_sites list (path-sensitive tracking).
+        node.free_sites.append(graph.allocator, .{
+            .free_inst = free_inst_ptr,
+            .bb_id = bb_id,
+            .free_lang = free_lang,
+        }) catch {};
 
-        node.freed = true;
-        node.freed_by = free_inst_ptr;
-        node.free_lang = free_lang;
-        return false;
+        const is_double = node.freed;
+        if (!is_double) {
+            node.freed = true;
+            node.freed_by = free_inst_ptr;
+            node.free_lang = free_lang;
+        }
+        return is_double;
     }
 
     // =====================================================================
@@ -593,6 +628,7 @@ pub const MemoryGraph = struct {
     pub fn reset(graph: *MemoryGraph) void {
         for (graph.node_store.items) |node| {
             node.aliases.deinit();
+            node.free_sites.deinit(graph.allocator);
             graph.allocator.destroy(node);
         }
         graph.node_store.clearRetainingCapacity();
@@ -639,6 +675,13 @@ pub const MemoryGraph = struct {
         graph.call_ret_by_ptr.clearRetainingCapacity();
 
         graph.alias_to_canonical.clearRetainingCapacity();
+
+        // P2: Clear BB control-flow edges for path-sensitive analysis.
+        var bb_edge_iter = graph.bb_edges.iterator();
+        while (bb_edge_iter.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
+        graph.bb_edges.clearRetainingCapacity();
 
         graph.next_id = 1;
     }
@@ -874,6 +917,105 @@ pub const MemoryGraph = struct {
             }
         }
 
+        return false;
+    }
+
+    // =====================================================================
+    // P2: Path-sensitive double-free analysis via BB control-flow graph
+    // =====================================================================
+
+    /// Add a directed edge in the BB control-flow graph.
+    /// Called during CFG construction: from_bb → to_bb means control can
+    /// flow from from_bb to to_bb (i.e., a branch/fall-through).
+    pub fn addBBEdge(graph: *MemoryGraph, from_bb: u32, to_bb: u32) !void {
+        if (from_bb == to_bb) return; // Skip self-edges
+        const gop = try graph.bb_edges.getOrPut(from_bb);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = std.AutoHashMap(u32, void).init(graph.allocator);
+        }
+        try gop.value_ptr.put(to_bb, {});
+    }
+
+    /// Check if one BB can reach another via the control-flow graph.
+    /// Uses BFS with visited set to handle cycles (loops).
+    pub fn isBBReachable(graph: *MemoryGraph, from_bb: u32, to_bb: u32, visited: *std.AutoHashMap(u32, void)) bool {
+        if (from_bb == to_bb) return true;
+        if (visited.contains(from_bb)) return false;
+        visited.put(from_bb, {}) catch return false;
+
+        const successors = graph.bb_edges.get(from_bb) orelse return false;
+        var succ_iter = successors.iterator();
+        while (succ_iter.next()) |entry| {
+            if (graph.isBBReachable(entry.key_ptr.*, to_bb, visited)) return true;
+        }
+        return false;
+    }
+
+    /// Path-sensitive double-free detection.
+    ///
+    /// Returns true if the same allocation is freed on the SAME execution path,
+    /// i.e., there exists a pair of free sites (A, B) such that:
+    ///   - A's BB can reach B's BB via control-flow edges
+    ///   (meaning execution CAN flow from A to B, so B would free already-freed memory)
+    ///
+    /// Returns false if all free sites are on MUTUALLY EXCLUSIVE paths:
+    ///   - Different branches of an if-else (A's BB cannot reach B's BB)
+    ///   - This is multi-path cleanup, NOT a double-free bug.
+    ///
+    /// If BB info is missing (bb_id=0 for all sites), falls back to
+    /// conservative behavior: return true (potential double-free).
+    pub fn isDoubleFreedOnSamePath(graph: *MemoryGraph, ptr_val: u64) bool {
+        const node = graph.nodes.get(ptr_val) orelse return false;
+
+        // Need at least 2 free sites for double-free
+        if (node.free_sites.items.len < 2) return false;
+
+        // Check if any BB info is available
+        var has_bb_info = false;
+        for (node.free_sites.items) |site| {
+            if (site.bb_id != 0) {
+                has_bb_info = true;
+                break;
+            }
+        }
+
+        // Fallback: no BB info → cannot determine path sensitivity.
+        // Conservative: assume same path (report potential double-free).
+        if (!has_bb_info) return node.freed;
+
+        // Same-BB check: if two frees are in the same BB, that's always
+        // a real double-free (sequential execution, no branch between them).
+        for (node.free_sites.items, 0..) |site_a, i| {
+            for (node.free_sites.items[i + 1 ..]) |site_b| {
+                if (site_a.bb_id != 0 and site_a.bb_id == site_b.bb_id) {
+                    return true; // Same BB = same path = real double-free
+                }
+            }
+        }
+
+        // Cross-BB reachability: check if free_A's BB can reach free_B's BB.
+        // If yes, they're on the same execution path → real double-free.
+        for (node.free_sites.items, 0..) |site_a, i| {
+            if (site_a.bb_id == 0) continue;
+            for (node.free_sites.items[i + 1 ..]) |site_b| {
+                if (site_b.bb_id == 0) continue;
+                // Check A → B reachability
+                var visited_ab = std.AutoHashMap(u32, void).init(graph.allocator);
+                defer visited_ab.deinit();
+                if (graph.isBBReachable(site_a.bb_id, site_b.bb_id, &visited_ab)) {
+                    return true;
+                }
+                // Check B → A reachability
+                var visited_ba = std.AutoHashMap(u32, void).init(graph.allocator);
+                defer visited_ba.deinit();
+                if (graph.isBBReachable(site_b.bb_id, site_a.bb_id, &visited_ba)) {
+                    return true;
+                }
+            }
+        }
+
+        // No pair of free sites is on the same execution path.
+        // All frees are on mutually exclusive paths → multi-path cleanup.
         return false;
     }
 

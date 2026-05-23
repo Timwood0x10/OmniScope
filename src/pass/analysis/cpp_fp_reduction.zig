@@ -611,6 +611,45 @@ pub fn detectDoubleFree(
                 continue;
             }
 
+            // P2 FIX: Only report double-free for pointers on danger paths.
+            // Pure C/C++ internal double-free is a generic bug, not FFI/unsafe.
+            const on_danger = ctx.isOnDangerPathFull(@as(u64, alloc_id));
+            if (!on_danger) {
+                diag.debug("DOUBLE-FREE-SKIP: alloc {d} not on danger path (pure internal)", .{alloc_id});
+                continue;
+            }
+
+            // P2 FIX: Validate with MemoryGraph.isDoubleFreedOnSamePath.
+            // Path-sensitive analysis: only report double-free when two free
+            // sites are on the SAME execution path (A's BB can reach B's BB).
+            // Multi-path cleanup (free in different if-branches) is NOT double-free.
+            const mg_double_freed = ctx.memory_graph.isDoubleFreedOnSamePath(@as(u64, alloc_id));
+            if (!mg_double_freed) {
+                diag.debug("DOUBLE-FREE-SKIP: alloc {d} not confirmed by MemoryGraph (multi-path cleanup)", .{alloc_id});
+                continue;
+            }
+
+            // P2 FIX: When BB info is missing (all bb_id=0 from MemoryGraph),
+            // the same-BB check is unreliable. If all free sites have bb_id=0,
+            // we cannot confirm they're on the same execution path → skip.
+            if (unique_bbs == 1) {
+                var all_bb_zero = true;
+                var check_iter = free_map.iterator();
+                outer: while (check_iter.next()) |check_entry| {
+                    const check_info = check_entry.value_ptr.*;
+                    if (check_info.ptr_value_id == alloc_id) {
+                        if (check_info.bb_id != 0) {
+                            all_bb_zero = false;
+                            break :outer;
+                        }
+                    }
+                }
+                if (all_bb_zero) {
+                    diag.debug("DOUBLE-FREE-SKIP: alloc {d} all free sites have bb_id=0 (BB info missing, cannot confirm same-path)", .{alloc_id});
+                    continue;
+                }
+            }
+
             stats.double_frees += 1;
 
             const severity: Severity = .high;
@@ -683,6 +722,20 @@ pub fn detectUseAfterFree(
             std.mem.indexOf(u8, free_info.func_name, "raw") != null;
         if (is_rust_mangled and !is_explicitly_unsafe) {
             diag.debug("UAF-SKIP: {s} is Rust safe code — ownership system guarantees memory safety", .{free_info.func_name});
+            continue;
+        }
+
+        // P2 FIX: Use MemoryGraph.isOnDangerPath to filter out UAF reports
+        // for pointers that are NOT on FFI/unsafe danger paths.
+        // Pure C/C++ internal UAF (same-language, no FFI boundary) is a
+        // generic bug, not an FFI/unsafe vulnerability. The flow_graph
+        // generates too many false edges from memcpy/store operations
+        // that don't represent actual pointer reuse after free.
+        // Only report UAF when the freed pointer was on a danger path
+        // (cross-language lifecycle, FFI arg/ret, unsafe zone alloc).
+        const mg_danger = ctx.isOnDangerPathFull(@as(u64, ptr_id));
+        if (!mg_danger) {
+            diag.debug("UAF-SKIP: ptr {d} not on danger path (pure internal)", .{ptr_id});
             continue;
         }
 
@@ -972,6 +1025,16 @@ pub fn detectMemoryLeaks(
                 continue;
             }
             if (alloc_info.stored_to_struct_field) {
+                continue;
+            }
+            // P2 FIX: Use MemoryGraph.isOnDangerPathFull to filter out leak
+            // reports for allocations NOT on FFI/unsafe danger paths.
+            // Pure C/C++ internal leaks are generic bugs, not FFI vulnerabilities.
+            // Only report when the allocation crosses a language boundary or
+            // is in an unsafe zone — these are the real FFI risks.
+            const on_danger_path = ctx.isOnDangerPathFull(@as(u64, alloc_info.inst_id));
+            if (!on_danger_path) {
+                diag.debug("LEAK-SKIP: alloc {d} not on danger path (pure internal)", .{alloc_info.inst_id});
                 continue;
             }
             const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);

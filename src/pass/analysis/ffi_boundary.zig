@@ -382,23 +382,26 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Skip same-language calls (not FFI boundaries)
-        if (!cross_edge_matched and caller_lang != .unknown and callee_lang != .unknown and
+        // P1 FIX: Skip same-language calls regardless of cross_edge_matched.
+        // CallGraph may mark C→C as cross-language when callee is external (e.g., time(),
+        // printf()), but calling a libc function from C code is NOT FFI.
+        // Similarly, Rust→Rust stdlib calls are not FFI boundaries.
+        if (caller_lang != .unknown and callee_lang != .unknown and
             caller_lang == callee_lang)
         {
             return false;
         }
 
         // P1 FIX: Skip C↔C++ bridge calls (same language family).
-        // C calling C++ (or vice versa) is NOT a dangerous FFI boundary —
-        // they share the same memory model (malloc/free, new/delete), same ABI
-        // conventions, and same runtime (libc). The only real risk is
-        // cross-allocator mismatches (malloc+delete, new+free), which are
+        // C/C++ share the same memory model (malloc/free, new/delete), same ABI
+        // (Itanium on Linux/macOS, MSVC on Windows), and same runtime (libc).
+        // The only real risk is cross-allocator mismatches (malloc+delete, new+free),
         // already handled by FreeValidationPass.isCrossAllocatorFree().
-        // Reporting every C→C++ call as "FFI unsafe" creates massive FP noise.
-        if (!cross_edge_matched and
-            ((caller_lang == .c and callee_lang == .cpp) or
-                (caller_lang == .cpp and callee_lang == .c)))
+        // Real FFI risk is C↔Rust, C↔Go, C↔Zig — different memory models, GC, etc.
+        // NOTE: Must NOT gate on !cross_edge_matched — CallGraph correctly marks
+        // C→C++ as cross-language, but these edges are benign (same family).
+        if ((caller_lang == .c and callee_lang == .cpp) or
+            (caller_lang == .cpp and callee_lang == .c))
         {
             diag.debug("C-CPP-SKIP: {s} -> {s} (same language family)", .{ caller_name, called_name });
             return false;

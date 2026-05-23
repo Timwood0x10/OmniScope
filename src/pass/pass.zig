@@ -479,6 +479,10 @@ pub const PassContext = struct {
         const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
         var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
         if (issue.severity != .critical and risk == .suppressed) {
+            if (issue.owned) {
+                var mutable_issue = issue.*;
+                mutable_issue.deinit(self.allocator);
+            }
             return;
         }
         // For CRITICAL issues, override suppression to at least .low

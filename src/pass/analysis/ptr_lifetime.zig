@@ -408,7 +408,7 @@ pub const PtrLifetimePass = struct {
                                     // Sync MemoryGraph.freed: propagate from original freed node.
                                     if (mem_graph) |mg| {
                                         const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
-                                        _ = try mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang);
+                                        _ = try mg.trackFree(free_inst, aliaser_ptr, node.alloc_lang, 0);
                                     }
                                     propagated += 1;
                                 }
@@ -496,6 +496,27 @@ pub const PtrLifetimePass = struct {
 
         const conv_lang: Lang = toZoneLanguage(ctx.module_language.language);
         const func_zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
+
+        // P2: Build BB control-flow graph for path-sensitive double-free analysis.
+        // Extract successor edges from each BB's terminator instruction.
+        if (mem_graph) |mg| {
+            var cfg_bb = c.LLVMGetFirstBasicBlock(func);
+            while (@intFromPtr(cfg_bb) != 0) : (cfg_bb = c.LLVMGetNextBasicBlock(cfg_bb)) {
+                const cfg_bb_id: u32 = @truncate(@intFromPtr(cfg_bb));
+                const term_inst = c.LLVMGetBasicBlockTerminator(cfg_bb);
+                if (@intFromPtr(term_inst) != 0) {
+                    const num_succ = c.LLVMGetNumSuccessors(term_inst);
+                    var si: u32 = 0;
+                    while (si < num_succ) : (si += 1) {
+                        const succ_bb = c.LLVMGetSuccessor(term_inst, si);
+                        if (@intFromPtr(succ_bb) != 0) {
+                            const succ_bb_id: u32 = @truncate(@intFromPtr(succ_bb));
+                            mg.addBBEdge(cfg_bb_id, succ_bb_id) catch {};
+                        }
+                    }
+                }
+            }
+        }
 
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -609,7 +630,7 @@ pub const PtrLifetimePass = struct {
                                                 // Sync MemoryGraph.freed for Source 1 consistency.
                                                 if (mem_graph) |mg| {
                                                     const free_inst: u64 = @intFromPtr(inst);
-                                                    _ = try mg.trackFree(free_inst, old_ptr_int, lang);
+                                                    _ = try mg.trackFree(free_inst, old_ptr_int, lang, 0);
                                                 }
                                                 _ = &old_info;
                                             }
@@ -763,7 +784,10 @@ pub const PtrLifetimePass = struct {
                                 // trackFree() was never called. Now both data structures stay synchronized.
                                 if (mem_graph) |mg| {
                                     const free_inst: u64 = @intFromPtr(inst);
-                                    _ = try mg.trackFree(free_inst, ptr_val, lang);
+                                    // P2: Get BB ID for path-sensitive double-free analysis.
+                                    const free_bb = c.LLVMGetInstructionParent(inst);
+                                    const free_bb_id: u32 = if (@intFromPtr(free_bb) != 0) @truncate(@intFromPtr(free_bb)) else 0;
+                                    _ = try mg.trackFree(free_inst, ptr_val, lang, free_bb_id);
                                 }
                             }
 
@@ -807,7 +831,10 @@ pub const PtrLifetimePass = struct {
                                         _ = global_tracker.markFreed(canon_inst, fn_name);
                                         // Sync MemoryGraph.freed for canonical alias free.
                                         const free_inst_canon: u64 = @intFromPtr(inst);
-                                        _ = try mg.trackFree(free_inst_canon, canon_inst, lang);
+                                        // P2: Get BB ID for path-sensitive double-free analysis.
+                                        const canon_bb = c.LLVMGetInstructionParent(inst);
+                                        const canon_bb_id: u32 = if (@intFromPtr(canon_bb) != 0) @truncate(@intFromPtr(canon_bb)) else 0;
+                                        _ = try mg.trackFree(free_inst_canon, canon_inst, lang, canon_bb_id);
                                     }
                                 }
                             }

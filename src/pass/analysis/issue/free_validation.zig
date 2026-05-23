@@ -349,6 +349,19 @@ pub const FreeValidationPass = struct {
             .from_param => {
                 const src = if (origin_info) |info| info.source_desc else "";
                 if (isFreeSafe(callee_name, origin, src)) return false;
+                // FIX: free() on a function parameter is NOT necessarily invalid.
+                // In C/C++, ownership transfer (caller malloc → callee free) is a
+                // standard pattern. The real invalid_free is free(stack_var) or
+                // free(global_var), not free(heap_pointer_passed_as_param).
+                // Our origin tracking loses "from_malloc" when the pointer flows
+                // through memcpy/store/load, causing from_param false positives.
+                // Only report if the free function is NOT standard C free/dealloc
+                // (e.g., __rust_dealloc on a C-allocated param IS a cross-allocator bug).
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                {
+                    return false;
+                }
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -363,6 +376,17 @@ pub const FreeValidationPass = struct {
                     return true;
                 }
                 if (isFreeSafe(callee_name, origin, src)) return false;
+                // P1 FIX: Standard C free()/operator delete on an FFI-sourced
+                // pointer is NOT necessarily invalid. If cross-allocator check
+                // already passed (e.g., C/C++ FFI returning heap memory freed
+                // by C free), this is a normal ownership transfer pattern.
+                // Only flag when using a non-standard deallocator that might
+                // mismatch the FFI source's allocator.
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                {
+                    return false;
+                }
                 try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                 return true;
             },
@@ -371,6 +395,16 @@ pub const FreeValidationPass = struct {
                 if (isCrossAllocatorFree(.from_malloc, src, callee_name)) {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                     return true;
+                }
+                if (isFreeSafe(callee_name, origin, src)) return false;
+                // P1 FIX: free() on malloc'd memory is always valid (C/C++ pattern).
+                // The cross-allocator check above already catches the real bugs
+                // (malloc + __rust_dealloc, __rust_alloc + free). Only flag
+                // if using a clearly mismatched deallocator on malloc'd memory.
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                {
+                    return false;
                 }
                 if (src.len > 0 and !isFreeSafe(callee_name, origin, src)) {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);

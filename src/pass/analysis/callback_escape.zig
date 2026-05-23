@@ -1405,8 +1405,17 @@ pub const CallbackEscapePass = struct {
                 }
             }
             if (!has_call_arg_source) {
-                try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
-                stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
+                // P2 FIX: Only report free-orphans for functions on danger paths.
+                // Multi-path cleanup (free in different if-branches) generates
+                // free_count > malloc_count, but these are NOT double-free bugs.
+                // Only report when the function is on an FFI/unsafe danger path.
+                const on_danger = ctx.isOnDangerPathFull(@as(u64, @intFromPtr(func_name.ptr)));
+                if (!on_danger) {
+                    diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but not on danger path (multi-path cleanup)", .{ func_name, free_count, malloc_count });
+                } else {
+                    try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
+                    stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
+                }
             } else {
                 diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but ptr came from call arg (external source)", .{ func_name, free_count, malloc_count });
             }

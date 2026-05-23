@@ -662,7 +662,7 @@ pub fn checkDoubleFreeViolation(
     if (mem_graph) |mg| {
         const inst_ptr = @as(u64, @intFromPtr(inst));
         const free_lang: Lang = toZoneLanguage(ctx.module_language.language);
-        const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang) catch false;
+        const is_double = mg.trackFree(inst_ptr, ptr_hash, free_lang, 0) catch false;
         if (is_double) {
             if (!ctx.isRelevantAlloc(ptr_hash)) return;
             const msg = try std.fmt.allocPrint(ctx.allocator, "[OMI-HIGH] [DOUBLE_FREE] MemoryGraph detected double-free of pointer in {s}", .{func_name});
