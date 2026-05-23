@@ -1061,17 +1061,22 @@ pub const MemoryGraph = struct {
         };
 
         // Build callee_name set for O(1) lookup (only once at top-level call).
-        var local_ffi_set = std.StringHashMap(void).init(graph.allocator);
-        defer local_ffi_set.deinit();
-        const set = if (ffi_set) |s| s else &local_ffi_set;
-
-        if (ffi_set == null) {
-            // Only build at top-level call (when ffi_set is null)
+        // PERF: Only allocate local_ffi_set when ffi_set is null (top-level call).
+        // Recursive calls always receive a valid ffi_set, so this is a one-time cost.
+        var local_ffi_set: std.StringHashMap(void) = undefined;
+        var local_ffi_set_needs_deinit = false;
+        const set: *const std.StringHashMap(void) = if (ffi_set) |s| s else blk: {
+            local_ffi_set = std.StringHashMap(void).init(graph.allocator);
+            local_ffi_set_needs_deinit = true;
             for (ffi_boundaries) |b| {
                 if (b.is_ffi_boundary) {
                     local_ffi_set.put(b.callee_name, {}) catch {};
                 }
             }
+            break :blk &local_ffi_set;
+        };
+        defer {
+            if (local_ffi_set_needs_deinit) local_ffi_set.deinit();
         }
 
         // (b): Check if ptr flows into any FFI boundary call as argument.

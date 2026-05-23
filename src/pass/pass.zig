@@ -296,6 +296,14 @@ pub const PassContext = struct {
     /// the same set from cross_lang_edges each time).
     ffi_set_cache: ?std.StringHashMap(void),
 
+    /// Performance: Cached danger_surfaces array for isOnDangerPathFull().
+    /// Built lazily on first call, then reused. Eliminates alloc+free per call.
+    danger_surfaces_cache: ?[]memory_graph_mod.MemoryGraph.DangerSurface,
+
+    /// Performance: Cached visited HashMap for isOnDangerPathFull().
+    /// Reused via clearRetainingCapacity() across calls. Eliminates init+deinit per call.
+    danger_path_visited_cache: ?std.AutoHashMap(u64, void),
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -335,6 +343,9 @@ pub const PassContext = struct {
             .CallSiteIndex = CallSiteIndex.init(allocator),
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
             .semantics_call_graph = null,
+            .ffi_set_cache = null,
+            .danger_surfaces_cache = null,
+            .danger_path_visited_cache = null,
         };
     }
 
@@ -411,6 +422,14 @@ pub const PassContext = struct {
         self.cross_edge_by_callee.deinit();
         // Free ffi_set_cache HashMap if it was lazily created
         if (self.ffi_set_cache) |*cache| {
+            cache.deinit();
+        }
+        // Free danger_surfaces_cache array if it was lazily created
+        if (self.danger_surfaces_cache) |surfaces| {
+            self.allocator.free(surfaces);
+        }
+        // Free danger_path_visited_cache HashMap if it was lazily created
+        if (self.danger_path_visited_cache) |*cache| {
             cache.deinit();
         }
     }
@@ -906,14 +925,15 @@ pub const PassContext = struct {
     /// Use this for issue reporting gates instead of isRelevantAlloc() for
     /// stricter validation per todolist.md architecture requirements.
     ///
-    /// OPTIMIZED: ffi_set and danger_surfaces are built lazily on first call
-    /// and cached in ffi_set_cache / danger_surfaces_cache for reuse across
-    /// all 17+ call sites. Eliminates O(N) HashMap + array rebuild per call.
+    /// OPTIMIZED: ffi_set, danger_surfaces, and visited are built/cached lazily
+    /// on first call and reused across all subsequent calls. Eliminates
+    /// O(N) alloc/free per call (was ~198 alloc+free cycles per detectMemoryLeaks
+    /// run on wasmtime_test.bc, now just 1 alloc reused via clearRetainingCapacity).
     pub fn isOnDangerPathFull(self: *PassContext, ptr_val: u64) bool {
         const raw_ffis = self.getCrossLangEdges();
         if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
 
-        // Build caches lazily on first call
+        // Build ffi_set cache lazily on first call (unchanged from before)
         if (self.ffi_set_cache == null) {
             var ffi_set = std.StringHashMap(void).init(self.allocator);
             for (raw_ffis) |ffe| {
@@ -924,19 +944,26 @@ pub const PassContext = struct {
             self.ffi_set_cache = ffi_set;
         }
 
-        // Convert CrossLangEdge[] to MemoryGraph.DangerSurface[] for isOnDangerPath API
-        var danger_surfaces = self.allocator.alloc(memory_graph_mod.MemoryGraph.DangerSurface, raw_ffis.len) catch return false;
-        defer self.allocator.free(danger_surfaces);
-        for (raw_ffis, 0..) |ffe, i| {
-            danger_surfaces[i] = .{
-                .callee_name = ffe.callee_name,
-                .is_ffi_boundary = ffe.is_ffi_boundary,
-            };
+        // Build danger_surfaces cache lazily on first call (OPT: was alloc+free per call)
+        if (self.danger_surfaces_cache == null) {
+            const surfaces = self.allocator.alloc(memory_graph_mod.MemoryGraph.DangerSurface, raw_ffis.len) catch return false;
+            for (raw_ffis, 0..) |ffe, i| {
+                surfaces[i] = .{
+                    .callee_name = ffe.callee_name,
+                    .is_ffi_boundary = ffe.is_ffi_boundary,
+                };
+            }
+            self.danger_surfaces_cache = surfaces;
         }
 
-        var visited = std.AutoHashMap(u64, void).init(self.allocator);
-        defer visited.deinit();
-        const result = self.memory_graph.isOnDangerPath(ptr_val, danger_surfaces, &visited, &self.ffi_set_cache.?);
+        // Reuse visited HashMap across calls (OPT: was init+deinit per call)
+        // clearRetainingCapacity keeps the backing storage, avoids alloc/dealloc cycle.
+        if (self.danger_path_visited_cache == null) {
+            self.danger_path_visited_cache = std.AutoHashMap(u64, void).init(self.allocator);
+        }
+        self.danger_path_visited_cache.?.clearRetainingCapacity();
+
+        const result = self.memory_graph.isOnDangerPath(ptr_val, self.danger_surfaces_cache.?, &self.danger_path_visited_cache.?, &self.ffi_set_cache.?);
         return result != .none;
     }
 

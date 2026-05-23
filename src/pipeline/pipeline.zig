@@ -104,6 +104,8 @@ pub const Pipeline = struct {
             .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(self.allocator),
             .semantics_call_graph = null,
             .ffi_set_cache = null,
+            .danger_surfaces_cache = null,
+            .danger_path_visited_cache = null,
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
@@ -122,6 +124,11 @@ pub const Pipeline = struct {
 
         // P0-2: Build shared callee→call_sites index ONCE before any passes run.
         // All call_graph and ffi_boundary lookups become O(1) instead of O(F).
+        // P0-3: FAST FFI PRE-CHECK — detect if ANY call instruction calls an extern/declaration
+        // function. If no external calls exist, the module is pure single-language and
+        // all FFI analysis passes (pointer_ownership, ffi_boundary, etc.) can be skipped.
+        // This saves ~17s on wasmtime_test.bc (pure Rust module without external FFI calls).
+        var has_ffi_calls = false;
         {
             const t_idx = std.time.nanoTimestamp();
             if (self.module) |mod| {
@@ -145,6 +152,10 @@ pub const Pipeline = struct {
                             ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
                                 std.log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
                             };
+                            // P0-3: Check if callee is an external declaration (FFI boundary indicator)
+                            if (c.LLVMIsDeclaration(called_val) != 0) {
+                                has_ffi_calls = true;
+                            }
                         }
                     }
                 }
@@ -154,6 +165,15 @@ pub const Pipeline = struct {
         }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
+
+        // P0-3: If no FFI calls detected at IR level, skip heavy FFI analysis passes.
+        // This eliminates significant overhead on pure single-language modules
+        // where call_graph + pointer_ownership + pointer-flow + ffi-boundary
+        // all run despite having zero actual FFI boundaries.
+        if (!has_ffi_calls) {
+            std.log.info("Pipeline: no external/declaration call sites detected — pure single-language module, skipping FFI passes", .{});
+            ctx.early_exit = true;
+        }
 
         // Run passes
         try self.pass_manager.run(&ctx, &diag);

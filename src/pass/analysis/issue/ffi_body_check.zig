@@ -668,15 +668,19 @@ pub const FFIBodyCheckPass = struct {
                                             .{ trace[0], trace[1] },
                                         );
 
-                                        const issue = Issue.init(
+                                        var issue = Issue.init(
                                             .ffi_unsafe_call,
                                             message,
                                             boundary.location,
                                             .medium,
                                             0.8,
                                         );
+                                        issue.owned = true;
 
                                         try ctx.addIssue(&issue);
+                                        ctx.allocator.free(trace[0]);
+                                        ctx.allocator.free(trace[1]);
+                                        ctx.allocator.free(trace);
                                         issue_count += 1;
 
                                         diag.warn("FFIBodyCheck: malloc result not checked in function '{s}'", .{boundary.function_name});
@@ -701,15 +705,19 @@ pub const FFIBodyCheckPass = struct {
                                                 .{ trace[0], trace[1] },
                                             );
 
-                                            const issue = Issue.init(
+                                            var issue = Issue.init(
                                                 .double_free,
                                                 message,
                                                 boundary.location,
                                                 .high,
                                                 0.9,
                                             );
+                                            issue.owned = true;
 
                                             try ctx.addIssue(&issue);
+                                            ctx.allocator.free(trace[0]);
+                                            ctx.allocator.free(trace[1]);
+                                            ctx.allocator.free(trace);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: double free detected in function '{s}'", .{boundary.function_name});
@@ -725,15 +733,19 @@ pub const FFIBodyCheckPass = struct {
                                                 .{ trace[0], trace[1] },
                                             );
 
-                                            const issue = Issue.init(
+                                            var issue = Issue.init(
                                                 .ffi_unsafe_call,
                                                 message,
                                                 boundary.location,
                                                 .medium,
                                                 0.7,
                                             );
+                                            issue.owned = true;
 
                                             try ctx.addIssue(&issue);
+                                            ctx.allocator.free(trace[0]);
+                                            ctx.allocator.free(trace[1]);
+                                            ctx.allocator.free(trace);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: free called on non-malloc pointer in function '{s}'", .{boundary.function_name});
@@ -752,18 +764,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         .ffi_unsafe_call,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
 
                                 // Check for format string vulnerabilities
@@ -774,18 +790,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         vuln.vuln_type,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
 
                                 // Check for command injection vulnerabilities
@@ -796,18 +816,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         vuln.vuln_type,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
                             }
                         }

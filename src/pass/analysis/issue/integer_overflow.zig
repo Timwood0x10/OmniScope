@@ -82,13 +82,14 @@ pub const IntegerOverflowPass = struct {
                     .{confidence * 100.0},
                 );
 
-                const issue = Issue.init(
+                var issue = Issue.init(
                     .integer_overflow, // Integer overflow or underflow (CWE-190/191)
                     message,
                     location,
                     .medium,
                     confidence,
                 );
+                issue.owned = true; // message is heap-allocated via allocPrint
 
                 try ctx.addIssue(&issue);
 

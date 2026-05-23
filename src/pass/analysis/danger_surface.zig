@@ -63,12 +63,13 @@ pub const DangerSurfacePass = struct {
             }
         }
 
+        // visited set for alias closure — shared across all traversals.
+        // traceAliasClosure is idempotent (skips already-relevant allocs), so sharing
+        // visited is safe and avoids O(N × alias_size) revisits.
         var visited = std.AutoHashMap(u64, void).init(ctx.allocator);
         defer visited.deinit();
 
         const t0 = std.time.nanoTimestamp();
-        var total_args: u64 = 0;
-        var total_rets: u64 = 0;
         var total_alias_traces: u64 = 0;
         var cross_lang_frees: u64 = 0;
 
@@ -81,46 +82,12 @@ pub const DangerSurfacePass = struct {
             diag.warn("[P1-1] DangerSurfacePass: MemoryGraph is empty despite ptr-lifetime dep — ptr-lifetime may have skipped this module", .{});
         }
 
-        for (ffis) |surface| {
-            // Phase 1 args: callee is already a known FFI boundary →
-            // isOnDangerPath would always return .ffi_arg. Skip the expensive call.
-            const arg_indices = mg.getCallArgsForCallee(surface.callee_name);
-            for (arg_indices) |arg_idx| {
-                total_args += 1;
-                const arg_ptr_val = mg.call_args.items[arg_idx].arg_ptr;
-                try ctx.markRelevantAlloc(arg_ptr_val);
-                try ctx.markFfiRelevant(arg_ptr_val); // BUGFIX: wire up P2-8 infrastructure
-                ctx.markFunctionFromInst(mg.call_args.items[arg_idx].caller_inst);
-                visited.clearRetainingCapacity();
-                total_alias_traces += 1;
-                traceAliasClosure(mg, arg_ptr_val, ctx, diag, &visited, 0) catch |err| {
-                    diag.debug("[P1-1] Alias propagation error for ptr 0x{x}: {}", .{ arg_ptr_val, err });
-                };
-            }
-
-            // Phase 1 rets: callee is already a known FFI boundary →
-            // isOnDangerPath would always return .ffi_ret. Skip the expensive call.
-            const ret_indices = mg.getCallRetsFromCallee(surface.callee_name);
-            for (ret_indices) |ret_idx| {
-                total_rets += 1;
-                const ret_ptr_val = mg.call_rets.items[ret_idx].ret_ptr;
-                try ctx.markRelevantAlloc(ret_ptr_val);
-                try ctx.markFfiRelevant(ret_ptr_val); // BUGFIX: wire up P2-8 infrastructure
-                ctx.markFunctionFromInst(mg.call_rets.items[ret_idx].caller_inst);
-                visited.clearRetainingCapacity();
-                total_alias_traces += 1;
-                traceAliasClosure(mg, ret_ptr_val, ctx, diag, &visited, 0) catch |err| {
-                    diag.debug("[P1-1] Alias propagation error for ptr 0x{x}: {}", .{ ret_ptr_val, err });
-                };
-            }
-        }
-
-        const t1 = std.time.nanoTimestamp();
-
-        // Phase 2: Pre-build ffi_set ONCE to avoid O(N × FFI_count) allocations.
-        // The old code called isOnDangerPathFull() per node, which allocated a
-        // 72,532-element array + 2 HashMaps each time. With 15K+ nodes, that's
-        // millions of unnecessary allocations. Instead, build once and reuse.
+        // PERF v2: Unified single-pass algorithm replacing the old Phase 1 + Phase 2.
+        // Old Phase 1 iterated call_arg_by_callee per FFI boundary — O(FFI_count × avg_args_per_callee)
+        // which was 72K × ~1.4K = 101M iterations (40s). Old Phase 2 iterated nodes — O(N) = 17K.
+        // New unified pass iterates only nodes — O(N × avg_args_per_ptr) — same as old Phase 2
+        // but now covers FFI arg/ret detection too, since getCallArgsForPtr + ffi_set.contains
+        // is equivalent to iterating call_arg_by_callee per FFI boundary.
         var ffi_set = std.StringHashMap(void).init(ctx.allocator);
         defer ffi_set.deinit();
         for (ffis) |surface| {
@@ -169,7 +136,7 @@ pub const DangerSurfacePass = struct {
                 }
             }
 
-            // (5) Alias closure — only walk aliases if cheap checks passed or node has aliases
+            // (5) Alias closure — only walk aliases if cheap checks failed but node has aliases
             if (!on_danger and node.aliases.count() > 0) {
                 visited.clearRetainingCapacity();
                 const path_kind = mg.isOnDangerPath(ptr_val, ffis, &visited, &ffi_set);
@@ -182,23 +149,29 @@ pub const DangerSurfacePass = struct {
             try markFunctionFromInst(ctx, node.alloc_inst);
             try ctx.markFfiRelevant(ptr_val);
 
-            visited.clearRetainingCapacity();
+            // Mark caller functions for all call_args/call_rets involving this ptr
+            const arg_indices2 = mg.getCallArgsForPtr(ptr_val);
+            for (arg_indices2) |aidx| {
+                ctx.markFunctionFromInst(mg.call_args.items[aidx].caller_inst);
+            }
+            const ret_indices2 = mg.getCallRetsForPtr(ptr_val);
+            for (ret_indices2) |ridx| {
+                ctx.markFunctionFromInst(mg.call_rets.items[ridx].caller_inst);
+            }
+
             total_alias_traces += 1;
             traceAliasClosure(mg, ptr_val, ctx, diag, &visited, 0) catch |err| {
                 diag.debug("[P1-1] Alias propagation error for danger ptr 0x{x}: {}", .{ ptr_val, err });
             };
         }
 
-        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | Phase1={d:.0}ms (args={d} rets={d} alias_traces={d}) Phase2={d:.0}ms (cross_lang_free={d})", .{
+        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | {d:.0}ms (cross_lang_free={d} alias_traces={d})", .{
             ffi_count,
             ctx.danger_surface_relevant.count(),
             ctx.relevant_functions.count(),
-            @as(u32, @intFromFloat(@as(f64, @floatFromInt(t1 - t0)) / 1_000_000.0)),
-            total_args,
-            total_rets,
-            total_alias_traces,
-            @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t1)) / 1_000_000.0)),
+            @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000.0)),
             cross_lang_frees,
+            total_alias_traces,
         });
     }
 };
@@ -214,6 +187,9 @@ fn traceAliasClosure(
     depth: u32,
 ) !void {
     if (depth >= max_alias_depth) return;
+    // PERF: isRelevantAlloc serves as a secondary visited check.
+    // If a pointer was already marked relevant by a prior trace,
+    // all its aliases have already been visited too. Skip entirely.
     if (ctx.isRelevantAlloc(ptr_val)) return;
     const node = mg.nodes.get(ptr_val) orelse return;
     var iter = node.aliases.iterator();
@@ -222,7 +198,7 @@ fn traceAliasClosure(
         if (visited.contains(alias_ptr)) continue;
         try visited.put(alias_ptr, {});
         try ctx.markRelevantAlloc(alias_ptr);
-        ctx.markFfiRelevant(alias_ptr) catch {}; // BUGFIX: aliases of FFI ptrs are also FFI-relevant
+        ctx.markFfiRelevant(alias_ptr) catch {};
         traceAliasClosure(mg, alias_ptr, ctx, diag, visited, depth + 1) catch |err| {
             diag.debug("[P1-1] Recursive alias error for 0x{x} -> 0x{x}: {}", .{ ptr_val, alias_ptr, err });
         };
