@@ -278,7 +278,7 @@ test "DangerSurfacePass - zero FFI boundaries returns early" {
     defer graph.deinit();
 
     _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
-    _ = try graph.trackFree(0x3000, 0xA001, .c);
+    _ = try graph.trackFree(0x3000, 0xA001, .c, 0);
 
     var empty_ffis = [_]DangerSurface{};
 

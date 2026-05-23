@@ -284,6 +284,11 @@ pub const MemoryGraph = struct {
 
         graph.alias_to_canonical.deinit();
         graph.weak_aliases.deinit(); // V2: Clean up weak aliases set
+        // Deinitialize inner HashMaps before outer bb_edges HashMap
+        var bb_iter = graph.bb_edges.iterator();
+        while (bb_iter.next()) |entry| {
+            entry.value_ptr.deinit();
+        }
         graph.bb_edges.deinit();
 
         graph.* = undefined;
