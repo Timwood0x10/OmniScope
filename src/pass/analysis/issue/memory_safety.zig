@@ -108,7 +108,7 @@ pub const MemorySafetyPass = struct {
 
         // INTEGRATION: Three-layer noise filter (name + path)
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return 0;
 
         _ = try relations.internString(func_name);
@@ -220,7 +220,7 @@ pub const MemorySafetyPass = struct {
                         return false;
                     }
                 }
-                const callee_classification = noise_filter.classifyFunctionFull(free_func_name, null, null, null);
+                const callee_classification = ctx.classifyFunctionSurface(free_func_name, null);
                 if (callee_classification.origin == .compiler_generated) {
                     diag.debug("[SUPPRESSED] Double free in compiler-generated function: {s} ({s})", .{ free_func_name, callee_classification.reason });
                     return false;

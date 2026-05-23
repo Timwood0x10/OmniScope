@@ -247,7 +247,7 @@ pub const PtrLifetimePass = struct {
 
             // INTEGRATION: Three-layer noise filter (name + path + behavior)
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const full_classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            const full_classification = ctx.classifyFunctionSurface(func_name, func_loc);
             // P0-2: Relax noise filter for Rust FFI callback functions.
             // Rust callbacks (e.g., rs_ffi_*_cb) may be classified as third_party
             // or have suppressed risk, but they are critical for FFI boundary analysis.

@@ -157,9 +157,9 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
     try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
 
-    // Origin classification — runs early to populate function_origin map
+    // Surface classification — runs early to populate function_surface map
     // for all downstream passes to use instead of per-function noise_filter calls.
-    try pipeline.registerPass(OmniScope.cross_lang.OriginClassifierPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SurfaceClassifierPass);
 
     // Independent pre-passes (no deps — run before CallGraph for early exit support)
     try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);

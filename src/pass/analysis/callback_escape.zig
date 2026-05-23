@@ -720,7 +720,7 @@ pub const CallbackEscapePass = struct {
 
         // INTEGRATION: Three-layer noise filter (name + path)
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return;
 
         // R7.2: Use module-level language detection instead of per-function cgo check.

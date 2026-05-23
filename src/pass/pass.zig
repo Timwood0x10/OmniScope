@@ -17,7 +17,7 @@ const memory_graph_mod = @import("../semantics/memory_graph.zig");
 const call_graph_mod = @import("../semantics/call_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
-const origin_classifier = @import("../semantics/origin_classifier.zig");
+const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const TraceEntry = @import("../diag/issue.zig").TraceEntry;
@@ -305,10 +305,10 @@ pub const PassContext = struct {
     /// Reused via clearRetainingCapacity() across calls. Eliminates init+deinit per call.
     danger_path_visited_cache: ?std.AutoHashMap(u64, void),
 
-    /// Origin classification built once by OriginClassifierPass.
-    /// Maps function pointer (u64) → FunctionOrigin.
+    /// Origin classification built once by SurfaceClassifierPass.
+    /// Maps function pointer (u64) → FunctionSurface.
     /// All downstream passes query this instead of calling noise_filter per-function.
-    function_origin: std.AutoHashMap(u64, origin_classifier.FunctionOrigin),
+    function_surface: std.AutoHashMap(u64, surface_classifier.FunctionSurface),
 
     /// Create a new pass context
     pub fn init(
@@ -352,7 +352,7 @@ pub const PassContext = struct {
             .ffi_set_cache = null,
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
-            .function_origin = std.AutoHashMap(u64, origin_classifier.FunctionOrigin).init(allocator),
+            .function_surface = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator),
         };
     }
 
@@ -439,88 +439,79 @@ pub const PassContext = struct {
         if (self.danger_path_visited_cache) |*cache| {
             cache.deinit();
         }
-        // Free function_origin classification map
-        self.function_origin.deinit();
+        // Free function_surface classification map
+        self.function_surface.deinit();
     }
 
-    /// Query the origin classification for a function.
-    /// Returns null if OriginClassifierPass has not yet run or the function was not classified.
-    pub fn getFunctionOrigin(self: *const PassContext, func_ptr: u64) ?origin_classifier.FunctionOrigin {
-        return self.function_origin.get(func_ptr);
+    /// Query the surface classification for a function.
+    /// Returns null if SurfaceClassifierPass has not yet run or the function was not classified.
+    pub fn getFunctionSurface(self: *const PassContext, func_ptr: u64) ?surface_classifier.FunctionSurface {
+        return self.function_surface.get(func_ptr);
     }
 
-    /// Check if a function should be analyzed based on its origin classification.
-    /// Returns true if origin is user/dependency/unknown, false for stdlib/generated/runtime.
+    /// Check if a function should be analyzed based on its surface classification.
+    /// Returns true for user_code/dependency/boundary/unknown, false for stdlib/generated/runtime.
     /// Falls back to true (analyze) if the function has not been classified yet.
-    pub fn shouldAnalyzeFunction(self: *const PassContext, func_ptr: u64) bool {
-        const origin = self.getFunctionOrigin(func_ptr) orelse return true;
-        return origin.shouldAnalyze();
+    pub fn shouldAnalyzeFunctionSurface(self: *const PassContext, func_ptr: u64) bool {
+        const surf = self.getFunctionSurface(func_ptr) orelse return true;
+        return surf.shouldAnalyze();
     }
 
     /// Check if a function should be analyzed based on its name.
-    /// Uses OriginClassifier results if available, otherwise falls back to
-    /// noise_filter.classifyFunctionFull for backward compatibility.
-    pub fn shouldAnalyzeFunctionByName(self: *PassContext, func_name: []const u8, func_ptr: ?u64) bool {
-        // Try origin classifier first (fast path — O(1) map lookup)
+    /// Uses SurfaceClassifier results if available, otherwise falls back to
+    /// noise_filter for backward compatibility.
+    pub fn shouldAnalyzeFunctionSurfaceByName(self: *PassContext, func_name: []const u8, func_ptr: ?u64) bool {
+        // Try surface classifier first (fast path — O(1) map lookup)
         if (func_ptr) |ptr| {
-            if (self.function_origin.get(ptr)) |origin| {
-                return origin.shouldAnalyze();
+            if (self.function_surface.get(ptr)) |surf| {
+                return surf.shouldAnalyze();
             }
         }
-        // Fallback: resolve func_name to func_ptr via LLVM API and try again
+        // Fallback: resolve func_name to func_ptr via LLVM API
         if (self.module) |mod| {
             const raw_mod = mod.raw;
             const func = c.LLVMGetNamedFunction(raw_mod, func_name.ptr);
             if (@intFromPtr(func) != 0) {
                 const ptr = @as(u64, @intFromPtr(func));
-                if (self.function_origin.get(ptr)) |origin| {
-                    return origin.shouldAnalyze();
+                if (self.function_surface.get(ptr)) |surf| {
+                    return surf.shouldAnalyze();
                 }
             }
         }
-        // Final fallback: use noise_filter for functions not in origin map
-        // (e.g., declarations, external functions)
+        // Final fallback: noise_filter for unclassified functions
         return noise_filter.shouldAnalyze(func_name, null, null);
     }
 
-    /// Classify a function's origin using the OriginClassifier cache.
+    /// Classify a function's surface using the SurfaceClassifier cache.
     /// Returns a ClassificationResult compatible with noise_filter.classifyFunctionFull.
-    /// Prefer this over direct noise_filter calls — it uses the pre-built
-    /// function_origin map from OriginClassifierPass (O(1) lookup) instead of
-    /// re-running name patterns and path analysis per call.
+    /// Prefer this over direct noise_filter calls — uses the pre-built
+    /// function_surface map (O(1) lookup) instead of re-running name patterns.
     ///
-    /// Fallback: if the function is not in the origin map (e.g., declarations),
-    /// uses noise_filter.classifyFunctionFull for backward compatibility.
-    pub fn classifyFunctionOrigin(
+    /// Fallback: if the function is not in the surface map, uses
+    /// noise_filter.classifyFunctionFull for backward compatibility.
+    pub fn classifyFunctionSurface(
         self: *PassContext,
         func_name: []const u8,
         source_location: ?@import("../ir/debug_info.zig").SourceLocation,
     ) noise_filter.ClassificationResult {
-        // Try to resolve func_name → func_ptr and check origin map
+        // Try to resolve func_name → func_ptr and check surface map
         if (self.module) |mod| {
             const raw_mod = mod.raw;
             const func = c.LLVMGetNamedFunction(raw_mod, func_name.ptr);
             if (@intFromPtr(func) != 0) {
                 const ptr = @as(u64, @intFromPtr(func));
-                if (self.function_origin.get(ptr)) |origin| {
-                    // Map FunctionOrigin → ClassificationResult
-                    const nf_origin: noise_filter.FunctionOrigin = switch (origin) {
-                        .user => .user,
-                        .dependency => .third_party,
-                        .stdlib => .stdlib,
-                        .generated => .compiler_generated,
-                        .runtime => .stdlib,
-                        .unknown => .unknown,
-                    };
+                if (self.function_surface.get(ptr)) |surf| {
+                    // Map FunctionSurface → noise_filter.FunctionOrigin for compat
+                    const nf_origin = noise_filter.functionSurfaceToOrigin(surf);
                     return .{
                         .origin = nf_origin,
                         .risk_level = noise_filter.getRiskLevel(nf_origin, .medium),
-                        .reason = "origin-classifier cache",
+                        .reason = "surface-classifier cache",
                     };
                 }
             }
         }
-        // Fallback: use noise_filter for unclassified functions
+        // Fallback: noise_filter for unclassified functions
         return noise_filter.classifyFunctionFull(func_name, null, source_location, null);
     }
 
@@ -603,7 +594,7 @@ pub const PassContext = struct {
         // These must always be reported regardless of function origin,
         // because they represent real security vulnerabilities.
         const func_name = issue.location.func;
-        const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
+        const classification = self.classifyFunctionSurface(func_name, null);
         var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
         if (issue.severity != .critical and risk == .suppressed) {
             if (issue.owned) {

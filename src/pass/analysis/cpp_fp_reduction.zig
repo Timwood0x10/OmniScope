@@ -702,7 +702,7 @@ pub fn detectUseAfterFree(
             continue;
         }
 
-        const classification = noise_filter.classifyFunctionFull(free_info.func_name, null, null, null);
+        const classification = ctx.classifyFunctionSurface(free_info.func_name, null);
         if (!classification.origin.shouldReportByDefault()) {
             diag.debug("UAF-SKIP: {s} is {s} — {s}", .{ free_info.func_name, classification.origin.toString(), classification.reason });
             continue;

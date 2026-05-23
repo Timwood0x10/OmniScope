@@ -561,7 +561,7 @@ pub const FFIBodyCheckPass = struct {
         if (@intFromPtr(func_name_ptr) != 0) {
             const func_name = std.mem.span(func_name_ptr);
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            const classification = ctx.classifyFunctionSurface(func_name, func_loc);
             if (!classification.origin.shouldReportByDefault()) return 0;
         }
         // Initialize analysis context

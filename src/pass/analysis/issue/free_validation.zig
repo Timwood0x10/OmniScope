@@ -88,7 +88,7 @@ pub const FreeValidationPass = struct {
         if (@intFromPtr(func_name_ptr) == 0) return 0;
         const func_name = std.mem.span(func_name_ptr);
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return 0;
 
         // Track pointer origins within this function

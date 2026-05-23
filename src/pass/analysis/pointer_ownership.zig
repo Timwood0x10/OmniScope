@@ -494,7 +494,7 @@ pub const PointerOwnershipPass = struct {
             // INTEGRATION: Use three-layer noise filter (name + path + behavior)
             // Layer 2 uses debug info from the function's source location
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            const classification = ctx.classifyFunctionSurface(func_name, func_loc);
             if (!classification.origin.shouldReportByDefault()) {
                 diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
                 continue;

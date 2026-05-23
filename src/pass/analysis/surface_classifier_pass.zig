@@ -1,11 +1,12 @@
-//! OriginClassifierPass — Early Pipeline Function Origin Classification
+//! SurfaceClassifierPass — Early Pipeline Function Surface Classification
 //!
-//! Classifies every function in the module using three layered signals:
+//! Classifies every function in the module using four layered signals:
 //!   L1 — Linkage heuristic (O(1) per function)
 //!   L2 — Debug origin / source path (O(1) per function)
 //!   L3 — CallGraph reachability (O(V+E) one-time BFS)
+//!   L4 — Boundary detection (exported symbols -> boundary)
 //!
-//! Writes results to PassContext.function_origin, which all downstream
+//! Writes results to PassContext.function_surface, which all downstream
 //! passes query instead of calling noise_filter.classifyFunctionFull().
 //!
 //! Pipeline position: after zone-classifier, before all analysis passes.
@@ -16,13 +17,11 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
-const origin_classifier = @import("../../semantics/origin_classifier.zig");
+const surface = @import("../../semantics/surface_classifier/surface_classifier.zig");
 
-pub const OriginClassifierPass = struct {
-    pub const name = "origin-classifier";
+pub const SurfaceClassifierPass = struct {
+    pub const name = "surface-classifier";
     pub const kind = PassKind.foundation;
-    // No hard deps — runs early, uses CallSiteIndex which is built
-    // in Pipeline.run() before any pass executes.
     pub const deps = &[_][]const u8{};
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
@@ -31,15 +30,13 @@ pub const OriginClassifierPass = struct {
 
         const t0 = std.time.nanoTimestamp();
 
-        // Phase 1: Classify every function using L1 + L2
+        // Phase 1: Classify every function using L1 + L2 + L4 (boundary)
         var func = c.LLVMGetFirstFunction(raw_mod);
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             const func_ptr = @as(u64, @intFromPtr(func));
-            const l1 = origin_classifier.classifyLinkage(func);
-            const l2 = origin_classifier.classifyDebugOrigin(func);
-            // L3 will be applied in Phase 2; for now, assume reachable
-            const origin = origin_classifier.mergeLayers(l1, l2, true);
-            try ctx.function_origin.put(func_ptr, origin);
+            const is_boundary = surface.detectBoundaryFromLLVM(func);
+            const surf = surface.classifyFunction(func, is_boundary);
+            try ctx.function_surface.put(func_ptr, surf);
         }
 
         // Phase 2: CallGraph reachability (L3)
@@ -48,19 +45,20 @@ pub const OriginClassifierPass = struct {
         const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000.0;
 
         // Statistics
-        var stats = OriginStats{};
-        var iter = ctx.function_origin.valueIterator();
-        while (iter.next()) |origin| {
-            stats.count(origin.*);
+        var stats = SurfaceStats{};
+        var iter = ctx.function_surface.valueIterator();
+        while (iter.next()) |s| {
+            stats.count(s.*);
         }
 
-        diag.info("[OriginClassifier] {d:.1} ms — classified {d} functions: user={d} dep={d} stdlib={d} gen={d} rt={d} unk={d}", .{
+        diag.info("[SurfaceClassifier] {d:.1} ms — {d} functions: user={d} dep={d} bnd={d} stdlib={d} gen={d} rt={d} unk={d}", .{
             elapsed_ms,
             stats.total(),
-            stats.user,
+            stats.user_code,
             stats.dependency,
-            stats.stdlib,
-            stats.generated,
+            stats.boundary,
+            stats.standard_library,
+            stats.compiler_generated,
             stats.runtime,
             stats.unknown,
         });
@@ -72,22 +70,10 @@ pub const OriginClassifierPass = struct {
 // ============================================================================
 
 /// Apply forward reachability from root functions.
-///
-/// Roots are functions that are "meaningful starting points":
-///   - extern "C" exports (FFI boundary producers)
-///   - functions with user/dependency origin from L1+L2
-///   - non-declaration functions that aren't compiler noise
-///
-/// Any function NOT reachable from roots AND classified as
-/// stdlib/generated/runtime by L1/L2 will stay suppressed.
-/// Reachable functions get promoted to user/dependency regardless of L1/L2.
 fn applyReachability(ctx: *PassContext) void {
-    // Build a caller→callees adjacency list from CallSiteIndex.
-    // CallSiteIndex maps callee_name → [CallSite{caller_func, inst}]
-    // We need caller_func → [callee_func] for forward walk.
     const allocator = ctx.allocator;
 
-    // Step 1: Build forward adjacency list (caller_ptr → callee_ptrs)
+    // Step 1: Build forward adjacency list (caller_ptr -> callee_ptrs)
     var forward_adj = std.AutoHashMap(u64, std.ArrayList(u64)).init(allocator);
     defer {
         var adj_iter = forward_adj.valueIterator();
@@ -97,13 +83,11 @@ fn applyReachability(ctx: *PassContext) void {
         forward_adj.deinit();
     }
 
-    // Populate forward_adj from CallSiteIndex
     var csi_iter = ctx.CallSiteIndex.map.iterator();
     while (csi_iter.next()) |entry| {
         const callee_name = entry.key_ptr.*;
         const call_sites = entry.value_ptr.*;
 
-        // Resolve callee_name to a function pointer
         const raw_mod = ctx.module.?.raw;
         const callee_func = c.LLVMGetNamedFunction(raw_mod, callee_name.ptr);
         if (@intFromPtr(callee_func) == 0) continue;
@@ -119,29 +103,25 @@ fn applyReachability(ctx: *PassContext) void {
         }
     }
 
-    // Step 2: Collect roots — functions that are entry points
+    // Step 2: Collect roots
     var reachable = std.AutoHashMap(u64, void).init(allocator);
     defer reachable.deinit();
 
-    // Roots: user/dependency origin functions (L1+L2 said they matter)
-    var origin_iter = ctx.function_origin.iterator();
+    // Roots: user/dependency/boundary functions
+    var origin_iter = ctx.function_surface.iterator();
     while (origin_iter.next()) |entry| {
-        const func_ptr = entry.key_ptr.*;
-        const origin = entry.value_ptr.*;
-        if (origin == .user or origin == .dependency) {
-            reachable.put(func_ptr, {}) catch {};
+        const surf = entry.value_ptr.*;
+        if (surf == .user_code or surf == .dependency or surf == .boundary) {
+            reachable.put(entry.key_ptr.*, {}) catch {};
         }
     }
 
-    // Roots: extern "C" exported functions (potential FFI boundary)
+    // Roots: externally visible defined functions
     var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
     while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
         if (c.LLVMIsDeclaration(func) != 0) continue;
-        const linkage = c.LLVMGetLinkage(func);
-        if (linkage == c.LLVMExternalLinkage) {
-            // Externally visible function — potential API entry point
-            const func_ptr = @as(u64, @intFromPtr(func));
-            reachable.put(func_ptr, {}) catch {};
+        if (c.LLVMGetLinkage(func) == c.LLVMExternalLinkage) {
+            reachable.put(@as(u64, @intFromPtr(func)), {}) catch {};
         }
     }
 
@@ -167,47 +147,25 @@ fn applyReachability(ctx: *PassContext) void {
     }
 
     // Step 4: Apply reachability results
-    // If a function is NOT reachable AND was classified as noise by L1/L2,
-    // keep its noise classification. If it IS reachable, promote it.
-    var apply_iter = ctx.function_origin.iterator();
+    var apply_iter = ctx.function_surface.iterator();
     while (apply_iter.next()) |entry| {
-        const func_ptr = entry.key_ptr.*;
-        const is_reachable = reachable.contains(func_ptr);
+        const is_reachable = reachable.contains(entry.key_ptr.*);
 
         if (is_reachable) {
-            // Reachable — if L1/L2 said noise, promote to user/dependency
             const current = entry.value_ptr.*;
             switch (current) {
-                .stdlib, .generated, .runtime => {
-                    // Reachable noise — likely a dependency that participates
-                    // in ownership flow (e.g., ring, libsqlite3-sys).
+                .standard_library, .compiler_generated, .runtime => {
                     entry.value_ptr.* = .dependency;
                 },
-                .user, .dependency, .unknown => {
-                    // Already kept — no change needed
-                },
+                .user_code, .dependency, .boundary, .unknown => {},
             }
         } else {
-            // Not reachable — if L1/L2 said noise, keep suppressed.
-            // If L1/L2 said user but it's unreachable, it's probably a
-            // dead function — but we conservatively keep it as .unknown.
             const current = entry.value_ptr.*;
             switch (current) {
-                .user => {
-                    // User code but unreachable — likely dead code.
-                    // Conservative: keep as .unknown (will be analyzed).
+                .user_code, .dependency => {
                     entry.value_ptr.* = .unknown;
                 },
-                .dependency => {
-                    // Dependency but unreachable — likely internal dep code.
-                    entry.value_ptr.* = .unknown;
-                },
-                .stdlib, .generated, .runtime => {
-                    // Already suppressed — no change needed
-                },
-                .unknown => {
-                    // Already conservative — no change
-                },
+                .standard_library, .compiler_generated, .runtime, .boundary, .unknown => {},
             }
         }
     }
@@ -217,26 +175,29 @@ fn applyReachability(ctx: *PassContext) void {
 // Statistics
 // ============================================================================
 
-const OriginStats = struct {
-    user: usize = 0,
+const SurfaceStats = struct {
+    user_code: usize = 0,
     dependency: usize = 0,
-    stdlib: usize = 0,
-    generated: usize = 0,
+    boundary: usize = 0,
+    standard_library: usize = 0,
+    compiler_generated: usize = 0,
     runtime: usize = 0,
     unknown: usize = 0,
 
-    fn count(self: *OriginStats, origin: origin_classifier.FunctionOrigin) void {
-        switch (origin) {
-            .user => self.user += 1,
+    fn count(self: *SurfaceStats, surf: surface.FunctionSurface) void {
+        switch (surf) {
+            .user_code => self.user_code += 1,
             .dependency => self.dependency += 1,
-            .stdlib => self.stdlib += 1,
-            .generated => self.generated += 1,
+            .boundary => self.boundary += 1,
+            .standard_library => self.standard_library += 1,
+            .compiler_generated => self.compiler_generated += 1,
             .runtime => self.runtime += 1,
             .unknown => self.unknown += 1,
         }
     }
 
-    fn total(self: OriginStats) usize {
-        return self.user + self.dependency + self.stdlib + self.generated + self.runtime + self.unknown;
+    fn total(self: SurfaceStats) usize {
+        return self.user_code + self.dependency + self.boundary +
+            self.standard_library + self.compiler_generated + self.runtime + self.unknown;
     }
 };

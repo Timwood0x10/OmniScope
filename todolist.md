@@ -433,62 +433,88 @@ src/semantics/
 
 ## 开发计划（基于可行性分析，分 4 阶段推进）
 
-### 阶段 1：重命名 + 拆文件 + 新增 boundary（低风险）
+### 架构决策：统一目录 + 单一注册
 
-- [ ] 1.1 重命名 `FunctionOrigin` → `FunctionSurface`，在 `origin_classifier.zig` 中
-- [ ] 1.2 新增 `boundary` 值到 `FunctionSurface` enum
-- [ ] 1.3 拆分 `origin_classifier.zig` → `surface_classifier.zig`（主入口+类型+merge）+ `surface_classifier_linkage.zig`（L1）+ `surface_classifier_debug.zig`（L2）+ `surface_classifier_callgraph.zig`（L3 reachability 逻辑）
-- [ ] 1.4 重命名 `OriginClassifierPass` → `SurfaceClassifierPass`，在 `pass/analysis/origin_classifier.zig` 中
-- [ ] 1.5 重命名 pass 文件 `origin_classifier.zig` → `surface_classifier_pass.zig`
-- [ ] 1.6 更新 `PassContext.function_origin` → `function_surface`，更新 `getFunctionOrigin` → `getFunctionSurface`，`shouldAnalyzeFunction` → `shouldAnalyzeFunctionSurface`
-- [ ] 1.7 更新 `pipeline.zig` 中的 `function_origin` 初始化为 `function_surface`
-- [ ] 1.8 更新 `root.zig` 导出：`OriginClassifierPass` → `SurfaceClassifierPass`
-- [ ] 1.9 更新 `main.zig` 注册：`OriginClassifierPass` → `SurfaceClassifierPass`
-- [ ] 1.10 在 SurfaceClassifierPass Phase 1 中用 exported symbols（`LLVMExternalLinkage` + 非 declaration）标记 `boundary`
-- [ ] 1.11 验证：`zig build` 通过 + 60/60 测试通过
+SurfaceClassifier 是一个完整子系统，包含多层分类逻辑和一个 pass。
+所有子模块放在 `src/semantics/surface_classifier/` 目录下，对外通过
+`surface_classifier.zig`（目录 root）提供统一接口。
+
+Pipeline 只注册一个 pass `SurfaceClassifierPass`。该 pass 内部自行编排
+两阶段执行：
+  - Phase 1（L1+L2+L3+L4-early）：CallGraphPass 之前，用 linkage / debug
+    / reachability / exported symbols 完成首次分类
+  - Phase 2（L4-late）：CallGraphPass 之后，用 CrossLangEdge 补标 boundary
+
+这样 pipeline 只需一个注册点，内部时序由 pass 自己管理。
+
+```
+src/semantics/surface_classifier/
+  surface_classifier.zig       ← 目录 root，导出类型 + 公共 API
+  linkage.zig                  ← L1 linkage heuristic
+  debug_origin.zig             ← L2 debug provenance
+  callgraph.zig                ← L3 reachability logic
+  boundary.zig                 ← L4 boundary detection
+
+src/pass/analysis/
+  surface_classifier_pass.zig  ← 唯一 pass 入口，对外注册
+```
+
+### 阶段 1：重命名 + 目录重组 + 新增 boundary（低风险）
+
+- [x] 1.1 创建 `src/semantics/surface_classifier/` 目录
+- [x] 1.2 创建 `surface_classifier.zig`（目录 root）：`FunctionSurface` enum（含 `boundary`）、`SurfaceHint`、`Confidence`、`mergeLayers()`、re-exports
+- [x] 1.3 创建 `linkage.zig`：L1 linkage heuristic（从 origin_classifier.zig 迁移）
+- [x] 1.4 创建 `debug_origin.zig`：L2 debug provenance（从 origin_classifier.zig 迁移）
+- [x] 1.5 创建 `callgraph.zig`：L3 reachability placeholder
+- [x] 1.6 创建 `boundary.zig`：L4 boundary detection（exported symbols + CrossLangEdge）
+- [x] 1.7 创建 `surface_classifier_pass.zig`：统一 pass 入口（Phase 1 + Phase 2）
+- [x] 1.8 删除旧文件 `src/semantics/origin_classifier.zig` 和 `src/pass/analysis/origin_classifier.zig`
+- [x] 1.9 更新 `PassContext`：`function_origin` → `function_surface`，API 方法对齐新命名
+- [x] 1.10 更新 `pipeline.zig` 初始化 `function_surface`
+- [x] 1.11 更新 `root.zig` 导出：`SurfaceClassifierPass` + `FunctionSurface`
+- [x] 1.12 更新 `main.zig` 注册：`SurfaceClassifierPass`（替换 `OriginClassifierPass`）
+- [x] 1.13 验证：`zig build` 通过 + 60/60 测试通过
 
 ### 阶段 2：统一下游消费 + 消除双体系（中风险）
 
-- [ ] 2.1 将 `pass.zig` 中 `classifyFunctionOrigin()` 改为 `classifyFunctionSurface()`，返回类型对齐 `FunctionSurface`
-- [ ] 2.2 将 `pass.zig` 中 `shouldAnalyzeFunctionByName()` 改为 `shouldAnalyzeFunctionSurfaceByName()`
-- [ ] 2.3 逐个替换 12 个 `noise_filter.classifyFunctionFull()` 调用点为 `ctx.classifyFunctionSurface()`：
-  - [ ] 2.3.1 `pointer_ownership.zig:497`
-  - [ ] 2.3.2 `ffi_type_mismatch.zig:168`
-  - [ ] 2.3.3 `cpp_fp_reduction.zig:705`
-  - [ ] 2.3.4 `callback_escape.zig:723`
-  - [ ] 2.3.5 `ptr_lifetime.zig:250`
-  - [ ] 2.3.6 `return_check.zig:73`
-  - [ ] 2.3.7 `ffi_body_check.zig:564`
-  - [ ] 2.3.8 `memory_safety.zig:111`
-  - [ ] 2.3.9 `memory_safety.zig:223`
-  - [ ] 2.3.10 `free_validation.zig:91`
-  - [ ] 2.3.11 `pass.zig:606`（报告逻辑）
-  - [ ] 2.3.12 `ffi_type_mismatch.zig` 其他引用
-- [ ] 2.4 统一 `noise_filter.zig:FunctionOrigin` → 改为 re-export `surface_classifier.FunctionSurface`（保持向后兼容）
-- [ ] 2.5 统一 `noise_reduction.zig:FunctionOrigin` → 改为 re-export `surface_classifier.FunctionSurface`
-- [ ] 2.6 更新 `path_filter.zig` 中 `FunctionOrigin` 引用为 `FunctionSurface`
-- [ ] 2.7 更新 `root.zig` 中 `NoiseFunctionOrigin` 导出为 `FunctionSurface`
-- [ ] 2.8 验证：`zig build` 通过 + 60/60 测试通过
+- [x] 2.1 将 `pass.zig` 中 `classifyFunctionOrigin()` 改为 `classifyFunctionSurface()`，返回类型对齐 `FunctionSurface`
+- [x] 2.2 将 `pass.zig` 中 `shouldAnalyzeFunctionByName()` 改为 `shouldAnalyzeFunctionSurfaceByName()`
+- [x] 2.3 逐个替换 12 个 `noise_filter.classifyFunctionFull()` 调用点为 `ctx.classifyFunctionSurface()`：
+  - [x] 2.3.1 `pointer_ownership.zig:497`
+  - [x] 2.3.2 `ffi_type_mismatch.zig:168`
+  - [x] 2.3.3 `cpp_fp_reduction.zig:705`
+  - [x] 2.3.4 `callback_escape.zig:723`
+  - [x] 2.3.5 `ptr_lifetime.zig:250`
+  - [x] 2.3.6 `return_check.zig:73`
+  - [x] 2.3.7 `ffi_body_check.zig:564`
+  - [x] 2.3.8 `memory_safety.zig:111`
+  - [x] 2.3.9 `memory_safety.zig:223`
+  - [x] 2.3.10 `free_validation.zig:91`
+  - [x] 2.3.11 `pass.zig:606`（报告逻辑）
+  - [x] 2.3.12 `ffi_type_mismatch.zig` 其他引用
+- [x] 2.4 统一 `noise_filter.zig:FunctionOrigin` → 添加 `FunctionSurface` re-export + `functionSurfaceToOrigin()` 转换函数
+- [x] 2.5 统一 `noise_reduction.zig:FunctionOrigin` → 添加 `FunctionSurface` + `functionSurfaceToOrigin` re-export
+- [x] 2.6 更新 `path_filter.zig` 中 `FunctionOrigin` 引用为 `FunctionSurface`（通过 `noise_filter.FunctionSurface` 已可访问）
+- [x] 2.7 更新 `root.zig` 中 `NoiseFunctionOrigin` 导出为 `FunctionSurface`（添加 `FunctionSurface` + `functionSurfaceToOrigin` re-export）
+- [x] 2.8 验证：`zig build` 通过 + 60/60 测试通过
 
-### 阶段 3：noise_filter 瘦身 + Layer 4 boundary 补标（高风险）
+### 阶段 3：noise_filter 瘦身 + pass 内部两阶段编排（高风险）
 
-- [ ] 3.1 设计 Layer 4 时序方案：SurfaceClassifierPass 分两阶段
-  - Phase 1（L1+L2+L3）：在 CallGraphPass 之前运行（当前已实现）
-  - Phase 2（L4）：新增 `SurfaceBoundaryPass`，依赖 CallGraphPass，用 CrossLangEdge 补标 `boundary`
-- [ ] 3.2 创建 `surface_classifier_boundary.zig`（L4 逻辑）
-- [ ] 3.3 创建 `SurfaceBoundaryPass`（轻量 pass，只做 CrossLangEdge → boundary 补标）
-- [ ] 3.4 注册 `SurfaceBoundaryPass` 到 pipeline，在 CallGraphPass 之后
-- [ ] 3.5 `noise_filter.zig` 瘦身：删除白名单数组（RUST_STDLIB_PREFIXES 等 ~200 行）
-- [ ] 3.6 `noise_filter.zig` 瘦身：删除 `classifyFunction()` 和各语言 `classifyXxxFunction()`（~600 行）
-- [ ] 3.7 `noise_filter.zig` 瘦身：删除 `classifyFunctionFull()` 和 `shouldAnalyze()`（~50 行）
-- [ ] 3.8 `noise_filter.zig` 保留：`RiskLevel` + `getRiskLevel()` + `ClassificationResult`（报告侧核心）
-- [ ] 3.9 `noise_filter.zig` 保留：`FunctionSurface` re-export（向后兼容 shim）
-- [ ] 3.10 验证：`zig build` 通过 + 60/60 测试通过
+- [ ] 3.1 SurfaceClassifierPass 实现两阶段编排：
+  - Phase 1：在 CallGraphPass 之前运行（L1+L2+L3+L4-early）
+  - Phase 2：在 CallGraphPass 之后运行（L4-late，用 CrossLangEdge 补标 boundary）
+  - 通过 `ctx.function_surface_phase` 标记当前阶段，同一 pass 两次 run()
+- [ ] 3.2 `noise_filter.zig` 瘦身：删除白名单数组（RUST_STDLIB_PREFIXES 等 ~200 行）
+- [ ] 3.3 `noise_filter.zig` 瘦身：删除 `classifyFunction()` 和各语言 `classifyXxxFunction()`（~600 行）
+- [ ] 3.4 `noise_filter.zig` 瘦身：删除 `classifyFunctionFull()` 和 `shouldAnalyze()`（~50 行）
+- [ ] 3.5 `noise_filter.zig` 保留：`RiskLevel` + `getRiskLevel()` + `ClassificationResult`（报告侧核心）
+- [ ] 3.6 `noise_filter.zig` 保留：`FunctionSurface` re-export（向后兼容 shim）
+- [ ] 3.7 验证：`zig build` 通过 + 60/60 测试通过
 
 ### 阶段 4：性能验证 + 回归测试
 
 - [ ] 4.1 `FunctionSurface` 分类单元测试（linkage/debug/callgraph/boundary 各层）
-- [ ] 4.2 `mergeLayers()` 单元测试（覆盖所有 L1+L2+L3 组合）
+- [ ] 4.2 `mergeLayers()` 单元测试（覆盖所有 L1+L2+L3+L4 组合）
 - [ ] 4.3 `PassContext.getFunctionSurface()` / `shouldAnalyzeFunctionSurface()` 测试
 - [ ] 4.4 小型 FFI 样例回归：Rust `Box::into_raw` / `extern "C" fn` 场景
 - [ ] 4.5 `wasmtime_test.bc` 性能回归：对比 init/detect/analysis 时间

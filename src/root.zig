@@ -76,7 +76,7 @@ pub const cross_lang = struct {
     pub const SOURCE_FUNCTIONS = @import("pass/analysis/call_graph.zig").SOURCE_FUNCTIONS;
     pub const SINK_PATTERNS = @import("pass/analysis/call_graph.zig").SINK_PATTERNS;
     pub const CallGraphPass = @import("pass/analysis/call_graph.zig").CallGraphPass;
-    pub const OriginClassifierPass = @import("pass/analysis/origin_classifier.zig").OriginClassifierPass;
+    pub const SurfaceClassifierPass = @import("pass/analysis/surface_classifier_pass.zig").SurfaceClassifierPass;
     pub const DangerSurfacePass = @import("pass/analysis/danger_surface.zig").DangerSurfacePass;
     pub const TaintPropagationPass = @import("pass/analysis/taint_propagation.zig").TaintPropagationPass;
     pub const FFIBoundaryPass = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryPass;
@@ -192,6 +192,9 @@ pub const semantics = struct {
     pub const deinitZoneCache = @import("semantics/zone_classifier.zig").deinitCache;
 
     pub const NoiseFunctionOrigin = @import("semantics/noise_filter.zig").FunctionOrigin;
+    // Canonical FunctionSurface — new code should prefer this over FunctionOrigin
+    pub const FunctionSurface = @import("semantics/noise_filter.zig").FunctionSurface;
+    pub const functionSurfaceToOrigin = @import("semantics/noise_filter.zig").functionSurfaceToOrigin;
     // M8 FIX: NoiseRiskLevel is now an alias for RiskLevel (unified definition)
     // Both now point to the same noise_filter.zig.RiskLevel type
     pub const NoiseRiskLevel = @import("semantics/noise_filter.zig").RiskLevel;

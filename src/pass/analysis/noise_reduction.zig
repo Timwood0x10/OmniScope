@@ -21,6 +21,13 @@ const ffi_utils = @import("ffi_utils.zig");
 /// This ensures a single shared definition across all layers.
 pub const FunctionOrigin = semantics.FunctionOrigin;
 
+/// Re-export canonical FunctionSurface from surface_classifier.
+/// New code should prefer FunctionSurface over FunctionOrigin.
+pub const FunctionSurface = semantics.FunctionSurface;
+
+/// Convert FunctionSurface → FunctionOrigin for backward compat.
+pub const functionSurfaceToOrigin = semantics.functionSurfaceToOrigin;
+
 /// Risk weight for combining origin + issue severity.
 /// Determines final reporting priority.
 pub const RiskWeight = enum(u8) {

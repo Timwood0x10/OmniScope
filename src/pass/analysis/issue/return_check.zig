@@ -59,8 +59,6 @@ pub const ReturnCheckPass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
-        const noise_filter = @import("../../../semantics/noise_filter.zig");
-
         var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
         if (@intFromPtr(func) == 0) return;
 
@@ -70,7 +68,7 @@ pub const ReturnCheckPass = struct {
             const func_name_raw = c.LLVMGetValueName(func);
             const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "";
             if (func_name.len > 0) {
-                const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
+                const classification = ctx.classifyFunctionSurface(func_name, null);
                 if (!classification.origin.shouldReportByDefault()) continue;
             }
 

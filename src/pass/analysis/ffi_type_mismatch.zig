@@ -165,7 +165,7 @@ pub const FFITypeMismatchPass = struct {
 
         // INTEGRATION: Use three-layer noise filter (name + path)
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
 
         // Skip stdlib and compiler-generated code
         if (!classification.origin.shouldReportByDefault()) {

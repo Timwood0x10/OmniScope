@@ -12,6 +12,24 @@ const std = @import("std");
 const CommonTypes = @import("../common/types.zig");
 const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
 
+/// Re-export FunctionSurface from the canonical surface_classifier module.
+/// New code should use FunctionSurface directly instead of FunctionOrigin.
+pub const FunctionSurface = @import("surface_classifier/surface_classifier.zig").FunctionSurface;
+
+/// Convert FunctionSurface to FunctionOrigin for backward compatibility.
+/// Maps the newer 7-value surface classification to the legacy 5-value origin.
+pub fn functionSurfaceToOrigin(surf: FunctionSurface) FunctionOrigin {
+    return switch (surf) {
+        .user_code => .user,
+        .dependency => .third_party,
+        .boundary => .user,
+        .standard_library => .stdlib,
+        .compiler_generated => .compiler_generated,
+        .runtime => .stdlib,
+        .unknown => .unknown,
+    };
+}
+
 /// Re-export Severity for backward compatibility.
 /// New code should import from common/types.zig directly.
 pub const Severity = CommonTypes.Severity;
