@@ -200,7 +200,6 @@ pub const semantics = struct {
     pub const NoiseRiskLevel = @import("semantics/noise_filter.zig").RiskLevel;
     pub const ClassificationResult = @import("semantics/noise_filter.zig").ClassificationResult;
     pub const FilterStats = @import("semantics/noise_filter.zig").FilterStats;
-    pub const classifyFunction = @import("semantics/noise_filter.zig").classifyFunction;
     pub const getRiskLevel = @import("semantics/noise_filter.zig").getRiskLevel;
 
     pub const PathClassificationResult = @import("semantics/path_filter.zig").PathClassificationResult;

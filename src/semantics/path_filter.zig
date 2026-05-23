@@ -323,11 +323,14 @@ fn buildFullPath(loc: debug_info.SourceLocation) []const u8 {
 }
 
 fn fallbackClassification(func_name: []const u8) PathClassificationResult {
-    const result = noise_filter.classifyFunction(func_name, null);
+    _ = func_name;
+    // No debug info available — conservative fallback to unknown.
+    // SurfaceClassifier should have already classified this function,
+    // so this path should rarely be reached.
     return .{
-        .origin = result.origin,
-        .risk_level = result.risk_level,
-        .reason = "No debug info, using name-based fallback",
+        .origin = .unknown,
+        .risk_level = .medium,
+        .reason = "No debug info, conservative fallback",
         .source_file = "",
         .source_dir = "",
     };

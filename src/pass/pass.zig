@@ -478,22 +478,22 @@ pub const PassContext = struct {
                 }
             }
         }
-        // Final fallback: noise_filter for unclassified functions
-        return noise_filter.shouldAnalyze(func_name, null, null);
+        // Final fallback: unclassified functions — conservative (analyze)
+        return true;
     }
 
     /// Classify a function's surface using the SurfaceClassifier cache.
-    /// Returns a ClassificationResult compatible with noise_filter.classifyFunctionFull.
-    /// Prefer this over direct noise_filter calls — uses the pre-built
-    /// function_surface map (O(1) lookup) instead of re-running name patterns.
+    /// Returns a ClassificationResult compatible with noise_filter.ClassificationResult.
+    /// Uses the pre-built function_surface map (O(1) lookup).
     ///
-    /// Fallback: if the function is not in the surface map, uses
-    /// noise_filter.classifyFunctionFull for backward compatibility.
+    /// Fallback: if the function is not in the surface map, returns
+    /// conservative unknown origin (always analyzed).
     pub fn classifyFunctionSurface(
         self: *PassContext,
         func_name: []const u8,
         source_location: ?@import("../ir/debug_info.zig").SourceLocation,
     ) noise_filter.ClassificationResult {
+        _ = source_location; // preserved for API compat, no longer used
         // Try to resolve func_name → func_ptr and check surface map
         if (self.module) |mod| {
             const raw_mod = mod.raw;
@@ -511,8 +511,12 @@ pub const PassContext = struct {
                 }
             }
         }
-        // Fallback: noise_filter for unclassified functions
-        return noise_filter.classifyFunctionFull(func_name, null, source_location, null);
+        // Fallback: unclassified function — conservative (unknown origin)
+        return .{
+            .origin = .unknown,
+            .risk_level = .medium,
+            .reason = "unclassified, conservative fallback",
+        };
     }
 
     /// Set the IR module

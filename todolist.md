@@ -500,16 +500,16 @@ src/pass/analysis/
 
 ### 阶段 3：noise_filter 瘦身 + pass 内部两阶段编排（高风险）
 
-- [ ] 3.1 SurfaceClassifierPass 实现两阶段编排：
+- [x] 3.1 SurfaceClassifierPass 实现两阶段编排：
   - Phase 1：在 CallGraphPass 之前运行（L1+L2+L3+L4-early）
   - Phase 2：在 CallGraphPass 之后运行（L4-late，用 CrossLangEdge 补标 boundary）
   - 通过 `ctx.function_surface_phase` 标记当前阶段，同一 pass 两次 run()
-- [ ] 3.2 `noise_filter.zig` 瘦身：删除白名单数组（RUST_STDLIB_PREFIXES 等 ~200 行）
-- [ ] 3.3 `noise_filter.zig` 瘦身：删除 `classifyFunction()` 和各语言 `classifyXxxFunction()`（~600 行）
-- [ ] 3.4 `noise_filter.zig` 瘦身：删除 `classifyFunctionFull()` 和 `shouldAnalyze()`（~50 行）
-- [ ] 3.5 `noise_filter.zig` 保留：`RiskLevel` + `getRiskLevel()` + `ClassificationResult`（报告侧核心）
-- [ ] 3.6 `noise_filter.zig` 保留：`FunctionSurface` re-export（向后兼容 shim）
-- [ ] 3.7 验证：`zig build` 通过 + 60/60 测试通过
+- [x] 3.2 `noise_filter.zig` 瘦身：删除白名单数组（RUST_STDLIB_PREFIXES 等 ~200 行）
+- [x] 3.3 `noise_filter.zig` 瘦身：删除 `classifyFunction()` 和各语言 `classifyXxxFunction()`（~600 行）
+- [x] 3.4 `noise_filter.zig` 瘦身：删除 `classifyFunctionFull()` 和 `shouldAnalyze()`（~50 行）
+- [x] 3.5 `noise_filter.zig` 保留：`RiskLevel` + `getRiskLevel()` + `ClassificationResult`（报告侧核心）
+- [x] 3.6 `noise_filter.zig` 保留：`FunctionSurface` re-export（向后兼容 shim）
+- [x] 3.7 验证：`zig build` 通过 + 60/60 测试通过
 
 ### 阶段 4：性能验证 + 回归测试
 
