@@ -111,6 +111,9 @@ pub const GlobalAllocTracker = struct {
         ptr_id: u32,
         /// Name of the function where allocation occurred.
         alloc_func: []const u8,
+        /// Name of the allocator callee (e.g. "__rust_alloc", "malloc").
+        /// Empty string if unknown — used for Rust Drop Semantics skip logic.
+        alloc_callee: []const u8,
         /// Whether this allocation has been freed (anywhere in the module).
         freed: bool,
         /// Name of the function where free occurred (if freed).
@@ -137,6 +140,7 @@ pub const GlobalAllocTracker = struct {
         // Free owned func name strings
         for (self.records.items) |*rec| {
             self.allocator.free(rec.alloc_func);
+            if (rec.alloc_callee.len > 0) self.allocator.free(rec.alloc_callee);
             if (rec.free_func) |f| self.allocator.free(f);
         }
         self.records.deinit(self.allocator);
@@ -144,12 +148,16 @@ pub const GlobalAllocTracker = struct {
     }
 
     /// Record a heap allocation (malloc/calloc/realloc).
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, is_global: bool) !void {
+    /// callee_name: the actual allocator function called (e.g. "__rust_alloc", "malloc").
+    ///              Used by Rust Drop Semantics to distinguish compiler-managed allocs.
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool) !void {
         const name_owned = try self.allocator.dupe(u8, func_name);
+        const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
         const idx = @as(u32, @intCast(self.records.items.len));
         try self.records.append(self.allocator, .{
             .ptr_id = 0, // Will be filled by caller if needed
             .alloc_func = name_owned,
+            .alloc_callee = callee_owned,
             .freed = false,
             .free_func = null,
             .is_global_or_static = is_global,

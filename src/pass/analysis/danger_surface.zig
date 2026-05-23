@@ -117,25 +117,70 @@ pub const DangerSurfacePass = struct {
 
         const t1 = std.time.nanoTimestamp();
 
-        // G-2: Use unified isOnDangerPath() instead of inline zone/freed checks.
-        // This ensures all DangerPathKind variants (including alias closure) are covered,
-        // and automatically benefits from future algorithm improvements.
+        // Phase 2: Pre-build ffi_set ONCE to avoid O(N × FFI_count) allocations.
+        // The old code called isOnDangerPathFull() per node, which allocated a
+        // 72,532-element array + 2 HashMaps each time. With 15K+ nodes, that's
+        // millions of unnecessary allocations. Instead, build once and reuse.
+        var ffi_set = std.StringHashMap(void).init(ctx.allocator);
+        defer ffi_set.deinit();
+        for (ffis) |surface| {
+            if (surface.is_ffi_boundary) {
+                ffi_set.put(surface.callee_name, {}) catch {};
+            }
+        }
+
         var node_iter = mg.nodes.iterator();
         while (node_iter.next()) |entry| {
             const ptr_val = entry.key_ptr.*;
             if (ctx.isRelevantAlloc(ptr_val)) continue;
-            // G-2: Use unified isOnDangerPathFull() instead of inline zone/freed checks.
-            // This ensures all DangerPathKind variants (including alias closure) are covered.
-            if (!ctx.isOnDangerPathFull(ptr_val)) continue;
-            try ctx.markRelevantAlloc(ptr_val);
-            const node = entry.value_ptr.*;
-            try markFunctionFromInst(ctx, node.alloc_inst);
-            try ctx.markFfiRelevant(ptr_val);
 
-            // Detect cross-language free: allocation and free in different languages
-            if (node.freed and node.free_lang != null and node.alloc_lang != node.free_lang.?) {
+            // Inline cheap checks first — most nodes fail here, avoiding expensive alias walk.
+            const node = entry.value_ptr.*;
+            var on_danger = false;
+
+            // (1) Unsafe zone
+            if (node.zone == .unsafe) on_danger = true;
+
+            // (2) Cross-language lifecycle (alloc and free in different languages)
+            if (!on_danger and node.freed and node.free_lang != null and node.alloc_lang != node.free_lang.?) {
+                on_danger = true;
                 cross_lang_frees += 1;
             }
+
+            // (3) FFI arg — check if ptr flows into any FFI boundary call
+            if (!on_danger) {
+                const arg_indices = mg.getCallArgsForPtr(ptr_val);
+                for (arg_indices) |aidx| {
+                    if (ffi_set.contains(mg.call_args.items[aidx].callee_name)) {
+                        on_danger = true;
+                        break;
+                    }
+                }
+            }
+
+            // (4) FFI ret — check if ptr returns from FFI boundary
+            if (!on_danger) {
+                const ret_indices = mg.getCallRetsForPtr(ptr_val);
+                for (ret_indices) |ridx| {
+                    if (ffi_set.contains(mg.call_rets.items[ridx].callee_name)) {
+                        on_danger = true;
+                        break;
+                    }
+                }
+            }
+
+            // (5) Alias closure — only walk aliases if cheap checks passed or node has aliases
+            if (!on_danger and node.aliases.count() > 0) {
+                visited.clearRetainingCapacity();
+                const path_kind = mg.isOnDangerPath(ptr_val, ffis, &visited, &ffi_set);
+                on_danger = path_kind != .none;
+            }
+
+            if (!on_danger) continue;
+
+            try ctx.markRelevantAlloc(ptr_val);
+            try markFunctionFromInst(ctx, node.alloc_inst);
+            try ctx.markFfiRelevant(ptr_val);
 
             visited.clearRetainingCapacity();
             total_alias_traces += 1;

@@ -55,7 +55,7 @@ pub fn reportStackEscape(
         .{ ptr_info.source_desc, callee_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -63,6 +63,7 @@ pub fn reportStackEscape(
         0.88,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.critical("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
@@ -96,7 +97,7 @@ pub fn reportReturnStackAddr(
         .{ptr_info.source_desc},
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -104,6 +105,7 @@ pub fn reportReturnStackAddr(
         0.92,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.critical("[OMI-CRITICAL] [RETURN-STACK] {s} returned from {s}", .{ ptr_info.source_desc, func_name });
@@ -138,7 +140,7 @@ pub fn reportReturnHeapPtr(
         .{ptr_info.source_desc},
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .memory_leak,
         message,
         location,
@@ -146,6 +148,7 @@ pub fn reportReturnHeapPtr(
         0.72,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [RETURN-HEAP] {s} returned from {s} - ownership unclear", .{ ptr_info.source_desc, func_name });
@@ -180,7 +183,7 @@ pub fn reportHeapToGlobal(
         .{ ptr_info.source_desc, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .memory_leak,
         message,
         location,
@@ -188,6 +191,7 @@ pub fn reportHeapToGlobal(
         0.75,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [HEAP-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
@@ -222,7 +226,7 @@ pub fn reportStackToGlobal(
         .{ ptr_info.source_desc, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -230,6 +234,7 @@ pub fn reportStackToGlobal(
         0.90,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.critical("[OMI-CRITICAL] [STACK-TO-GLOBAL] {s} -> global in {s}", .{ ptr_info.source_desc, func_name });
@@ -265,7 +270,7 @@ pub fn reportUseAfterFree(
         .{ ptr_info.source_desc, callee_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .use_after_free,
         message,
         location,
@@ -273,6 +278,7 @@ pub fn reportUseAfterFree(
         0.82, // M5 FIX: UAF confidence raised from 0.75 to 0.82 (consistent with severity)
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [UAF-RISK] freed ptr -> {s}() in {s}", .{ callee_name, func_name });
@@ -328,7 +334,7 @@ pub fn reportResourceUAF(
         .{ resource_desc, ptr_info.source_desc, callee_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .use_after_free,
         message,
         location,
@@ -336,6 +342,7 @@ pub fn reportResourceUAF(
         0.85,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.critical("[OMI-CRITICAL] [RESOURCE-UAF] {s} ({s}) -> {s}() in {s}", .{ resource_desc, ptr_info.source_desc, callee_name, func_name });
@@ -371,7 +378,7 @@ pub fn reportHeapAmbiguous(
         .{ ptr_info.source_desc, callee_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .memory_leak,
         message,
         location,
@@ -379,6 +386,7 @@ pub fn reportHeapAmbiguous(
         0.60,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-MEDIUM] [HEAP-OWNERSHIP] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
@@ -410,7 +418,7 @@ pub fn reportHeapEscapeToFFI(
         .{ ptr_info.source_desc, callee_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .memory_leak,
         message,
         location,
@@ -418,6 +426,7 @@ pub fn reportHeapEscapeToFFI(
         0.78,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [HEAP-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
@@ -444,7 +453,7 @@ pub fn reportFFINullGuardMissing(
         .{ callee_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .unchecked_return,
         message,
         location,
@@ -452,6 +461,7 @@ pub fn reportFFINullGuardMissing(
         0.80,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [FFI-NULL-CHECK] {s}() result not NULL-checked in {s}", .{ callee_name, func_name });
@@ -487,7 +497,7 @@ pub fn reportBorrowEscapeFFI(
         .{ ptr_info.source_desc, callee_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -495,6 +505,7 @@ pub fn reportBorrowEscapeFFI(
         0.82,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [BORROW-ESCAPE-FFI] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
@@ -523,7 +534,7 @@ pub fn reportCrossLanguageFree(
         .{ alloc_lang, free_lang, callee_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .cross_language_free,
         message,
         location,
@@ -531,6 +542,7 @@ pub fn reportCrossLanguageFree(
         0.88,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.critical("[OMI-CRITICAL] [CROSS-LANG-FREE] {s}-alloc freed by {s} {s}() in {s}", .{ alloc_lang, free_lang, callee_name, func_name });
@@ -558,7 +570,7 @@ pub fn reportFFITypeMismatch(
         .{ mismatch_desc, callee_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .ffi_type_mismatch,
         message,
         location,
@@ -566,6 +578,7 @@ pub fn reportFFITypeMismatch(
         0.78,
         trace,
     );
+    errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [FFI-TYPE-MISMATCH] {s} -> {s}() in {s}", .{ mismatch_desc, callee_name, func_name });

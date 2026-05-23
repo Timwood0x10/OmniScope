@@ -22,6 +22,7 @@ const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
+const rust_drop_semantics = @import("../../../semantics/rust_drop_semantics.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 const ffi_utils = @import("../ffi_utils.zig");
 const ptr_types = @import("../ptr_lifetime_types.zig");
@@ -265,6 +266,11 @@ pub const FreeValidationPass = struct {
     /// For Rust/Zig: Stricter — these languages have ownership systems; if code bypasses them
     /// via FFI, we require explicit safety proof (null checks, RAII, refcount), not assumptions.
     fn isFreeSafe(free_func: []const u8, origin: ValueOrigin, source_desc: []const u8) bool {
+        // Rust Drop Semantics: drop glue and drop-chain deallocs are
+        // compiler-generated implicit destructors — NOT bugs.
+        // E.g., drop_in_place<T> and __rust_dealloc within a drop chain
+        // are safe because they represent automatic scope-end cleanup.
+        if (rust_drop_semantics.isImplicitDropFree(free_func, true, false)) return true;
         // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
         if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
         // into_raw + matching Rust dealloc: correct ownership reclamation
@@ -599,7 +605,7 @@ pub const FreeValidationPass = struct {
             .{ free_func_name, origin_str, base_confidence, ffi_note },
         );
 
-        const issue = Issue.initWithTrace(
+        var issue = Issue.initWithTrace(
             .invalid_free,
             message,
             location,
@@ -607,6 +613,7 @@ pub const FreeValidationPass = struct {
             base_confidence,
             trace,
         );
+        errdefer issue.deinit(ctx.allocator);
 
         try ctx.addIssue(&issue);
 

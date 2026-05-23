@@ -19,6 +19,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 const CommonTypes = @import("../../common/types.zig");
 const ptr_types = @import("ptr_lifetime_types.zig");
 const ffi_language_classifier = @import("ffi_language_classifier.zig");
+const rust_drop_semantics = @import("../../semantics/rust_drop_semantics.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -743,9 +744,14 @@ pub const RustFfiAuditor = struct {
                         if (@intFromPtr(callee_name_ptr) != 0) {
                             const callee_name = std.mem.span(callee_name_ptr);
                             // Is this a drop/dealloc on the parent or something derived from it?
-                            const is_drop = std.mem.indexOf(u8, callee_name, "drop") != null or
-                                std.mem.indexOf(u8, callee_name, "dealloc") != null or
-                                isFreeLikeFunction(callee_name);
+                            // Use rust_drop_semantics to classify the call:
+                            //   - drop_in_place = implicit scope-end destructor (compiler-generated)
+                            //   - __rust_dealloc = part of drop chain (compiler-generated cleanup)
+                            //   - C free() = manual free (potentially dangerous)
+                            const drop_class = rust_drop_semantics.classifyDropCall(callee_name);
+                            const is_drop = drop_class == .is_drop_glue or
+                                drop_class == .is_dealloc_in_drop_chain or
+                                drop_class == .is_manual_free;
                             if (is_drop) {
                                 // Check if any argument derives from the parent
                                 const num_args = c.LLVMGetNumArgOperands(inst_i);
@@ -779,7 +785,14 @@ pub const RustFfiAuditor = struct {
 
                         const trace = try self.allocator.alloc(TraceEntry, 3);
                         errdefer self.allocator.free(trace);
-                        trace[0] = TraceEntry.init("Dangling reference via as_ptr");
+
+                        // Distinguish implicit scope-end drop (compiler-generated)
+                        // from explicit manual free (user-caused).
+                        // Implicit drops are normal cleanup — still a real dangling
+                        // ptr issue, but less likely to be exploitable than a manual
+                        // double-free. The diagnostic helps users understand the
+                        // root cause: Rust's implicit drop glue at scope exit.
+                        trace[0] = TraceEntry.init("Dangling reference via as_ptr after implicit scope-end drop");
 
                         const desc1 = try std.fmt.allocPrint(
                             self.allocator,

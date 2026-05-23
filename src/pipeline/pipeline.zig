@@ -20,6 +20,7 @@ const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
 const call_graph_mod = @import("../semantics/call_graph.zig");
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
+const rust_drop_semantics = @import("../semantics/rust_drop_semantics.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
 const c = @import("../ir/llvm_raw.zig").c;
 
@@ -164,8 +165,40 @@ pub const Pipeline = struct {
         if (leak_count > 0) {
             const tracker = &ctx.global_alloc_tracker;
             var confirmed_high: u32 = 0;
+            var reported_leaks: u32 = 0;
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
+                    // Rust Drop Semantics: In Rust modules, allocations via __rust_alloc
+                    // or _Znwm are freed by __rust_dealloc at scope end (drop glue chain).
+                    // If no explicit free was found in this function, it's because the
+                    // compiler inserts __rust_dealloc at scope end (possibly inlined or
+                    // in a different basic block). This is NOT a leak.
+                    //
+                    // COMPILER_IR_PATTERNS.md §Rust Drop Glue:
+                    //   drop_in_place<T> → __rust_dealloc(ptr, size, align)
+                    // This chain runs automatically when values leave scope.
+                    //
+                    // We use alloc_callee (the actual allocator function name) rather than
+                    // alloc_func (the enclosing function name) to detect Rust allocator
+                    // intrinsics, because alloc_func stores the function CONTAINING the call
+                    // (e.g. _ZN11rust_merkle7new_sha...E), not the allocator itself.
+                    if (ctx.isRustModule()) {
+                        var is_rust_alloc = false;
+                        // Check alloc_callee for Rust allocator intrinsics
+                        for (rust_drop_semantics.DROP_ALLOC_INTRINSICS.alloc) |intrinsic| {
+                            if (std.mem.indexOf(u8, rec.alloc_callee, intrinsic) != null) {
+                                is_rust_alloc = true;
+                                break;
+                            }
+                        }
+                        // Also check for C++ operator new in Rust modules (used by some allocators)
+                        if (std.mem.indexOf(u8, rec.alloc_callee, "_Znwm") != null or
+                            std.mem.indexOf(u8, rec.alloc_callee, "_Znam") != null)
+                        {
+                            is_rust_alloc = true;
+                        }
+                        if (is_rust_alloc) continue;
+                    }
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
                     const trace = try self.allocator.alloc(TraceEntry, 1);
                     trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");
@@ -193,11 +226,12 @@ pub const Pipeline = struct {
                     );
                     issue.owned = true; // We own msg and trace; addIssue will deep-copy then deinit our originals
                     try ctx.addIssue(&issue);
+                    reported_leaks += 1;
                 }
             }
             const omi_prefix = if (confirmed_high > 0) "[OMI-HIGH] " else "";
             diag.info("{s}GlobalAllocTracker: {d} memory leaks confirmed from {d} tracked allocations ({d} cross-FFI)", .{
-                omi_prefix, leak_count, tracker.size(), confirmed_high,
+                omi_prefix, reported_leaks, tracker.size(), confirmed_high,
             });
         }
     }
