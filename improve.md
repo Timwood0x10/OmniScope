@@ -3,6 +3,8 @@
 **目标:** 将 ffi-demo precision 从 73% 提升到 90%+，召回率从 50% 提升到 75%+
 **范围:** Memory + Ownership 核心能力，不横向铺开 Bounds/Overflow
 
+编码风格与约束：`./plan/rules/rules.md`
+
 ---
 
 ## 现状验证（源码级证据）
@@ -210,6 +212,19 @@ posix.          (OS abstraction)
 **方案:** 在 `trackInstruction` 中，调用 `insertAlloc` 后立即设置 `ptr_id`。
 
 **改动文件:** `src/pass/analysis/ptr_lifetime.zig`
+
+
+
+### P5: 扩展跨语言 free 检测
+
+当前只检测到 C++ new → C free 的不匹配。需要扩展到：
+- Zig allocator → C free
+- C malloc → Zig allocator free
+- Rust alloc → C free
+
+### P6: Go/LLVM bitcode 支持
+
+考虑集成 `tinygo` 以支持纯 Go 项目的 LLVM bitcode 生成，使 OmniScope 能分析 Go 代码。
 
 ---
 

@@ -331,6 +331,31 @@ fn classifyPlainName(name: []const u8) ?SurfaceHint {
         };
     }
 
+    // Go/TinyGo runtime patterns (from TINYGO_IR_SPEC.md)
+    // TinyGo's runtime package is the primary entry point for all runtime operations.
+    // Standard Go uses similar naming but with more GC-related functions.
+    if (std.mem.startsWith(u8, name, "runtime.")) {
+        return .{
+            .surface = .runtime,
+            .confidence = .high,
+            .reason = "Go-TinyGo runtime",
+        };
+    }
+    if (std.mem.startsWith(u8, name, "internal/task.")) {
+        return .{
+            .surface = .runtime,
+            .confidence = .high,
+            .reason = "TinyGo task scheduler",
+        };
+    }
+    if (std.mem.startsWith(u8, name, "reflect/types.")) {
+        return .{
+            .surface = .standard_library,
+            .confidence = .high,
+            .reason = "Go reflect types",
+        };
+    }
+
     return null;
 }
 

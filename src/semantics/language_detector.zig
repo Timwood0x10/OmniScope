@@ -242,6 +242,23 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
+        // Go / TinyGo markers (from TINYGO_IR_SPEC.md)
+        // TinyGo produces distinctive runtime.* and internal/task.* symbols.
+        // Standard Go (gc) uses similar naming with more GC-related functions.
+        // User code follows package.FunctionName convention (e.g., main.foo).
+        if (std.mem.startsWith(u8, name, "runtime.") or
+            std.mem.startsWith(u8, name, "internal/task.") or
+            std.mem.startsWith(u8, name, "reflect/types."))
+        {
+            go_count += 1;
+            continue;
+        }
+        // _Cgo_* prefix — CGo bridge functions (unambiguous)
+        if (std.mem.indexOf(u8, name, "_Cgo_") != null) {
+            go_count += 1;
+            continue;
+        }
+
         // _ZN (Itanium nested name mangling) -- used by BOTH Rust and C++.
         // Multi-layer disambiguation with increasing specificity:
         //

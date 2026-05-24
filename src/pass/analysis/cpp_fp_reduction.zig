@@ -148,6 +148,20 @@ fn isLocalRustValue(value_name: []const u8) bool {
     return false;
 }
 
+/// Check if a callee name represents a C++ new/new[] allocation.
+/// Matches both Itanium ABI mangled names and unmangled operator forms.
+fn isCppNewAllocation(callee: []const u8) bool {
+    // Itanium ABI: _Znwm = operator new(unsigned long), _Znam = operator new[]
+    // Shorter variants: _Znw, _Zna
+    if (std.mem.indexOf(u8, callee, "_Znwm") != null) return true;
+    if (std.mem.indexOf(u8, callee, "_Znam") != null) return true;
+    if (std.mem.indexOf(u8, callee, "_Znw") != null) return true;
+    if (std.mem.indexOf(u8, callee, "_Zna") != null) return true;
+    // Unmangled
+    if (std.mem.indexOf(u8, callee, "operator new") != null) return true;
+    return false;
+}
+
 /// Check if a function is a C++ ABI runtime internal function (__cxa_*).
 /// Check if a function is a C++ ABI internal function (exception handling, TLS, etc.).
 /// Delegated to unified ffi_utils (single source of truth).
@@ -1134,6 +1148,34 @@ pub fn detectMemoryLeaks(
             // is in an unsafe zone — these are the real FFI risks.
             const on_danger_path = ctx.isOnDangerPathFull(@as(u64, alloc_info.inst_id));
             if (!on_danger_path) {
+                // P2: C++ internal leak bypass — report leaks as LOW in C++ modules
+                // even when not on FFI danger path. Pure C malloc internal leaks
+                // are generic bugs (skip), but C++ heap allocations in FFI modules
+                // often represent ownership transfer issues worth flagging.
+                const is_cpp_module = ctx.module_language.language == .cpp or
+                    ctx.module_language.language == .unknown;
+                const looks_like_cpp_alloc = std.mem.indexOf(u8, alloc_info.func_name, "_ZN") != null or
+                    std.mem.indexOf(u8, alloc_info.func_name, "_Z") != null;
+                if (is_cpp_module and looks_like_cpp_alloc) {
+                    const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
+                    const already_reported = reported_func_ptrs.contains(func_ptr_key);
+                    if (!already_reported) {
+                        stats.memory_leaks += 1;
+                        ctx.addIssue(&Issue.init(
+                            .memory_leak,
+                            "C++ heap allocation never freed (internal leak)",
+                            Location.init(alloc_info.func_name),
+                            .low, // LOW severity for non-danger-path
+                            0.5, // reduced confidence
+                        )) catch {
+                            diag.warn("Failed to register C++ leak issue", .{});
+                        };
+                        diag.warn("MEMORY LEAK [LOW]: C++ allocation never freed in {s}", .{
+                            alloc_info.func_name,
+                        });
+                        reported_func_ptrs.put(func_ptr_key, {}) catch {};
+                    }
+                }
                 diag.debug("LEAK-SKIP: alloc {d} not on danger path (pure internal)", .{alloc_info.inst_id});
                 continue;
             }

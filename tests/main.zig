@@ -567,7 +567,7 @@ test "LanguageHint: all variants" {
     try std.testing.expectEqual(@as(u8, 1), @intFromEnum(lifetime.LanguageHint.c));
     try std.testing.expectEqual(@as(u8, 2), @intFromEnum(lifetime.LanguageHint.rust));
     try std.testing.expectEqual(@as(u8, 3), @intFromEnum(lifetime.LanguageHint.zig));
-    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(lifetime.LanguageHint.swift));
+    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(lifetime.LanguageHint.csharp));
     try std.testing.expectEqual(@as(u8, 5), @intFromEnum(lifetime.LanguageHint.cpp));
     try std.testing.expectEqual(@as(u8, 6), @intFromEnum(lifetime.LanguageHint.go));
 }

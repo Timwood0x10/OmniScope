@@ -667,7 +667,8 @@ pub const PtrLifetimePass = struct {
                                     const inst_ptr_val = @as(u64, @intFromPtr(inst));
                                     const fn_name_raw = c.LLVMGetValueName(func);
                                     const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                    _ = try global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false);
+                                    const inst_id = @as(u32, @truncate(inst_ptr_val));
+                                    _ = try global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id);
                                 }
                                 break;
                             }

@@ -123,6 +123,37 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
     // Go/cgo runtime
     if (containsAny(fn_name, &[_][]const u8{ "_cgo_allocate", "_Cfunc_GoMalloc", "_Cfunc_GoAlloc" }))
         return "go";
+    // Go/TinyGo runtime allocators (from TINYGO_IR_SPEC.md)
+    // TinyGo uses runtime.alloc/runtime.free as its primary heap interface.
+    // Standard Go (gc) uses runtime.newobject for GC-managed allocations.
+    // CGo bridge functions use _cgo_* prefixes.
+    if (containsAny(fn_name, &[_][]const u8{
+        "runtime.alloc",
+        "runtime.realloc",
+        "runtime.mallocgc",
+        "runtime.newobject",
+        "runtime.cmalloc",
+        "runtime.persistentalloc",
+        "tinygo_alloc",
+    }))
+        return "go";
+    // Zig standard library / runtime allocators
+    // Zig's heap.PageAllocator, heap.GeneralPoolAllocator, and arena allocators
+    // compile to these internal symbols in release builds.
+    // Also catches @import("c") wrappers that delegate to Zig allocators.
+    if (containsAny(fn_name, &[_][]const u8{
+        "zig_alloc",
+        "__zig_alloc",
+        "PageAllocator.alloc",
+        "GeneralPoolAllocator.alloc",
+        "ArenaAllocator.alloc",
+        "heap.page_allocator",
+        "heap.general_pool_allocator",
+        "heap.ArenaAllocator",
+        "c_allocator",
+        "gpa.",
+    }))
+        return "zig";
     // Objective-C
     if (containsAny(fn_name, &[_][]const u8{ "objc_alloc", "class_createInstance", "NSAllocateObject" }))
         return "objc";
@@ -177,6 +208,22 @@ pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?L
     // Go/cgo runtime
     if (containsAny(fn_name, &[_][]const u8{ "_cgo_allocate", "_Cfunc_GoMalloc", "_Cfunc_GoAlloc" }))
         return .go;
+    // Go/TinyGo runtime allocators
+    if (containsAny(fn_name, &[_][]const u8{
+        "runtime.alloc",   "runtime.realloc", "runtime.mallocgc", "runtime.newobject",
+        "runtime.cmalloc", "tinygo_alloc",
+    }))
+        return .go;
+    // JNIZig standard library / runtime allocators
+    // Zig standard library / runtime allocators
+    if (containsAny(fn_name, &[_][]const u8{
+        "zig_alloc",
+        "__zig_alloc",
+        "PageAllocator.alloc",
+        "heap.page_allocator",
+        "c_allocator",
+    }))
+        return .zig;
     // JNI
     if (containsAny(fn_name, &[_][]const u8{ "NewGlobalRef", "NewLocalRef", "FindClass" }))
         return .java;
@@ -204,6 +251,14 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         return "c";
     if (containsAny(fn_name, &[_][]const u8{ "_cgo_free", "_Cfunc_GoFree" }))
         return "go";
+    // Go/TinyGo runtime deallocators (from TINYGO_IR_SPEC.md)
+    // TinyGo: runtime.free is the primary deallocator
+    // Standard Go: runtime.GC / runtime.markfinalizer manage lifecycle
+    if (containsAny(fn_name, &[_][]const u8{
+        "runtime.free",
+        "tinygo_free",
+    }))
+        return "go";
     if (containsAny(fn_name, &[_][]const u8{ "objc_release", "CFRelease", "CGImageRelease" }))
         return "objc";
     if (containsAny(fn_name, &[_][]const u8{ "PyMem_Free", "PyObject_Free", "Py_DECREF" }))
@@ -215,6 +270,22 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         "Marshal_FreeHGlobal", "CoTaskMemFree", "LocalFree", "HeapFree",
     }))
         return "csharp";
+    // Zig standard library / runtime deallocators
+    // Note: C's "free()" called from Zig code (via @cImport) is NOT
+    // classified here — it remains "c" because that's the correct
+    // classification for interop scenarios where C allocs and Zig frees via C API.
+    if (containsAny(fn_name, &[_][]const u8{
+        "__zig_dealloc",
+        "zig_free",
+        "PageAllocator.free",
+        "PageAllocator.rawFree",
+        "GeneralPoolAllocator.free",
+        "ArenaAllocator.free",
+        "heap.page_allocator.free",
+        "destroy", // allocator.destroy() in Zig IR
+        "rawDestroy",
+    }))
+        return "zig";
     return null;
 }
 

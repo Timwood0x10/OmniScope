@@ -150,6 +150,43 @@ pub fn checkCrossLanguageFree(
                 return;
             }
 
+            // Zig cross-language free detection (P5)
+            // Case A: Zig allocator memory freed by C's free()
+            //   e.g., heap.page_allocator.alloc() followed by C free()
+            //   → undefined behavior (different heaps, different ownership)
+            const free_is_c = std.mem.eql(u8, free_lang.?, "c");
+            const alloc_is_zig = alloc_lang == .zig;
+            if (free_is_c and alloc_is_zig) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name,
+                    "Zig", "C", inst, diag);
+                return;
+            }
+            // Case B: C-allocated memory freed by Zig's own deallocator
+            //   e.g., malloc() followed by PageAllocator.free() or destroy()
+            //   → C heap pointer managed by Zig runtime = UAF/corruption risk
+            const free_is_zig = std.mem.eql(u8, free_lang.?, "zig");
+            if (free_is_zig and (alloc_is_c or alloc_is_rust)) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name,
+                    langToString(alloc_lang), "Zig", inst, diag);
+                return;
+            }
+
+            // Go/TinyGo cross-language free detection
+            // Case A: Go runtime.alloc memory freed by C's free()
+            const free_is_go = std.mem.eql(u8, free_lang.?, "go");
+            const alloc_is_go = alloc_lang == .go;
+            if (free_is_c and alloc_is_go) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name,
+                    "Go", "C", inst, diag);
+                return;
+            }
+            // Case B: C-allocated memory freed by Go's runtime.free
+            if (free_is_go and (alloc_is_c or alloc_is_rust)) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name,
+                    langToString(alloc_lang), "Go", inst, diag);
+                return;
+            }
+
             // Generic cross-language mismatch — compare Language enums,
             // not strings. classifyFreeLanguage returns "c" while
             // langToString(.c) returns "C/C++" — string comparison always
@@ -173,6 +210,30 @@ pub fn checkCrossLanguageFree(
                 const src_alloc_lang = classifyAllocLanguage(src_name);
 
                 if (src_alloc_lang) |alloc_l| {
+                    // P1: Call-site language context for cross-language free detection.
+                    // When Zig code calls C's free() via @cImport("libc"), the IR shows
+                    // callee as just "free" — same as C code calling free(). But semantically:
+                    //   - If alloc was from a ZIG allocator (not malloc) → cross-language bug
+                    //   - If alloc was from C (malloc) → legitimate @cImport usage, skip
+                    //
+                    // Key insight: Use ctx.module_language.language to determine caller's language.
+                    const caller_is_zig = ctx.module_language.language == .zig;
+                    const free_is_c = std.mem.eql(u8, free_lang.?, "c");
+                    const alloc_is_zig = std.mem.eql(u8, alloc_l, "zig");
+                    const alloc_is_c = std.mem.eql(u8, alloc_l, "c");
+
+                    if (caller_is_zig and free_is_c) {
+                        // Zig module calling C's free()
+                        if (alloc_is_zig or (!alloc_is_c and !std.mem.eql(u8, alloc_l, "rust"))) {
+                            // Alloc is from Zig allocator (or unknown in Zig context)
+                            // → potential cross-language free bug
+                            try reportCrossLanguageFree(ctx, func_name, callee_name,
+                                "Zig (allocator)", "C (free)", inst, diag);
+                            return;
+                        }
+                        // alloc_is_c: malloc+free via @cImport → legitimate, fall through to normal check
+                    }
+
                     if (!std.mem.eql(u8, alloc_l, free_lang.?)) {
                         try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
                     }
@@ -207,6 +268,7 @@ fn freeLangToLanguage(free_lang: []const u8) memory_graph.Language {
     if (std.mem.eql(u8, free_lang, "java")) return .java;
     if (std.mem.eql(u8, free_lang, "python")) return .python;
     if (std.mem.eql(u8, free_lang, "csharp")) return .csharp; // .NET P/Invoke
+    if (std.mem.eql(u8, free_lang, "zig")) return .zig; // Zig runtime allocator
     return .unknown;
 }
 

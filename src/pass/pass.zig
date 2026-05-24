@@ -152,12 +152,14 @@ pub const GlobalAllocTracker = struct {
     /// Record a heap allocation (malloc/calloc/realloc).
     /// callee_name: the actual allocator function called (e.g. "__rust_alloc", "malloc").
     ///              Used by Rust Drop Semantics to distinguish compiler-managed allocs.
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool) !void {
+    /// inst_id: the instruction ID of the allocation call — used as unique ptr_id
+    ///          for downstream cross-referencing of allocation records.
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32) !void {
         const name_owned = try self.allocator.dupe(u8, func_name);
         const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
         const idx = @as(u32, @intCast(self.records.items.len));
         try self.records.append(self.allocator, .{
-            .ptr_id = 0, // Will be filled by caller if needed
+            .ptr_id = inst_id,
             .alloc_func = name_owned,
             .alloc_callee = callee_owned,
             .freed = false,
@@ -513,6 +515,18 @@ pub const PassContext = struct {
         source_location: ?@import("../ir/debug_info.zig").SourceLocation,
     ) noise_filter.ClassificationResult {
         _ = source_location; // preserved for API compat, no longer used
+
+        // P3: Zig stdlib prefix filter — catch stdlib functions that surface
+        // classifier misses (mangled Zig names don't always match L0 patterns).
+        // These are never user code — suppress medium/low, downgrade high.
+        if (isZigStdlibFunction(func_name)) {
+            return .{
+                .origin = .stdlib,
+                .risk_level = noise_filter.getRiskLevel(.stdlib, .medium),
+                .reason = "Zig standard library (prefix match)",
+            };
+        }
+
         // Try to resolve func_name → func_ptr and check surface map
         if (self.module) |mod| {
             const raw_mod = mod.raw;
@@ -927,20 +941,20 @@ pub const PassContext = struct {
     }
     pub fn channelPtrLifetime(self: *const PassContext) ChannelMode {
         return switch (self.module_language.language) {
-            .zig => .skip,
+            .zig => .limited, // P0: unlock Zig memory analysis (was .skip)
             .go => .limited,
             else => .full,
         };
     }
     pub fn channelCallbackEscape(self: *const PassContext) ChannelMode {
         return switch (self.module_language.language) {
-            .zig => .skip,
+            .zig => .limited, // P0: unlock Zig callback escape (was .skip)
             else => .full,
         };
     }
     pub fn channelPointerOwnership(self: *const PassContext) ChannelMode {
         return switch (self.module_language.language) {
-            .zig => .skip,
+            .zig => .limited, // P0: unlock Zig ownership tracking (was .skip)
             .go => .limited,
             else => .full,
         };
@@ -1548,6 +1562,45 @@ test "PassContext - getOrComputeZone null safety" {
     const zone = ctx.getOrComputeZone(@ptrCast(&dummy), "dummy_func");
     // Should return some valid ZoneKind enum value
     _ = zone;
+}
+
+/// Check if a function name belongs to Zig's standard library.
+/// Matches well-known stdlib package prefixes that are never user code.
+/// P3: Used by classifyFunctionSurface to suppress stdlib noise after
+/// unlocking Zig analysis (P0: .skip → .limited).
+fn isZigStdlibFunction(func_name: []const u8) bool {
+    // Core stdlib packages — these are always library internals
+    const stdlib_prefixes = [_][]const u8{
+        "debug.", // DWARF, stacktrace, debug info (debug.writeCurrentStackTrace, etc.)
+        "heap.", // Memory allocators (heap.PageAllocator, heap.GeneralPoolAllocator)
+        "mem.", // Memory utilities (mem.copy, mem.set)
+        "fmt.", // Formatting (fmt.format, fmt.bufPrint)
+        "io.", // I/O abstraction (io.Writer, io.Reader)
+        "posix.", // OS API wrapper (posix.open, posix.mmap)
+        "hash_map.", // Hash map (hash_map.HashMapUnmanaged)
+        "array_hash_map.", // Array hash map (array_hash_map.ArrayHashMapUnmanaged)
+        "array_list.", // Array list
+        "bitmap.", // Bitmap
+        "crypto.", // Crypto utilities
+        "log.", // Logging
+        "time.", // Time
+        "fs.", // File system
+        "net.", // Networking
+        "process.", // Process management
+        "async.", // Async runtime
+        "event_loop.", // Event loop
+        "unicode", // Unicode handling
+        "math.", // Math
+        "random", // Random number generation
+        "compress", // Compression
+        "hmac", // HMAC
+        "aead", // AEAD encryption
+        "aes", // AES
+    };
+    for (stdlib_prefixes) |prefix| {
+        if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
+    }
+    return false;
 }
 
 /// Convert diag.issue.Severity to noise_filter.Severity
