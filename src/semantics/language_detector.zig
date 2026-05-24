@@ -133,7 +133,10 @@ fn langToIndex(lang: Language) usize {
         .c => 4,
         .swift => 5,
         .java => 6,
-        .unknown => 7,
+        .objc => 7,
+        .python => 8,
+        .nodejs => 9,
+        .unknown => 10,
     };
 }
 
@@ -146,6 +149,9 @@ fn indexToLang(idx: usize) Language {
         4 => .c,
         5 => .swift,
         6 => .java,
+        7 => .objc,
+        8 => .python,
+        9 => .nodejs,
         else => .unknown,
     };
 }

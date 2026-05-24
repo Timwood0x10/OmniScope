@@ -22,6 +22,8 @@ const FreeSiteList = @import("ptr_lifetime.zig").FreeSiteList;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
+const classifyAllocLanguage = @import("ptr_lifetime_classify.zig").classifyAllocLanguage;
+const classifyFreeLanguage = @import("ptr_lifetime_classify.zig").classifyFreeLanguage;
 const report = @import("ptr_lifetime_report.zig");
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const word_boundary = @import("../../utils/word_boundary.zig");
@@ -88,7 +90,12 @@ pub fn checkStoreToGlobal(
     }
 }
 
-/// Check for cross-language free violations
+/// Check for cross-language free violations.
+///
+/// Uses the centralized classifyAllocLanguage/classifyFreeLanguage from
+/// ptr_lifetime_classify.zig to support ALL registered allocator patterns
+/// (C, Rust, C++, Go/cgo, ObjC, Python, JNI, Node.js) — not just
+/// the hardcoded malloc/__rust_dealloc subset.
 pub fn checkCrossLanguageFree(
     ctx: *PassContext,
     inst: c.LLVMValueRef,
@@ -106,21 +113,20 @@ pub fn checkCrossLanguageFree(
     if (@intFromPtr(name_ptr) == 0) return;
     const callee_name = std.mem.span(name_ptr);
 
-    const is_rust_dealloc = std.mem.indexOf(u8, callee_name, "__rust_dealloc") != null or
-        std.mem.indexOf(u8, callee_name, "__rdl_dealloc") != null or
-        std.mem.indexOf(u8, callee_name, "__rg_dealloc") != null;
-    const is_c_free = isFreeFunction(callee_name) and !is_rust_dealloc;
-
-    if (!is_rust_dealloc and !is_c_free) return;
+    // Use centralized classification (supports all languages)
+    const free_lang = classifyFreeLanguage(callee_name);
+    if (free_lang == null) return; // Not a known free function
 
     const ptr_arg = c.LLVMGetOperand(inst, 0);
     if (@intFromPtr(ptr_arg) == 0) return;
 
     const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
+
+    // Path 1: Memory graph has alloc_lang info
     if (mem_graph) |mg| {
         if (mg.nodes.get(ptr_hash)) |node| {
             const alloc_lang = node.alloc_lang;
-            const free_is_rust = is_rust_dealloc;
+            const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
             const alloc_is_c = alloc_lang == .c or alloc_lang == .cpp;
             const alloc_is_rust = alloc_lang == .rust;
 
@@ -128,34 +134,53 @@ pub fn checkCrossLanguageFree(
                 try reportCrossLanguageFree(ctx, func_name, callee_name, "C/C++", "Rust", inst, diag);
                 return;
             }
-            if (is_c_free and alloc_is_rust) {
-                try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", "C/C++", inst, diag);
+            if (!free_is_rust and alloc_is_rust) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", free_lang.?, inst, diag);
+                return;
+            }
+
+            // Generic cross-language mismatch for any non-matching pair
+            const alloc_lang_str = langToString(alloc_lang);
+            if (!std.mem.eql(u8, free_lang.?, alloc_lang_str)) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_lang_str, free_lang.?, inst, diag);
                 return;
             }
         }
     }
 
+    // Path 2: Pointer map has source instruction — classify by name
     if (pointer_map.get(ptr_arg)) |ptr_info| {
         if (ptr_info.source_inst) |src_inst| {
             const src_name_ptr = c.LLVMGetValueName(src_inst);
             if (@intFromPtr(src_name_ptr) != 0) {
                 const src_name = std.mem.span(src_name_ptr);
-                const src_is_rust_alloc = std.mem.indexOf(u8, src_name, "__rust_alloc") != null or
-                    std.mem.indexOf(u8, src_name, "__rdl_alloc") != null or
-                    std.mem.indexOf(u8, src_name, "__rg_alloc") != null or
-                    std.mem.indexOf(u8, src_name, "__rust_alloc_zeroed") != null;
-                const src_is_c_alloc = std.mem.indexOf(u8, src_name, "malloc") != null or
-                    std.mem.indexOf(u8, src_name, "calloc") != null or
-                    std.mem.indexOf(u8, src_name, "realloc") != null;
+                const src_alloc_lang = classifyAllocLanguage(src_name);
 
-                if (is_rust_dealloc and src_is_c_alloc) {
-                    try reportCrossLanguageFree(ctx, func_name, callee_name, "C/C++", "Rust", inst, diag);
-                } else if (is_c_free and src_is_rust_alloc) {
-                    try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", "C/C++", inst, diag);
+                if (src_alloc_lang) |alloc_l| {
+                    if (!std.mem.eql(u8, alloc_l, free_lang.?)) {
+                        try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
+                    }
                 }
             }
         }
     }
+}
+
+/// Convert memory_graph.Language enum to string for reporting.
+fn langToString(lang: memory_graph.Language) []const u8 {
+    return switch (lang) {
+        .c => "C/C++",
+        .cpp => "C/C++",
+        .rust => "Rust",
+        .zig => "Zig",
+        .swift => "Swift",
+        .go => "Go",
+        .java => "Java/JNI",
+        .objc => "Objective-C",
+        .python => "Python",
+        .nodejs => "Node.js",
+        .unknown => "Unknown",
+    };
 }
 
 /// Check for FFI type mismatch via bitcast

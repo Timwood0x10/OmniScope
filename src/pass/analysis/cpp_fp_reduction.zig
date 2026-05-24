@@ -1429,6 +1429,9 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
         .go => .go,
         .swift => .swift,
         .java => .java,
+        .objc => .objc,
+        .python => .python,
+        .nodejs => .nodejs,
         .unknown => .unknown,
     };
 }

@@ -96,14 +96,20 @@ pub const SemanticResolverPass = struct {
         _ = diag;
     }
 
-    /// Register built-in patterns for common allocation/release functions
+    /// Register built-in patterns for common allocation/release functions.
+    ///
+    /// Design principle: match NAMING CONVENTIONS (language runtime standards),
+    /// not project-specific function names. All patterns here are:
+    ///   - Official language runtime symbols (e.g., __rust_alloc, _cgo_allocate)
+    ///   - Standard library functions (e.g., malloc, objc_alloc)
+    ///   - FFI bridge conventions with well-documented prefixes
     fn registerBuiltinPatterns(engine: *ResolutionEngine) !void {
-        // C allocation patterns
+        // ── C standard library ──
         _ = try engine.registerPattern(
             "malloc_alloc",
             "C malloc allocation",
             semantic_patterns.PatternType.allocation,
-            &[_][]const u8{ "malloc", "calloc", "realloc" },
+            &[_][]const u8{ "malloc", "calloc", "realloc", "aligned_alloc" },
             100,
             "c",
         );
@@ -111,15 +117,15 @@ pub const SemanticResolverPass = struct {
             "free_release",
             "C free release",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{"free"},
+            &[_][]const u8{ "free" },
             100,
             "c",
         );
 
-        // Rust allocation patterns
+        // ── Rust standard library ──
         _ = try engine.registerPattern(
             "rust_alloc",
-            "Rust heap allocation",
+            "Rust global allocator allocation",
             semantic_patterns.PatternType.allocation,
             &[_][]const u8{ "__rust_alloc", "__rust_alloc_zeroed" },
             100,
@@ -127,37 +133,177 @@ pub const SemanticResolverPass = struct {
         );
         _ = try engine.registerPattern(
             "rust_dealloc",
-            "Rust heap release",
+            "Rust global allocator release",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{"__rust_dealloc"},
+            &[_][]const u8{ "__rust_dealloc" },
             100,
             "rust",
         );
         _ = try engine.registerPattern(
             "rust_drop",
-            "Rust Drop trait implementation",
+            "Rust Drop trait / compiler drop glue",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "drop_in_place", "drop" },
+            &[_][]const u8{ "drop_in_place", "__rust_drop_in_place" },
             90,
             "rust",
         );
 
-        // C++ allocation patterns
+        // ── C++ standard library (Itanium mangled) ──
         _ = try engine.registerPattern(
             "cpp_new",
-            "C++ new allocation",
+            "C++ new operator allocation",
             semantic_patterns.PatternType.allocation,
-            &[_][]const u8{ "_Znwm", "_Znam" },
+            &[_][]const u8{ "_Znwm", "_Znam", "_ZnwmSt11align_val_t" },
             100,
             "cpp",
         );
         _ = try engine.registerPattern(
             "cpp_delete",
-            "C++ delete release",
+            "C++ delete operator release",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "_ZdlPv", "_ZdaPv" },
+            &[_][]const u8{ "_ZdlPv", "_ZdaPv", "_ZdlPvm" },
             100,
             "cpp",
+        );
+
+        // ── Go/cgo runtime (official cgo naming convention) ──
+        // cgo-generated wrappers follow strict naming:
+        //   _cgo_*       — C-side cgo runtime helpers
+        //   _Cfunc_*     — Go→C call wrappers (Go functions called from C)
+        //   _Cgo_*       — C→Go call wrappers (C functions called from Go)
+        _ = try engine.registerPattern(
+            "cgo_alloc",
+            "Go cgo runtime allocation (_cgo_allocate)",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{ "_cgo_allocate", "_cgo_allocate_local" },
+            95,
+            "go",
+        );
+        _ = try engine.registerPattern(
+            "cgo_free",
+            "Go cgo runtime release (_cgo_free)",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{ "_cgo_free" },
+            95,
+            "go",
+        );
+        _ = try engine.registerPattern(
+            "cgo_gomalloc",
+            "Go heap allocation via cgo (_Cfunc_GoMalloc)",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{ "_Cfunc_GoMalloc", "_Cfunc_GoAlloc" },
+            90,
+            "go",
+        );
+        _ = try engine.registerPattern(
+            "cgo_gofree",
+            "Go heap release via cgo (_Cfunc_GoFree)",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{ "_Cfunc_GoFree" },
+            90,
+            "go",
+        );
+
+        // ── Objective-C runtime ──
+        _ = try engine.registerPattern(
+            "objc_alloc",
+            "Objective-C object allocation",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{
+                "objc_alloc",      "objc_allocInit",
+                "objc_allocWithZone", "class_createInstance",
+                "NSAllocateObject", "+[NSObject alloc]",
+                "malloc_zone_malloc", "malloc_zone_calloc",
+            },
+            90,
+            "objc",
+        );
+        _ = try engine.registerPattern(
+            "objc_free",
+            "Objective-C object release",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{
+                "objc_release",    "objc_autorelease",
+                "CFRelease",        "CGImageRelease",
+                "NSDeallocateObject", "free",
+            },
+            90,
+            "objc",
+        );
+
+        // ── Python/C API ──
+        _ = try engine.registerPattern(
+            "py_alloc",
+            "Python C API allocation",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{
+                "PyMem_Malloc", "PyMem_Calloc", "PyMem_Realloc",
+                "PyObject_Malloc", "PyObject_New", "PyObject_NewVar",
+                "PyList_New", "PyDict_New", "PyTuple_New",
+                "PyUnicode_FromString", "PyBytes_FromString",
+            },
+            85,
+            "python",
+        );
+        _ = try engine.registerPattern(
+            "py_free",
+            "Python C API release",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{
+                "PyMem_Free", "PyObject_Free",
+                "Py_DECREF", "Py_XDECREF", "Py_CLEAR",
+            },
+            85,
+            "python",
+        );
+
+        // ── JNI/Java Native Interface ──
+        _ = try engine.registerPattern(
+            "jni_alloc",
+            "JNI local reference allocation",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{
+                "NewGlobalRef", "NewLocalRef",
+                "FindClass", "GetObjectClass",
+                "NewStringUTF", "NewByteArray",
+                "CallObjectMethod", "CallStaticObjectMethod",
+            },
+            80,
+            "java",
+        );
+        _ = try engine.registerPattern(
+            "jni_free",
+            "JNI reference release",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{
+                "DeleteLocalRef", "DeleteGlobalRef",
+            },
+            80,
+            "java",
+        );
+
+        // ── Node.js/N-API ──
+        _ = try engine.registerPattern(
+            "napi_alloc",
+            "Node.js N-API value creation",
+            semantic_patterns.PatternType.allocation,
+            &[_][]const u8{
+                "napi_create_object", "napi_create_array",
+                "napi_create_string_utf8", "napi_create_external_arraybuffer",
+                "napi_get_cb_info",
+            },
+            80,
+            "nodejs",
+        );
+        _ = try engine.registerPattern(
+            "napi_free",
+            "Node.js N-API reference release",
+            semantic_patterns.PatternType.release,
+            &[_][]const u8{
+                "napi_unref", "napi_delete_reference",
+            },
+            80,
+            "nodejs",
         );
     }
 };

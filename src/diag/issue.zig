@@ -314,7 +314,8 @@ pub const FFIBoundary = struct {
         external_unknown,
     };
 
-    /// Language type enumeration
+    /// Language type enumeration for cross-language FFI analysis.
+    /// Used by MemoryGraph.alloc_lang, FFIBoundary, and cross_language_free detection.
     pub const Language = enum {
         /// C language
         c,
@@ -326,11 +327,17 @@ pub const FFIBoundary = struct {
         zig,
         /// Swift language
         swift,
-        /// Go language
+        /// Go language (including cgo)
         go,
         /// Java/JNI language
         java,
-        /// Unknown language
+        /// Objective-C language
+        objc,
+        /// Python/C API language
+        python,
+        /// Node.js/N-API language
+        nodejs,
+        /// Unknown / undetermined language
         unknown,
     };
 

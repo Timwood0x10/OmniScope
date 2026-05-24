@@ -12,6 +12,15 @@ const KNOWN_DEALLOCATORS = pt.KNOWN_DEALLOCATORS;
 /// This module contains pure functions that classify LLVM function names
 /// into categories (alloc/free/resource) based on naming conventions.
 /// No state is maintained — all functions are deterministic lookups.
+
+/// Helper: check if haystack contains ANY of the needles (substring match).
+fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
+    for (needles) |needle| {
+        if (std.mem.indexOf(u8, haystack, needle) != null) return true;
+    }
+    return false;
+}
+
 pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
     const factory_prefixes = [_][]const u8{
         "create", "Create", "CREATE",
@@ -43,10 +52,30 @@ pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
 pub fn isFreeFunction(fn_name: []const u8) bool {
     // Exact matches for well-known free/dealloc functions
     const exact_fns = [_][]const u8{
-        "__rdl_dealloc", "__rg_dealloc", "__rust_dealloc",
-        "cfree",         "free",         "g_free",
-        "kfree",         "realloc",      "vfree",
-        "c_free",        "c_malloc",
+        // C standard library
+        "free",       "cfree",      "realloc",
+        "g_free",     "kfree",      "vfree",
+        "c_free",     "c_malloc",
+
+        // Rust global allocator
+        "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+
+        // Go/cgo runtime (official cgo naming convention)
+        "_cgo_free",
+
+        // Objective-C runtime
+        "objc_release",   "objc_autorelease",
+        "CFRelease",      "CGImageRelease",
+        "NSDeallocateObject",
+
+        // Python C API
+        "PyMem_Free",  "PyObject_Free",
+
+        // JNI
+        "DeleteLocalRef", "DeleteGlobalRef",
+
+        // Node.js N-API
+        "napi_unref", "napi_delete_reference",
     };
     for (exact_fns) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;
@@ -54,10 +83,10 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     // Suffix patterns: function must END with these to avoid false positives
     // on names like "free_size", "freestyle", "set_freedom" etc.
     const suffixes = [_][]const u8{
-        "_free",      "_dealloc", "_deallocate",
-        "_release",   "_destroy", "_drop",
-        "delete",     "Delete",   "deallocate",
-        "Deallocate",
+        "_free",         "_dealloc",    "_deallocate",
+        "_release",      "_destroy",    "_drop",
+        "delete",        "Delete",      "deallocate",
+        "Deallocate",    "GoFree",      // _Cfunc_GoFree pattern
     };
     for (suffixes) |suffix| {
         if (fn_name.len >= suffix.len and
@@ -69,6 +98,50 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     // C++ operator delete (contains space)
     if (std.mem.indexOf(u8, fn_name, "operator delete") != null) return true;
     return false;
+}
+
+/// Classify an allocation function's language/runtime origin.
+/// Used by cross_language_free detection to determine alloc_lang mismatch.
+pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
+    // Rust global allocator
+    if (containsAny(fn_name, &[_][]const u8{ "__rust_alloc", "__rdl_alloc", "__rg_alloc" }))
+        return "rust";
+    // C standard library
+    if (containsAny(fn_name, &[_][]const u8{ "malloc", "calloc", "realloc", "aligned_alloc" }))
+        return "c";
+    // Go/cgo runtime
+    if (containsAny(fn_name, &[_][]const u8{ "_cgo_allocate", "_Cfunc_GoMalloc", "_Cfunc_GoAlloc" }))
+        return "go";
+    // Objective-C
+    if (containsAny(fn_name, &[_][]const u8{ "objc_alloc", "class_createInstance", "NSAllocateObject" }))
+        return "objc";
+    // Python C API
+    if (containsAny(fn_name, &[_][]const u8{ "PyMem_Malloc", "PyObject_Malloc", "PyObject_New", "PyList_New", "PyDict_New" }))
+        return "python";
+    // JNI
+    if (containsAny(fn_name, &[_][]const u8{ "NewGlobalRef", "NewLocalRef", "FindClass" }))
+        return "java";
+    // Node.js N-API
+    if (containsAny(fn_name, &[_][]const u8{ "napi_create_", "napi_get_cb_info" }))
+        return "nodejs";
+    return null;
+}
+
+/// Classify a free/dealloc function's language/runtime origin.
+pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
+    if (containsAny(fn_name, &[_][]const u8{ "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc" }))
+        return "rust";
+    if (std.mem.eql(u8, fn_name, "free") or containsAny(fn_name, &[_][]const u8{ "cfree", "kfree" }))
+        return "c";
+    if (containsAny(fn_name, &[_][]const u8{ "_cgo_free", "_Cfunc_GoFree" }))
+        return "go";
+    if (containsAny(fn_name, &[_][]const u8{ "objc_release", "CFRelease", "CGImageRelease" }))
+        return "objc";
+    if (containsAny(fn_name, &[_][]const u8{ "PyMem_Free", "PyObject_Free", "Py_DECREF" }))
+        return "python";
+    if (containsAny(fn_name, &[_][]const u8{ "DeleteLocalRef", "DeleteGlobalRef" }))
+        return "java";
+    return null;
 }
 
 pub fn isResourceCloseFunction(fn_name: []const u8) ?ResourceType {
