@@ -744,13 +744,11 @@ pub const PassContext = struct {
     /// Uses FNV-1a hash for fast lookup.
     fn dedupKey(self: *PassContext, issue: *const Issue) u64 {
         _ = self;
-        const func_name = @field(issue, "location").func;
+        const loc = @field(issue, "location");
         const kind_tag = @tagName(@field(issue, "kind"));
         var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(func_name);
+        hasher.update(loc.func);
         hasher.update(kind_tag);
-        const loc = @field(issue, "location");
-        hasher.update(loc.func); // Function name always participates in dedup
         if (loc.file) |f| hasher.update(f); // File path (if available)
         if (loc.line > 0) hasher.update(&std.mem.toBytes(loc.line)); // Line number (if available)
         if (loc.column > 0) hasher.update(&std.mem.toBytes(loc.column)); // Column (if available)

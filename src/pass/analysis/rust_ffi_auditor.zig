@@ -1209,21 +1209,11 @@ pub const RustFfiAuditor = struct {
                 const gep_base = c.LLVMGetOperand(load_src, 0);
                 if (@intFromPtr(gep_base) == 0) continue;
 
-                // T5: Use traceValueSource for struct inference (replaces pure operand count)
-                // A GEP is accessing struct fields if its base is:
-                //   - from_call (function returns a struct)
-                //   - from_global (global struct variable)
-                //   - from_alloca (stack-allocated struct)
-                // Combined with: ≥3 operands (ptr + i32 0 + field_idx)
-                const base_source = self.traceValueSource(gep_base, func);
-                const is_likely_struct = switch (base_source) {
-                    .from_call, .from_global, .from_alloca => true,
-                    else => false,
-                };
-
-                // Fallback: operand count heuristic (original logic)
+                // Struct field GEP detection: ≥3 operands (ptr + i32 0 + field_idx).
+                // With opaque pointers we can't use type checks, so operand count
+                // is the primary signal. traceValueSource can refine later if needed.
                 const num_gep_operands = c.LLVMGetNumOperands(load_src);
-                const is_struct_gep = is_likely_struct or (num_gep_operands >= 3);
+                const is_struct_gep = num_gep_operands >= 3;
 
                 // T5: Debug metadata confirmation — if GEP has !dbg with DICompositeType,
                 // it's definitely a struct access regardless of other signals

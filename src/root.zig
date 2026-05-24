@@ -47,9 +47,6 @@ pub const dataflow = struct {
     pub const EdgeType = @import("dataflow/edge.zig").EdgeType;
 };
 
-// Export tracking utilities
-pub const tracking = @import("tracking/mod.zig");
-
 // Export pipeline system
 pub const pipeline = struct {
     pub const Pipeline = @import("pipeline/pipeline.zig").Pipeline;
