@@ -389,6 +389,11 @@ test "Pattern A — __rust_dealloc in message" {
     try std.testing.expect(isRustDropChainLeak(&i));
 }
 
+test "Pattern A — __rust_dealloc in cross_language_free message" {
+    var i = Issue.init(.cross_language_free, "Cross-language free: C/C++-allocated memory freed by Rust deallocator __rust_dealloc() in wasmtime_foo (CWE-763)", .{ .func = "wasmtime_foo" }, .critical, 0.88);
+    try std.testing.expect(isRustDropChainLeak(&i));
+}
+
 test "Pattern A — drop_in_place in message" {
     var i = Issue.init(.unchecked_return, "drop_in_place called without matching alloc", .{ .func = "test" }, .medium, 0.7);
     try std.testing.expect(isRustDropChainLeak(&i));

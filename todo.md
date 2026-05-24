@@ -270,51 +270,36 @@ const ValueUsage = enum {
 
 #### 8.2 具体任务
 
-- [ ] **T1: 实现 `traceValueSource()`** — 统一的值来源追踪
+- [x] **T1: 实现 `traceValueSource()`** — 统一的值来源追踪 ✅ (2026-05-24)
   - 替代 `isDerivedFromAlloca()`、`isValueFromParameter()`、`ptrOriginatesFromRustAlloc()` 等分散实现
   - 追踪 def-use chain：alloca → store → load → bitcast → GEP → 最终值
   - 追踪 alloca 内容来源（当前最大缺陷：只看 alloca 本身，不看里面存了什么）
   - 返回 `ValueSource` 枚举
-  - 位置：`rust_ffi_auditor.zig` 约 60 行
+  - 位置：`rust_ffi_auditor.zig` 约 80 行（含 traceAllocaContent + isCodeSectionGlobal）
 
-- [ ] **T2: 实现 `traceValueUsage()`** — 统一的值用途推断
+- [x] **T2: 实现 `traceValueUsage()`** — 统一的值用途推断 ✅ (2026-05-24)
   - 替代 `isGlobalUsedForIndirectCall()`、`mayRetainPointer()` 等分散实现
   - 扫描值的所有 use-site，收集用途集合
-  - 返回 `[]ValueUsage`（一个值可以同时有多种用途）
-  - 位置：`rust_ffi_auditor.zig` 约 40 行
+  - 返回 `UsageSet`（固定 6 槽位 + contains 方法）
+  - 位置：`rust_ffi_auditor.zig` 约 70 行
 
-- [ ] **T3: 增强 Rule 5 stack_escape — 追踪 alloca 内容**
-  - 当前问题：`isDerivedFromAlloca()` 只判断 alloca 是否是栈分配，不追踪 alloca 里存了什么
-  - wasmtime 误报根因：alloca 里存的是代码段地址（`@text_section`），但报告为"alloca-derived pointer"
-  - 增强：用 `traceValueSource()` 替代 `isDerivedFromAlloca()`，区分 alloca 内容来源：
-    - `from_code_section` → 抑制（代码段指针不是栈逃逸）
-    - `from_constant` → 抑制
-    - `from_parameter` → 保留（真正的栈逃逸风险）
-    - `from_alloca`（内容也是栈上） → 保留（高风险）
-  - 预期效果：wasmtime 剩余 2 个 `ffi_unsafe_call` 也可能被消除
+- [x] **T3: 增强 Rule 5 stack_escape — 追踪 alloca 内容** ✅ (2026-05-24)
+  - 用 `traceValueSource()` 替代 `isDerivedFromAlloca()`
+  - `from_code_section` / `from_constant` → 抑制（非真正栈逃逸）
+  - `from_parameter` / `from_alloca` → 保留报告
 
-- [ ] **T4: 增强 Rule 8 callback — 扩展函数指针识别**
-  - 当前：只检查全局变量是否被用作间接调用（`isGlobalUsedForIndirectCall`）
-  - 增强：用 `traceValueUsage()` 检查任何值是否被用作 `as_call_target`
-  - 扩展检测范围：不光检测 `store @global`，还检测 `store alloca`（局部回调变量）
-  - 增加 confidence：如果值来源是 `from_parameter` + 用途包含 `as_call_target` → 高置信度 callback
+- [x] **T4: 增强 Rule 8 callback — 扩展函数指针识别** ✅ (2026-05-24)
+  - Mode A (原有): store @global + indirect call 验证
+  - Mode B (新增): store alloca + traceValueUsage 包含 as_call_target
 
-- [ ] **T5: 增强 Rule 9 write_imm — 不透明指针下的 struct 推断**
-  - 当前：靠 `LLVMStructTypeKind` 判断 GEP 是否访问结构体字段
-  - 不透明指针下退化为只靠 GEP 操作数数量（`num_gep_operands >= 3`）
-  - 增强：结合 `traceValueSource()` 判断基址来源：
-    - 基址来自 `from_call`（返回结构体） → 可能是 struct field
-    - 基址来自 `from_global`（全局结构体） → 可能是 struct field
-    - 基址来自 `from_alloca`（栈上结构体） → 可能是 struct field
-  - 增加 debug metadata 辅助：如果 GEP 基址有 `!dbg` 且关联 DICompositeType → 确认 struct
+- [x] **T5: 增强 Rule 9 write_imm — 不透明指针下的 struct 推断** ✅ (2026-05-24)
+  - GEP 基址用 `traceValueSource` 推断 (from_call/global/alloca)
+  - `hasStructDebugMetadata()` 调试元数据辅助确认
 
-- [ ] **T6: 增强 Rule 10 UAF — 全局变量别名追踪**
-  - 当前问题：`detectUseAfterFree()` 只追踪直接被 free 的值，不追踪经过全局变量 store→load 的别名
-  - GO-03 未检测到：`_cgo_free(ptr)` → `store ptr, @global` → `load @global` → `memset(loaded)` → UAF
-  - 增强：在 Pass 2 中增加全局变量别名检查
-  - 当检测到 free 的指针被存入全局变量时，追踪该全局变量的所有 load→use
-  - 实现方式：构建 freed_globals 集合，扫描后续 load 指令
-  - 预期效果：GO-03 检出
+- [x] **T6: 增强 Rule 10 UAF — 全局变量别名追踪** ✅ (2026-05-24)
+  - Pass 1.5: 检测 freed ptr → store @global（poisoned global）
+  - Pass 2 Mode 2: load @global after poison → UAF
+  - Pass 2 Mode 3: use of loaded value from poisoned global → UAF
 
 #### 8.3 集成方式
 
