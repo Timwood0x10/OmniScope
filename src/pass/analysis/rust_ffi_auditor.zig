@@ -21,6 +21,9 @@ const ptr_types = @import("ptr_lifetime_types.zig");
 const ffi_language_classifier = @import("ffi_language_classifier.zig");
 const rust_drop_semantics = @import("../../semantics/rust_drop_semantics.zig");
 const tracking = @import("value_tracking.zig");
+const helpers = @import("ffi_helpers.zig");
+const debug_info = @import("debug_info.zig");
+const alias = @import("alias_analysis.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;

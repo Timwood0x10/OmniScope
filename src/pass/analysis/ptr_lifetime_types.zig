@@ -225,6 +225,8 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "malloc",          "calloc",         "realloc",      "aligned_alloc",
     "valloc",          "pvalloc",        "memalign",     "operator new",
     "operator new[]",  "allocImpl",      "mmap",
+    // C++ operator new — Itanium ABI mangled names
+    "_Znwm",           "_Znam",          "_Znw",         "_Zna",
     // v0.1.7 FIX: Removed "into_raw" from this list.
     // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
     // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was

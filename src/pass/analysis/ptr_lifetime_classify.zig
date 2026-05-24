@@ -96,8 +96,10 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
             return true;
         }
     }
-    // C++ operator delete (contains space)
+    // C++ operator delete — mangled (Itanium ABI) and unmangled
     if (std.mem.indexOf(u8, fn_name, "operator delete") != null) return true;
+    if (containsAny(fn_name, &[_][]const u8{ "_ZdlPv", "_ZdaPv", "_Zdl", "_Zda" }))
+        return true;
     return false;
 }
 
@@ -107,6 +109,14 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
     // Rust global allocator
     if (containsAny(fn_name, &[_][]const u8{ "__rust_alloc", "__rdl_alloc", "__rg_alloc" }))
         return "rust";
+    // C++ operator new — Itanium ABI mangled names.
+    // NOTE: _Znwm may also appear in Rust modules (Rust's std::alloc::alloc
+    // can compile to _Znwm). Use classifyAllocLanguageEnum with module_lang
+    // to disambiguate. Here we conservatively return "cpp".
+    if (containsAny(fn_name, &[_][]const u8{ "_Znwm", "_Znam", "_Znw", "_Zna" }))
+        return "cpp";
+    if (std.mem.indexOf(u8, fn_name, "operator new") != null)
+        return "cpp";
     // C standard library
     if (containsAny(fn_name, &[_][]const u8{ "malloc", "calloc", "realloc", "aligned_alloc" }))
         return "c";
@@ -133,20 +143,48 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
 /// Used by ptr_lifetime.zig to set alloc_lang from the actual allocator
 /// rather than the module-level language — fixes cross_language_free FP
 /// when C++ modules use malloc (C allocator) but alloc_lang was set to .cpp.
-pub fn classifyAllocLanguageEnum(fn_name: []const u8) ?Language {
-    const str = classifyAllocLanguage(fn_name) orelse return null;
-    if (std.mem.eql(u8, str, "rust")) return .rust;
-    if (std.mem.eql(u8, str, "c")) return .c;
-    if (std.mem.eql(u8, str, "go")) return .go;
-    if (std.mem.eql(u8, str, "java")) return .java;
-    if (std.mem.eql(u8, str, "python")) return .python;
-    return null; // objc, nodejs — no Language enum variant
+///
+/// `module_lang` disambiguates _Znwm (C++ operator new vs Rust global alloc):
+/// in a Rust module, _Znwm is Rust's std::alloc::alloc; in C++, it's operator new.
+pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?Language {
+    // Rust global allocator — always unambiguous
+    if (containsAny(fn_name, &[_][]const u8{ "__rust_alloc", "__rdl_alloc", "__rg_alloc" }))
+        return .rust;
+    // C++ operator new (Itanium ABI mangled) — ambiguous with Rust.
+    // Rust's std::alloc::alloc compiles to _Znwm in some configurations.
+    // Disambiguate by module language.
+    if (containsAny(fn_name, &[_][]const u8{ "_Znwm", "_Znam", "_Znw", "_Zna" })) {
+        if (module_lang) |ml| {
+            if (ml == .rust) return .rust;
+        }
+        return .cpp;
+    }
+    if (std.mem.indexOf(u8, fn_name, "operator new") != null)
+        return .cpp;
+    // C standard library
+    if (containsAny(fn_name, &[_][]const u8{ "malloc", "calloc", "realloc", "aligned_alloc" }))
+        return .c;
+    // Go/cgo runtime
+    if (containsAny(fn_name, &[_][]const u8{ "_cgo_allocate", "_Cfunc_GoMalloc", "_Cfunc_GoAlloc" }))
+        return .go;
+    // JNI
+    if (containsAny(fn_name, &[_][]const u8{ "NewGlobalRef", "NewLocalRef", "FindClass" }))
+        return .java;
+    // Python C API
+    if (containsAny(fn_name, &[_][]const u8{ "PyMem_Malloc", "PyObject_Malloc", "PyObject_New", "PyList_New", "PyDict_New" }))
+        return .python;
+    return null;
 }
 
 /// Classify a free/dealloc function's language/runtime origin.
 pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
     if (containsAny(fn_name, &[_][]const u8{ "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc" }))
         return "rust";
+    // C++ operator delete — Itanium ABI mangled names + unmangled
+    if (containsAny(fn_name, &[_][]const u8{ "_ZdlPv", "_ZdaPv", "_Zdl", "_Zda" }))
+        return "cpp";
+    if (std.mem.indexOf(u8, fn_name, "operator delete") != null)
+        return "cpp";
     if (std.mem.eql(u8, fn_name, "free") or containsAny(fn_name, &[_][]const u8{ "cfree", "kfree" }))
         return "c";
     if (containsAny(fn_name, &[_][]const u8{ "_cgo_free", "_Cfunc_GoFree" }))

@@ -657,7 +657,7 @@ pub const PtrLifetimePass = struct {
                                 // false positives when C++ modules use C allocators.
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    const alloc_lang = classifyAllocLanguageEnum(callee_name) orelse lang;
+                                    const alloc_lang = classifyAllocLanguageEnum(callee_name, lang) orelse lang;
                                     _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, alloc_lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }
@@ -689,7 +689,7 @@ pub const PtrLifetimePass = struct {
 
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    const alloc_lang = classifyAllocLanguageEnum(callee_name) orelse lang;
+                                    const alloc_lang = classifyAllocLanguageEnum(callee_name, lang) orelse lang;
                                     _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, alloc_lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }

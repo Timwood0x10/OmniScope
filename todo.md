@@ -27,6 +27,17 @@
 
 ptr_lifetime_report.zig (13处) + free_validation.zig (1处) 添加了 errdefer issue.deinit(ctx.allocator)。
 
+### 3. cross_language_free 误报修复 — 已实现
+
+问题: `classifyFreeLanguage("free")` 返回 `"c"`，`langToString(.c)` 返回 `"C/C++"`，字符串比较永远不等，导致所有 C 模块内部 malloc+free 对都被误报为跨语言问题。ffi-demo 上 80% FP 率。
+
+方案:
+- `ptr_lifetime_classify.zig`: 新增 `classifyAllocLanguageEnum()` — 返回 Language enum 而非字符串
+- `ptr_lifetime.zig`: heap_alloc 的 `trackAlloc` 改用 `classifyAllocLanguageEnum(callee_name) orelse lang`，让 alloc_lang 反映实际分配器（如 malloc→.c）而非模块语言
+- `ptr_lifetime_violations.zig`: 新增 `freeLangToLanguage()` + generic mismatch 改为 enum 比较
+
+效果: ffi-demo FP 从 8 降到 1（-87.5%），precision 从 20% 提升到 50%。
+
 ---
 
 ## 待做优化方案
