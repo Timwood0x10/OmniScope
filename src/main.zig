@@ -621,6 +621,7 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .integer_overflow => .other,
         .format_string => .format_string,
         .callback_signature_mismatch => .callback_signature_mismatch,
+        .callback_ownership_risk => .callback_signature_mismatch,
         .static_buffer_misuse => .static_buffer_misuse,
         .data_race => .other,
         .thread_safety_violation => .other,

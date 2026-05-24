@@ -17,6 +17,7 @@ const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
+const provenance = @import("provenance.zig");
 
 pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
     const desc = try std.fmt.allocPrint(allocator, fmt, args);
@@ -28,14 +29,16 @@ pub fn reportStackEscape(
     func_name: []const u8,
     callee_name: []const u8,
     ptr_info: PtrInfo,
-    _: c.LLVMValueRef,
+    inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
+    mem_graph: ?*provenance.memory_graph.MemoryGraph,
 ) !void {
+    _ = inst;
     const is_extern_callee = is_extern_function(callee_name) or
         (std.mem.indexOf(u8, callee_name, "ffi_") != null);
 
-    if (ptr_info.source_inst) |inst| {
-        const ptr_val = @as(u64, @intFromPtr(inst));
+    if (ptr_info.source_inst) |src_inst| {
+        const ptr_val = @as(u64, @intFromPtr(src_inst));
         if (!is_extern_callee and !ctx.isOnDangerPathFull(ptr_val)) {
             diag.debug("[STACK-ESCAPE SUPPRESSED] Pointer not on FFI danger path in {s}", .{func_name});
             return;
@@ -44,15 +47,29 @@ pub fn reportStackEscape(
 
     const location = Location.init(func_name);
 
-    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    // P0+: Use unified Provenance service for precise messages
+    var prov = provenance.Provenance.init(ctx.allocator, mem_graph);
+    const prov_desc = if (ptr_info.source_inst) |src_inst|
+        prov.describeAllocaContent(src_inst)
+    else
+        "unknown content";
+
+    // Generate suppression-friendly tag for generic pattern matching
+    const tag = if (ptr_info.source_inst) |src_inst|
+        prov.getSuppressionTag(src_inst)
+    else
+        "[unknown]";
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 4);
     trace[0] = TraceEntry.init("Stack pointer passed to FFI boundary function");
     trace[1] = try makeTrace(ctx.allocator, "Pointer origin: {s}", .{ptr_info.source_desc});
-    trace[2] = try makeTrace(ctx.allocator, "Passed to {s}() which may retain pointer beyond caller scope", .{callee_name});
+    trace[2] = try makeTrace(ctx.allocator, "Provenance: {s} {s}", .{ tag, prov_desc });
+    trace[3] = try makeTrace(ctx.allocator, "Passed to {s}() which may retain pointer beyond caller scope", .{callee_name});
 
     const message = try std.fmt.allocPrint(
         ctx.allocator,
-        "Stack pointer ({s}) escapes to FFI function {s}() - pointer invalid after function returns (CWE-562)",
-        .{ ptr_info.source_desc, callee_name },
+        "Stack pointer ({s}, provenance: {s} [{s}]) escapes to FFI function {s}() - pointer invalid after function returns (CWE-562)",
+        .{ ptr_info.source_desc, prov_desc, tag, callee_name },
     );
 
     var issue = Issue.initWithTrace(
@@ -66,7 +83,7 @@ pub fn reportStackEscape(
     errdefer issue.deinit(ctx.allocator);
 
     try ctx.addIssue(&issue);
-    diag.critical("[OMI-CRITICAL] [STACK-ESCAPE] {s} -> {s}() in {s}", .{ ptr_info.source_desc, callee_name, func_name });
+    diag.critical("[OMI-CRITICAL] [STACK-ESCAPE] {s} ({s}) [{s}] -> {s}() in {s}", .{ ptr_info.source_desc, prov_desc, tag, callee_name, func_name });
 }
 
 pub fn reportReturnStackAddr(

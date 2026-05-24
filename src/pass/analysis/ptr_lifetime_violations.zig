@@ -176,9 +176,7 @@ fn langToString(lang: memory_graph.Language) []const u8 {
         .swift => "Swift",
         .go => "Go",
         .java => "Java/JNI",
-        .objc => "Objective-C",
         .python => "Python",
-        .nodejs => "Node.js",
         .unknown => "Unknown",
     };
 }
@@ -778,7 +776,7 @@ pub fn checkCallViolation(
                             if (isRustBorrowPattern(ptr_info.source_desc)) {
                                 try reportBorrowEscapeFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
                             } else {
-                                try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                                try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag, mem_graph);
                             }
                         } else {
                             diag.debug("[SUPPRESSED] Stack escape to sink function (no pointer return): {s}", .{callee_name});
@@ -818,7 +816,7 @@ pub fn checkCallViolation(
                     if (is_extern_callee and is_borrow) {
                         try reportBorrowEscapeFFI(ctx, func_name, callee_name, ptr_info, inst, diag);
                     } else {
-                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag);
+                        try reportStackEscape(ctx, func_name, callee_name, ptr_info, inst, diag, mem_graph);
                     }
                     if (has_cross_func_alias) {
                         diag.debug("[ENHANCED] Cross-function alias evidence found for stack escape to {s}", .{callee_name});

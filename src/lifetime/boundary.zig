@@ -444,9 +444,7 @@ fn langName(lang: LanguageHint) []const u8 {
         .julia => "Julia",
         .nim => "Nim",
         .java => "Java",
-        .objc => "Objective-C",
         .python => "Python",
-        .nodejs => "Node.js",
     };
 }
 

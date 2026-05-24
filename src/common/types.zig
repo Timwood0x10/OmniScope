@@ -183,6 +183,8 @@ pub const IssueKind = enum {
     borrow_escape,
     /// Callback signature does not match receiver expectation (CWE-688).
     callback_signature_mismatch,
+    /// Callback ownership risk - function pointer parameter stored to global (CWE-825).
+    callback_ownership_risk,
     /// Free called on non-malloc pointer (CWE-590).
     invalid_free,
     /// Static buffer misuse - thread-unsafe functions like ctime, strerror (CWE-242).
@@ -216,6 +218,7 @@ pub const IssueKind = enum {
             .null_dereference => "null_dereference",
             .borrow_escape => "borrow_escape",
             .callback_signature_mismatch => "callback_signature_mismatch",
+            .callback_ownership_risk => "callback_ownership_risk",
             .invalid_free => "invalid_free",
             .static_buffer_misuse => "static_buffer_misuse",
             .data_race => "data_race",
@@ -247,6 +250,7 @@ pub const IssueKind = enum {
             .null_dereference => 476,
             .borrow_escape => 704,
             .callback_signature_mismatch => 688,
+            .callback_ownership_risk => 825,
             .invalid_free => 590,
             .static_buffer_misuse => 242,
             .data_race => 362,
@@ -277,6 +281,7 @@ pub const IssueKind = enum {
             .null_dereference => "Null pointer dereference - nullable allocation used without guard",
             .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
+            .callback_ownership_risk => "Function pointer parameter stored to global - caller controls callback lifetime, may dangle (CWE-825)",
             .invalid_free => "Free called on non-malloc pointer",
             .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
             .data_race => "Data race - concurrent access without synchronization",

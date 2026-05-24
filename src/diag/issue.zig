@@ -331,12 +331,8 @@ pub const FFIBoundary = struct {
         go,
         /// Java/JNI language
         java,
-        /// Objective-C language
-        objc,
         /// Python/C API language
         python,
-        /// Node.js/N-API language
-        nodejs,
         /// Unknown / undetermined language
         unknown,
     };

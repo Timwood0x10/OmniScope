@@ -176,6 +176,9 @@ pub const RustFfiAuditor = struct {
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
         try self.detectStackEscapeToFFI(func, ctx, diag);
+
+        // Rule 8: Callback ownership risk — function pointer parameter stored to global
+        try self.detectCallbackOwnershipRisk(func, ctx, diag);
     }
 
     /// Detect as_ptr borrow escape in function body
@@ -888,6 +891,214 @@ pub const RustFfiAuditor = struct {
             try writer.writeAll("└─────────────────────────────────────────\n");
         }
     }
+
+    /// Rule 8: Detect callback ownership risk — function pointer parameter stored to global.
+    ///
+    /// GO-05 pattern: Function pointer from caller is stored to a global variable.
+    /// When this global is later used for an indirect call, the callback may dangle
+    /// if the original function/stack frame has been destroyed.
+    ///
+    /// Detection criteria (all must be true):
+    ///   1. Store target is a global variable (LLVMIsAGlobalValue)
+    ///   2. Stored value is function pointer type (LLVMFunctionTypeKind)
+    ///   3. Stored value originates from function parameter (LLVMIsAArgument)
+    ///
+    /// CWE-825: Exploitable with callback through pointer to non-argument
+    fn detectCallbackOwnershipRisk(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode != c.LLVMStore) continue;
+
+                // Condition 1: Store target must be a global variable
+                const dest = c.LLVMGetOperand(inst, 1);
+                if (@intFromPtr(dest) == 0) continue;
+                if (c.LLVMIsAGlobalValue(dest) == null) continue;
+
+                // Get global name for reporting
+                const global_name_ptr = c.LLVMGetValueName(dest);
+                const global_name = if (@intFromPtr(global_name_ptr) != 0)
+                    std.mem.span(global_name_ptr)
+                else
+                    "@anonymous_global";
+
+                // Skip known safe globals (signal handler tables, vtable slots, etc.)
+                if (isSafeGlobalStore(global_name)) continue;
+
+                // Condition 2: Value should be a pointer type (with opaque pointers,
+                // we can't reliably distinguish function ptr from data ptr via types alone).
+                // Instead, we verify that the global is later used for indirect calls.
+                const value = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(value) == 0) continue;
+                const value_type = c.LLVMTypeOf(value);
+                if (@intFromPtr(value_type) == 0) continue;
+
+                // Must be some kind of pointer (opaque or typed)
+                const type_kind = c.LLVMGetTypeKind(value_type);
+                if (type_kind != c.LLVMPointerTypeKind) continue;
+
+                // Heuristic: check if this global is used for indirect calls elsewhere
+                // This confirms it's being treated as a function pointer
+                if (!isGlobalUsedForIndirectCall(global_name, func)) {
+                    continue;
+                }
+
+                // Condition 3: Value source must be a function parameter (or loaded from param storage)
+                // C compiler pattern: param → alloca → load → store @global
+                // We need to trace through one level of load to find the original parameter
+                if (!isValueFromParameter(value)) continue;
+
+                // All three conditions met — report callback_ownership_risk
+                const func_name = getFunctionName(func);
+
+                const trace = try self.allocator.alloc(TraceEntry, 4);
+                errdefer self.allocator.free(trace);
+                trace[0] = TraceEntry.init("Function pointer parameter stored to global variable");
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(self.allocator, "Global: {s}", .{global_name}));
+                trace[2] = TraceEntry.init("Callback lifetime controlled by caller — may dangle if caller's scope ends");
+                trace[3] = TraceEntry.init("Indirect call via this global may use-after-return");
+
+                const message = try std.fmt.allocPrint(
+                    self.allocator,
+                    "Function pointer from parameter stored to global {s} — caller controls callback lifetime (CWE-825)",
+                    .{global_name},
+                );
+
+                var issue = Issue.initWithTrace(
+                    .callback_ownership_risk,
+                    message,
+                    Location.init(func_name),
+                    .high,
+                    0.82,
+                    trace,
+                );
+                errdefer issue.deinit(self.allocator);
+
+                try ctx.addIssue(&issue);
+                diag.warn("[OMI-HIGH] [CALLBACK-RISK] fn param -> global {s} in {s}", .{ global_name, func_name });
+            }
+        }
+    }
+
+    /// Check if storing to this global is a known-safe pattern (false positive suppression).
+    fn isSafeGlobalStore(global_name: []const u8) bool {
+        const safe_prefixes = [_][]const u8{
+            "__sig_", "_ZTV",   "_ZTI",       ".cxx_delet",
+            "atexit", "__cxa_", "__pthread_", "_fini",
+            "_init",  ".llvm.",
+        };
+        for (safe_prefixes) |prefix| {
+            if (std.mem.indexOf(u8, global_name, prefix) != null) return true;
+        }
+
+        const safe_globals = [_][]const u8{
+            "environ", "stderr", "stdout", "stdin", "optarg", "errno",
+        };
+        for (safe_globals) |safe_name| {
+            if (std.mem.eql(u8, global_name, safe_name)) return true;
+        }
+        return false;
+    }
+
+    /// Check if a value originates from a function parameter.
+    /// Handles the common C compiler pattern:
+    ///   param → store alloca → load → use
+    fn isValueFromParameter(value: c.LLVMValueRef) bool {
+        // Direct: value IS a parameter
+        if (c.LLVMIsAArgument(value) != null) return true;
+
+        // Indirect: value is a load from an alloca that stores a parameter
+        const opcode = c.LLVMGetInstructionOpcode(value);
+        if (opcode == c.LLVMLoad) {
+            const ptr_operand = c.LLVMGetOperand(value, 0);
+            if (@intFromPtr(ptr_operand) == 0) return false;
+
+            // Check if loaded from an alloca that was initialized with a parameter
+            // We scan the same basic block for: store %param, ptr %alloca
+            const parent_bb = c.LLVMGetInstructionParent(value);
+            if (@intFromPtr(parent_bb) == 0) return false;
+
+            var inst = c.LLVMGetFirstInstruction(parent_bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
+                if (c.LLVMGetOperand(inst, 1) != ptr_operand) continue; // not storing to this alloca
+
+                // Check if stored value is a parameter
+                const stored_val = c.LLVMGetOperand(inst, 0);
+                if (c.LLVMIsAArgument(stored_val) != null) return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Check if a global variable is used for indirect calls anywhere in the module.
+    /// This confirms that the global is being treated as a function pointer (callback).
+    fn isGlobalUsedForIndirectCall(global_name: []const u8, current_func: c.LLVMValueRef) bool {
+        const module = c.LLVMGetGlobalParent(current_func);
+        if (@intFromPtr(module) == 0) return false;
+
+        var func = c.LLVMGetFirstFunction(module);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            var bb = c.LLVMGetFirstBasicBlock(func);
+            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                var inst = c.LLVMGetFirstInstruction(bb);
+                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                    // Check for indirect call (call/invoke with non-function callee)
+                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                        const callee = c.LLVMGetCalledValue(inst);
+                        if (@intFromPtr(callee) == 0) continue;
+
+                        // If callee is not a direct function, it's an indirect call
+                        if (c.LLVMIsAFunction(callee) == null) {
+                            // Check if this indirect call uses our global
+                            if (isValueFromGlobal(callee, global_name)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Check if a value ultimately originates from a specific global variable.
+    /// Handles: load @global, or load → bitcast → load chain
+    fn isValueFromGlobal(value: c.LLVMValueRef, global_name: []const u8) bool {
+        // Direct: value IS the global
+        if (c.LLVMIsAGlobalValue(value) != null) {
+            const name_ptr = c.LLVMGetValueName(value);
+            if (@intFromPtr(name_ptr) != 0) {
+                const val_name = std.mem.span(name_ptr);
+                if (std.mem.eql(u8, val_name, global_name)) return true;
+            }
+        }
+
+        // Indirect: value is a load from the global
+        const opcode = c.LLVMGetInstructionOpcode(value);
+        if (opcode == c.LLVMLoad) {
+            const ptr_op = c.LLVMGetOperand(value, 0);
+            if (@intFromPtr(ptr_op) != 0) {
+                return isValueFromGlobal(ptr_op, global_name);
+            }
+        }
+
+        // Through bitcast/GEP
+        if (opcode == c.LLVMBitCast or opcode == c.LLVMGetElementPtr) {
+            const src = c.LLVMGetOperand(value, 0);
+            if (@intFromPtr(src) != 0) {
+                return isValueFromGlobal(src, global_name);
+            }
+        }
+
+        return false;
+    }
 };
 
 // ============================================================================
@@ -1189,6 +1400,10 @@ pub fn isRustMangledName(func_name: []const u8) bool {
     }
     return false;
 }
+
+// ============================================================================
+// Detection Helpers (module-level functions)
+// ============================================================================
 
 /// Check if an FFI callee may store/retain a pointer argument beyond the call.
 /// Uses heuristic name patterns for retain/store/register callbacks.
