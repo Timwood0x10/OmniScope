@@ -161,6 +161,10 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     // for all downstream passes to use instead of per-function noise_filter calls.
     try pipeline.registerPass(OmniScope.cross_lang.SurfaceClassifierPass);
 
+    // Semantic resolution pass — applies language-specific patterns to resolve
+    // ownership and safety semantics before heavy analysis
+    try pipeline.registerPass(OmniScope.cross_lang.SemanticResolverPass);
+
     // Independent pre-passes (no deps — run before CallGraph for early exit support)
     try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);

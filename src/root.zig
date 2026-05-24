@@ -156,6 +156,9 @@ pub const cross_lang = struct {
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
     pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
 
+    // Semantic resolution pass
+    pub const SemanticResolverPass = @import("pass/analysis/semantic_resolver_pass.zig").SemanticResolverPass;
+
     pub const IntrinsicRisk = @import("pass/analysis/ffi_enhancement.zig").IntrinsicRisk;
     pub const FnOrigin = @import("pass/analysis/ffi_enhancement.zig").FnOrigin;
     pub const classifyRustIntrinsic = @import("pass/analysis/ffi_enhancement.zig").classifyRustIntrinsic;
@@ -214,6 +217,17 @@ pub const semantics = struct {
     pub const analyzeBehavior = @import("semantics/behavior_filter.zig").analyzeBehavior;
     pub const looksLikeDropGlue = @import("semantics/behavior_filter.zig").looksLikeDropGlue;
     pub const looksLikeAllocatorWrapper = @import("semantics/behavior_filter.zig").looksLikeAllocatorWrapper;
+
+    // Semantic resolution tree architecture
+    pub const SemanticTree = @import("semantics/semantic_tree.zig").SemanticTree;
+    pub const SemanticNode = @import("semantics/semantic_tree.zig").SemanticNode;
+    pub const SemanticKind = @import("semantics/semantic_tree.zig").SemanticKind;
+    pub const Resolution = @import("semantics/semantic_tree.zig").Resolution;
+    pub const PatternRegistry = @import("semantics/semantic_patterns.zig").PatternRegistry;
+    pub const PatternMatcher = @import("semantics/semantic_patterns.zig").PatternMatcher;
+    pub const PatternResolver = @import("semantics/semantic_patterns.zig").PatternResolver;
+    pub const ResolutionEngine = @import("semantics/resolution_engine.zig").ResolutionEngine;
+    pub const MemoryGraph = @import("semantics/memory_graph.zig").MemoryGraph;
 };
 
 // Export registry system

@@ -19,6 +19,7 @@ const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
 const language_detector = @import("../semantics/language_detector.zig");
+const issue_suppression = @import("analysis/issue_suppression.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
@@ -310,6 +311,19 @@ pub const PassContext = struct {
     /// All downstream passes query this instead of calling noise_filter per-function.
     function_surface: std.AutoHashMap(u64, surface_classifier.FunctionSurface),
 
+    /// FFI boundary detection result from SurfaceClassifierPass.
+    /// true = real extern "C" / #[no_mangle] boundaries exist → full analysis
+    /// false = no cross-ABI surface → skip heavy FFI analysis passes
+    has_ffi_boundary: bool = true, // default true (conservative)
+
+    /// Issue suppression statistics from known safe pattern elimination.
+    /// Tracks how many issues were suppressed by each pattern type.
+    suppression_stats: issue_suppression.SuppressionStats,
+
+    /// Semantic resolution engine for universal semantic tree.
+    /// Provides language-agnostic semantic resolution using pattern matching.
+    semantic_resolution: ?*@import("../semantics/resolution_engine.zig").ResolutionEngine,
+
     /// Create a new pass context
     pub fn init(
         allocator: Allocator,
@@ -441,6 +455,11 @@ pub const PassContext = struct {
         }
         // Free function_surface classification map
         self.function_surface.deinit();
+        // Free semantic resolution engine if it was created
+        if (self.semantic_resolution) |engine| {
+            engine.deinit();
+            self.allocator.destroy(engine);
+        }
     }
 
     /// Query the surface classification for a function.
@@ -581,10 +600,38 @@ pub const PassContext = struct {
     /// Parameters:
     ///   - issue: The issue to add
     ///
-    /// Features cross-pass deduplication: if another pass has already
-    /// reported an issue with the same (function, kind) signature,
     /// this call is silently skipped to avoid duplicate alerts.
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
+        // ═══════════════════════════════════════════════════════════════
+        // ISSUE SUPPRESSION: Known Safe Pattern Elimination
+        //
+        // Before ANY processing (dedup, severity, output), check if this
+        // issue matches a proven-safe pattern. If so, suppress it immediately.
+        // This is the architectural shift from "classify → filter functions" to
+        // "identify safe patterns → suppress specific issues".
+        //
+        // Two patterns:
+        //   A) Rust Drop Chain: leak where free side is __rust_dealloc/drop_in_place
+        //   B) Code Section Provenance: escape from .text/NonNull/static address
+        // ═══════════════════════════════════════════════════════════════
+        if (issue_suppression.shouldSuppress(issue)) {
+            // Record which pattern matched for statistics (order matters: check specific first)
+            if (issue_suppression.isPanicCleanupDoubleFree(issue)) {
+                self.suppression_stats.record(.panic_cleanup);
+            } else if (issue_suppression.isOsApiStandardUsage(issue)) {
+                self.suppression_stats.record(.os_api_usage);
+            } else if (issue_suppression.isStaticProvenanceEscape(issue)) {
+                self.suppression_stats.record(.static_provenance);
+            } else {
+                self.suppression_stats.record(.drop_chain);
+            }
+            if (issue.owned) {
+                var mutable_issue = issue.*;
+                mutable_issue.deinit(self.allocator);
+            }
+            return;
+        }
+
         // 90/10 Priority分层: FFI boundary (90%) vs local-only (10%)
         // Check if issue reaches FFI/unsafe boundary for priority classification
         const on_danger_path = if (issue.ffi_boundary) |_| true else false;

@@ -293,6 +293,20 @@ pub fn build(b: *std.Build) void {
     const run_bench_perf_tests = b.addRunArtifact(bench_perf_tests);
     bench_test_step.dependOn(&run_bench_perf_tests.step);
 
+    // Semantic resolution tests step
+    const semantic_resolution_test_step = b.step("test-semantic", "Run semantic resolution tests");
+    const semantic_resolution_test_mod = b.addModule("semantic_resolution_test", .{
+        .root_source_file = b.path("tests/semantic_resolution_test.zig"),
+        .target = target,
+    });
+    semantic_resolution_test_mod.addImport("OmniScope", lib_mod);
+    const semantic_resolution_tests = b.addTest(.{
+        .root_module = semantic_resolution_test_mod,
+    });
+    const run_semantic_resolution_tests = b.addRunArtifact(semantic_resolution_tests);
+    semantic_resolution_test_step.dependOn(&run_semantic_resolution_tests.step);
+    test_step.dependOn(&run_semantic_resolution_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{

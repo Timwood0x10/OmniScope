@@ -107,6 +107,8 @@ pub const Pipeline = struct {
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
             .function_surface = std.AutoHashMap(u64, @import("../semantics/surface_classifier/surface_classifier.zig").FunctionSurface).init(self.allocator),
+            .semantic_resolution = null,
+            .suppression_stats = .{},
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

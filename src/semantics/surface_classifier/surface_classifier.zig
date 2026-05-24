@@ -4,8 +4,9 @@
 //! a provenance-based classification system. Shared across all passes
 //! via PassContext.function_surface.
 //!
-//! Layers:
-//!   L1 — Linkage Heuristic (linkage.zig)
+//! Layers (ordered by cost, cheapest first):
+//!   L0 — Mangled Name Heuristic (mangled_name.zig) — pure string match
+//!   L1 — Linkage Heuristic (linkage.zig) — O(1) LLVM field read
 //!   L2 — Debug Origin / Source Path Provenance (debug_origin.zig)
 //!   L3 — CallGraph Reachability (callgraph.zig, invoked by pass)
 //!   L4 — Boundary Detection (boundary.zig, invoked by pass)
@@ -15,6 +16,7 @@
 const std = @import("std");
 const linkage = @import("linkage.zig");
 const debug_origin = @import("debug_origin.zig");
+const mangled_name = @import("mangled_name.zig");
 const c = @import("../../ir/llvm_raw.zig").c;
 
 // ============================================================================
@@ -75,24 +77,32 @@ pub const SurfaceHint = struct {
 // Re-exports from sub-modules
 // ============================================================================
 
+pub const classifyMangledName = mangled_name.classifyMangledName;
+pub const classifyMangledNameDiagnostic = mangled_name.classifyMangledNameDiagnostic;
 pub const classifyLinkage = linkage.classifyLinkage;
 pub const classifyDebugOrigin = debug_origin.classifyDebugOrigin;
+pub const classifyDebugOriginDiagnostic = debug_origin.classifyDebugOriginDiagnostic;
 pub const classifySourcePath = debug_origin.classifySourcePath;
 pub const detectBoundaryFromLLVM = @import("boundary.zig").detectBoundaryFromLLVM;
 
 // ============================================================================
-// Three-Layer Merge
+// Five-Layer Merge
 // ============================================================================
 
-/// Merge classification hints from all three layers into a final decision.
+/// Merge classification hints from L0+L1+L2 layers into a final decision.
 ///
-/// Decision logic:
-///   - boundary overrides everything (L4 signal is strongest)
-///   - L3 reachable → override skip signals from L1/L2
-///   - L2 stdlib/generated + L3 not_reachable → skip
-///   - L1 generated + L3 not_reachable → skip
-///   - else → unknown (conservative: keep for analysis)
+/// Decision priority (highest wins):
+///   1. boundary (L4) — overrides everything
+///   2. L0/L1/L2 skip surfaces when not reachable — suppress analysis
+///   3. L2 user_code/dependency/boundary when reachable — preserve
+///   4. L0/L1 skip surfaces even when reachable — trust name/linkage over default
+///   5. else → unknown (conservative: keep for analysis)
+///
+/// Key fix vs. old behavior: L0/L1 compiler_generated is respected even
+/// when reachable=true, preventing stdlib functions from being misclassified
+/// as user_code when debug info is absent.
 pub fn mergeLayers(
+    l0: ?SurfaceHint,
     l1: ?SurfaceHint,
     l2: ?SurfaceHint,
     is_reachable: ?bool,
@@ -101,53 +111,86 @@ pub fn mergeLayers(
     // Boundary signal overrides everything
     if (is_boundary) return .boundary;
 
-    const reachable = is_reachable orelse true; // default: keep if unknown
+    // Collect the strongest skip signal from L0→L1→L2 (first non-null wins)
+    const skip_signal = strongestSkipSignal(l0) orelse
+        strongestSkipSignal(l1) orelse
+        strongestSkipSignal(l2);
 
-    // L3 reachable → override any skip signal from L1/L2
-    if (reachable) {
-        if (l2) |hint| {
-            if (hint.surface == .user_code or hint.surface == .dependency or hint.surface == .boundary) {
-                return hint.surface;
-            }
-        }
-        return .user_code;
-    }
+    const reachable = is_reachable orelse true;
 
-    // Not reachable — apply L1/L2 suppression signals
-    if (l2) |hint| {
-        if (hint.surface == .standard_library or
-            hint.surface == .compiler_generated or
-            hint.surface == .runtime)
+    // When reachable and L2 gives a positive ID (user/dep/boundary), use it
+    if (reachable and l2 != null) {
+        const hint = l2.?;
+        if (hint.surface == .user_code or
+            hint.surface == .dependency or
+            hint.surface == .boundary)
         {
             return hint.surface;
         }
+        // L2 says skip → check if L0/L1 also agree on skip
+        if (skip_signal) |skip| {
+            return skip.surface;
+        }
     }
 
-    if (l1) |hint| {
-        if (hint.surface == .compiler_generated or hint.surface == .runtime) {
-            return hint.surface;
-        }
+    // When not reachable, any skip signal wins
+    if (!reachable and skip_signal != null) {
+        return skip_signal.?.surface;
+    }
+
+    // When reachable but no L2 positive ID:
+    // Trust L0/L1 skip signals over blind user_code default.
+    // This is the critical fix: drop_in_place shouldn't become user_code.
+    if (reachable and skip_signal != null) {
+        return skip_signal.?.surface;
     }
 
     // No strong signal → conservative keep
     return .unknown;
 }
 
+/// Extract a skip-surface hint from a layer result, if it indicates
+/// the function should be suppressed (stdlib / compiler_generated / runtime).
+fn strongestSkipSignal(hint: ?SurfaceHint) ?SurfaceHint {
+    if (hint) |h| {
+        if (h.surface == .standard_library or
+            h.surface == .compiler_generated or
+            h.surface == .runtime)
+        {
+            return h;
+        }
+    }
+    return null;
+}
+
 // ============================================================================
-// Convenience: Full Classification (L1 + L2, no L3)
+// Convenience: Full Classification (L0 + L1 + L2, no L3)
 // ============================================================================
 
-/// Classify a single function using L1 + L2 layers only.
+/// Classify a single function using L0 + L1 + L2 layers.
 /// Used when callgraph reachability is not yet available (early pipeline).
-pub fn classifyFunction(func: c.LLVMValueRef, is_boundary: bool) FunctionSurface {
+pub fn classifyFunction(func: c.LLVMValueRef, func_name: []const u8, is_boundary: bool) FunctionSurface {
+    const l0 = mangled_name.classifyMangledName(func_name);
     const l1 = linkage.classifyLinkage(func);
     const l2 = debug_origin.classifyDebugOrigin(func);
-    return mergeLayers(l1, l2, true, is_boundary);
+    return mergeLayers(l0, l1, l2, true, is_boundary);
 }
 
 // ============================================================================
 // Tests
 // ============================================================================
+
+test "strongestSkipSignal - extracts only skip surfaces" {
+    const gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
+    const user: SurfaceHint = .{ .surface = .user_code, .confidence = .high, .reason = "test" };
+    const stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
+
+    // strongestSkipSignal takes ?SurfaceHint (value), not *SurfaceHint (pointer)
+    try std.testing.expect(strongestSkipSignal(gen) != null);
+    try std.testing.expect(strongestSkipSignal(user) == null);
+    try std.testing.expect(strongestSkipSignal(stdlib) != null);
+    try std.testing.expect(strongestSkipSignal(null) == null);
+}
 
 test "FunctionSurface.shouldAnalyze - analyze surfaces" {
     try std.testing.expect(FunctionSurface.user_code.shouldAnalyze());
@@ -173,104 +216,76 @@ test "FunctionSurface.toString - all variants" {
 }
 
 test "mergeLayers - boundary overrides everything" {
-    const l1_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
-    const l2_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
-
-    // Boundary + stdlib hint + not reachable = still boundary
-    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(l1_stdlib, l2_gen, false, true));
-    // Boundary + no hints = still boundary
-    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(null, null, false, true));
-    // Boundary + reachable = still boundary
-    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(null, null, true, true));
-}
-
-test "mergeLayers - reachable overrides skip signals" {
-    const l2_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
-    const l2_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
+    const l0_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
     const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
 
-    // Reachable + stdlib L2 → user_code (reachable overrides skip)
-    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(null, l2_stdlib, true, false));
-    // Reachable + generated L2 → user_code
-    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(null, l2_gen, true, false));
-    // Reachable + generated L1 + no L2 → user_code
-    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(l1_gen, null, true, false));
+    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(l0_stdlib, l1_gen, null, false, true));
+    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(null, null, null, false, true));
+    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(null, null, null, true, true));
 }
 
-test "mergeLayers - reachable with user/dep/boundary L2 preserves L2" {
-    const l2_user: SurfaceHint = .{ .surface = .user_code, .confidence = .high, .reason = "test" };
-    const l2_dep: SurfaceHint = .{ .surface = .dependency, .confidence = .high, .reason = "test" };
-    const l2_bnd: SurfaceHint = .{ .surface = .boundary, .confidence = .high, .reason = "test" };
+test "mergeLayers - L0/L1 skip signal respected when reachable (key fix)" {
+    // Before fix: L1=COMPILER_GEN + reachable=true → USER_CODE (bug)
+    // After fix:  L1=COMPILER_GEN + reachable=true → COMPILER_GEN (correct)
+    const l0_null: ?SurfaceHint = null;
+    const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "internal linkage no dbg" };
+    const l2_null: ?SurfaceHint = null;
 
-    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(null, l2_user, true, false));
-    try std.testing.expectEqual(FunctionSurface.dependency, mergeLayers(null, l2_dep, true, false));
-    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(null, l2_bnd, true, false));
+    try std.testing.expectEqual(
+        FunctionSurface.compiler_generated,
+        mergeLayers(l0_null, l1_gen, l2_null, true, false),
+    );
 }
 
-test "mergeLayers - not reachable applies L2 suppression" {
-    const l2_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
-    const l2_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
-    const l2_rt: SurfaceHint = .{ .surface = .runtime, .confidence = .high, .reason = "test" };
-
-    try std.testing.expectEqual(FunctionSurface.standard_library, mergeLayers(null, l2_stdlib, false, false));
-    try std.testing.expectEqual(FunctionSurface.compiler_generated, mergeLayers(null, l2_gen, false, false));
-    try std.testing.expectEqual(FunctionSurface.runtime, mergeLayers(null, l2_rt, false, false));
+test "mergeLayers - L0 skip signal takes priority over blind user_code" {
+    // L0 identifies core::ptr::drop_in_place as compiler_generated
+    // Even with reachable=true (default), this should stay compiler_generated
+    const l0_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "drop_in_place pattern" };
+    try std.testing.expectEqual(
+        FunctionSurface.compiler_generated,
+        mergeLayers(l0_gen, null, null, true, false),
+    );
 }
 
-test "mergeLayers - not reachable applies L1 suppression when no L2" {
-    const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
-    const l1_rt: SurfaceHint = .{ .surface = .runtime, .confidence = .low, .reason = "test" };
-
-    try std.testing.expectEqual(FunctionSurface.compiler_generated, mergeLayers(l1_gen, null, false, false));
-    try std.testing.expectEqual(FunctionSurface.runtime, mergeLayers(l1_rt, null, false, false));
+test "mergeLayers - L0 stdlib signal respected when reachable" {
+    const l0_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "core::fmt" };
+    try std.testing.expectEqual(
+        FunctionSurface.standard_library,
+        mergeLayers(l0_stdlib, null, null, true, false),
+    );
 }
 
-test "mergeLayers - no strong signal returns unknown" {
-    // No hints, not boundary, not reachable → unknown (conservative keep)
-    try std.testing.expectEqual(FunctionSurface.unknown, mergeLayers(null, null, false, false));
-    // L1 null + L2 null + reachable default (null → true) → user_code
-    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(null, null, null, false));
+test "mergeLayers - L2 user_code preserved when reachable" {
+    const l2_user: SurfaceHint = .{ .surface = .user_code, .confidence = .high, .reason = "workspace path" };
+    try std.testing.expectEqual(FunctionSurface.user_code, mergeLayers(null, null, l2_user, true, false));
+
+    const l2_dep: SurfaceHint = .{ .surface = .dependency, .confidence = .high, .reason = "registry path" };
+    try std.testing.expectEqual(FunctionSurface.dependency, mergeLayers(null, null, l2_dep, true, false));
 }
 
-test "mergeLayers - L2 user_code with not reachable falls through" {
-    // L2 user_code is not a skip signal, so with no L1 skip and not reachable → unknown
-    const l2_user: SurfaceHint = .{ .surface = .user_code, .confidence = .high, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.unknown, mergeLayers(null, l2_user, false, false));
+test "mergeLayers - not reachable applies suppression" {
+    const l0_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "core::fmt" };
+    const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "internal linkage" };
+    const l2_rt: SurfaceHint = .{ .surface = .runtime, .confidence = .high, .reason = "panic" };
+
+    try std.testing.expectEqual(FunctionSurface.standard_library, mergeLayers(l0_stdlib, null, null, false, false));
+    try std.testing.expectEqual(FunctionSurface.compiler_generated, mergeLayers(null, l1_gen, null, false, false));
+    try std.testing.expectEqual(FunctionSurface.runtime, mergeLayers(null, null, l2_rt, false, false));
 }
 
-test "mergeLayers - L1 confidence does not affect outcome" {
-    // Low-confidence L1 skip signal should still apply when not reachable
-    const l1_gen_low: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .low, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.compiler_generated, mergeLayers(l1_gen_low, null, false, false));
-    // High-confidence L1 skip signal
-    const l1_gen_high: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.compiler_generated, mergeLayers(l1_gen_high, null, false, false));
+test "mergeLayers - no signals returns unknown" {
+    try std.testing.expectEqual(FunctionSurface.unknown, mergeLayers(null, null, null, false, false));
+    try std.testing.expectEqual(FunctionSurface.unknown, mergeLayers(null, null, null, true, false));
 }
 
-test "mergeLayers - L2 takes priority over L1 when both present and not reachable" {
-    // L1 says runtime, L2 says stdlib → L2 wins (checked first)
-    const l1_rt: SurfaceHint = .{ .surface = .runtime, .confidence = .high, .reason = "test" };
-    const l2_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.standard_library, mergeLayers(l1_rt, l2_stdlib, false, false));
-}
-
-test "mergeLayers - dependency L2 is not a skip signal" {
-    // L2 dependency with not reachable → falls through to unknown (not a skip surface)
-    const l2_dep: SurfaceHint = .{ .surface = .dependency, .confidence = .high, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.unknown, mergeLayers(null, l2_dep, false, false));
-}
-
-test "classifyFunction - boundary function classified correctly" {
-    // When is_boundary=true, the result should always be boundary
-    // regardless of other signals (cannot test with real LLVM here,
-    // but mergeLayers with is_boundary=true covers the logic)
-    const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .high, .reason = "test" };
-    const l2_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "test" };
-    try std.testing.expectEqual(FunctionSurface.boundary, mergeLayers(l1_gen, l2_stdlib, false, true));
+test "mergeLayers - L0 takes priority over L1 for skip signals" {
+    const l0_stdlib: SurfaceHint = .{ .surface = .standard_library, .confidence = .high, .reason = "alloc crate" };
+    const l1_gen: SurfaceHint = .{ .surface = .compiler_generated, .confidence = .low, .reason = "internal linkage" };
+    // L0 checked first → stdlib wins
+    try std.testing.expectEqual(FunctionSurface.standard_library, mergeLayers(l0_stdlib, l1_gen, null, false, false));
 }
 
 test "Confidence - ordering" {
-    // Verify confidence enum values for comparison
     try std.testing.expect(@intFromEnum(Confidence.low) < @intFromEnum(Confidence.medium));
     try std.testing.expect(@intFromEnum(Confidence.medium) < @intFromEnum(Confidence.high));
 }

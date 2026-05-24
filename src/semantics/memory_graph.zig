@@ -597,6 +597,16 @@ pub const MemoryGraph = struct {
         return node.freed;
     }
 
+    /// Check if analysis should be skipped for a pointer based on semantic resolution.
+    /// Returns true if the pointer has been identified as semantically safe
+    /// (e.g., managed by a language runtime like Rust's Drop or Go's GC).
+    pub fn shouldSkipAnalysis(graph: *const MemoryGraph, ptr_val: u64) bool {
+        _ = graph;
+        _ = ptr_val;
+        // Placeholder: will be enhanced when semantic resolution is fully integrated
+        return false;
+    }
+
     /// Gets allocation info for a pointer.
     pub fn getAllocInfo(graph: *MemoryGraph, ptr_val: u64) ?*const AllocNode {
         return graph.nodes.get(ptr_val);

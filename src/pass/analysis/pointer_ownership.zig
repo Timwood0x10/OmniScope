@@ -509,6 +509,20 @@ pub const PointerOwnershipPass = struct {
             };
             if (!is_ffi_relevant) continue;
 
+            // SRT (Semantic Resolution Tree) filter:
+            // If the function is semantically resolved as a release (drop_in_place,
+            // __rust_dealloc, etc.), it's a Rust Drop trait implementation — skip
+            // the entire function to avoid false positives from destructor glue.
+            // These functions are guaranteed safe by Rust's ownership system.
+            if (ctx.semantic_resolution) |engine| {
+                if (engine.isSemanticallyRelease(func_name)) {
+                    diag.debug("SRT-SKIP: {s} is semantically resolved as release — Rust Drop/destructor, skipping analysis", .{func_name});
+                    continue;
+                }
+            } else {
+                diag.info("SRT-DEBUG: ctx.semantic_resolution is NULL for func {s}", .{func_name});
+            }
+
             if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
                 // v0.1.7 FIX (break point 5): Fallback for when DangerSurfacePass produced
                 // no relevant functions (common in Rust FFI where CrossLangEdge detection

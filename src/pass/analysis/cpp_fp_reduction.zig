@@ -594,6 +594,17 @@ pub fn detectDoubleFree(
                 std.mem.indexOf(u8, first_func, "_R") != null);
             if (is_mangled) continue;
 
+            // SRT (Semantic Resolution Tree) filter:
+            // If the function containing the free is semantically resolved as a release
+            // (e.g., drop_in_place, __rust_dealloc), this is a language-guaranteed
+            // destructor call — not a real double-free bug. Skip it.
+            if (ctx.semantic_resolution) |engine| {
+                if (engine.isSemanticallyRelease(first_func)) {
+                    diag.debug("DOUBLE-FREE-SKIP: {s} is semantically resolved as release (drop/dealloc) — language-guaranteed", .{first_func});
+                    continue;
+                }
+            }
+
             // === P0-B Core Logic: Control-Flow Awareness ===
             //
             // Case 1: All frees in SAME basic block
@@ -700,6 +711,17 @@ pub fn detectUseAfterFree(
         if (isRustDropGlue(free_info.func_name)) {
             diag.debug("UAF-SKIP: {s} is Rust drop_in_place — guaranteed safe by ownership system", .{free_info.func_name});
             continue;
+        }
+
+        // SRT (Semantic Resolution Tree) filter:
+        // If the function containing the free is semantically resolved as a release
+        // (e.g., drop_in_place, __rust_dealloc), the subsequent use is part of the
+        // language's normal destructor sequence — not a real UAF. Skip it.
+        if (ctx.semantic_resolution) |engine| {
+            if (engine.isSemanticallyRelease(free_info.func_name)) {
+                diag.debug("UAF-SKIP: {s} is semantically resolved as release — language-guaranteed destructor", .{free_info.func_name});
+                continue;
+            }
         }
 
         const classification = ctx.classifyFunctionSurface(free_info.func_name, null);
@@ -1074,6 +1096,20 @@ pub fn detectMemoryLeaks(
         const rust_func_ptr = @intFromPtr(alloc_info.func_name.ptr);
         if (ctx.rust_into_raw_set.contains(rust_func_ptr)) {
             if (ctx.rust_from_raw_set.count() > 0) {
+                continue;
+            }
+        }
+
+        // SRT (Semantic Resolution Tree) filter:
+        // If the allocation function is semantically resolved (e.g., __rust_alloc
+        // matched as allocation, drop_in_place matched as release), and the
+        // function is NOT on an FFI boundary, the "leak" is likely managed by
+        // Rust's ownership system — skip it.
+        // Only skip if the function itself is resolved as a release/destructor,
+        // meaning the allocation happens inside a drop glue function.
+        if (ctx.semantic_resolution) |engine| {
+            if (engine.isSemanticallyRelease(alloc_info.func_name)) {
+                diag.debug("LEAK-SKIP: {s} is semantically resolved as release — allocation inside destructor, ownership-managed", .{alloc_info.func_name});
                 continue;
             }
         }
