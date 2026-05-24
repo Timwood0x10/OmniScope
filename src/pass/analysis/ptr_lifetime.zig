@@ -27,6 +27,7 @@
 
 const std = @import("std");
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
+const classifyAllocLanguageEnum = @import("ptr_lifetime_classify.zig").classifyAllocLanguageEnum;
 const c = @import("../../ir/llvm_raw.zig").c;
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
@@ -651,9 +652,13 @@ pub const PtrLifetimePass = struct {
                                 stats.total_pointers_tracked += 1;
 
                                 // v0.1.9: Sync with MemoryGraph — mark as heap allocation.
+                                // Use the allocator function's own language (e.g. malloc→C)
+                                // rather than module-level language to avoid cross_language_free
+                                // false positives when C++ modules use C allocators.
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang);
+                                    const alloc_lang = classifyAllocLanguageEnum(callee_name) orelse lang;
+                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, alloc_lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }
 
@@ -684,7 +689,8 @@ pub const PtrLifetimePass = struct {
 
                                 if (mg_effective) |mg| {
                                     const inst_ptr = @as(u64, @intFromPtr(inst));
-                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, lang);
+                                    const alloc_lang = classifyAllocLanguageEnum(callee_name) orelse lang;
+                                    _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, zone, alloc_lang);
                                     mg.recordFuncAlloc(func_ptr);
                                 }
                             }

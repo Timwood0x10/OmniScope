@@ -5,6 +5,7 @@ const pt = @import("ptr_lifetime_types.zig");
 const ResourceType = pt.ResourceType;
 const HEAP_ALLOC_FUNCTIONS = pt.HEAP_ALLOC_FUNCTIONS;
 const KNOWN_DEALLOCATORS = pt.KNOWN_DEALLOCATORS;
+const Language = @import("../../semantics/zone_classifier.zig").Language;
 
 /// Function classification and identification utilities for PtrLifetimePass.
 /// Extracted from ptr_lifetime.zig to improve code organization.
@@ -125,6 +126,21 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
     if (containsAny(fn_name, &[_][]const u8{ "napi_create_", "napi_get_cb_info" }))
         return "nodejs";
     return null;
+}
+
+/// Classify an allocation function's language as a Language enum.
+/// Returns the language of the allocator function itself, or null if unknown.
+/// Used by ptr_lifetime.zig to set alloc_lang from the actual allocator
+/// rather than the module-level language — fixes cross_language_free FP
+/// when C++ modules use malloc (C allocator) but alloc_lang was set to .cpp.
+pub fn classifyAllocLanguageEnum(fn_name: []const u8) ?Language {
+    const str = classifyAllocLanguage(fn_name) orelse return null;
+    if (std.mem.eql(u8, str, "rust")) return .rust;
+    if (std.mem.eql(u8, str, "c")) return .c;
+    if (std.mem.eql(u8, str, "go")) return .go;
+    if (std.mem.eql(u8, str, "java")) return .java;
+    if (std.mem.eql(u8, str, "python")) return .python;
+    return null; // objc, nodejs — no Language enum variant
 }
 
 /// Classify a free/dealloc function's language/runtime origin.

@@ -20,6 +20,7 @@ const CommonTypes = @import("../../common/types.zig");
 const ptr_types = @import("ptr_lifetime_types.zig");
 const ffi_language_classifier = @import("ffi_language_classifier.zig");
 const rust_drop_semantics = @import("../../semantics/rust_drop_semantics.zig");
+const tracking = @import("value_tracking.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -42,42 +43,10 @@ pub const RustFfiIssueType = enum {
     stack_address_escape,
 };
 
-/// Unified value source classification — replaces scattered isDerivedFromAlloca(),
-/// isValueFromParameter(), ptrOriginatesFromRustAlloc() with a single enum.
-/// Used by traceValueSource() to answer "where did this value come from?"
-pub const ValueSource = enum {
-    from_parameter,
-    from_alloca,
-    from_call,
-    from_global,
-    from_constant,
-    from_code_section,
-    unknown,
-};
-
-/// Unified value usage classification — replaces scattered isGlobalUsedForIndirectCall(),
-/// mayRetainPointer() partial logic. Answers "how is this value being used?"
-pub const ValueUsage = enum {
-    as_call_target,
-    as_store_dest,
-    as_load_src,
-    as_gep_base,
-    as_arg_to_ffi,
-    as_free_arg,
-};
-
-/// Result of traceValueUsage — fixed-size set of detected usages.
-pub const UsageSet = struct {
-    items: [6]ValueUsage = undefined,
-    len: usize = 0,
-
-    pub fn contains(self: *const UsageSet, usage: ValueUsage) bool {
-        for (self.items[0..self.len]) |u| {
-            if (u == usage) return true;
-        }
-        return false;
-    }
-};
+/// Re-export from value_tracking.zig (T1-T2 unified API)
+pub const ValueSource = tracking.ValueSource;
+pub const ValueUsage = tracking.ValueUsage;
+pub const UsageSet = tracking.UsageSet;
 
 /// Rust FFI audit result for a single function
 pub const RustFfiFinding = struct {
@@ -900,22 +869,7 @@ pub const RustFfiAuditor = struct {
 
     /// Check if an instruction uses (or transitively uses) a given value.
     fn instructionUsesValue(inst: c.LLVMValueRef, target: c.LLVMValueRef) bool {
-        if (@intFromPtr(inst) == 0 or @intFromPtr(target) == 0) return false;
-        if (inst == target) return true;
-
-        const num_operands = c.LLVMGetNumOperands(inst);
-        var i: c_uint = 0;
-        while (i < num_operands) : (i += 1) {
-            const op = c.LLVMGetOperand(inst, i);
-            if (@intFromPtr(op) == 0) continue;
-            if (op == target) return true;
-            // Follow bitcast/GEP one level
-            const op_opcode = c.LLVMGetInstructionOpcode(op);
-            if (op_opcode == c.LLVMBitCast or op_opcode == c.LLVMGetElementPtr) {
-                if (c.LLVMGetOperand(op, 0) == target) return true;
-            }
-        }
-        return false;
+        return tracking.instructionUsesValue(inst, target);
     }
 
     fn addFinding(self: *RustFfiAuditor, finding: RustFfiFinding) !void {
@@ -1163,15 +1117,8 @@ pub const RustFfiAuditor = struct {
     }
 
     /// T5 helper: Check if an instruction has debug metadata indicating struct type.
-    /// When LLVM IR is compiled with `-g`, GEP instructions carry !dbg metadata.
-    /// Presence of debug info means the compiler had struct type knowledge.
     fn hasStructDebugMetadata(inst: c.LLVMValueRef) bool {
-        if (@intFromPtr(inst) == 0) return false;
-
-        // Check if instruction has any metadata node (typically !dbg at index 0)
-        // If it does, the compiler had type information when generating this GEP
-        const meta = c.LLVMGetMetadata(inst, 0);
-        return @intFromPtr(meta) != 0;
+        return tracking.hasStructDebugMetadata(inst);
     }
 
     /// Rule 9: Detect write-to-immutable violations.
@@ -1281,43 +1228,8 @@ pub const RustFfiAuditor = struct {
     }
 
     /// Check if `user_value` ultimately derives from `source_value`.
-    /// Handles common C compiler patterns: source → store alloca → load → GEP → user
     fn ptrTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef) bool {
-        // Direct match
-        if (user_value == source_value) return true;
-
-        const opcode = c.LLVMGetInstructionOpcode(user_value);
-
-        // Through GEP: user is GEP(base, ...) and base traces to source
-        if (opcode == c.LLVMGetElementPtr) {
-            const base = c.LLVMGetOperand(user_value, 0);
-            if (@intFromPtr(base) != 0 and ptrTracesTo(base, source_value)) return true;
-        }
-
-        // Through bitcast
-        if (opcode == c.LLVMBitCast) {
-            const src = c.LLVMGetOperand(user_value, 0);
-            if (@intFromPtr(src) != 0 and ptrTracesTo(src, source_value)) return true;
-        }
-
-        // Through load: user is load(ptr) and ptr was stored with source
-        if (opcode == c.LLVMLoad) {
-            const load_ptr = c.LLVMGetOperand(user_value, 0);
-            if (@intFromPtr(load_ptr) != 0) {
-                // Check if source was stored to this pointer
-                const parent_bb = c.LLVMGetInstructionParent(user_value);
-                if (@intFromPtr(parent_bb) != 0) {
-                    var inst = c.LLVMGetFirstInstruction(parent_bb);
-                    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                        if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-                        if (c.LLVMGetOperand(inst, 1) != load_ptr) continue;
-                        if (c.LLVMGetOperand(inst, 0) == source_value) return true;
-                    }
-                }
-            }
-        }
-
-        return false;
+        return tracking.valueTracesTo(user_value, source_value);
     }
 
     /// Try to extract struct name from a value (GEP or load from GEP).
@@ -1756,69 +1668,18 @@ pub const RustFfiAuditor = struct {
     }
 
     /// Check if `inst` uses a value that was loaded from `target_global`.
-    /// Recursively walks operands to find load-from-global → use chain.
     fn instructionUsesLoadedFromGlobal(
         inst: c.LLVMValueRef,
         target_global: c.LLVMValueRef,
         func: c.LLVMValueRef,
     ) bool {
-        if (@intFromPtr(inst) == 0 or @intFromPtr(target_global) == 0) return false;
-
-        const num_operands = c.LLVMGetNumOperands(inst);
-        var i: c_uint = 0;
-        while (i < num_operands) : (i += 1) {
-            const op = c.LLVMGetOperand(inst, i);
-            if (@intFromPtr(op) == 0) continue;
-
-            // Check if operand is a load from target_global
-            const op_opcode = c.LLVMGetInstructionOpcode(op);
-            if (op_opcode == c.LLVMLoad) {
-                const load_src = c.LLVMGetOperand(op, 0);
-                if (load_src == target_global) return true;
-            }
-
-            // Recurse into bitcast/GEP wrappers around loads
-            if (op_opcode == c.LLVMBitCast or op_opcode == c.LLVMGetElementPtr) {
-                if (instructionUsesLoadedFromGlobal(op, target_global, func)) return true;
-            }
-        }
-        return false;
+        _ = func;
+        return tracking.instructionUsesLoadedFromGlobal(inst, target_global);
     }
 
     /// Check if a function name matches known deallocator patterns across languages.
     fn isDeallocator(func_name: []const u8) bool {
-        // C standard library
-        if (std.mem.eql(u8, func_name, "free")) return true;
-        if (std.mem.eql(u8, func_name, "realloc")) return true; // realloc(ptr, 0) can free
-
-        // Go/cgo runtime
-        if (std.mem.indexOf(u8, func_name, "_cgo_free") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "_Cfunc_GoFree") != null) return true;
-
-        // Rust
-        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "__rust_alloc_error_handler") != null) return true;
-
-        // C++
-        if (std.mem.indexOf(u8, func_name, "_Zdl") != null) return true; // operator delete
-        if (std.mem.indexOf(u8, func_name, "_Zda") != null) return true; // operator delete[]
-
-        // Objective-C
-        if (std.mem.indexOf(u8, func_name, "objc_release") != null) return true;
-
-        // Python C API
-        if (std.mem.indexOf(u8, func_name, "PyMem_Free") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "PyObject_Free") != null) return true;
-
-        // Java JNI
-        if (std.mem.indexOf(u8, func_name, "DeleteLocalRef") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "ReleaseStringUTF") != null) return true;
-
-        // POSIX
-        if (std.mem.eql(u8, func_name, "munmap")) return true;
-        if (std.mem.eql(u8, func_name, "close")) return false; // fd, not memory
-
-        return false;
+        return tracking.isDeallocator(func_name);
     }
 
     /// Check if instruction A comes before (or at) instruction B in the same basic block.
@@ -1945,197 +1806,17 @@ pub const RustFfiAuditor = struct {
     }
 
     // =====================================================================
-    // Unified Value Tracking API (T1 + T2 from todo.md)
-    //
-    // Replaces scattered: isDerivedFromAlloca(), isValueFromParameter(),
-    // ptrOriginatesFromRustAlloc(), isGlobalUsedForIndirectCall()
+    // Unified Value Tracking API (T1 + T2) — delegates to value_tracking.zig
     // =====================================================================
 
-    /// T1: Trace a value back to its origin source.
-    ///
-    /// Walks def-use chain to determine where `val` ultimately comes from.
-    /// Key enhancement over isDerivedFromAlloca(): also traces alloca CONTENT
-    /// (what was stored into the alloca), not just the alloca itself.
-    ///
-    /// For alloca-derived values, returns:
-    ///   .from_code_section  if alloca holds a function pointer / .text addr
-    ///   .from_constant      if alloca holds a compile-time constant
-    ///   .from_parameter     if alloca stores a function parameter
-    ///   .from_alloca        if alloca content is also stack-allocated
-    ///   .from_call          if alloca stores a call return value
-    ///   .from_global        if alloca stores a global address
     pub fn traceValueSource(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
-        if (@intFromPtr(val) == 0) return .unknown;
-
-        const opcode = c.LLVMGetInstructionOpcode(val);
-
-        // Direct classification by value kind
-        if (c.LLVMIsAArgument(val) != null) return .from_parameter;
-        if (opcode == c.LLVMAlloca) {
-            return traceAllocaContent(val, func);
-        }
-        if (c.LLVMIsAGlobalValue(val) != null) return .from_global;
-        if (c.LLVMIsAConstant(val) != null or c.LLVMIsAConstantInt(val) != null) return .from_constant;
-
-        // Function pointer (global address in code section)
-        if (c.LLVMIsAFunction(val) != null) return .from_code_section;
-
-        // Call instruction → return value
-        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) return .from_call;
-
-        // Recursive tracing through wrappers
-        if (opcode == c.LLVMBitCast or opcode == c.LLVMGetElementPtr) {
-            const src = c.LLVMGetOperand(val, 0);
-            if (@intFromPtr(src) != 0) return traceValueSource(self, src, func);
-        }
-
-        // Load instruction → trace what's being loaded
-        if (opcode == c.LLVMLoad) {
-            const ptr_op = c.LLVMGetOperand(val, 0);
-            if (@intFromPtr(ptr_op) != 0) {
-                const src_kind = traceValueSource(self, ptr_op, func);
-                // If loading from an alloca, check what's stored inside it
-                if (src_kind == .from_alloca) {
-                    return traceAllocaContent(ptr_op, func);
-                }
-                return src_kind;
-            }
-        }
-
-        return .unknown;
+        _ = self;
+        return tracking.traceValueSource(val, func);
     }
 
-    /// Trace what content is stored inside an alloca.
-    /// This is the key enhancement over plain isDerivedFromAlloca():
-    /// we don't just know "it's stack memory", we know "what's IN it".
-    fn traceAllocaContent(alloca_val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-                if (c.LLVMGetOperand(inst, 1) != alloca_val) continue;
-
-                const stored_val = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(stored_val) == 0) continue;
-
-                // Classify the stored value
-                if (c.LLVMIsAArgument(stored_val) != null) return .from_parameter;
-                if (c.LLVMIsAGlobalValue(stored_val) != null) {
-                    const gname_ptr = c.LLVMGetValueName(stored_val);
-                    if (@intFromPtr(gname_ptr) != 0) {
-                        const gname = std.mem.span(gname_ptr);
-                        // Global in .text section → code section provenance
-                        if (isCodeSectionGlobal(gname)) return .from_code_section;
-                    }
-                    return .from_global;
-                }
-                if (c.LLVMIsAConstant(stored_val) != null) return .from_constant;
-                if (c.LLVMIsAFunction(stored_val) != null) return .from_code_section;
-
-                const stored_opcode = c.LLVMGetInstructionOpcode(stored_val);
-                if (stored_opcode == c.LLVMCall or stored_opcode == c.LLVMInvoke) return .from_call;
-                if (stored_opcode == c.LLVMAlloca) return .from_alloca;
-            }
-        }
-
-        return .from_alloca;
-    }
-
-    /// Check if a global name suggests it lives in .text/.rodata section.
-    /// These are function pointers or constant tables, not heap data.
-    fn isCodeSectionGlobal(gname: []const u8) bool {
-        const section_patterns = [_][]const u8{
-            ".text", ".rodata",  "__TEXT", "__const",
-            "llvm.", "metadata", "comdat",
-        };
-        for (section_patterns) |pat| {
-            if (std.mem.indexOf(u8, gname, pat) != null) return true;
-        }
-        return false;
-    }
-
-    /// T2: Infer how a value is being used by scanning its use-sites.
-    ///
-    /// Returns all detected usage patterns for this value within `func`.
-    /// A single value can have multiple simultaneous uses (e.g., both
-    /// stored AND passed as FFI argument).
-    ///
-    /// Max usages capped at 6 (size of fixed array).
     pub fn traceValueUsage(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef) ?UsageSet {
         _ = self;
-        if (@intFromPtr(val) == 0 or @intFromPtr(func) == 0) return null;
-
-        var usage_count: usize = 0;
-        var usages: [6]ValueUsage = undefined;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Check if this instruction uses our target value
-                if (!instructionUsesValue(inst, val)) continue;
-
-                // Classify usage by instruction type and context
-                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                    const called = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called) != 0 and called == val) {
-                        addUsage(&usages, &usage_count, .as_call_target);
-                    } else {
-                        addUsage(&usages, &usage_count, .as_arg_to_ffi);
-                    }
-                    // Check if callee is a deallocator
-                    if (isDeallocCall(inst)) {
-                        addUsage(&usages, &usage_count, .as_free_arg);
-                    }
-                } else if (opcode == c.LLVMStore) {
-                    const dest = c.LLVMGetOperand(inst, 1);
-                    if (@intFromPtr(dest) != 0) {
-                        if (c.LLVMIsAGlobalValue(dest) != null) {
-                            addUsage(&usages, &usage_count, .as_store_dest);
-                        } else {
-                            addUsage(&usages, &usage_count, .as_store_dest);
-                        }
-                    }
-                } else if (opcode == c.LLVMLoad) {
-                    addUsage(&usages, &usage_count, .as_load_src);
-                } else if (opcode == c.LLVMGetElementPtr) {
-                    addUsage(&usages, &usage_count, .as_gep_base);
-                }
-
-                if (usage_count >= usages.len) break;
-            }
-            if (usage_count >= usages.len) break;
-        }
-
-        if (usage_count == 0) return null;
-        return .{ .items = usages, .len = usage_count };
-    }
-
-    /// Check if a call/invoke instruction calls a known deallocator.
-    fn isDeallocCall(inst: c.LLVMValueRef) bool {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return false;
-
-        const called = c.LLVMGetCalledValue(inst);
-        if (@intFromPtr(called) == 0) return false;
-        const name_ptr = c.LLVMGetValueName(called);
-        if (@intFromPtr(name_ptr) == 0) return false;
-
-        return isDeallocator(std.mem.span(name_ptr));
-    }
-
-    /// Safely add a usage to the array if not already present.
-    fn addUsage(usages: *[6]ValueUsage, count: *usize, usage: ValueUsage) void {
-        for (usages[0..count.*]) |u| {
-            if (u == usage) return;
-        }
-        if (count.* < usages.len) {
-            usages[count.*] = usage;
-            count.* += 1;
-        }
+        return tracking.traceValueUsage(val, func);
     }
 };
 

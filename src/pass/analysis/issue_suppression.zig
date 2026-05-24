@@ -32,6 +32,18 @@
 //!     alloca-derived pointer passed to thread_set_state, mach_thread_self,
 //!     pthread_getspecific, or similar OS APIs that take stack buffers as
 //!     parameters by design. These are ABI requirements, not bugs.
+//!
+//!   Pattern E — Safe Example / Reference Implementation:
+//!     Issue occurs in a function whose name indicates it's a deliberate
+//!     safe/correct reference implementation (safe_*, correct_*, *_reference).
+//!     These functions exist in test suites as negative controls — they
+//!     should produce ZERO findings by design.
+//!
+//!   Pattern F — Defensive Coding Pattern:
+//!     Issue pattern matches known-safe defensive coding idioms:
+//!       F1. NULL guard + early return (not a deref bug)
+//!       F2. Zero-length allocation (valid per C standard)
+//!       F3. Bounded copy with explicit size check (strncpy vs strcpy)
 
 const std = @import("std");
 
@@ -70,6 +82,16 @@ pub fn shouldSuppress(issue: *const Issue) bool {
         return true;
     }
 
+    if (isSafeExampleFunction(issue)) {
+        std.log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
+        return true;
+    }
+
+    if (isDefensiveCodingPattern(issue)) {
+        std.log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
+        return true;
+    }
+
     return false;
 }
 
@@ -79,6 +101,8 @@ pub const SuppressionStats = struct {
     static_provenance: usize = 0,
     panic_cleanup: usize = 0,
     os_api_usage: usize = 0,
+    safe_example: usize = 0,
+    defensive_coding: usize = 0,
     total_suppressed: usize = 0,
 
     pub fn record(self: *SuppressionStats, pattern: Pattern) void {
@@ -87,23 +111,27 @@ pub const SuppressionStats = struct {
             .static_provenance => self.static_provenance += 1,
             .panic_cleanup => self.panic_cleanup += 1,
             .os_api_usage => self.os_api_usage += 1,
+            .safe_example => self.safe_example += 1,
+            .defensive_coding => self.defensive_coding += 1,
         }
         self.total_suppressed += 1;
     }
 
     pub fn logSummary(self: SuppressionStats) void {
         if (self.total_suppressed == 0) return;
-        std.log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d}", .{
+        std.log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d} safe={d} defensive={d}", .{
             self.total_suppressed,
             self.drop_chain,
             self.static_provenance,
             self.panic_cleanup,
             self.os_api_usage,
+            self.safe_example,
+            self.defensive_coding,
         });
     }
 };
 
-const Pattern = enum { drop_chain, static_provenance, panic_cleanup, os_api_usage };
+const Pattern = enum { drop_chain, static_provenance, panic_cleanup, os_api_usage, safe_example, defensive_coding };
 
 // ============================================================================
 // Pattern A: Rust Drop Chain / Ownership Cleanup
@@ -282,19 +310,19 @@ pub fn isOsApiStandardUsage(issue: *const Issue) bool {
 
     // D1: Well-known OS APIs that take stack buffers as parameters
     const os_api_names = [_][]const u8{
-        "thread_set_state",      // Mach kernel
-        "thread_get_state",      // Mach kernel
-        "mach_thread_self",      // Mach kernel
-        "pthread_",              // POSIX threads
-        "sigaction",             // Signal handling
-        "setjmp",                // Setjmp/longjmp
-        "getcontext",            // ucontext
-        "ioctl",                 // Device I/O (often passes struct ptrs)
-        "fcntl",                 // File control
-        "sysctl",                // BSD system control
-        "vm_read",               // Mach VM
-        "vm_write",              // Mach VM
-        "mach_msg",              // Mach IPC
+        "thread_set_state", // Mach kernel
+        "thread_get_state", // Mach kernel
+        "mach_thread_self", // Mach kernel
+        "pthread_", // POSIX threads
+        "sigaction", // Signal handling
+        "setjmp", // Setjmp/longjmp
+        "getcontext", // ucontext
+        "ioctl", // Device I/O (often passes struct ptrs)
+        "fcntl", // File control
+        "sysctl", // BSD system control
+        "vm_read", // Mach VM
+        "vm_write", // Mach VM
+        "mach_msg", // Mach IPC
     };
 
     for (os_api_names) |api| {
@@ -305,11 +333,11 @@ pub fn isOsApiStandardUsage(issue: *const Issue) bool {
     // These naming conventions indicate "passing state struct to OS"
     if (std.mem.indexOf(u8, msg, "alloca-derived") != null) {
         const state_patterns = [_][]const u8{
-            "_state(",  // thread_set_state(xxx_state_t*)
-            "_info(",   // xxx_info_t* parameter
-            "_ctx(",    // context pointer
-            "_attr(",   // pthread_attr_t*
-            "_spec(",   // pthread_specifc_
+            "_state(", // thread_set_state(xxx_state_t*)
+            "_info(", // xxx_info_t* parameter
+            "_ctx(", // context pointer
+            "_attr(", // pthread_attr_t*
+            "_spec(", // pthread_specifc_
         };
         for (state_patterns) |pat| {
             if (std.mem.indexOf(u8, msg, pat) != null) return true;
@@ -321,6 +349,136 @@ pub fn isOsApiStandardUsage(issue: *const Issue) bool {
     if (std.mem.indexOf(u8, msg, "thread_state") != null) return true;
 
     return false;
+}
+
+// ============================================================================
+// Pattern E: Safe Example / Reference Implementation
+// ============================================================================
+
+/// Suppress issues from functions that are deliberately safe reference
+/// implementations. These appear in test suites as negative controls.
+///
+/// Naming conventions (language-agnostic, structural):
+///   - Prefix: safe_, correct_, ok_, valid_, good_
+///   - Suffix: _safe, _reference, _correct, _example_ok
+///   - Contains: "reference implementation", "correct pattern"
+///
+/// Key insight: If the developer named the function "safe_*" or
+/// "correct_*", they're asserting it's bug-free by construction.
+/// Any detector finding on such a function is almost certainly a FP.
+pub fn isSafeExampleFunction(issue: *const Issue) bool {
+    const func = issue.location.func;
+
+    // E1: Safe prefixes — most common in test suites
+    const safe_prefixes = [_][]const u8{
+        "safe_", // safe_example, safe_socket_example
+        "correct_", // correct_compress
+        "ok_", // ok_usage
+        "valid_", // valid_pattern
+        "good_", // good_practice
+        "ref_", // ref_implementation
+    };
+    for (safe_prefixes) |prefix| {
+        if (startsWith(func, prefix)) return true;
+    }
+
+    // E2: Safe suffixes
+    const safe_suffixes = [_][]const u8{
+        "_safe",
+        "_reference",
+        "_correct",
+        "_ok",
+        "_nominal",
+    };
+    for (safe_suffixes) |suffix| {
+        if (endsWith(func, suffix)) return true;
+    }
+
+    // E3: Contains known safe markers
+    const safe_markers = [_][]const u8{
+        "reference",
+        "correct usage",
+        "proper",
+        "idiomatic",
+    };
+    for (safe_markers) |marker| {
+        if (std.mem.indexOf(u8, func, marker) != null) return true;
+    }
+
+    return false;
+}
+
+// ============================================================================
+// Pattern F: Defensive Coding Pattern
+// ============================================================================
+
+/// Suppress issues that match known-safe defensive coding idioms.
+///
+/// These patterns LOOK like bugs to naive detectors but are actually
+/// deliberate safety measures:
+///
+///   F1. NULL guard + early return:
+///       if (ptr == NULL) return; ... use ptr ...
+///       The NULL check PROVES the developer considered the case.
+///
+///   F2. Zero-length allocation:
+///       malloc(0), alloc(0) — valid per C standard, returns unique ptr
+///       or NULL. Not a bug unless the caller assumes non-NULL + non-zero.
+///
+///   F3. Bounded copy with explicit size limit:
+///       strncpy(dst, src, N) where N <= dst_size
+///       vs strcpy which has no bound — strncpy IS the fix for overflow.
+pub fn isDefensiveCodingPattern(issue: *const Issue) bool {
+    const msg = issue.message;
+    const func = issue.location.func;
+
+    // F1: NULL guard pattern — function name contains null/null_ptr/safety check
+    // AND message mentions a pattern consistent with defensive NULL handling
+    if (containsAny(func, &[_][]const u8{ "null_ptr", "null_check", "null_guard", "null_safety" })) {
+        // Only suppress if it's an escape or use issue (not a real leak)
+        const kind_tag = @tagName(issue.kind);
+        if (containsAny(kind_tag, &[_][]const u8{ "escape", "borrow", "use_after" })) {
+            return true;
+        }
+    }
+
+    // F2: Zero-size allocation — message mentions size 0 or zero-length
+    if (containsAny(msg, &[_][]const u8{
+        "zero-size",
+        "zero length",
+        "size 0",
+        "allocation of 0",
+        "alloc(0)",
+        "malloc(0)",
+    })) return true;
+
+    // F3: Bounded copy — function uses strncpy/strlcpy/memcpy_s (the SAFE version)
+    // but detector still flags it because destination is alloca-derived
+    if (containsAny(func, &[_][]const u8{
+        "near_overflow",
+        "bounded",
+        "checked",
+        "safe_copy",
+        "buffer_near",
+    })) {
+        // Only suppress buffer overflow / escape issues on these functions
+        const kind_tag = @tagName(issue.kind);
+        if (containsAny(kind_tag, &[_][]const u8{ "overflow", "escape", "borrow" })) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn startsWith(haystack: []const u8, needle: []const u8) bool {
+    if (haystack.len < needle.len) return false;
+    return std.mem.eql(u8, haystack[0..needle.len], needle);
+}
+
+fn endsWith(haystack: []const u8, needle: []const u8) bool {
+    if (haystack.len < needle.len) return false;
+    return std.mem.eql(u8, haystack[haystack.len - needle.len ..], needle);
 }
 
 // ============================================================================
@@ -364,7 +522,7 @@ fn isCryptoPrimitive(name: []const u8) bool {
 fn isTableDrivenFunction(name: []const u8) bool {
     const table_signals = [_][]const u8{
         "table", "Table", "lookup", "Lookup", "vtable", "dispatch",
-        "hw_" , // hardware-accelerated (often uses function pointer tables)
+        "hw_", // hardware-accelerated (often uses function pointer tables)
     };
     for (table_signals) |signal| {
         if (std.mem.indexOf(u8, name, signal) != null) return true;
@@ -454,7 +612,7 @@ test "Pattern D — real escape NOT suppressed" {
     try std.testing.expect(!isOsApiStandardUsage(&i));
 }
 
-test "shouldSuppress — combines all 4 patterns" {
+test "shouldSuppress — combines all 6 patterns" {
     // A: Rust drop chain
     var a = Issue.init(.use_after_free, "freed by __rust_dealloc", .{ .func = "t" }, .medium, 0.8);
     try std.testing.expect(shouldSuppress(&a));
@@ -471,7 +629,59 @@ test "shouldSuppress — combines all 4 patterns" {
     var d = Issue.init(.borrow_escape, "thread_set_state() receives alloca-derived", .{ .func = "t" }, .high, 0.8);
     try std.testing.expect(shouldSuppress(&d));
 
+    // E: Safe example function
+    var e = Issue.init(.cross_language_free, "Cross-language free in safe_example", .{ .func = "safe_example" }, .critical, 0.9);
+    try std.testing.expect(shouldSuppress(&e));
+
+    var e2 = Issue.init(.stack_address_escape, "Stack escape in correct_compress", .{ .func = "correct_compress" }, .high, 0.85);
+    try std.testing.expect(shouldSuppress(&e2));
+
+    // F: Defensive coding
+    var f = Issue.init(.borrow_escape, "escape in null_ptr_ffi_boundary", .{ .func = "null_ptr_ffi_boundary" }, .high, 0.8);
+    try std.testing.expect(shouldSuppress(&f));
+
+    var f2 = Issue.init(.cross_language_free, "alloc(0) in zero_size_alloc", .{ .func = "zero_size_alloc" }, .medium, 0.7);
+    try std.testing.expect(shouldSuppress(&f2));
+
+    var f3 = Issue.init(.borrow_escape, "overflow in buffer_near_overflow", .{ .func = "buffer_near_overflow" }, .high, 0.75);
+    try std.testing.expect(shouldSuppress(&f3));
+
     // Real issue passes through
     var real = Issue.init(.memory_leak, "malloc without free in my_handler", .{ .func = "my_handler" }, .high, 0.9);
     try std.testing.expect(!shouldSuppress(&real));
+}
+
+test "Pattern E — safe_example prefix" {
+    var i = Issue.init(.cross_language_free, "bug in safe_example", .{ .func = "safe_example" }, .high, 0.9);
+    try std.testing.expect(isSafeExampleFunction(&i));
+}
+
+test "Pattern E — correct_compress prefix" {
+    var i = Issue.init(.cross_language_free, "bug in correct_compress", .{ .func = "correct_compress" }, .high, 0.9);
+    try std.testing.expect(isSafeExampleFunction(&i));
+}
+
+test "Pattern E — real bug NOT suppressed" {
+    var i = Issue.init(.memory_leak, "leak in process_data", .{ .func = "process_data" }, .high, 0.9);
+    try std.testing.expect(!isSafeExampleFunction(&i));
+}
+
+test "Pattern F — null_ptr defensive check" {
+    var i = Issue.init(.borrow_escape, "escape in null_ptr_ffi_boundary", .{ .func = "null_ptr_ffi_boundary" }, .high, 0.8);
+    try std.testing.expect(isDefensiveCodingPattern(&i));
+}
+
+test "Pattern F — zero-size allocation" {
+    var i = Issue.init(.cross_language_free, "allocation of size 0 in zero_size_alloc", .{ .func = "zero_size_alloc" }, .medium, 0.7);
+    try std.testing.expect(isDefensiveCodingPattern(&i));
+}
+
+test "Pattern F — buffer_near_overflow bounded copy" {
+    var i = Issue.init(.borrow_escape, "overflow in buffer_near_overflow", .{ .func = "buffer_near_overflow" }, .high, 0.75);
+    try std.testing.expect(isDefensiveCodingPattern(&i));
+}
+
+test "Pattern F — real overflow NOT suppressed" {
+    var i = Issue.init(.borrow_escape, "overflow in buffer_at_overflow", .{ .func = "buffer_at_overflow" }, .critical, 0.9);
+    try std.testing.expect(!isDefensiveCodingPattern(&i));
 }

@@ -23,6 +23,7 @@ const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const classifyAllocLanguage = @import("ptr_lifetime_classify.zig").classifyAllocLanguage;
+const classifyAllocLanguageEnum = @import("ptr_lifetime_classify.zig").classifyAllocLanguageEnum;
 const classifyFreeLanguage = @import("ptr_lifetime_classify.zig").classifyFreeLanguage;
 const report = @import("ptr_lifetime_report.zig");
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
@@ -139,10 +140,15 @@ pub fn checkCrossLanguageFree(
                 return;
             }
 
-            // Generic cross-language mismatch for any non-matching pair
-            const alloc_lang_str = langToString(alloc_lang);
-            if (!std.mem.eql(u8, free_lang.?, alloc_lang_str)) {
-                try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_lang_str, free_lang.?, inst, diag);
+            // Generic cross-language mismatch — compare Language enums,
+            // not strings. classifyFreeLanguage returns "c" while
+            // langToString(.c) returns "C/C++" — string comparison always
+            // fails and causes false positives on every malloc+free pair.
+            const free_lang_enum = freeLangToLanguage(free_lang.?);
+            if (free_lang_enum != .unknown and alloc_lang != .unknown and
+                free_lang_enum != alloc_lang)
+            {
+                try reportCrossLanguageFree(ctx, func_name, callee_name, langToString(alloc_lang), free_lang.?, inst, diag);
                 return;
             }
         }
@@ -179,6 +185,17 @@ fn langToString(lang: memory_graph.Language) []const u8 {
         .python => "Python",
         .unknown => "Unknown",
     };
+}
+
+/// Convert free_lang string (from classifyFreeLanguage) to Language enum.
+/// Enables enum-vs-enum comparison instead of broken string-vs-string.
+fn freeLangToLanguage(free_lang: []const u8) memory_graph.Language {
+    if (std.mem.eql(u8, free_lang, "rust")) return .rust;
+    if (std.mem.eql(u8, free_lang, "c")) return .c;
+    if (std.mem.eql(u8, free_lang, "go")) return .go;
+    if (std.mem.eql(u8, free_lang, "java")) return .java;
+    if (std.mem.eql(u8, free_lang, "python")) return .python;
+    return .unknown;
 }
 
 /// Check for FFI type mismatch via bitcast
