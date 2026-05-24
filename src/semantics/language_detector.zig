@@ -69,7 +69,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     const PERSONALITY_WEIGHT: f32 = 0.8;
     const GLOBALS_WEIGHT: f32 = 0.6;
 
-    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, swift, java, unknown]
+    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, csharp, java, unknown]
 
     if (sampling_result) |r| {
         const lang_idx = langToIndex(r.language);
@@ -131,7 +131,7 @@ fn langToIndex(lang: Language) usize {
         .zig => 2,
         .cpp => 3,
         .c => 4,
-        .swift => 5,
+        .csharp => 5,
         .java => 6,
         .python => 7,
         .unknown => 8,
@@ -145,7 +145,7 @@ fn indexToLang(idx: usize) Language {
         2 => .zig,
         3 => .cpp,
         4 => .c,
-        5 => .swift,
+        5 => .csharp,
         6 => .java,
         7 => .python,
         else => .unknown,
@@ -173,6 +173,7 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var go_count: u32 = 0;
     var zig_count: u32 = 0;
     var cpp_count: u32 = 0;
+    var csharp_count: u32 = 0;
     var c_count: u32 = 0;
     var total: u32 = 0;
 
@@ -219,6 +220,28 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
+        // C# / .NET NativeAOT markers (unambiguous)
+        // .NET NativeAOT produces distinctive symbol names:
+        //   - <Module>.  prefix for module-level methods
+        //   - System.*, Microsoft.* namespace prefixes
+        //   - _N3System (Itanium-mangled .NET: N=namespace, 3=len("System"))
+        //   - Rh* prefix = Runtime Helpers (RhThrowHresult, RhNewArray etc.)
+        //   - GC_* = GC interaction stubs (GCPinAllocHandle, GCGlobalHandleFree2)
+        //   - IL_* = IL code stubs
+        if (std.mem.startsWith(u8, name, "<Module>.") or
+            std.mem.startsWith(u8, name, "System.") or
+            std.mem.startsWith(u8, name, "Microsoft.") or
+            (name.len > 9 and std.mem.indexOf(u8, name[0..9], "_N3System") != null) or
+            (name.len > 2 and name[0] == 'R' and name[1] == 'h') or
+            std.mem.startsWith(u8, name, "GC_") or
+            std.mem.startsWith(u8, name, "IL_") or
+            std.mem.indexOf(u8, name, "__DotNet") != null or
+            std.mem.indexOf(u8, name, "Marshal_") != null)
+        {
+            csharp_count += 1;
+            continue;
+        }
+
         // _ZN (Itanium nested name mangling) -- used by BOTH Rust and C++.
         // Multi-layer disambiguation with increasing specificity:
         //
@@ -260,6 +283,7 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .go, .count = go_count },
         .{ .lang = .zig, .count = zig_count },
         .{ .lang = .cpp, .count = cpp_count },
+        .{ .lang = .csharp, .count = csharp_count },
         .{ .lang = .c, .count = c_count },
     };
 

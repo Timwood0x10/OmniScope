@@ -4,6 +4,7 @@
 //! orchestrates passes and data flow.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
@@ -153,7 +154,7 @@ pub const Pipeline = struct {
                             const inst_ptr = @as(u64, @intFromPtr(inst));
                             // DC-C4 FIX: Log OOM instead of silently swallowing error
                             ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
-                                std.log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
+                                log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
                             };
                             // P0-3: Check if callee is an external declaration (FFI boundary indicator)
                             if (c.LLVMIsDeclaration(called_val) != 0) {
@@ -164,7 +165,7 @@ pub const Pipeline = struct {
                 }
             }
             const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
-            if (idx_ms > 10) std.log.info("[PERF] CallSiteIndex build: {d:.1} ms", .{@as(u32, @intFromFloat(idx_ms))});
+            if (idx_ms > 10) log.debug("[PERF] CallSiteIndex build: {d:.1} ms", .{@as(u32, @intFromFloat(idx_ms))});
         }
 
         var diag = DiagnosticWriter{ .allocator = self.allocator };
@@ -174,7 +175,7 @@ pub const Pipeline = struct {
         // where call_graph + pointer_ownership + pointer-flow + ffi-boundary
         // all run despite having zero actual FFI boundaries.
         if (!has_ffi_calls) {
-            std.log.info("Pipeline: no external/declaration call sites detected — pure single-language module, skipping FFI passes", .{});
+            log.info("Pipeline: no external/declaration call sites detected — pure single-language module, skipping FFI passes", .{});
             ctx.early_exit = true;
         }
 

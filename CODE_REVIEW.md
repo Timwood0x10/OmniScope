@@ -1,140 +1,176 @@
 # OmniScope Code Review
 
 > **Verified**: 2026-05-24 — All claims checked against actual source code  
-> **Metrics verified**: `find src/ -name '*.zig' | xargs wc -l | tail -1` = 66,579 lines, 157 files, 960 tests
+> **Metrics verified**: 157 `.zig` source files, ~66,579 lines across `src/`  
+> **Fresh review scope**: `src/` tree (dataflow, pass/analysis, registry, semantics, output, engine, ir)
 
 ---
 
-## Dead Code
+## 🔴 Critical Bugs
 
-### ✅ CR-DC-1: `src/pass/analysis/taint.zig` — **CONFIRMED DEAD CODE**
+### CR-BUG-1: Dangling pointer — `getIssuesBySeverity` returns reference to temporary array
 
-**File exists:** Yes (530 lines)  
-**References:** Only self-referential. Zero imports from any other `.zig` file. Not in `main.zig` pipeline.
+**File:** `src/dataflow/graph.zig:458`
 
-**Verdict:** Complete dead code. Safe to delete.
-
----
-
-### ✅ CR-DC-2: `src/tracking/mod.zig` — **CONFIRMED DEAD CODE**
-
-**File:** 8-line deprecation stub  
-**Still exported in root.zig:51** — `pub const tracking = @import("tracking/mod.zig");`
-
-**Verdict:** Dead stub still wired into module tree. Delete file + remove export.
-
----
-
-### ⚠️ CR-DC-3: Incomplete passes — **PARTIALLY CONFIRMED**
-
-| File | Status |
-|------|--------|
-| `abi_mismatch.zig` | ✅ Commented out in main.zig pipeline (L192) |
-| `thread_crossing.zig` | ✅ Commented out in main.zig pipeline (L193) |
-
-Both files exist but are not active. Low priority — may be re-enabled later.
-
----
-
-## Error Handling Issues
-
-### ✅ CR-EH-1: `catch {}` silent error swallowing — **CONFIRMED (exact count)**
-
-**Actual count: 63 instances** (CODE_REVIEW claimed 63 → ✅ EXACT MATCH)
-
-```bash
-$ grep -rc 'catch {}' src/ --include='*.zig' | awk -F: '{s+=$2} END {print s}'
-63
-```
-
-**Top offenders by file:**
-| File | Count | Notes |
-|------|-------|-------|
-| `rust_ffi_auditor.zig` | ~8 | Report path failures |
-| `pointer_ownership.zig` | ~5 | Various error paths |
-| `cpp_fp_reduction.zig` | ~4 | detectDoubleFree etc. |
-| `ffi_type_mismatch.zig` | ~4 | reportTypeMismatch paths |
-| Others | ~42 | Scattered |
-
-**Severity:** Most catch {} guard non-critical reporting paths (diag.warn/diag.error). A few mask real errors (see CR-EH-2 below).
-
----
-
-### ⚠️ CR-EH-2: Error set mismatch with `catch {}` — **PARTIALLY CONFIRMED**
-
-**Claimed locations and actual findings:**
-
-| Location | Claimed | Actual |
-|----------|---------|--------|
-| `pointer_ownership.zig:698` | "error set mismatch" comment present | ⚠️ Line has `catch {}` but no such comment visible; line number may have shifted |
-| `cpp_fp_reduction.zig:846` | detectDoubleFree catch {} | ✅ Confirmed pattern exists near this area |
-| `ffi_type_mismatch.zig:264,270,276,283` | reporting failures use catch {} | ⚠️ Lines exist but are general error returns, not specifically "reporting failure" catches |
-
-**Verdict:** The pattern of `catch {}` on functions returning error unions is real and widespread (63 instances). Specific line numbers and comments have shifted due to recent edits. **The core claim is valid** — many `catch {}` sites should propagate or handle specific errors instead of silently discarding them.
-
----
-
-## Panic Safety
-
-### ✅ CR-PANIC-1: `@panic` on memory leak in `danger_surface.zig` — **CONFIRMED**
-
-**Lines confirmed:**
-- L222-223: `@panic("Memory leak detected")` inside `deinit()`
-- L248-249: Same pattern in another cleanup path
-
-**Analysis:** These are in `deinit()` / finalization code where allocation failure truly is unrecoverable. Using `@panic` here is defensible but inconsistent with the rest of the codebase which uses `catch {}`.
-
-**Recommendation:** Acceptable as-is for deinit paths, but document why @panic is used here vs elsewhere.
-
----
-
-### ✅ CR-PANIC-2: `@panic("OOM")` in `lock.zig` — **CONFIRMED**
-
-**6 instances at lines:** 56, 276, 290, 338, 354, 372
-
-All follow pattern:
 ```zig
-const item = self.allocator.create(QueueItem) catch @panic("OOM");
+if (count == 0) {
+    return &[_]Issue{};   // ❌ Pointer to a temporary stack array
+}
 ```
 
-**Analysis:** These are in lock-free queue operations where OOM cannot be propagated (async context). `@panic("OOM")` is a common Zig idiom for this scenario. However, it's inconsistent with the rest of the codebase.
+The pointer returned refers to a temporary array literal allocated on the stack. Once the function returns the pointer is dangling. Any caller that uses the slice after the call reads freed stack memory. Fix: return a caller-owned (or null) slice, or use a sentinel global zero-length array.
 
-**Recommendation:** Acceptable for now. If consistency matters, replace with a wrapper that logs + aborts.
+### CR-BUG-2: Array-bounds write — `langToIndex(.unknown) = 8` overflows 8-element array
+
+**File:** `src/semantics/language_detector.zig:72, 138`
+
+```zig
+var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0 }; // 8 slots
+
+fn langToIndex(lang: Language) usize {
+    return switch (lang) {
+        .unknown => 8,    // ❌ index 8 is past the end of an 8-element array (0..7)
+        ...
+    };
+}
+```
+
+`indexToLang` maps index 7 → `.unknown`, but `langToIndex` maps `.unknown` → 8, writing one element past the end of `weighted_votes`. This causes undefined behaviour and will likely panic in release builds. The slot for `.unknown` can also never accumulate votes from any non-unknown incoming result, making it dead regardless.
+
+### CR-BUG-3: `f32` array size/`langToIndex` invariant broken — 9 states vs 8 slots
+
+**File:** `src/semantics/language_detector.zig:72`
+
+The `weighted_votes` array has 8 elements (`rust, go, zig, cpp, c, swift, java, unknown`) but `langToIndex` maps 9 states (adding `.unknown` at index 8). The `_` catch-all in `indexToLang` also maps index 8 → `.unknown`. Even after fixing BUG-2 to put `.unknown` at index 7 (matching `indexToLang`), the voter has 8 votes for 9 states. The `.unknown` vote-origin becomes indeterminable — a logic hole that must be resolved by explicitly choosing: 8 states (drop one slot) or 9 states (add one slot).
 
 ---
 
-### ✅ CR-PANIC-3: Test panics in `semantic_registry.zig` — **CONFIRMED**
+## 🟠 Potential Bugs
 
-**3 instances at lines:** 465, 474, 483
+### POT-BUG-1: `getIssuesBySeverity` leaks partial result on OOM during deep copy
 
-Pattern: `@panic("test failed")` when expected patterns not found.
+**File:** `src/dataflow/graph.zig:461–493`
 
-**Verdict:** Standard test-only panic usage. Acceptable — test assertions that fail fast on logic errors.
+```zig
+const result = try self.allocator.alloc(Issue, count);
+...
+const message_copy = try self.allocator.dupe(u8, issue.message);
+```
+
+If OOM strikes inside the loop, already-allocated `message_copy` / `func_copy` strings leak and the partially-filled `result` is never `deinit()`-ed. There is no `errdefer` inside the loop. The error propagates upward but without a cleanup path for internally allocated entries.
+
+### POT-BUG-2: Silent OOM in FFI set cache — possible false negative on every pointer
+
+**File:** `src/pass/pass.zig:1071`
+
+```zig
+ffi_set.put(ffe.callee_name, {}) catch {};
+```
+
+If OOM occurs while building `ffi_set_cache`, the affected FFI boundary name is silently dropped. `isOnDangerPathFull` (line 1096) then treats that FFI pointer as non-FFI, producing a false negative. This runs in the hot path for every pointer during analysis.
+
+### POT-BUG-3: `markFunctionFromInst` swallows HashMap OOM — false-negative tier gating
+
+**File:** `src/pass/pass.zig:1154–1157`
+
+```zig
+self.relevant_functions.put(func_ptr, {}) catch |err| {
+    log.warn("[P0-1] markFunctionFromInst: ...", .{ func_ptr, err });
+};
+```
+
+`markFunctionFromInst` is documented as "gating degradation is acceptable", but silently failing on OOM means a function that _should_ have been Tier 2-analyzed falls through to the Tier 1 skip path. This is a false negative, not just noisy logging.
+
+### POT-BUG-4: `isIndirect` misclassifies non-func ConstantExpr as indirect call
+
+**File:** `src/pass/analysis/ffi_boundary.zig:293–296`
+
+```zig
+const is_indirect = (called_name.len == 0 or
+    called_name[0] == '%' or
+    c.LLVMIsAFunction(called_val) == null or
+    c.LLVMIsAConstantExpr(called_val) != null);
+```
+
+`LLVMIsAConstantExpr` matches not only `inttoptr`/`bitcast` function-pointer casts, but also constant `getelementptr`, constant `load`, etc. A constant GEP to a data structure will trigger the GEP-based JNI resolution path (`resolveIndirectCallTarget`), which then returns `""` at lines 754/777. The caller sees an empty name and skips the call as indeterminate.
+
+### POT-BUG-5: Zone-aware severity boost mentioned but not implemented
+
+**File:** `src/pass/analysis/ffi_boundary.zig:428–437`
+
+```zig
+const severity = base_severity;   // no zone-based adjustment applied
+const confidence: f32 = switch (caller_zone) { ... };
+```
+
+The comment says "Zone-aware confidence/severity adjustment" but only confidence is adjusted. The `severity` variable is set to the plain `base_severity` with no zone-specific boost. If a severity boost for `.ffi` / `.unknown` callers was intended, it was never coded.
+
+### POT-BUG-6: `demangleRustName` caps path at 3 components
+
+**File:** `src/pass/analysis/ffi_utils.zig:290–293`
+
+```zig
+var components: [3][]const u8 = .{ "", "", "" };
+var comp_count: usize = 0;
+while (pos < mangled.len and comp_count < 3) { ... }
+```
+
+Deep Rust paths such as `core::iter::adapters::Map::new` are truncated to 2 components. Same function-name collisions may result from identical first-two-component Rust paths sharing different leaf structs — leading to incorrect pointer pairing in `rust_ffi_auditor`.
+
+### POT-BUG-7: `surface_classifier_pass` BFS `getOrPut` pattern has unreachable-branches risk
+
+**File:** `src/pass/analysis/surface_classifier_pass.zig:259–263, 299–306`
+
+```zig
+const gop = forward_adj.getOrPut(caller_ptr) catch continue;
+if (!gop.found_existing) {
+    gop.value_ptr.* = std.ArrayList(u64).initCapacity(allocator, 4) catch continue;
+}
+gop.value_ptr.append(allocator, callee_ptr) catch {};
+```
+
+`getOrPut` allocates the key placeholder on OOM via `catch continue` — but then `gop.value_ptr` is unconditionally dereferenced on `append`. If `getOrPut` succeeded but `initCapacity`'s `catch continue` skips past, the same callee will be retried next time – or the entry is left in `forward_adj` with a null list pointer. In Zig 0.15.x this `catch continue` after `initCapacity` passes `gop` by value so the value is live — but if it's later overwritten in a subsequent `getOrPut` the stale entry may be leaked.
+
+### POT-BUG-8: `rust_ffi_auditor` uses pointer-address as HashMap key
+
+**File:** `src/pass/analysis/rust_ffi_auditor.zig:2095, 2101`
+
+```zig
+into_raw_set.put(@intFromPtr(func_name_raw), {}) catch {};
+from_raw_set.put(@intFromPtr(func_name_raw), {}) catch {};
+```
+
+`func_name_raw` is a `[]const u8`. `@intFromPtr` returns the backing address of the string slice header. The same function name with a different backing string allocation produces a different key, so both `into_raw` and `from_raw` entries for the same function coexist in the map. The pairing logic in `hooks.zig:99–128` relies on unique keys per function name, making this a root cause of missed ownership-transfer detections.
 
 ---
 
-## Metrics Verification
+## 🟡 Dead Code / Orphaned Files
 
-| Metric | Claimed | Actual | Verdict |
-|--------|---------|--------|---------|
-| Total source lines | 64,870 | **66,579** | ⚠️ Off by ~1,709 (+2.6%) — close but stale |
-| Source files (.zig) | 157 | **157** | ✅ Exact match |
-| Test cases (`test "..."`) | 959 | **960** | ✅ Off by 1 (negligible) |
-| `catch {}` instances | 63 | **63** | ✅ Exact match |
+### DEAD-1: `src/registry/semantic_registry.zig.bak` — **STALE BACKUP, 3,713 lines**
 
----
+**State:** Full copy of `semantic_registry.zig` from before the Severity value migration.  
+**Evidence:** Tests at line 3508 assert `low=1, medium=2, high=3, critical=4` while `common/types.zig` defines `low=0, medium=1, high=2, critical=3`.  
+**Build impact:** Not referenced by `build.zig`, `Makefile`, or any source file — cutting it out is zero-risk.  
+**`bugs.md` error:** Already says "ALREADY GONE" on lines 22, 176 but file still exists on disk.
 
-## Summary Table
+### DEAD-2: `src/registry/sanitizer_registry.zig` — **ORPHAN FILE**
 
-| # | Type | Location | Verdict | Action |
-|---|------|----------|---------|--------|
-| CR-DC-1 | Dead code | `taint.zig` (530 lines) | ✅ CONFIRMED | Delete file |
-| CR-DC-2 | Dead code | `tracking/mod.zig` + `root.zig:51` | ✅ CONFIRMED | Delete both |
-| CR-DC-3 | Incomplete | `abi_mismatch.zig`, `thread_crossing.zig` | ✅ CONFIRMED | Keep commented out |
-| CR-EH-1 | Error handling | 63× `catch {}` across src/ | ✅ CONFIRMED (63 exact) | Gradual fix, prioritize critical paths |
-| CR-EH-2 | Error set mismatch | Multiple files | ⚠️ PATTERN REAL, lines shifted | Fix specific instances |
-| CR-PANIC-1 | Panic safety | `danger_surface.zig:223,249` | ✅ CONFIRMED | Acceptable (deinit context) |
-| CR-PANIC-2 | Panic safety | `lock.zig` (6 instances) | ✅ CONFIRMED | Acceptable (lock-free queue) |
-| CR-PANIC-3 | Panic safety | `semantic_registry.zig` (3 test) | ✅ CONFIRMED | Acceptable (test only) |
+Does not appear in `semantic_registry.zig:30–40`'s import list. Not imported by any other file. Zero callers.
 
-**Stats:** 3 dead code items confirmed, 2 error handling issues (1 exact, 1 partial), 3 panic issues all confirmed acceptable
+### DEAD-3: `src/registry/hooks_test.zig` and `layer1_reg_test.zig` — **ORPHAN TEST FILES**
+
+Both missing from `root.zig`'s `test {}` bare block (lines 289–295). Not globbed by `build.zig`. They are never compiled.
+
+### DEAD-4: `src/pass/analysis/callback_escape_test.zig` — **REPLACED BUT NOT REMOVED**
+
+Only `callback_escape_enhanced_test.zig` (line 291 root.zig) is imported by `root.zig`. The plain variant is dead code.
+
+### DEAD-5: `src/pass/analysis/ffi_zone_check.zig` referenced in docstring but not the live import graph
+
+**File:** `src/pass/analysis/ffi_boundary.zig:25`
+
+```zig
+const zone_check = @import("ffi_zone_check.zig");
+```
+
+The file `ffi_zone_check.zig` exists (323 lines) and is imported by both `ffi_boundary.zig` and `ffi_boundary_check.zig`. Not dead — but the `docs/en/passes.md` reference still points to `ffi_boundary.zig`-only notes rather than the extracted `ffi_zone_check.zig`. Minor doc drift only (`DANGERSURFACE.md line 263` notes its reference in the printf%n section).

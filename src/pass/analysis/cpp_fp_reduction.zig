@@ -1427,7 +1427,7 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
         .zig => .zig,
         .cpp => .cpp,
         .go => .go,
-        .swift => .swift,
+        .csharp => .csharp,
         .java => .java,
         .python => .python,
         .unknown => .unknown,

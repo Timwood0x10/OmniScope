@@ -99,11 +99,9 @@ pub fn isExternCCall(callee_name: []const u8) bool {
 /// Check if function is from core::ffi crate (Rust standard FFI utilities)
 pub fn isCoreFfiFunction(callee_name: []const u8) bool {
     const core_ffi_patterns = [_][]const u8{
-        "c_void", "c_char", "c_int", "c_long", "c_uint", "c_ulong",
-        "c_float", "c_double",
-        "CStr", "CString",
-        "from_raw", "into_raw", "as_ptr", "to_ptr", "to_str",
-        "from_bytes_with_nul_unchecked", "from_bytes_with_nul",
+        "c_void",  "c_char",   "c_int",  "c_long",                        "c_uint",              "c_ulong",
+        "c_float", "c_double", "CStr",   "CString",                       "from_raw",            "into_raw",
+        "as_ptr",  "to_ptr",   "to_str", "from_bytes_with_nul_unchecked", "from_bytes_with_nul",
     };
     for (core_ffi_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
@@ -115,23 +113,27 @@ pub fn isCoreFfiFunction(callee_name: []const u8) bool {
 pub fn isLibcFunction(callee_name: []const u8) bool {
     const libc_patterns = [_][]const u8{
         // POSIX memory
-        "malloc", "calloc", "realloc", "free", "memalign", "posix_memalign",
+        "malloc",             "calloc",               "realloc",           "free",                "memalign",       "posix_memalign",
         // POSIX I/O
-        "open", "read", "write", "close", "fcntl", "ioctl", "fstat", "lseek",
-        "mmap", "munmap",
+        "open",               "read",                 "write",             "close",               "fcntl",          "ioctl",
+        "fstat",              "lseek",                "mmap",              "munmap",
         // POSIX threads
-        "pthread_create", "pthread_join", "pthread_mutex_lock",
-        "pthread_mutex_unlock", "pthread_cond_wait", "pthread_cond_signal",
+                     "pthread_create", "pthread_join",
+        "pthread_mutex_lock", "pthread_mutex_unlock", "pthread_cond_wait", "pthread_cond_signal",
         // String operations
-        "strlen", "strcpy", "strncpy", "strcat", "strncat", "strcmp", "strncmp", "strdup",
+        "strlen",         "strcpy",
+        "strncpy",            "strcat",               "strncat",           "strcmp",              "strncmp",        "strdup",
         // Network
-        "socket", "bind", "listen", "accept", "connect", "send", "recv",
+        "socket",             "bind",                 "listen",            "accept",              "connect",        "send",
+        "recv",
         // Time
-        "time", "gettimeofday", "clock_gettime", "sleep", "usleep", "nanosleep",
+                      "time",                 "gettimeofday",      "clock_gettime",       "sleep",          "usleep",
+        "nanosleep",
         // Environment
-        "getenv", "setenv", "unsetenv",
+                 "getenv",               "setenv",            "unsetenv",
         // Error handling
-        "errno", "strerror", "perror",
+                   "errno",          "strerror",
+        "perror",
     };
     for (libc_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
@@ -167,7 +169,7 @@ pub fn classifyFfiBoundaryType(
 
     // OS-specific patterns
     const os_patterns = [_][]const u8{
-        "mach_", "pthread_", "dladdr", "sysctl",
+        "mach_",           "pthread_",     "dladdr",    "sysctl",
         "GetModuleHandle", "VirtualAlloc", "HeapAlloc",
     };
     for (os_patterns) |pat| {
@@ -227,10 +229,10 @@ pub fn isRustMangledName(func_name: []const u8) bool {
 pub fn mayRetainPointer(callee_name: []const u8) bool {
     // Known safe: pure functions that don't retain
     const safe_patterns = [_][]const u8{
-        "memcmp", "memcpy", "memmove", "memset",
-        "strlen", "strcmp", "strncmp", "strncpy",
-        "printf", "fprintf", "snprintf", "sprintf",
-        "tolower", "toupper", "isalpha", "isdigit",
+        "memcmp",  "memcpy",  "memmove",  "memset",
+        "strlen",  "strcmp",  "strncmp",  "strncpy",
+        "printf",  "fprintf", "snprintf", "sprintf",
+        "tolower", "toupper", "isalpha",  "isdigit",
     };
     for (safe_patterns) |pat| {
         if (std.mem.eql(u8, callee_name, pat)) return false;
@@ -238,11 +240,9 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
 
     // Known retaining: storage functions
     const retain_patterns = [_][]const u8{
-        "strcpy", "strcat", "strdup", "strndup",
-        "sqlite3_bind", "sqlite3_exec",
-        "SetEnvironmentVariable", "putenv",
-        "register_callback", "set_handler",
-        "g_signal_connect",
+        "strcpy",            "strcat",       "strdup",                 "strndup",
+        "sqlite3_bind",      "sqlite3_exec", "SetEnvironmentVariable", "putenv",
+        "register_callback", "set_handler",  "g_signal_connect",
     };
     for (retain_patterns) |pat| {
         if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
@@ -306,14 +306,15 @@ pub fn ptrOriginatesFromRustAlloc(
 /// These are safe to pass stack/short-lived pointers to.
 pub fn isPureConsumptionFunction(callee_name: []const u8) bool {
     const pure_patterns = [_][]const u8{
-        "printf", "fprintf", "snprintf", "sprintf",
-        "puts", "fputc", "fwrite",
-        "memcmp", "memcpy", "memmove", "memset",
-        "strlen", "strcmp", "strncmp", "strncpy",
-        "tolower", "toupper", "isalpha", "isdigit", "isspace",
-        "atoi", "atol", "atof", "strtod", "strtol",
-        "htonl", "ntohl", "htons", "ntohs",
-        "crc32", "md5", "sha1", "hash",
+        "printf",  "fprintf", "snprintf", "sprintf",
+        "puts",    "fputc",   "fwrite",   "memcmp",
+        "memcpy",  "memmove", "memset",   "strlen",
+        "strcmp",  "strncmp", "strncpy",  "tolower",
+        "toupper", "isalpha", "isdigit",  "isspace",
+        "atoi",    "atol",    "atof",     "strtod",
+        "strtol",  "htonl",   "ntohl",    "htons",
+        "ntohs",   "crc32",   "md5",      "sha1",
+        "hash",
     };
     for (pure_patterns) |pat| {
         if (std.mem.eql(u8, callee_name, pat)) return true;

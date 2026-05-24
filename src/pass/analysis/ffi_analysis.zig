@@ -583,7 +583,7 @@ pub const FFIAnalysisPass = struct {
             .C_plus_plus, .C_plus_plus_03, .C_plus_plus_11, .C_plus_plus_14, .C_plus_plus_17, .C_plus_plus_20, .C_plus_plus_23 => .cpp,
             .Rust => .rust,
             .Zig => .zig,
-            .Swift => .swift,
+            .C_Sharp => .csharp,
             .Go, .Go_language => .go,
             else => null,
         };
@@ -619,7 +619,7 @@ pub const FFIAnalysisPass = struct {
             return .zig;
         }
         if (std.mem.indexOf(u8, func_name, "UnsafeMutablePointer") != null) {
-            return .swift;
+            return .csharp;
         }
 
         return .c;
@@ -732,7 +732,7 @@ test "FFIAnalysisPass - detectLanguage fallback" {
     try std.testing.expectEqual(FFIAnalysisPass.Language.cpp, pass.detectLanguage("_ZSt"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.c, pass.detectLanguage("malloc"));
     try std.testing.expectEqual(FFIAnalysisPass.Language.zig, pass.detectLanguage("Allocator.alloc"));
-    try std.testing.expectEqual(FFIAnalysisPass.Language.swift, pass.detectLanguage("UnsafeMutablePointer"));
+    try std.testing.expectEqual(FFIAnalysisPass.Language.csharp, pass.detectLanguage("UnsafeMutablePointer"));
 }
 
 test "FFIAnalysisPass - detectLanguageFromDwarf with null returns null" {

@@ -14,6 +14,36 @@ const Severity = OmniScope.diag.Severity;
 const log = OmniScope.log;
 const writeJsonEscaped = OmniScope.output.writeJsonEscaped;
 
+// ============================================================================
+// Terminal ANSI Colors — auto-disabled when stdout is not a TTY
+// ============================================================================
+
+const term = struct {
+    const reset = "\x1b[0m";
+    const bold = "\x1b[1m";
+    const dim = "\x1b[2m";
+    const red = "\x1b[31m";
+    const green = "\x1b[32m";
+    const yellow = "\x1b[33m";
+    const blue = "\x1b[34m";
+    const magenta = "\x1b[35m";
+    const cyan = "\x1b[36m";
+    const white = "\x1b[37m";
+    const bright_black = "\x1b[90m";
+    const bright_red = "\x1b[91m";
+    const bright_yellow = "\x1b[93m";
+    const bright_cyan = "\x1b[96m";
+
+    fn colorForSeverity(sev: Severity) []const u8 {
+        return switch (sev) {
+            .critical => bright_red,
+            .high => bright_yellow,
+            .medium => bright_cyan,
+            .low => bright_black,
+        };
+    }
+};
+
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
 pub const MainError = error{
@@ -284,6 +314,113 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
     }
 }
 
+/// Render an ASCII call graph / dataflow diagram for HIGH/CRITICAL issues.
+/// Shows the detection function, FFI boundary (if any), and the bug trigger path.
+fn writeCallGraph(w: anytype, allocator: Allocator, issue: Issue) !void {
+    _ = allocator;
+    if (issue.severity != .critical and issue.severity != .high) return;
+
+    try w.writeAll(term.magenta);
+    try w.writeAll(term.bold);
+    try w.writeAll("    ┌─ Call Graph ──\n");
+    try w.writeAll(term.reset);
+
+    // Row 1: Detection function (root node)
+    try w.writeAll("    │\n");
+    try w.writeAll(term.dim);
+    try w.writeAll("    │  ");
+    try w.writeAll(term.reset);
+    try w.writeAll(term.white);
+    try w.print("{s}", .{issue.location.func});
+    try w.writeAll(term.reset);
+    try w.writeAll("  ◄── ");
+    try w.writeAll(term.bright_red);
+    try w.writeAll("detection point\n");
+    try w.writeAll(term.reset);
+
+    // Rows 2+: Build call chain from trace entries + FFI boundary
+    var has_content = false;
+
+    if (issue.trace) |trace| {
+        if (trace.len >= 2) {
+            has_content = true;
+            // Show alloc source (first trace step that mentions allocation)
+            for (trace, 0..) |entry, i| {
+                const is_alloc = std.mem.indexOf(u8, entry.description, "alloc") != null or
+                    std.mem.indexOf(u8, entry.description, "_Znam") != null or
+                    std.mem.indexOf(u8, entry.description, "_Znwm") != null or
+                    std.mem.indexOf(u8, entry.description, "malloc") != null;
+                const is_free = std.mem.indexOf(u8, entry.description, "free") != null or
+                    std.mem.indexOf(u8, entry.description, "_Zda") != null or
+                    std.mem.indexOf(u8, entry.description, "_Zdl") != null;
+                const is_last = (i == trace.len - 1);
+
+                if (is_alloc and !is_last) {
+                    try w.writeAll(term.dim);
+                    try w.writeAll("    ├── ");
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.green);
+                    try w.print("{s}", .{entry.description});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.dim);
+                    try w.writeAll("  ──source\n");
+                    try w.writeAll(term.reset);
+                }
+
+                if (is_free or is_last) {
+                    try w.writeAll(term.dim);
+                    try w.writeAll("    └── ");
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.bright_red);
+                    try w.print("{s}", .{entry.description});
+                    try w.writeAll(term.reset);
+                    try w.writeAll("  ");
+                    try w.writeAll(term.bright_red);
+                    try w.writeAll("✗ BUG\n");
+                    try w.writeAll(term.reset);
+                }
+            }
+        } else if (trace.len == 1) {
+            has_content = true;
+            try w.writeAll(term.dim);
+            try w.writeAll("    └── ");
+            try w.writeAll(term.reset);
+            try w.writeAll(term.bright_red);
+            try w.print("{s}", .{trace[0].description});
+            try w.writeAll(term.reset);
+            try w.writeAll("  ");
+            try w.writeAll(term.bright_red);
+            try w.writeAll("✗\n");
+            try w.writeAll(term.reset);
+        }
+    }
+
+    // FFI boundary as cross-language edge
+    if (issue.ffi_boundary) |bnd| {
+        has_content = true;
+        try w.writeAll(term.dim);
+        try w.writeAll("    │\n");
+        try w.writeAll("    ├─ FFI: ");
+        try w.writeAll(term.reset);
+        try w.writeAll(term.cyan);
+        try w.print("{s} -> {s}", .{ @tagName(bnd.caller_language), @tagName(bnd.callee_language) });
+        try w.writeAll(term.reset);
+        try w.writeAll(term.dim);
+        try w.print(" ({s})\n", .{@tagName(bnd.kind)});
+        try w.writeAll(term.reset);
+    }
+
+    if (!has_content) {
+        try w.writeAll(term.dim);
+        try w.writeAll("    │  (no trace data available)\n");
+        try w.writeAll(term.reset);
+    }
+
+    try w.writeAll(term.magenta);
+    try w.writeAll("    └────────────────\n");
+    try w.writeAll(term.reset);
+}
+
 /// Format a structured report for text mode.
 /// Layout: Findings → Coverage → Summary → Verdict
 fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
@@ -291,16 +428,29 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
     defer buf.deinit(allocator);
     const w = buf.writer(allocator);
 
-    // ── Header ──
+    // ── Header (bold + blue title bar) ──
+    try w.writeAll(term.bold);
+    try w.writeAll(term.blue);
     try w.writeAll("═══════════════════════════════════════════════════════════════\n");
     try w.writeAll("  OmniScope — Cross-Language Memory Safety Analysis\n");
-    try w.writeAll("═══════════════════════════════════════════════════════════════\n\n");
+    try w.writeAll("═══════════════════════════════════════════════════════════════\n");
+    try w.writeAll(term.reset);
+    try w.writeAll("\n");
 
     // ── Coverage ──
+    try w.writeAll(term.bold);
     try w.writeAll("Coverage\n");
+    try w.writeAll(term.reset);
     try w.writeAll("───────────────────────────────────────────────────────────────\n");
     try w.print("  Functions:          {d}\n", .{func_count});
-    try w.print("  Issues detected:    {d}\n", .{issues.len});
+    if (issues.len > 0) {
+        try w.writeAll(term.bright_red);
+        try w.print("  Issues detected:    {d}", .{issues.len});
+        try w.writeAll(term.reset);
+        try w.writeAll("\n");
+    } else {
+        try w.print("  Issues detected:    {d}\n", .{issues.len});
+    }
 
     // Count actionable vs suppressed
     var actionable: usize = 0;
@@ -325,16 +475,31 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
             .low => low_count += 1,
         }
     }
-    try w.print("  Actionable:         {d}\n", .{actionable});
+    if (actionable > 0) {
+        try w.writeAll(term.yellow);
+        try w.print("  Actionable:         {d}", .{actionable});
+        try w.writeAll(term.reset);
+        try w.writeAll("\n");
+    } else {
+        try w.print("  Actionable:         {d}\n", .{actionable});
+    }
     try w.writeAll("\n");
 
     // ── Findings ──
     if (issues.len == 0) {
+        try w.writeAll(term.bold);
         try w.writeAll("Findings\n");
+        try w.writeAll(term.reset);
         try w.writeAll("───────────────────────────────────────────────────────────────\n");
-        try w.writeAll("  No issues detected.\n\n");
+        try w.writeAll(term.green);
+        try w.writeAll(term.bold);
+        try w.writeAll("  ✓ No issues detected.\n");
+        try w.writeAll(term.reset);
+        try w.writeAll("\n");
     } else {
+        try w.writeAll(term.bold);
         try w.writeAll("Findings\n");
+        try w.writeAll(term.reset);
         try w.writeAll("───────────────────────────────────────────────────────────────\n");
 
         // Issue category summary
@@ -348,50 +513,231 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
         }
         if (!first_kind) try w.writeAll("\n");
 
-        // Severity summary
-        if (critical_count > 0) try w.print("  Critical: {d}\n", .{critical_count});
-        if (high_count > 0) try w.print("  High:     {d}\n", .{high_count});
-        if (medium_count > 0) try w.print("  Medium:   {d}\n", .{medium_count});
-        if (low_count > 0) try w.print("  Low:      {d}\n", .{low_count});
+        // Severity summary (color-coded)
+        if (critical_count > 0) {
+            try w.writeAll(term.bright_red);
+            try w.print("  Critical: {d}", .{critical_count});
+            try w.writeAll(term.reset);
+            try w.writeAll("\n");
+        }
+        if (high_count > 0) {
+            try w.writeAll(term.bright_yellow);
+            try w.print("  High:     {d}", .{high_count});
+            try w.writeAll(term.reset);
+            try w.writeAll("\n");
+        }
+        if (medium_count > 0) {
+            try w.writeAll(term.bright_cyan);
+            try w.print("  Medium:   {d}", .{medium_count});
+            try w.writeAll(term.reset);
+            try w.writeAll("\n");
+        }
+        if (low_count > 0) {
+            try w.writeAll(term.dim);
+            try w.print("  Low:      {d}", .{low_count});
+            try w.writeAll(term.reset);
+            try w.writeAll("\n");
+        }
         try w.writeAll("\n");
 
-        // Individual issues
+        // Individual issues — color-coded rich format
         for (issues, 0..) |issue, idx| {
+            const sev_color = term.colorForSeverity(issue.severity);
             const sev_tag = switch (issue.severity) {
                 .critical => "CRITICAL",
                 .high => "HIGH",
                 .medium => "MEDIUM",
                 .low => "LOW",
             };
-            try w.print("  [{s}] OMI-{d:0>3}\n", .{ sev_tag, idx + 1 });
-            try w.print("    Type:       {s}\n", .{@tagName(issue.kind)});
-            try w.print("    Confidence: {s} ({d:.0}%)\n", .{ issue.confidence_level.toString(), issue.confidence * 100 });
-            try w.print("    Function:   {s}\n", .{issue.location.func});
+
+            // ── Issue header card ──
+            try w.writeAll(sev_color);
+            try w.writeAll(term.bold);
+            try w.print("  [{s}] OMI-{d:0>3}", .{ sev_tag, idx + 1 });
+            try w.writeAll(term.reset);
+            try w.writeAll("\n");
+
+            try w.writeAll(term.dim);
+            try w.print("    Type:       ", .{});
+            try w.writeAll(term.reset);
+            try w.writeAll(term.cyan);
+            try w.print("{s}\n", .{@tagName(issue.kind)});
+            try w.writeAll(term.reset);
+
+            try w.writeAll(term.dim);
+            try w.print("    Confidence: ", .{});
+            try w.writeAll(term.reset);
+            try w.print("{s} ({d:.0}%)\n", .{ issue.confidence_level.toString(), issue.confidence * 100 });
+
+            try w.writeAll(term.dim);
+            try w.print("    Function:   ", .{});
+            try w.writeAll(term.reset);
+            try w.writeAll(term.white);
+            try w.print("{s}\n", .{issue.location.func});
+            try w.writeAll(term.reset);
+
             if (issue.reason.len > 0) {
-                try w.print("    Reason:     {s}\n", .{issue.reason});
+                try w.writeAll(term.dim);
+                try w.print("    Reason:     ", .{});
+                try w.writeAll(term.reset);
+                try w.print("{s}\n", .{issue.reason});
             }
             if (issue.message.len > 0 and !std.mem.eql(u8, issue.message, issue.reason)) {
-                try w.print("    Detail:     {s}\n", .{issue.message});
+                try w.writeAll(term.dim);
+                try w.print("    Detail:     ", .{});
+                try w.writeAll(term.reset);
+                try w.print("{s}\n", .{issue.message});
             }
+
+            // Rich context for high-confidence issues: detection path + call graph + FFI boundary
+            if (issue.severity == .critical or issue.severity == .high) {
+
+                // ── Detection Path (trace entries as numbered steps) ──
+                if (issue.trace) |trace| {
+                    if (trace.len > 0) {
+                        try w.writeAll(term.magenta);
+                        try w.writeAll(term.bold);
+                        try w.writeAll("    ┌─ Detection Path ──\n");
+                        try w.writeAll(term.reset);
+                        for (trace, 0..) |entry, step_idx| {
+                            const is_last = (step_idx == trace.len - 1);
+                            const connector = if (is_last) "└──" else "├──";
+                            const arrow = if (is_last) "✗" else "│";
+                            try w.writeAll(term.dim);
+                            try w.print("    {s} [{d}]", .{ connector, step_idx + 1 });
+                            try w.writeAll(term.reset);
+                            try w.print(" {s}", .{entry.description});
+
+                            // Location info
+                            if (entry.location) |loc| {
+                                if (loc.file) |fname| {
+                                    try w.writeAll(term.dim);
+                                    try w.print(" @{s}:{d}", .{ fname, loc.line });
+                                } else {
+                                    try w.writeAll(term.dim);
+                                    try w.print(" @:{d}", .{loc.line});
+                                }
+                            }
+                            // Mark last step as the bug location
+                            if (is_last) {
+                                try w.writeAll("  ");
+                                try w.writeAll(term.bright_red);
+                                try w.writeAll(arrow);
+                                try w.writeAll(term.reset);
+                            }
+                            try w.writeAll("\n");
+                        }
+                        try w.writeAll(term.magenta);
+                        try w.writeAll("    └──────────────────\n");
+                        try w.writeAll(term.reset);
+                    }
+                }
+
+                // ── ASCII Call Graph Visualization ──
+                try writeCallGraph(w, allocator, issue);
+
+                // ── FFI Boundary Context ──
+                if (issue.ffi_boundary) |bnd| {
+                    try w.writeAll(term.magenta);
+                    try w.writeAll(term.bold);
+                    try w.writeAll("    ┌─ FFI Context ──\n");
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.dim);
+                    try w.print("      Function:  ", .{});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.white);
+                    try w.print("{s}\n", .{bnd.function_name});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.dim);
+                    try w.print("      Call:      ", .{});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.cyan);
+                    try w.print("{s}", .{@tagName(bnd.caller_language)});
+                    try w.writeAll(term.dim);
+                    try w.writeAll(" -> ");
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.cyan);
+                    try w.print("{s}\n", .{@tagName(bnd.callee_language)});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.dim);
+                    try w.print("      Kind:      ", .{});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.yellow);
+                    try w.print("{s}\n", .{@tagName(bnd.kind)});
+                    try w.writeAll(term.reset);
+                    if (bnd.location.file) |f| {
+                        try w.writeAll(term.dim);
+                        try w.print("      Location:  ", .{});
+                        try w.writeAll(term.reset);
+                        try w.print("{s}:{d}\n", .{ f, bnd.location.line });
+                    }
+                    try w.writeAll(term.magenta);
+                    try w.writeAll("    └────────────────\n");
+                    try w.writeAll(term.reset);
+                }
+            } else if (issue.severity == .medium) {
+                // MEDIUM: show trace summary (first + last step only)
+                if (issue.trace) |trace| {
+                    if (trace.len > 0) {
+                        try w.writeAll(term.bright_cyan);
+                        try w.writeAll("    ── Detection Summary ──\n");
+                        try w.writeAll(term.reset);
+                        if (trace.len == 1) {
+                            try w.print("      {s}\n", .{trace[0].description});
+                        } else {
+                            try w.writeAll(term.dim);
+                            try w.print("      Start: ", .{});
+                            try w.writeAll(term.reset);
+                            try w.print("{s}\n", .{trace[0].description});
+                            try w.writeAll(term.dim);
+                            try w.print("      End:   ", .{});
+                            try w.writeAll(term.reset);
+                            try w.print("{s}\n", .{trace[trace.len - 1].description});
+                            if (trace.len > 2) {
+                                try w.writeAll(term.dim);
+                                try w.print("      (+ {d} more steps, use --debug for full trace)\n", .{trace.len - 2});
+                                try w.writeAll(term.reset);
+                            }
+                        }
+                    }
+                }
+            }
+
             try w.writeAll("\n");
         }
     }
 
-    // ── Verdict ──
+    // ── Verdict (color-coded summary) ──
+    try w.writeAll(term.bold);
     try w.writeAll("Summary\n");
+    try w.writeAll(term.reset);
     try w.writeAll("───────────────────────────────────────────────────────────────\n");
     if (critical_count > 0) {
-        try w.print("  {d} CRITICAL issue(s) require immediate attention.\n", .{critical_count});
+        try w.writeAll(term.bright_red);
+        try w.writeAll(term.bold);
+        try w.print("  ⚠ {d} CRITICAL issue(s) require immediate attention.\n", .{critical_count});
+        try w.writeAll(term.reset);
     } else if (high_count > 0) {
-        try w.print("  {d} high-severity issue(s) found.\n", .{high_count});
+        try w.writeAll(term.bright_yellow);
+        try w.print("  ⚡ {d} high-severity issue(s) found.\n", .{high_count});
+        try w.writeAll(term.reset);
     } else if (medium_count > 0) {
-        try w.print("  {d} medium-severity issue(s) found. Review recommended.\n", .{medium_count});
+        try w.writeAll(term.bright_cyan);
+        try w.print("  ○ {d} medium-severity issue(s) found. Review recommended.\n", .{medium_count});
+        try w.writeAll(term.reset);
     } else if (low_count > 0) {
-        try w.print("  {d} low-severity finding(s). No immediate action required.\n", .{low_count});
+        try w.writeAll(term.dim);
+        try w.print("  · {d} low-severity finding(s). No immediate action required.\n", .{low_count});
+        try w.writeAll(term.reset);
     } else {
-        try w.writeAll("  No issues detected. Analysis clean.\n");
+        try w.writeAll(term.green);
+        try w.writeAll(term.bold);
+        try w.writeAll("  ✓ No issues detected. Analysis clean.\n");
+        try w.writeAll(term.reset);
     }
+    try w.writeAll(term.dim);
     try w.print("  Analysis time: {d} ms\n", .{time_ms});
+    try w.writeAll(term.reset);
     try w.writeAll("  (use --verbose for pipeline metrics, --debug for full trace)\n");
     try w.writeAll("═══════════════════════════════════════════════════════════════\n");
 

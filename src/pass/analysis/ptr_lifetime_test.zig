@@ -267,5 +267,5 @@ test "toZoneLanguage - explicit mapping correctness" {
     try std.testing.expectEqual(Lang.rust, toZoneLanguage(FfiLang.rust));
     try std.testing.expectEqual(Lang.zig, toZoneLanguage(FfiLang.zig));
     try std.testing.expectEqual(Lang.go, toZoneLanguage(FfiLang.go));
-    try std.testing.expectEqual(Lang.unknown, toZoneLanguage(FfiLang.swift));
+    try std.testing.expectEqual(Lang.unknown, toZoneLanguage(FfiLang.csharp));
 }

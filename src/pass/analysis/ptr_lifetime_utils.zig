@@ -18,7 +18,7 @@ pub fn toZoneLanguage(lang: FfiLang) Lang {
         .rust => .rust,
         .zig => .zig,
         .go => .go,
-        .swift => .unknown,
+        .csharp => .unknown,
         else => .unknown,
     };
 }

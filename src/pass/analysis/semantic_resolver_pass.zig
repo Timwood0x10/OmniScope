@@ -5,6 +5,7 @@
 //! and safety semantics before heavy analysis passes.
 
 const std = @import("std");
+const log = @import("../../common/log.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 
@@ -22,7 +23,7 @@ pub const SemanticResolverPass = struct {
 
     /// Run the semantic resolver pass
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
-        std.log.debug("[SemanticResolver] Starting semantic resolution...", .{});
+        log.debug("[SemanticResolver] Starting semantic resolution...", .{});
 
         const start_time = std.time.nanoTimestamp();
 
@@ -81,7 +82,7 @@ pub const SemanticResolverPass = struct {
 
         // Log statistics
         const stats = engine.getStats();
-        std.log.debug(
+        log.debug(
             "[SemanticResolver] Completed in {d:.1}ms: total_nodes={d}, resolutions={d}, patterns_applied={d}, allocs={d}, frees={d}, caller_semantics={d}",
             .{ duration_ms, stats.total_nodes, stats.resolutions_made, stats.patterns_applied, stats.allocations_tracked, stats.frees_tracked, engine.caller_semantics.count() },
         );
@@ -117,7 +118,7 @@ pub const SemanticResolverPass = struct {
             "free_release",
             "C free release",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "free" },
+            &[_][]const u8{"free"},
             100,
             "c",
         );
@@ -135,7 +136,7 @@ pub const SemanticResolverPass = struct {
             "rust_dealloc",
             "Rust global allocator release",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "__rust_dealloc" },
+            &[_][]const u8{"__rust_dealloc"},
             100,
             "rust",
         );
@@ -183,7 +184,7 @@ pub const SemanticResolverPass = struct {
             "cgo_free",
             "Go cgo runtime release (_cgo_free)",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "_cgo_free" },
+            &[_][]const u8{"_cgo_free"},
             95,
             "go",
         );
@@ -199,7 +200,7 @@ pub const SemanticResolverPass = struct {
             "cgo_gofree",
             "Go heap release via cgo (_Cfunc_GoFree)",
             semantic_patterns.PatternType.release,
-            &[_][]const u8{ "_Cfunc_GoFree" },
+            &[_][]const u8{"_Cfunc_GoFree"},
             90,
             "go",
         );
@@ -210,9 +211,9 @@ pub const SemanticResolverPass = struct {
             "Objective-C object allocation",
             semantic_patterns.PatternType.allocation,
             &[_][]const u8{
-                "objc_alloc",      "objc_allocInit",
+                "objc_alloc",         "objc_allocInit",
                 "objc_allocWithZone", "class_createInstance",
-                "NSAllocateObject", "+[NSObject alloc]",
+                "NSAllocateObject",   "+[NSObject alloc]",
                 "malloc_zone_malloc", "malloc_zone_calloc",
             },
             90,
@@ -223,8 +224,8 @@ pub const SemanticResolverPass = struct {
             "Objective-C object release",
             semantic_patterns.PatternType.release,
             &[_][]const u8{
-                "objc_release",    "objc_autorelease",
-                "CFRelease",        "CGImageRelease",
+                "objc_release",       "objc_autorelease",
+                "CFRelease",          "CGImageRelease",
                 "NSDeallocateObject", "free",
             },
             90,
@@ -237,9 +238,9 @@ pub const SemanticResolverPass = struct {
             "Python C API allocation",
             semantic_patterns.PatternType.allocation,
             &[_][]const u8{
-                "PyMem_Malloc", "PyMem_Calloc", "PyMem_Realloc",
-                "PyObject_Malloc", "PyObject_New", "PyObject_NewVar",
-                "PyList_New", "PyDict_New", "PyTuple_New",
+                "PyMem_Malloc",         "PyMem_Calloc",       "PyMem_Realloc",
+                "PyObject_Malloc",      "PyObject_New",       "PyObject_NewVar",
+                "PyList_New",           "PyDict_New",         "PyTuple_New",
                 "PyUnicode_FromString", "PyBytes_FromString",
             },
             85,
@@ -251,7 +252,8 @@ pub const SemanticResolverPass = struct {
             semantic_patterns.PatternType.release,
             &[_][]const u8{
                 "PyMem_Free", "PyObject_Free",
-                "Py_DECREF", "Py_XDECREF", "Py_CLEAR",
+                "Py_DECREF",  "Py_XDECREF",
+                "Py_CLEAR",
             },
             85,
             "python",
@@ -263,9 +265,9 @@ pub const SemanticResolverPass = struct {
             "JNI local reference allocation",
             semantic_patterns.PatternType.allocation,
             &[_][]const u8{
-                "NewGlobalRef", "NewLocalRef",
-                "FindClass", "GetObjectClass",
-                "NewStringUTF", "NewByteArray",
+                "NewGlobalRef",     "NewLocalRef",
+                "FindClass",        "GetObjectClass",
+                "NewStringUTF",     "NewByteArray",
                 "CallObjectMethod", "CallStaticObjectMethod",
             },
             80,
@@ -288,7 +290,7 @@ pub const SemanticResolverPass = struct {
             "Node.js N-API value creation",
             semantic_patterns.PatternType.allocation,
             &[_][]const u8{
-                "napi_create_object", "napi_create_array",
+                "napi_create_object",      "napi_create_array",
                 "napi_create_string_utf8", "napi_create_external_arraybuffer",
                 "napi_get_cb_info",
             },

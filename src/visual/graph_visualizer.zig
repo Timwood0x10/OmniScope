@@ -199,10 +199,9 @@ pub const GraphVisualizer = struct {
 
         var first_kc = true;
         const kinds_ordered = [_][]const u8{
-            "double_free",         "use_after_free",   "borrow_escape",
-            "memory_leak",         "malloc_unchecked", "invalid_free",
-            "write_to_immutable",
-            "cross_language_leak", "null_dereference",
+            "double_free",        "use_after_free",      "borrow_escape",
+            "memory_leak",        "malloc_unchecked",    "invalid_free",
+            "write_to_immutable", "cross_language_leak", "null_dereference",
         };
         for (kinds_ordered) |ks| {
             if (kind_counts.get(ks)) |cnt| {

@@ -14,6 +14,7 @@
 //!   3. Language-agnostic — Rust Itanium, C++ Itanium, Zig, Go
 
 const std = @import("std");
+const log = @import("../../common/log.zig");
 
 const SurfaceHint = @import("surface_classifier.zig").SurfaceHint;
 const FunctionSurface = @import("surface_classifier.zig").FunctionSurface;
@@ -48,9 +49,9 @@ pub fn classifyMangledName(name: []const u8) ?SurfaceHint {
 pub fn classifyMangledNameDiagnostic(name: []const u8) ?SurfaceHint {
     const result = classifyMangledName(name);
     if (result) |hint| {
-        std.log.debug("[L0-MANGLE] '{s}': => {s} ({s})", .{ name, hint.surface.toString(), hint.reason });
+        log.debug("[L0-MANGLE] '{s}': => {s} ({s})", .{ name, hint.surface.toString(), hint.reason });
     } else {
-        std.log.debug("[L0-MANGLE] '{s}': no pattern matched, deferring to L1/L2", .{name});
+        log.debug("[L0-MANGLE] '{s}': no pattern matched, deferring to L1/L2", .{name});
     }
     return result;
 }
@@ -284,6 +285,51 @@ fn classifyPlainName(name: []const u8) ?SurfaceHint {
         .confidence = .high,
         .reason = "LLVM internal",
     };
+
+    // C# / .NET NativeAOT patterns — these are unambiguous
+    // <Module>. is the canonical prefix for module-level static methods in AOT output
+    const dotnet_module_prefix = "\x3CModule\x3E.";
+    if (std.mem.startsWith(u8, name, dotnet_module_prefix)) {
+        return .{
+            .surface = .standard_library,
+            .confidence = .high,
+            .reason = ".NET NativeAOT module method",
+        };
+    }
+    // System.* / Microsoft.* = BCL (Base Class Library)
+    if (std.mem.startsWith(u8, name, "System.") or
+        std.mem.startsWith(u8, name, "Microsoft."))
+    {
+        return .{
+            .surface = .standard_library,
+            .confidence = .high,
+            .reason = ".NET Base Class Library",
+        };
+    }
+    // Rh* = Runtime Helpers (ILC-generated runtime support functions)
+    if (name.len > 2 and name[0] == 'R' and name[1] == 'h') {
+        return .{
+            .surface = .runtime,
+            .confidence = .high,
+            .reason = ".NET Runtime Helper (Rh*)",
+        };
+    }
+    // GC_* = GC interaction stubs
+    if (std.mem.startsWith(u8, name, "GC_")) {
+        return .{
+            .surface = .runtime,
+            .confidence = .high,
+            .reason = ".NET GC stub",
+        };
+    }
+    // IL_* = IL code stubs
+    if (std.mem.startsWith(u8, name, "IL_")) {
+        return .{
+            .surface = .runtime,
+            .confidence = .medium,
+            .reason = ".NET IL stub",
+        };
+    }
 
     return null;
 }

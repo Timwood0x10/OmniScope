@@ -325,8 +325,8 @@ pub const FFIBoundary = struct {
         rust,
         /// Zig language
         zig,
-        /// Swift language
-        swift,
+        /// C# / .NET language (P/Invoke, NativeAOT)
+        csharp,
         /// Go language (including cgo)
         go,
         /// Java/JNI language

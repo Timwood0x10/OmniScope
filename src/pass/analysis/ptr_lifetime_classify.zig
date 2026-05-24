@@ -13,7 +13,6 @@ const Language = @import("../../semantics/zone_classifier.zig").Language;
 /// This module contains pure functions that classify LLVM function names
 /// into categories (alloc/free/resource) based on naming conventions.
 /// No state is maintained — all functions are deterministic lookups.
-
 /// Helper: check if haystack contains ANY of the needles (substring match).
 fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
     for (needles) |needle| {
@@ -54,29 +53,30 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     // Exact matches for well-known free/dealloc functions
     const exact_fns = [_][]const u8{
         // C standard library
-        "free",       "cfree",      "realloc",
-        "g_free",     "kfree",      "vfree",
-        "c_free",     "c_malloc",
+        "free",           "cfree",                 "realloc",
+        "g_free",         "kfree",                 "vfree",
+        "c_free",         "c_malloc",
 
         // Rust global allocator
-        "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+                     "__rust_dealloc",
+        "__rdl_dealloc",  "__rg_dealloc",
 
         // Go/cgo runtime (official cgo naming convention)
-        "_cgo_free",
+                 "_cgo_free",
 
         // Objective-C runtime
-        "objc_release",   "objc_autorelease",
-        "CFRelease",      "CGImageRelease",
-        "NSDeallocateObject",
+        "objc_release",   "objc_autorelease",      "CFRelease",
+        "CGImageRelease", "NSDeallocateObject",
 
         // Python C API
-        "PyMem_Free",  "PyObject_Free",
+           "PyMem_Free",
+        "PyObject_Free",
 
         // JNI
-        "DeleteLocalRef", "DeleteGlobalRef",
+         "DeleteLocalRef",        "DeleteGlobalRef",
 
         // Node.js N-API
-        "napi_unref", "napi_delete_reference",
+        "napi_unref",     "napi_delete_reference",
     };
     for (exact_fns) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;
@@ -84,10 +84,10 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     // Suffix patterns: function must END with these to avoid false positives
     // on names like "free_size", "freestyle", "set_freedom" etc.
     const suffixes = [_][]const u8{
-        "_free",         "_dealloc",    "_deallocate",
-        "_release",      "_destroy",    "_drop",
-        "delete",        "Delete",      "deallocate",
-        "Deallocate",    "GoFree",      // _Cfunc_GoFree pattern
+        "_free",    "_dealloc", "_deallocate",
+        "_release", "_destroy", "_drop",
+        "delete",   "Delete",   "deallocate",
+        "Deallocate", "GoFree", // _Cfunc_GoFree pattern
     };
     for (suffixes) |suffix| {
         if (fn_name.len >= suffix.len and
@@ -135,6 +135,16 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
     // Node.js N-API
     if (containsAny(fn_name, &[_][]const u8{ "napi_create_", "napi_get_cb_info" }))
         return "nodejs";
+    // C# / .NET — P/Invoke unmanaged memory + COM interop
+    // NativeAOT compiles these to their mangled/linked forms.
+    // Marshal.AllocHGlobal / Marshal.FreeHGlobal are the primary FFI allocators.
+    if (containsAny(fn_name, &[_][]const u8{
+        "Marshal_AllocHGlobal", "Marshal_FreeHGlobal",
+        "CoTaskMemAlloc",       "CoTaskMemFree",
+        "LocalAlloc",           "LocalFree",
+        "HeapAlloc",            "HeapFree",
+    }))
+        return "csharp";
     return null;
 }
 
@@ -173,6 +183,11 @@ pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?L
     // Python C API
     if (containsAny(fn_name, &[_][]const u8{ "PyMem_Malloc", "PyObject_Malloc", "PyObject_New", "PyList_New", "PyDict_New" }))
         return .python;
+    // C# / .NET — P/Invoke unmanaged memory allocators
+    if (containsAny(fn_name, &[_][]const u8{
+        "Marshal_AllocHGlobal", "CoTaskMemAlloc", "LocalAlloc", "HeapAlloc",
+    }))
+        return .csharp;
     return null;
 }
 
@@ -195,6 +210,11 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         return "python";
     if (containsAny(fn_name, &[_][]const u8{ "DeleteLocalRef", "DeleteGlobalRef" }))
         return "java";
+    // C# / .NET — P/Invoke unmanaged memory free + COM interop
+    if (containsAny(fn_name, &[_][]const u8{
+        "Marshal_FreeHGlobal", "CoTaskMemFree", "LocalFree", "HeapFree",
+    }))
+        return "csharp";
     return null;
 }
 

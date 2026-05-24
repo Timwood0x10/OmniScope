@@ -237,12 +237,10 @@ pub const Provenance = struct {
 
         // Common allocator patterns across languages
         const allocators = [_][]const u8{
-            "malloc",      "calloc",      "realloc",
-            "_cgo_allocate", "_cgo_allocate_local",
-            "_Cfunc_GoMalloc", "_Cfunc_GoAlloc",
-            "__rust_alloc", "__rust_realloc",
-            "PyMem_Malloc",  "PyMalloc",
-            "JNIEnv_NewStringUTF",
+            "malloc",             "calloc",              "realloc",
+            "_cgo_allocate",      "_cgo_allocate_local", "_Cfunc_GoMalloc",
+            "_Cfunc_GoAlloc",     "__rust_alloc",        "__rust_realloc",
+            "PyMem_Malloc",       "PyMalloc",            "JNIEnv_NewStringUTF",
             "napi_create_object", "napi_create_array",
         };
 

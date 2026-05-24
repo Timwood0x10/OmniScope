@@ -21,6 +21,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const log = @import("../../common/log.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
@@ -101,7 +102,7 @@ pub const SurfaceClassifierPass = struct {
                 const l1_str = if (l1_hint) |h| h.surface.toString() else "null";
                 const l2_str = if (l2_hint) |h| h.surface.toString() else "null";
                 const bnd_str = if (is_ffi_boundary) "FFI" else if (is_lib_export) "LIB" else "--";
-                std.log.debug("[SurfaceClassifier] {s}: L0={s} L1={s} L2={s} bnd={s} => {s}", .{
+                log.debug("[SurfaceClassifier] {s}: L0={s} L1={s} L2={s} bnd={s} => {s}", .{
                     func_name, l0_str, l1_str, l2_str, bnd_str, surf.toString(),
                 });
                 logged_count += 1;
@@ -110,7 +111,7 @@ pub const SurfaceClassifierPass = struct {
         }
 
         // Phase 1 summary (info level — always visible)
-        std.log.info("[SurfaceClassifier-LAYERS] L0={d} L1={d} L2={d} L2_no_dbg={d} L2_dbg_unk={d} FFI_BND={d} LIB_EXP={d}", .{
+        log.debug("[SurfaceClassifier-LAYERS] L0={d} L1={d} L2={d} L2_no_dbg={d} L2_dbg_unk={d} FFI_BND={d} LIB_EXP={d}", .{
             l0_hits,
             l1_hits,
             l2_hits,
@@ -119,7 +120,7 @@ pub const SurfaceClassifierPass = struct {
             ffi_boundary_count,
             lib_export_count,
         });
-        std.log.info("[SurfaceClassifier-PHASE1] user={d} dep={d} bnd={d} stdlib={d} gen={d} rt={d} unk={d}", .{
+        log.debug("[SurfaceClassifier-PHASE1] user={d} dep={d} bnd={d} stdlib={d} gen={d} rt={d} unk={d}", .{
             phase1_stats.user_code,
             phase1_stats.dependency,
             phase1_stats.boundary,
@@ -137,7 +138,7 @@ pub const SurfaceClassifierPass = struct {
         // This saves massive resources on single-language binaries where
         // the old pipeline would still analyze 1331 "boundary" functions.
         if (ffi_boundary_count == 0) {
-            std.log.info("[SurfaceClassifier-FFI] No FFI boundary detected ({d} lib_exports). Skipping cross-language analysis.", .{lib_export_count});
+            log.debug("[SurfaceClassifier-FFI] No FFI boundary detected ({d} lib_exports). Skipping cross-language analysis.", .{lib_export_count});
             // Mark context: no FFI analysis needed
             ctx.has_ffi_boundary = false;
 
@@ -160,7 +161,7 @@ pub const SurfaceClassifierPass = struct {
             return; // Early exit — skip Phase 3 and heavy analysis
         }
 
-        std.log.info("[SurfaceClassifier-FFI] {d} FFI boundaries detected — proceeding with full analysis.", .{ffi_boundary_count});
+        log.debug("[SurfaceClassifier-FFI] {d} FFI boundaries detected — proceeding with full analysis.", .{ffi_boundary_count});
         ctx.has_ffi_boundary = true;
 
         // Phase 2: CallGraph reachability (L3) — only when FFI exists
@@ -173,7 +174,7 @@ pub const SurfaceClassifierPass = struct {
             post_l3_stats.count(s.*);
         }
 
-        std.log.info("[SurfaceClassifier-POST-L3] user={d} dep={d} bnd={d} stdlib={d} gen={d} rt={d} unk={d}", .{
+        log.debug("[SurfaceClassifier-POST-L3] user={d} dep={d} bnd={d} stdlib={d} gen={d} rt={d} unk={d}", .{
             post_l3_stats.user_code,
             post_l3_stats.dependency,
             post_l3_stats.boundary,
@@ -183,7 +184,7 @@ pub const SurfaceClassifierPass = struct {
             post_l3_stats.unknown,
         });
 
-        std.log.info("[SurfaceClassifier-L3-DELTA] stdlib:{d}->{d} gen:{d}->{d} rt:{d}->{d} unk:{d}->{d} dep:{d}->{d}", .{
+        log.debug("[SurfaceClassifier-L3-DELTA] stdlib:{d}->{d} gen:{d}->{d} rt:{d}->{d} unk:{d}->{d} dep:{d}->{d}", .{
             phase1_stats.standard_library,
             post_l3_stats.standard_library,
             phase1_stats.compiler_generated,

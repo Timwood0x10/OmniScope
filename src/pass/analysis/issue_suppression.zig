@@ -46,6 +46,7 @@
 //!       F3. Bounded copy with explicit size check (strncpy vs strcpy)
 
 const std = @import("std");
+const log = @import("../../common/log.zig");
 
 const Issue = @import("../../diag/issue.zig").Issue;
 
@@ -63,32 +64,32 @@ const Issue = @import("../../diag/issue.zig").Issue;
 /// and output — suppressed issues consume zero resources.
 pub fn shouldSuppress(issue: *const Issue) bool {
     if (isRustDropChainLeak(issue)) {
-        std.log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
+        log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
         return true;
     }
 
     if (isStaticProvenanceEscape(issue)) {
-        std.log.debug("[SUPPRESS-STATIC] {s}: Static/code provenance", .{issue.location.func});
+        log.debug("[SUPPRESS-STATIC] {s}: Static/code provenance", .{issue.location.func});
         return true;
     }
 
     if (isPanicCleanupDoubleFree(issue)) {
-        std.log.debug("[SUPPRESS-PANIC] {s}: Panic cleanup double-free", .{issue.location.func});
+        log.debug("[SUPPRESS-PANIC] {s}: Panic cleanup double-free", .{issue.location.func});
         return true;
     }
 
     if (isOsApiStandardUsage(issue)) {
-        std.log.debug("[SUPPRESS-OSAPI] {s}: OS API standard usage", .{issue.location.func});
+        log.debug("[SUPPRESS-OSAPI] {s}: OS API standard usage", .{issue.location.func});
         return true;
     }
 
     if (isSafeExampleFunction(issue)) {
-        std.log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
+        log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
         return true;
     }
 
     if (isDefensiveCodingPattern(issue)) {
-        std.log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
+        log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
         return true;
     }
 

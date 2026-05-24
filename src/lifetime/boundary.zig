@@ -318,7 +318,7 @@ pub fn detectLanguage(func_name: []const u8) LanguageHint {
         return .zig;
     }
     if (std.mem.startsWith(u8, func_name, "$s")) {
-        return .swift;
+        return .csharp;
     }
     if (std.mem.indexOf(u8, func_name, "C.") != null or
         std.mem.indexOf(u8, func_name, "_cgo_") != null)
@@ -438,7 +438,7 @@ fn langName(lang: LanguageHint) []const u8 {
         .c => "C",
         .rust => "Rust",
         .zig => "Zig",
-        .swift => "Swift",
+        .csharp => "C#",
         .cpp => "C++",
         .go => "Go",
         .julia => "Julia",

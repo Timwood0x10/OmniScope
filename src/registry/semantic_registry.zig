@@ -266,7 +266,7 @@ pub const SemanticRegistry = struct {
     };
 
     /// Known language identifiers for cross-language inference.
-    pub const Language = enum { go, rust, c, cpp, python, swift, zig, unknown };
+    pub const Language = enum { go, rust, c, cpp, python, csharp, zig, unknown };
 
     /// Parse a language identifier string to Language enum.
     pub fn parseLanguage(lang_str: []const u8) Language {
@@ -284,7 +284,7 @@ pub const SemanticRegistry = struct {
         if (std.mem.eql(u8, lower, "c")) return .c;
         if (std.mem.eql(u8, lower, "cpp") or std.mem.eql(u8, lower, "c++")) return .cpp;
         if (std.mem.eql(u8, lower, "python") or std.mem.eql(u8, lower, "py")) return .python;
-        if (std.mem.eql(u8, lower, "swift")) return .swift;
+        if (std.mem.eql(u8, lower, "csharp")) return .csharp;
         if (std.mem.eql(u8, lower, "zig")) return .zig;
         return .unknown;
     }

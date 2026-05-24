@@ -24,6 +24,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const log = @import("../../common/log.zig");
 
 // ============================================================================
 // Public API
@@ -65,7 +66,7 @@ pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef) bool {
     // Rust mangled names always start with _ZN or _R.
     // C symbols, #[no_mangle], and extern "C" functions use plain names.
     if (isUnmangledName(name)) {
-        std.log.debug("[BOUNDARY] '{s}': FFI boundary (unmangled + external)", .{name});
+        log.debug("[BOUNDARY] '{s}': FFI boundary (unmangled + external)", .{name});
         return true;
     }
 
@@ -81,7 +82,7 @@ pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef) bool {
     // to use C calling convention — NOT a cross-ABI boundary.
     const call_conv = c.LLVMGetFunctionCallConv(func);
     if (call_conv == c.LLVMCCallConv and isUnmangledName(name)) {
-        std.log.debug("[BOUNDARY] '{s}': FFI boundary (C call conv + unmangled)", .{name});
+        log.debug("[BOUNDARY] '{s}': FFI boundary (C call conv + unmangled)", .{name});
         return true;
     }
 
@@ -91,7 +92,7 @@ pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef) bool {
     if (@intFromPtr(section_ptr) != 0) {
         const section = std.mem.span(section_ptr);
         if (isExportSection(section)) {
-            std.log.debug("[BOUNDARY] '{s}': FFI boundary (section={s})", .{ name, section });
+            log.debug("[BOUNDARY] '{s}': FFI boundary (section={s})", .{ name, section });
             return true;
         }
     }

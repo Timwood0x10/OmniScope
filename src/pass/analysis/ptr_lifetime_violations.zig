@@ -140,6 +140,16 @@ pub fn checkCrossLanguageFree(
                 return;
             }
 
+            // C# / .NET P/Invoke cross-language free detection
+            // Marshal.FreeHGlobal / CoTaskMemFree on non-.NET allocated memory
+            const free_is_csharp = std.mem.eql(u8, free_lang.?, "csharp");
+            const free_is_cpp = std.mem.eql(u8, free_lang.?, "cpp");
+            if ((free_is_csharp or free_is_cpp) and (alloc_is_c or alloc_is_rust)) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name,
+                    langToString(alloc_lang), free_lang.?, inst, diag);
+                return;
+            }
+
             // Generic cross-language mismatch — compare Language enums,
             // not strings. classifyFreeLanguage returns "c" while
             // langToString(.c) returns "C/C++" — string comparison always
@@ -179,7 +189,7 @@ fn langToString(lang: memory_graph.Language) []const u8 {
         .cpp => "C/C++",
         .rust => "Rust",
         .zig => "Zig",
-        .swift => "Swift",
+        .csharp => "C#",
         .go => "Go",
         .java => "Java/JNI",
         .python => "Python",
@@ -192,9 +202,11 @@ fn langToString(lang: memory_graph.Language) []const u8 {
 fn freeLangToLanguage(free_lang: []const u8) memory_graph.Language {
     if (std.mem.eql(u8, free_lang, "rust")) return .rust;
     if (std.mem.eql(u8, free_lang, "c")) return .c;
+    if (std.mem.eql(u8, free_lang, "cpp")) return .c; // C++ uses same heap as C
     if (std.mem.eql(u8, free_lang, "go")) return .go;
     if (std.mem.eql(u8, free_lang, "java")) return .java;
     if (std.mem.eql(u8, free_lang, "python")) return .python;
+    if (std.mem.eql(u8, free_lang, "csharp")) return .csharp; // .NET P/Invoke
     return .unknown;
 }
 

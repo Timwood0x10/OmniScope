@@ -1185,8 +1185,9 @@ pub const DiagnosticWriter = struct {
         // Verbose mode: + pipeline pass statistics.
         // Debug mode: + internal debug traces.
         if (std.mem.eql(u8, severity, "INFO") and log.current_log_level == .normal) return;
-        // WARN messages only show in verbose mode or higher (not normal mode)
-        if (std.mem.eql(u8, severity, "WARN") and log.current_log_level == .normal) return;
+        // WARN/ERROR/CRITICAL only show in verbose or debug mode.
+        // Normal mode gets the clean structured report only.
+        if (log.current_log_level == .normal) return;
 
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {

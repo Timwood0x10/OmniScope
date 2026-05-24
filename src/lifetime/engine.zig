@@ -158,7 +158,7 @@ pub const LanguageHint = enum(u8) {
     c,
     rust,
     zig,
-    swift,
+    csharp,
     cpp,
     go,
     julia,

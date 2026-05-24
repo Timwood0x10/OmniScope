@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const log = @import("../../common/log.zig");
 const SurfaceHint = @import("surface_classifier.zig").SurfaceHint;
 const FunctionSurface = @import("surface_classifier.zig").FunctionSurface;
 
@@ -47,7 +48,7 @@ pub fn classifyDebugOrigin(func: c.LLVMValueRef) ?SurfaceHint {
     // Diagnostic: log source path when provenance is unknown — this is the
     // key failure mode where L2 has debug info but path doesn't match any rule.
     if (provenance == .unknown) {
-        std.log.debug("[L2-UNKNOWN] dir='{s}' file='{s}' — no provenance rule matched", .{ dir, filename });
+        log.debug("[L2-UNKNOWN] dir='{s}' file='{s}' — no provenance rule matched", .{ dir, filename });
     }
 
     return switch (provenance) {
@@ -76,17 +77,17 @@ pub fn classifyDebugOrigin(func: c.LLVMValueRef) ?SurfaceHint {
 }
 
 /// Diagnostic version of classifyDebugOrigin — logs detailed debug info.
-/// All output at std.log.debug level (visible with --debug-log or equivalent).
+/// All output at log.debug level (visible with --debug-log or equivalent).
 pub fn classifyDebugOriginDiagnostic(func: c.LLVMValueRef, func_name: []const u8) ?SurfaceHint {
     const sp = c.LLVMGetSubprogram(func);
     if (@intFromPtr(sp) == 0) {
-        std.log.debug("[DEBUG_ORIGIN] '{s}': NO subprogram (no debug info)", .{func_name});
+        log.debug("[DEBUG_ORIGIN] '{s}': NO subprogram (no debug info)", .{func_name});
         return null;
     }
 
     const file_ref = c.LLVMDIScopeGetFile(sp);
     if (@intFromPtr(file_ref) == 0) {
-        std.log.debug("[DEBUG_ORIGIN] '{s}': has subprogram but NO DIFile", .{func_name});
+        log.debug("[DEBUG_ORIGIN] '{s}': has subprogram but NO DIFile", .{func_name});
         return null;
     }
 
@@ -94,7 +95,7 @@ pub fn classifyDebugOriginDiagnostic(func: c.LLVMValueRef, func_name: []const u8
     const dir_ptr = c.LLVMDIFileGetDirectory(file_ref, &dir_len);
     const max_path_len: c_uint = 8192;
     if (@intFromPtr(dir_ptr) == 0 or dir_len == 0 or dir_len > max_path_len) {
-        std.log.debug("[DEBUG_ORIGIN] '{s}': DIFile directory empty or too long (len={d})", .{ func_name, dir_len });
+        log.debug("[DEBUG_ORIGIN] '{s}': DIFile directory empty or too long (len={d})", .{ func_name, dir_len });
         return null;
     }
     const dir = dir_ptr[0..dir_len];
@@ -102,13 +103,13 @@ pub fn classifyDebugOriginDiagnostic(func: c.LLVMValueRef, func_name: []const u8
     var name_len: c_uint = 0;
     const name_ptr = c.LLVMDIFileGetFilename(file_ref, &name_len);
     if (@intFromPtr(name_ptr) == 0 or name_len == 0 or name_len > max_path_len) {
-        std.log.debug("[DEBUG_ORIGIN] '{s}': dir='{s}' but filename empty", .{ func_name, dir });
+        log.debug("[DEBUG_ORIGIN] '{s}': dir='{s}' but filename empty", .{ func_name, dir });
         return null;
     }
     const filename = name_ptr[0..name_len];
 
     const provenance = classifySourcePath(dir, filename);
-    std.log.debug("[DEBUG_ORIGIN] '{s}': dir='{s}' file='{s}' => {s}", .{ func_name, dir, filename, @tagName(provenance) });
+    log.debug("[DEBUG_ORIGIN] '{s}': dir='{s}' file='{s}' => {s}", .{ func_name, dir, filename, @tagName(provenance) });
 
     return switch (provenance) {
         .user_code => .{
@@ -132,7 +133,7 @@ pub fn classifyDebugOriginDiagnostic(func: c.LLVMValueRef, func_name: []const u8
             .reason = "source path in build output",
         },
         .unknown => {
-            std.log.debug("[DEBUG_ORIGIN] '{s}': path matched UNKNOWN (no pattern matched)", .{func_name});
+            log.debug("[DEBUG_ORIGIN] '{s}': path matched UNKNOWN (no pattern matched)", .{func_name});
             return null;
         },
     };
