@@ -52,6 +52,7 @@ pub const GraphKind = enum {
     malloc_unchecked,
     null_dereference,
     invalid_free,
+    write_to_immutable,
     borrow_escape,
     ffi_unsafe_call,
     unchecked_return,
@@ -200,6 +201,7 @@ pub const GraphVisualizer = struct {
         const kinds_ordered = [_][]const u8{
             "double_free",         "use_after_free",   "borrow_escape",
             "memory_leak",         "malloc_unchecked", "invalid_free",
+            "write_to_immutable",
             "cross_language_leak", "null_dereference",
         };
         for (kinds_ordered) |ks| {

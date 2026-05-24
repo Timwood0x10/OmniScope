@@ -233,7 +233,123 @@ if L2 == BUILD_GENERATED && L3 == not_reachable → SKIP
 else → KEEP（交给下游 ownership 分析）
 ```
 
-### 8. OriginClassifierPass — 独立组件
+### 8. FFIAuditor 统一值追踪框架（opcode 粗筛 + def-use 精筛）
+
+#### 背景：不透明指针时代的挑战
+
+LLVM 15+ 把所有指针统一成 `ptr`，`LLVMGetTypeKind()` 只能返回 `LLVMPointerTypeKind`，无法区分函数指针 vs 数据指针。当前各 Rule 各自实现 opcode + 类型检查，重复代码多，且在不透明指针下精度下降。
+
+**核心策略：用行为推断替代类型查询。** 不问"这个指针是什么类型"，而问"这个值被怎么使用"。
+
+#### 8.1 统一值追踪 API
+
+在 `rust_ffi_auditor.zig` 中新增工具层：
+
+```zig
+/// 值来源（替代类型查询）
+const ValueSource = enum {
+    from_parameter,      // 函数参数
+    from_alloca,         // 栈分配
+    from_call,           // 函数返回值
+    from_global,         // 全局变量
+    from_constant,       // 常量/全局地址
+    from_code_section,   // .text 段地址（函数指针）
+    unknown,
+};
+
+/// 值用途（行为推断）
+const ValueUsage = enum {
+    as_call_target,      // 被用作间接调用目标 → 是函数指针
+    as_store_dest,       // 被用作 store 目标 → 是可写指针
+    as_load_src,         // 被用作 load 来源 → 是可读指针
+    as_gep_base,         // 被用作 GEP 基址 → 是聚合类型
+    as_arg_to_ffi,       // 被传给 FFI 函数 → 跨边界
+    as_free_arg,         // 被传给 free/dealloc → 是堆指针
+};
+```
+
+#### 8.2 具体任务
+
+- [ ] **T1: 实现 `traceValueSource()`** — 统一的值来源追踪
+  - 替代 `isDerivedFromAlloca()`、`isValueFromParameter()`、`ptrOriginatesFromRustAlloc()` 等分散实现
+  - 追踪 def-use chain：alloca → store → load → bitcast → GEP → 最终值
+  - 追踪 alloca 内容来源（当前最大缺陷：只看 alloca 本身，不看里面存了什么）
+  - 返回 `ValueSource` 枚举
+  - 位置：`rust_ffi_auditor.zig` 约 60 行
+
+- [ ] **T2: 实现 `traceValueUsage()`** — 统一的值用途推断
+  - 替代 `isGlobalUsedForIndirectCall()`、`mayRetainPointer()` 等分散实现
+  - 扫描值的所有 use-site，收集用途集合
+  - 返回 `[]ValueUsage`（一个值可以同时有多种用途）
+  - 位置：`rust_ffi_auditor.zig` 约 40 行
+
+- [ ] **T3: 增强 Rule 5 stack_escape — 追踪 alloca 内容**
+  - 当前问题：`isDerivedFromAlloca()` 只判断 alloca 是否是栈分配，不追踪 alloca 里存了什么
+  - wasmtime 误报根因：alloca 里存的是代码段地址（`@text_section`），但报告为"alloca-derived pointer"
+  - 增强：用 `traceValueSource()` 替代 `isDerivedFromAlloca()`，区分 alloca 内容来源：
+    - `from_code_section` → 抑制（代码段指针不是栈逃逸）
+    - `from_constant` → 抑制
+    - `from_parameter` → 保留（真正的栈逃逸风险）
+    - `from_alloca`（内容也是栈上） → 保留（高风险）
+  - 预期效果：wasmtime 剩余 2 个 `ffi_unsafe_call` 也可能被消除
+
+- [ ] **T4: 增强 Rule 8 callback — 扩展函数指针识别**
+  - 当前：只检查全局变量是否被用作间接调用（`isGlobalUsedForIndirectCall`）
+  - 增强：用 `traceValueUsage()` 检查任何值是否被用作 `as_call_target`
+  - 扩展检测范围：不光检测 `store @global`，还检测 `store alloca`（局部回调变量）
+  - 增加 confidence：如果值来源是 `from_parameter` + 用途包含 `as_call_target` → 高置信度 callback
+
+- [ ] **T5: 增强 Rule 9 write_imm — 不透明指针下的 struct 推断**
+  - 当前：靠 `LLVMStructTypeKind` 判断 GEP 是否访问结构体字段
+  - 不透明指针下退化为只靠 GEP 操作数数量（`num_gep_operands >= 3`）
+  - 增强：结合 `traceValueSource()` 判断基址来源：
+    - 基址来自 `from_call`（返回结构体） → 可能是 struct field
+    - 基址来自 `from_global`（全局结构体） → 可能是 struct field
+    - 基址来自 `from_alloca`（栈上结构体） → 可能是 struct field
+  - 增加 debug metadata 辅助：如果 GEP 基址有 `!dbg` 且关联 DICompositeType → 确认 struct
+
+- [ ] **T6: 增强 Rule 10 UAF — 全局变量别名追踪**
+  - 当前问题：`detectUseAfterFree()` 只追踪直接被 free 的值，不追踪经过全局变量 store→load 的别名
+  - GO-03 未检测到：`_cgo_free(ptr)` → `store ptr, @global` → `load @global` → `memset(loaded)` → UAF
+  - 增强：在 Pass 2 中增加全局变量别名检查
+  - 当检测到 free 的指针被存入全局变量时，追踪该全局变量的所有 load→use
+  - 实现方式：构建 freed_globals 集合，扫描后续 load 指令
+  - 预期效果：GO-03 检出
+
+#### 8.3 集成方式
+
+不新增文件，不新增 pass。所有增强在 `rust_ffi_auditor.zig` 内完成：
+
+```
+当前结构：
+  detectStackEscapeToFFI()    → 自己实现 isDerivedFromAlloca()
+  detectCallbackOwnershipRisk() → 自己实现 isValueFromParameter() + isGlobalUsedForIndirectCall()
+  detectWriteToImmutable()     → 自己实现 struct GEP 检测
+  detectUseAfterFree()         → 自己实现 freed ptr 追踪
+
+增强后结构：
+  traceValueSource()  ← 统一实现，各 Rule 调用
+  traceValueUsage()   ← 统一实现，各 Rule 调用
+  detectStackEscapeToFFI()    → 调用 traceValueSource() 判断 alloca 内容
+  detectCallbackOwnershipRisk() → 调用 traceValueSource() + traceValueUsage()
+  detectWriteToImmutable()     → 调用 traceValueSource() 判断 GEP 基址
+  detectUseAfterFree()         → 调用 traceValueSource() 追踪全局别名
+```
+
+#### 8.4 优先级与预期收益
+
+| 任务 | 优先级 | 预期收益 |
+|------|--------|---------|
+| T1 traceValueSource | P0 | 基础设施，T3/T4/T5/T6 依赖它 |
+| T3 stack_escape 增强 | P0 | 消除 wasmtime 剩余误报 |
+| T2 traceValueUsage | P1 | T4/T5 依赖它 |
+| T8 callback 扩展 | P1 | 检测局部回调变量 |
+| T5 write_imm 增强 | P2 | 不透明指针下精度提升 |
+| T6 UAF 全局别名 | P2 | GO-03 检出 |
+
+---
+
+### 9. OriginClassifierPass — 独立组件
 
 improve.md 里提到的"第一公民组件"这个判断非常对。
 

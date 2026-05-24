@@ -612,6 +612,7 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
         .malloc_unchecked => .malloc_unchecked,
         .null_dereference => .null_dereference,
         .invalid_free => .invalid_free,
+        .write_to_immutable => .write_to_immutable,
         .borrow_escape => .borrow_escape,
         .ffi_unsafe_call => .ffi_unsafe_call,
         .unchecked_return => .unchecked_return,

@@ -603,10 +603,10 @@ pub const FFITypeMismatchPass = struct {
             const msg = try std.fmt.allocPrint(ctx.allocator, "Go cgo pointer escape: no KeepAlive after passing Go heap ptr to C in {s}", .{
                 caller_name,
             });
-            defer ctx.allocator.free(msg);
 
             const location = Location.init(caller_name);
-            const issue = Issue.init(.borrow_escape, msg, location, .high, 0.75);
+            var issue = Issue.init(.borrow_escape, msg, location, .high, 0.75);
+            issue.owned = true;
             try ctx.addIssue(&issue);
 
             return true;
@@ -694,6 +694,7 @@ pub const FFITypeMismatchPass = struct {
                     .high,
                     0.72,
                 );
+                issue.owned = true;
                 try ctx.addIssue(&issue);
                 return true;
             }

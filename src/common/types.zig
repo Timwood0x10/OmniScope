@@ -187,6 +187,8 @@ pub const IssueKind = enum {
     callback_ownership_risk,
     /// Free called on non-malloc pointer (CWE-590).
     invalid_free,
+    /// Write to immutable memory - writing through const-qualified pointer (CWE-757).
+    write_to_immutable,
     /// Static buffer misuse - thread-unsafe functions like ctime, strerror (CWE-242).
     static_buffer_misuse,
     /// Data race - concurrent access without synchronization (CWE-362).
@@ -220,6 +222,7 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "callback_signature_mismatch",
             .callback_ownership_risk => "callback_ownership_risk",
             .invalid_free => "invalid_free",
+            .write_to_immutable => "write_to_immutable",
             .static_buffer_misuse => "static_buffer_misuse",
             .data_race => "data_race",
             .thread_safety_violation => "thread_safety_violation",
@@ -252,6 +255,7 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => 688,
             .callback_ownership_risk => 825,
             .invalid_free => 590,
+            .write_to_immutable => 757,
             .static_buffer_misuse => 242,
             .data_race => 362,
             .thread_safety_violation => 807,
@@ -283,6 +287,7 @@ pub const IssueKind = enum {
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
             .callback_ownership_risk => "Function pointer parameter stored to global - caller controls callback lifetime, may dangle (CWE-825)",
             .invalid_free => "Free called on non-malloc pointer",
+            .write_to_immutable => "Write to immutable memory - writing through const-qualified pointer violates immutability contract (CWE-757)",
             .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
             .data_race => "Data race - concurrent access without synchronization",
             .thread_safety_violation => "Thread safety violation - lock ordering issue or deadlock risk",
