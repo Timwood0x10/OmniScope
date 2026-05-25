@@ -157,7 +157,9 @@ pub fn markAsRcFunction(func: c.LLVMValueRef, rc_set: *std.AutoHashMap(usize, vo
         };
     }
 }
-
+/// fe_oa_3fc6d3bc256be7a0d3830412c3f5700e267fbf1a58233367
+///
+/// fe_oa_e8d71d8a8deb220da95dbfeb3ed037de05d3a3f720c0102d
 /// Detect RAII-managed allocations (L3/L4).
 pub fn detectRaiiManagedAllocations(
     func: c.LLVMValueRef,

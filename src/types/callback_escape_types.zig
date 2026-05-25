@@ -349,3 +349,102 @@ pub fn validate_callback_signature(func_name: []const u8, callback_arg_type: []c
     }
     return false;
 }
+
+// ============================================================================
+// LLVM Helper Functions
+// ============================================================================
+
+/// Check if an LLVM value is a global variable.
+pub fn isGlobalVariable(ptr: c.LLVMValueRef) bool {
+    if (@intFromPtr(ptr) == 0) return false;
+    return c.LLVMGetValueKind(ptr) == c.LLVMGlobalVariableValueKind;
+}
+
+/// Known function patterns that accept void-returning callbacks.
+pub const VOID_CALLBACK_PATTERNS = &[_][]const u8{
+    "atexit",         "qsort",              "bsearch", "signal", "sigaction",
+    "pthread_create", "pthread_key_create",
+};
+
+/// Check if a function type looks like a callback function based on signature.
+pub fn isLikelyCallbackFunction(fn_type: c.LLVMTypeRef, receiver_name: []const u8) bool {
+    if (@intFromPtr(fn_type) == 0) return false;
+
+    const num_params = c.LLVMCountParamTypes(fn_type);
+    if (num_params == 0) return false;
+
+    const ret_type = c.LLVMGetReturnType(fn_type);
+    if (@intFromPtr(ret_type) == 0) return false;
+
+    for (VOID_CALLBACK_PATTERNS) |p| {
+        if (std.mem.indexOf(u8, receiver_name, p) != null) return true;
+    }
+
+    if (c.LLVMGetTypeKind(ret_type) == c.LLVMVoidTypeKind or
+        c.LLVMGetTypeKind(ret_type) == c.LLVMIntegerTypeKind or
+        c.LLVMGetTypeKind(ret_type) == c.LLVMPointerTypeKind)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+/// Check if a function name is a known generic callback receiver.
+pub fn isGenericCallbackReceiver(receiver: []const u8) bool {
+    for (C_RETAINING_FUNCTIONS) |pattern| {
+        if (std.mem.indexOf(u8, receiver, pattern) != null) return true;
+    }
+    return false;
+}
+
+// ============================================================================
+// Ownership Pattern Detection Functions
+// ============================================================================
+
+/// Factory/constructor function name patterns (ownership transfer to caller).
+pub const FACTORY_PATTERNS = &[_][]const u8{
+    "Alloc",  "Create", "New",     "Init", "Open", "Dup",
+    "Malloc", "Calloc", "Realloc",
+};
+
+/// Destructor/cleanup function name patterns (ownership consume from caller).
+pub const DESTRUCTOR_PATTERNS = &[_][]const u8{
+    "Free",   "Destroy",  "Delete",  "Close", "Release", "Cleanup",
+    "Finish", "Finalize", "Dispose",
+};
+
+/// Transfer function name patterns (ownership pass-through).
+pub const TRANSFER_PATTERNS = &[_][]const u8{
+    "Clone", "Copy", "Move", "Transfer", "Take",
+};
+
+/// Checks if a function is a factory/constructor that transfers ownership to caller.
+pub fn isFactoryFunction(func_name: []const u8) bool {
+    for (FACTORY_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Checks if a function is a destructor that consumes ownership from caller.
+pub fn isDestructorFunction(func_name: []const u8) bool {
+    for (DESTRUCTOR_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Checks if a function is a transfer function that passes ownership through.
+pub fn isTransferFunction(func_name: []const u8) bool {
+    for (TRANSFER_PATTERNS) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}

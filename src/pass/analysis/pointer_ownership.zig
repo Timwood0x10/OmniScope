@@ -1,21 +1,6 @@
-//! Pointer Ownership Tracking Pass
-//!
-//! Tracks pointer ownership across FFI boundaries to detect:
-//! - Cross-language free mismatch (Rust alloc, C free or vice versa)
-//! - Ownership loss when passing pointers across boundaries
-//! - Double free risks
-//!
-//! This pass analyzes LLVM IR to identify allocation and free sites,
-//! then tracks ownership state through def-use chains.
-//!
-//! v0.2 Enhancements:
-//! - Inter-procedural analysis via function summaries
-//! - Path-sensitive analysis for null check tracking
-//!
-//! v0.3 Enhancements:
-//! - Memory pool for reduced allocation overhead
-//! - Profiling for performance analysis
-//! - BoundaryAnalyzer integration for cross-language contract checking
+//! Pointer Ownership Tracking Pass — tracks pointer ownership across FFI boundaries.
+//! Detects: cross-language free mismatch, ownership loss, double free risks.
+//! v0.3: Memory pool, profiling, BoundaryAnalyzer integration.
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
@@ -55,11 +40,30 @@ pub const FreeSite = types.FreeSite;
 pub const PointerFlowEdge = types.PointerFlowEdge;
 pub const FlowType = types.FlowType;
 pub const OwnershipStats = types.OwnershipStats;
+pub const OwnershipSource = types.OwnershipSource;
+pub const OwnershipMode = types.OwnershipMode;
+pub const FFIRelevanceHint = types.FFIRelevanceHint;
+pub const OwnershipPassConfig = types.OwnershipPassConfig;
 const truncateInstId = types.truncateInstId;
 const resolveInstFuncName = types.resolveInstFuncName;
 const AllocType = types.AllocType;
 const FreeType = types.FreeType;
+const isStdlibCall = types.isStdlibCall;
+const checkFfiNamePatterns = types.checkFfiNamePatterns;
+const canReach = types.canReach;
+const findFreePath = types.findFreePath;
+const canReachFree = types.canReachFree;
+const addFlowEdge = types.addFlowEdge;
+const checkDebugMetadataAvailable = types.checkDebugMetadataAvailable;
+const markAllocSitesReachingValue = types.markAllocSitesReachingValue;
+const isRustFFIRelevantFunction = types.isRustFFIRelevantFunction;
 
+/// Analysis methods extracted to ownership_analysis.zig
+const analysis = @import("../../types/ownership_analysis.zig");
+const analyzeFunctionForOwnership = analysis.analyzeFunctionForOwnership;
+const checkOwnershipTransferForFunction = analysis.checkOwnershipTransferForFunction;
+const analyzeInstructionForOwnership = analysis.analyzeInstructionForOwnership;
+const buildFlowGraph = analysis.buildFlowGraph;
 /// Pointer ownership tracking pass.
 pub const PointerOwnershipPass = struct {
     pub const name = "pointer-ownership";
@@ -88,11 +92,7 @@ pub const PointerOwnershipPass = struct {
             });
             return;
         }
-
-        // FFI Relevance Gate: if no cross-language edges have real FFI
-        // boundary semantics (all are just stdlib/runtime calls like malloc/free),
-        // skip the expensive analysis. This saves ~17s on pure Rust modules
-        // where 72532 "cross-language" edges are just Rust→libc calls.
+        // FFI Relevance Gate: skip if all cross-lang edges are stdlib calls (~17s saved on pure Rust)
         {
             const cross_edges = ctx.getCrossLangEdges();
             if (cross_edges.len > 0) {
@@ -109,12 +109,10 @@ pub const PointerOwnershipPass = struct {
                 }
             }
         }
-
         if (ctx.module == null) {
             diag.warn("PointerOwnership: No module loaded, skipping", .{});
             return;
         }
-
         var init_timer: ?ScopedTimer = ScopedTimer.start(&profiler, "init") catch null;
         defer {
             if (init_timer) |*t| t.stop() catch {};
@@ -134,14 +132,11 @@ pub const PointerOwnershipPass = struct {
 
         var free_pool = try MemoryPool(FreeSite).init(ctx.allocator);
         defer free_pool.deinit();
-
         var stats = OwnershipStats{};
         var alloc_map = std.AutoHashMap(u32, *AllocSite).init(ctx.allocator);
         defer alloc_map.deinit();
-
         var free_map = std.AutoHashMap(u32, *FreeSite).init(ctx.allocator);
         defer free_map.deinit();
-
         var flow_graph = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(ctx.allocator);
         defer {
             var iter = flow_graph.iterator();
@@ -160,42 +155,24 @@ pub const PointerOwnershipPass = struct {
             }
             reverse_flow.deinit();
         }
-
         var boundary_analyzer = lifetime.BoundaryAnalyzer.init(ctx.allocator);
         errdefer boundary_analyzer.deinit();
         defer boundary_analyzer.deinit();
-
         var lifetime_engine = lifetime.LifetimeEngine.init(ctx.allocator);
         errdefer lifetime_engine.deinit();
         defer lifetime_engine.deinit();
-
         var null_check_recognizer = NullCheckRecognizer.init(ctx.allocator);
         defer null_check_recognizer.deinit();
-
         // OPT #2: Cache for isRustFFIRelevantFunction (pure function, LLVM IR immutable)
         var ffi_relevant_cache = std.AutoHashMap(usize, bool).init(ctx.allocator);
         defer ffi_relevant_cache.deinit();
-
         const mod = ctx.module.?.raw;
-
         const has_debug_info = checkDebugMetadataAvailable(mod);
         if (!has_debug_info) {
             diag.info("TIP: Rebuild with -g for file/line diagnostics", .{});
         }
-
-        // CRITICAL FIX (2026-05-05 → 2026-05-06): Pre-populate alloc_map/free_map.
-        // Previously, pointer_ownership.zig relied solely on IR scanning + filters,
-        // which caused 0 allocations/0 frees because zone gate / noise filter /
-        // isRustFFIRelevantFunction blocked ALL functions.
-        //
-        // v0.1.7 RESOLVED: We use THREE synchronized data sources:
-        //   Source 1: MemoryGraph.nodes — allocation sites + freed allocations
-        //     (ptr_lifetime.zig now calls mg.trackFree() at 5 sites, populating .freed/.freed_by)
-        //   Source 2: GlobalAllocTracker.records — supplementary free tracking
-        //     (covers cases where ptr_lifetime.zig's markFired() was called but MG sync missed)
-        //   Source 3: IR-level free instruction scan — fallback for any free not caught above
-        //
-        // Data flow: ptr_lifetime.zig → {MemoryGraph.freed, GlobalAllocTracker.freed} → here
+        // Pre-populate alloc_map/free_map from 3 data sources:
+        // Source 1: MemoryGraph.nodes, Source 2: GlobalAllocTracker.records, Source 3: IR scan
         {
             var mg_freed_count: usize = 0;
             var mg_unfreed_count: usize = 0;
@@ -219,6 +196,7 @@ pub const PointerOwnershipPass = struct {
                         .bb_id = 0, // N/A for MemoryGraph-sourced
                         .transferred = (node.zone == .ffi), // Mark FFI transfers
                         .stored_to_struct_field = false,
+                        .source = .memory_graph,
                         .debug_file = null,
                         .debug_line = null,
                         .debug_column = null,
@@ -238,6 +216,7 @@ pub const PointerOwnershipPass = struct {
                         .free_type = .free, // Default: standard free
                         .ptr_value_id = alloc_inst_id_safe,
                         .bb_id = 0, // N/A for MemoryGraph-sourced
+                        .source = .memory_graph,
                         .debug_file = null,
                         .debug_line = null,
                         .debug_column = null,
@@ -252,13 +231,7 @@ pub const PointerOwnershipPass = struct {
                 mg_unfreed_count, mg_freed_count, mg_unfreed_count + mg_freed_count,
             });
 
-            // Source 2: GlobalAllocTracker — supplementary free tracking.
-            // RESOLVED (v0.1.7): MemoryGraph.freed_by IS now populated by ptr_lifetime.zig
-            // (mg.trackFree() called at 5 sites: alias-propagation×2, realloc, main-free, canonical-alias).
-            // However, GlobalAllocTracker remains valuable as a SECONDARY source because:
-            //   - It tracks frees at a different granularity (per-ptr_id vs per-instruction)
-            //   - It may catch edge cases where IR-scan misses non-standard free patterns
-            //   - It provides cross-validation between independent tracking systems
+            // Source 2: GlobalAllocTracker — supplementary free tracking (per-ptr_id granularity)
             {
                 const total_recs = ctx.global_alloc_tracker.records.items.len;
                 var gat_freed_count: usize = 0;
@@ -269,15 +242,9 @@ pub const PointerOwnershipPass = struct {
             }
             for (ctx.global_alloc_tracker.records.items) |rec| {
                 if (rec.freed) {
-                    // This allocation was freed — create FreeSite entry
                     const free_name = rec.free_func orelse "unknown";
                     const fsite = try free_pool.alloc();
-                    // NOTE: GlobalAllocTracker.AllocRecord does NOT store free_inst (only ptr_id + free_func).
-                    // We use ptr_id as both ptr_value_id (correct: this is the freed pointer) and
-                    // as the free_map key (acceptable: GAT's natural key is per-allocation).
-                    // For inst_id, we use 0 (sentinel) since the actual free instruction address is
-                    // not tracked by GlobalAllocTracker. This is semantically distinct from Source 1/3
-                    // which have real instruction-level addresses.
+                    // GAT doesn't track free_inst; use 0 as sentinel, ptr_id as key
                     const gat_ptr_id: u32 = @truncate(rec.ptr_id);
                     fsite.* = .{
                         .inst_id = 0, // Sentinel: GAT doesn't track free instruction address
@@ -286,6 +253,7 @@ pub const PointerOwnershipPass = struct {
                         .free_type = .free,
                         .ptr_value_id = gat_ptr_id,
                         .bb_id = 0,
+                        .source = .global_alloc_tracker,
                         .debug_file = null,
                         .debug_line = null,
                         .debug_column = null,
@@ -298,18 +266,7 @@ pub const PointerOwnershipPass = struct {
                 }
             }
 
-            // Source 3: IR-level free instruction scan (bypasses upstream tracking gaps).
-            // CRITICAL FIX (v0.1.7): Both MemoryGraph.freed_by (Source 1) and
-            // GlobalAllocTracker.records (Source 2) have near-zero coverage because:
-            //   - MemoryGraph.freed_by is never populated by ptr_lifetime.zig
-            //   - GlobalAllocTracker only tracks allocations where insertAlloc() was called
-            //
-            // This source directly scans the LLVM IR for free/dealloc call instructions,
-            // giving us accurate free counts independent of any upstream pass's tracking.
-            //
-            // PERF: Only scan non-declaration, non-safe-zone functions.
-            // Safe/runtime_internal zones are guaranteed not to contain FFI-relevant frees.
-            // This skips ~60% of functions on large Rust modules (wasmtime_test.bc).
+            // Source 3: IR-level free instruction scan (skips safe/runtime_internal zones)
             {
                 var ir_func = c.LLVMGetFirstFunction(mod);
                 while (@intFromPtr(ir_func) != 0) : (ir_func = c.LLVMGetNextFunction(ir_func)) {
@@ -338,6 +295,7 @@ pub const PointerOwnershipPass = struct {
                                     .free_type = classifyFree(inst, opcode),
                                     .ptr_value_id = ptr_id,
                                     .bb_id = id_map.getOrPutId(@intFromPtr(bb)) catch 0,
+                                    .source = .ir_scan,
                                     .debug_file = null,
                                     .debug_line = null,
                                     .debug_column = null,
@@ -368,10 +326,7 @@ pub const PointerOwnershipPass = struct {
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
 
-        // C1 FIX: Merge 8 independent traversals into single pass.
-        // Previously: 8 separate loops over all functions (8× LLVM C API overhead).
-        // Now: Single loop performing all 8 detection tasks per function.
-        // Performance improvement: ~5-8× on large modules (1000+ functions).
+        // C1: Single-pass detection (was 8 separate traversals, ~5-8× faster)
         var raii_count: u32 = 0;
 
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
@@ -413,11 +368,7 @@ pub const PointerOwnershipPass = struct {
             };
             if (!is_ffi_relevant) continue;
 
-            // SRT (Semantic Resolution Tree) filter:
-            // If the function is semantically resolved as a release (drop_in_place,
-            // __rust_dealloc, etc.), it's a Rust Drop trait implementation — skip
-            // the entire function to avoid false positives from destructor glue.
-            // These functions are guaranteed safe by Rust's ownership system.
+            // SRT: Skip Rust Drop/destructor functions (guaranteed safe by Rust ownership)
             if (ctx.semantic_resolution) |engine| {
                 if (engine.isSemanticallyRelease(func_name)) {
                     diag.debug("SRT-SKIP: {s} is semantically resolved as release — Rust Drop/destructor, skipping analysis", .{func_name});
@@ -428,10 +379,7 @@ pub const PointerOwnershipPass = struct {
             }
 
             if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
-                // v0.1.7 FIX (break point 5): Fallback for when DangerSurfacePass produced
-                // no relevant functions (common in Rust FFI where CrossLangEdge detection
-                // missed unmangled wrappers). If the function's zone is .unknown or .ffi,
-                // analyze it anyway — these are precisely the functions we need to check.
+                // Fallback: analyze .unknown/.ffi zone functions anyway
                 const is_fallback_zone = (zone == .unknown or zone == .ffi);
                 if (!is_fallback_zone) {
                     diag.debug("RELEVANT-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
@@ -563,779 +511,104 @@ pub const PointerOwnershipPass = struct {
         @import("../pass.zig").printZoneSummary(ctx.zone_stats, ctx.data_flow_graph);
     }
 
-    /// Check if debug metadata is available in the module.
-    fn checkDebugMetadataAvailable(mod: c.LLVMModuleRef) bool {
-        var md_node = c.LLVMGetFirstNamedMetadata(mod);
-        while (@intFromPtr(md_node) != 0) {
-            var name_len: usize = 0;
-            const name_ptr = c.LLVMGetNamedMetadataName(md_node, &name_len);
-            if (@intFromPtr(name_ptr) != 0) {
-                const md_name = name_ptr[0..name_len];
-                if (std.mem.startsWith(u8, md_name, "llvm.dbg") or
-                    std.mem.startsWith(u8, md_name, "!dbg"))
-                {
-                    return true;
-                }
-            }
-            md_node = c.LLVMGetNextNamedMetadata(md_node);
-        }
-        return false;
-    }
+    /// Add flow edge → types.addFlowEdge.
+    /// canReach → types.canReach.
 
-    /// Analyze a function for allocation and free sites.
-    fn analyzeFunctionForOwnership(
-        allocator: std.mem.Allocator,
-        func: c.LLVMValueRef,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        has_debug_info: bool,
-        id_map: *ValueIdMap,
-        alloc_pool: *MemoryPool(AllocSite),
-        free_pool: *MemoryPool(FreeSite),
-        null_check_recognizer: *NullCheckRecognizer,
-    ) OwnershipError!void {
-        const func_name = getFunctionName(func);
-
-        null_check_recognizer.recognizeInFunction(func, id_map) catch {}; // error set mismatch; best-effort
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try analyzeInstructionForOwnership(
-                    allocator,
-                    inst,
-                    func_name,
-                    alloc_map,
-                    free_map,
-                    flow_graph,
-                    reverse_flow,
-                    stats,
-                    has_debug_info,
-                    id_map,
-                    alloc_pool,
-                    free_pool,
-                );
-            }
-        }
-    }
-
-    /// P0-C: Rust-Focused FFI Filtering (v0.1.7 relaxed).
-    /// For Rust-mangled functions (_R* or $*), analyze if the function:
-    ///   A) Calls an extern/"C" declaration directly (original check)
-    ///   B) Uses indirect calls through function pointers (FFI callback pattern)
-    ///   C) Has name suggesting FFI relevance (ffi/extern/bindgen/cinterop)
-    ///
-    /// This eliminates ~90% of false positives from Rust drop glue,
-    /// closure cleanup, and iterator patterns while catching indirect FFI.
-    fn isRustFFIRelevantFunction(func: c.LLVMValueRef) bool {
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (func_name_raw == null) return true;
-        const func_name = std.mem.span(func_name_raw);
-
-        const is_rust = (std.mem.indexOf(u8, func_name, "_R") != null or
-            std.mem.indexOf(u8, func_name, "$") != null);
-        if (!is_rust) return true;
-
-        // Fast path: name-based FFI hints (avoids expensive IR scan for obvious cases).
-        const ffi_name_patterns = [_][]const u8{
-            "_ffi",     "_extern",   "_cinterop", "_bindgen",
-            "_foreign", "_abi",      "_marshal",  "_syscall",
-            "_invoke",  "_callback", "_native",   "_interop",
-        };
-        for (ffi_name_patterns) |pat| {
-            if (std.mem.indexOf(u8, func_name, pat) != null) return true;
-        }
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (c.LLVMGetInstructionOpcode(inst) == c.LLVMCall) {
-                    const num_ops = c.LLVMGetNumOperands(inst);
-                    if (num_ops == 0) continue;
-                    const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));
-                    if (@intFromPtr(callee_val) == 0) continue;
-                    // Case A: Direct call to extern declaration.
-                    if (c.LLVMIsDeclaration(callee_val) != 0) return true;
-                    // Case B: Indirect call through function pointer.
-                    // Callee is neither a declaration nor a defined function → it's a value
-                    // (function pointer loaded from memory). This is the classic FFI callback pattern:
-                    //   %fn_ptr = load void ()*, void ()** @callback
-                    //   call void %fn_ptr()  ← callee_val is %fn_ptr, not a function
-                    if (c.LLVMIsAFunction(callee_val) == null) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    /// Check if allocation results in this function are transferred to the caller
-    /// via return value or output parameter. Marks matching AllocSite entries.
-    ///
-    /// Pattern A (return-value transfer):
-    ///   %p = call i8* @malloc(i64 %s)
-    ///   ...
-    ///   ret i8* %p          ; ownership transferred to caller
-    ///
-    /// Pattern B (output-param transfer):
-    ///   %p = call i8* @malloc(i64 %s)
-    ///   ...
-    ///   store i8* %p, i8** %arg1  ; ownership transferred via output param
-    fn checkOwnershipTransferForFunction(
-        func: c.LLVMValueRef,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        id_map: *ValueIdMap,
-    ) void {
-        const num_params = c.LLVMCountParams(func);
-
-        var param_value_ids: [32]u32 = undefined;
-        var param_count: usize = 0;
-        {
-            var i: c_uint = 0;
-            while (i < num_params and i < 16) : (i += 1) {
-                const param = c.LLVMGetParam(func, i);
-                if (@intFromPtr(param) != 0) {
-                    param_value_ids[param_count] = id_map.getOrPutId(@intFromPtr(param)) catch continue;
-                    param_count += 1;
-                }
-            }
-        }
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                if (opcode == c.LLVMRet) {
-                    const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-                    if (num_operands > 0) {
-                        const ret_val = c.LLVMGetOperand(inst, 0);
-                        if (@intFromPtr(ret_val) != 0) {
-                            const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
-                            markAllocSitesReachingValue(alloc_map, reverse_flow, ret_value_id) catch {};
-                        }
-                    }
-                }
-
-                if (opcode == c.LLVMStore) {
-                    if (c.LLVMGetNumOperands(inst) >= 2) {
-                        const store_val = c.LLVMGetOperand(inst, 0);
-                        const store_ptr = c.LLVMGetOperand(inst, 1);
-                        if (@intFromPtr(store_val) != 0 and @intFromPtr(store_ptr) != 0) {
-                            const ptr_value_id = id_map.getOrPutId(@intFromPtr(store_ptr)) catch continue;
-                            for (param_value_ids[0..param_count]) |param_id| {
-                                if (ptr_value_id == param_id) {
-                                    const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
-                                    markAllocSitesReachingValue(alloc_map, reverse_flow, val_value_id) catch {};
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Mark all AllocSite entries whose allocated value can reach the given target value
-    /// via the flow graph. Uses REVERSE traversal with pre-built predecessor map.
-    fn markAllocSitesReachingValue(
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        target_value_id: u32,
-    ) !void {
-        var visited = std.AutoHashMap(u32, void).init(alloc_map.allocator);
-        defer visited.deinit();
-
-        var bfs_queue = try std.ArrayList(u32).initCapacity(alloc_map.allocator, 32);
-        defer bfs_queue.deinit(alloc_map.allocator);
-        try bfs_queue.append(alloc_map.allocator, target_value_id);
-
-        while (bfs_queue.items.len > 0) {
-            const current = bfs_queue.orderedRemove(0);
-
-            if (visited.contains(current)) continue;
-            // Propagate error instead of silent return - ensures complete traversal
-            try visited.put(current, {});
-
-            if (alloc_map.get(current)) |site| {
-                site.transferred = true;
-            }
-
-            if (reverse_flow.get(current)) |preds| {
-                var pred_iter = preds.iterator();
-                while (pred_iter.next()) |entry| {
-                    const pred_id = entry.key_ptr.*;
-                    if (!visited.contains(pred_id)) {
-                        try bfs_queue.append(alloc_map.allocator, pred_id);
-                    }
-                }
-            }
-        }
-    }
-
-    /// Analyze a single instruction for ownership-relevant operations.
-    fn analyzeInstructionForOwnership(
-        allocator: std.mem.Allocator,
-        inst: c.LLVMValueRef,
-        func_name: []const u8,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        has_debug_info: bool,
-        id_map: *ValueIdMap,
-        alloc_pool: *MemoryPool(AllocSite),
-        free_pool: *MemoryPool(FreeSite),
-    ) OwnershipError!void {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
-        _ = has_debug_info;
-
-        try buildFlowGraph(allocator, inst, opcode, flow_graph, reverse_flow, id_map);
-
-        // Hook dispatch for call instructions (fixes break point 2+3: dead hook code).
-        // Previously rustOwnershipHook was never called because analyzeInstructionForOwnership
-        // only did alloc/free pattern matching without any hook dispatch path.
-        // Now we create a HookContext and invoke the hook system for each LLVMCall.
-        if (opcode == c.LLVMCall) {
-            const num_ops = c.LLVMGetNumOperands(inst);
-            if (num_ops > 0) {
-                const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));
-                if (@intFromPtr(callee_val) != 0) {
-                    const callee_name_raw = c.LLVMGetValueName(callee_val);
-                    const callee_name = if (callee_name_raw != null)
-                        std.mem.span(callee_name_raw)
-                    else
-                        "unknown";
-
-                    // Get first argument pointer value (for into_raw/from_raw pairing).
-                    var first_arg_ptr_val: u64 = 0;
-                    if (num_ops >= 1) {
-                        const arg0 = c.LLVMGetOperand(inst, 0);
-                        if (@intFromPtr(arg0) != 0) {
-                            first_arg_ptr_val = @as(u64, @intFromPtr(arg0));
-                        }
-                    }
-
-                    var hook_ctx = @import("../../registry/types.zig").HookContext{
-                        .inst = @ptrCast(inst),
-                        .callee_name = callee_name,
-                        .opcode = opcode,
-                        .language = "rust",
-                        .first_arg_ptr_val = first_arg_ptr_val,
-                    };
-                    _ = hooks.rustOwnershipHook(&hook_ctx);
-                }
-            }
-        }
-
-        if (isAllocationInstruction(inst, opcode)) {
-            const alloc_type = classifyAllocation(inst, opcode);
-            const callee_lang = identifyLanguageFromCallee(inst, opcode);
-            const site = try alloc_pool.alloc();
-            const parent_bb = c.LLVMGetInstructionParent(inst);
-            site.* = .{
-                .inst_id = inst_id,
-                .func_name = func_name,
-                .lang = callee_lang,
-                .alloc_type = alloc_type,
-                .ptr_value_id = inst_id,
-                .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
-                .debug_file = null,
-                .debug_line = null,
-                .debug_column = null,
-            };
-
-            try alloc_map.put(inst_id, site);
-            stats.alloc_sites += 1;
-            stats.tracked_pointers += 1;
-        }
-
-        if (isFreeInstruction(inst, opcode)) {
-            const free_type = classifyFree(inst, opcode);
-            const callee_lang = identifyLanguageFromCallee(inst, opcode);
-            const ptr_arg = c.LLVMGetOperand(inst, 0);
-            const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
-                id_map.getOrPutId(@intFromPtr(ptr_arg)) catch return
-            else
-                inst_id;
-
-            const site = try free_pool.alloc();
-            const parent_bb = c.LLVMGetInstructionParent(inst);
-            site.* = .{
-                .inst_id = inst_id,
-                .func_name = func_name,
-                .lang = callee_lang,
-                .free_type = free_type,
-                .ptr_value_id = ptr_value_id,
-                .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
-                .debug_file = null,
-                .debug_line = null,
-                .debug_column = null,
-            };
-
-            try free_map.put(inst_id, site);
-            stats.free_sites += 1;
-        }
-    }
-
-    /// Build a flow graph to track pointer movement through the program.
-    fn buildFlowGraph(
-        allocator: std.mem.Allocator,
-        inst: c.LLVMValueRef,
-        opcode: c_uint,
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        id_map: *ValueIdMap,
-    ) OwnershipError!void {
-        const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
-
-        switch (opcode) {
-            c.LLVMStore => {
-                const value = c.LLVMGetOperand(inst, 0);
-                const ptr = c.LLVMGetOperand(inst, 1);
-                if (@intFromPtr(value) != 0 and @intFromPtr(ptr) != 0) {
-                    const value_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
-                    const ptr_id = id_map.getOrPutId(@intFromPtr(ptr)) catch return;
-                    try addFlowEdge(allocator, value_id, ptr_id, flow_graph, reverse_flow);
-                }
-            },
-            c.LLVMLoad => {},
-            c.LLVMBitCast, c.LLVMPtrToInt, c.LLVMIntToPtr => {
-                const operand = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(operand) != 0) {
-                    const operand_id = id_map.getOrPutId(@intFromPtr(operand)) catch return;
-                    try addFlowEdge(allocator, operand_id, inst_id, flow_graph, reverse_flow);
-                }
-            },
-            c.LLVMCall => {
-                const num_ops = c.LLVMGetNumOperands(inst);
-                var i: u32 = 0;
-                while (i < num_ops) : (i += 1) {
-                    const op = c.LLVMGetOperand(inst, i);
-                    if (@intFromPtr(op) != 0) {
-                        const op_id = id_map.getOrPutId(@intFromPtr(op)) catch continue;
-                        try addFlowEdge(allocator, op_id, inst_id, flow_graph, reverse_flow);
-                    }
-                }
-            },
-            c.LLVMPHI => {
-                const num_incoming = c.LLVMCountIncoming(inst);
-                var i: u32 = 0;
-                while (i < num_incoming) : (i += 1) {
-                    const incoming = c.LLVMGetIncomingValue(inst, i);
-                    if (@intFromPtr(incoming) != 0) {
-                        const incoming_id = id_map.getOrPutId(@intFromPtr(incoming)) catch continue;
-                        try addFlowEdge(allocator, incoming_id, inst_id, flow_graph, reverse_flow);
-                    }
-                }
-            },
-            c.LLVMSelect => {
-                const true_val = c.LLVMGetOperand(inst, 1);
-                const false_val = c.LLVMGetOperand(inst, 2);
-                if (@intFromPtr(true_val) != 0) {
-                    const true_id = id_map.getOrPutId(@intFromPtr(true_val)) catch return;
-                    try addFlowEdge(allocator, true_id, inst_id, flow_graph, reverse_flow);
-                }
-                if (@intFromPtr(false_val) != 0) {
-                    const false_id = id_map.getOrPutId(@intFromPtr(false_val)) catch return;
-                    try addFlowEdge(allocator, false_id, inst_id, flow_graph, reverse_flow);
-                }
-            },
-            c.LLVMGetElementPtr => {
-                const base_ptr = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(base_ptr) != 0) {
-                    const base_id = id_map.getOrPutId(@intFromPtr(base_ptr)) catch return;
-                    try addFlowEdge(allocator, base_id, inst_id, flow_graph, reverse_flow);
-                }
-            },
-            c.LLVMExtractValue => {
-                const aggregate = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(aggregate) != 0) {
-                    const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
-                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph, reverse_flow);
-                }
-            },
-            c.LLVMInsertValue => {
-                const aggregate = c.LLVMGetOperand(inst, 0);
-                const value = c.LLVMGetOperand(inst, 1);
-                if (@intFromPtr(aggregate) != 0) {
-                    const agg_id = id_map.getOrPutId(@intFromPtr(aggregate)) catch return;
-                    try addFlowEdge(allocator, agg_id, inst_id, flow_graph, reverse_flow);
-                }
-                if (@intFromPtr(value) != 0) {
-                    const val_id = id_map.getOrPutId(@intFromPtr(value)) catch return;
-                    try addFlowEdge(allocator, val_id, inst_id, flow_graph, reverse_flow);
-                }
-            },
-            else => {},
-        }
-    }
-
-    /// Add a flow edge to the graph.
-    fn addFlowEdge(
-        allocator: std.mem.Allocator,
-        from: u32,
-        to: u32,
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-    ) !void {
-        if (from == to) return; // Skip self-edges
-
-        // Add forward edge
-        const entry = try flow_graph.getOrPut(from);
-        if (!entry.found_existing) {
-            entry.value_ptr.* = std.AutoHashMap(u32, void).init(allocator);
-        }
-        try entry.value_ptr.put(to, {});
-
-        // OPT #1: Incrementally build reverse_flow
-        if (reverse_flow) |rf| {
-            const rf_entry = try rf.getOrPut(to);
-            if (!rf_entry.found_existing) {
-                rf_entry.value_ptr.* = std.AutoHashMap(u32, void).init(allocator);
-            }
-            try rf_entry.value_ptr.put(from, {});
-        }
-    }
-
-    /// Check if a value can reach another value through the flow graph.
-    fn canReach(
-        flow_graph: *const std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        from: u32,
-        to: u32,
-        visited: *std.AutoHashMap(u32, void),
-    ) bool {
-        if (from == to) return true;
-
-        if (visited.contains(from)) return false;
-        visited.put(from, {}) catch return false;
-
-        const edges = flow_graph.get(from) orelse return false;
-        var iter = edges.iterator();
-        while (iter.next()) |entry| {
-            if (canReach(flow_graph, entry.key_ptr.*, to, visited)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // --- Detection passes (delegated to cpp_fp_reduction.zig) ---
-
-    fn detectViolations(
-        ctx: *PassContext,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        diag: *DiagnosticWriter,
-        boundary_analyzer: *lifetime.BoundaryAnalyzer,
-        lifetime_engine: *lifetime.LifetimeEngine,
-    ) OwnershipError!void {
-        return cpp_fp.detectViolations(ctx, alloc_map, free_map, flow_graph, stats, diag, boundary_analyzer, lifetime_engine);
+    // --- Detection & classification delegates (cpp_fp_reduction + alloc_classifier) ---
+    fn detectViolations(ctx: *PassContext, am: *std.AutoHashMap(u32, *AllocSite), fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), st: *OwnershipStats, dg: *DiagnosticWriter, ba: *lifetime.BoundaryAnalyzer, le: *lifetime.LifetimeEngine) OwnershipError!void {
+        return cpp_fp.detectViolations(ctx, am, fm, fg, st, dg, ba, le);
     }
     fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
         return alloc_classifier.convertLanguageToHint(lang);
     }
     fn isCrossFFIAllocation(alloc: *const AllocSite) bool {
-        return alloc.lang != .unknown and alloc.lang != .c;
+        return types.isCrossFFIAllocation(alloc.lang);
     }
-    fn isAllocationInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
-        return alloc_classifier.isAllocationInstruction(inst, opcode);
+    fn isAllocationInstruction(inst: c.LLVMValueRef, op: c_uint) bool {
+        return analysis.isAllocationInstruction(inst, op);
     }
-
-    /// Check if a callee name is a standard library / runtime call
-    /// that does not represent a real FFI boundary security risk.
-    /// Examples: malloc, free, realloc, __rust_*, llvm.*, etc.
-    fn isStdlibCall(callee_name: []const u8) bool {
-        const stdlib_prefixes = [_][]const u8{
-            "malloc",      "calloc",             "realloc",          "free",
-            "abort",       "exit",               "printf",           "fprintf",
-            "sprintf",     "snprintf",           "puts",             "fputs",
-            "memcpy",      "memset",             "memmove",          "memcmp",
-            "strlen",      "strcpy",             "strncpy",          "strcmp",
-            "__rust_",     "llvm.",              "_Znwm",            "_Znam",
-            "_ZdlPv",      "pthread_",           "dlopen",           "dlsym",
-            "sigaltstack", "__deregister_frame", "__register_frame",
-        };
-        for (stdlib_prefixes) |prefix| {
-            if (std.mem.startsWith(u8, callee_name, prefix)) return true;
-        }
-        return false;
+    fn classifyAllocation(inst: c.LLVMValueRef, op: c_uint) AllocType {
+        return analysis.classifyAllocation(inst, op);
     }
-    fn classifyAllocation(inst: c.LLVMValueRef, opcode: c_uint) AllocType {
-        return alloc_classifier.classifyAllocation(inst, opcode);
+    fn identifyLanguageFromCallee(inst: c.LLVMValueRef, op: c_uint) Language {
+        return analysis.identifyLanguageFromCallee(inst, op);
     }
-    fn identifyLanguageFromCallee(inst: c.LLVMValueRef, opcode: c_uint) Language {
-        return alloc_classifier.identifyLanguageFromCallee(inst, opcode);
+    fn isFreeInstruction(inst: c.LLVMValueRef, op: c_uint) bool {
+        return analysis.isFreeInstruction(inst, op);
     }
-    fn isFreeInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
-        return alloc_classifier.isFreeInstruction(inst, opcode);
-    }
-    fn classifyFree(inst: c.LLVMValueRef, opcode: c_uint) FreeType {
-        return alloc_classifier.classifyFree(inst, opcode);
+    fn classifyFree(inst: c.LLVMValueRef, op: c_uint) FreeType {
+        return analysis.classifyFree(inst, op);
     }
     fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-        return cpp_fp.getFunctionName(func);
+        return analysis.getFunctionName(func);
     }
     fn identifyLanguage(func: c.LLVMValueRef) Language {
         return @import("../../semantics/language_detector.zig").identifyLanguage(func);
     }
-    fn isGuardedByNullCheck(free_inst: c.LLVMValueRef, ptr_value_id: u32, path_manager: *PathManager) bool {
-        return cpp_fp.isGuardedByNullCheck(free_inst, ptr_value_id, path_manager);
+    fn isGuardedByNullCheck(fi: c.LLVMValueRef, pvid: u32, pm: *PathManager) bool {
+        return cpp_fp.isGuardedByNullCheck(fi, pvid, pm);
     }
-    fn detectMemoryIssues(ctx: *PassContext, alloc_map: *std.AutoHashMap(u32, *AllocSite), free_map: *std.AutoHashMap(u32, *FreeSite), flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), stats: *OwnershipStats, diag: *DiagnosticWriter) void {
-        return cpp_fp.detectMemoryIssues(ctx, alloc_map, free_map, flow_graph, stats, diag);
+    fn detectMemoryIssues(ctx: *PassContext, am: *std.AutoHashMap(u32, *AllocSite), fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), st: *OwnershipStats, dg: *DiagnosticWriter) void {
+        cpp_fp.detectMemoryIssues(ctx, am, fm, fg, st, dg);
     }
-    fn detectMemoryLeaks(ctx: *PassContext, alloc_map: *std.AutoHashMap(u32, *AllocSite), free_map: *std.AutoHashMap(u32, *FreeSite), flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), stats: *OwnershipStats, diag: *DiagnosticWriter) void {
-        return cpp_fp.detectMemoryLeaks(ctx, alloc_map, free_map, flow_graph, stats, diag);
+    fn detectMemoryLeaks(ctx: *PassContext, am: *std.AutoHashMap(u32, *AllocSite), fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), st: *OwnershipStats, dg: *DiagnosticWriter) void {
+        cpp_fp.detectMemoryLeaks(ctx, am, fm, fg, st, dg);
     }
-    fn isLikelyStructMemberOwnership(func_name: []const u8) bool {
-        return cpp_fp.isLikelyStructMemberOwnership(func_name);
+    fn isLikelyStructMemberOwnership(fn_: []const u8) bool {
+        return cpp_fp.isLikelyStructMemberOwnership(fn_);
     }
-    fn detectStructMemberStores(func: c.LLVMValueRef, alloc_map: *std.AutoHashMap(u32, *AllocSite), id_map: *ValueIdMap) void {
-        return cpp_fp.detectStructMemberStores(func, alloc_map, id_map);
+    fn detectStructMemberStores(func: c.LLVMValueRef, am: *std.AutoHashMap(u32, *AllocSite), idm: *ValueIdMap) void {
+        cpp_fp.detectStructMemberStores(func, am, idm);
     }
-
-    fn isStlInternalFunction(func_name: []const u8) bool {
-        return cpp_fp.isStlInternalFunction(func_name);
+    fn isStlInternalFunction(fn_: []const u8) bool {
+        return cpp_fp.isStlInternalFunction(fn_);
     }
-    fn isCppSpecialMemberFunction(func_name: []const u8) bool {
-        return cpp_fp.isCppSpecialMemberFunction(func_name);
+    fn isCppSpecialMemberFunction(fn_: []const u8) bool {
+        return cpp_fp.isCppSpecialMemberFunction(fn_);
     }
-    fn isCppAbiInternalFunction(func_name: []const u8) bool {
-        return cpp_fp.isCppAbiInternalFunction(func_name);
+    fn isCppAbiInternalFunction(fn_: []const u8) bool {
+        return cpp_fp.isCppAbiInternalFunction(fn_);
     }
-    fn isMeyersSingletonPattern(func_name: []const u8) bool {
-        return cpp_fp.isMeyersSingletonPattern(func_name);
+    fn isMeyersSingletonPattern(fn_: []const u8) bool {
+        return cpp_fp.isMeyersSingletonPattern(fn_);
     }
-    fn is_likely_intentional_pattern(func_name: []const u8) bool {
-        return cpp_fp.is_likely_intentional_pattern(func_name);
+    fn is_likely_intentional_pattern(fn_: []const u8) bool {
+        return cpp_fp.is_likely_intentional_pattern(fn_);
     }
-    fn detectRaiiManagedAllocations(
-        func: c.LLVMValueRef,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        id_map: *ValueIdMap,
-        raii_stats: *u32,
-        raii_func_set: *std.AutoHashMap(usize, void),
-    ) void {
-        return cpp_fp.detectRaiiManagedAllocations(func, alloc_map, id_map, raii_stats, raii_func_set);
+    fn detectRaiiManagedAllocations(func: c.LLVMValueRef, am: *std.AutoHashMap(u32, *AllocSite), idm: *ValueIdMap, rs: *u32, rfs: *std.AutoHashMap(usize, void)) void {
+        cpp_fp.detectRaiiManagedAllocations(func, am, idm, rs, rfs);
     }
-    fn detectMeyersSingletonFunctions(
-        func: c.LLVMValueRef,
-        meyers_set: *std.AutoHashMap(usize, void),
-    ) void {
-        return cpp_fp.detectMeyersSingletonFunctions(func, meyers_set);
+    fn detectMeyersSingletonFunctions(func: c.LLVMValueRef, ms: *std.AutoHashMap(usize, void)) void {
+        cpp_fp.detectMeyersSingletonFunctions(func, ms);
     }
-    fn detectRefCountedContainerFunctions(
-        func: c.LLVMValueRef,
-        rc_set: *std.AutoHashMap(usize, void),
-    ) void {
-        return cpp_fp.detectRefCountedContainerFunctions(func, rc_set, cpp_fp.isAllocationByName);
+    fn detectRefCountedContainerFunctions(func: c.LLVMValueRef, rcs: *std.AutoHashMap(usize, void)) void {
+        cpp_fp.detectRefCountedContainerFunctions(func, rcs, cpp_fp.isAllocationByName);
     }
-    fn detectRustFfiPairingFunctions(
-        func: c.LLVMValueRef,
-        into_raw_set: *std.StringHashMap(void),
-        from_raw_set: *std.StringHashMap(void),
-    ) void {
-        return cpp_fp.detectRustFfiPairingFunctions(func, into_raw_set, from_raw_set);
+    fn detectRustFfiPairingFunctions(func: c.LLVMValueRef, irs: *std.StringHashMap(void), frs: *std.StringHashMap(void)) void {
+        cpp_fp.detectRustFfiPairingFunctions(func, irs, frs);
     }
-    fn isAllocationByName(callee_name: []const u8) bool {
-        return cpp_fp.isAllocationByName(callee_name);
+    fn isAllocationByName(cn: []const u8) bool {
+        return cpp_fp.isAllocationByName(cn);
     }
-    fn detectNullDereferences(
-        ctx: *PassContext,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        recognizer: *NullCheckRecognizer,
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        diag: *DiagnosticWriter,
-    ) void {
-        return cpp_fp.detectNullDereferences(ctx, alloc_map, recognizer, flow_graph, diag);
+    fn detectNullDereferences(ctx: *PassContext, am: *std.AutoHashMap(u32, *AllocSite), ncr: *NullCheckRecognizer, fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), d: *DiagnosticWriter) void {
+        cpp_fp.detectNullDereferences(ctx, am, ncr, fg, d);
     }
-    fn detectAsPtrBorrowEscape(
-        ctx: *PassContext,
-        func: c.LLVMValueRef,
-        diag: *DiagnosticWriter,
-    ) void {
-        return cpp_fp.detectAsPtrBorrowEscape(ctx, func, diag);
+    fn detectAsPtrBorrowEscape(ctx: *PassContext, func: c.LLVMValueRef, d: *DiagnosticWriter) void {
+        cpp_fp.detectAsPtrBorrowEscape(ctx, func, d);
     }
-    fn detectCrossLangAllocMismatch(
-        ctx: *PassContext,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        diag: *DiagnosticWriter,
-    ) void {
-        return cpp_fp.detectCrossLangAllocMismatch(ctx, alloc_map, free_map, flow_graph, diag);
+    fn detectCrossLangAllocMismatch(ctx: *PassContext, am: *std.AutoHashMap(u32, *AllocSite), fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), d: *DiagnosticWriter) void {
+        cpp_fp.detectCrossLangAllocMismatch(ctx, am, fm, fg, d);
     }
-    fn isNullableAllocation(alloc: *const AllocSite) bool {
-        return cpp_fp.isNullableAllocation(alloc);
+    fn isNullableAllocation(a: *const AllocSite) bool {
+        return cpp_fp.isNullableAllocation(a);
     }
-    fn findFreePath(
-        from_ptr: u32,
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        visited: *std.AutoHashMap(u32, void),
-    ) bool {
-        // BFS traversal with cycle detection from from_ptr to find any reachable free site.
-        // This enables alloc-free path detection for leak analysis.
-        // CRITICAL FIX: Added visited set to prevent infinite loops on cyclic graphs.
-        if (free_map.contains(from_ptr)) return true;
-        if (visited.contains(from_ptr)) return false;
-        // Graceful degradation: OOM in visited set → skip this path rather than crash.
-        // The allocation failure is logged via the error union capture below.
-        visited.put(from_ptr, {}) catch return false;
-
-        if (flow_graph.get(from_ptr)) |outgoing| {
-            for (outgoing.keys()) |target| {
-                if (findFreePath(target, free_map, flow_graph, visited)) return true;
-            }
-        }
-        return false;
+    fn detectDoubleFree(ctx: *PassContext, fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), st: *OwnershipStats, d: *DiagnosticWriter) void {
+        cpp_fp.detectDoubleFree(ctx, fm, fg, st, d);
     }
-    fn canReachFree(
-        from: u32,
-        flow: std.AutoHashMap(u32, void),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        visited: *std.AutoHashMap(u32, void),
-    ) bool {
-        // DFS with cycle detection to check if 'from' can reach any free site.
-        // Used by use-after-free detection after a pointer is freed.
-        // The 'flow' parameter tracks live aliases — if non-empty, 'from' has live aliases
-        // that should also be checked for reachability to free sites.
-        // CONSERVATIVE STRATEGY: If 'from' has known aliases AND any of those aliases
-        // are in the free_map, count it as a potential UAF even without full chain tracking.
-        // This catches the common pattern: ptr_a = alloc(); ptr_b = alias(ptr_a); free(ptr_a); use(ptr_b)
-        if (flow.count() > 0) {
-            // 'from' has live aliases — check if any alias is already freed.
-            // If an alias pointer is in free_map, 'from' becomes a dangling pointer (UAF risk).
-            var alias_iter = flow.iterator();
-            while (alias_iter.next()) |entry| {
-                const alias_ptr = entry.key_ptr.*;
-                if (free_map.contains(alias_ptr)) return true;
-            }
-            // Also check: if 'from' itself reaches a free site, all its aliases become dangling.
-            // This is the transitive case: free(from) → all aliases of 'from' are now UAF.
-        }
-        if (free_map.contains(from)) return true;
-        if (visited.contains(from)) return false;
-        visited.put(from, {}) catch return false;
-
-        if (flow_graph.get(from)) |outgoing| {
-            for (outgoing.keys()) |target| {
-                if (canReachFree(target, .{}, free_map, flow_graph, visited)) return true;
-            }
-        }
-        return false;
+    fn detectUseAfterFree(ctx: *PassContext, fm: *std.AutoHashMap(u32, *FreeSite), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), st: *OwnershipStats, d: *DiagnosticWriter) void {
+        cpp_fp.detectUseAfterFree(ctx, fm, fg, st, d);
     }
-    fn detectDoubleFree(
-        ctx: *PassContext,
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        diag: *DiagnosticWriter,
-    ) void {
-        return cpp_fp.detectDoubleFree(ctx, free_map, flow_graph, stats, diag);
-    }
-    fn detectUseAfterFree(
-        ctx: *PassContext,
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        diag: *DiagnosticWriter,
-    ) void {
-        return cpp_fp.detectUseAfterFree(ctx, free_map, flow_graph, stats, diag);
-    }
-    fn hasUseAfterFree(
-        freed_ptr: u32,
-        flow: std.AutoHashMap(u32, void),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        visited: *std.AutoHashMap(u32, void),
-    ) bool {
-        return cpp_fp.hasUseAfterFree(freed_ptr, &flow, flow_graph, visited);
-    }
-    fn isMemoryAccess(value_id: u32) bool {
-        // Check if value_id corresponds to a memory access instruction.
-        // Memory accesses include: Load, Store, GetElementPtr (GEP),
-        // and memory intrinsic calls (memcpy, memmove, memset).
-        const inst: c.LLVMValueRef = @ptrFromInt(@as(usize, value_id));
-        if (@intFromPtr(inst) == 0) return false;
-
-        // Check opcode for load/store/GEP
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        return switch (opcode) {
-            c.LLVMLoad, c.LLVMStore, c.LLVMGetElementPtr => true,
-            else => {
-                // Check for memory intrinsics (memcpy, memmove, memset, etc.)
-                // NOTE: Only exact LLVM intrinsic names — no variants with spaces.
-                // User wrappers like "my_llvm_memcpy" should be detected via allocation_classifier,
-                // not here. This prevents false positives from function names containing substrings.
-                const intrinsic_name_raw = c.LLVMGetValueName(inst);
-                if (intrinsic_name_raw != null) {
-                    const intrinsic_name = std.mem.span(intrinsic_name_raw);
-                    const mem_intrinsics = [_][]const u8{
-                        "llvm.memcpy",        "llvm.memmove", "llvm.memset",
-                        "llvm.memset.inline",
-                    };
-                    for (mem_intrinsics) |intrinsic| {
-                        if (std.mem.indexOf(u8, intrinsic_name, intrinsic) != null) return true;
-                    }
-                }
-                return false;
-            },
-        };
-    }
-    fn getInstName(value_id: u32) []const u8 {
-        // Return the debug/instruction name for a value ID.
-        // Used in diagnostic messages to show which instruction is involved.
-        const inst: c.LLVMValueRef = @ptrFromInt(@as(usize, value_id));
-        if (@intFromPtr(inst) == 0) return "<null>";
-
-        const name_raw = c.LLVMGetValueName(inst);
-        if (name_raw != null) {
-            return std.mem.span(name_raw);
-        }
-
-        // Fallback: generate name from opcode
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        const opcode_names = [_][]const u8{
-            "load",   "store",   "gep",    "call",   "ret",
-            "br",     "switch",  "phi",    "alloca", "extract",
-            "insert", "shuffle", "select", "icmp",   "fcmp",
-        };
-        if (opcode < opcode_names.len) {
-            return opcode_names[opcode];
-        }
-        return "<unknown>";
+    fn hasUseAfterFree(fp: u32, flow: std.AutoHashMap(u32, void), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), v: *std.AutoHashMap(u32, void)) bool {
+        return cpp_fp.hasUseAfterFree(fp, &flow, fg, v);
     }
 };
-
-test "PointerOwnership - alloc types" {
-    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(AllocType.heap));
-    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(AllocType.rust_box_into_raw));
-    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(AllocType.rust_box_from_raw));
-}
-
-test "PointerOwnership - ownership states" {
-    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(OwnershipState.live));
-    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(OwnershipState.ownership_transferred));
-    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(OwnershipState.freed));
-    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(OwnershipState.leaked));
-}
-
-test "PointerOwnership - violation types" {
-    try std.testing.expectEqual(@as(u8, 0), @intFromEnum(OwnershipViolationType.cross_lang_free_mismatch));
-    try std.testing.expectEqual(@as(u8, 1), @intFromEnum(OwnershipViolationType.ownership_lost));
-    try std.testing.expectEqual(@as(u8, 2), @intFromEnum(OwnershipViolationType.double_free_risk));
-    try std.testing.expectEqual(@as(u8, 3), @intFromEnum(OwnershipViolationType.rust_drop_after_ffi_transfer));
-}

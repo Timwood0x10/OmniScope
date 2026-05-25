@@ -24,12 +24,8 @@ const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 const ModuleRef = @import("../../ir/view.zig").ModuleRef;
 
-/// Pointer information for alias analysis
-const PointerInfo = struct {
-    value: c.LLVMValueRef,
-    type_id: u32,
-    inst_id: u32,
-};
+const alias_types = @import("../../types/alias_types.zig");
+const PointerInfo = alias_types.PointerInfo;
 
 /// Alias analysis pass
 pub const AliasPass = struct {

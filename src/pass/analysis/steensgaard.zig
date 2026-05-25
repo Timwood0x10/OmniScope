@@ -25,29 +25,11 @@ const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 
 const Allocator = std.mem.Allocator;
 
-pub const SteensgaardError = error{
-    TooManyLambdaNodes,
-    OutOfMemory,
-};
-
-/// Maximum ID for regular pointer nodes (lower 31 bits)
-/// Lambda nodes use IDs from MAX_POINTER_ID + 1 to avoid collision
-pub const MAX_POINTER_ID: u32 = 0x7FFFFFFF;
-
-/// Lambda ID offset (upper bit set to distinguish from regular nodes)
-pub const LAMBDA_ID_OFFSET: u32 = 0x80000000;
-
-pub const Constraint = struct {
-    lhs: u32,
-    rhs: u32,
-    kind: ConstraintKind,
-};
-
-pub const ConstraintKind = enum(u8) {
-    address_of,
-    assign,
-    indirect,
-};
+const SteensgaardError = @import("../../types/steensgaard_types.zig").SteensgaardError;
+const MAX_POINTER_ID = @import("../../types/steensgaard_types.zig").MAX_POINTER_ID;
+const LAMBDA_ID_OFFSET = @import("../../types/steensgaard_types.zig").LAMBDA_ID_OFFSET;
+const Constraint = @import("../../types/steensgaard_types.zig").Constraint;
+const ConstraintKind = @import("../../types/steensgaard_types.zig").ConstraintKind;
 
 pub const ConstraintGen = struct {
     allocator: Allocator,

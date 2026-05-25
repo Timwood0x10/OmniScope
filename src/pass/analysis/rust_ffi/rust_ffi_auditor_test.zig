@@ -367,3 +367,35 @@ test "Accuracy - FFI boundary classification coverage" {
     // All classifications should be correct (100% accuracy)
     try std.testing.expectEqual(@as(u32, test_cases.len), correct);
 }
+
+// ============================================================================
+// Test: into_raw/from_raw set keying — regression for POT-BUG-8 / T0.4
+// ============================================================================
+
+// The pairing sets are keyed by string content, not by the backing pointer.
+// Pre-fix code used `@intFromPtr(name_ptr)` as the key, so the same logical
+// function appearing through two different owning slices missed the pairing.
+// This test locks the contract: insertion via one buffer and lookup via a
+// disjoint buffer with identical bytes must hit, and a near-match must miss.
+test "into_raw/from_raw set keys by content, not pointer" {
+    var into_raw_set = std.StringHashMap(void).init(std.testing.allocator);
+    defer into_raw_set.deinit();
+
+    // Insert via a heap-owned slice — simulates one LLVM allocation.
+    const inserted = try std.testing.allocator.dupe(u8, "rust_into_raw");
+    defer std.testing.allocator.free(inserted);
+    try into_raw_set.put(inserted, {});
+
+    // Look up via a separately-allocated slice with identical bytes —
+    // would miss under pointer-keyed maps but must hit by content.
+    const queried = try std.testing.allocator.dupe(u8, "rust_into_raw");
+    defer std.testing.allocator.free(queried);
+    try std.testing.expect(into_raw_set.contains(queried));
+    try std.testing.expect(@intFromPtr(inserted.ptr) != @intFromPtr(queried.ptr));
+
+    // Boundary: a near-match (one byte off) must not collide.
+    try std.testing.expect(!into_raw_set.contains("rust_into_ra_"));
+
+    // Boundary: empty key is treated as a distinct value, not a wildcard.
+    try std.testing.expect(!into_raw_set.contains(""));
+}

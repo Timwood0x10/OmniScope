@@ -69,21 +69,27 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     const PERSONALITY_WEIGHT: f32 = 0.8;
     const GLOBALS_WEIGHT: f32 = 0.6;
 
-    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, csharp, java, python, unknown]
+    // One slot per concrete language. `.unknown` is the "no winner" fallback
+    // and intentionally has no vote slot — letting it index in would write
+    // past the array (see T0.2 in plan/todolist_v2.md).
+    var weighted_votes = [_]f32{0} ** 8; // [rust, go, zig, cpp, c, csharp, java, python]
 
     if (sampling_result) |r| {
-        const lang_idx = langToIndex(r.language);
-        weighted_votes[lang_idx] += r.confidence * SAMPLING_WEIGHT;
+        if (langToIndex(r.language)) |idx| {
+            weighted_votes[idx] += r.confidence * SAMPLING_WEIGHT;
+        }
     }
 
     if (personality_result) |r| {
-        const lang_idx = langToIndex(r.language);
-        weighted_votes[lang_idx] += r.confidence * PERSONALITY_WEIGHT;
+        if (langToIndex(r.language)) |idx| {
+            weighted_votes[idx] += r.confidence * PERSONALITY_WEIGHT;
+        }
     }
 
     if (globals_result) |r| {
-        const lang_idx = langToIndex(r.language);
-        weighted_votes[lang_idx] += r.confidence * GLOBALS_WEIGHT;
+        if (langToIndex(r.language)) |idx| {
+            weighted_votes[idx] += r.confidence * GLOBALS_WEIGHT;
+        }
     }
 
     // Find dominant language from weighted votes
@@ -124,7 +130,12 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     };
 }
 
-fn langToIndex(lang: Language) usize {
+/// Map a concrete language to its weighted-vote slot, or null for `.unknown`.
+///
+/// `.unknown` is the "no signal" sentinel returned when no concrete language
+/// wins — it deliberately has no vote slot, so callers must skip it instead
+/// of indexing the array (T0.2: prior code wrote past the 8-slot bound).
+fn langToIndex(lang: Language) ?usize {
     return switch (lang) {
         .rust => 0,
         .go => 1,
@@ -134,7 +145,7 @@ fn langToIndex(lang: Language) usize {
         .csharp => 5,
         .java => 6,
         .python => 7,
-        .unknown => 8,
+        .unknown => null,
     };
 }
 
@@ -148,7 +159,6 @@ fn indexToLang(idx: usize) Language {
         5 => .csharp,
         6 => .java,
         7 => .python,
-        8 => .unknown,
         else => .unknown,
     };
 }
@@ -526,4 +536,29 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
 /// to ensure consistent detection across the codebase.
 fn isRustMangledName(name: []const u8) bool {
     return ffi_language_classifier.isRustMangledName(name);
+}
+
+// Boundary: every `Language` variant must map to a slot that is either
+// in-bounds for `weighted_votes` or explicitly null (`.unknown`). A regression
+// would silently corrupt the next stack slot in `detectModuleLanguage`.
+test "langToIndex covers all Language enum variants without OOB" {
+    const expected_slots: usize = 8;
+
+    inline for (@typeInfo(Language).@"enum".fields) |field| {
+        const lang: Language = @field(Language, field.name);
+        if (langToIndex(lang)) |idx| {
+            try std.testing.expect(idx < expected_slots);
+            // Round-trip: index must map back to the same language.
+            try std.testing.expectEqual(lang, indexToLang(idx));
+        } else {
+            // Only `.unknown` is allowed to have no vote slot.
+            try std.testing.expectEqual(Language.unknown, lang);
+        }
+    }
+}
+
+// indexToLang must return .unknown for any index >= 8 instead of panicking.
+test "indexToLang returns .unknown for out-of-range indices" {
+    try std.testing.expectEqual(Language.unknown, indexToLang(8));
+    try std.testing.expectEqual(Language.unknown, indexToLang(100));
 }

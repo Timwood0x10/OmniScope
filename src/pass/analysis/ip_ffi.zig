@@ -19,52 +19,11 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const word_boundary = @import("../../utils/word_boundary.zig");
+const ip_ffi = @import("../../types/ip_ffi_types.zig");
+const OwnershipTransfer = ip_ffi.OwnershipTransfer;
+const FFICallSite = ip_ffi.FFICallSite;
 
 const NULL_GUARD_MAX_SCAN: u32 = 15;
-
-/// Ownership transfer direction observed at an FFI call site.
-pub const OwnershipTransfer = enum(u8) {
-    /// No ownership transfer detected
-    none,
-    /// Caller passes owned resource to callee (e.g., free(handle))
-    to_callee,
-    /// Callee returns owned resource to caller (e.g., handle = dlopen())
-    to_caller,
-};
-
-/// A single FFI call site with cross-function context.
-///
-/// Populated by scanning a caller function's instructions for
-/// FFI boundary calls and their surrounding context.
-pub const FFICallSite = struct {
-    /// The caller function containing this call site
-    caller_func: c.LLVMValueRef,
-    /// The call instruction itself
-    call_inst: c.LLVMValueRef,
-    /// Name of the called FFI function
-    callee_name: []const u8,
-    /// Whether the return value is used (stored/passed/compared)
-    result_used: bool,
-    /// Whether caller checks return value against NULL before use
-    has_null_guard: bool,
-    /// Detected ownership transfer direction
-    ownership_transfer: OwnershipTransfer,
-
-    pub fn init(
-        caller_func: c.LLVMValueRef,
-        call_inst: c.LLVMValueRef,
-        callee_name: []const u8,
-    ) FFICallSite {
-        return .{
-            .caller_func = caller_func,
-            .call_inst = call_inst,
-            .callee_name = callee_name,
-            .result_used = false,
-            .has_null_guard = false,
-            .ownership_transfer = .none,
-        };
-    }
-};
 
 /// Analyze all FFI boundary calls within a single function.
 ///

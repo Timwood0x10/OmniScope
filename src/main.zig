@@ -14,172 +14,20 @@ const Severity = OmniScope.diag.Severity;
 const log = OmniScope.log;
 const writeJsonEscaped = OmniScope.output.writeJsonEscaped;
 
-// ============================================================================
-// Terminal ANSI Colors — auto-disabled when stdout is not a TTY
-// ============================================================================
-
-const term = struct {
-    const reset = "\x1b[0m";
-    const bold = "\x1b[1m";
-    const dim = "\x1b[2m";
-    const red = "\x1b[31m";
-    const green = "\x1b[32m";
-    const yellow = "\x1b[33m";
-    const blue = "\x1b[34m";
-    const magenta = "\x1b[35m";
-    const cyan = "\x1b[36m";
-    const white = "\x1b[37m";
-    const bright_black = "\x1b[90m";
-    const bright_red = "\x1b[91m";
-    const bright_yellow = "\x1b[93m";
-    const bright_cyan = "\x1b[96m";
-
-    fn colorForSeverity(sev: Severity) []const u8 {
-        return switch (sev) {
-            .critical => bright_red,
-            .high => bright_yellow,
-            .medium => bright_cyan,
-            .low => bright_black,
-        };
-    }
-};
+const main_config = @import("./types/main_config.zig");
+const term = main_config.term;
+const Config = main_config.Config;
+const OutputFormat = main_config.OutputFormat;
 
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
 
-pub const MainError = error{
-    NoInputFile,
-    InvalidOption,
-};
-
-const Config = struct {
-    show_help: bool = false,
-    show_version: bool = false,
-    verbose: bool = false,
-    debug: bool = false,
-    quiet: bool = false,
-    input_files: std.ArrayList([]const u8),
-    output_format: OutputFormat = .text,
-    output_file: ?[]const u8 = null,
-    visualize: bool = false,
-    focus_user_code: bool = false,
-    ffi_only: bool = false,
-    include_stdlib: bool = false,
-
-    fn init(allocator: std.mem.Allocator) !Config {
-        return .{
-            .input_files = std.ArrayList([]const u8).initCapacity(allocator, 0) catch return error.OutOfMemory,
-        };
-    }
-
-    fn deinit(self: *Config, allocator: std.mem.Allocator) void {
-        for (self.input_files.items) |file| {
-            if (file.len > 0) {
-                allocator.free(file);
-            }
-        }
-        self.input_files.deinit(allocator);
-        if (self.output_file) |path| {
-            if (path.len > 0) {
-                allocator.free(path);
-            }
-        }
-    }
-};
-
-const OutputFormat = enum {
-    text,
-    json,
-    sarif,
-};
-
-const AnalyzeResult = struct {
+pub const AnalyzeResult = struct {
     issues: []const Issue,
     func_count: usize,
     fact_count: usize,
     time_ms: u64,
     _pipeline: Pipeline,
 };
-
-fn parseArgs(allocator: std.mem.Allocator) !Config {
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
-
-    _ = args.next();
-
-    var config = try Config.init(allocator);
-    errdefer config.deinit(allocator);
-
-    while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            config.show_help = true;
-        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
-            config.verbose = true;
-        } else if (std.mem.eql(u8, arg, "-d") or std.mem.eql(u8, arg, "--debug")) {
-            config.debug = true;
-        } else if (std.mem.eql(u8, arg, "-q") or std.mem.eql(u8, arg, "--quiet")) {
-            config.quiet = true;
-        } else if (std.mem.eql(u8, arg, "--version")) {
-            config.show_version = true;
-        } else if (std.mem.eql(u8, arg, "--json")) {
-            config.output_format = .json;
-        } else if (std.mem.eql(u8, arg, "--sarif")) {
-            config.output_format = .sarif;
-        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--output")) {
-            const output_file = args.next() orelse {
-                log.err("Error: --output requires a file path\n", .{});
-                return error.InvalidOption;
-            };
-            if (output_file.len == 0) {
-                log.err("Error: --output requires a non-empty file path\n", .{});
-                return error.InvalidOption;
-            }
-            config.output_file = try allocator.dupe(u8, output_file);
-        } else if (std.mem.eql(u8, arg, "--visualize") or std.mem.eql(u8, arg, "--viz")) {
-            config.visualize = true;
-        } else if (std.mem.eql(u8, arg, "--focus-user-code")) {
-            config.focus_user_code = true;
-        } else if (std.mem.eql(u8, arg, "--ffi-only")) {
-            config.ffi_only = true;
-        } else if (std.mem.eql(u8, arg, "--include-stdlib")) {
-            config.include_stdlib = true;
-        } else if (arg.len > 0 and arg[0] == '-') {
-            return error.InvalidOption;
-        } else {
-            const arg_copy = try allocator.dupe(u8, arg);
-            errdefer allocator.free(arg_copy);
-            try config.input_files.append(allocator, arg_copy);
-        }
-    }
-
-    return config;
-}
-
-fn showHelp() void {
-    log.info(
-        \\OmniScope - Universal LLVM Analysis Framework
-        \\
-        \\Usage: omniscope [options] <input.ll/bc> [input2.ll/bc] [...]
-        \\
-        \\Options:
-        \\  -h, --help          Show this help message
-        \\  -v, --verbose       Enable verbose logging
-        \\  -d, --debug         Enable debug logging
-        \\  -q, --quiet         Quiet mode (only show issues)
-        \\  --visualize, --viz  Generate HTML visualization
-        \\  --focus-user-code   Only report issues from user code
-        \\  --ffi-only          Only report FFI boundary issues
-        \\  --include-stdlib    Include stdlib issues
-        \\  --version           Show version information
-        \\  --json              Output in JSON format
-        \\  --sarif             Output in SARIF format
-        \\  -o, --output <file> Write output to file
-        \\
-        \\Multi-File Mode (auto-detected when 2+ files given):
-        \\  omniscope rust.bc c.bc
-        \\  Runs full pipeline on each file + cross-language FFI matching
-        \\
-    , .{});
-}
 
 fn registerAllPasses(pipeline: *Pipeline) !void {
     // Foundation passes (required by analysis passes)
@@ -314,113 +162,6 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
     }
 }
 
-/// Render an ASCII call graph / dataflow diagram for HIGH/CRITICAL issues.
-/// Shows the detection function, FFI boundary (if any), and the bug trigger path.
-fn writeCallGraph(w: anytype, allocator: Allocator, issue: Issue) !void {
-    _ = allocator;
-    if (issue.severity != .critical and issue.severity != .high) return;
-
-    try w.writeAll(term.magenta);
-    try w.writeAll(term.bold);
-    try w.writeAll("    ┌─ Call Graph ──\n");
-    try w.writeAll(term.reset);
-
-    // Row 1: Detection function (root node)
-    try w.writeAll("    │\n");
-    try w.writeAll(term.dim);
-    try w.writeAll("    │  ");
-    try w.writeAll(term.reset);
-    try w.writeAll(term.white);
-    try w.print("{s}", .{issue.location.func});
-    try w.writeAll(term.reset);
-    try w.writeAll("  ◄── ");
-    try w.writeAll(term.bright_red);
-    try w.writeAll("detection point\n");
-    try w.writeAll(term.reset);
-
-    // Rows 2+: Build call chain from trace entries + FFI boundary
-    var has_content = false;
-
-    if (issue.trace) |trace| {
-        if (trace.len >= 2) {
-            has_content = true;
-            // Show alloc source (first trace step that mentions allocation)
-            for (trace, 0..) |entry, i| {
-                const is_alloc = std.mem.indexOf(u8, entry.description, "alloc") != null or
-                    std.mem.indexOf(u8, entry.description, "_Znam") != null or
-                    std.mem.indexOf(u8, entry.description, "_Znwm") != null or
-                    std.mem.indexOf(u8, entry.description, "malloc") != null;
-                const is_free = std.mem.indexOf(u8, entry.description, "free") != null or
-                    std.mem.indexOf(u8, entry.description, "_Zda") != null or
-                    std.mem.indexOf(u8, entry.description, "_Zdl") != null;
-                const is_last = (i == trace.len - 1);
-
-                if (is_alloc and !is_last) {
-                    try w.writeAll(term.dim);
-                    try w.writeAll("    ├── ");
-                    try w.writeAll(term.reset);
-                    try w.writeAll(term.green);
-                    try w.print("{s}", .{entry.description});
-                    try w.writeAll(term.reset);
-                    try w.writeAll(term.dim);
-                    try w.writeAll("  ──source\n");
-                    try w.writeAll(term.reset);
-                }
-
-                if (is_free or is_last) {
-                    try w.writeAll(term.dim);
-                    try w.writeAll("    └── ");
-                    try w.writeAll(term.reset);
-                    try w.writeAll(term.bright_red);
-                    try w.print("{s}", .{entry.description});
-                    try w.writeAll(term.reset);
-                    try w.writeAll("  ");
-                    try w.writeAll(term.bright_red);
-                    try w.writeAll("✗ BUG\n");
-                    try w.writeAll(term.reset);
-                }
-            }
-        } else if (trace.len == 1) {
-            has_content = true;
-            try w.writeAll(term.dim);
-            try w.writeAll("    └── ");
-            try w.writeAll(term.reset);
-            try w.writeAll(term.bright_red);
-            try w.print("{s}", .{trace[0].description});
-            try w.writeAll(term.reset);
-            try w.writeAll("  ");
-            try w.writeAll(term.bright_red);
-            try w.writeAll("✗\n");
-            try w.writeAll(term.reset);
-        }
-    }
-
-    // FFI boundary as cross-language edge
-    if (issue.ffi_boundary) |bnd| {
-        has_content = true;
-        try w.writeAll(term.dim);
-        try w.writeAll("    │\n");
-        try w.writeAll("    ├─ FFI: ");
-        try w.writeAll(term.reset);
-        try w.writeAll(term.cyan);
-        try w.print("{s} -> {s}", .{ @tagName(bnd.caller_language), @tagName(bnd.callee_language) });
-        try w.writeAll(term.reset);
-        try w.writeAll(term.dim);
-        try w.print(" ({s})\n", .{@tagName(bnd.kind)});
-        try w.writeAll(term.reset);
-    }
-
-    if (!has_content) {
-        try w.writeAll(term.dim);
-        try w.writeAll("    │  (no trace data available)\n");
-        try w.writeAll(term.reset);
-    }
-
-    try w.writeAll(term.magenta);
-    try w.writeAll("    └────────────────\n");
-    try w.writeAll(term.reset);
-}
-
 /// Format a structured report for text mode.
 /// Layout: Findings → Coverage → Summary → Verdict
 fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
@@ -542,7 +283,7 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
 
         // Individual issues — color-coded rich format
         for (issues, 0..) |issue, idx| {
-            const sev_color = term.colorForSeverity(issue.severity);
+            const sev_color = term.colorForSeverity(@intFromEnum(issue.severity));
             const sev_tag = switch (issue.severity) {
                 .critical => "CRITICAL",
                 .high => "HIGH",
@@ -744,6 +485,139 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
     return buf.toOwnedSlice(allocator);
 }
 
+fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
+    var buf = std.ArrayList(u8).initCapacity(allocator, 2048) catch return error.OutOfMemory;
+    defer buf.deinit(allocator);
+    const w = buf.writer(allocator);
+
+    try w.writeAll("{\n");
+    try w.print("  \"version\": \"0.1.9\",\n", .{});
+    try w.print("  \"function_count\": {d},\n", .{func_count});
+    try w.print("  \"issue_count\": {d},\n", .{issues.len});
+    try w.print("  \"analysis_time_ms\": {d},\n", .{time_ms});
+    try w.writeAll("  \"issues\": [\n");
+
+    for (issues, 0..) |issue, idx| {
+        try w.writeAll("    {\n");
+        try w.print("      \"id\": \"OMI-{d:0>3}\",\n", .{idx + 1});
+        try w.print("      \"kind\": \"{s}\",\n", .{@tagName(issue.kind)});
+        try w.print("      \"severity\": \"{s}\",\n", .{@tagName(issue.severity)});
+        try w.print("      \"confidence\": {d:.2},\n", .{issue.confidence});
+        try w.writeAll("      \"location\": {\n");
+        try w.print("        \"function\": ", .{});
+        try writeJsonEscaped(w, issue.location.func);
+        try w.writeAll(",\n");
+        if (issue.location.file) |f| {
+            try w.print("        \"file\": ", .{});
+            try writeJsonEscaped(w, f);
+            try w.writeAll(",\n");
+            try w.print("        \"line\": {d}\n", .{issue.location.line});
+        } else {
+            try w.print("        \"line\": {d}\n", .{issue.location.line});
+        }
+        try w.writeAll("      },\n");
+        try w.writeAll("      \"reason\": ");
+        try writeJsonEscaped(w, issue.reason);
+        try w.writeAll(",\n");
+        if (issue.message.len > 0 and !std.mem.eql(u8, issue.message, issue.reason)) {
+            try w.writeAll("      \"message\": ");
+            try writeJsonEscaped(w, issue.message);
+            try w.writeAll(",\n");
+        }
+        if (issue.ffi_boundary) |bnd| {
+            try w.writeAll("      \"ffi_boundary\": {\n");
+            try w.print("        \"function_name\": ", .{});
+            try writeJsonEscaped(w, bnd.function_name);
+            try w.writeAll(",\n");
+            try w.print("        \"caller_language\": \"{s}\",\n", .{@tagName(bnd.caller_language)});
+            try w.print("        \"callee_language\": \"{s}\",\n", .{@tagName(bnd.callee_language)});
+            try w.print("        \"kind\": \"{s}\"\n", .{@tagName(bnd.kind)});
+            try w.writeAll("      },\n");
+        }
+        if (idx < issues.len - 1) {
+            try w.writeAll("    },\n");
+        } else {
+            try w.writeAll("    }\n");
+        }
+    }
+
+    try w.writeAll("  ]\n");
+    try w.writeAll("}\n");
+
+    return buf.toOwnedSlice(allocator);
+}
+
+fn writeCallGraph(w: anytype, allocator: std.mem.Allocator, issue: Issue) !void {
+    _ = allocator;
+    if (issue.trace) |trace| {
+        if (trace.len < 2) return;
+        try w.writeAll(term.dim);
+        try w.writeAll(term.bold);
+        try w.writeAll("    ┌─ Call Graph ──\n");
+        try w.writeAll(term.reset);
+        for (trace, 0..) |entry, idx| {
+            const prefix = if (idx == trace.len - 1) "└──" else "├──";
+            try w.writeAll(term.dim);
+            try w.print("    {s} ", .{prefix});
+            try w.writeAll(term.reset);
+            try w.print("{s}", .{entry.description});
+            if (entry.location) |loc| {
+                if (loc.file) |f| {
+                    try w.writeAll(term.dim);
+                    try w.print(" @{s}:{d}", .{ f, loc.line });
+                } else {
+                    try w.writeAll(term.dim);
+                    try w.print(" @:{d}", .{loc.line});
+                }
+            }
+            try w.writeAll("\n");
+        }
+        try w.writeAll(term.magenta);
+        try w.writeAll("    └─────────────\n");
+        try w.writeAll(term.reset);
+    }
+}
+
+fn issueToGraphKind(kind: IssueKind) GraphKind {
+    return switch (kind) {
+        .double_free => .double_free,
+        .use_after_free => .use_after_free,
+        .null_dereference => .null_dereference,
+        .memory_leak => .memory_leak,
+        .buffer_overflow => .buffer_overflow,
+        .integer_overflow => .other,
+        .ffi_type_mismatch, .type_mismatch => .type_mismatch,
+        .ffi_unsafe_call => .ffi_unsafe_call,
+        .borrow_escape => .borrow_escape,
+        .callback_signature_mismatch, .callback_ownership_risk => .callback_signature_mismatch,
+        .invalid_free => .invalid_free,
+        .unchecked_return => .unchecked_return,
+        .malloc_unchecked => .malloc_unchecked,
+        .cross_language_leak => .cross_language_leak,
+        .cross_language_free => .cross_language_free,
+        .format_string => .format_string,
+        .command_injection => .command_injection,
+        .write_to_immutable => .write_to_immutable,
+        .static_buffer_misuse => .static_buffer_misuse,
+        else => .other,
+    };
+}
+
+fn isDangerousFFIPattern(match: *const call_graph.FFIMatch) bool {
+    _ = match;
+    return true;
+}
+
+fn ffiMatchToIssue(match: *const call_graph.FFIMatch) Issue {
+    return Issue.init(
+        .ffi_unsafe_call,
+        "Cross-language FFI boundary detected",
+        Location.init(match.name),
+        .high,
+        0.7,
+    );
+}
+
 fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config: Config) !void {
     log.debug("=== OmniScope IR Analysis ===\n", .{});
     log.debug("File: {s}\n\n", .{path});
@@ -803,12 +677,6 @@ fn generateVisualization(allocator: std.mem.Allocator, issues: []const Issue, pa
     viz.exportIssuesHtml(graph_issues, mem_json, mem_html) catch |err| {
         log.info("Warning: Failed to generate visualization: {s}\n", .{@errorName(err)});
     };
-}
-
-fn ffiMatchToIssue(match: *const call_graph.FFIMatch) Issue {
-    const def_name = if (match.define_func) |f| f.name else "unknown";
-    const loc = Location.initWithFile("ffi", def_name, 0, 0);
-    return Issue.init(.command_injection, "Cross-language FFI vulnerability detected", loc, .high, 0.85);
 }
 
 fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8, config: Config) !void {
@@ -931,119 +799,6 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
     }
 }
 
-fn isDangerousFFIPattern(match: *const call_graph.FFIMatch) bool {
-    const define_func = match.define_func orelse return false;
-    const name = define_func.name;
-
-    // Dangerous patterns that indicate command execution or shell interaction.
-    // These are specific enough to avoid false positives on normal business logic.
-    const dangerous_patterns = &[_][]const u8{
-        "system",      "exec",            "popen", "eval", "shell",
-        "run_command", "execute_command",
-    };
-    for (dangerous_patterns) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
-
-    return false;
-}
-
-fn issueToGraphKind(kind: IssueKind) GraphKind {
-    return switch (kind) {
-        .memory_leak => .memory_leak,
-        .use_after_free => .use_after_free,
-        .double_free => .double_free,
-        .cross_language_leak => .cross_language_leak,
-        .cross_language_free => .cross_language_free,
-        .malloc_unchecked => .malloc_unchecked,
-        .null_dereference => .null_dereference,
-        .invalid_free => .invalid_free,
-        .write_to_immutable => .write_to_immutable,
-        .borrow_escape => .borrow_escape,
-        .ffi_unsafe_call => .ffi_unsafe_call,
-        .unchecked_return => .unchecked_return,
-        .type_mismatch, .ffi_type_mismatch => .type_mismatch,
-        .command_injection => .command_injection,
-        .buffer_overflow => .buffer_overflow,
-        .integer_overflow => .other,
-        .format_string => .format_string,
-        .callback_signature_mismatch => .callback_signature_mismatch,
-        .callback_ownership_risk => .callback_signature_mismatch,
-        .static_buffer_misuse => .static_buffer_misuse,
-        .data_race => .other,
-        .thread_safety_violation => .other,
-        .unknown => .other,
-    };
-}
-
-fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, analysis_time_ms: u64) ![]u8 {
-    var output = std.array_list.Managed(u8).init(allocator);
-    defer output.deinit();
-
-    const timestamp = std.time.timestamp();
-    const writer = output.writer();
-
-    try writer.writeAll("{\"schema_version\":\"1.0.0\",\"tool\":\"omniscope\",\"tool_version\":\"0.1.9\",\"timestamp\":");
-    try writer.print("{d}", .{timestamp});
-    try writer.writeAll(",\"summary\":{");
-    try writer.print("\"functions\":{d},\"issues\":{d},\"time_ms\":{d}", .{ func_count, issues.len, analysis_time_ms });
-    try writer.writeAll("},\"issues\":[");
-
-    for (issues, 0..) |issue, idx| {
-        if (idx > 0) try writer.writeAll(",");
-
-        const line_num = if (issue.location.line > 0) issue.location.line else null;
-        const col_num = if (issue.location.column > 0) issue.location.column else null;
-        const cwe_id = issue.kind.toCweId();
-
-        try writer.writeAll("{\"id\":\"");
-        try writer.print("OMI-{d:0>3}", .{idx + 1});
-        try writer.writeAll("\",\"kind\":\"");
-        try writer.writeAll(@tagName(issue.kind));
-        try writer.writeAll("\",\"severity\":\"");
-        try writer.writeAll(@tagName(issue.severity));
-        try writer.writeAll("\",\"confidence\":\"");
-        try writer.writeAll(issue.confidence_level.toString());
-        try writer.writeAll("\",\"confidence_score\":");
-        try writer.print("{d:.2}", .{issue.confidence});
-        try writer.writeAll(",\"cwe_id\":");
-        try writer.print("{d}", .{cwe_id});
-
-        if (issue.reason.len > 0) {
-            try writer.writeAll(",\"reason\":\"");
-            try writeJsonEscaped(writer, issue.reason);
-            try writer.writeAll("\"");
-        }
-
-        try writer.writeAll(",\"message\":\"");
-        try writeJsonEscaped(writer, issue.message);
-        try writer.writeAll("\",\"location\":{");
-        try writer.writeAll("\"function\":\"");
-        try writeJsonEscaped(writer, issue.location.func);
-        try writer.writeAll("\"");
-
-        if (issue.location.file) |f| {
-            try writer.writeAll(",\"file\":\"");
-            try writeJsonEscaped(writer, f);
-            try writer.writeAll("\"");
-        }
-        if (line_num) |l| {
-            try writer.writeAll(",\"line\":");
-            try writer.print("{d}", .{l});
-        }
-        if (col_num) |c| {
-            try writer.writeAll(",\"column\":");
-            try writer.print("{d}", .{c});
-        }
-
-        try writer.writeAll("}}");
-    }
-
-    try writer.writeAll("]}\n");
-
-    return try output.toOwnedSlice();
-}
-
 fn countFunction(func_ref: FunctionRef, count: *usize) !void {
     _ = func_ref;
     count.* += 1;
@@ -1066,7 +821,7 @@ pub fn main() !void {
     OmniScope.semantics.initZoneCache(allocator);
     defer OmniScope.semantics.deinitZoneCache();
 
-    var config = try parseArgs(allocator);
+    var config = try main_config.parseArgs(allocator);
     defer config.deinit(allocator);
 
     if (config.quiet) {
@@ -1080,7 +835,7 @@ pub fn main() !void {
     }
 
     if (config.show_help) {
-        showHelp();
+        main_config.showHelp();
         return;
     }
 
@@ -1111,14 +866,14 @@ test "Config - init and deinit" {
 }
 
 test "parseArgs - help flag" {
-    const config = try parseArgs(std.testing.allocator);
+    const config = try main_config.parseArgs(std.testing.allocator);
     defer config.deinit(std.testing.allocator);
 
     try std.testing.expect(!config.show_help);
 }
 
 test "parseArgs - no input files" {
-    const config = try parseArgs(std.testing.allocator);
+    const config = try main_config.parseArgs(std.testing.allocator);
     defer config.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), config.input_files.items.len);

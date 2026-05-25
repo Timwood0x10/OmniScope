@@ -16,157 +16,21 @@ const zone = @import("zone_classifier.zig");
 pub const ZoneKind = zone.ZoneKind;
 pub const Language = zone.Language;
 
-/// Error set for memory graph operations.
-pub const MemoryGraphError = error{
-    OutOfMemory,
-    NodeNotFound,
-};
+const mg_types = @import("../types/memory_graph_types.zig");
+pub const MemoryGraphError = mg_types.MemoryGraphError;
+pub const SourceKind = mg_types.SourceKind;
+pub const FuncCounter = mg_types.FuncCounter;
+pub const OwnershipTransferStatus = mg_types.OwnershipTransferStatus;
+pub const ResourceLifecycle = mg_types.ResourceLifecycle;
+pub const CallArgEdge = mg_types.CallArgEdge;
+pub const CallRetEdge = mg_types.CallRetEdge;
+pub const FreeRecord = mg_types.FreeRecord;
+const AllocNode = mg_types.AllocNode;
+pub const DangerPathKind = mg_types.DangerPathKind;
+pub const DangerSurface = mg_types.DangerSurface;
+const hashValues = mg_types.hashValues;
 
-/// Source kind of an allocation node — how was this pointer created?
-pub const SourceKind = enum(u8) {
-    /// Created by an LLVM alloca instruction (stack).
-    alloca,
-    /// Created by a heap allocation (malloc, calloc, realloc, etc.).
-    heap_alloc,
-    /// Created by a resource allocation (dlopen, mmap, fopen, socket, etc.).
-    resource_alloc,
-    /// Created by a function call whose return type is unknown.
-    call_result,
-    /// Unknown source.
-    unknown,
-};
-
-/// Per-function alloc/free balance counter.
-/// Tracks how many heap allocations and frees a function performs,
-/// and whether the function returns a pointer value.
-pub const FuncCounter = struct {
-    /// Number of heap/resource allocations in this function.
-    allocs: u32,
-    /// Number of free calls in this function.
-    frees: u32,
-    /// Whether this function returns a pointer value.
-    /// Functions that don't return pointers are likely "sink" functions
-    /// that consume their arguments rather than forwarding them.
-    returns_pointer: bool,
-
-    /// Net allocation count: positive means more allocs than frees.
-    pub fn net(self: FuncCounter) i64 {
-        return @as(i64, @intCast(self.allocs)) - @as(i64, @intCast(self.frees));
-    }
-
-    /// Whether this function has any heap operations at all.
-    pub fn hasHeapOps(self: FuncCounter) bool {
-        return self.allocs > 0 or self.frees > 0;
-    }
-};
-
-/// Status of an ownership transfer between functions.
-pub const OwnershipTransferStatus = enum(u8) {
-    /// Transfer is valid and correct.
-    valid,
-    /// Pointer is not tracked in the memory graph.
-    not_tracked,
-    /// Attempting to transfer ownership that the function doesn't have.
-    transfer_without_ownership,
-    /// Attempting to transfer ownership after the pointer was freed.
-    transfer_after_free,
-    /// Potential double transfer (ownership already transferred).
-    potential_double_transfer,
-};
-
-/// Complete lifecycle information for a resource.
-pub const ResourceLifecycle = struct {
-    /// The instruction that allocated this resource.
-    allocation_site: u64,
-    /// How the resource was created (heap, stack, resource, etc.).
-    source_kind: SourceKind,
-    /// All pointer values that alias to this allocation.
-    aliases: []const u64,
-    /// Whether the resource has been freed.
-    is_freed: bool,
-    /// The instruction that freed this resource (if any).
-    free_site: ?u64,
-};
-
-// R8.0: Call edge types for cross-function pointer flow tracking.
-
-/// A call_arg edge: pointer passed as argument to a function.
-pub const CallArgEdge = struct {
-    /// The call instruction (raw pointer as u64).
-    caller_inst: u64,
-    /// Callee function name (owned by the containing MemoryGraph).
-    callee_name: []const u8,
-    /// The pointer value passed as argument.
-    arg_ptr: u64,
-    /// Argument index (0-based).
-    arg_index: u32,
-};
-
-/// A call_ret edge: pointer returned from a function call.
-pub const CallRetEdge = struct {
-    /// The call instruction (raw pointer as u64).
-    caller_inst: u64,
-    /// Callee function name (owned by the containing MemoryGraph).
-    callee_name: []const u8,
-    /// The returned pointer value.
-    ret_ptr: u64,
-};
-
-/// Per-free-site record for path-sensitive double-free analysis.
-/// Each free() call on the same allocation is recorded separately,
-/// along with its basic block ID for control-flow reachability analysis.
-pub const FreeRecord = struct {
-    /// The instruction that performed the free (raw pointer value).
-    free_inst: u64,
-    /// Basic block ID where this free occurred (0 = unknown).
-    bb_id: u32,
-    /// Language of the free site.
-    free_lang: Language,
-};
-
-/// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
-const AllocNode = struct {
-    /// Unique identifier for this allocation.
-    id: u64,
-    /// The instruction that performed the allocation (raw pointer value).
-    alloc_inst: u64,
-    /// Merkle hash for this allocation.
-    merkle_root: u64,
-    /// Set of all pointer values that alias to this allocation.
-    aliases: std.AutoHashMap(u64, void),
-    /// Whether this allocation has been freed (at least once).
-    freed: bool,
-    /// The instruction that freed this allocation (raw pointer value).
-    /// DEPRECATED: Use free_sites for path-sensitive analysis.
-    /// Kept for backward compatibility with downstream passes.
-    freed_by: ?u64,
-    /// How this allocation was created.
-    source_kind: SourceKind,
-    /// Zone where this allocation occurred (.safe/.ffi/.unsafe/.runtime_internal).
-    zone: ZoneKind = .unknown,
-    /// Language of the module/function where this allocation was made.
-    alloc_lang: Language = .unknown,
-    /// Language of the module/function where this was freed (? = not yet freed).
-    free_lang: ?Language = null,
-    /// All free operations on this allocation (path-sensitive).
-    /// Multiple entries = potential double-free; use isDoubleFreedOnSamePath
-    /// to distinguish same-path (real bug) from multi-path cleanup (not a bug).
-    free_sites: std.ArrayList(FreeRecord),
-};
-
-/// Result of isOnDangerPath — why a pointer matters (or doesn't).
-pub const DangerPathKind = enum {
-    /// Not on any danger path → Tier 1, pass through (statistics only).
-    none,
-    /// Allocated inside an .unsafe block → Tier 2, strict analysis.
-    unsafe_alloc,
-    /// Alloc and free happened in different languages → Tier 2.
-    cross_lang_lifecycle,
-    /// Pointer flows into an FFI boundary call as argument → Tier 2.
-    ffi_arg,
-    /// Pointer returns from an FFI boundary call → Tier 2.
-    ffi_ret,
-};
+const mg_methods = @import("../types/memory_graph_methods.zig");
 
 /// Main memory graph structure.
 ///
@@ -248,7 +112,6 @@ pub const MemoryGraph = struct {
         graph.func_counters.deinit();
         graph.content_sources.deinit();
 
-        // R8.0: Free call edge data
         for (graph.call_args.items) |*edge| {
             graph.allocator.free(edge.callee_name);
         }
@@ -258,33 +121,14 @@ pub const MemoryGraph = struct {
         }
         graph.call_rets.deinit(graph.allocator);
 
-        var arg_iter = graph.call_arg_by_ptr.iterator();
-        while (arg_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_arg_by_ptr.deinit();
-
-        var arg_callee_iter = graph.call_arg_by_callee.iterator();
-        while (arg_callee_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_arg_by_callee.deinit();
-
-        var ret_iter = graph.call_ret_by_callee.iterator();
-        while (ret_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_ret_by_callee.deinit();
-
-        var ret_ptr_iter = graph.call_ret_by_ptr.iterator();
-        while (ret_ptr_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_ret_by_ptr.deinit();
+        mg_methods.deinitCallIndexMap(u64, &graph.call_arg_by_ptr, graph.allocator);
+        mg_methods.deinitStringCallIndexMap(&graph.call_arg_by_callee, graph.allocator);
+        mg_methods.deinitStringCallIndexMap(&graph.call_ret_by_callee, graph.allocator);
+        mg_methods.deinitCallIndexMap(u64, &graph.call_ret_by_ptr, graph.allocator);
 
         graph.alias_to_canonical.deinit();
-        graph.weak_aliases.deinit(); // V2: Clean up weak aliases set
-        // Deinitialize inner HashMaps before outer bb_edges HashMap
+        graph.weak_aliases.deinit();
+
         var bb_iter = graph.bb_edges.iterator();
         while (bb_iter.next()) |entry| {
             entry.value_ptr.deinit();
@@ -418,31 +262,25 @@ pub const MemoryGraph = struct {
 
     /// Records a heap allocation in a function's counter.
     pub fn recordFuncAlloc(graph: *MemoryGraph, func_ptr: u64) void {
-        const gop = graph.func_counters.getOrPut(func_ptr) catch return;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
+        if (mg_methods.getOrInitFuncCounter(&graph.func_counters, func_ptr)) |c| {
+            c.allocs += 1;
         }
-        gop.value_ptr.allocs += 1;
     }
 
     /// Records a free call in a function's counter.
     pub fn recordFuncFree(graph: *MemoryGraph, func_ptr: u64) void {
-        const gop = graph.func_counters.getOrPut(func_ptr) catch return;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
+        if (mg_methods.getOrInitFuncCounter(&graph.func_counters, func_ptr)) |c| {
+            c.frees += 1;
         }
-        gop.value_ptr.frees += 1;
     }
 
     /// Records that a function returns a pointer value.
     /// Used by borrow_escape analysis to identify sink functions
     /// (functions that consume pointers without returning them).
     pub fn recordFuncReturns(graph: *MemoryGraph, func_ptr: u64) void {
-        const gop = graph.func_counters.getOrPut(func_ptr) catch return;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .{ .allocs = 0, .frees = 0, .returns_pointer = false };
+        if (mg_methods.getOrInitFuncCounter(&graph.func_counters, func_ptr)) |c| {
+            c.returns_pointer = true;
         }
-        gop.value_ptr.returns_pointer = true;
     }
 
     /// Gets the alloc/free counter for a function.
@@ -571,18 +409,13 @@ pub const MemoryGraph = struct {
         if (graph.call_ret_by_ptr.get(ptr_val)) |list| return list.items;
         return &.{};
     }
-
     pub fn getCallArgsForCallee(graph: *MemoryGraph, callee_name: []const u8) []const u32 {
         if (graph.call_arg_by_callee.get(callee_name)) |list| return list.items;
         return &.{};
     }
-
-    /// Query: Check if a pointer flows into any function call as an argument.
     pub fn isPassedAsArg(graph: *MemoryGraph, ptr_val: u64) bool {
         return graph.call_arg_by_ptr.contains(ptr_val);
     }
-
-    /// Query: Check if a pointer is returned from any function call.
     pub fn isReturnedFromCall(graph: *MemoryGraph, ptr_val: u64) bool {
         return graph.call_ret_by_ptr.contains(ptr_val);
     }
@@ -591,29 +424,21 @@ pub const MemoryGraph = struct {
     // Queries
     // =====================================================================
 
-    /// Checks if a pointer value has been freed.
     pub fn isFreed(graph: *MemoryGraph, ptr_val: u64) bool {
         const node = graph.nodes.get(ptr_val) orelse return false;
         return node.freed;
     }
 
-    /// Check if analysis should be skipped for a pointer based on semantic resolution.
-    /// Returns true if the pointer has been identified as semantically safe
-    /// (e.g., managed by a language runtime like Rust's Drop or Go's GC).
     pub fn shouldSkipAnalysis(graph: *const MemoryGraph, ptr_val: u64) bool {
         _ = graph;
         _ = ptr_val;
-        // Placeholder: will be enhanced when semantic resolution is fully integrated
         return false;
     }
 
-    /// Gets allocation info for a pointer.
     pub fn getAllocInfo(graph: *MemoryGraph, ptr_val: u64) ?*const AllocNode {
         return graph.nodes.get(ptr_val);
     }
 
-    /// Gets the source kind of a pointer value.
-    /// Returns .unknown if the pointer is not tracked.
     pub fn getSourceKind(graph: *MemoryGraph, ptr_val: u64) SourceKind {
         const node = graph.nodes.get(ptr_val) orelse return .unknown;
         return node.source_kind;
@@ -660,38 +485,15 @@ pub const MemoryGraph = struct {
         }
         graph.call_rets.clearRetainingCapacity();
 
-        // M14 FIX: Clear weak_aliases to prevent stale data across resets.
-        // Previous implementation cleared all other HashMap fields but missed this one,
-        // causing weak alias information from previous analyses to leak into new ones.
         graph.weak_aliases.clearRetainingCapacity();
 
-        var arg_iter = graph.call_arg_by_ptr.iterator();
-        while (arg_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_arg_by_ptr.clearRetainingCapacity();
-
-        var arg_callee_iter = graph.call_arg_by_callee.iterator();
-        while (arg_callee_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_arg_by_callee.clearRetainingCapacity();
-
-        var ret_iter = graph.call_ret_by_callee.iterator();
-        while (ret_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_ret_by_callee.clearRetainingCapacity();
-
-        var ret_ptr_iter = graph.call_ret_by_ptr.iterator();
-        while (ret_ptr_iter.next()) |entry| {
-            entry.value_ptr.deinit(graph.allocator);
-        }
-        graph.call_ret_by_ptr.clearRetainingCapacity();
+        mg_methods.clearCallIndexMap(u64, &graph.call_arg_by_ptr, graph.allocator);
+        mg_methods.clearStringCallIndexMap(&graph.call_arg_by_callee, graph.allocator);
+        mg_methods.clearStringCallIndexMap(&graph.call_ret_by_callee, graph.allocator);
+        mg_methods.clearCallIndexMap(u64, &graph.call_ret_by_ptr, graph.allocator);
 
         graph.alias_to_canonical.clearRetainingCapacity();
 
-        // P2: Clear BB control-flow edges for path-sensitive analysis.
         var bb_edge_iter = graph.bb_edges.iterator();
         while (bb_edge_iter.next()) |entry| {
             entry.value_ptr.deinit();
@@ -705,73 +507,26 @@ pub const MemoryGraph = struct {
     // Advanced Detection Methods
     // =====================================================================
 
-    /// Checks if a pointer is used after being freed via an alias.
-    ///
-    /// This detects the pattern:
-    ///   ptr1 = malloc();
-    ///   ptr2 = ptr1;      // alias
-    ///   free(ptr1);
-    ///   use(ptr2);        // BUG: use after free via alias
-    ///
-    /// Arguments:
-    ///   ptr_val - The pointer value being used
-    ///   use_inst - The instruction using the pointer
-    ///
-    /// Returns:
-    ///   The allocation node if use-after-free detected, null otherwise
     pub fn isUseAfterFreeViaAlias(graph: *MemoryGraph, ptr_val: u64, use_inst: u64) ?*const AllocNode {
-        _ = use_inst; // Future: use for ordering check
-
-        // Find the allocation this pointer belongs to
+        _ = use_inst;
         const node = graph.nodes.get(ptr_val) orelse return null;
-
-        // Check if the allocation has been freed
         if (!node.freed) return null;
-
-        // This pointer is being used after the allocation was freed
         return node;
     }
 
-    /// Finds all aliases of a pointer that form a use-after-free chain.
-    ///
-    /// Given a freed pointer, returns all other pointers that alias to it
-    /// and could be used after the free, creating a use-after-free bug.
-    ///
-    /// Arguments:
-    ///   ptr_val - The pointer that was freed
-    ///
-    /// Returns:
-    ///   Slice of alias pointer values (caller owns the memory)
     pub fn findDangerousAliases(graph: *MemoryGraph, ptr_val: u64, allocator: std.mem.Allocator) ![]u64 {
         const node = graph.nodes.get(ptr_val) orelse return &.{};
         if (!node.freed) return &.{};
 
         var aliases = std.ArrayList(u64).init(allocator);
         errdefer aliases.deinit();
-
         var iter = node.aliases.iterator();
         while (iter.next()) |entry| {
             try aliases.append(entry.key_ptr.*);
         }
-
         return aliases.items;
     }
 
-    /// Validates ownership transfer between functions.
-    ///
-    /// Checks if a function correctly transfers ownership of a resource
-    /// to another function. This helps detect:
-    ///   - Transfer without ownership (caller doesn't own it)
-    ///   - Missing transfer (caller should transfer but doesn't)
-    ///   - Double transfer (ownership transferred twice)
-    ///
-    /// Arguments:
-    ///   from_func - Function transferring ownership
-    ///   to_func - Function receiving ownership
-    ///   ptr_val - The pointer being transferred
-    ///
-    /// Returns:
-    ///   OwnershipTransferStatus indicating if the transfer is valid
     pub fn validateOwnershipTransfer(
         graph: *MemoryGraph,
         from_func: u64,
@@ -779,26 +534,11 @@ pub const MemoryGraph = struct {
         ptr_val: u64,
     ) OwnershipTransferStatus {
         const node = graph.nodes.get(ptr_val) orelse return .not_tracked;
-
-        // Check if from_func has ownership to transfer
         const from_counter = graph.getFuncCounter(from_func);
-        if (from_counter.net() <= 0) {
-            // from_func doesn't have extra ownership to transfer
-            return .transfer_without_ownership;
-        }
-
-        // Check if the pointer is already freed
-        if (node.freed) {
-            return .transfer_after_free;
-        }
-
-        // Check if to_func already has ownership
+        if (from_counter.net() <= 0) return .transfer_without_ownership;
+        if (node.freed) return .transfer_after_free;
         const to_counter = graph.getFuncCounter(to_func);
-        if (to_counter.net() > 0) {
-            // to_func already owns something, might be double transfer
-            return .potential_double_transfer;
-        }
-
+        if (to_counter.net() > 0) return .potential_double_transfer;
         return .valid;
     }
 
@@ -981,65 +721,27 @@ pub const MemoryGraph = struct {
     /// conservative behavior: return true (potential double-free).
     pub fn isDoubleFreedOnSamePath(graph: *MemoryGraph, ptr_val: u64) bool {
         const node = graph.nodes.get(ptr_val) orelse return false;
-
-        // Need at least 2 free sites for double-free
         if (node.free_sites.items.len < 2) return false;
 
-        // Check if any BB info is available
-        var has_bb_info = false;
-        for (node.free_sites.items) |site| {
-            if (site.bb_id != 0) {
-                has_bb_info = true;
-                break;
+        if (!mg_methods.hasBBInfo(node.free_sites.items)) return node.freed;
+
+        if (mg_methods.checkFreeSitesSameBB(node.free_sites.items)) return true;
+
+        const Context = struct {
+            g: *MemoryGraph,
+            fn reachable(ctx: *const @This(), from_bb: u32, to_bb: u32) bool {
+                var visited = std.AutoHashMap(u32, void).init(ctx.g.allocator);
+                defer visited.deinit();
+                return ctx.g.isBBReachable(from_bb, to_bb, &visited);
             }
-        }
-
-        // Fallback: no BB info → cannot determine path sensitivity.
-        // Conservative: assume same path (report potential double-free).
-        if (!has_bb_info) return node.freed;
-
-        // Same-BB check: if two frees are in the same BB, that's always
-        // a real double-free (sequential execution, no branch between them).
-        for (node.free_sites.items, 0..) |site_a, i| {
-            for (node.free_sites.items[i + 1 ..]) |site_b| {
-                if (site_a.bb_id != 0 and site_a.bb_id == site_b.bb_id) {
-                    return true; // Same BB = same path = real double-free
-                }
-            }
-        }
-
-        // Cross-BB reachability: check if free_A's BB can reach free_B's BB.
-        // If yes, they're on the same execution path → real double-free.
-        for (node.free_sites.items, 0..) |site_a, i| {
-            if (site_a.bb_id == 0) continue;
-            for (node.free_sites.items[i + 1 ..]) |site_b| {
-                if (site_b.bb_id == 0) continue;
-                // Check A → B reachability
-                var visited_ab = std.AutoHashMap(u32, void).init(graph.allocator);
-                defer visited_ab.deinit();
-                if (graph.isBBReachable(site_a.bb_id, site_b.bb_id, &visited_ab)) {
-                    return true;
-                }
-                // Check B → A reachability
-                var visited_ba = std.AutoHashMap(u32, void).init(graph.allocator);
-                defer visited_ba.deinit();
-                if (graph.isBBReachable(site_b.bb_id, site_a.bb_id, &visited_ba)) {
-                    return true;
-                }
-            }
-        }
-
-        // No pair of free sites is on the same execution path.
-        // All frees are on mutually exclusive paths → multi-path cleanup.
-        return false;
+        };
+        const ctx = Context{ .g = graph };
+        return mg_methods.checkFreeSitesReachability(node.free_sites.items, Context, &ctx, Context.reachable);
     }
 
     /// Descriptor for an FFI/unsafe boundary call. Used by isOnDangerPath without
     /// depending on pass.zig's CrossLangEdge type (avoids circular import).
-    pub const DangerSurface = struct {
-        callee_name: []const u8,
-        is_ffi_boundary: bool,
-    };
+    // pub const DangerSurface is now imported from mg_types
 
     /// The ONE question that determines whether we care about a pointer.
     ///
@@ -1057,7 +759,7 @@ pub const MemoryGraph = struct {
     pub fn isOnDangerPath(
         graph: *MemoryGraph,
         ptr_val: u64,
-        ffi_boundaries: []const MemoryGraph.DangerSurface,
+        ffi_boundaries: []const DangerSurface,
         visited: *std.AutoHashMap(u64, void),
         ffi_set: ?*const std.StringHashMap(void),
     ) DangerPathKind {
@@ -1071,18 +773,11 @@ pub const MemoryGraph = struct {
         };
 
         // Build callee_name set for O(1) lookup (only once at top-level call).
-        // PERF: Only allocate local_ffi_set when ffi_set is null (top-level call).
-        // Recursive calls always receive a valid ffi_set, so this is a one-time cost.
         var local_ffi_set: std.StringHashMap(void) = undefined;
         var local_ffi_set_needs_deinit = false;
         const set: *const std.StringHashMap(void) = if (ffi_set) |s| s else blk: {
-            local_ffi_set = std.StringHashMap(void).init(graph.allocator);
+            local_ffi_set = mg_methods.buildFFISet(graph.allocator, ffi_boundaries);
             local_ffi_set_needs_deinit = true;
-            for (ffi_boundaries) |b| {
-                if (b.is_ffi_boundary) {
-                    local_ffi_set.put(b.callee_name, {}) catch {};
-                }
-            }
             break :blk &local_ffi_set;
         };
         defer {
@@ -1134,17 +829,6 @@ pub const MemoryGraph = struct {
         return .none;
     }
 };
-
-/// FNV-1a hash with wrapping multiplication.
-/// Wrapping is intentional: hash values are not ordered, overflow is expected.
-fn hashValues(values: []const u64) u64 {
-    var hash: u64 = 0xcbf29ce484222325;
-    for (values) |val| {
-        hash ^= val;
-        hash = hash *% 0x100000001b3;
-    }
-    return hash;
-}
 
 // Re-export FuzzyMatcher from separate module
 pub const FuzzyMatcher = @import("memory_graph_fuzzy.zig").FuzzyMatcher;

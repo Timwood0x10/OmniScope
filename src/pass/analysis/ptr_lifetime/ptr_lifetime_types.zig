@@ -106,6 +106,36 @@ pub const FreeSiteRecord = struct {
     free_inst: c.LLVMValueRef,
 };
 
+/// Lightweight growable list for FreeSiteRecord (contains opaque C types
+/// that prevent std.ArrayList from monomorphizing correctly in Zig 0.15.2).
+pub const FreeSiteList = struct {
+    items: []FreeSiteRecord,
+    len: usize,
+    capacity: usize,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) FreeSiteList {
+        return .{ .items = &.{}, .len = 0, .capacity = 0, .allocator = allocator };
+    }
+
+    pub fn append(self: *FreeSiteList, record: FreeSiteRecord) !void {
+        if (self.len >= self.capacity) {
+            const new_cap = if (self.capacity == 0) 4 else self.capacity * 2;
+            const new_items = try self.allocator.alloc(FreeSiteRecord, new_cap);
+            @memcpy(new_items[0..self.len], self.items);
+            if (self.capacity > 0) self.allocator.free(self.items);
+            self.items = new_items;
+            self.capacity = new_cap;
+        }
+        self.items[self.len] = record;
+        self.len += 1;
+    }
+
+    pub fn deinit(self: *FreeSiteList) void {
+        if (self.capacity > 0) self.allocator.free(self.items);
+    }
+};
+
 /// Analysis result for a single function.
 pub const LifetimeAnalysisResult = struct {
     /// Number of violations found

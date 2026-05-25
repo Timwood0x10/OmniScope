@@ -25,7 +25,7 @@ const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
 const MemoryGraph = @import("../../semantics/memory_graph.zig").MemoryGraph;
-const DangerSurface = MemoryGraph.DangerSurface;
+const DangerSurface = @import("../../types/memory_graph_types.zig").DangerSurface;
 const DangerPathKind = @import("../../semantics/memory_graph.zig").DangerPathKind;
 
 pub const DangerSurfacePass = struct {

@@ -290,10 +290,40 @@ pub const FFIBoundaryPass = struct {
         defer if (indirect_name_owned) |owned| ctx.allocator.free(owned);
         var is_indirect_call = false;
 
-        const is_indirect = (called_name.len == 0 or
-            called_name[0] == '%' or // LLVM register (e.g., %11)
-            c.LLVMIsAFunction(called_val) == null or
-            c.LLVMIsAConstantExpr(called_val) != null); // Constant expr wrapping function pointer (inttoptr, bitcast, etc.)
+        // T0.5: A constant-expression callee is most often a `bitcast` or
+        // `addrspacecast` wrapping a real function (type-coerced direct call).
+        // Treating every ConstantExpr as indirect previously routed these into
+        // resolveIndirectCallTarget, which expects a load/GEP shape and would
+        // return "" — silently dropping the entire callsite (POT-BUG-4).
+        // Under LLVM 22 opaque pointers we cannot type-gate via
+        // LLVMGetElementType (it returns garbage on `ptr`), so we unwrap the
+        // constant expression instead and only fall through to the JNI/vtable
+        // path when no underlying function can be recovered.
+        var resolved_via_const_unwrap = false;
+        if (c.LLVMIsAConstantExpr(called_val) != null) {
+            const const_opcode = c.LLVMGetConstOpcode(called_val);
+            const is_wrap = (const_opcode == c.LLVMBitCast or
+                const_opcode == c.LLVMAddrSpaceCast);
+            if (is_wrap and c.LLVMGetNumOperands(called_val) > 0) {
+                const inner = c.LLVMGetOperand(called_val, 0);
+                if (@intFromPtr(inner) != 0 and c.LLVMIsAFunction(inner) != null) {
+                    const inner_name_ptr = c.LLVMGetValueName(inner);
+                    if (@intFromPtr(inner_name_ptr) != 0) {
+                        called_name = std.mem.span(inner_name_ptr);
+                        resolved_via_const_unwrap = true;
+                    }
+                }
+            }
+        }
+
+        // After unwrapping, only register-named or otherwise-non-function
+        // callees should fall into the JNI/vtable resolver. Note:
+        // `LLVMIsAFunction == null` already covers any ConstantExpr we could
+        // not unwrap, so no separate ConstantExpr disjunct is needed.
+        const is_indirect = !resolved_via_const_unwrap and
+            (called_name.len == 0 or
+                called_name[0] == '%' or // LLVM register (e.g., %11)
+                c.LLVMIsAFunction(called_val) == null);
         if (is_indirect) {
             const resolved = resolveIndirectCallTarget(inst, diag);
             if (resolved.len > 0) {
