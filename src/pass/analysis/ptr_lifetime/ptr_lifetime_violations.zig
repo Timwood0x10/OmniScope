@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const log = @import("../../../common/log.zig");
 const safe = @import("../../../ir/llvm_safe.zig"); // Issue2: Standardized LLVM helpers
 
 const PassContext = @import("../../../pass/pass.zig").PassContext;
@@ -863,7 +864,7 @@ pub fn checkCallViolation(
                         if (lifetime_map) |lm| {
                             if (ptr_info.source_inst) |alloca_inst| {
                                 if (!isAllocaAliveAt(lm, alloca_inst, inst)) {
-                                    std.log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
+                                    log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
                                     stats.heap_intentional_transfer += 1;
                                     continue;
                                 }
@@ -910,7 +911,7 @@ pub fn checkCallViolation(
                 if (lifetime_map) |lm| {
                     if (ptr_info.source_inst) |alloca_inst| {
                         if (!isAllocaAliveAt(lm, alloca_inst, inst)) {
-                            std.log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
+                            log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
                             stats.heap_intentional_transfer += 1;
                             continue;
                         }

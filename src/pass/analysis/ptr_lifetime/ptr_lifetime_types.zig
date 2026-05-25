@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const log = @import("../../../common/log.zig");
 const word_boundary = @import("../../../utils/word_boundary.zig");
 
 const allocator_kb = @import("../../../semantics/allocator_kb.zig");
@@ -573,7 +574,7 @@ pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
     if (g_allocator_kb != null) return &g_allocator_kb.?;
 
     g_allocator_kb = allocator_kb.AllocatorKB.init(std.heap.page_allocator) catch |err| {
-        std.log.warn("AllocatorKB init failed: {any}, falling back to legacy detection", .{err});
+        log.warn("AllocatorKB init failed: {any}, falling back to legacy detection", .{err});
         g_allocator_kb_init_failed = true;
         return null;
     };

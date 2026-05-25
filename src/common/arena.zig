@@ -397,7 +397,7 @@ test "Arena - large allocation spans block boundary" {
     const large_ptr = try arena.alloc(16 * 1024, 0); // 16KB > default 8KB block
 
     // Should be able to write to it
-    @memset(large_ptr[0..16 * 1024], 0xCC);
+    @memset(large_ptr[0 .. 16 * 1024], 0xCC);
     try testing.expectEqual(@as(u8, 0xCC), large_ptr[0]);
     try testing.expectEqual(@as(u8, 0xCC), large_ptr[16 * 1024 - 1]);
 

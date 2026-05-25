@@ -172,6 +172,82 @@ fn isExportSection(section: []const u8) bool {
     return false;
 }
 
+/// Detect if a function is a FFI CALLER (calls external FFI functions).
+///
+/// This complements detectBoundaryFromLLVM() which only detects callee-side
+/// boundaries (functions DEFINED in this module that are exported via extern "C").
+///
+/// In real FFI scenarios:
+///   - Rust module has: `extern "C" { fn c_hash(...); }` (declaration)
+///   - Rust mangled function calls: `call void @c_hash(...)` (caller side)
+///   - The mangled Rust function IS a FFI boundary caller (cross-ABI call site)
+///
+/// NOTE: Full instruction scanning requires LLVMGetFirstInstruction which may
+/// not be available in all LLVM C API versions. This implementation uses a
+/// lightweight heuristic: if the module contains external declarations with
+/// unmangled/C-conv names AND this function is a user function with external
+/// linkage (not stdlib/runtime/llvm), it's likely an FFI caller.
+pub fn detectCallerSideFFI(func: c.LLVMValueRef, module: c.LLVMModuleRef) bool {
+    if (c.LLVMIsDeclaration(func) != 0) return false;
+
+    const name_ptr = c.LLVMGetValueName(func);
+    const func_name = if (@intFromPtr(name_ptr) != 0) std.mem.span(name_ptr) else "<anon>";
+
+    // Skip LLVM intrinsics, stdlib, and runtime functions
+    if (isLLVMIntrinsic(func_name) or isStdlibOrRuntime(func_name)) return false;
+
+    // Must have external linkage (user-visible function that could be FFI boundary)
+    const linkage = c.LLVMGetLinkage(func);
+    if (linkage != c.LLVMExternalLinkage) return false;
+
+    // Check if the module has any external FFI declarations
+    var decl = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(decl) != 0) : (decl = c.LLVMGetNextFunction(decl)) {
+        if (c.LLVMIsDeclaration(decl) == 0) continue;
+
+        const decl_name_ptr = c.LLVMGetValueName(decl);
+        const decl_name = if (@intFromPtr(decl_name_ptr) != 0) std.mem.span(decl_name_ptr) else "";
+
+        if (isUnmangledName(decl_name) and decl_name.len > 0) {
+            const decl_conv = c.LLVMGetFunctionCallConv(decl);
+            if (decl_conv == c.LLVMCCallConv or isFFIPrefixName(decl_name)) {
+                log.debug("[BOUNDARY-CALLER] '{s}' potential FFI caller (module has FFI decl '{s}')", .{ func_name, decl_name });
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Check if a name looks like an LLVM intrinsic (llvm.*).
+fn isLLVMIntrinsic(name: []const u8) bool {
+    return std.mem.startsWith(u8, name, "llvm.");
+}
+
+/// Check if a name looks like a standard library or runtime function.
+fn isStdlibOrRuntime(name: []const u8) bool {
+    // Rust stdlib patterns
+    if (std.mem.startsWith(u8, name, "_RN")) return true; // Rust new mangling
+    if (std.mem.startsWith(u8, name, "_ZN") and std.mem.indexOf(u8, name, "4core") != null) return true;
+    if (std.mem.startsWith(u8, name, "_ZN") and std.mem.indexOf(u8, name, "5alloc") != null) return true;
+    if (std.mem.startsWith(u8, name, "_ZN") and std.mem.indexOf(u8, name, "3std") != null) return true;
+
+    // Special functions
+    if (std.mem.eql(u8, name, "rust_eh_personality")) return true;
+    if (std.mem.indexOf(u8, name, "__rust_") != null) return true;
+
+    return false;
+}
+
+fn isFFIPrefixName(name: []const u8) bool {
+    const ffi_prefixes = [_][]const u8{ "c_", "cpp_", "java_", "go_", "rust_" };
+    for (ffi_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, name, prefix)) return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Tests
 // ============================================================================

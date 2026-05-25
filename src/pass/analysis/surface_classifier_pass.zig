@@ -63,7 +63,13 @@ pub const SurfaceClassifierPass = struct {
             const is_ffi_boundary = boundary.detectBoundaryFromLLVM(func);
             const is_lib_export = boundary.detectLibraryExport(func);
 
-            if (is_ffi_boundary) ffi_boundary_count += 1;
+            // L4c: Caller-side FFI detection (calls external FFI functions)
+            // Complements callee-side detection for modules that IMPORT FFI functions
+            // Example: Rust module calling c_hash() from C bridge
+            const is_ffi_caller = boundary.detectCallerSideFFI(func, raw_mod);
+            const is_real_ffi_boundary = is_ffi_boundary or is_ffi_caller;
+
+            if (is_real_ffi_boundary) ffi_boundary_count += 1;
             if (is_lib_export) lib_export_count += 1;
 
             // L0: Mangled name heuristic (cheapest — pure string match)
@@ -77,9 +83,9 @@ pub const SurfaceClassifierPass = struct {
 
             // Merge all layers into final decision
             //
-            // Critical: is_ffi_boundary (not is_lib_export) controls the
+            // Critical: is_real_ffi_boundary (not is_lib_export) controls the
             // .boundary surface. Library exports are just dependency code.
-            const surf = surface.mergeLayers(l0_hint, l1_hint, l2_hint, true, is_ffi_boundary);
+            const surf = surface.mergeLayers(l0_hint, l1_hint, l2_hint, true, is_real_ffi_boundary);
 
             // Track per-layer hit rates
             if (l0_hint != null) l0_hits += 1;
@@ -101,9 +107,10 @@ pub const SurfaceClassifierPass = struct {
                 const l0_str = if (l0_hint) |h| h.surface.toString() else "null";
                 const l1_str = if (l1_hint) |h| h.surface.toString() else "null";
                 const l2_str = if (l2_hint) |h| h.surface.toString() else "null";
-                const bnd_str = if (is_ffi_boundary) "FFI" else if (is_lib_export) "LIB" else "--";
-                log.debug("[SurfaceClassifier] {s}: L0={s} L1={s} L2={s} bnd={s} => {s}", .{
-                    func_name, l0_str, l1_str, l2_str, bnd_str, surf.toString(),
+                const bnd_str = if (is_real_ffi_boundary) "FFI" else if (is_lib_export) "LIB" else "--";
+                const caller_str = if (is_ffi_caller) "+CALLER" else "";
+                log.debug("[SurfaceClassifier] {s}: L0={s} L1={s} L2={s} bnd={s}{s} => {s}", .{
+                    func_name, l0_str, l1_str, l2_str, bnd_str, caller_str, surf.toString(),
                 });
                 logged_count += 1;
             }

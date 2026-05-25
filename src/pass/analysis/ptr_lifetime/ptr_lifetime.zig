@@ -98,6 +98,9 @@ const report = @import("ptr_lifetime_report.zig");
 
 // Core helper functions (extracted to reduce main file size)
 const core = @import("ptr_lifetime_helpers.zig");
+
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../../pipeline/parallel.zig");
 const extractDebugFilePath = core.extractDebugFilePath;
 const inferContentKind = core.inferContentKind;
 const putPtrInfo = core.putPtrInfo;
@@ -181,8 +184,8 @@ pub const PtrLifetimePass = struct {
         });
 
         const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        const first_func = c.LLVMGetFirstFunction(mod);
+        if (@intFromPtr(first_func) == 0) return;
 
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = LifetimeStats{};
@@ -195,11 +198,7 @@ pub const PtrLifetimePass = struct {
         defer hooks.deinitHookStates();
 
         const t_total = std.time.nanoTimestamp();
-        var t_analyze: i128 = 0;
         var t_postprocess: i128 = 0;
-        var t_track_all: i128 = 0;
-        var t_check_all: i128 = 0;
-        var funcs_analyzed: u32 = 0;
 
         // P0-3c: Build FFI function name set from cross_lang_edges (already populated
         // by FFIBoundaryPass which runs BEFORE ptr_lifetime). Functions not in this
@@ -211,131 +210,84 @@ pub const PtrLifetimePass = struct {
             try ffi_func_names.put(edge.caller_name, {});
         }
 
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) {
-                const func_name_raw = c.LLVMGetValueName(func);
+        // T3.1: Pre-collect all functions into work items for parallel distribution.
+        // Two-pass approach: count first, then allocate exact-sized array.
+        // This avoids ArrayList cross-module type issues in Zig 0.15.2.
+        var func_count: usize = 0;
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                func_count += 1;
+            }
+        }
+        if (func_count == 0) return;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        defer ctx.allocator.free(work_items);
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            var idx: usize = 0;
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                const func_name_raw = c.LLVMGetValueName(f);
                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-                ctx.zone_stats.record(zone);
-                continue;
-            }
-
-            const func_name_raw = c.LLVMGetValueName(func);
-            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-
-            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-            ctx.zone_stats.record(zone);
-
-            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
-            const debug_file_path = extractDebugFilePath(func);
-            var classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
-            // E2-2e: Stdl functions on FFI danger path should not be suppressed
-            const func_ptr_val: u64 = @intFromPtr(func);
-            classification = NoiseReduction.reevaluateWithDangerPath(classification, ctx.isRelevantFunction(func_ptr_val));
-            if (classification.origin == .compiler_generated) continue;
-            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
-
-            // INTEGRATION: Three-layer noise filter (name + path + behavior)
-            const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const full_classification = ctx.classifyFunctionSurface(func_name, func_loc);
-            // P0-2: Relax noise filter for Rust FFI callback functions.
-            // Rust callbacks (e.g., rs_ffi_*_cb) may be classified as third_party
-            // or have suppressed risk, but they are critical for FFI boundary analysis.
-            // Only skip compiler_generated code; stdlib/third_party may have FFI callbacks.
-            if (full_classification.origin == .compiler_generated) continue;
-            if (full_classification.origin == .stdlib and !noise_config.include_stdlib) continue;
-            if (full_classification.origin == .third_party) {
-                const func_ptr_val_tmp: u64 = @intFromPtr(func);
-                if (!ctx.isRelevantFunction(func_ptr_val_tmp)) continue;
-            }
-
-            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
-            if (FPWhitelist.is_known_fp(func_name) != null) continue;
-
-            // NOTE: Function-level isRelevantFunction() gate intentionally NOT applied here.
-            // While ptr_lifetime populates MemoryGraph (trackAlloc/trackCallArg/trackAlias),
-            // it is NOT the sole producer — other passes also write to MemoryGraph.
-            // The real reason for no gate here is PERFORMANCE: skipping functions would
-            // reduce leak/double-free detection coverage. The ffi_func_names gate below
-            // provides a balanced compromise — skip expensive call-edge indexing for
-            // non-FFI functions while retaining full alloc/free tracking on all code.
-            //
-            // P0-3c: Use ffi_func_names (from cross_lang_edges, already populated by
-            // FFIBoundaryPass which runs BEFORE ptr_lifetime) to skip expensive
-            // call-edge tracking (trackCallArg/trackCallRet) for non-FFI functions.
-            // Full alloc/free/alias tracking still applies to ALL functions.
-            //
-            // CRITICAL FIX for 0/73 benchmark: Also use CallGraph BFS traversal to
-            // detect functions that INDIRECTLY reach FFI boundaries. A wrapper function
-            // like my_process_data() may not be in cross_lang_edges itself, but if it
-            // calls C.save_to_file() transitively, it needs full MemoryGraph tracking
-            // to detect pointer leaks across the FFI boundary.
-            var is_ffi_func = ffi_func_names.contains(func_name);
-            if (!is_ffi_func) {
-                if (ctx.semantics_call_graph) |*sg| {
-                    if (sg.getNodeByName(func_name)) |node_id| {
-                        if (call_graph_mod.CallGraph.reachesFFIBoundary(sg, node_id, 10)) {
-                            is_ffi_func = true;
-                        }
-                    }
-                }
-            }
-
-            // Phase R5.1: Reset hook state per function scope
-            hooks.resetHookStatesForFunction();
-
-            // P2-3 — Single-function error isolation
-            {
-                const t0 = std.time.nanoTimestamp();
-                var t_track_fn: i128 = 0;
-                var t_check_fn: i128 = 0;
-                analyzeFunction(ctx, func, diag, &stats, mem_graph, &t_track_fn, &t_check_fn, is_ffi_func) catch |err| {
-                    diag.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, func_name });
-                    ctx.recordDegradedFunction();
-                    continue;
+                const is_decl = c.LLVMIsDeclaration(f) != 0;
+                work_items[idx] = .{
+                    .func = @intFromPtr(f),
+                    .func_name = func_name,
+                    .is_declaration = is_decl,
                 };
-                t_analyze += std.time.nanoTimestamp() - t0;
-                t_track_all += t_track_fn;
-                t_check_all += t_check_fn;
-                funcs_analyzed += 1;
+                idx += 1;
             }
+        }
 
-            // Phase R5.1: Check hook state for end-of-function issues.
-            if (hooks.rustUnpairedTransferCount() > 0) {
-                const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
-                defer ctx.allocator.free(msg);
-                const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                errdefer ctx.allocator.free(trace);
-                trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak");
-                const issue = Issue.initWithTrace(
-                    .cross_language_leak,
-                    msg,
-                    Location.init(func_name),
-                    .medium,
-                    0.65,
-                    trace,
-                );
-                try ctx.addIssue(&issue);
-            }
-            {
-                const count = hooks.pythonUnbalancedDecrefCount();
-                if (count > 0) {
-                    const msg = try std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) in {s}", .{ count, func_name });
-                    defer ctx.allocator.free(msg);
-                    const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                    errdefer ctx.allocator.free(trace);
-                    trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free");
-                    const issue = Issue.initWithTrace(
-                        .use_after_free,
-                        msg,
-                        Location.init(func_name),
-                        .high,
-                        0.80,
-                        trace,
-                    );
-                    try ctx.addIssue(&issue);
-                }
-            }
+        // T3.1: Mutex protecting shared PassContext state during parallel analysis.
+        // Covers: memory_graph writes, addIssue, zone_cache, zone_stats, global_alloc_tracker.
+        var analysis_mutex = std.Thread.Mutex{};
+        var funcs_analyzed: u32 = 0;
+
+        // T3.1: Per-worker local state accumulated during parallel phase.
+        // Merged into global stats after all workers complete.
+        // Uses fixed-size array (max 16 workers) to avoid ArrayList cross-module issues.
+        var worker_stats_arr: [PTR_LIFETIME_MAX_WORKERS]LifetimeStats = undefined;
+        var worker_stats_len: usize = 0;
+
+        // T3.1: Parallel execution — distribute functions across worker threads.
+        // Each worker independently processes its assigned functions; shared state
+        // is protected by analysis_mutex to prevent data races on MemoryGraph,
+        // issue store, and zone classification cache.
+        var w_t_track: i128 = 0;
+        var w_t_check: i128 = 0;
+        var worker_ctx = PtrLifetimeWorkerContext{
+            .ctx_ptr = ctx,
+            .diag_ptr = diag,
+            .mem_graph_ptr = mem_graph,
+            .noise_cfg = noise_config,
+            .ffi_names = &ffi_func_names,
+            .mutex = &analysis_mutex,
+            .stats_arr = &worker_stats_arr,
+            .stats_len = &worker_stats_len,
+            .t_track_out = &w_t_track,
+            .t_check_out = &w_t_check,
+        };
+
+        // T3.1: Publish worker context for worker function access
+        worker_context_ptr = &worker_ctx;
+        defer worker_context_ptr = null;
+
+        var executor = try parallel.ParallelExecutor.init(ctx.allocator, 0);
+        defer executor.deinit();
+        const results = try executor.run(work_items, ptrLifetimeWorkerFn);
+
+        // T3.1: Merge per-worker stats into global stats.
+        for (results) |r| {
+            funcs_analyzed += r.funcs_analyzed;
+        }
+        for (worker_stats_arr[0..worker_stats_len]) |*ws| {
+            stats.stack_escapes_found += ws.stack_escapes_found;
+            stats.return_stack_addr_found += ws.return_stack_addr_found;
+            stats.use_after_free_found += ws.use_after_free_found;
+            stats.heap_ambiguous_found += ws.heap_ambiguous_found;
+            stats.total_functions_analyzed += ws.total_functions_analyzed;
+            stats.total_pointers_tracked += ws.total_pointers_tracked;
         }
 
         const total_violations = stats.stack_escapes_found + stats.return_stack_addr_found + stats.use_after_free_found + stats.heap_ambiguous_found;
@@ -365,11 +317,193 @@ pub const PtrLifetimePass = struct {
         const t_end = std.time.nanoTimestamp();
         const total_ms: f64 = @as(f64, @floatFromInt(t_end - t_total)) / 1_000_000.0;
         const post_ms: f64 = @as(f64, @floatFromInt(t_postprocess)) / 1_000_000.0;
-        const track_ms: f64 = @as(f64, @floatFromInt(t_track_all)) / 1_000_000.0;
-        const check_ms: f64 = @as(f64, @floatFromInt(t_check_all)) / 1_000_000.0;
         if (total_ms > 10) {
-            diag.info("[PERF-DETAIL] PtrLifetime: {d:.0}ms total (track={d:.0}ms, check={d:.0}ms, postprocess={d:.0}ms) for {d} funcs", .{ total_ms, track_ms, check_ms, post_ms, funcs_analyzed });
+            diag.info("[PERF-DETAIL] PtrLifetime: {d:.0}ms total (postprocess={d:.0}ms) for {d} funcs", .{ total_ms, post_ms, funcs_analyzed });
         }
+    }
+
+    /// T3.1: Worker function for parallel per-function analysis.
+    /// Each invocation processes one WorkItem (one LLVM function) through
+    /// the full noise-filter → analyze → report pipeline.
+    ///
+    /// Thread safety: All shared PassContext state accesses are protected by
+    /// the mutex held in worker_ctx. The lock is held for the minimum duration
+    //   — only during analyzeFunction() and issue reporting, not during noise filtering.
+    fn ptrLifetimeWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
+        _ = worker_id;
+        var result = parallel.WorkerResult{};
+
+        // Reconstruct LLVM function pointer from integer (C-compatible ABI)
+        const func: c.LLVMValueRef = @ptrFromInt(item.func);
+
+        // Declaration-only functions: record zone stats, skip analysis
+        if (item.is_declaration) {
+            const wctx = getWorkerContext();
+            wctx.mutex.lock();
+            defer wctx.mutex.unlock();
+            const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
+            wctx.ctx_ptr.zone_stats.record(zone);
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        const wctx = getWorkerContext();
+
+        // Noise filtering (read-only ctx access, no lock needed)
+        const debug_file_path = extractDebugFilePath(func);
+        var classification = NoiseReduction.classifyFunction(item.func_name, debug_file_path, wctx.noise_cfg);
+        const func_ptr_val: u64 = @intFromPtr(func);
+        classification = NoiseReduction.reevaluateWithDangerPath(classification, wctx.ctx_ptr.isRelevantFunction(func_ptr_val));
+        if (classification.origin == .compiler_generated) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const full_classification = wctx.ctx_ptr.classifyFunctionSurface(item.func_name, func_loc);
+        if (full_classification.origin == .compiler_generated) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (full_classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (full_classification.origin == .third_party) {
+            if (!wctx.ctx_ptr.isRelevantFunction(func_ptr_val)) {
+                result.funcs_skipped += 1;
+                return result;
+            }
+        }
+
+        if (FPWhitelist.is_known_fp(item.func_name) != null) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        // FFI function detection (read-only HashMap lookup)
+        var is_ffi_func = wctx.ffi_names.contains(item.func_name);
+        if (!is_ffi_func) {
+            wctx.mutex.lock();
+            defer wctx.mutex.unlock();
+            if (wctx.ctx_ptr.semantics_call_graph) |*sg| {
+                if (sg.getNodeByName(item.func_name)) |node_id| {
+                    if (call_graph_mod.CallGraph.reachesFFIBoundary(sg, node_id, 10)) {
+                        is_ffi_func = true;
+                    }
+                }
+            }
+        }
+
+        // Per-function local stats for this worker
+        var fn_stats = LifetimeStats{};
+        var fn_t_track: i128 = 0;
+        var fn_t_check: i128 = 0;
+
+        // Phase R5.1: Reset hook state per function scope (global, but sequential-per-func)
+        hooks.resetHookStatesForFunction();
+
+        // Core analysis — locked because it writes to MemoryGraph and issues
+        wctx.mutex.lock();
+        defer wctx.mutex.unlock();
+
+        const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
+        wctx.ctx_ptr.zone_stats.record(zone);
+
+        analyzeFunction(wctx.ctx_ptr, func, wctx.diag_ptr, &fn_stats, wctx.mem_graph_ptr, &fn_t_track, &fn_t_check, is_ffi_func) catch |err| {
+            wctx.diag_ptr.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, item.func_name });
+            wctx.ctx_ptr.recordDegradedFunction();
+            result.funcs_errored += 1;
+            return result;
+        };
+
+        result.funcs_analyzed = 1;
+
+        // Accumulate timing (atomic add via mutex protection)
+        wctx.t_track_out.* += fn_t_track;
+        wctx.t_check_out.* += fn_t_check;
+
+        // Store local stats in shared array (under same lock)
+        if (wctx.stats_len.* < PTR_LIFETIME_MAX_WORKERS) {
+            wctx.stats_arr[wctx.stats_len.*] = fn_stats;
+            wctx.stats_len.* += 1;
+        }
+
+        // Phase R5.1: Hook-based end-of-function checks (issue reporting under lock)
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{item.func_name}) catch {
+                return result;
+            };
+            defer wctx.ctx_ptr.allocator.free(msg);
+            const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                wctx.ctx_ptr.allocator.free(msg);
+                return result;
+            };
+            trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak");
+            const issue = Issue.initWithTrace(
+                .cross_language_leak,
+                msg,
+                Location.init(item.func_name),
+                .medium,
+                0.65,
+                trace,
+            );
+            wctx.ctx_ptr.addIssue(&issue) catch {};
+        }
+        {
+            const count = hooks.pythonUnbalancedDecrefCount();
+            if (count > 0) {
+                const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "{d} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, item.func_name }) catch {
+                    return result;
+                };
+                defer wctx.ctx_ptr.allocator.free(msg);
+                const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                    wctx.ctx_ptr.allocator.free(msg);
+                    return result;
+                };
+                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
+                const issue = Issue.initWithTrace(
+                    .use_after_free,
+                    msg,
+                    Location.init(item.func_name),
+                    .high,
+                    0.80,
+                    trace,
+                );
+                wctx.ctx_ptr.addIssue(&issue) catch {};
+            }
+        }
+
+        return result;
+    }
+
+    /// T3.1: Worker context — shared state passed to each worker thread.
+    /// Holds pointers to all resources needed during per-function analysis.
+    /// Published via worker_context_ptr before parallel execution begins.
+    const PTR_LIFETIME_MAX_WORKERS = 16;
+    const PtrLifetimeWorkerContext = struct {
+        ctx_ptr: *PassContext,
+        diag_ptr: *DiagnosticWriter,
+        mem_graph_ptr: ?*memory_graph.MemoryGraph,
+        noise_cfg: NoiseReduction.NoiseReductionConfig,
+        ffi_names: *std.StringHashMap(void),
+        mutex: *std.Thread.Mutex,
+        stats_arr: *[PTR_LIFETIME_MAX_WORKERS]LifetimeStats,
+        stats_len: *usize,
+        t_track_out: *i128,
+        t_check_out: *i128,
+    };
+
+    /// T3.1: Retrieve the worker context (passes closure data to worker function).
+    /// Uses comptime-known global variable set during run() initialization.
+    var worker_context_ptr: ?*PtrLifetimeWorkerContext = null;
+
+    fn getWorkerContext() *PtrLifetimeWorkerContext {
+        return worker_context_ptr.?;
     }
 
     fn analyzeFunction(

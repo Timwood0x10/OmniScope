@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const log = @import("../../../common/log.zig");
 
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const zone_cls = @import("../../../semantics/zone_classifier.zig");
@@ -83,7 +84,7 @@ pub fn handleAlloca(ctx: *TrackContext) !void {
 
     if (ctx.mgEffective()) |mg| {
         const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-        _ = try mg.trackAlloc(inst_ptr, inst_ptr, .alloca, ctx.zone, ctx.lang);
+        _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, ctx.zone, ctx.lang) catch {};
     }
 }
 
@@ -123,7 +124,7 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
             if (ctx.mgEffective()) |mg| {
                 const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
                 const alloc_lang = classifyAllocLanguageEnum(callee_name, ctx.lang) orelse ctx.lang;
-                _ = try mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang);
+                _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang) catch {};
                 mg.recordFuncAlloc(ctx.funcPtr());
             }
         }
@@ -144,7 +145,7 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
 
         if (ctx.mgEffective()) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            _ = try mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang);
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang) catch {};
             mg.recordFuncAlloc(ctx.funcPtr());
         }
     }
@@ -379,7 +380,7 @@ pub fn handleLoad(ctx: *TrackContext) !void {
         const content_kind = mg.getContentSource(src_ptr);
         if (content_kind != .unknown) {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            _ = try mg.trackAlloc(inst_ptr, inst_ptr, content_kind, ctx.zone, ctx.lang);
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, ctx.zone, ctx.lang) catch {};
         }
     }
 
@@ -435,7 +436,7 @@ pub fn handleStore(ctx: *TrackContext) !void {
         if (ctx.mgEffective()) |mg| {
             const from_hash = @as(u64, @intFromPtr(dest));
             const to_hash = @as(u64, @intFromPtr(value));
-            try mg.trackAliasStrong(from_hash, to_hash);
+            _ = mg.trackAliasStrong(from_hash, to_hash) catch {};
         }
     } else {
         if (ctx.mgEffective()) |mg| {
@@ -562,42 +563,30 @@ pub fn handleLifetimeIntrinsic(ctx: *TrackContext) void {
 
     // Check if this operand is a known alloca in our pointer_map
     if (!ctx.pointer_map.contains(alloca_operand)) {
-        // The operand might be a bitcast/GEP of the alloca — try to resolve
-        // For now, only track direct alloca references
-        std.log.debug("[ptr-lifetime] Lifetime intrinsic for non-tracked alloca, skipping", .{});
         return;
     }
 
     if (std.mem.indexOf(u8, intrinsic_name, "llvm.lifetime.start") != null) {
-        // Record lifetime.start: create or update interval with start instruction
         const interval = LifetimeInterval{
             .start_inst = ctx.inst,
             .end_inst = null,
         };
         lifetime_map.put(alloca_operand, interval) catch {
-            std.log.warn("[ptr-lifetime] Failed to record lifetime.start for alloca", .{});
+            log.warn("[ptr-lifetime] Failed to record lifetime.start for alloca", .{});
             return;
         };
-        std.log.debug("[ptr-lifetime] Recorded lifetime.start at inst {}", .{@intFromPtr(ctx.inst)});
     } else if (std.mem.indexOf(u8, intrinsic_name, "llvm.lifetime.end") != null) {
-        // Record lifetime.end: update existing interval with end instruction
         if (lifetime_map.getPtr(alloca_operand)) |existing| {
             existing.end_inst = ctx.inst;
-            std.log.debug("[ptr-lifetime] Recorded lifetime.end at inst {} for alloca", .{
-                @intFromPtr(ctx.inst),
-            });
         } else {
-            // lifetime.end without matching lifetime.start — unusual but possible
-            // Create an interval with end only (will be treated as "already ended")
             const interval = LifetimeInterval{
-                .start_inst = ctx.inst, // Use end as start (interval is empty)
+                .start_inst = ctx.inst,
                 .end_inst = ctx.inst,
             };
             lifetime_map.put(alloca_operand, interval) catch {
-                std.log.warn("[ptr-lifetime] Failed to record orphaned lifetime.end", .{});
+                log.warn("[ptr-lifetime] Failed to record orphaned lifetime.end", .{});
                 return;
             };
-            std.log.debug("[ptr-lifetime] Recorded orphaned lifetime.end", .{});
         }
     }
 }

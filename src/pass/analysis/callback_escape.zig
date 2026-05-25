@@ -52,6 +52,9 @@ const call_graph_mod = @import("../../semantics/call_graph.zig");
 // Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
 const hooks = @import("../../registry/hooks.zig");
 const registry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
+
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../pipeline/parallel.zig");
 const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 
 // Reporting functions (extracted to separate module)
@@ -123,7 +126,6 @@ pub const CallbackEscapePass = struct {
         if (ctx.module == null) return;
 
         // R8.2-d: Consume cross-language edges from CallGraphPass.
-        // Cross-lang edges help identify Go→C cgo boundaries for callback escape detection.
         const cross_edges = ctx.getCrossLangEdges();
         var go_cgo_edge_count: u32 = 0;
         for (cross_edges) |edge| {
@@ -136,101 +138,198 @@ pub const CallbackEscapePass = struct {
         }
 
         const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        const first_func = c.LLVMGetFirstFunction(mod);
+        if (@intFromPtr(first_func) == 0) return;
 
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = EscapeStats{};
 
-        // Initialize Hook system for semantic analysis.
-        // Hooks provide language-specific detection beyond pattern matching.
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
 
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) {
-                const func_name_raw = c.LLVMGetValueName(func);
+        // T3.1: Pre-collect all functions into work items for parallel distribution.
+        var func_count: usize = 0;
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                func_count += 1;
+            }
+        }
+        if (func_count == 0) return;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        defer ctx.allocator.free(work_items);
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            var idx: usize = 0;
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                const func_name_raw = c.LLVMGetValueName(f);
                 const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-                ctx.zone_stats.record(zone);
-                continue;
-            }
-
-            const func_name_raw = c.LLVMGetValueName(func);
-            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-
-            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-            ctx.zone_stats.record(zone);
-
-            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
-            const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
-            if (classification.origin == .compiler_generated) continue;
-            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
-
-            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
-            if (FPWhitelist.is_known_fp(func_name) != null) continue;
-
-            // P0-1: Function-level gate — skip functions without danger-surface-relevant
-            // pointers to optimize analysis. DangerSurfacePass (upstream) populates
-            // relevant_functions HashSet; functions not involved in FFI boundary
-            // pointer flow can safely be skipped.
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
-                continue;
-            }
-
-            // : Reset hook state for this function scope.
-            hooks.resetHookStatesForFunction();
-
-            // Function-level error isolation
-            analyzeFunction(ctx, func, diag, &stats) catch |err| {
-                diag.warn("CallbackEscape: skipped function due to error: {any} ({s})", .{ err, func_name });
-                ctx.recordDegradedFunction();
-                continue;
-            };
-
-            // Check hook state for end-of-function issues.
-            if (hooks.rustUnpairedTransferCount() > 0) {
-                const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
-                defer ctx.allocator.free(msg);
-                const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
-                const issue = Issue.initWithTrace(
-                    .cross_language_leak,
-                    msg,
-                    Location.init(func_name),
-                    .medium,
-                    0.65,
-                    trace,
-                );
-                try ctx.addIssue(&issue);
-                stats.unsafeptr_risks += 1;
-            }
-            if (hooks.pythonUnbalancedDecrefCount() > 0) {
-                const count = hooks.pythonUnbalancedDecrefCount();
-                const msg = try std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, func_name });
-                defer ctx.allocator.free(msg);
-                const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
-                const issue = Issue.initWithTrace(
-                    .use_after_free,
-                    msg,
-                    Location.init(func_name),
-                    .high,
-                    0.80,
-                    trace,
-                );
-                try ctx.addIssue(&issue);
-                stats.unsafeptr_risks += @intCast(count);
+                const is_decl = c.LLVMIsDeclaration(f) != 0;
+                work_items[idx] = .{
+                    .func = @intFromPtr(f),
+                    .func_name = func_name,
+                    .is_declaration = is_decl,
+                };
+                idx += 1;
             }
         }
 
-        diag.info("CallbackEscape: analyzed {d} funcs, {d} cgo boundaries, {d} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +
-            stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans });
+        // T3.1: Mutex protecting shared PassContext state during parallel analysis.
+        var analysis_mutex = std.Thread.Mutex{};
+
+        // T3.1: Per-worker local stats
+        var worker_stats_arr: [CB_MAX_WORKERS]EscapeStats = undefined;
+        var worker_stats_len: usize = 0;
+
+        // T3.1: Worker context for callback escape analysis
+        var cb_worker_ctx = CallbackEscapeWorkerContext{
+            .ctx_ptr = ctx,
+            .diag_ptr = diag,
+            .noise_cfg = noise_config,
+            .mutex = &analysis_mutex,
+            .stats_arr = &worker_stats_arr,
+            .stats_len = &worker_stats_len,
+        };
+
+        // T3.1: Publish worker context
+        cb_context_ptr = &cb_worker_ctx;
+        defer cb_context_ptr = null;
+
+        var executor = try parallel.ParallelExecutor.init(ctx.allocator, 0);
+        defer executor.deinit();
+        _ = try executor.run(work_items, cbEscapeWorkerFn);
+
+        // T3.1: Merge per-worker stats
+        for (worker_stats_arr[0..worker_stats_len]) |*ws| {
+            stats.total_functions_analyzed += ws.total_functions_analyzed;
+            stats.go_cgo_boundaries_found += ws.go_cgo_boundaries_found;
+            stats.keepalive_missing += ws.keepalive_missing;
+            stats.cbytes_escapes += ws.cbytes_escapes;
+            stats.unsafeptr_risks += ws.unsafeptr_risks;
+            stats.malloc_leaks += ws.malloc_leaks;
+            stats.free_orphans += ws.free_orphans;
+        }
+
+        diag.info("CallbackEscape: analyzed {d} funcs, {d} cgo boundaries, {d} issues found", .{
+            stats.total_functions_analyzed,
+            stats.go_cgo_boundaries_found,
+            stats.keepalive_missing + stats.cbytes_escapes + stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans,
+        });
     }
 
     /// Extract debug file path from LLVM subprogram metadata.
     /// Used by NoiseReduction Layer 2 (path-based filter).
+    /// T3.1: Worker context for callback escape parallel analysis.
+    const CB_MAX_WORKERS = 16;
+    const CallbackEscapeWorkerContext = struct {
+        ctx_ptr: *PassContext,
+        diag_ptr: *DiagnosticWriter,
+        noise_cfg: NoiseReduction.NoiseReductionConfig,
+        mutex: *std.Thread.Mutex,
+        stats_arr: *[CB_MAX_WORKERS]EscapeStats,
+        stats_len: *usize,
+    };
+
+    var cb_context_ptr: ?*CallbackEscapeWorkerContext = null;
+
+    fn getCBWorkerContext() *CallbackEscapeWorkerContext {
+        return cb_context_ptr.?;
+    }
+
+    fn cbEscapeWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
+        _ = worker_id;
+        var result = parallel.WorkerResult{};
+        const func: c.LLVMValueRef = @ptrFromInt(item.func);
+
+        if (item.is_declaration) {
+            const wctx = getCBWorkerContext();
+            wctx.mutex.lock();
+            defer wctx.mutex.unlock();
+            const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
+            wctx.ctx_ptr.zone_stats.record(zone);
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        const wctx = getCBWorkerContext();
+
+        // Noise filtering (read-only, no lock needed)
+        const debug_file_path = extractDebugFilePath(func);
+        const classification = NoiseReduction.classifyFunction(item.func_name, debug_file_path, wctx.noise_cfg);
+        if (classification.origin == .compiler_generated) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (FPWhitelist.is_known_fp(item.func_name) != null) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (!wctx.ctx_ptr.isRelevantFunction(@as(u64, item.func))) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        // Per-function local stats
+        var fn_stats = EscapeStats{};
+
+        hooks.resetHookStatesForFunction();
+
+        // Core analysis + issue reporting under mutex
+        wctx.mutex.lock();
+        defer wctx.mutex.unlock();
+
+        analyzeFunction(wctx.ctx_ptr, func, wctx.diag_ptr, &fn_stats) catch |err| {
+            wctx.diag_ptr.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, item.func_name });
+            wctx.ctx_ptr.recordDegradedFunction();
+            result.funcs_errored += 1;
+            return result;
+        };
+
+        result.funcs_analyzed = 1;
+
+        // Store stats in shared array
+        if (wctx.stats_len.* < CB_MAX_WORKERS) {
+            wctx.stats_arr[wctx.stats_len.*] = fn_stats;
+            wctx.stats_len.* += 1;
+        }
+
+        // Hook-based end-of-function checks
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{item.func_name}) catch {
+                return result;
+            };
+            defer wctx.ctx_ptr.allocator.free(msg);
+            const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                wctx.ctx_ptr.allocator.free(msg);
+                return result;
+            };
+            trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
+            const issue = Issue.initWithTrace(.cross_language_leak, msg, Location.init(item.func_name), .medium, 0.65, trace);
+            wctx.ctx_ptr.addIssue(&issue) catch {};
+        }
+        {
+            const count = hooks.pythonUnbalancedDecrefCount();
+            if (count > 0) {
+                const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "{d} unbalanced Py_DECREF(s) in {s}", .{ count, item.func_name }) catch {
+                    return result;
+                };
+                defer wctx.ctx_ptr.allocator.free(msg);
+                const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                    wctx.ctx_ptr.allocator.free(msg);
+                    return result;
+                };
+                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
+                const issue = Issue.initWithTrace(.use_after_free, msg, Location.init(item.func_name), .high, 0.80, trace);
+                wctx.ctx_ptr.addIssue(&issue) catch {};
+            }
+        }
+        return result;
+    }
+
     fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
         const subprogram = c.LLVMGetSubprogram(func);
         if (@intFromPtr(subprogram) == 0) return null;

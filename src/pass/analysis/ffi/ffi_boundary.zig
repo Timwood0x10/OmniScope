@@ -50,6 +50,11 @@ const NoiseReduction = @import("../noise/noise_reduction.zig");
 const ip_ffi = @import("../ip_ffi.zig");
 const severity_rules = @import("../noise/severity_rules.zig");
 
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../../pipeline/parallel.zig");
+// T3.1: Worker context and function (extracted to keep this file <1000 lines)
+const ffi_parallel = @import("ffi_parallel.zig");
+
 // Re-export types for backward compatibility
 const ffi_types = @import("ffi_types.zig");
 pub const FFIBoundaryError = ffi_types.FFIBoundaryError;
@@ -113,41 +118,64 @@ pub const FFIBoundaryPass = struct {
             diag.info("FFIBoundary: consuming {} cross-language edges from CallGraph", .{cross_edges.len});
         }
 
-        // Diagnostic counters for understanding why issues are/aren't generated
-        var total_funcs: u32 = 0;
-        var skipped_irrelevant: u32 = 0;
-        var issues_generated: u32 = 0;
-
         const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) == 0) {
-                total_funcs += 1;
-                // P0-2: Function-level gate — skip functions with no danger-surface-relevant pointers.
-                // EXCEPTION: Always analyze JNI_*/Java_/Py_* functions for FFI boundary detection,
-                // even if DangerSurfacePass didn't mark them as relevant (indirect calls via function
-                // pointers may not be detected by surface analysis).
-                const func_name_ptr = c.LLVMGetValueName(func);
-                const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                    std.mem.span(func_name_ptr)
-                else
-                    "unknown";
-                const is_ffi_boundary_func = (std.mem.indexOf(u8, func_name, "JNI_") != null or
-                    std.mem.indexOf(u8, func_name, "Java_") != null or
-                    std.mem.startsWith(u8, func_name, "Py_")); // Python C API functions use Py_ prefix (e.g., Py_Init, Py_BuildValue)
+        const first_func = c.LLVMGetFirstFunction(mod);
+        if (@intFromPtr(first_func) == 0) return;
 
-                if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func))) and !is_ffi_boundary_func) {
-                    skipped_irrelevant += 1;
-                    continue;
+        // T3.1: Pre-collect all non-declaration functions into work items.
+        var func_count: usize = 0;
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                if (c.LLVMIsDeclaration(f) == 0) func_count += 1;
+            }
+        }
+        if (func_count == 0) return;
+
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        defer ctx.allocator.free(work_items);
+        {
+            var f = c.LLVMGetFirstFunction(mod);
+            var idx: usize = 0;
+            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+                if (c.LLVMIsDeclaration(f) == 0) {
+                    const func_name_ptr = c.LLVMGetValueName(f);
+                    const func_name = if (@intFromPtr(func_name_ptr) != 0)
+                        std.mem.span(func_name_ptr)
+                    else
+                        "unknown";
+                    work_items[idx] = .{
+                        .func = @intFromPtr(f),
+                        .func_name = func_name,
+                        .is_declaration = false,
+                    };
+                    idx += 1;
                 }
-                const result = try @This().analyze(ctx, func, diag);
-                issues_generated += result.count;
             }
         }
 
-        diag.info("FFIBoundary: {d}/{d} funcs analyzed, {d} skipped (irrelevant), {d} issues generated", .{
-            total_funcs - skipped_irrelevant, total_funcs, skipped_irrelevant, issues_generated,
-        });
+        // T3.1: Shared state for parallel analysis
+        var analysis_mutex = std.Thread.Mutex{};
+        var total_analyzed: u32 = 0;
+        var issues_generated: u32 = 0;
+
+        // T3.1: Worker context for FFI boundary analysis (from ffi_parallel.zig)
+        var ffi_worker_ctx = ffi_parallel.FFIBoundaryWorkerContext{
+            .ctx_ptr = ctx,
+            .diag_ptr = diag,
+            .mutex = &analysis_mutex,
+            .total_analyzed_out = &total_analyzed,
+            .issues_out = &issues_generated,
+        };
+
+        ffi_parallel.setFFIWorkerContext(&ffi_worker_ctx);
+        defer ffi_parallel.clearFFIWorkerContext();
+
+        var executor = try parallel.ParallelExecutor.init(ctx.allocator, 0);
+        defer executor.deinit();
+        _ = try executor.run(work_items, ffi_parallel.ffiBoundaryWorkerFn);
+
+        diag.info("FFIBoundary: {d} funcs analyzed, {d} issues generated", .{ total_analyzed, issues_generated });
     }
 
     /// Analyze a single function for FFI boundaries.

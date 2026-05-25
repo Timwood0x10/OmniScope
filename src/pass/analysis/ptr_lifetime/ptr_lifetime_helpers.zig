@@ -146,7 +146,7 @@ pub fn propagateOrigin(
         if (mem_graph) |mg| {
             const from_hash = @as(u64, @intFromPtr(dst));
             const to_hash = @as(u64, @intFromPtr(src));
-            try mg.trackAliasStrong(from_hash, to_hash);
+            _ = mg.trackAliasStrong(from_hash, to_hash) catch {};
         }
     }
 }
@@ -201,7 +201,7 @@ pub fn propagateCrossFunctionFreedStatus(
                             _ = global_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
                             {
                                 const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
-                                _ = try mem_graph.trackFree(free_inst, aliaser_ptr, node.alloc_lang, 0);
+                                _ = mem_graph.trackFree(free_inst, aliaser_ptr, node.alloc_lang, 0) catch {};
                             }
                             propagated += 1;
                         }
