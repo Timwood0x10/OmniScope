@@ -307,6 +307,95 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             go_count += 1;
             continue;
         }
+
+        // Go runtime internal symbols (fine-grained classification)
+        // These are strong signals that uniquely identify Go runtime internals.
+        // Weight: strong signal (2.0) equivalent — unambiguous Go markers.
+        //
+        // Categories:
+        //   GC:         gc*, mallocgc, scanobject, markroot, sweep, scanstack
+        //   Scheduler:  schedule*, park*, wake*, stopm, startm, handoffp
+        //   Channel:    chan*, select*, chanclose, chansend, chanrecv
+        //   Interface:  interface*, assertI2I*, assertE2I*, convI2E*
+        //   Map:        mapaccess*, mapassign*, mapdelete*, mapiter*
+        //   Goroutine:  newproc*, goexit*, systemstack*, morestack*, lessstack*
+        //   Defer:      defer*, deferreturn, deferproc
+        //   Reflect:    reflect.* (medium signal — could be user code using reflect)
+        const is_go_runtime_internal = blk: {
+            if (!std.mem.startsWith(u8, name, "runtime.")) break :blk false;
+
+            const rest = name["runtime.".len..];
+
+            if (std.mem.startsWith(u8, rest, "gc") or
+                std.mem.startsWith(u8, rest, "mallocgc") or
+                std.mem.startsWith(u8, rest, "scanobject") or
+                std.mem.startsWith(u8, rest, "markroot") or
+                std.mem.startsWith(u8, rest, "sweep") or
+                std.mem.startsWith(u8, rest, "scanstack"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "schedule") or
+                std.mem.startsWith(u8, rest, "park") or
+                std.mem.startsWith(u8, rest, "wake") or
+                std.mem.startsWith(u8, rest, "stopm") or
+                std.mem.startsWith(u8, rest, "startm") or
+                std.mem.startsWith(u8, rest, "handoffp"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "chan") or
+                std.mem.startsWith(u8, rest, "select"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "interface") or
+                std.mem.startsWith(u8, rest, "assertI2I") or
+                std.mem.startsWith(u8, rest, "assertE2I") or
+                std.mem.startsWith(u8, rest, "convI2E"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "mapaccess") or
+                std.mem.startsWith(u8, rest, "mapassign") or
+                std.mem.startsWith(u8, rest, "mapdelete") or
+                std.mem.startsWith(u8, rest, "mapiter"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "newproc") or
+                std.mem.startsWith(u8, rest, "goexit") or
+                std.mem.startsWith(u8, rest, "systemstack") or
+                std.mem.startsWith(u8, rest, "morestack") or
+                std.mem.startsWith(u8, rest, "lessstack"))
+            {
+                break :blk true;
+            }
+
+            if (std.mem.startsWith(u8, rest, "defer")) {
+                break :blk true;
+            }
+
+            break :blk false;
+        };
+
+        if (is_go_runtime_internal) {
+            go_count += 1;
+            continue;
+        }
+
+        // Reflect package symbols (medium Go signal)
+        // reflect.* functions are part of Go's reflection system but can also
+        // appear in user code. Weight as medium confidence (1.0).
+        if (std.mem.startsWith(u8, name, "reflect.")) {
+            go_count += 1;
+            continue;
+        }
         // _Cgo_* prefix — CGo bridge functions (unambiguous)
         if (std.mem.indexOf(u8, name, "_Cgo_") != null) {
             go_count += 1;
@@ -697,8 +786,40 @@ fn classifyGlobalName(name: []const u8) ?Language {
         return .rust;
     }
 
-    // Go runtime globals
+    // Go runtime globals (fine-grained classification)
+    // Beyond basic __go_ prefix, detect Go runtime internal globals:
+    //   - GC internals: runtime.gclock*, runtime.gc*, etc.
+    //   - Scheduler: runtime.sched*, runtime.m*
+    //   - Map internals: runtime.map*
     if (std.mem.startsWith(u8, name, "__go_")) {
+        return .go;
+    }
+
+    // Go runtime internal global variables (from Go compiler output)
+    // These globals are emitted by the Go compiler for runtime bookkeeping.
+    const is_go_runtime_global = blk: {
+        if (!std.mem.startsWith(u8, name, "runtime.")) break :blk false;
+
+        const rest = name["runtime.".len..];
+
+        if (std.mem.startsWith(u8, rest, "gclock") or
+            std.mem.startsWith(u8, rest, "gc") or
+            std.mem.startsWith(u8, rest, "sched") or
+            std.mem.startsWith(u8, rest, "mcache") or
+            std.mem.startsWith(u8, rest, "mheap") or
+            std.mem.startsWith(u8, rest, "mcentral") or
+            std.mem.startsWith(u8, rest, "mfixed") or
+            std.mem.startsWith(u8, rest, "allg") or
+            std.mem.startsWith(u8, rest, "allm") or
+            std.mem.startsWith(u8, rest, "allp"))
+        {
+            break :blk true;
+        }
+
+        break :blk false;
+    };
+
+    if (is_go_runtime_global) {
         return .go;
     }
 
@@ -913,6 +1034,77 @@ test "Non-C# symbols are not falsely detected as C#" {
         const lang = classifyGlobalName(sym);
         if (lang) |l| {
             try std.testing.expect(l != .csharp);
+        }
+    }
+}
+
+test "Go runtime internal symbols are classified as Go in classifyGlobalName" {
+    // GC internals
+    const gc_symbols = [_][]const u8{
+        "runtime.gclock_gw",
+        "runtime.gcBgMarkWorker",
+        "runtime.gcStart",
+        "runtime.gcDrain",
+        "runtime.gcSweep",
+        "runtime.gcResetMarkState",
+    };
+
+    for (gc_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.go, lang.?);
+    }
+
+    // Scheduler internals
+    const scheduler_symbols = [_][]const u8{
+        "runtime.schedinit",
+        "runtime.schedule",
+        "runtime.park0",
+        "runtime.park1",
+        "runtime.wakep",
+        "runtime.stopm",
+        "runtime.startm",
+        "runtime.handoffp",
+    };
+
+    for (scheduler_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.go, lang.?);
+    }
+
+    // Memory management internals
+    const mem_symbols = [_][]const u8{
+        "runtime.mcache",
+        "runtime.mheap_",
+        "runtime.mcentral",
+        "runtime.allg",
+        "runtime.allm",
+        "runtime.allp",
+    };
+
+    for (mem_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.go, lang.?);
+    }
+}
+
+test "Non-Go symbols are not falsely detected as Go" {
+    // Ensure we don't get false positives on similar but non-Go patterns
+    const non_go = [_][]const u8{
+        "__rust_no_alloc_shim", // Rust global
+        "__cxa_guard", // C++ ABI
+        "_ZTV4Base", // C++ vtable
+        "System_Console", // C# global
+        "running_time", // contains "runtime" but not prefix
+        "my_runtime_var", // user variable with "runtime" in name
+    };
+
+    for (non_go) |sym| {
+        const lang = classifyGlobalName(sym);
+        if (lang) |l| {
+            try std.testing.expect(l != .go);
         }
     }
 }

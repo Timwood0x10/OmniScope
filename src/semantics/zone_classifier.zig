@@ -487,10 +487,37 @@ fn isLikelyRuntimeInternal(name: []const u8) bool {
         if (std.mem.indexOf(u8, name, pat) != null) return true;
     }
 
-    // Go runtime patterns
+    // Go runtime patterns (fine-grained classification)
+    // Beyond basic prefixes, detect specific Go runtime internal categories
+    // to ensure they are classified as .runtime_internal (not .unknown/.unsafe).
     const go_runtime_patterns = [_][]const u8{
-        "runtime.", "_cgo_",  "crosscall2",
-        "__go_",    "__gcc_",
+        "runtime.",            "_cgo_",              "crosscall2",
+        "__go_",               "__gcc_",
+        // GC internals
+                    "runtime.gc",
+        "runtime.mallocgc",    "runtime.scanobject", "runtime.markroot",
+        "runtime.sweep",       "runtime.scanstack",
+        // Scheduler
+         "runtime.schedule",
+        "runtime.park",        "runtime.wake",       "runtime.stopm",
+        "runtime.startm",      "runtime.handoffp",
+        // Channel operations
+          "runtime.chan",
+        "runtime.select",
+        // Interface conversions
+             "runtime.interface",  "runtime.assertI2I",
+        "runtime.assertE2I",   "runtime.convI2E",
+        // Map operations
+           "runtime.mapaccess",
+        "runtime.mapassign",   "runtime.mapdelete",  "runtime.mapiter",
+        // Goroutine lifecycle
+        "runtime.newproc",     "runtime.goexit",     "runtime.systemstack",
+        "runtime.morestack",   "runtime.lessstack",
+        // Defer mechanism
+         "runtime.defer",
+        "runtime.deferreturn",
+        // Reflect package
+        "reflect.",
     };
 
     for (go_runtime_patterns) |pat| {
@@ -594,6 +621,13 @@ fn classifyZigFunction(func_name: []const u8) ZoneKind {
 
 /// Classify a Go function.
 fn classifyGoFunction(func_name: []const u8) ZoneKind {
+    // Go runtime internal functions → .runtime_internal (safe, skip analysis)
+    // These are compiler-generated runtime support functions, not user code.
+    // They should never be classified as .unsafe or .ffi.
+    if (isGoRuntimeInternal(func_name)) {
+        return .runtime_internal;
+    }
+
     for (GO_ESCAPE_PATTERNS) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {
             return .unsafe;
@@ -611,6 +645,86 @@ fn classifyGoFunction(func_name: []const u8) ZoneKind {
     }
 
     return .unknown;
+}
+
+/// Check if function is a Go runtime internal function.
+///
+/// These are fine-grained patterns for specific Go runtime subsystems:
+///   GC: gc*, mallocgc, scanobject, markroot, sweep, scanstack
+///   Scheduler: schedule*, park*, wake*, stopm, startm, handoffp
+///   Channel: chan*, select*
+///   Interface: interface*, assertI2I*, assertE2I*, convI2E*
+///   Map: mapaccess*, mapassign*, mapdelete*, mapiter*
+///   Goroutine: newproc*, goexit*, systemstack*, morestack*, lessstack*
+///   Defer: defer*, deferreturn
+fn isGoRuntimeInternal(func_name: []const u8) bool {
+    if (!std.mem.startsWith(u8, func_name, "runtime.")) return false;
+
+    const rest = func_name["runtime.".len..];
+
+    // GC internals
+    if (std.mem.startsWith(u8, rest, "gc") or
+        std.mem.startsWith(u8, rest, "mallocgc") or
+        std.mem.startsWith(u8, rest, "scanobject") or
+        std.mem.startsWith(u8, rest, "markroot") or
+        std.mem.startsWith(u8, rest, "sweep") or
+        std.mem.startsWith(u8, rest, "scanstack"))
+    {
+        return true;
+    }
+
+    // Scheduler
+    if (std.mem.startsWith(u8, rest, "schedule") or
+        std.mem.startsWith(u8, rest, "park") or
+        std.mem.startsWith(u8, rest, "wake") or
+        std.mem.startsWith(u8, rest, "stopm") or
+        std.mem.startsWith(u8, rest, "startm") or
+        std.mem.startsWith(u8, rest, "handoffp"))
+    {
+        return true;
+    }
+
+    // Channel operations
+    if (std.mem.startsWith(u8, rest, "chan") or
+        std.mem.startsWith(u8, rest, "select"))
+    {
+        return true;
+    }
+
+    // Interface conversions
+    if (std.mem.startsWith(u8, rest, "interface") or
+        std.mem.startsWith(u8, rest, "assertI2I") or
+        std.mem.startsWith(u8, rest, "assertE2I") or
+        std.mem.startsWith(u8, rest, "convI2E"))
+    {
+        return true;
+    }
+
+    // Map operations
+    if (std.mem.startsWith(u8, rest, "mapaccess") or
+        std.mem.startsWith(u8, rest, "mapassign") or
+        std.mem.startsWith(u8, rest, "mapdelete") or
+        std.mem.startsWith(u8, rest, "mapiter"))
+    {
+        return true;
+    }
+
+    // Goroutine lifecycle
+    if (std.mem.startsWith(u8, rest, "newproc") or
+        std.mem.startsWith(u8, rest, "goexit") or
+        std.mem.startsWith(u8, rest, "systemstack") or
+        std.mem.startsWith(u8, rest, "morestack") or
+        std.mem.startsWith(u8, rest, "lessstack"))
+    {
+        return true;
+    }
+
+    // Defer mechanism
+    if (std.mem.startsWith(u8, rest, "defer")) {
+        return true;
+    }
+
+    return false;
 }
 
 /// Classify a C++ function.
@@ -716,6 +830,75 @@ fn isGoFunction(func_name: []const u8) bool {
     if (std.mem.startsWith(u8, func_name, "runtime.")) return true;
     if (std.mem.startsWith(u8, func_name, "main.")) return true;
     if (std.mem.indexOf(u8, func_name, "C.") != null) return true;
+
+    // Go runtime internal symbols (fine-grained detection)
+    // These are unambiguous Go runtime markers that should be classified
+    // as Go functions for correct zone classification (.runtime_internal).
+    const is_go_runtime_internal = blk: {
+        if (!std.mem.startsWith(u8, func_name, "runtime.")) break :blk false;
+
+        const rest = func_name["runtime.".len..];
+
+        if (std.mem.startsWith(u8, rest, "gc") or
+            std.mem.startsWith(u8, rest, "mallocgc") or
+            std.mem.startsWith(u8, rest, "scanobject") or
+            std.mem.startsWith(u8, rest, "markroot") or
+            std.mem.startsWith(u8, rest, "sweep") or
+            std.mem.startsWith(u8, rest, "scanstack"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "schedule") or
+            std.mem.startsWith(u8, rest, "park") or
+            std.mem.startsWith(u8, rest, "wake") or
+            std.mem.startsWith(u8, rest, "stopm") or
+            std.mem.startsWith(u8, rest, "startm") or
+            std.mem.startsWith(u8, rest, "handoffp"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "chan") or
+            std.mem.startsWith(u8, rest, "select"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "interface") or
+            std.mem.startsWith(u8, rest, "assertI2I") or
+            std.mem.startsWith(u8, rest, "assertE2I") or
+            std.mem.startsWith(u8, rest, "convI2E"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "mapaccess") or
+            std.mem.startsWith(u8, rest, "mapassign") or
+            std.mem.startsWith(u8, rest, "mapdelete") or
+            std.mem.startsWith(u8, rest, "mapiter"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "newproc") or
+            std.mem.startsWith(u8, rest, "goexit") or
+            std.mem.startsWith(u8, rest, "systemstack") or
+            std.mem.startsWith(u8, rest, "morestack") or
+            std.mem.startsWith(u8, rest, "lessstack"))
+        {
+            break :blk true;
+        }
+
+        if (std.mem.startsWith(u8, rest, "defer")) {
+            break :blk true;
+        }
+
+        break :blk false;
+    };
+
+    if (is_go_runtime_internal) return true;
+
     return false;
 }
 
@@ -1231,4 +1414,143 @@ test "isLibcFunction - detects known libc functions" {
     // Non-libc functions
     try std.testing.expect(!isLibcFunction("my_custom_function"));
     try std.testing.expect(!isLibcFunction("pthread_create"));
+}
+
+test "Go runtime internal symbols are classified as .runtime_internal" {
+    // GC internals → .runtime_internal
+    const gc_symbols = [_][]const u8{
+        "runtime.gcStart",
+        "runtime.gcDrain",
+        "runtime.mallocgc",
+        "runtime.scanobject",
+        "runtime.markroot",
+        "runtime.sweep",
+        "runtime.scanstack",
+    };
+
+    for (gc_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Scheduler internals → .runtime_internal
+    const scheduler_symbols = [_][]const u8{
+        "runtime.schedule",
+        "runtime.park0",
+        "runtime.wakep",
+        "runtime.stopm",
+        "runtime.startm",
+        "runtime.handoffp",
+    };
+
+    for (scheduler_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Channel operations → .runtime_internal
+    const channel_symbols = [_][]const u8{
+        "runtime.chansend1",
+        "runtime.chanrecv1",
+        "runtime.chanclose",
+        "runtime.selectgo",
+        "runtime.selectnbrecv",
+    };
+
+    for (channel_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Interface conversions → .runtime_internal
+    const interface_symbols = [_][]const u8{
+        "runtime.interface",
+        "runtime.assertI2I",
+        "runtime.assertI2I2",
+        "runtime.assertE2I",
+        "runtime.convI2E",
+    };
+
+    for (interface_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Map operations → .runtime_internal
+    const map_symbols = [_][]const u8{
+        "runtime.mapaccess1",
+        "runtime.mapaccess2",
+        "runtime.mapassign",
+        "runtime.mapdelete",
+        "runtime.mapiterinit",
+        "runtime.mapiternext",
+    };
+
+    for (map_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Goroutine lifecycle → .runtime_internal
+    const goroutine_symbols = [_][]const u8{
+        "runtime.newproc",
+        "runtime.newproc1",
+        "runtime.goexit",
+        "runtime.systemstack",
+        "runtime.morestack",
+        "runtime.lessstack",
+    };
+
+    for (goroutine_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+
+    // Defer mechanism → .runtime_internal
+    const defer_symbols = [_][]const u8{
+        "runtime.deferproc",
+        "runtime.deferreturn",
+        "runtime.deferprocStack",
+    };
+
+    for (defer_symbols) |sym| {
+        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
+    }
+}
+
+test "Go runtime internal symbols detected by isLikelyRuntimeInternal" {
+    // All Go runtime internal categories should be detected as runtime internal
+    const go_runtime_test_cases = [_][]const u8{
+        // GC
+        "runtime.gcStart",     "runtime.mallocgc",   "runtime.scanobject",
+        // Scheduler
+        "runtime.schedule",    "runtime.park0",      "runtime.wakep",
+        // Channel
+        "runtime.chansend1",   "runtime.selectgo",
+        // Interface
+          "runtime.assertI2I",
+        "runtime.convI2E",
+        // Map
+            "runtime.mapaccess1", "runtime.mapassign",
+        // Goroutine
+        "runtime.newproc",     "runtime.goexit",     "runtime.systemstack",
+        // Defer
+        "runtime.deferreturn",
+        // Reflect
+        "reflect.MakeFunc",
+    };
+
+    for (go_runtime_test_cases) |sym| {
+        try std.testing.expect(isLikelyRuntimeInternal(sym), "{s} should be runtime internal", .{sym});
+    }
+}
+
+test "Non-Go runtime symbols not falsely classified" {
+    // Ensure non-Go symbols are not classified as Go runtime internals
+    const non_go_runtime = [_][]const u8{
+        "main.main", // User code, not runtime
+        "my_package.func", // User code
+        "runtime_custom", // Not prefixed with "runtime."
+        "_ZN4core3ptr", // Rust
+        "std::vector", // C++
+    };
+
+    for (non_go_runtime) |sym| {
+        const result = isGoRuntimeInternal(sym);
+        try std.testing.expect(!result, "{s} should NOT be Go runtime internal", .{sym});
+    }
 }

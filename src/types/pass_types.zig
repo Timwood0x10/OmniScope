@@ -14,6 +14,7 @@ const Allocator = std.mem.Allocator;
 const log = @import("../common/log.zig");
 const c = @import("../ir/llvm_raw.zig").c;
 const PrefixTrie = @import("../common/prefix_trie.zig").PrefixTrie;
+const StringInterner = @import("../common/string_interner.zig").StringInterner;
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -206,6 +207,7 @@ pub const PassContext = struct {
     suppression_stats: issue_suppression.SuppressionStats,
     semantic_resolution: ?*@import("../semantics/resolution_engine.zig").ResolutionEngine,
     evidence: ?ir_evidence.IREvidence,
+    interner: ?StringInterner,
 
     pub fn init(
         allocator: Allocator,
@@ -250,6 +252,7 @@ pub const PassContext = struct {
             .danger_path_visited_cache = null,
             .function_surface = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator),
             .evidence = null,
+            .interner = null,
         };
     }
 
@@ -313,6 +316,9 @@ pub const PassContext = struct {
         if (self.semantic_resolution) |engine| {
             engine.deinit();
             self.allocator.destroy(engine);
+        }
+        if (self.interner) |*intr| {
+            intr.deinit();
         }
     }
 
@@ -763,6 +769,36 @@ pub const PassContext = struct {
 
         const func_ptr = @as(u64, @intFromPtr(func));
         try self.relevant_functions.put(func_ptr, {});
+    }
+
+    /// Intern a string using the optional string interner.
+    ///
+    /// If the interner is initialized (non-null), returns the canonical
+    /// deduplicated copy. Otherwise returns a freshly allocated copy.
+    ///
+    /// Arguments:
+    ///   s - String slice to intern
+    ///
+    /// Returns:
+    ///   Owned string slice (caller must not free directly)
+    ///
+    /// Errors:
+    ///   OutOfMemory if allocation fails
+    pub fn internString(self: *PassContext, s: []const u8) ![]const u8 {
+        if (self.interner) |*intr| {
+            return intr.intern(s);
+        }
+        return self.allocator.dupe(u8, s);
+    }
+
+    /// Enable string interning for this context.
+    ///
+    /// Initializes the internal StringInterner if not already done.
+    /// After calling this, internString() will deduplicate strings.
+    pub fn enableInterning(self: *PassContext) !void {
+        if (self.interner == null) {
+            self.interner = StringInterner.init(self.allocator);
+        }
     }
 };
 

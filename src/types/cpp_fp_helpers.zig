@@ -91,6 +91,38 @@ pub fn is_likely_intentional_pattern(func_name: []const u8) bool {
     return false;
 }
 
+/// C++ internal leak gate patterns — STL/runtime/compiler-generated functions
+/// that allocate memory internally but manage it without user intervention.
+/// These are NOT real leaks and should be suppressed for C++ modules.
+const cpp_internal_leak_patterns = [_][]const u8{
+    "_ZNSt", // std::* (libc++/libstdc++ mangled)
+    "_ZSt", // STL helper functions (std::move, std::forward, etc.)
+    "_ZNKSt", // const std::* methods
+    "__cxx_", // C++ runtime internals
+    "__gxx", // G++ runtime internals
+};
+
+/// Check if an allocation site function name matches C++ internal patterns.
+/// Used by the C++ Internal Leak Gate to suppress FP reports from
+/// STL template expansions and compiler-generated code in C++ modules.
+///
+/// Patterns matched:
+///   - `_ZNSt*`  — libc++/libstdc++ std::* mangled symbols
+///   - `_ZSt*`   — STL algorithm/helper functions
+///   - `_ZNKSt*` — const member methods on std types
+///   - `__cxx_*` — C++ ABI runtime functions
+///   - `__gxx*`  — GNU C++ runtime functions
+///
+/// Returns true if the function should be suppressed by the gate.
+pub fn isCppInternalLeakPattern(func_name: []const u8) bool {
+    for (cpp_internal_leak_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Check if a callee name is an allocation by name.
 pub fn isAllocationByName(callee_name: []const u8) bool {
     return std.mem.indexOf(u8, callee_name, "_Znwm") != null or
@@ -157,7 +189,7 @@ pub fn markAsRcFunction(func: c.LLVMValueRef, rc_set: *std.AutoHashMap(usize, vo
         };
     }
 }
-/// fe_oa_3fc6d3bc256be7a0d3830412c3f5700e267fbf1a58233367
+///
 ///
 /// fe_oa_e8d71d8a8deb220da95dbfeb3ed037de05d3a3f720c0102d
 /// Detect RAII-managed allocations (L3/L4).
@@ -380,4 +412,35 @@ pub fn detectAsPtrBorrowEscape(
             }
         }
     }
+}
+
+// ============================================================================
+// Tests — T1.4 C++ Internal Leak Gate
+// ============================================================================
+
+test "isCppInternalLeakPattern - _ZNSt (std::vector)" {
+    try std.testing.expect(isCppInternalLeakPattern("_ZNSt6vectorC2Ev"));
+}
+
+test "isCppInternalLeakPattern - _ZSt (STL helper)" {
+    try std.testing.expect(isCppInternalLeakPattern("_ZSt4moveIRSt6stringEONSt16remove_referenceIT_E4typeEOS3_"));
+}
+
+test "isCppInternalLeakPattern - _ZNKSt (const std method)" {
+    try std.testing.expect(isCppInternalLeakPattern("_ZNKSt6vectorIiSaIiEE4sizeEv"));
+}
+
+test "isCppInternalLeakPattern - __cxx_ (C++ runtime)" {
+    try std.testing.expect(isCppInternalLeakPattern("__cxx_global_var_init"));
+}
+
+test "isCppInternalLeakPattern - __gxx (G++ runtime)" {
+    try std.testing.expect(isCppInternalLeakPattern("__gxx_personality_v0"));
+}
+
+test "isCppInternalLeakPattern - user code NOT matched" {
+    try std.testing.expect(!isCppInternalLeakPattern("my_cpp_function"));
+    try std.testing.expect(!isCppInternalLeakPattern("malloc"));
+    try std.testing.expect(!isCppInternalLeakPattern("sqlite3Malloc"));
+    try std.testing.expect(!isCppInternalLeakPattern("_Z8myFuncv"));
 }

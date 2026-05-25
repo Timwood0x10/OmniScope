@@ -162,6 +162,7 @@ pub const OwnershipStats = struct {
     rc_containers: u32 = 0,
     rust_into_raw_funcs: u32 = 0,
     rust_from_raw_funcs: u32 = 0,
+    cpp_internal_suppressed: u32 = 0,
 
     pub fn format(
         self: *const OwnershipStats,

@@ -31,6 +31,7 @@ const isCppSpecialMemberFunction = cpp_helpers.isCppSpecialMemberFunction;
 const is_likely_intentional_pattern = cpp_helpers.is_likely_intentional_pattern;
 const isCppAbiInternalFunction = cpp_helpers.isCppAbiInternalFunction;
 const isMeyersSingletonPattern = cpp_helpers.isMeyersSingletonPattern;
+const isCppInternalLeakPattern = cpp_helpers.isCppInternalLeakPattern;
 
 const PtrInfo = cpp_types.PtrInfo;
 const isLikelyStructMemberOwnership = cpp_types.isLikelyStructMemberOwnership;
@@ -343,6 +344,17 @@ pub fn detectMemoryLeaks(
                 diag.debug("LEAK-SKIP: alloc {d} not on danger path (pure internal)", .{alloc_info.inst_id});
                 continue;
             }
+
+            // T1.4 C++ Internal Leak Gate: suppress STL/runtime internal allocations
+            // in C++ modules. These are managed by the C++ runtime and are NOT real leaks.
+            const is_cpp_module = ctx.module_language.language == .cpp or
+                ctx.module_language.language == .unknown;
+            if (is_cpp_module and isCppInternalLeakPattern(alloc_info.func_name)) {
+                stats.cpp_internal_suppressed += 1;
+                diag.debug("CPP-LEAK-GATE: suppressed STL internal leak in {s} (C++ module)", .{alloc_info.func_name});
+                continue;
+            }
+
             const func_ptr_key = @intFromPtr(alloc_info.func_name.ptr);
             const already_reported = reported_func_ptrs.contains(func_ptr_key);
             if (!already_reported) {

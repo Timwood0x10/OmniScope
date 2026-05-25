@@ -189,6 +189,8 @@ pub fn detectResourceLeaks(
 ) void {
     const Issue = @import("../diag/issue.zig").Issue;
     const Location = @import("../diag/issue.zig").Location;
+    const cpp_helpers = @import("cpp_fp_helpers.zig");
+    const isCppInternalLeakPattern = cpp_helpers.isCppInternalLeakPattern;
 
     const mod = ctx.module orelse return;
     const raw_mod = mod.raw;
@@ -249,6 +251,16 @@ pub fn detectResourceLeaks(
             if (has_alloc and !has_free) {
                 const func_name_raw = c.LLVMGetValueName(func);
                 const func_name = if (func_name_raw) |n| std.mem.span(n) else "unknown";
+
+                // T1.4 C++ Internal Leak Gate: suppress resource leak reports
+                // from STL/internal functions in C++ modules
+                const is_cpp_module = ctx.module_language.language == .cpp or
+                    ctx.module_language.language == .unknown;
+                if (is_cpp_module and isCppInternalLeakPattern(func_name)) {
+                    diag.debug("CPP-LEAK-GATE: suppressed resource leak in {s} (C++ STL internal)", .{func_name});
+                    continue;
+                }
+
                 const is_heap_msg: bool = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch {
                     ctx.addIssue(&Issue.init(.memory_leak, "Resource leak detected", Location.init(func_name), .medium, 0.75)) catch {};
                     diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });

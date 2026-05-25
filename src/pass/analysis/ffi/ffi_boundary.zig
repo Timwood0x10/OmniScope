@@ -999,9 +999,9 @@ pub const FFIBoundaryPass = struct {
                 if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') return true;
                 // Rust allocator intrinsics (from ptr_types)
                 const rust_alloc_patterns = [_][]const u8{
-                    "__rust_alloc", "__rdl_alloc", "__rg_alloc",
-                    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
-                    "__rust_realloc", "__rdl_realloc", "__rg_realloc",
+                    "__rust_alloc",    "__rdl_alloc",   "__rg_alloc",
+                    "__rust_dealloc",  "__rdl_dealloc", "__rg_dealloc",
+                    "__rust_realloc",  "__rdl_realloc", "__rg_realloc",
                     "exchange_malloc", "exchange_free",
                 };
                 for (rust_alloc_patterns) |p| {
@@ -1046,11 +1046,11 @@ pub const FFIBoundaryPass = struct {
                 // This is already handled by isLibcFunction() in zone classification,
                 // but we add explicit checks here for completeness
                 const libc_internal = [_][]const u8{
-                    "malloc", "calloc", "realloc", "free",
-                    "memcpy", "memmove", "memset", "memcmp",
-                    "strlen", "strcpy", "strncpy", "strcmp",
-                    "printf", "fprintf", "sprintf", "snprintf",
-                    "fopen", "fclose", "fread", "fwrite",
+                    "malloc",         "calloc",       "realloc", "free",
+                    "memcpy",         "memmove",      "memset",  "memcmp",
+                    "strlen",         "strcpy",       "strncpy", "strcmp",
+                    "printf",         "fprintf",      "sprintf", "snprintf",
+                    "fopen",          "fclose",       "fread",   "fwrite",
                     "pthread_create", "pthread_join",
                 };
                 for (libc_internal) |p| {

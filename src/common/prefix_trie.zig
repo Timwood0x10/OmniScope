@@ -199,7 +199,7 @@ test "prefix trie - basic prefix matching" {
     try std.testing.expect(trie.contains("heap.alloc"));
     try std.testing.expect(trie.contains("mem.copy"));
     try std.testing.expect(!trie.contains("fmt.format")); // Wrong prefix
-    try std.testing.expect(!trie.contains("debug"));      // Too short, no dot
+    try std.testing.expect(!trie.contains("debug")); // Too short, no dot
 }
 
 test "prefix trie - substring matching (indexOf semantics)" {
@@ -209,16 +209,16 @@ test "prefix trie - substring matching (indexOf semantics)" {
     );
 
     // Test substring matches like indexOf would find
-    try std.testing.expect(trie.contains("C.malloc"));         // Contains "malloc"
-    try std.testing.expect(trie.contains("C.free"));           // Contains "free"
-    try std.testing.expect(trie.contains("pthread_create"));   // Exact match
+    try std.testing.expect(trie.contains("C.malloc")); // Contains "malloc"
+    try std.testing.expect(trie.contains("C.free")); // Contains "free"
+    try std.testing.expect(trie.contains("pthread_create")); // Exact match
     try std.testing.expect(trie.contains("my_pthread_create")); // Contains pattern
-    try std.testing.expect(!trie.contains("memcpy"));          // Does not contain "malloc"
+    try std.testing.expect(!trie.contains("memcpy")); // Does not contain "malloc"
 }
 
 test "prefix trie - empty input handling" {
     const trie = comptime PrefixTrie.init(
-        &[_][]const u8{ "test" },
+        &[_][]const u8{"test"},
         .prefix,
     );
 
