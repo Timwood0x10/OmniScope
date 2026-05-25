@@ -112,6 +112,7 @@ pub const Pipeline = struct {
             .suppression_stats = .{},
             .evidence = null,
             .interner = null,
+            .arena = null,
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

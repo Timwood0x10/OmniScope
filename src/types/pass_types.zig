@@ -15,6 +15,7 @@ const log = @import("../common/log.zig");
 const c = @import("../ir/llvm_raw.zig").c;
 const PrefixTrie = @import("../common/prefix_trie.zig").PrefixTrie;
 const StringInterner = @import("../common/string_interner.zig").StringInterner;
+const Arena = @import("../common/arena.zig").Arena;
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -208,6 +209,7 @@ pub const PassContext = struct {
     semantic_resolution: ?*@import("../semantics/resolution_engine.zig").ResolutionEngine,
     evidence: ?ir_evidence.IREvidence,
     interner: ?StringInterner,
+    arena: ?Arena,
 
     pub fn init(
         allocator: Allocator,
@@ -251,8 +253,12 @@ pub const PassContext = struct {
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
             .function_surface = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator),
+            .has_ffi_boundary = true,
+            .suppression_stats = .{},
+            .semantic_resolution = null,
             .evidence = null,
             .interner = null,
+            .arena = null,
         };
     }
 
@@ -319,6 +325,9 @@ pub const PassContext = struct {
         }
         if (self.interner) |*intr| {
             intr.deinit();
+        }
+        if (self.arena) |*a| {
+            a.deinit();
         }
     }
 
@@ -799,6 +808,49 @@ pub const PassContext = struct {
         if (self.interner == null) {
             self.interner = StringInterner.init(self.allocator);
         }
+    }
+
+    /// Enable arena allocator for this context.
+    ///
+    /// Initializes the internal Arena if not already done.
+    /// After calling this, arenaAlloc() returns a fast bump-pointer allocator
+    /// suitable for temporary allocations during analysis passes.
+    ///
+    /// Use cases:
+    /// - Temporary HashMap nodes during single-pass analysis
+    /// - ArrayList elements that are bulk-freed at pass end
+    /// - Any short-lived data that can be freed all at once
+    ///
+    /// Example:
+    ///
+    /// ```zig
+    /// try ctx.enableArena();
+    /// const alloc = ctx.arenaAlloc();
+    /// var temp_list = std.ArrayList(u32).init(alloc);
+    /// ```
+    pub fn enableArena(self: *PassContext) !void {
+        if (self.arena == null) {
+            self.arena = Arena.init(self.allocator);
+        }
+    }
+
+    /// Get the arena allocator if enabled, or fallback to the default allocator.
+    ///
+    /// Returns a std.mem.Allocator that can be used for temporary allocations.
+    /// If the arena is not initialized, falls back to the context's main allocator.
+    ///
+    /// Returns:
+    ///   Allocator interface (arena if enabled, otherwise default allocator)
+    ///
+    /// Note:
+    ///   When using the returned allocator, memory is managed by the arena
+    ///   and will be freed on reset/deinit. Do not call allocator.free() on
+    ///   pointers obtained from this allocator.
+    pub fn arenaAlloc(self: *PassContext) std.mem.Allocator {
+        if (self.arena) |*a| {
+            return @import("../common/arena.zig").arenaAllocator(a);
+        }
+        return self.allocator;
     }
 };
 
