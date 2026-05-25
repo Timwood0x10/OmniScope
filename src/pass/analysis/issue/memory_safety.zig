@@ -194,13 +194,19 @@ pub const MemorySafetyPass = struct {
         // within the same function. If so, the frees are likely in mutually
         // exclusive branches (if/else) — not a real double free.
         //
-        // EXCEPTION: FFI-related frees (cross-language deallocators like
-        // __rust_dealloc, external C free()) should NOT be suppressed because:
+        // EXCEPTION: FFI-related frees should NOT be suppressed because:
         //   1. Loop-pattern calls (e.g., MerkleTree::new calling sha256 N times)
         //      trigger multiple alloc/free cycles that are NOT mutually exclusive
         //   2. Cross-language memory bugs are inherently more dangerous
         //   3. The "mutually exclusive" assumption doesn't hold across ABI boundaries
-        const is_ffi_free = isFFIRelatedFree(free_func_name);
+        //
+        // Detection uses BOTH callee name AND caller context:
+        //   - Callee patterns: __rust_dealloc, free(), c_*, etc.
+        //   - Caller context: FFI boundary functions, loop-pattern callers,
+        //     cross-language wrappers (inflateEnd, PyMem_Free, etc.)
+        const ffi_caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const ffi_caller_name = if (@intFromPtr(ffi_caller_name_ptr) != 0) std.mem.span(ffi_caller_name_ptr) else "";
+        const is_ffi_free = isFFIRelatedFree(free_func_name, ffi_caller_name);
         if (!is_ffi_free) {
             if (free_bb_map.get(ptr_value)) |prev_bb_count| {
                 if (prev_bb_count >= 1) {
@@ -364,28 +370,84 @@ pub const MemorySafetyPass = struct {
         return ffi_utils.isRustDropGlue(func_name);
     }
 
-    /// Check if a free function is FFI-related (cross-language deallocator).
+    /// Check if a free call is FFI-related and should be exempt from
+    /// "mutually exclusive branch" suppression.
     ///
-    /// These functions should NOT be subject to "mutually exclusive branch"
-    /// suppression because:
-    ///   - Loop-pattern FFI calls (e.g., N iterations of c_hash) produce
-    ///     multiple alloc/free cycles that are NOT in mutually exclusive branches
-    ///   - Cross-language memory bugs are higher risk and should be reported
-    ///   - The "if/else" assumption doesn't hold across ABI boundaries
-    fn isFFIRelatedFree(func_name: []const u8) bool {
+    /// Uses TWO signals:
+    ///   1. **Callee name**: Known FFI deallocators (__rust_dealloc, free(), c_*, etc.)
+    ///   2. **Caller context**: Whether the calling function is an FFI boundary
+    ///      or cross-language wrapper (even with non-standard deallocators like
+    ///      inflateEnd, PyMem_Free, cairo_destroy, etc.)
+    fn isFFIRelatedFree(free_func_name: []const u8, caller_func_name: []const u8) bool {
+        // Signal 1: Callee name matches known FFI deallocator patterns
+        if (isFFIDeallocatorName(free_func_name)) return true;
+
+        // Signal 2: Caller function is an FFI boundary or cross-language wrapper
+        if (isFFIBoundaryCaller(caller_func_name)) return true;
+
+        return false;
+    }
+
+    /// Check if a free FUNCTION NAME matches known FFI deallocator patterns.
+    fn isFFIDeallocatorName(func_name: []const u8) bool {
         // Rust global allocator (used in FFI contexts)
         if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
         if (std.mem.indexOf(u8, func_name, "__rust_alloc") != null) return true;
         if (std.mem.indexOf(u8, func_name, "__rust_free") != null) return true;
 
-        // C standard library frees (commonly used in C bridges)
+        // C standard library frees
         if (std.mem.eql(u8, func_name, "free")) return true;
         if (std.mem.eql(u8, func_name, "realloc")) return true;
 
-        // Known FFI bridge patterns
+        // FFI bridge prefix conventions
         if (std.mem.startsWith(u8, func_name, "c_")) return true;
         if (std.mem.startsWith(u8, func_name, "cpp_")) return true;
         if (std.mem.startsWith(u8, func_name, "ffi_")) return true;
+
+        // Common library deallocators used in FFI wrappers
+        const ffi_deallocators = [_][]const u8{
+            "inflateEnd", "deflateEnd", // zlib
+            "PyMem_Free", "PyObject_Free", // Python C API
+            "cairo_destroy", // Cairo
+            "EVP_CIPHER_CTX_free", "EVP_PKEY_free", // OpenSSL
+            "g_string_free", "g_free", // GLib
+            "bson_destroy", // libbson
+        };
+        for (ffi_deallocators) |dealloc| {
+            if (std.mem.eql(u8, func_name, dealloc)) return true;
+        }
+
+        return false;
+    }
+
+    /// Check if a CALLER function looks like an FFI boundary or cross-language wrapper.
+    fn isFFIBoundaryCaller(func_name: []const u8) bool {
+        if (func_name.len == 0) return false;
+
+        // Skip compiler-generated and stdlib internals
+        if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
+        if (std.mem.indexOf(u8, func_name, "__rust_") != null) return false;
+
+        // FFI boundary naming patterns
+        const ffi_patterns = [_][]const u8{
+            "bridge",  "wrapper", "binding", "_ffi",
+            "interop", "marshal", "extern",  "c2",
+            "2c",      "2py",     "py2",     "_cb_",
+            "_impl_",
+        };
+        for (ffi_patterns) |pat| {
+            if (std.mem.indexOf(u8, func_name, pat) != null) return true;
+        }
+
+        // Language transition markers: rust_hash, c_bridge, zig_main, etc.
+        const lang_markers = [_][]const u8{
+            "rust_",    "c_",        "cpp_",     "go_",      "zig_",
+            "_hash",    "_compress", "_encrypt", "_decrypt", "_init",
+            "_cleanup", "_free",     "_destroy",
+        };
+        for (lang_markers) |marker| {
+            if (std.mem.indexOf(u8, func_name, marker) != null) return true;
+        }
 
         return false;
     }

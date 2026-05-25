@@ -63,6 +63,31 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 /// Called from PassContext.addIssue() BEFORE dedup, severity adjustment,
 /// and output — suppressed issues consume zero resources.
 pub fn shouldSuppress(issue: *const Issue) bool {
+    // ════════════════════════════════════════════════════════════
+    // GLOBAL GUARD: Real memory safety bugs are NEVER suppressed
+    // ════════════════════════════════════════════════════════════
+    //
+    // Memory safety violations (double_free, use_after_free, invalid_free,
+    // memory_leak) and FFI boundary issues (ffi_unsafe_call, cross_language_*)
+    // represent GENUINE security vulnerabilities — even when they occur in
+    // functions named "safe_*", involve Rust allocators (__rust_dealloc),
+    // or mention NonNull types.
+    //
+    // The suppression patterns below are designed to filter FALSE POSITIVES
+    // from intra-procedural detectors that can't see inter-procedural context.
+    // They must NOT suppress real bugs that happen to share surface-level
+    // characteristics with those false positive patterns.
+    //
+    // This guard is placed at the top so it applies uniformly to ALL 6 patterns.
+    // Individual pattern functions may add additional kind-specific guards for
+    // finer-grained control (e.g., Pattern A's drop_in_place exception).
+    if (isRealMemorySafetyBug(issue)) {
+        log.debug("[SUPPRESS-PASS] {s} ({s}): Real memory safety bug — exempt from all patterns", .{
+            issue.location.func, @tagName(issue.kind),
+        });
+        return false;
+    }
+
     if (isRustDropChainLeak(issue)) {
         log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
         return true;
@@ -93,6 +118,26 @@ pub fn shouldSuppress(issue: *const Issue) bool {
         return true;
     }
 
+    // Pattern G: Stdlib internal function (language runtime / standard library)
+    //
+    // Issues from compiler/runtime/stdlib internals are almost always false positives
+    // because:
+    //   1. Stdlib code is heavily audited and tested by the language team
+    //   2. Patterns like "write to immutable" in hash_map.getOrPutContext are normal
+    //      internal operations (e.g., Zig's HashMap initializing cache entries)
+    //   3. These functions are NOT user code and should not appear in security reports
+    //
+    // Detected by function name prefixes that indicate stdlib internals:
+    //   - debug.* (Zig debug info parser)
+    //   - hash_map.* (Zig stdlib HashMap)
+    //   - array_hash_map.* (Zig stdlib ArrayHashMap)
+    //   - std.* (generic stdlib marker)
+    //   - __zig_* (Zig compiler builtins)
+    if (isStdlibInternalFunction(issue)) {
+        log.debug("[SUPPRESS-STDLIB] {s}: Stdlib internal function", .{issue.location.func});
+        return true;
+    }
+
     return false;
 }
 
@@ -104,6 +149,7 @@ pub const SuppressionStats = struct {
     os_api_usage: usize = 0,
     safe_example: usize = 0,
     defensive_coding: usize = 0,
+    stdlib_internal: usize = 0,
     total_suppressed: usize = 0,
 
     pub fn record(self: *SuppressionStats, pattern: Pattern) void {
@@ -114,13 +160,14 @@ pub const SuppressionStats = struct {
             .os_api_usage => self.os_api_usage += 1,
             .safe_example => self.safe_example += 1,
             .defensive_coding => self.defensive_coding += 1,
+            .stdlib_internal => self.stdlib_internal += 1,
         }
         self.total_suppressed += 1;
     }
 
     pub fn logSummary(self: SuppressionStats) void {
         if (self.total_suppressed == 0) return;
-        std.log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d} safe={d} defensive={d}", .{
+        std.log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d} safe={d} defensive={d} stdlib={d}", .{
             self.total_suppressed,
             self.drop_chain,
             self.static_provenance,
@@ -128,11 +175,12 @@ pub const SuppressionStats = struct {
             self.os_api_usage,
             self.safe_example,
             self.defensive_coding,
+            self.stdlib_internal,
         });
     }
 };
 
-const Pattern = enum { drop_chain, static_provenance, panic_cleanup, os_api_usage, safe_example, defensive_coding };
+const Pattern = enum { drop_chain, static_provenance, panic_cleanup, os_api_usage, safe_example, defensive_coding, stdlib_internal };
 
 // ============================================================================
 // Pattern A: Rust Drop Chain / Ownership Cleanup
@@ -156,19 +204,6 @@ pub fn isRustDropChainLeak(issue: *const Issue) bool {
     const msg = issue.message;
     const reason = issue.reason;
     const func = issue.location.func;
-
-    // EXCEPTION: Real memory safety bugs (double_free, invalid_free, use_after_free,
-    // memory_leak) that happen to involve Rust allocators should NOT be suppressed.
-    // These are genuine bugs, not Drop chain false positives.
-    // The __rust_dealloc/__rust_alloc in the message indicates WHERE the bug
-    // occurred, not that it's a false positive.
-    const is_real_memory_bug = switch (issue.kind) {
-        .double_free, .invalid_free, .use_after_free, .memory_leak,
-        .cross_language_leak, .cross_language_free,
-        => true,
-        else => false,
-    };
-    if (is_real_memory_bug) return false;
 
     // ── A1: Rust allocator / drop glue in free side ──
     // "__rust_dealloc" appears when Rust's global allocator frees memory
@@ -227,8 +262,34 @@ pub fn isStaticProvenanceEscape(issue: *const Issue) bool {
     // B1: Explicit code section marker
     if (containsAny(msg, &[_][]const u8{ ".text section", "code section", ".rodata" })) return true;
 
-    // B2: NonNull wrapper around static address
-    if (std.mem.indexOf(u8, msg, "NonNull") != null) return true;
+    // B2: NonNull wrapper around static address — REQUIRES additional context.
+    //
+    // Unconditional "NonNull" match was too aggressive: Rust FFI code commonly
+    // uses NonNull<T> for pointers that cross ABI boundaries, and borrow_escape
+    // detectors flag these as escapes. However, not every NonNull mention is a FP.
+    //
+    // Now requires AT LEAST ONE additional static-provenance signal alongside "NonNull":
+    //   - "from()", "wrap()" → construction from known-static value
+    //   - "static", ".text", "code section" → compile-time address
+    //   - "wrapper", "smart pointer" → abstraction layer over static data
+    if (std.mem.indexOf(u8, msg, "NonNull") != null) {
+        const has_static_context = containsAny(msg, &[_][]const u8{
+            "from(", // NonNull::from(static_addr)
+            "wrap(", // NonNull::wrap(ptr)
+            "static", // static reference
+            ".text", // code section
+            "code section",
+            "wrapper",
+            "smart pointer",
+            "dangling", // known-dangling NonNull (FP pattern)
+        });
+        if (has_static_context) return true;
+
+        // Additional heuristic: function name suggests crypto/stdlib utility
+        // where NonNull wrapping is common and safe
+        if (isCryptoPrimitive(func)) return true;
+        if (isTableDrivenFunction(func)) return true;
+    }
 
     // B3: alloca-derived in known-safe contexts
     // Crypto/hashing functions commonly pass stack buffers to assembly routines
@@ -485,6 +546,64 @@ pub fn isDefensiveCodingPattern(issue: *const Issue) bool {
     return false;
 }
 
+// ============================================================================
+// Pattern G: Stdlib Internal Function
+// ============================================================================
+
+/// Detect if an issue originates from a language standard library or
+/// compiler runtime internal function.
+///
+/// These functions are NOT user code — they are part of the language's
+/// trusted computing base and should not appear in security reports.
+///
+/// Common false positive sources:
+///   - Zig: debug.*, hash_map.*, array_hash_map.* (HashMap internal ops)
+///   - Rust: core::*, alloc::* (standard library internals)
+///   - C++: std::__* (libstdc++ internals)
+///   - General: __* (compiler builtins)
+pub fn isStdlibInternalFunction(issue: *const Issue) bool {
+    const func = issue.location.func;
+    if (func.len == 0) return false;
+
+    // Zig standard library patterns (most common source of FPs)
+    const zig_stdlib_prefixes = [_][]const u8{
+        "debug.", // Zig debug info parser (Dwarf, SelfInfo, etc.)
+        "hash_map.", // Zig stdlib HashMap
+        "array_hash_map.", // Zig stdlib ArrayHashMap
+        "std.", // Generic stdlib marker
+        "builtin.", // Zig compiler builtins
+        "mem.", // Zig memory module
+        "log.", // Zig logging
+    };
+    for (zig_stdlib_prefixes) |prefix| {
+        if (startsWith(func, prefix)) return true;
+    }
+
+    // Rust standard library patterns
+    const rust_stdlib_prefixes = [_][]const u8{
+        "core::",
+        "alloc::",
+        "std::",
+    };
+    for (rust_stdlib_prefixes) |prefix| {
+        if (startsWith(func, prefix)) return true;
+    }
+
+    // C++ standard library patterns (libstdc++ / libc++ internals)
+    const cpp_stdlib_prefixes = [_][]const u8{
+        "std::__",
+        "__gnu_debug",
+    };
+    for (cpp_stdlib_prefixes) |prefix| {
+        if (std.mem.indexOf(u8, func, prefix) != null) return true;
+    }
+
+    // Generic compiler builtin patterns (any language)
+    if (startsWith(func, "__")) return true;
+
+    return false;
+}
+
 fn startsWith(haystack: []const u8, needle: []const u8) bool {
     if (haystack.len < needle.len) return false;
     return std.mem.eql(u8, haystack[0..needle.len], needle);
@@ -552,6 +671,114 @@ fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
     return false;
 }
 
+/// Detect if a double_free issue is actually a pure Rust internal drop chain
+/// false positive, NOT a real memory safety bug.
+///
+/// Rust's ownership system uses Drop trait for cleanup. When a function creates
+/// multiple owned values (e.g., String::with_capacity + format!), each one gets
+/// its own __rust_dealloc call when the function returns. To an intra-procedural
+/// detector that doesn't model Rust's ownership semantics, this looks like double_free.
+///
+/// Conditions for "pure Rust internal" classification:
+///   1. Caller function name is mangled (_ZN... pattern) → Rust-internal, not FFI boundary
+///   2. Message mentions __rust_dealloc or drop_in_place (Rust global allocator)
+///   3. No FFI cross-boundary evidence in message (no external function names)
+///   4. Issue kind is double_free (not use_after_free or invalid_free — those are
+///      always real bugs even in pure Rust)
+fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
+    const func = issue.location.func;
+    const msg = issue.message;
+
+    // Condition 1: Caller must be mangled Rust name
+    // _ZN = Rust name mangling prefix (Itanium C++ ABI style)
+    const is_mangled_rust = std.mem.startsWith(u8, func, "_ZN");
+    if (!is_mangled_rust) return false;
+
+    // Condition 2: Must involve Rust global allocator
+    const has_rust_dealloc = containsAny(msg, &[_][]const u8{
+        "__rust_dealloc",
+        "__rust_alloc",
+        "drop_in_place",
+    });
+    if (!has_rust_dealloc) return false;
+
+    // Condition 3: No FFI cross-boundary evidence
+    // If the message mentions external FFI functions (c_hash, malloc from bridge, etc.)
+    // then this IS a real cross-language double_free
+    const ffi_signals = [_][]const u8{
+        "c_hash",    "c_alloc",        "c_free",
+        "cross-FFI", "cross_language", "FFI Boundary",
+        "FFI call",  "malloc(",        "free(",
+        "extern ",
+    };
+    if (containsAny(msg, &ffi_signals)) return false;
+
+    // All conditions met → pure Rust drop chain FP
+    log.debug("[PURE-RUST-FP] double_free in {s} classified as Rust drop chain FP", .{func});
+    return true;
+}
+
+/// Check if an issue represents a REAL memory safety vulnerability that
+/// should NEVER be suppressed by any pattern.
+///
+/// This is the unified guard placed at the top of shouldSuppress().
+/// It covers:
+///   - Core memory safety violations (double_free, use_after_free, etc.)
+///   - FFI boundary issues (cross-language leaks, unsafe calls)
+///   - Ownership/borrow violations (borrow_escape, type_mismatch)
+///   - Callback safety issues (callback_ownership_risk, etc.)
+///
+/// Rationale: These issue kinds represent GENUINE security vulnerabilities.
+/// Even when they occur in "safe_*" named functions, involve __rust_dealloc,
+/// or mention NonNull types — the detector found a real problem, not a FP.
+fn isRealMemorySafetyBug(issue: *const Issue) bool {
+    // EXCEPTION: Pure-Rust-internal drop chain double_free
+    //
+    // When a Rust function like format_digest() does String::with_capacity + format!,
+    // the IR shows multiple __rust_dealloc calls (one per String allocation).
+    // This looks like double_free but is actually Rust's normal Drop trait cleanup.
+    //
+    // These are NOT real memory safety bugs because:
+    //   1. Caller is mangled Rust name (_ZN11rust_merkle...) → internal, not FFI boundary
+    //   2. Callee is __rust_dealloc / drop_in_place → Rust global allocator
+    //   3. No FFI cross-language evidence in message (no "c_hash", no "cross-FFI")
+    //   4. Issue kind is double_free (not use_after_free or invalid_free)
+    //
+    // In this case, let Pattern A handle it (Rust drop chain FP suppression).
+    if (issue.kind == .double_free) {
+        if (isPureRustInternalDoubleFree(issue)) return false;
+    }
+
+    return switch (issue.kind) {
+        // Core memory safety — NEVER suppress these under any pattern
+        .double_free,
+        .use_after_free,
+        .invalid_free,
+        .memory_leak,
+        => true,
+
+        // Cross-language / FFI boundary — inherently security-relevant
+        .cross_language_leak,
+        .cross_language_free,
+        .ffi_unsafe_call,
+        .ffi_type_mismatch,
+        => true,
+
+        // Ownership & borrow violations — real type-system bugs
+        .borrow_escape,
+        .type_mismatch,
+        => true,
+
+        // Callback safety — real API contract violations
+        .callback_ownership_risk,
+        .callback_signature_mismatch,
+        => true,
+
+        // Everything else — allow normal suppression pipeline
+        else => false,
+    };
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -586,9 +813,17 @@ test "Pattern B — .text section in message" {
     try std.testing.expect(isStaticProvenanceEscape(&i));
 }
 
-test "Pattern B — NonNull in message" {
-    var i = Issue.init(.borrow_escape, "NonNull pointer escapes to FFI", .{ .func = "test" }, .high, 0.85);
+test "Pattern B — NonNull with static context (suppressed)" {
+    // Only suppressed when NonNull appears WITH static-provenance context
+    var i = Issue.init(.stack_address_escape, "NonNull::from(static_addr) pointer escapes to FFI", .{ .func = "test" }, .high, 0.85);
     try std.testing.expect(isStaticProvenanceEscape(&i));
+}
+
+test "Pattern B — NonNull WITHOUT static context (NOT suppressed)" {
+    // Bare "NonNull" without static context → NOT suppressed
+    // This is the B3 fix: real borrow_escape with NonNull type passes through
+    var i = Issue.init(.stack_address_escape, "NonNull pointer escapes to FFI boundary", .{ .func = "user_handler" }, .high, 0.85);
+    try std.testing.expect(!isStaticProvenanceEscape(&i));
 }
 
 test "Pattern B — alloca in crypto function" {
@@ -627,42 +862,64 @@ test "Pattern D — real escape NOT suppressed" {
 }
 
 test "shouldSuppress — combines all 6 patterns" {
-    // A: Rust drop chain
-    var a = Issue.init(.use_after_free, "freed by __rust_dealloc", .{ .func = "t" }, .medium, 0.8);
+    // A: Rust drop chain (use non-memory-bug kind for suppression test)
+    var a = Issue.init(.unchecked_return, "freed by __rust_dealloc", .{ .func = "t" }, .medium, 0.8);
     try std.testing.expect(shouldSuppress(&a));
 
-    // B: Code section
-    var b = Issue.init(.borrow_escape, ".text section pointer", .{ .func = "t" }, .critical, 0.9);
+    // B: Code section (use non-memory-bug kind)
+    var b = Issue.init(.stack_address_escape, ".text section pointer", .{ .func = "t" }, .critical, 0.9);
     try std.testing.expect(shouldSuppress(&b));
 
-    // C: Panic cleanup
-    var c = Issue.init(.double_free, "via panic_in_cleanup", .{ .func = "t" }, .high, 0.85);
+    // C: Panic cleanup (use non-memory-bug kind)
+    var c = Issue.init(.buffer_overflow, "via panic_in_cleanup", .{ .func = "t" }, .high, 0.85);
     try std.testing.expect(shouldSuppress(&c));
 
-    // D: OS API
-    var d = Issue.init(.borrow_escape, "thread_set_state() receives alloca-derived", .{ .func = "t" }, .high, 0.8);
+    // D: OS API (use non-memory-bug kind)
+    var d = Issue.init(.malloc_unchecked, "thread_set_state() receives alloca-derived", .{ .func = "t" }, .high, 0.8);
     try std.testing.expect(shouldSuppress(&d));
 
-    // E: Safe example function
-    var e = Issue.init(.cross_language_free, "Cross-language free in safe_example", .{ .func = "safe_example" }, .critical, 0.9);
+    // E: Safe example function (use non-memory-bug kind)
+    var e = Issue.init(.malloc_unchecked, "Cross-language free in safe_example", .{ .func = "safe_example" }, .critical, 0.9);
     try std.testing.expect(shouldSuppress(&e));
 
     var e2 = Issue.init(.stack_address_escape, "Stack escape in correct_compress", .{ .func = "correct_compress" }, .high, 0.85);
     try std.testing.expect(shouldSuppress(&e2));
 
-    // F: Defensive coding
-    var f = Issue.init(.borrow_escape, "escape in null_ptr_ffi_boundary", .{ .func = "null_ptr_ffi_boundary" }, .high, 0.8);
+    // F: Defensive coding (use non-memory-bug kind)
+    var f = Issue.init(.null_dereference, "escape in null_ptr_ffi_boundary", .{ .func = "null_ptr_ffi_boundary" }, .high, 0.8);
     try std.testing.expect(shouldSuppress(&f));
 
-    var f2 = Issue.init(.cross_language_free, "alloc(0) in zero_size_alloc", .{ .func = "zero_size_alloc" }, .medium, 0.7);
+    var f2 = Issue.init(.integer_overflow, "alloc(0) in zero_size_alloc", .{ .func = "zero_size_alloc" }, .medium, 0.7);
     try std.testing.expect(shouldSuppress(&f2));
 
-    var f3 = Issue.init(.borrow_escape, "overflow in buffer_near_overflow", .{ .func = "buffer_near_overflow" }, .high, 0.75);
+    var f3 = Issue.init(.buffer_overflow, "overflow in buffer_near_overflow", .{ .func = "buffer_near_overflow" }, .high, 0.75);
     try std.testing.expect(shouldSuppress(&f3));
 
     // Real issue passes through
     var real = Issue.init(.memory_leak, "malloc without free in my_handler", .{ .func = "my_handler" }, .high, 0.9);
     try std.testing.expect(!shouldSuppress(&real));
+}
+
+test "Global Guard — real memory bugs bypass ALL patterns" {
+    // double_free in safe_example → NOT suppressed (B1 fix)
+    var df = Issue.init(.double_free, "Double free in safe_example", .{ .func = "safe_example" }, .high, 0.9);
+    try std.testing.expect(!shouldSuppress(&df));
+
+    // borrow_escape mentioning NonNull → NOT suppressed (B3 fix)
+    var be = Issue.init(.borrow_escape, "NonNull pointer escapes to FFI", .{ .func = "user_func" }, .high, 0.85);
+    try std.testing.expect(!shouldSuppress(&be));
+
+    // cross_language_free with __rust_dealloc → NOT suppressed (B2 fix)
+    var clf = Issue.init(.cross_language_free, "Freed by __rust_dealloc in ffi_handler", .{ .func = "ffi_handler" }, .critical, 0.88);
+    try std.testing.expect(!shouldSuppress(&clf));
+
+    // use_after_free in panicking function → NOT suppressed (B4 fix)
+    var uaf = Issue.init(.use_after_free, "UAF via panic_in_cleanup", .{ .func = "_ZN4core9panicking" }, .high, 0.9);
+    try std.testing.expect(!shouldSuppress(&uaf));
+
+    // Non-memory bugs still suppressed normally
+    var fp = Issue.init(.unchecked_return, "Unchecked return in safe_example", .{ .func = "safe_example" }, .medium, 0.7);
+    try std.testing.expect(shouldSuppress(&fp));
 }
 
 test "Pattern E — safe_example prefix" {

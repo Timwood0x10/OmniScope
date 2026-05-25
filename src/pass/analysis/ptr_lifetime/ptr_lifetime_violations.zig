@@ -128,26 +128,28 @@ pub fn checkCrossLanguageFree(
 
     // Path 1: Memory graph has alloc_lang info
     if (mem_graph) |mg| {
-        if (mg.nodes.get(ptr_hash)) |node| {
-            const alloc_lang = node.alloc_lang;
-            const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
-            const alloc_is_c = alloc_lang == .c or alloc_lang == .cpp;
-            const alloc_is_rust = alloc_lang == .rust;
+            if (mg.nodes.get(ptr_hash)) |node| {
+                const alloc_lang = node.alloc_lang;
+                const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
+                const alloc_is_c = alloc_lang == .c; // C only — NOT cpp
+                const alloc_is_rust = alloc_lang == .rust;
 
-            if (free_is_rust and alloc_is_c) {
-                try reportCrossLanguageFree(ctx, func_name, callee_name, "C/C++", "Rust", inst, diag);
-                return;
-            }
-            if (!free_is_rust and alloc_is_rust) {
-                try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", free_lang.?, inst, diag);
-                return;
-            }
+                if (free_is_rust and alloc_is_c) {
+                    try reportCrossLanguageFree(ctx, func_name, callee_name, "C", "Rust", inst, diag);
+                    return;
+                }
+                if (!free_is_rust and alloc_is_rust) {
+                    try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", free_lang.?, inst, diag);
+                    return;
+                }
 
-            // C# / .NET P/Invoke cross-language free detection
-            // Marshal.FreeHGlobal / CoTaskMemFree on non-.NET allocated memory
-            const free_is_csharp = std.mem.eql(u8, free_lang.?, "csharp");
-            const free_is_cpp = std.mem.eql(u8, free_lang.?, "cpp");
-            if ((free_is_csharp or free_is_cpp) and (alloc_is_c or alloc_is_rust)) {
+                // C# / .NET P/Invoke cross-language free detection
+                // Marshal.FreeHGlobal / CoTaskMemFree on non-.NET allocated memory
+                const free_is_csharp = std.mem.eql(u8, free_lang.?, "csharp");
+                const free_is_cpp = std.mem.eql(u8, free_lang.?, "cpp");
+                // IMPORTANT: Only report as cross-language when alloc/free languages DIFFER.
+                // Same-language frees (e.g., C++ delete on C++ new) are normal, not bugs.
+                if ((free_is_csharp or free_is_cpp) and (alloc_is_c or alloc_is_rust)) {
                 try reportCrossLanguageFree(ctx, func_name, callee_name, langToString(alloc_lang), free_lang.?, inst, diag);
                 return;
             }

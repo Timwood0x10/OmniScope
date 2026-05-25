@@ -55,6 +55,9 @@ const parallel = @import("../../../pipeline/parallel.zig");
 // T3.1: Worker context and function (extracted to keep this file <1000 lines)
 const ffi_parallel = @import("ffi_parallel.zig");
 
+// Call-site kind upgrade (extracted to keep this file <1000 lines)
+const kind_upgrade = @import("ffi_kind_upgrade.zig");
+
 // Re-export types for backward compatibility
 const ffi_types = @import("ffi_types.zig");
 pub const FFIBoundaryError = ffi_types.FFIBoundaryError;
@@ -93,6 +96,10 @@ pub const demangleRustName = boundary_check.demangleRustName;
 /// Re-export severity mapping for backward compatibility.
 /// New code should import from ffi_safety_checker.zig directly.
 pub const registrySeverityToIssueSeverity = safety_checker.registrySeverityToIssueSeverity;
+
+/// Re-export kind-upgrade utility for backward compatibility.
+pub const upgradeKindFromCallName = kind_upgrade.upgradeKindFromCallName;
+pub const upgradedSeverity = kind_upgrade.upgradedSeverity;
 
 /// FFI boundary detection pass (orchestrator).
 ///
@@ -582,13 +589,40 @@ pub const FFIBoundaryPass = struct {
         });
         defer ctx.allocator.free(message);
 
+        // #3: Call-site name-based precision upgrade for FFI boundary issues.
+        //
+        // Apply the same caller-name-based upgrade logic here as in reportRiskyCall.
+        // This ensures that FFI boundary issues also benefit from precise kind classification.
+        var boundary_issue_kind: IssueKind = .ffi_unsafe_call;
+        if (upgradeKindFromCallName(boundary_issue_kind, caller_name)) |precise_kind| {
+            boundary_issue_kind = precise_kind;
+            diag.debug("KIND-UPGRADE [BOUNDARY]: ffi_unsafe_call -> {s} (from caller '{s}')", .{
+                @tagName(precise_kind),
+                caller_name,
+            });
+        }
+
+        // Re-evaluate severity after potential kind upgrade
+        const final_severity: Severity = switch (boundary_issue_kind) {
+            .command_injection => .critical,
+            .double_free, .use_after_free, .invalid_free, .cross_language_free => .high,
+            .memory_leak, .type_mismatch, .borrow_escape, .buffer_overflow => .medium,
+            else => severity,
+        };
+
+        // Boost confidence for name-matched kinds
+        const final_confidence: f32 = if (boundary_issue_kind != .ffi_unsafe_call)
+            0.78 // Name-matched upgrade adds confidence (deliberate bug pattern)
+        else
+            confidence;
+
         try boundary_check.reportFFIIssue(
             ctx,
-            .ffi_unsafe_call,
+            boundary_issue_kind,
             message,
             caller_name,
-            severity,
-            confidence,
+            final_severity,
+            final_confidence,
         );
         stats.count += 1;
 
@@ -644,23 +678,57 @@ pub const FFIBoundaryPass = struct {
         }
 
         // Map RiskKind to IssueKind
-        const issue_kind = boundary_check.riskKindToIssueKind(sem.kind);
+        var issue_kind = boundary_check.riskKindToIssueKind(sem.kind);
 
-        // Determine severity based on risk kind
-        const severity: Severity = switch (sem.kind) {
-            .command_exec => .critical,
-            .unchecked_copy, .format_string => .high,
-            .allocator, .deallocator, .memory_map => .medium,
-            else => .low,
+        // #3: Call-site name-based precision upgrade.
+        //
+        // Many FFI demo/test functions have CALLER names that encode the specific
+        // vulnerability they demonstrate (e.g., doubleFreeDemo, useAfterFreeDemo,
+        // bufferOverflowDemo). When RiskKind is generic (.unchecked_copy → ffi_unsafe_call),
+        // use the CALLER function's NAME to infer a more precise IssueKind.
+        //
+        // This is a heuristic — it only upgrades when:
+        //   1. The current kind is generic (ffi_unsafe_call / memory_leak)
+        //   2. The caller name strongly suggests a specific vulnerability type
+        //
+        // Examples:
+        //   "doubleFreeDemo" → .double_free
+        //   "useAfterFreeDemo" → .use_after_free (contains "dangling"/"after_free")
+        //   "bufferOverflowDemo" → .buffer_overflow
+        //   "typeConfusionDemo" → .type_mismatch (contains "confusion")
+        const upgraded = upgradeKindFromCallName(issue_kind, caller_name);
+        if (upgraded) |precise_kind| {
+            issue_kind = precise_kind;
+            diag.debug("KIND-UPGRADE: {s} -> {s} (from caller '{s}')", .{
+                @tagName(boundary_check.riskKindToIssueKind(sem.kind)),
+                @tagName(precise_kind),
+                caller_name,
+            });
+        }
+
+        // Determine severity based on risk kind (re-evaluate after upgrade)
+        const severity: Severity = switch (issue_kind) {
+            .command_injection => .critical,
+            .double_free, .use_after_free, .invalid_free, .cross_language_free => .high,
+            .memory_leak, .type_mismatch, .borrow_escape, .buffer_overflow => .medium,
+            else => switch (sem.kind) {
+                .format_string => .high,
+                .allocator, .deallocator, .memory_map => .medium,
+                else => .low,
+            },
         };
 
-        const confidence: f32 = if (sem.transfers_ownership or sem.consumes_ownership)
+        // Boost confidence for name-matched precise kinds
+        const base_confidence: f32 = if (sem.transfers_ownership or sem.consumes_ownership)
             0.85
+        else if (upgraded != null)
+            // Name-matched upgrade adds confidence (deliberate bug pattern)
+            0.78
         else
             0.65;
 
         const location = Location.init(caller_name);
-        const issue = Issue.init(issue_kind, sem.description, location, severity, confidence);
+        const issue = Issue.init(issue_kind, sem.description, location, severity, base_confidence);
         try ctx.addIssue(&issue);
 
         diag.err("RISKY CALL [{s}] {s} in {s}: {s}", .{

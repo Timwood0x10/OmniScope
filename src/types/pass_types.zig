@@ -421,17 +421,20 @@ pub const PassContext = struct {
     }
 
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
-        log.debug("[ADD-ISSUE] kind={s} func={s} severity={s} conf={d:.2}", .{
-            @tagName(issue.kind), issue.location.func, @tagName(issue.severity), issue.confidence,
-        });
         if (issue_suppression.shouldSuppress(issue)) {
-            log.debug("[ADD-ISSUE-DROP] SUPPRESSED kind={s} func={s}", .{ @tagName(issue.kind), issue.location.func });
+            // Record which pattern caused suppression for accurate stats
             if (issue_suppression.isPanicCleanupDoubleFree(issue)) {
                 self.suppression_stats.record(.panic_cleanup);
             } else if (issue_suppression.isOsApiStandardUsage(issue)) {
                 self.suppression_stats.record(.os_api_usage);
             } else if (issue_suppression.isStaticProvenanceEscape(issue)) {
                 self.suppression_stats.record(.static_provenance);
+            } else if (issue_suppression.isSafeExampleFunction(issue)) {
+                self.suppression_stats.record(.safe_example);
+            } else if (issue_suppression.isDefensiveCodingPattern(issue)) {
+                self.suppression_stats.record(.defensive_coding);
+            } else if (issue_suppression.isStdlibInternalFunction(issue)) {
+                self.suppression_stats.record(.stdlib_internal);
             } else {
                 self.suppression_stats.record(.drop_chain);
             }
@@ -447,13 +450,13 @@ pub const PassContext = struct {
         const func_name = issue.location.func;
         const classification = self.classifyFunctionSurface(func_name, null);
         var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
-        log.debug("[ADD-ISSUE-RISK] kind={s} func={s} risk={s} severity={s} ffi={}", .{
-            @tagName(issue.kind), issue.location.func, @tagName(risk), @tagName(issue.severity), on_danger_path,
-        });
 
         // FFI boundary issues should NOT be suppressed by noise filter
         // FFI cross-ABI calls are inherently security-relevant regardless of function origin
+        // Core memory safety bugs should also bypass risk suppression — a double_free
+        // or use_after_free in an unknown-origin function is still a real vulnerability.
         const is_ffi_issue = switch (issue.kind) {
+            // FFI boundary issues
             .ffi_unsafe_call,
             .ffi_type_mismatch,
             .type_mismatch,
@@ -461,11 +464,18 @@ pub const PassContext = struct {
             .cross_language_free,
             .borrow_escape,
             => true,
+
+            // Core memory safety — never risk-suppressed
+            .double_free,
+            .use_after_free,
+            .invalid_free,
+            .memory_leak,
+            => true,
+
             else => on_danger_path,
         };
 
         if (!is_ffi_issue and issue.severity != .critical and risk == .suppressed) {
-            log.debug("[ADD-ISSUE-DROP] RISK-SUPPRESSED kind={s} func={s}", .{ @tagName(issue.kind), issue.location.func });
             if (issue.owned) {
                 var mutable_issue = issue.*;
                 mutable_issue.deinit(self.allocator);
@@ -482,11 +492,7 @@ pub const PassContext = struct {
         const dedup_key = self.dedupKey(issue);
         if (issue.severity != .critical) {
             const gop = try self.reported_keys.getOrPut(dedup_key);
-            log.debug("[ADD-ISSUE-DEDUP] kind={s} func={s} found_existing={}", .{
-                @tagName(issue.kind), issue.location.func, gop.found_existing,
-            });
             if (gop.found_existing) {
-                log.debug("[ADD-ISSUE-DROP] DEDUP kind={s} func={s}", .{ @tagName(issue.kind), issue.location.func });
                 if (issue.owned) {
                     var mutable_issue = issue.*;
                     mutable_issue.deinit(self.allocator);
