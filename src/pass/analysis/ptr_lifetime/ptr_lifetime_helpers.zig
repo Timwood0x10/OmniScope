@@ -199,10 +199,10 @@ pub fn propagateCrossFunctionFreedStatus(
                     if (mem_graph.nodes.get(aliaser_ptr)) |aliaser_node| {
                         if (!aliaser_node.freed) {
                             _ = global_tracker.markFreed(aliaser_node.alloc_inst, "R8.3-f-alias-propagation");
-                        {
-                            const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
-                            _ = try mem_graph.trackFree(free_inst, aliaser_ptr, node.alloc_lang, 0);
-                        }
+                            {
+                                const free_inst = node.freed_by orelse aliaser_node.alloc_inst;
+                                _ = try mem_graph.trackFree(free_inst, aliaser_ptr, node.alloc_lang, 0);
+                            }
                             propagated += 1;
                         }
                     }

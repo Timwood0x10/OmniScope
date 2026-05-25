@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-const callback_escape = @import("callback_escape.zig");
+const callback_escape = @import("../pass/analysis/callback_escape.zig");
 
 const isCgoBoundary = callback_escape.isCgoBoundary;
 const isGoUnsafeOperation = callback_escape.isGoUnsafeOperation;

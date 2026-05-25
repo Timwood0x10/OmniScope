@@ -559,4 +559,4 @@ pub const reportFreeOrphan = cb_report.reportFreeOrphan;
 pub const makeTrace = cb_report.makeTrace;
 
 // Tests are in callback_escape_test.zig (imported to run tests)
-const _tests = @import("callback_escape_test.zig");
+const _tests = @import("../../types/callback_escape_test.zig");

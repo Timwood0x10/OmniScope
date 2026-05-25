@@ -287,10 +287,10 @@ test "root.zig - module import test" {
 
 // Wire up previously disconnected test modules
 test {
-    _ = @import("pass/analysis/callback_escape_enhanced_test.zig");
+    _ = @import("types/callback_escape_enhanced_test.zig");
     _ = @import("pass/analysis/ffi/ffi_type_mismatch_test.zig");
     _ = @import("pass/analysis/ptr_lifetime/ptr_lifetime_test.zig");
     _ = @import("pass/analysis/noise/noise_reduction_test.zig");
-    _ = @import("pass/analysis/pipeline_deps_test.zig");
+    _ = @import("pipeline/pipeline_deps_test.zig");
     _ = @import("pass/analysis/rust_ffi/rust_ffi_auditor_test.zig");
 }
