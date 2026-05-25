@@ -34,6 +34,9 @@ pub const CPP_SAFE_PATTERNS = zone_types.CPP_SAFE_PATTERNS;
 pub const CPP_ESCAPE_PATTERNS = zone_types.CPP_ESCAPE_PATTERNS;
 pub const C_ESCAPE_PATTERNS = zone_types.C_ESCAPE_PATTERNS;
 
+const language_detector = @import("language_detector.zig");
+const LanguageProfile = language_detector.LanguageProfile;
+
 // C5 FIX: Add thread-local cache for classifyFunction results
 // This is a pure function that was being called repeatedly with the same inputs
 // Cache size: 1024 entries (covers most common function patterns)
@@ -141,6 +144,176 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     }
 
     return result;
+}
+
+/// Evidence-driven zone classification using module-level language detection.
+///
+/// T4.1 Enhancement: Uses LanguageProfile (from language_detector) to select
+/// language-specific rule subsets, improving accuracy for mangled names.
+///
+/// Key improvements over classifyFunction():
+///   1. C++ STL internal helpers (_ZNSt*) → .safe (was .unknown/.unsafe)
+///   2. Rust compiler intrinsics (__rust_*) → .runtime_internal (consistent)
+///   3. C stdlib functions → .safe when in C module context
+///
+/// Fallback: If evidence is null, delegates to original classifyFunction().
+pub fn classifyFunctionWithEvidence(
+    func_name: []const u8,
+    lang: ?Language,
+    evidence: ?LanguageProfile,
+) ZoneKind {
+    if (func_name.len == 0) return .unknown;
+
+    if (evidence) |profile| {
+        return classifyWithEvidence(func_name, lang, profile);
+    }
+
+    return classifyFunction(func_name, lang);
+}
+
+/// Internal: Apply evidence-aware classification rules based on dominant language.
+fn classifyWithEvidence(
+    func_name: []const u8,
+    lang: ?Language,
+    profile: LanguageProfile,
+) ZoneKind {
+    const log = std.log.scoped(.zone_classifier);
+
+    const dominant = profile.language;
+
+    switch (dominant) {
+        .rust => {
+            log.debug("Rust module: applying Rust-aware rules for {s}", .{func_name});
+
+            // Rust module: _ZN* and __rust_* are safe/compiler-generated
+            if (std.mem.startsWith(u8, func_name, "_ZN") or
+                std.mem.startsWith(u8, func_name, "__rust_") or
+                std.mem.startsWith(u8, func_name, "__rdl_") or
+                std.mem.startswith(u8, func_name, "__rg_"))
+            {
+                // Check for Rust allocator intrinsics → runtime_internal
+                const rust_alloc_patterns = [_][]const u8{
+                    "__rust_dealloc",      "__rust_alloc",  "__rust_realloc",
+                    "__rust_alloc_zeroed", "__rdl_dealloc", "__rdl_alloc",
+                    "__rdl_realloc",       "__rg_dealloc",  "__rg_alloc",
+                    "__rg_realloc",
+                };
+                for (rust_alloc_patterns) |pat| {
+                    if (std.mem.indexOf(u8, func_name, pat) != null) {
+                        return .runtime_internal;
+                    }
+                }
+                // Other _ZN* in Rust modules are stdlib/user code → safe or unknown
+                if (std.mem.startsWith(u8, func_name, "_ZN4core") or
+                    std.mem.startsWith(u8, func_name, "_ZN5alloc") or
+                    std.mem.startsWith(u8, func_name, "_ZN3std"))
+                {
+                    return .runtime_internal;
+                }
+            }
+
+            // extern "C" wrappers in Rust → unsafe (FFI boundary)
+            if (std.mem.indexOf(u8, func_name, "extern") != null) {
+                return .ffi;
+            }
+
+            // Delegate to standard Rust classifier for escape pattern detection
+            return classifyRustFunction(func_name);
+        },
+        .cpp => {
+            log.debug("C++ module: applying C++-aware rules for {s}", .{func_name});
+
+            // C++ module: _ZSt* (std) and _ZNSt* (STL internals) → safe
+            if (isCppStlInternal(func_name)) {
+                return .safe;
+            }
+
+            // operator new/delete → safe (RAII-managed)
+            if (isCppOperatorNewDelete(func_name)) {
+                return .safe;
+            }
+
+            // Delegate to standard C++ classifier for user code analysis
+            return classifyCppFunction(func_name);
+        },
+        .c => {
+            log.debug("C module: applying C-aware rules for {s}", .{func_name});
+
+            // C module: known libc functions → safe
+            if (isLibcFunction(func_name)) {
+                return .safe;
+            }
+
+            // Delegate to standard C classifier for user code
+            return classifyCFunction(func_name);
+        },
+        else => {
+            log.debug("Unknown language ({}) fallback to heuristic", .{dominant});
+            return classifyFunction(func_name, lang);
+        },
+    }
+}
+
+/// Check if function name is a C++ STL internal helper (_ZNSt*).
+///
+/// These are Itanium-mangled names from the C++ standard library:
+///   - _ZNSt6vector* → std::vector methods
+///   - _ZNSt3map* → std::map methods
+///   - _ZNSt6string* → std::string methods
+///   - _ZSt* → STL algorithm functions (e.g., std::sort)
+fn isCppStlInternal(func_name: []const u8) bool {
+    // _ZNSt* prefix: STL class method (Itanium mangling)
+    if (std.mem.startsWith(u8, func_name, "_ZNSt")) {
+        return true;
+    }
+
+    // _ZSt* prefix: STL standalone function (e.g., _ZSt4sort)
+    if (std.mem.startsWith(u8, func_name, "_ZSt")) {
+        return true;
+    }
+
+    return false;
+}
+
+/// Check if function is C++ operator new/delete (RAII-managed memory).
+fn isCppOperatorNewDelete(func_name: []const u8) bool {
+    const operators = [_][]const u8{
+        "_Znwm", // operator new
+        "_Znam", // operator new[]
+        "_ZdlPv", // operator delete
+        "_ZdaPv", // operator delete[]
+        "_ZnwmRKSt9nothrow_t", // operator new (nothrow)
+        "_ZnamRKSt9nothrow_t", // operator new[] (nothrow)
+    };
+
+    for (operators) |op| {
+        if (std.mem.startsWith(u8, func_name, op)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Check if function is a known libc/C standard library function.
+fn isLibcFunction(func_name: []const u8) bool {
+    const libc_prefixes = [_][]const u8{
+        "memcpy",  "memmove",  "memset", "memcmp",  "memchr",
+        "strcpy",  "strncpy",  "strcat", "strncat", "strlen",
+        "strcmp",  "strncmp",  "strchr", "strrchr", "strstr",
+        "sprintf", "snprintf", "printf", "fprintf", "vprintf",
+        "atoi",    "atol",     "atof",   "strtol",  "strtod",
+        "strtoul", "abs",      "labs",   "fabs",    "ceil",
+        "floor",   "round",    "qsort",  "bsearch",
+    };
+
+    for (libc_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Classify a function using LLVM metadata (more precise than string matching).
@@ -885,4 +1058,177 @@ test "classifyCFunction - word boundary prevents FP" {
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipeline")); // "pipe" followed by alpha → not a word boundary
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("get_handle_count")); // contains "handle"
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reinitialize")); // contains "init"
+}
+
+// T4.1: Evidence-driven classification tests
+test "classifyFunctionWithEvidence - C++ STL mangled names → .safe" {
+    const cpp_evidence = LanguageProfile{
+        .language = .cpp,
+        .confidence = 0.9,
+        .method = .sampling,
+    };
+
+    // std::vector<int>::push_back (mangled: _ZNSt6vectorIiEE9push_backERKi)
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_ZNSt6vectorIiEE9push_backERKi", null, cpp_evidence),
+    );
+
+    // std::string::c_str (mangled: _ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv)
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv", null, cpp_evidence),
+    );
+
+    // std::map::insert (mangled: _ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi)
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi", null, cpp_evidence),
+    );
+
+    // std::sort (mangled: _ZSt4sortIPiEvT_S3_)
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_ZSt4sortIPiEvT_S3_", null, cpp_evidence),
+    );
+}
+
+test "classifyFunctionWithEvidence - C++ operator new/delete → .safe" {
+    const cpp_evidence = LanguageProfile{
+        .language = .cpp,
+        .confidence = 0.85,
+        .method = .sampling,
+    };
+
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_Znwm", null, cpp_evidence), // operator new
+    );
+
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("_ZdlPv", null, cpp_evidence), // operator delete
+    );
+}
+
+test "classifyFunctionWithEvidence - C++ user code still uses standard rules" {
+    const cpp_evidence = LanguageProfile{
+        .language = .cpp,
+        .confidence = 0.8,
+        .method = .sampling,
+    };
+
+    // User-defined unsafe function (reinterpret_cast) → .unsafe
+    try std.testing.expectEqual(
+        ZoneKind.unsafe,
+        classifyFunctionWithEvidence("reinterpret_cast<int*>", null, cpp_evidence),
+    );
+
+    // Unknown user function → .unknown
+    try std.testing.expectEqual(
+        ZoneKind.unknown,
+        classifyFunctionWithEvidence("my_custom_function", null, cpp_evidence),
+    );
+}
+
+test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics → .runtime_internal" {
+    const rust_evidence = LanguageProfile{
+        .language = .rust,
+        .confidence = 0.95,
+        .method = .sampling,
+    };
+
+    // Rust allocator intrinsics → runtime_internal
+    try std.testing.expectEqual(
+        ZoneKind.runtime_internal,
+        classifyFunctionWithEvidence("__rust_dealloc", null, rust_evidence),
+    );
+
+    try std.testing.expectEqual(
+        ZoneKind.runtime_internal,
+        classifyFunctionWithEvidence("__rust_alloc", null, rust_evidence),
+    );
+
+    // Rust stdlib (_ZN4core*) → runtime_internal
+    try std.testing.expectEqual(
+        ZoneKind.runtime_internal,
+        classifyFunctionWithEvidence("_ZN4core3ptr13drop_in_place", null, rust_evidence),
+    );
+}
+
+test "classifyFunctionWithEvidence - C module with libc functions → .safe" {
+    const c_evidence = LanguageProfile{
+        .language = .c,
+        .confidence = 0.9,
+        .method = .globals,
+    };
+
+    // Known libc functions → safe in C module context
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("memcpy", null, c_evidence),
+    );
+
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("strlen", null, c_evidence),
+    );
+
+    try std.testing.expectEqual(
+        ZoneKind.safe,
+        classifyFunctionWithEvidence("qsort", null, c_evidence),
+    );
+}
+
+test "classifyFunctionWithEvidence - null evidence falls back to original logic" {
+    // Without evidence, should behave exactly like classifyFunction()
+    const result_with_null = classifyFunctionWithEvidence("my_function", null, null);
+    const result_original = classifyFunction("my_function", null);
+
+    try std.testing.expectEqual(result_original, result_with_null);
+}
+
+test "isCppStlInternal - detects STL mangled names" {
+    // _ZNSt* prefix (STL class methods)
+    try std.testing.expect(isCppStlInternal("_ZNSt6vectorIiEE9push_backERKi"));
+    try std.testing.expect(isCppStlInternal("_ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv"));
+    try std.testing.expect(isCppStlInternal("_ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi"));
+
+    // _ZSt* prefix (STL standalone functions)
+    try std.testing.expect(isCppStlInternal("_ZSt4sortIPiEvT_S3_"));
+    try std.testing.expect(isCppStlInternal("_ZSt3maxIiET_RKS1_S1_"));
+
+    // Non-STL _Z* names should not match
+    try std.testing.expect(!isCppStlInternal("_Z9my_funcv"));
+    try std.testing.expect(!isCppStlInternal("_ZN4user6class3fooEv"));
+}
+
+test "isCppOperatorNewDelete - detects memory operators" {
+    try std.testing.expect(isCppOperatorNewDelete("_Znwm")); // operator new
+    try std.testing.expect(isCppOperatorNewDelete("_Znam")); // operator new[]
+    try std.testing.expect(isCppOperatorNewDelete("_ZdlPv")); // operator delete
+    try std.testing.expect(isCppOperatorNewDelete("_ZdaPv")); // operator delete[]
+
+    // Non-operator names
+    try std.testing.expect(!isCppOperatorNewDelete("_Z9my_funcv"));
+    try std.testing.expect(!isCppOperatorNewDelete("malloc"));
+}
+
+test "isLibcFunction - detects known libc functions" {
+    // String operations
+    try std.testing.expect(isLibcFunction("memcpy"));
+    try std.testing.expect(isLibcFunction("strlen"));
+    try std.testing.expect(isLibcFunction("strcpy"));
+
+    // Math functions
+    try std.testing.expect(isLibcFunction("fabs"));
+    try std.testing.expect(isLibcFunction("ceil"));
+
+    // Stdlib functions
+    try std.testing.expect(isLibcFunction("qsort"));
+    try std.testing.expect(isLibcFunction("atoi"));
+
+    // Non-libc functions
+    try std.testing.expect(!isLibcFunction("my_custom_function"));
+    try std.testing.expect(!isLibcFunction("pthread_create"));
 }

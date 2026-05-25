@@ -110,6 +110,7 @@ pub const Pipeline = struct {
             .function_surface = std.AutoHashMap(u64, @import("../semantics/surface_classifier/surface_classifier.zig").FunctionSurface).init(self.allocator),
             .semantic_resolution = null,
             .suppression_stats = .{},
+            .evidence = null,
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

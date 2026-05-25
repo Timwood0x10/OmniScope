@@ -26,6 +26,7 @@ const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
 const language_detector = @import("../semantics/language_detector.zig");
+const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
@@ -204,6 +205,7 @@ pub const PassContext = struct {
     has_ffi_boundary: bool = true,
     suppression_stats: issue_suppression.SuppressionStats,
     semantic_resolution: ?*@import("../semantics/resolution_engine.zig").ResolutionEngine,
+    evidence: ?ir_evidence.IREvidence,
 
     pub fn init(
         allocator: Allocator,
@@ -247,6 +249,7 @@ pub const PassContext = struct {
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
             .function_surface = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator),
+            .evidence = null,
         };
     }
 
@@ -569,6 +572,15 @@ pub const PassContext = struct {
 
         self.module_language = language_detector.detectModuleLanguage(llvm_module);
         self.language_detected = true;
+
+        if (self.evidence == null) {
+            var evidence_collector = ir_evidence.EvidenceCollector.init(self.allocator, llvm_module) catch |err| {
+                log.warn("[pass-types] Evidence collection failed: {}", .{err});
+                return;
+            };
+            defer evidence_collector.deinit();
+            self.evidence = evidence_collector.getEvidence().*;
+        }
 
         log.debug("[pass-types] LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
             @tagName(self.module_language.language),

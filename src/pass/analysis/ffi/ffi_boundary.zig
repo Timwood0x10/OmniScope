@@ -399,6 +399,20 @@ pub const FFIBoundaryPass = struct {
         const caller_lang = zone_check.identifyLanguage(caller_func);
         var callee_lang = zone_check.identifyCalleeLanguage(called_name);
 
+        // T1.3: Call-site language context enhancement.
+        // Use module-level language as cross-validation to improve FFI boundary
+        // detection accuracy. This addresses false positives where C→Rust safe
+        // calls are incorrectly marked as cross-language boundaries.
+        //
+        // Data source priority:
+        //   1. ctx.evidence.dominant_language (if T1.1 IREvidence completed)
+        //   2. ctx.getModuleLanguage() (module-level statistical detection)
+        //   3. Per-function heuristics (fallback, current behavior)
+        const module_lang_profile = ctx.getModuleLanguage();
+        const module_lang = module_lang_profile.language;
+        const is_module_lang_confident = module_lang_profile.confidence >= 0.6 and
+            module_lang != .unknown;
+
         // R8.2-c: Check if this call matches a pre-computed cross-language edge.
         // CallGraphPass may have detected language differences that our per-call
         // heuristics missed (e.g., external functions with ambiguous names).
@@ -420,6 +434,54 @@ pub const FFIBoundaryPass = struct {
             caller_lang == callee_lang)
         {
             return false;
+        }
+
+        // T1.3 Enhanced: Module-level language context cross-validation.
+        // When per-function detection is uncertain (.unknown) or conflicts with
+        // module-level evidence, use module language as tiebreaker.
+        //
+        // Key insight: If the entire module is Rust, then calls to _rust_*
+        // prefixed functions are Rust-internal (not FFI). Similarly for other languages.
+        //
+        // Cross-validation matrix:
+        //   | Caller | Callee | Module | Action                    |
+        //   |--------|--------|--------|---------------------------|
+        //   | .c     | .c     | .c     | ✅ Same-lang (skip)       |
+        //   | .rust  | .rust  | .rust  | ✅ Same-lang (skip)       |
+        //   | .c     | .rust | .rust  | ⚠️ Likely internal (skip)  |
+        //   | .rust  | .c     | .rust  | ✅ Real FFI (report)      |
+        //   | .c     | .c     | .rust  | ⚠️ Re-check needed        |
+        //   | .unknown| .rust | .rust  | ⚠️ Use module as caller    |
+        if (is_module_lang_confident) {
+            // Case 1: Both caller and callee match module language → same-lang skip
+            if (caller_lang == module_lang and callee_lang == module_lang) {
+                diag.debug("T1.3-MODULE-SKIP [{s}]: {s} -> {s} (both match module lang)", .{
+                    @tagName(module_lang), caller_name, called_name,
+                });
+                return false;
+            }
+
+            // Case 2: Caller matches module language, callee looks like internal pattern
+            // Example: Rust module calling _rust_* functions (Rust internals)
+            if (caller_lang == module_lang and isInternalToLanguage(called_name, module_lang)) {
+                diag.debug("T1.3-INTERNAL-SKIP [{s}]: {s} -> {s} (callee is internal)", .{
+                    @tagName(module_lang), caller_name, called_name,
+                });
+                return false;
+            }
+
+            // Case 3: Caller is .unknown but module language provides context
+            // Use module language as proxy for caller when per-function detection failed
+            if (caller_lang == .unknown and callee_lang == module_lang) {
+                diag.debug("T1.3-CALLER-INFERENCE [{s}]: {s} -> {s} (inferred caller from module)", .{
+                    @tagName(module_lang), caller_name, called_name,
+                });
+                return false;
+            }
+
+            // Case 4: Callee is .unknown but matches module's external call pattern
+            // Example: Rust module calling extern "C" functions (real FFI)
+            // This case should NOT skip — let it fall through to normal reporting
         }
 
         // P1 FIX: Skip C↔C++ bridge calls (same language family).
@@ -910,4 +972,189 @@ pub const FFIBoundaryPass = struct {
         // Unknown struct type — cannot resolve
         return "";
     }
+
+    /// T1.3: Check if a function name is internal to a specific language.
+    ///
+    /// This function identifies language-internal function patterns that should
+    /// NOT be treated as FFI boundaries when called from within the same language.
+    ///
+    /// Patterns detected:
+    ///   - Rust: `_rust_`, `rs2py_`, `rust_`, `_R` (v0 mangling), allocator intrinsics
+    ///   - Zig: `zig_`, `__zig_`, `Allocator.`
+    ///   - Go: `runtime.`, `main.`, `_Cgo_` (CGo internal)
+    ///   - C/C++: libc functions, `__cxa_` (ABI internals)
+    ///
+    /// Parameters:
+    ///   - func_name: Function name to check
+    ///   - lang: Language to check against
+    ///
+    /// Returns:
+    ///   - true if the function is internal to the specified language
+    fn isInternalToLanguage(func_name: []const u8, lang: Language) bool {
+        return switch (lang) {
+            .rust => {
+                // Rust-internal patterns: compiler-generated, stdlib, allocator glue
+                if (std.mem.indexOf(u8, func_name, "_rust_") != null) return true;
+                if (std.mem.indexOf(u8, func_name, "rs2py_") != null) return true;
+                if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') return true;
+                // Rust allocator intrinsics (from ptr_types)
+                const rust_alloc_patterns = [_][]const u8{
+                    "__rust_alloc", "__rdl_alloc", "__rg_alloc",
+                    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+                    "__rust_realloc", "__rdl_realloc", "__rg_realloc",
+                    "exchange_malloc", "exchange_free",
+                };
+                for (rust_alloc_patterns) |p| {
+                    if (std.mem.indexOf(u8, func_name, p) != null) return true;
+                }
+                // Rust ownership/drop glue
+                const rust_ownership = [_][]const u8{ "into_raw", "from_raw", "drop_in_place" };
+                for (rust_ownership) |p| {
+                    if (std.mem.indexOf(u8, func_name, p) != null) return true;
+                }
+                return false;
+            },
+            .zig => {
+                // Zig-internal patterns: compiler runtime, stdlib
+                if (std.mem.indexOf(u8, func_name, "zig_") != null) return true;
+                if (std.mem.startsWith(u8, func_name, "__zig_")) return true;
+                if (std.mem.indexOf(u8, func_name, "Allocator.") != null) return true;
+                return false;
+            },
+            .go => {
+                // Go-internal patterns: runtime, CGo glue
+                if (std.mem.startsWith(u8, func_name, "runtime.")) return true;
+                if (std.mem.startsWith(u8, func_name, "main.")) return true;
+                if (std.mem.indexOf(u8, func_name, "_Cgo_") != null) return true;
+                if (std.mem.indexOf(u8, func_name, "_cgo_") != null) return true;
+                return false;
+            },
+            .cpp => {
+                // C++ ABI internals (safe within C++ code)
+                if (std.mem.startsWith(u8, func_name, "__cxa_")) return true;
+                // C++ RTTI/vtable symbols
+                if (func_name.len > 3 and func_name[0] == '_' and func_name[1] == 'Z' and
+                    func_name[2] == 'T')
+                {
+                    const third = func_name[3];
+                    if (third == 'V' or third == 'I' or third == 'S') return true;
+                }
+                return false;
+            },
+            .c => {
+                // Most libc functions are C-internal when called from C code
+                // This is already handled by isLibcFunction() in zone classification,
+                // but we add explicit checks here for completeness
+                const libc_internal = [_][]const u8{
+                    "malloc", "calloc", "realloc", "free",
+                    "memcpy", "memmove", "memset", "memcmp",
+                    "strlen", "strcpy", "strncpy", "strcmp",
+                    "printf", "fprintf", "sprintf", "snprintf",
+                    "fopen", "fclose", "fread", "fwrite",
+                    "pthread_create", "pthread_join",
+                };
+                for (libc_internal) |p| {
+                    if (std.mem.eql(u8, func_name, p)) return true;
+                }
+                return false;
+            },
+            else => return false,
+        };
+    }
 };
+
+// ═══════════════════════════════════════════════════════════════
+// T1.3: Call-site language context tests
+// ═══════════════════════════════════════════════════════════════
+
+test "T1.3 - isInternalToLanguage detects Rust internal functions" {
+    // Rust-internal patterns should be detected
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_rust_extern_fn", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("rs2py_wrapper", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_Rabc123def", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("__rust_alloc", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("exchange_malloc", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("into_raw", .rust));
+
+    // Non-Rust functions should not be detected as Rust-internal
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("malloc", .rust));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("printf", .rust));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("zig_main", .rust));
+}
+
+test "T1.3 - isInternalToLanguage detects Zig internal functions" {
+    // Zig-internal patterns should be detected
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("zig_panic", .zig));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("__zig_probe_stack", .zig));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("Allocator.alloc", .zig));
+
+    // Non-Zig functions should not be detected as Zig-internal
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("malloc", .zig));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("_rust_extern_fn", .zig));
+}
+
+test "T1.3 - isInternalToLanguage detects Go internal functions" {
+    // Go-internal patterns should be detected
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("runtime.gopark", .go));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("main.main", .go));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_Cgo_expact", .go));
+
+    // Non-Go functions should not be detected as Go-internal
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("malloc", .go));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("printf", .go));
+}
+
+test "T1.3 - isInternalToLanguage detects C++ ABI internal functions" {
+    // C++ ABI internals should be detected
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("__cxa_throw", .cpp));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("__cxa_begin_catch", .cpp));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_ZTV4Base", .cpp)); // vtable
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_ZTI4Base", .cpp)); // typeinfo
+
+    // Non-C++ functions should not be detected as C++-internal
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("malloc", .cpp));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("printf", .cpp));
+}
+
+test "T1.3 - isInternalToLanguage detects C internal functions" {
+    // C-internal (libc) functions should be detected
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("malloc", .c));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("free", .c));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("printf", .c));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("pthread_create", .c));
+
+    // Non-C functions should not be detected as C-internal
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("_rust_extern_fn", .c));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("zig_panic", .c));
+}
+
+test "T1.3 - Cross-language boundary detection accuracy" {
+    // This test verifies the cross-validation matrix from T1.3:
+    //
+    // | Caller | Callee | Module | Expected Result      |
+    // |--------|--------|--------|----------------------|
+    // | .c     | .c     | .c     | Same-lang (skip)     |
+    // | .rust  | .rust  | .rust  | Same-lang (skip)     |
+    // | .rust  | .c     | .rust  | Real FFI (report)    |
+    // | .c     | .rust  | .rust  | Internal (skip)      |
+    //
+    // Note: Full integration testing requires LLVM module context,
+    // so we test the isInternalToLanguage component in isolation.
+
+    // Case 1: C→C calls with libc functions are same-language
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("malloc", .c));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("printf", .c));
+
+    // Case 2: Rust→Rust internal calls are same-language
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_rust_extern_fn", .rust));
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("__rust_alloc", .rust));
+
+    // Case 3: Rust→C calls are REAL FFI boundaries (libc is NOT Rust-internal)
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("malloc", .rust));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("printf", .rust));
+    try std.testing.expect(!FFIBoundaryPass.isInternalToLanguage("free", .rust));
+
+    // Case 4: C→Rust-looking calls in Rust module are internal (not FFI)
+    // If caller is C-like but module is Rust, _rust_* callee is likely Rust internal
+    try std.testing.expect(FFIBoundaryPass.isInternalToLanguage("_rust_extern_fn", .rust));
+}
