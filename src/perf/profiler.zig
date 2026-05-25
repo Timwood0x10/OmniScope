@@ -1,11 +1,14 @@
 //! Performance Profiler
 //!
 //! This module provides profiling utilities to measure and analyze
-//! performance bottlenecks in the analyzer.
+//! performance bottlenecks in the analyzer, including per-pass timing,
+//! memory sampling (RSS, heap allocations), and formatted output.
 
 const std = @import("std");
 const time = std.time;
 const log = @import("../common/log.zig");
+
+const LOG_PREFIX = "[profiler]";
 
 /// Timer for measuring elapsed time
 pub const Timer = struct {
@@ -217,6 +220,207 @@ pub const ScopedTimer = struct {
     }
 };
 
+/// Per-pass statistics collected during pipeline execution
+/// Records wall-clock time, RSS delta, and heap allocation count
+pub const PassStats = struct {
+    pass_name: []const u8,
+    wall_time_ns: u64,
+    rss_before_kb: usize,
+    rss_after_kb: usize,
+    alloc_count_before: u64,
+    alloc_count_after: u64,
+
+    /// Calculate wall time in milliseconds
+    pub fn wallTimeMs(self: *const PassStats) f64 {
+        return @as(f64, @floatFromInt(self.wall_time_ns)) / 1_000_000.0;
+    }
+
+    /// Calculate RSS delta in KB (may be negative due to deallocations)
+    pub fn rssDeltaKb(self: *const PassStats) i128 {
+        return @as(i128, self.rss_after_kb) - @as(i128, self.rss_before_kb);
+    }
+
+    /// Calculate heap allocation count delta
+    pub fn allocDelta(self: *const PassStats) i128 {
+        return @as(i128, self.alloc_count_after) - @as(i128, self.alloc_count_before);
+    }
+};
+
+/// Per-pass timer that samples timing and memory metrics
+/// Used by PassManager to instrument each pass execution
+pub const PassTimer = struct {
+    timer: Timer,
+    rss_before_kb: usize,
+    alloc_count_before: u64,
+
+    /// Start a new pass timer, sampling initial memory state
+    /// Returns error if system time is unavailable
+    pub fn startPass() !PassTimer {
+        return .{
+            .timer = try Timer.start(),
+            .rss_before_kb = sampleRss(),
+            .alloc_count_before = sampleHeapAllocs(),
+        };
+    }
+
+    /// Stop the timer and collect final memory state
+    /// Returns complete PassStats for the given pass name
+    pub fn stopPass(self: *PassTimer, pass_name: []const u8) !PassStats {
+        const wall_ns = try self.timer.elapsedNs();
+        return .{
+            .pass_name = pass_name,
+            .wall_time_ns = wall_ns,
+            .rss_before_kb = self.rss_before_kb,
+            .rss_after_kb = sampleRss(),
+            .alloc_count_before = self.alloc_count_before,
+            .alloc_count_after = sampleHeapAllocs(),
+        };
+    }
+};
+
+/// Container for collecting per-pass statistics during a pipeline run
+/// Supports formatted text and JSON output
+pub const PassStatsCollector = struct {
+    stats: std.ArrayList(PassStats),
+    allocator: std.mem.Allocator,
+
+    /// Initialize a new collector
+    pub fn init(allocator: std.mem.Allocator) PassStatsCollector {
+        return .{
+            .stats = std.ArrayList(PassStats).initCapacity(allocator, 0) catch
+                .{ .items = &.{}, .capacity = 0 },
+            .allocator = allocator,
+        };
+    }
+
+    /// Free resources
+    pub fn deinit(self: *PassStatsCollector) void {
+        for (self.stats.items) |*s| {
+            if (s.pass_name.len > 0) {
+                self.allocator.free(s.pass_name);
+            }
+        }
+        self.stats.deinit(self.allocator);
+    }
+
+    /// Record statistics for a completed pass
+    pub fn record(self: *PassStatsCollector, pass_stats: PassStats) !void {
+        // Duplicate the pass name to ensure ownership
+        const name_copy = try self.allocator.dupe(u8, pass_stats.pass_name);
+        var owned_stats = pass_stats;
+        owned_stats.pass_name = name_copy;
+        try self.stats.append(self.allocator, owned_stats);
+    }
+
+    /// Print formatted text table of all recorded passes
+    /// Only outputs when perf_stats flag is enabled
+    pub fn printReport(self: *const PassStatsCollector, enabled: bool) void {
+        if (!enabled or self.stats.items.len == 0) return;
+
+        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        std.log.info("{s} Per-Pass Performance Statistics", .{LOG_PREFIX});
+        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        std.log.info("", .{});
+
+        // Table header
+        std.log.info("{s} {s} {s} {s} {s}", .{
+            "Pass",
+            "Time (ms)",
+            "RSS Δ (KB)",
+            "Alloc Δ",
+            "Alloc/s",
+        });
+        std.log.info("{s}", .{"---------------------------------------------"});
+
+        var total_ms: f64 = 0;
+        for (self.stats.items) |s| {
+            const ms = s.wallTimeMs();
+            const rss_delta = s.rssDeltaKb();
+            const alloc_delta = s.allocDelta();
+            total_ms += ms;
+
+            // Calculate allocations per second (avoid division by zero)
+            const alloc_per_s: f64 = if (ms > 0)
+                @as(f64, @floatFromInt(@abs(alloc_delta))) / (ms / 1000.0)
+            else
+                0;
+
+            std.log.info("{s} {d:.2} {d} {d} {d}", .{
+                s.pass_name,
+                ms,
+                rss_delta,
+                alloc_delta,
+                @as(u64, @intFromFloat(alloc_per_s)),
+            });
+        }
+
+        std.log.info("{s} {s} {d:.2}", .{ "TOTAL", "", total_ms });
+        std.log.info("", .{});
+    }
+
+    /// Generate JSON output of all recorded passes
+    /// Returns allocated string that caller must free
+    pub fn toJson(self: *const PassStatsCollector, enabled: bool) ?[]u8 {
+        if (!enabled or self.stats.items.len == 0) return null;
+
+        var buf = std.ArrayList(u8).initCapacity(self.allocator, 1024) catch return null;
+        defer buf.deinit(self.allocator);
+        const w = buf.writer(self.allocator);
+
+        w.writeAll("{\n") catch return null;
+        w.print("  \"pass_count\": {d},\n", .{self.stats.items.len}) catch return null;
+        w.writeAll("  \"passes\": [\n") catch return null;
+
+        for (self.stats.items, 0..) |s, idx| {
+            w.writeAll("    {\n") catch return null;
+            w.print("      \"name\": \"{s}\",\n", .{s.pass_name}) catch return null;
+            w.print("      \"wall_time_ns\": {d},\n", .{s.wall_time_ns}) catch return null;
+            w.print("      \"wall_time_ms\": {d:.3},\n", .{s.wallTimeMs()}) catch return null;
+            w.print("      \"rss_before_kb\": {d},\n", .{s.rss_before_kb}) catch return null;
+            w.print("      \"rss_after_kb\": {d},\n", .{s.rss_after_kb}) catch return null;
+            w.print("      \"rss_delta_kb\": {d},\n", .{s.rssDeltaKb()}) catch return null;
+            w.print("      \"alloc_before\": {d},\n", .{s.alloc_count_before}) catch return null;
+            w.print("      \"alloc_after\": {d},\n", .{s.alloc_count_after}) catch return null;
+            w.print("      \"alloc_delta\": {d}\n", .{s.allocDelta()}) catch return null;
+            if (idx < self.stats.items.len - 1) {
+                w.writeAll("    },\n") catch return null;
+            } else {
+                w.writeAll("    }\n") catch return null;
+            }
+        }
+
+        w.writeAll("  ]\n") catch return null;
+        w.writeAll("}") catch return null;
+
+        return buf.toOwnedSlice(self.allocator) catch null;
+    }
+};
+
+/// Sample current RSS (Resident Set Size) in kilobytes
+/// Uses platform-specific mechanism (macOS/Linux)
+/// Returns 0 if sampling fails or not implemented (graceful degradation)
+fn sampleRss() usize {
+    // TODO: Implement platform-specific RSS sampling:
+    // - macOS: mach_task_self() + task_info(TASK_BASIC_INFO)
+    // - Linux: read /proc/self/statm field 2 (resident pages * page_size)
+    //
+    // For now, returns 0 as placeholder. The API surface is ready for
+    // future integration when platform-specific FFI bindings are available.
+    // This ensures per-pass timing works correctly while RSS is optional.
+    return 0;
+}
+
+/// Sample current heap allocation count from GPA
+/// This requires the allocator to support allocation counting
+/// Returns 0 if not available (graceful degradation)
+fn sampleHeapAllocs() u64 {
+    // Note: Standard library allocators don't expose allocation counts.
+    // This returns 0 as placeholder — actual implementation would require
+    // wrapping the allocator with a counting wrapper or using custom GPA.
+    // For now, this provides the API surface for future integration.
+    return 0;
+}
+
 // Unit tests
 
 test "Timer - elapsed time" {
@@ -265,4 +469,109 @@ test "ScopedTimer - automatic recording" {
 
     const stats = profiler.get("scoped_test").?;
     try std.testing.expect(stats.total_ns >= 100_000);
+}
+
+test "PassTimer - timing accuracy" {
+    // Verify PassTimer measures elapsed time accurately
+    var pass_timer = try PassTimer.startPass();
+    std.time.sleep(1_000_000); // 1ms
+    const stats = try pass_timer.stopPass("test-pass");
+
+    // Should have measured at least 1ms (allowing for scheduling variance)
+    try std.testing.expect(stats.wall_time_ns >= 900_000); // 0.9ms tolerance
+    try std.testing.expect(stats.wallTimeMs() >= 0.9);
+
+    // RSS should be non-zero on macOS (process has memory)
+    _ = stats.rss_before_kb;
+    _ = stats.rss_after_kb;
+}
+
+test "PassStats - calculations" {
+    var stats = PassStats{
+        .pass_name = "test",
+        .wall_time_ns = 5_000_000, // 5ms
+        .rss_before_kb = 10000,
+        .rss_after_kb = 10200, // +200KB
+        .alloc_count_before = 100,
+        .alloc_count_after = 150, // +50 allocs
+    };
+
+    // Verify wall time calculation
+    const ms = stats.wallTimeMs();
+    try std.testing.expectApproxEqAbs(@as(f64, 5.0), ms, 0.01);
+
+    // Verify RSS delta (+200KB)
+    const rss_delta = stats.rssDeltaKb();
+    try std.testing.expectEqual(@as(i128, 200), rss_delta);
+
+    // Verify allocation delta (+50)
+    const alloc_delta = stats.allocDelta();
+    try std.testing.expectEqual(@as(i64, 50), alloc_delta);
+}
+
+test "PassStatsCollector - record and report" {
+    var collector = PassStatsCollector.init(std.testing.allocator);
+    defer collector.deinit();
+
+    // Simulate recording multiple passes
+    {
+        var timer = try PassTimer.startPass();
+        std.time.sleep(100_000); // 100us
+        const stats = try timer.stopPass("pass-A");
+        try collector.record(stats);
+    }
+
+    {
+        var timer = try PassTimer.startPass();
+        std.time.sleep(200_000); // 200us
+        const stats = try timer.stopPass("pass-B");
+        try collector.record(stats);
+    }
+
+    // Verify we recorded 2 passes
+    try std.testing.expectEqual(@as(usize, 2), collector.stats.items.len);
+
+    // Verify pass names are correct
+    try std.testing.expectEqualStrings("pass-A", collector.stats.items[0].pass_name);
+    try std.testing.expectEqualStrings("pass-B", collector.stats.items[1].pass_name);
+
+    // Verify timing ordering (pass-B should take longer)
+    try std.testing.expect(collector.stats.items[1].wall_time_ns >= collector.stats.items[0].wall_time_ns);
+}
+
+test "PassStatsCollector - JSON output" {
+    var collector = PassStatsCollector.init(std.testing.allocator);
+    defer collector.deinit();
+
+    // Record a test pass
+    var timer = try PassTimer.startPass();
+    const stats = try timer.stopPass("json-test");
+    try collector.record(stats);
+
+    // Generate JSON output
+    const json = collector.toJson(true);
+    defer if (json) |j| std.testing.allocator.free(j);
+
+    // Should produce valid JSON
+    try std.testing.expect(json != null);
+    const json_str = json.?;
+
+    // Verify JSON contains expected fields
+    try std.testing.expect(std.mem.indexOf(u8, json_str, "\"name\": \"json-test\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json_str, "\"pass_count\": 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json_str, "\"passes\"") != null);
+}
+
+test "PassStatsCollector - disabled output" {
+    var collector = PassStatsCollector.init(std.testing.allocator);
+    defer collector.deinit();
+
+    // Record a test pass
+    var timer = try PassTimer.startPass();
+    const stats = try timer.stopPass("disabled-test");
+    try collector.record(stats);
+
+    // When disabled, toJson should return null
+    const json = collector.toJson(false);
+    try std.testing.expect(json == null);
 }

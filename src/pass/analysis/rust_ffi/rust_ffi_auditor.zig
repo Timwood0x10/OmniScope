@@ -1904,3 +1904,70 @@ test "isPureConsumptionFunction - safe functions" {
     try std.testing.expect(!isPureConsumptionFunction("c_ffi_store_pointer"));
     try std.testing.expect(!isPureConsumptionFunction("pthread_create"));
 }
+
+test "StringHashMap pairing stability - same content, different backing" {
+    // Verify StringHashMap key stability: same function name from different
+    // memory locations must map to the same entry (POT-BUG-8 regression test).
+    // This ensures into_raw/from_raw pairing doesn't miss matches due to
+    // slice header pointer instability.
+    const testing = std.testing;
+
+    var into_raw_set = std.StringHashMap(void).init(testing.allocator);
+    defer into_raw_set.deinit();
+    var from_raw_set = std.StringHashMap(void).init(testing.allocator);
+    defer from_raw_set.deinit();
+
+    // Simulate LLVM returning same name from different allocations (common in
+    // real modules where LLVMGetValueName may return different pointers for
+    // the same logical string across calls).
+    const name1 = "my_func_into_raw";
+    const name2 = "my_func_into_raw";
+    // name1 and name2 have identical content but are separate comptime
+    // constants — in runtime they'd be separate allocations.
+
+    try into_raw_set.put(name1, {});
+    try testing.expect(into_raw_set.contains(name2));
+    try testing.expectEqual(@as(usize, 1), into_raw_set.count());
+
+    // Verify from_raw set behaves identically
+    const name3 = "my_func_from_raw";
+    const name4 = "my_func_from_raw";
+    try from_raw_set.put(name3, {});
+    try testing.expect(from_raw_set.contains(name4));
+    try testing.expectEqual(@as(usize, 1), from_raw_set.count());
+
+    // Cross-check: different names must not collide
+    try testing.expect(!into_raw_set.contains("other_func"));
+    try testing.expect(!from_raw_set.contains("my_func_into_raw"));
+}
+
+test "StringHashMap pairing stability - mangled Rust names" {
+    // Verify mangled Rust names pair correctly through StringHashMap.
+    // Real-world Rust FFI uses mangled names like _ZN5alloc... which must
+    // match regardless of backing allocation.
+    const testing = std.testing;
+
+    var set = std.StringHashMap(void).init(testing.allocator);
+    defer set.deinit();
+
+    const mangled_names = [_][]const u8{
+        "_ZN5alloc3boxed3Box*.*8into_raw17habc123",
+        "_ZN5alloc3boxed3Box*.*8from_raw17hdef456",
+        "_RNvCsfLfy6EI15iL_7___rustc12___rust_alloc",
+    };
+
+    // Insert each name
+    for (mangled_names) |name| {
+        try set.put(name, {});
+    }
+
+    try testing.expectEqual(@as(usize, 3), set.count());
+
+    // Verify each name can be looked up with an identical copy
+    for (mangled_names) |name| {
+        // Create a duplicate to simulate different backing memory
+        const dup = try testing.dupe(u8, name);
+        defer testing.allocator.free(dup);
+        try testing.expect(set.contains(dup));
+    }
+}

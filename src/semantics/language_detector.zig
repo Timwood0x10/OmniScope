@@ -472,6 +472,21 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
+        // C++ RTTI / vtable globals (Itanium C++ ABI)
+        // These are unambiguous strong signals — only present in C++ with RTTI enabled:
+        //   _ZTV* = vtable (virtual function table pointer)
+        //   _ZTI* = typeinfo (RTTI type information object)
+        //   _ZTS* = typeinfo name (null-terminated mangled type name)
+        // Weight: same as __cxa_ since they're equally definitive.
+        if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'T') {
+            const third_char = name[3];
+            if (third_char == 'V' or third_char == 'I' or third_char == 'S') {
+                cpp_score += GLOBAL_STRONG_WEIGHT;
+                total_votes += 1;
+                continue;
+            }
+        }
+
         // C linker symbols
         if (std.mem.startsWith(u8, name, "__start_") or
             std.mem.startsWith(u8, name, "__stop_") or
@@ -561,4 +576,108 @@ test "langToIndex covers all Language enum variants without OOB" {
 test "indexToLang returns .unknown for out-of-range indices" {
     try std.testing.expectEqual(Language.unknown, indexToLang(8));
     try std.testing.expectEqual(Language.unknown, indexToLang(100));
+}
+
+/// Classify a single global variable name to its likely language.
+///
+/// This is a test helper that exposes the prefix-matching logic from
+/// detectFromGlobals() for unit-testing individual symbol names without
+/// needing a full LLVM module.
+fn classifyGlobalName(name: []const u8) ?Language {
+    // C++ RTTI / vtable globals (Itanium C++ ABI)
+    if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'T') {
+        const third_char = name[3];
+        if (third_char == 'V' or third_char == 'I' or third_char == 'S') {
+            return .cpp;
+        }
+    }
+
+    // C++ ABI globals (__cxa_guard*, __cxa_atexit, etc.)
+    if (std.mem.startsWith(u8, name, "__cxa_")) {
+        return .cpp;
+    }
+
+    // Rust global patterns
+    if (std.mem.startsWith(u8, name, "__rust_")) {
+        return .rust;
+    }
+
+    // Go runtime globals
+    if (std.mem.startsWith(u8, name, "__go_")) {
+        return .go;
+    }
+
+    // Zig globals
+    if (std.mem.startsWith(u8, name, "zig.") or
+        std.mem.startsWith(u8, name, "__zig_"))
+    {
+        return .zig;
+    }
+
+    // C linker symbols
+    if (std.mem.startsWith(u8, name, "__start_") or
+        std.mem.startsWith(u8, name, "__stop_") or
+        std.mem.startsWith(u8, name, "__end_"))
+    {
+        return .c;
+    }
+
+    return null;
+}
+
+test "C++ vtable/RTTI globals are classified as cpp" {
+    // _ZTV = vtable (virtual function table)
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTV4Base"));
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTVN3foo6BarE"));
+
+    // _ZTI = typeinfo (RTTI type information)
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTI4Base"));
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTIN3foo6BarE"));
+
+    // _ZTS = typeinfo name (mangled type name string)
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTS4Base"));
+    try std.testing.expectEqual(Language.cpp, classifyGlobalName("_ZTSN3foo6BarE"));
+
+    // Edge case: _ZTx where x is not V/I/S should NOT match
+    try std.testing.expectEqual(@as(?Language, null), classifyGlobalName("_ZTX4Base"));
+}
+
+test "Pure C globals are not misclassified as C++" {
+    // C linker symbols should be classified as C, not C++
+    try std.testing.expectEqual(Language.c, classifyGlobalName("__start_mysection"));
+    try std.testing.expectEqual(Language.c, classifyGlobalName("__stop_mysection"));
+    try std.testing.expectEqual(Language.c, classifyGlobalName("__end_mysection"));
+
+    // Common C library symbols should not match C++ patterns
+    try std.testing.expectEqual(@as(?Language, null), classifyGlobalName("printf"));
+    try std.testing.expectEqual(@as(?Language, null), classifyGlobalName("malloc"));
+    try std.testing.expectEqual(@as(?Language, null), classifyGlobalName("global_var"));
+
+    // _Z prefix without _ZT should not trigger RTTI detection
+    // (e.g., plain mangled function names in globals is unusual but possible)
+    try std.testing.expectEqual(@as(?Language, null), classifyGlobalName("_Z4funcv"));
+}
+
+test "C++ with RTTI produces strong cpp signal" {
+    // Simulate a C++ module with multiple RTTI symbols
+    // In real usage, detectFromGlobals would see all of these and
+    // accumulate a high cpp_score
+    const rtti_symbols = [_][]const u8{
+        "_ZTV4Base", // vtable for Base
+        "_ZTVN3foo6BarE", // vtable for foo::Bar
+        "_ZTI4Base", // typeinfo for Base
+        "_ZTIN3foo6BarE", // typeinfo for foo::Bar
+        "_ZTS4Base", // typeinfo name for Base
+        "_ZTIN3foo6BarE", // typeinfo name for foo::Bar
+    };
+
+    var cpp_count: u32 = 0;
+    for (rtti_symbols) |sym| {
+        if (classifyGlobalName(sym)) |lang| {
+            if (lang == .cpp) cpp_count += 1;
+        }
+    }
+
+    // All RTTI symbols should be classified as C++
+    try std.testing.expectEqual(@as(u32, 6), cpp_count);
 }

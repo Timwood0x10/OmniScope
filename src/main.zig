@@ -71,10 +71,15 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     // try pipeline.registerPass(OmniScope.cross_lang.ThreadCrossingPass);
 }
 
-fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader) !AnalyzeResult {
+fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Config) !AnalyzeResult {
     var pipeline = try Pipeline.init(allocator);
     if (loader.getModule()) |module_ref| {
         pipeline.setModule(module_ref);
+    }
+
+    // Enable per-pass profiling if --perf-stats flag is set
+    if (config.perf_stats) {
+        pipeline.setPerfStats(true);
     }
 
     try registerAllPasses(&pipeline);
@@ -630,7 +635,7 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
 
     log.debug("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
 
-    var result = try runModulePipeline(allocator, &loader);
+    var result = try runModulePipeline(allocator, &loader, config);
     defer deinitAnalyzeResult(&result);
 
     try emitOutput(allocator, result.issues, result.func_count, result.time_ms, config);
@@ -711,7 +716,7 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
     log.info("[*] Running per-file pipelines...\n", .{});
     for (loaders.items, 0..) |*loader, i| {
         log.info("  [{d}/{d}] Analyzing: {s} ({d} functions)\n", .{ i + 1, loaders.items.len, files[i], loader.getFunctionCount() });
-        const result = runModulePipeline(allocator, loader) catch |err| {
+        const result = runModulePipeline(allocator, loader, config) catch |err| {
             log.err("  [{d}/{d}] Analysis FAILED: {}\n", .{ i + 1, loaders.items.len, err });
             continue;
         };

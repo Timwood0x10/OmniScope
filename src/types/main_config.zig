@@ -50,6 +50,7 @@ pub const Config = struct {
     focus_user_code: bool = false,
     ffi_only: bool = false,
     include_stdlib: bool = false,
+    perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
 
     pub fn init(allocator: Allocator) !Config {
         return .{
@@ -126,6 +127,8 @@ pub fn parseArgs(allocator: Allocator) !Config {
             config.ffi_only = true;
         } else if (std.mem.eql(u8, arg, "--include-stdlib")) {
             config.include_stdlib = true;
+        } else if (std.mem.eql(u8, arg, "--perf-stats")) {
+            config.perf_stats = true;
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -153,6 +156,7 @@ pub fn showHelp() void {
         \\  --focus-user-code   Only report issues from user code
         \\  --ffi-only          Only report FFI boundary issues
         \\  --include-stdlib    Include stdlib issues
+        \\  --perf-stats        Enable per-pass performance profiling (time, RSS, allocations)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format

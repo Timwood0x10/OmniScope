@@ -306,6 +306,12 @@ pub const Pipeline = struct {
     pub fn registerPass(self: *Pipeline, comptime PassType: type) !void {
         try self.pass_manager.registerPass(PassType);
     }
+
+    /// Enable or disable per-pass performance profiling
+    /// Must be called before run() or runStaticAnalysis()
+    pub fn setPerfStats(self: *Pipeline, enabled: bool) void {
+        self.pass_manager.setPerfStats(enabled);
+    }
 };
 
 /// Pipeline result
