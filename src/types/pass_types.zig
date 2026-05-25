@@ -13,6 +13,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const log = @import("../common/log.zig");
 const c = @import("../ir/llvm_raw.zig").c;
+const PrefixTrie = @import("../common/prefix_trie.zig").PrefixTrie;
 
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -853,8 +854,6 @@ fn isZigStdlibFunction(func_name: []const u8) bool {
         "aead",
         "aes",
     };
-    for (stdlib_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
-    }
-    return false;
+    const trie = comptime PrefixTrie.init(&stdlib_prefixes, .substring);
+    return trie.contains(func_name);
 }

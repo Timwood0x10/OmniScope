@@ -7,6 +7,7 @@ const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 const word_boundary = @import("../utils/word_boundary.zig");
 const PassContext = @import("../pass/pass.zig").PassContext;
+const PrefixTrie = @import("../common/prefix_trie.zig").PrefixTrie;
 
 /// Types of callback escaping violations detected.
 pub const EscapeViolation = enum(u8) {
@@ -126,19 +127,52 @@ pub const GO_UNSAFE_PATTERNS = &[_][]const u8{
 };
 
 // ============================================================================
+// Comptime Trie Instances — replace linear scans with O(n) single-pass matching
+// ============================================================================
+
+/// Pre-built trie for CGO_ENHANCED_PATTERNS + CGO_GLUE_PATTERNS (used in isCgoBoundary)
+pub const cgo_boundary_trie = PrefixTrie.init(CGO_ENHANCED_PATTERNS, .substring);
+
+/// Pre-built trie for CGO_GLUE_PATTERNS only (used in isCgoGlueByPattern)
+pub const cgo_glue_trie = PrefixTrie.init(CGO_GLUE_PATTERNS, .substring);
+
+/// Pre-built trie for GO_UNSAFE_PATTERNS (used in isGoUnsafeOperation)
+pub const go_unsafe_trie = PrefixTrie.init(GO_UNSAFE_PATTERNS, .substring);
+
+/// Pre-built trie for GO_RUNTIME_SAFETY_FUNCTIONS (used in isGoSafetyFunction)
+pub const go_safety_trie = PrefixTrie.init(GO_RUNTIME_SAFETY_FUNCTIONS, .substring);
+
+/// Pre-built trie for C_RETAINING_FUNCTIONS (used in mayRetainInCLanguageAware, isGenericCallbackReceiver)
+pub const c_retaining_trie = PrefixTrie.init(C_RETAINING_FUNCTIONS, .substring);
+
+/// Pre-built trie for callback receiver patterns (used in isCallbackReceiver)
+pub const callback_receiver_trie = PrefixTrie.init(&[_][]const u8{
+    "RegisterNatives",  "SetCallback",            "set_callback",
+    "pthread_create",   "pthread_setcancelstate", "signal",
+    "sigaction",        "SDL_SetEventCallback",   "glfwSetCallback",
+    "curl_easy_setopt",
+}, .substring);
+
+/// Pre-built trie for VOID_CALLBACK_PATTERNS (used in isLikelyCallbackFunction)
+pub const void_callback_trie = PrefixTrie.init(VOID_CALLBACK_PATTERNS, .substring);
+
+/// Pre-built trie for FACTORY_PATTERNS (used in isFactoryFunction)
+pub const factory_trie = PrefixTrie.init(FACTORY_PATTERNS, .substring);
+
+/// Pre-built trie for DESTRUCTOR_PATTERNS (used in isDestructorFunction)
+pub const destructor_trie = PrefixTrie.init(DESTRUCTOR_PATTERNS, .substring);
+
+/// Pre-built trie for TRANSFER_PATTERNS (used in isTransferFunction)
+pub const transfer_trie = PrefixTrie.init(TRANSFER_PATTERNS, .substring);
+
+// ============================================================================
 // Detection Functions
 // ============================================================================
 
 /// Check if a function name indicates cgo boundary code.
 pub fn isCgoBoundary(func_name: []const u8) bool {
-    // First check enhanced patterns
-    for (CGO_ENHANCED_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
+    // Use trie for O(n) single-pass scan instead of O(n*m) linear scan
+    if (cgo_boundary_trie.contains(func_name)) return true;
 
     // Cgo "C." prefix matching with stricter rules to avoid false positives:
     const c_dot_idx = std.mem.indexOf(u8, func_name, "C.");
@@ -160,10 +194,8 @@ pub fn isGoUnsafeOperation(inst: c.LLVMValueRef) bool {
     if (callee_name_ptr == null) return false;
     const callee_name = std.mem.span(callee_name_ptr);
     if (callee_name.len == 0) return false;
-    for (GO_UNSAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
-    }
-    return false;
+    // Use trie for O(n) scan instead of linear loop
+    return go_unsafe_trie.contains(callee_name);
 }
 
 /// Detect Go-specific memory management patterns
@@ -227,28 +259,24 @@ pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
 
 /// Check if name matches cgo glue patterns.
 pub fn isCgoGlueByPattern(name: []const u8) bool {
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
+    // Use trie for CGO_GLUE_PATTERNS
+    if (cgo_glue_trie.contains(name)) return true;
+    // Additional single-pattern checks (not in original pattern array)
     if (std.mem.indexOf(u8, name, "cgocall") != null) return true;
-    if (std.mem.indexOf(u8, name, "_cgo_") != null) return true;
     if (std.mem.startsWith(u8, name, "crosscall")) return true;
     return false;
 }
 
 /// Check if a function is a Go runtime safety function.
 pub fn isGoSafetyFunction(callee_name: []const u8) bool {
-    for (GO_RUNTIME_SAFETY_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-    return false;
+    // Use trie for O(n) scan
+    return go_safety_trie.contains(callee_name);
 }
 
 /// Language-aware pointer retention check.
 pub fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool {
-    for (C_RETAINING_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
+    // Use trie for C_RETAINING_FUNCTIONS
+    if (c_retaining_trie.contains(callee_name)) return true;
     if (caller_is_cgo) {
         const retaining_prefixes = [_][]const u8{
             "register_", "set_", "add_", "subscribe_",

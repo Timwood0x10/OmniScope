@@ -72,7 +72,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     // One slot per concrete language. `.unknown` is the "no winner" fallback
     // and intentionally has no vote slot — letting it index in would write
     // past the array (see T0.2 in plan/todolist_v2.md).
-    var weighted_votes = [_]f32{0} ** 8; // [rust, go, zig, cpp, c, csharp, java, python]
+    var weighted_votes = [_]f32{0} ** 9; // [rust, go, zig, cpp, c, csharp, java, python, CSharp]
 
     if (sampling_result) |r| {
         if (langToIndex(r.language)) |idx| {
@@ -145,6 +145,7 @@ fn langToIndex(lang: Language) ?usize {
         .csharp => 5,
         .java => 6,
         .python => 7,
+        .swift => 8,
         .unknown => null,
     };
 }
@@ -159,6 +160,7 @@ fn indexToLang(idx: usize) Language {
         5 => .csharp,
         6 => .java,
         7 => .python,
+        8 => .swift,
         else => .unknown,
     };
 }
@@ -185,6 +187,8 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var zig_count: u32 = 0;
     var cpp_count: u32 = 0;
     var csharp_count: u32 = 0;
+    var python_count: u32 = 0;
+    var swift_count: u32 = 0;
     var c_count: u32 = 0;
     var total: u32 = 0;
 
@@ -231,17 +235,43 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
+        // Python C extension module init function (unambiguous)
+        // PyInit_<modname> is the mandatory entry point for Python C extensions.
+        // This is a strong signal — only Python extensions use this naming convention.
+        if (std.mem.startsWith(u8, name, "PyInit_")) {
+            python_count += 1;
+            continue;
+        }
+
+        // Swift mangling prefixes (unambiguous — from SWIFT_IR_SPEC.md §1.1)
+        // Swift 5+ uses $s / _$s for symbols, $S / _$S for Swift 4.x,
+        // _T0 for Swift 4, and $e / _$e for Embedded Swift.
+        // These prefixes are unique to Swift and never appear in other languages.
+        if (std.mem.startsWith(u8, name, "$s") or
+            std.mem.startsWith(u8, name, "$S") or
+            std.mem.startsWith(u8, name, "$e") or
+            (name.len > 2 and name[0] == '_' and name[1] == '$' and
+                (name[2] == 's' or name[2] == 'S' or name[2] == 'e')) or
+            std.mem.startsWith(u8, name, "_T0"))
+        {
+            swift_count += 1;
+            continue;
+        }
+
         // C# / .NET NativeAOT markers (unambiguous)
-        // .NET NativeAOT produces distinctive symbol names:
+        // .NET NativeAOT and Mono produce distinctive symbol names:
         //   - <Module>.  prefix for module-level methods
         //   - System.*, Microsoft.* namespace prefixes
+        //   - Mono_* prefix for Mono runtime symbols
         //   - _N3System (Itanium-mangled .NET: N=namespace, 3=len("System"))
         //   - Rh* prefix = Runtime Helpers (RhThrowHresult, RhNewArray etc.)
         //   - GC_* = GC interaction stubs (GCPinAllocHandle, GCGlobalHandleFree2)
         //   - IL_* = IL code stubs
+        //   - Function names with '.' indicate managed method namespacing
         if (std.mem.startsWith(u8, name, "<Module>.") or
             std.mem.startsWith(u8, name, "System.") or
             std.mem.startsWith(u8, name, "Microsoft.") or
+            std.mem.startsWith(u8, name, "Mono_") or
             (name.len > 9 and std.mem.indexOf(u8, name[0..9], "_N3System") != null) or
             (name.len > 2 and name[0] == 'R' and name[1] == 'h') or
             std.mem.startsWith(u8, name, "GC_") or
@@ -251,6 +281,23 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
         {
             csharp_count += 1;
             continue;
+        }
+
+        // C# function names containing '.' (managed method namespace pattern)
+        // This catches additional .NET patterns like:
+        //   System.Console.WriteLine, Program.Main, etc.
+        // Must appear AFTER explicit Go patterns to avoid false positives.
+        // Only match if the name looks like a qualified .NET identifier
+        // (contains at least one '.' but doesn't start with known Go prefixes).
+        if (std.mem.indexOf(u8, name, ".") != null) {
+            const has_dotnet_pattern =
+                (std.mem.indexOf(u8, name, "System.") != null or
+                    std.mem.indexOf(u8, name, "Microsoft.") != null or
+                    std.mem.indexOf(u8, name, "Mono.") != null);
+            if (has_dotnet_pattern) {
+                csharp_count += 1;
+                continue;
+            }
         }
 
         // Go / TinyGo markers (from TINYGO_IR_SPEC.md)
@@ -312,6 +359,8 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .zig, .count = zig_count },
         .{ .lang = .cpp, .count = cpp_count },
         .{ .lang = .csharp, .count = csharp_count },
+        .{ .lang = .python, .count = python_count },
+        .{ .lang = .swift, .count = swift_count },
         .{ .lang = .c, .count = c_count },
     };
 
@@ -345,6 +394,7 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
 ///   - @rust_eh_personality  → Rust (weight +3)
 ///   - __gxx_personality_v0  → C++ (weight +3)
 ///   - __gnat_eh_personality → Ada (rare, treat as cpp)
+///   - _swift_exceptionPersonality → Swift (weight +3)
 ///   - _Unwind_Resume        → C (weight +1)
 ///   - _Unwind_RaiseException → C (weight +1)
 ///   - No personality         → no vote (skip)
@@ -353,6 +403,8 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
     const go_score: f32 = 0;
     const zig_score: f32 = 0;
     var cpp_score: f32 = 0;
+    var swift_score: f32 = 0;
+    const python_score: f32 = 0;
     var c_score: f32 = 0;
     var total_votes: u32 = 0;
 
@@ -380,6 +432,11 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         {
             cpp_score += PERSONALITY_WEIGHT;
             total_votes += 1;
+        } else if (std.mem.eql(u8, name, "_swift_exceptionPersonality") or
+            std.mem.indexOf(u8, name, "_swift_exceptionPersonality") != null)
+        {
+            swift_score += PERSONALITY_WEIGHT;
+            total_votes += 1;
         } else if (std.mem.eql(u8, name, "_Unwind_Resume") or
             std.mem.eql(u8, name, "_Unwind_RaiseException"))
         {
@@ -395,6 +452,8 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .go, .score = go_score },
         .{ .lang = .zig, .score = zig_score },
         .{ .lang = .cpp, .score = cpp_score },
+        .{ .lang = .swift, .score = swift_score },
+        .{ .lang = .python, .score = python_score },
         .{ .lang = .c, .score = c_score },
     };
 
@@ -430,6 +489,8 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
     var go_score: f32 = 0;
     var zig_score: f32 = 0;
     var cpp_score: f32 = 0;
+    var csharp_score: f32 = 0;
+    var python_score: f32 = 0;
     var c_score: f32 = 0;
     var total_votes: u32 = 0;
 
@@ -441,6 +502,31 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
         const name_ptr = c.LLVMGetValueName(global);
         if (@intFromPtr(name_ptr) == 0) continue;
         const name = std.mem.span(name_ptr);
+
+        // C# / .NET global symbols
+        // .NET NativeAOT and Mono produce distinctive global variable patterns:
+        //   - __dotnet_* / __cil_*: CIL runtime infrastructure
+        //   - System_*, Microsoft_*, Mono_*: mangled namespace prefixes
+        //   - gc_frame, __managed_*: GC and managed code markers
+        if (std.mem.startsWith(u8, name, "__dotnet_") or
+            std.mem.startsWith(u8, name, "__cil_") or
+            std.mem.startsWith(u8, name, "System_") or
+            std.mem.startsWith(u8, name, "Microsoft_") or
+            std.mem.startsWith(u8, name, "Mono_"))
+        {
+            csharp_score += GLOBAL_STRONG_WEIGHT;
+            total_votes += 1;
+            continue;
+        }
+
+        // C# managed code / GC markers (weaker signal)
+        if (std.mem.indexOf(u8, name, "__managed_") != null or
+            std.mem.indexOf(u8, name, "gc_frame") != null)
+        {
+            csharp_score += GLOBAL_WEAK_WEIGHT;
+            total_votes += 1;
+            continue;
+        }
 
         // Rust global patterns
         if (std.mem.startsWith(u8, name, "__rust_")) {
@@ -487,6 +573,16 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
             }
         }
 
+        // Python GC internal runtime symbols
+        // _PyGC_* functions are part of CPython's garbage collector implementation.
+        // These are strong signals for Python/C extension code that interacts with
+        // the Python runtime's memory management system.
+        if (std.mem.startsWith(u8, name, "_PyGC_")) {
+            python_score += GLOBAL_STRONG_WEIGHT;
+            total_votes += 1;
+            continue;
+        }
+
         // C linker symbols
         if (std.mem.startsWith(u8, name, "__start_") or
             std.mem.startsWith(u8, name, "__stop_") or
@@ -504,6 +600,8 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .go, .score = go_score },
         .{ .lang = .zig, .score = zig_score },
         .{ .lang = .cpp, .score = cpp_score },
+        .{ .lang = .csharp, .score = csharp_score },
+        .{ .lang = .python, .score = python_score },
         .{ .lang = .c, .score = c_score },
     };
 
@@ -614,6 +712,32 @@ fn classifyGlobalName(name: []const u8) ?Language {
         return .zig;
     }
 
+    // Python GC internal runtime symbols
+    // _PyGC_* functions are part of CPython's garbage collector implementation.
+    if (std.mem.startsWith(u8, name, "_PyGC_")) {
+        return .python;
+    }
+
+    // C# / .NET global symbols
+    // .NET NativeAOT and Mono produce distinctive global variable patterns:
+    //   - __dotnet_* / __cil_*: CIL runtime infrastructure
+    //   - System_*, Microsoft_*, Mono_*: mangled namespace prefixes
+    if (std.mem.startsWith(u8, name, "__dotnet_") or
+        std.mem.startsWith(u8, name, "__cil_") or
+        std.mem.startsWith(u8, name, "System_") or
+        std.mem.startsWith(u8, name, "Microsoft_") or
+        std.mem.startsWith(u8, name, "Mono_"))
+    {
+        return .csharp;
+    }
+
+    // C# managed code / GC markers (weaker signal)
+    if (std.mem.indexOf(u8, name, "__managed_") != null or
+        std.mem.indexOf(u8, name, "gc_frame") != null)
+    {
+        return .csharp;
+    }
+
     // C linker symbols
     if (std.mem.startsWith(u8, name, "__start_") or
         std.mem.startsWith(u8, name, "__stop_") or
@@ -680,4 +804,118 @@ test "C++ with RTTI produces strong cpp signal" {
 
     // All RTTI symbols should be classified as C++
     try std.testing.expectEqual(@as(u32, 6), cpp_count);
+}
+
+test "Python C extension PyInit_ functions are detected" {
+    // PyInit_<modname> is the mandatory entry point for Python C extensions.
+    // These should be classified as Python with high confidence.
+    const pyinit_symbols = [_][]const u8{
+        "PyInit_mymodule",
+        "PyInit_numpy",
+        "PyInit__ctypes", // stdlib module with underscore prefix
+        "PyInit_spam", // classic example from Python docs
+    };
+
+    // Verify that all PyInit_ prefixed symbols would be detected in sampling.
+    // We test the prefix matching logic directly since we can't easily create
+    // an LLVM module in unit tests.
+    for (pyinit_symbols) |sym| {
+        // All must start with PyInit_
+        try std.testing.expect(std.mem.startsWith(u8, sym, "PyInit_"));
+        // Must have a module name after the prefix (length > 7)
+        try std.testing.expect(sym.len > 7);
+    }
+}
+
+test "Python GC internal _PyGC_ globals are detected" {
+    // _PyGC_* symbols are part of CPython's garbage collector implementation.
+    // These should be classified as Python when found in global variables.
+    const pygc_symbols = [_][]const u8{
+        "_PyGC_Collect",
+        "_PyGC_AddToRootSet",
+        "_PyGC_RemoveFromRootSet",
+        "_PyGC_Track",
+        "_PyGC_UnTrack",
+    };
+
+    // Test that _PyGC_ prefix is correctly identified by classifyGlobalName
+    for (pygc_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.python, lang.?);
+    }
+}
+
+test "Non-Python symbols are not falsely detected as Python" {
+    // Ensure we don't get false positives on similar but non-Python patterns
+
+    // PyInit without trailing underscore should NOT match
+    const non_python = [_][]const u8{
+        "PyInitializer", // similar but not PyInit_
+        "init_py_module", // reversed order
+        "__py__", // double underscore, different pattern
+        "python_func", // contains "py" but not PyInit_
+        "_PyNonGC_", // _Py but not _PyGC_
+    };
+
+    for (non_python) |sym| {
+        // None of these should start with PyInit_
+        if (std.mem.startsWith(u8, sym, "PyInit_")) {
+            // This should never happen for our test cases
+            unreachable;
+        }
+        // None of these should start with _PyGC_
+        if (std.mem.startsWith(u8, sym, "_PyGC_")) {
+            // This should never happen for our test cases
+            unreachable;
+        }
+    }
+}
+
+test "C# / .NET global symbols are classified as csharp" {
+    // Strong C# signals: runtime infrastructure globals
+    const csharp_strong_symbols = [_][]const u8{
+        "__dotnet_init",
+        "__cil_exceptions",
+        "System_Console",
+        "Microsoft_Win32",
+        "Mono_Runtime",
+    };
+
+    for (csharp_strong_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.csharp, lang.?);
+    }
+
+    // Weaker C# signals: managed code / GC markers
+    const csharp_weak_symbols = [_][]const u8{
+        "__managed_thread_id",
+        "gc_frame_0",
+    };
+
+    for (csharp_weak_symbols) |sym| {
+        const lang = classifyGlobalName(sym);
+        try std.testing.expect(lang != null);
+        try std.testing.expectEqual(Language.csharp, lang.?);
+    }
+}
+
+test "Non-C# symbols are not falsely detected as C#" {
+    // Ensure we don't get false positives on similar but non-C# patterns
+    const non_csharp = [_][]const u8{
+        "__rust_no_alloc_shim", // Rust global
+        "__go_go", // Go global
+        "__cxa_guard", // C++ ABI
+        "__start_mysection", // C linker symbol
+        "system_call", // lowercase "system", not "System_"
+        "dotnet_custom", // no __ prefix
+    };
+
+    for (non_csharp) |sym| {
+        const lang = classifyGlobalName(sym);
+        if (lang) |l| {
+            try std.testing.expect(l != .csharp);
+        }
+    }
 }

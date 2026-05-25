@@ -333,6 +333,8 @@ pub const FFIBoundary = struct {
         java,
         /// Python/C API language
         python,
+        /// Swift language (Swift 5+ mangling, ARC runtime)
+        swift,
         /// Unknown / undetermined language
         unknown,
     };

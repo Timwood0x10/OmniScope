@@ -248,6 +248,7 @@ fn langToString(lang: memory_graph.Language) []const u8 {
         .go => "Go",
         .java => "Java/JNI",
         .python => "Python",
+        .swift => "Swift",
         .unknown => "Unknown",
     };
 }

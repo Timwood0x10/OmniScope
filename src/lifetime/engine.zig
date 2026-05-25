@@ -165,6 +165,7 @@ pub const LanguageHint = enum(u8) {
     nim,
     java,
     python,
+    swift,
 };
 
 /// Issue type detected by the lifetime engine.
