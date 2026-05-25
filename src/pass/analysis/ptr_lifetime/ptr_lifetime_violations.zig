@@ -18,8 +18,10 @@ const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const LifetimeStats = @import("ptr_lifetime_types.zig").LifetimeStats;
 const FreeSiteRecord = @import("ptr_lifetime_types.zig").FreeSiteRecord;
-const FreeSiteList = @import("ptr_lifetime.zig").FreeSiteList;
+const FreeSiteList = @import("ptr_lifetime_types.zig").FreeSiteList;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
+const LifetimeMap = @import("ptr_lifetime_types.zig").LifetimeMap;
+const isAllocaAliveAt = @import("ptr_lifetime_types.zig").isAllocaAliveAt;
 
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const classifyAllocLanguage = @import("ptr_lifetime_classify.zig").classifyAllocLanguage;
@@ -248,7 +250,6 @@ fn langToString(lang: memory_graph.Language) []const u8 {
         .go => "Go",
         .java => "Java/JNI",
         .python => "Python",
-        .swift => "Swift",
         .unknown => "Unknown",
     };
 }
@@ -823,6 +824,7 @@ pub fn checkCallViolation(
     mem_graph: ?*memory_graph.MemoryGraph,
     diag: *DiagnosticWriter,
     stats: *LifetimeStats,
+    lifetime_map: ?*LifetimeMap,
 ) !void {
     const called = c.LLVMGetCalledValue(inst);
     if (@intFromPtr(called) == 0) return;
@@ -857,6 +859,17 @@ pub fn checkCallViolation(
                 const arg = c.LLVMGetOperand(inst, i);
                 if (pointer_map.get(arg)) |ptr_info| {
                     if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
+                        // T1.2: Check if escape occurs outside alloca's lifetime interval
+                        if (lifetime_map) |lm| {
+                            if (ptr_info.source_inst) |alloca_inst| {
+                                if (!isAllocaAliveAt(lm, alloca_inst, inst)) {
+                                    std.log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
+                                    stats.heap_intentional_transfer += 1;
+                                    continue;
+                                }
+                            }
+                        }
+
                         const is_extern = is_extern_function(callee_name);
                         if (is_extern) {
                             if (isRustBorrowPattern(ptr_info.source_desc)) {
@@ -893,6 +906,17 @@ pub fn checkCallViolation(
             const has_cross_func_alias = ip_ffi.detect_cross_func_alias(inst, call_graph_ptr);
 
             if (ptr_info.alloc_site == .stack and !ptr_info.escaped) {
+                // T1.2: Check if escape occurs outside alloca's lifetime interval
+                if (lifetime_map) |lm| {
+                    if (ptr_info.source_inst) |alloca_inst| {
+                        if (!isAllocaAliveAt(lm, alloca_inst, inst)) {
+                            std.log.debug("[ptr-lifetime] SUPPRESSED: Stack escape to {s} occurs outside alloca lifetime (FP reduction)", .{callee_name});
+                            stats.heap_intentional_transfer += 1;
+                            continue;
+                        }
+                    }
+                }
+
                 if (isStackEscapeSuppressed(callee_name, ptr_info)) {
                     diag.debug("[SUPPRESSED] Stack escape in callback/hook: {s}", .{callee_name});
                     stats.stack_escapes_found += 1;
@@ -945,6 +969,7 @@ pub fn checkViolations(
     diag: *DiagnosticWriter,
     stats: *LifetimeStats,
     free_sites: *std.AutoHashMap(u64, FreeSiteList),
+    lifetime_map: ?*LifetimeMap,
 ) !void {
     if (@intFromPtr(inst) == 0) return;
 
@@ -952,7 +977,7 @@ pub fn checkViolations(
 
     if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
         try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);
-        try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats);
+        try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats, lifetime_map);
         try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
         try checkCrossLanguageFree(ctx, inst, func_name, pointer_map, mem_graph, diag, stats);
         try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);

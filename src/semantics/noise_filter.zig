@@ -140,8 +140,9 @@ pub const Language = enum(u8) {
     go,
     c,
     cpp,
-    swift,
+    csharp,
     python,
+    java,
     unknown,
 };
 

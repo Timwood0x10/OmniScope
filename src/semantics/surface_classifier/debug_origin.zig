@@ -168,8 +168,10 @@ pub fn classifySourcePath(dir: []const u8, filename: []const u8) SourceProvenanc
     // Go standard library
     if (std.mem.indexOf(u8, dir, "/go/src/") != null) return .stdlib;
 
-    // Swift standard library
-    if (std.mem.indexOf(u8, dir, "/swift/lib/") != null) return .stdlib;
+    // C# / .NET standard library
+    if (std.mem.indexOf(u8, dir, "/dotnet/") != null) return .stdlib;
+    if (std.mem.indexOf(u8, dir, "/mono/") != null) return .stdlib;
+    if (std.mem.indexOf(u8, dir, "/microsoft.netcore.") != null) return .stdlib;
 
     // Python standard library
     if (std.mem.indexOf(u8, dir, "/lib/python") != null) return .stdlib;

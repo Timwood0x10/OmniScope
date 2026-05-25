@@ -72,7 +72,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     // One slot per concrete language. `.unknown` is the "no winner" fallback
     // and intentionally has no vote slot — letting it index in would write
     // past the array (see T0.2 in plan/todolist_v2.md).
-    var weighted_votes = [_]f32{0} ** 9; // [rust, go, zig, cpp, c, csharp, java, python, CSharp]
+    var weighted_votes = [_]f32{0} ** 8; // [rust, go, zig, cpp, c, csharp, java, python]
 
     if (sampling_result) |r| {
         if (langToIndex(r.language)) |idx| {
@@ -145,7 +145,6 @@ fn langToIndex(lang: Language) ?usize {
         .csharp => 5,
         .java => 6,
         .python => 7,
-        .swift => 8,
         .unknown => null,
     };
 }
@@ -160,7 +159,6 @@ fn indexToLang(idx: usize) Language {
         5 => .csharp,
         6 => .java,
         7 => .python,
-        8 => .swift,
         else => .unknown,
     };
 }
@@ -188,7 +186,6 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var cpp_count: u32 = 0;
     var csharp_count: u32 = 0;
     var python_count: u32 = 0;
-    var swift_count: u32 = 0;
     var c_count: u32 = 0;
     var total: u32 = 0;
 
@@ -243,18 +240,17 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
-        // Swift mangling prefixes (unambiguous — from SWIFT_IR_SPEC.md §1.1)
-        // Swift 5+ uses $s / _$s for symbols, $S / _$S for Swift 4.x,
-        // _T0 for Swift 4, and $e / _$e for Embedded Swift.
-        // These prefixes are unique to Swift and never appear in other languages.
+        // C# / .NET NativeAOT mangling prefixes (unambiguous)
+        // .NET NativeAOT and Mono produce distinctive symbol names:
+        //   - $s prefix: used by .NET NativeAOT for managed symbols
+        //   - System_*, Microsoft_*: Itanium-mangled .NET namespace prefixes
+        // These prefixes uniquely identify .NET/C# compiled code.
         if (std.mem.startsWith(u8, name, "$s") or
-            std.mem.startsWith(u8, name, "$S") or
-            std.mem.startsWith(u8, name, "$e") or
-            (name.len > 2 and name[0] == '_' and name[1] == '$' and
-                (name[2] == 's' or name[2] == 'S' or name[2] == 'e')) or
-            std.mem.startsWith(u8, name, "_T0"))
+            (name.len > 7 and std.mem.indexOf(u8, name[0..7], "System_") != null) or
+            (name.len > 10 and std.mem.indexOf(u8, name[0..10], "Microsoft_") != null) or
+            (name.len > 5 and std.mem.indexOf(u8, name[0..5], "Mono_") != null))
         {
-            swift_count += 1;
+            csharp_count += 1;
             continue;
         }
 
@@ -360,7 +356,6 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .cpp, .count = cpp_count },
         .{ .lang = .csharp, .count = csharp_count },
         .{ .lang = .python, .count = python_count },
-        .{ .lang = .swift, .count = swift_count },
         .{ .lang = .c, .count = c_count },
     };
 
@@ -394,7 +389,7 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
 ///   - @rust_eh_personality  → Rust (weight +3)
 ///   - __gxx_personality_v0  → C++ (weight +3)
 ///   - __gnat_eh_personality → Ada (rare, treat as cpp)
-///   - _swift_exceptionPersonality → Swift (weight +3)
+///   - csharp_exception_personality / mono_unity_personality → C# (weight +3)
 ///   - _Unwind_Resume        → C (weight +1)
 ///   - _Unwind_RaiseException → C (weight +1)
 ///   - No personality         → no vote (skip)
@@ -403,7 +398,7 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
     const go_score: f32 = 0;
     const zig_score: f32 = 0;
     var cpp_score: f32 = 0;
-    var swift_score: f32 = 0;
+    var csharp_score: f32 = 0;
     const python_score: f32 = 0;
     var c_score: f32 = 0;
     var total_votes: u32 = 0;
@@ -432,10 +427,12 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         {
             cpp_score += PERSONALITY_WEIGHT;
             total_votes += 1;
-        } else if (std.mem.eql(u8, name, "_swift_exceptionPersonality") or
-            std.mem.indexOf(u8, name, "_swift_exceptionPersonality") != null)
+        } else if (std.mem.eql(u8, name, "csharp_exception_personality") or
+            std.mem.indexOf(u8, name, "csharp_exception_personality") != null or
+            std.mem.eql(u8, name, "mono_unity_personality") or
+            std.mem.indexOf(u8, name, "mono_unity_personality") != null)
         {
-            swift_score += PERSONALITY_WEIGHT;
+            csharp_score += PERSONALITY_WEIGHT;
             total_votes += 1;
         } else if (std.mem.eql(u8, name, "_Unwind_Resume") or
             std.mem.eql(u8, name, "_Unwind_RaiseException"))
@@ -452,7 +449,7 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         .{ .lang = .go, .score = go_score },
         .{ .lang = .zig, .score = zig_score },
         .{ .lang = .cpp, .score = cpp_score },
-        .{ .lang = .swift, .score = swift_score },
+        .{ .lang = .csharp, .score = csharp_score },
         .{ .lang = .python, .score = python_score },
         .{ .lang = .c, .score = c_score },
     };

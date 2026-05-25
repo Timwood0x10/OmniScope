@@ -174,6 +174,67 @@ pub const LifetimeStats = struct {
 };
 
 // ============================================================================
+// LLVM Lifetime Intrinsic Tracking (T1.2)
+// ============================================================================
+
+/// Lifetime interval for a single alloca instruction.
+/// Tracks [start_inst, end_inst] where the alloca is logically "alive".
+pub const LifetimeInterval = struct {
+    /// Instruction where lifetime.start was called (inclusive)
+    start_inst: c.LLVMValueRef,
+    /// Instruction where lifetime.end was called (exclusive, null if not yet ended)
+    end_inst: ?c.LLVMValueRef,
+};
+
+/// Map from alloca pointer to its lifetime interval.
+/// Used to reduce false positives in stack escape detection:
+/// if an escape occurs outside the lifetime interval, it's likely a FP.
+///
+/// Key design decisions:
+/// - Uses AutoHashMap for O(1) lookup by alloca ref
+/// - Stores LLVMValueRef directly (not hash) for comparison efficiency
+/// - end_inst=null means lifetime.start seen but no matching lifetime.end yet
+pub const LifetimeMap = std.AutoHashMap(c.LLVMValueRef, LifetimeInterval);
+
+/// Check if an instruction falls within a lifetime interval.
+/// Returns true if inst is within [interval.start_inst, interval.end_inst).
+///
+/// When interval.end_inst is null (no lifetime.end seen), we consider
+/// the instruction to be within the interval if it comes after start_inst
+/// in the same basic block (conservative: assume alive until function end).
+pub fn isWithinLifetime(
+    interval: LifetimeInterval,
+    inst: c.LLVMValueRef,
+) bool {
+    const inst_ptr = @intFromPtr(inst);
+    const start_ptr = @intFromPtr(interval.start_inst);
+
+    // Must be after or at start instruction
+    if (inst_ptr < start_ptr) return false;
+
+    // If no end instruction, assume still alive (conservative)
+    if (interval.end_inst == null) return true;
+
+    const end_ptr = @intFromPtr(interval.end_inst.?);
+    // Must be before end instruction (exclusive)
+    return inst_ptr < end_ptr;
+}
+
+/// Check if an alloca has an active lifetime interval that contains the given instruction.
+/// Returns true if the instruction is within the alloca's lifetime, false otherwise.
+///
+/// This is the main query function used by checkStackEscape/checkCallViolation
+/// to suppress false positive reports when escapes occur outside the lifetime.
+pub fn isAllocaAliveAt(
+    lifetime_map: *const LifetimeMap,
+    alloca_ref: c.LLVMValueRef,
+    inst: c.LLVMValueRef,
+) bool {
+    const interval = lifetime_map.get(alloca_ref) orelse return false;
+    return isWithinLifetime(interval, inst);
+}
+
+// ============================================================================
 // Constants
 // ============================================================================
 

@@ -445,7 +445,6 @@ fn langName(lang: LanguageHint) []const u8 {
         .nim => "Nim",
         .java => "Java",
         .python => "Python",
-        .swift => "Swift",
     };
 }
 

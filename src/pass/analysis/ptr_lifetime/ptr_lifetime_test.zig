@@ -269,3 +269,156 @@ test "toZoneLanguage - explicit mapping correctness" {
     try std.testing.expectEqual(Lang.go, toZoneLanguage(FfiLang.go));
     try std.testing.expectEqual(Lang.unknown, toZoneLanguage(FfiLang.csharp));
 }
+
+// ============================================================================
+// T1.2: LLVM Lifetime Intrinsic Tests
+// ============================================================================
+
+const LifetimeMap = @import("ptr_lifetime_types.zig").LifetimeMap;
+const LifetimeInterval = @import("ptr_lifetime_types.zig").LifetimeInterval;
+const isWithinLifetime = @import("ptr_lifetime_types.zig").isWithinLifetime;
+const isAllocaAliveAt = @import("ptr_lifetime_types.zig").isAllocaAliveAt;
+
+test "T1.2 - LifetimeInterval basic structure" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    try std.testing.expect(interval.start_inst == @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))));
+    try std.testing.expect(interval.end_inst.? == @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))));
+}
+
+test "T1.2 - isWithinLifetime - instruction inside interval" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    // Instruction at 150 should be within [100, 200)
+    try std.testing.expect(isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 150)))));
+}
+
+test "T1.2 - isWithinLifetime - instruction before start" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    // Instruction at 50 should NOT be within [100, 200)
+    try std.testing.expect(!isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 50)))));
+}
+
+test "T1.2 - isWithinLifetime - instruction after end" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    // Instruction at 250 should NOT be within [100, 200) (exclusive end)
+    try std.testing.expect(!isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 250)))));
+}
+
+test "T1.2 - isWithinLifetime - instruction at start (inclusive)" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    // Instruction at exactly start should be included
+    try std.testing.expect(isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100)))));
+}
+
+test "T1.2 - isWithinLifetime - instruction at end (exclusive)" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
+    };
+    // Instruction at exactly end should NOT be included (exclusive)
+    try std.testing.expect(!isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200)))));
+}
+
+test "T1.2 - isWithinLifetime - no end instruction (conservative)" {
+    const interval = LifetimeInterval{
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = null,
+    };
+    // When no end instruction, assume still alive for any inst after start
+    try std.testing.expect(isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 150)))));
+    try std.testing.expect(isWithinLifetime(interval, @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 99999)))));
+}
+
+test "T1.2 - isAllocaAliveAt - happy path: alloca alive during escape" {
+    var lifetime_map = LifetimeMap.init(std.testing.allocator);
+    defer lifetime_map.deinit();
+
+    const alloca_ref: c.LLVMValueRef = @ptrFromInt(@as(usize, 1000));
+    const start_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 2000));
+    const end_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 5000));
+    const escape_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 3000));
+
+    try lifetime_map.put(alloca_ref, LifetimeInterval{
+        .start_inst = start_inst,
+        .end_inst = end_inst,
+    });
+
+    // Escape at 3000 is within [2000, 5000) → should report (alive)
+    try std.testing.expect(isAllocaAliveAt(&lifetime_map, alloca_ref, escape_inst));
+}
+
+test "T1.2 - isAllocaAliveAt - boundary: escape after lifetime.end" {
+    var lifetime_map = LifetimeMap.init(std.testing.allocator);
+    defer lifetime_map.deinit();
+
+    const alloca_ref: c.LLVMValueRef = @ptrFromInt(@as(usize, 1000));
+    const start_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 2000));
+    const end_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 5000));
+    const escape_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 6000));
+
+    try lifetime_map.put(alloca_ref, LifetimeInterval{
+        .start_inst = start_inst,
+        .end_inst = end_inst,
+    });
+
+    // Escape at 6000 is AFTER [2000, 5000) → should suppress (dead, FP reduction)
+    try std.testing.expect(!isAllocaAliveAt(&lifetime_map, alloca_ref, escape_inst));
+}
+
+test "T1.2 - isAllocaAliveAt - old IR: no intrinsic (empty map)" {
+    var lifetime_map = LifetimeMap.init(std.testing.allocator);
+    defer lifetime_map.deinit();
+
+    const alloca_ref: c.LLVMValueRef = @ptrFromInt(@as(usize, 1000));
+    const escape_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 3000));
+
+    // Empty lifetime_map → returns false → falls back to current logic (no suppression)
+    try std.testing.expect(!isAllocaAliveAt(&lifetime_map, alloca_ref, escape_inst));
+}
+
+test "T1.2 - isAllocaAliveAt - unknown alloca not in map" {
+    var lifetime_map = LifetimeMap.init(std.testing.allocator);
+    defer lifetime_map.deinit();
+
+    const known_alloca: c.LLVMValueRef = @ptrFromInt(@as(usize, 1000));
+    const unknown_alloca: c.LLVMValueRef = @ptrFromInt(@as(usize, 2000));
+    const escape_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 3000));
+
+    try lifetime_map.put(known_alloca, LifetimeInterval{
+        .start_inst = @ptrFromInt(@as(usize, 2000)),
+        .end_inst = @ptrFromInt(@as(usize, 5000)),
+    });
+
+    // Unknown alloca not in map → returns false → no suppression
+    try std.testing.expect(!isAllocaAliveAt(&lifetime_map, unknown_alloca, escape_inst));
+}
+
+test "T1.2 - LifetimeMap put and get roundtrip" {
+    var lifetime_map = LifetimeMap.init(std.testing.allocator);
+    defer lifetime_map.deinit();
+
+    const alloca_ref: c.LLVMValueRef = @ptrFromInt(@as(usize, 42));
+    const interval = LifetimeInterval{
+        .start_inst = @ptrFromInt(@as(usize, 100)),
+        .end_inst = @ptrFromInt(@as(usize, 200)),
+    };
+
+    try lifetime_map.put(alloca_ref, interval);
+    const retrieved = lifetime_map.get(alloca_ref).?;
+    try std.testing.expect(retrieved.start_inst == interval.start_inst);
+    try std.testing.expect(retrieved.end_inst.? == interval.end_inst.?);
+}

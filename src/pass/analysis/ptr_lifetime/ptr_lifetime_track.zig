@@ -21,6 +21,8 @@ const ptr_types = @import("ptr_lifetime_types.zig");
 const PtrAllocSite = ptr_types.PtrAllocSite;
 const PtrInfo = ptr_types.PtrInfo;
 const HEAP_ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
+const LifetimeMap = ptr_types.LifetimeMap;
+const LifetimeInterval = ptr_types.LifetimeInterval;
 
 const core = @import("ptr_lifetime_helpers.zig");
 const putPtrInfo = core.putPtrInfo;
@@ -51,6 +53,8 @@ pub const TrackContext = struct {
     lang: Lang,
     zone: ZoneKind,
     is_ffi_func: bool,
+    /// T1.2: Map tracking alloca lifetime intervals from LLVM intrinsics
+    lifetime_map: ?*LifetimeMap,
 
     pub fn mgEffective(self: *const TrackContext) ?*memory_graph.MemoryGraph {
         return if (self.is_ffi_func) self.mem_graph else null;
@@ -521,6 +525,79 @@ pub fn handleRet(ctx: *TrackContext) void {
                     mg.recordFuncReturns(ctx.funcPtr());
                 }
             }
+        }
+    }
+}
+
+// ============================================================================
+// LLVM Lifetime Intrinsic Handler (T1.2)
+// ============================================================================
+
+/// Handle @llvm.lifetime.start and @llvm.lifetime.end intrinsics.
+///
+/// These intrinsics mark the begin and end of a variable's lifetime in the IR.
+/// LLVM generates them when optimizations are enabled (-O1 and above).
+/// They allow us to precisely track when an alloca is "alive" vs "dead",
+/// which reduces false positives in stack escape detection.
+///
+/// Intrinsic signatures:
+///   - @llvm.lifetime.start.p0(i64 %size, ptr %alloca) → void
+///   - @llvm.lifetime.end.p0(i64 %size, ptr %alloca)   → void
+///
+/// The first operand is the size (ignored here), the second is the alloca pointer.
+pub fn handleLifetimeIntrinsic(ctx: *TrackContext) void {
+    const lifetime_map = ctx.lifetime_map orelse return;
+
+    const called = c.LLVMGetCalledValue(ctx.inst);
+    if (@intFromPtr(called) == 0) return;
+
+    const name_ptr = c.LLVMGetValueName(called);
+    if (@intFromPtr(name_ptr) == 0) return;
+
+    const intrinsic_name = std.mem.span(name_ptr);
+
+    // Get the alloca operand (second operand, index 1)
+    const alloca_operand = c.LLVMGetOperand(ctx.inst, 1);
+    if (@intFromPtr(alloca_operand) == 0) return;
+
+    // Check if this operand is a known alloca in our pointer_map
+    if (!ctx.pointer_map.contains(alloca_operand)) {
+        // The operand might be a bitcast/GEP of the alloca — try to resolve
+        // For now, only track direct alloca references
+        std.log.debug("[ptr-lifetime] Lifetime intrinsic for non-tracked alloca, skipping", .{});
+        return;
+    }
+
+    if (std.mem.indexOf(u8, intrinsic_name, "llvm.lifetime.start") != null) {
+        // Record lifetime.start: create or update interval with start instruction
+        const interval = LifetimeInterval{
+            .start_inst = ctx.inst,
+            .end_inst = null,
+        };
+        lifetime_map.put(alloca_operand, interval) catch {
+            std.log.warn("[ptr-lifetime] Failed to record lifetime.start for alloca", .{});
+            return;
+        };
+        std.log.debug("[ptr-lifetime] Recorded lifetime.start at inst {}", .{@intFromPtr(ctx.inst)});
+    } else if (std.mem.indexOf(u8, intrinsic_name, "llvm.lifetime.end") != null) {
+        // Record lifetime.end: update existing interval with end instruction
+        if (lifetime_map.getPtr(alloca_operand)) |existing| {
+            existing.end_inst = ctx.inst;
+            std.log.debug("[ptr-lifetime] Recorded lifetime.end at inst {} for alloca", .{
+                @intFromPtr(ctx.inst),
+            });
+        } else {
+            // lifetime.end without matching lifetime.start — unusual but possible
+            // Create an interval with end only (will be treated as "already ended")
+            const interval = LifetimeInterval{
+                .start_inst = ctx.inst, // Use end as start (interval is empty)
+                .end_inst = ctx.inst,
+            };
+            lifetime_map.put(alloca_operand, interval) catch {
+                std.log.warn("[ptr-lifetime] Failed to record orphaned lifetime.end", .{});
+                return;
+            };
+            std.log.debug("[ptr-lifetime] Recorded orphaned lifetime.end", .{});
         }
     }
 }

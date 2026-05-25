@@ -141,6 +141,9 @@ pub const areAllocatorPair = ptr_types.areAllocatorPair;
 // Re-export FreeSiteList from types (definition moved to ptr_lifetime_types.zig)
 pub const FreeSiteList = ptr_types.FreeSiteList;
 
+// T1.2: Re-export LifetimeMap for use in analyzeFunction
+pub const LifetimeMap = ptr_types.LifetimeMap;
+
 // ============================================================================
 // Main Pass
 // ============================================================================
@@ -391,6 +394,10 @@ pub const PtrLifetimePass = struct {
 
         var free_sites = std.AutoHashMap(u64, FreeSiteList).init(ctx.allocator);
 
+        // T1.2: Initialize LifetimeMap for LLVM intrinsic tracking
+        var lifetime_map = LifetimeMap.init(ctx.allocator);
+        defer lifetime_map.deinit();
+
         defer {
             var iter = pointer_map.iterator();
             while (iter.next()) |entry| {
@@ -444,7 +451,7 @@ pub const PtrLifetimePass = struct {
                 if (total_insts > 50000) return;
                 {
                     const t0 = std.time.nanoTimestamp();
-                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func);
+                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
                     t_track.* += std.time.nanoTimestamp() - t0;
                 }
                 {
@@ -453,7 +460,7 @@ pub const PtrLifetimePass = struct {
                     if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                         _ = c.LLVMGetCalledValue(inst);
                     }
-                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites);
+                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
                     t_check.* += std.time.nanoTimestamp() - t0;
                 }
             }
@@ -473,6 +480,7 @@ pub const PtrLifetimePass = struct {
         lang: Lang,
         zone: ZoneKind,
         is_ffi_func: bool,
+        lifetime_map: *LifetimeMap,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -488,11 +496,16 @@ pub const PtrLifetimePass = struct {
             .lang = lang,
             .zone = zone,
             .is_ffi_func = is_ffi_func,
+            .lifetime_map = lifetime_map,
         };
 
         switch (opcode) {
             c.LLVMAlloca => try track.handleAlloca(&ctx),
-            c.LLVMCall, c.LLVMInvoke => try track.handleCallInvoke(&ctx),
+            c.LLVMCall, c.LLVMInvoke => {
+                try track.handleCallInvoke(&ctx);
+                // T1.2: Also check for LLVM lifetime intrinsics (they are calls)
+                track.handleLifetimeIntrinsic(&ctx);
+            },
             c.LLVMLoad => try track.handleLoad(&ctx),
             c.LLVMStore => try track.handleStore(&ctx),
             c.LLVMGetElementPtr => try track.handleGetElementPtr(&ctx),

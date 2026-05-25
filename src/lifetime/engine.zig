@@ -11,14 +11,14 @@
 //! This module provides a universal model for:
 //! - Rust ↔ C
 //! - Zig ↔ C
-//! - Swift ↔ C
+//! - C# ↔ C
 //! - C++ ↔ C ABI
 //! - Julia ↔ C
 //! - Any LLVM language ↔ Native boundary
 //!
 //! Architecture:
 //! ```
-//! Language Frontends (Rust/Zig/C/Swift symbol hints)
+//! Language Frontends (Rust/Zig/C/C# symbol hints)
 //!         ↓
 //! Semantic Mapper (alloc/free/borrow/transfer/reclaim/escape)
 //!         ↓
@@ -165,7 +165,6 @@ pub const LanguageHint = enum(u8) {
     nim,
     java,
     python,
-    swift,
 };
 
 /// Issue type detected by the lifetime engine.

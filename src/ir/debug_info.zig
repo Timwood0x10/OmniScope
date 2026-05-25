@@ -37,7 +37,7 @@ pub const DWARFSourceLanguage = enum(c_uint) {
     OpenCL = 20,
     GLslang = 21,
     Rust = 22,
-    Swift = 23,
+    CSharp = 23,
     Julia = 24,
     Dylan = 25,
     Fischer = 26,
@@ -423,7 +423,7 @@ test "DWARFSourceLanguage - enum values" {
     try std.testing.expectEqual(@as(c_uint, 1), @intFromEnum(DWARFSourceLanguage.C));
     try std.testing.expectEqual(@as(c_uint, 3), @intFromEnum(DWARFSourceLanguage.C_plus_plus));
     try std.testing.expectEqual(@as(c_uint, 22), @intFromEnum(DWARFSourceLanguage.Rust));
-    try std.testing.expectEqual(@as(c_uint, 23), @intFromEnum(DWARFSourceLanguage.Swift));
+    try std.testing.expectEqual(@as(c_uint, 23), @intFromEnum(DWARFSourceLanguage.CSharp));
 }
 
 test "DIFlags - flag values" {

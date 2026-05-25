@@ -5,13 +5,13 @@
 //! This module provides universal lifetime tracking for:
 //! - Rust ↔ C
 //! - Zig ↔ C
-//! - Swift ↔ C
+//! - C# ↔ C
 //! - C++ ↔ C ABI
 //! - Any LLVM language ↔ Native boundary
 //!
 //! Architecture:
 //! ```
-//! Language Frontends (Rust/Zig/C/Swift symbol hints)
+//! Language Frontends (Rust/Zig/C/C# symbol hints)
 //!         ↓
 //! Lifetime Engine (owner + state transitions)
 //!         ↓

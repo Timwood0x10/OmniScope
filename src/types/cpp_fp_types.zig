@@ -306,7 +306,6 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
         .csharp => .csharp,
         .java => .java,
         .python => .python,
-        .swift => .swift,
         .unknown => .unknown,
     };
 }

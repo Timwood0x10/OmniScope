@@ -13,7 +13,7 @@
 //! - Layer 1: FFI high-risk functions (C standard library)
 //! - Layer 2: Rust ownership patterns (into_raw, from_raw, as_ptr)
 //! - Layer 3: Go cgo allocator patterns
-//! - Layer 4: Swift FFI patterns
+//! - Layer 4: C# FFI patterns
 //! - Layer 5: Zig Standard Library patterns
 //! - Layer 6: C++ Standard Library patterns
 //!
@@ -55,7 +55,7 @@ pub const SemanticRegistry = struct {
     /// Layer 3: Go cgo allocator patterns
     const layer3 = layer3_reg.layer3_functions;
 
-    /// Layer 4: Swift FFI patterns
+    /// Layer 4: C# FFI patterns
     const layer4 = layer4_reg.layer4_functions;
 
     /// Layer 5: Zig Standard Library patterns

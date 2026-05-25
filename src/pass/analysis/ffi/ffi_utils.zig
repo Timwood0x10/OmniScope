@@ -287,10 +287,13 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
     }
 
     var pos: usize = 3;
-    var components: [8][]const u8 = .{ "", "", "", "", "", "", "", "" };
-    var comp_count: usize = 0;
+    var components = std.ArrayList([]const u8).init(allocator);
+    defer components.deinit();
 
-    while (pos < mangled.len and comp_count < 8) {
+    const max_components = 32;
+    var truncated = false;
+
+    while (pos < mangled.len and components.items.len < max_components) {
         if (mangled[pos] == 'E') break;
 
         var len: usize = 0;
@@ -313,25 +316,23 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
             continue;
         }
 
-        if (comp_count == 0) {
+        if (components.items.len == 0) {
             if (std.mem.eql(u8, slice, "core") or
                 std.mem.eql(u8, slice, "alloc") or
                 std.mem.eql(u8, slice, "std") or
                 std.mem.eql(u8, slice, "rust_ffi_demo"))
             {
-                components[0] = slice;
-                comp_count = 1;
+                try components.append(slice);
                 continue;
             }
         }
 
-        if (comp_count > 0 or
+        if (components.items.len > 0 or
             (!std.mem.eql(u8, slice, "core") and
                 !std.mem.eql(u8, slice, "alloc") and
                 !std.mem.eql(u8, slice, "std")))
         {
-            components[comp_count] = slice;
-            comp_count += 1;
+            try components.append(slice);
         }
 
         if (pos < mangled.len and mangled[pos] == 'E') {
@@ -340,11 +341,57 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
         }
     }
 
-    if (comp_count >= 2) {
-        return (try std.fmt.allocPrint(allocator, "{s}::{s}", .{ components[0], components[1] }));
-    } else if (comp_count == 1) {
-        return (try allocator.dupe(u8, components[0]));
+    if (components.items.len >= max_components) {
+        std.log.warn("[ffi-utils] Rust demangle: path truncated to {d} segments (max: {d}), mangled name may be incomplete", .{ components.items.len, max_components });
+        truncated = true;
+    }
+
+    if (components.items.len >= 2) {
+        var result = std.ArrayList(u8).init(allocator);
+        defer result.deinit();
+        for (components.items, 0..) |comp, i| {
+            if (i > 0) try result.appendSlice("::");
+            try result.appendSlice(comp);
+        }
+        return result.toOwnedSlice();
+    } else if (components.items.len == 1) {
+        return (try allocator.dupe(u8, components.items[0]));
     }
 
     return (try allocator.dupe(u8, mangled));
+}
+
+test "demangleRustName - deep path with 5+ segments" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const mangled = "_ZN4core4iter8adapters3Map3newE";
+    const result = try demangleRustName(allocator, mangled);
+    try testing.expect(result != null);
+    try testing.expectEqualStrings("core::iter::adapters::Map::new", result.?);
+}
+
+test "demangleRustName - simple 2-segment path" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const mangled = "_ZN4std2io5printE";
+    const result = try demangleRustName(allocator, mangled);
+    try testing.expect(result != null);
+    try testing.expectEqualStrings("std::io::print", result.?);
+}
+
+test "demangleRustName - non-Rust name returns null" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const not_rust = "some_c_function";
+    const result = try demangleRustName(allocator, not_rust);
+    try testing.expect(result == null);
 }
