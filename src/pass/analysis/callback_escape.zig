@@ -39,13 +39,13 @@ const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
-const lang_classifier = @import("ffi_language_classifier.zig");
+const lang_classifier = @import("ffi/ffi_language_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
 comptime {
     _ = FPPrecisionGuard.PrecisionMetrics;
 } // Force test discovery
-const NoiseReduction = @import("noise_reduction.zig");
+const NoiseReduction = @import("noise/noise_reduction.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
@@ -54,7 +54,7 @@ const call_graph_mod = @import("../../semantics/call_graph.zig");
 // Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
 const hooks = @import("../../registry/hooks.zig");
 const registry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
-const ptr_types = @import("ptr_lifetime_types.zig");
+const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 
 // Reporting functions (extracted to separate module)
 const cb_report = @import("callback_escape_report.zig");
@@ -63,493 +63,34 @@ const cb_report = @import("callback_escape_report.zig");
 pub const CGoCallInfo = cb_report.CGoCallInfo;
 pub const CallbackEscapeInfo = cb_report.CallbackEscapeInfo;
 
-/// Types of callback escaping violations detected.
-pub const EscapeViolation = enum(u8) {
-    /// Go pointer passed to C without KeepAlive guard
-    go_pointer_no_keepalive,
-    /// C.CBytes result passed to retaining function
-    cbytes_escape,
-    /// unsafe.Pointer used across FFI boundary without lifetime guarantee
-    unsafeptr_dangling_risk,
-    /// malloc without corresponding free (leak)
-    malloc_without_free,
-    /// free without matching malloc (double-free risk)
-    free_without_malloc,
-};
-
-/// Classification of a detected escape pattern.
-pub const EscapePattern = struct {
-    violation_type: EscapeViolation,
-    confidence: f32,
-    func_name: []const u8,
-    callee_name: []const u8,
-    description: []const u8,
-};
-
-/// Statistics for the callback escape detector.
-pub const EscapeStats = struct {
-    total_functions_analyzed: u32 = 0,
-    go_cgo_boundaries_found: u32 = 0,
-    keepalive_missing: u32 = 0,
-    cbytes_escapes: u32 = 0,
-    unsafeptr_risks: u32 = 0,
-    malloc_leaks: u32 = 0,
-    free_orphans: u32 = 0,
-    callback_escapes: u32 = 0,
-
-    pub fn formatSummary(self: EscapeStats, writer: anytype) !void {
-        try writer.writeAll("\n╔══════════════════════════════════════╗\n");
-        try writer.writeAll("║   CALLBACK ESCAPE DETECTOR SUMMARY ║\n");
-        try writer.writeAll("╠══════════════════════════════════════╣\n");
-        try writer.print("║  Functions analyzed:      {d:>8}     ║\n", .{self.total_functions_analyzed});
-        try writer.print("║  CGo boundaries found:    {d:>8}     ║\n", .{self.go_cgo_boundaries_found});
-        try writer.print("║  Missing KeepAlive:       {d:>8}     ║\n", .{self.keepalive_missing});
-        try writer.print("║  CBytes escapes:          {d:>8}     ║\n", .{self.cbytes_escapes});
-        try writer.print("║  Callback escapes:        {d:>8}     ║\n", .{self.callback_escapes});
-        try writer.print("║  Unsafe.Pointer risks:    {d:>8}     ║\n", .{self.unsafeptr_risks});
-        try writer.print("║  Malloc-without-free:     {d:>8}     ║\n", .{self.malloc_leaks});
-        try writer.print("║  Free-orphan calls:       {d:>8}     ║\n", .{self.free_orphans});
-        try writer.writeAll("╚══════════════════════════════════════╝\n");
-    }
-};
-
-// ============================================================================
-// Go CGo Pattern Detection
-// ============================================================================
-
-/// Functions that indicate cgo glue code (compiler-generated).
-const CGO_GLUE_PATTERNS = &[_][]const u8{
-    "_cgo_",
-    "_Cfunc_",
-    "_cgo_gotypes",
-    "crosscall2",
-};
-
-/// Known Go runtime functions related to cgo safety.
-const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
-    "runtime.KeepAlive",
-    "runtime_Pin",
-    "runtime_Unpin",
-    "runtime_cgocall",
-};
-
-/// C standard library functions that unconditionally retain pointers (escape analysis).
-/// These functions store pointers for later use beyond the caller's lifetime.
-const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    "pthread_create",          "signal",           "sigaction",
-    "atexit",                  "on_exit",          "SDL_SetEventCallback",
-    "glfwSetCallback",         "curl_easy_setopt", "RegisterNatives",
-    "PyCapsule_SetDestructor", "dlopen",
-};
-
-/// Enhanced Go cgo boundary patterns (v0.1.8)
-/// Includes standard library, runtime, and common third-party patterns.
-const CGO_ENHANCED_PATTERNS = &[_][]const u8{
-    // Standard cgo glue (compiler-generated)
-    "_cgo_",
-    "_Cfunc_",
-    "_cgo_gotypes",
-    "crosscall2",
-
-    // Go runtime cgo support
-    "runtime_cgocall",
-    "runtime_iscgo",
-    "_cgo_runtime_cgocall",
-
-    // Common Go package prefixes
-    "golang_org.",
-    "google.golang.org.",
-    "github.com/",
-
-    // Go-specific FFI patterns
-    "__cgocallback",
-    "cgoexp_",
-    "_cgo_exp_",
-
-    // JNI/Python interop via cgo
-    "Java_", // cgo-JNI bridge
-    "PyInit_", // cgo-Python bridge
-    "Cython_", // cgo-Cython bridge
-};
-
-/// Go unsafe package patterns
-const GO_UNSAFE_PATTERNS = &[_][]const u8{
-    "unsafe.Pointer",
-    "unsafe.String",
-    "unsafe.Slice",
-    "unsafe.SliceData",
-    "unsafe.StringData",
-    "Add",
-    "Alignof",
-    "Offsetof",
-    "Sizeof",
-};
-
-/// Check if a function name indicates cgo boundary code.
-pub fn isCgoBoundary(func_name: []const u8) bool {
-    // First check enhanced patterns
-    for (CGO_ENHANCED_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    // Cgo "C." prefix matching with stricter rules to avoid false positives:
-    // - Must be at start of function name OR preceded by a package path (e.g., "main.C.")
-    // - NOT in the middle of a name like "AC.BMethod" or "MC.function"
-    const c_dot_idx = std.mem.indexOf(u8, func_name, "C.");
-    if (c_dot_idx) |idx| {
-        const valid = idx == 0 or
-            (idx >= 2 and func_name[idx - 1] == '.');
-        if (valid) return true;
-    }
-
-    return false;
-}
-
-/// Check if instruction involves Go unsafe operations
-/// Enhanced with robust null safety and malformed IR protection
-pub fn isGoUnsafeOperation(inst: c.LLVMValueRef) bool {
-    // Safety check: ensure instruction is valid (Zig idiom: ptr == null)
-    if (inst == null) return false;
-
-    const called_val = c.LLVMGetCalledValue(inst);
-
-    // Null safety: handle LLVM API failure gracefully
-    if (called_val == null) {
-        return false;
-    }
-
-    const callee_name_ptr = c.LLVMGetValueName(called_val);
-
-    // Null safety: handle empty or invalid function names
-    if (callee_name_ptr == null) {
-        return false;
-    }
-
-    // Safe span conversion with length validation
-    const callee_name = std.mem.span(callee_name_ptr);
-
-    // Additional safety: skip empty names to prevent false positives
-    if (callee_name.len == 0) return false;
-
-    // Pattern matching with bounds checking
-    for (GO_UNSAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
-    }
-
-    return false;
-}
-
-/// Detect Go-specific memory management patterns that may cause issues
-pub fn detectGoMemoryPattern(func_name: []const u8) enum {
-    /// Standard Go memory (GC-managed, safe)
-    safe,
-    /// Uses runtime.KeepAlive (properly guarded)
-    keepalive_guarded,
-    /// Missing KeepAlive (potential GC issue)
-    missing_keepalive,
-    /// Uses C.malloc/C.free directly (manual memory)
-    manual_c_memory,
-    /// Mixed pattern (complex analysis needed)
-    mixed,
-} {
-    // Check for KeepAlive usage
-    if (std.mem.indexOf(u8, func_name, "KeepAlive") != null)
-        return .keepalive_guarded;
-
-    // Check for direct C memory functions
-    const has_malloc = std.mem.indexOf(u8, func_name, "C.malloc") != null or
-        std.mem.indexOf(u8, func_name, "C.calloc") != null;
-    const has_free = std.mem.indexOf(u8, func_name, "C.free") != null;
-
-    if (has_malloc and has_free) return .manual_c_memory;
-    if (has_malloc or has_free) return .mixed;
-
-    // Default to safe for pure Go code
-    return .safe;
-}
-
-/// Checks if a function name provides sufficient Go-specific evidence to be
-/// considered a cgo boundary function.
-///
-/// This helper consolidates the three-tier Go evidence check used across multiple
-/// linkage type validations in isCgoBoundaryFromLLVM():
-///   1. Known cgo glue patterns (isCgoGlueByPattern)
-///   2. Go runtime prefix (_cgo_)
-///   3. Go callback marker (__cgocallback)
-///
-/// Using this single function ensures consistency and reduces maintenance overhead.
-/// If the evidence requirements change, only this one place needs updating.
-///
-/// Arguments:
-///   func_name - The LLVM function name to check
-///
-/// Returns:
-///   true if the function name contains Go-specific cgo evidence
-fn hasCgoEvidence(func_name: []const u8) bool {
-    return isCgoGlueByPattern(func_name) or
-        std.mem.indexOf(u8, func_name, "_cgo_") != null or
-        std.mem.indexOf(u8, func_name, "__cgocallback") != null;
-}
-
-/// Unified CGO boundary detection by LLVM linkage type and name evidence.
-///
-/// Consolidates all cgo boundary checks into a single helper that:
-///   1. Checks if the linkage type is one of the known cgo linkage types
-///      (ExternalWeak, Common, External, WeakAny/ODR, LinkOnceAny/ODR)
-///   2. Requires additional Go-specific evidence for non-obvious linkages
-///      (prevents false positives in non-Go projects)
-///
-/// This replaces the duplicated logic previously in isCgoBoundaryFromLLVM()
-/// where each linkage type had its own copy of the evidence check.
-///
-/// Arguments:
-///   linkage - The LLVM linkage type of the function
-///   func_name - The function name to check for Go patterns
-///
-/// Returns:
-///   true if the function should be treated as a cgo boundary
-fn isCgoBoundaryByLinkage(linkage: c.LLVMLinkage, func_name: []const u8) bool {
-    // All these linkage types are commonly used in cgo glue code,
-    // but can also appear in non-Go projects (e.g., weak symbols, COMDAT).
-    // Therefore, we require additional Go-specific evidence to reduce false positives.
-    const is_cgo_linkage = (linkage == c.LLVMExternalWeakLinkage or
-        linkage == c.LLVMCommonLinkage or
-        linkage == c.LLVMExternalLinkage or
-        linkage == c.LLVMWeakAnyLinkage or
-        linkage == c.LLVMWeakODRLinkage or
-        linkage == c.LLVMLinkOnceAnyLinkage or
-        linkage == c.LLVMLinkOnceODRLinkage);
-
-    return is_cgo_linkage and hasCgoEvidence(func_name);
-}
-
-/// Check if a function is a cgo boundary using LLVM metadata.
-///
-/// Uses LLVM linkage type and declaration status to identify
-/// compiler-generated cgo glue functions more precisely than string matching.
-///
-/// Delegates to isCgoBoundaryByLinkage() for all declaration-based checks,
-/// ensuring consistent evidence requirements across all linkage types.
-pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
-    if (func == null) return false;
-
-    const func_name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(func_name_ptr) == 0) return false;
-    const func_name = std.mem.span(func_name_ptr);
-
-    if (c.LLVMIsDeclaration(func) != 0) {
-        // Unified check: all cgo-relevant linkage types + Go evidence
-        const linkage = c.LLVMGetLinkage(func);
-        if (isCgoBoundaryByLinkage(linkage, func_name)) return true;
-    } else {
-        if (isCgoGlueByPattern(func_name)) return true;
-
-        const section = c.LLVMGetSection(func);
-        if (@intFromPtr(section) != 0) {
-            const section_name = std.mem.span(section);
-            if (std.mem.indexOf(u8, section_name, ".text") != null) {
-                if (isCgoGlueByPattern(func_name)) return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-fn isCgoGlueByPattern(name: []const u8) bool {
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
-    if (std.mem.indexOf(u8, name, "cgocall") != null) return true;
-    if (std.mem.indexOf(u8, name, "_cgo_") != null) return true;
-    if (std.mem.startsWith(u8, name, "crosscall")) return true;
-    return false;
-}
-
-/// Check if a function is a Go runtime safety function (KeepAlive etc).
-pub fn isGoSafetyFunction(callee_name: []const u8) bool {
-    for (GO_RUNTIME_SAFETY_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-    return false;
-}
-
-/// R7.1-3: Language-aware pointer retention check.
-///
-/// For **Go callers** (cgo boundary): Full detection — set_/add_/register_ prefixes
-///   indicate the callee may hold the pointer beyond the call (Go runtime can't
-///   see C memory, so KeepAlive is needed).
-///
-/// For **C callers**: Only detect REAL escapes — storing to global variables,
-///   passing to async callbacks (pthread_create, signal), etc.
-///   Plain func(&local) in C is standard borrowing — NOT an escape.
-///
-/// For **Rust callers**: Only detect escapes inside unsafe blocks.
-///
-/// For **Zig callers**: Skip entirely (compile-time lifetime guarantees).
-fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool {
-    // Always-retaining functions regardless of language
-    for (C_RETAINING_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-
-    if (caller_is_cgo) {
-        // Go cgo: broader prefix matching (set_, add_, register_ may hold pointers)
-        const retaining_prefixes = [_][]const u8{
-            "register_", "set_", "add_", "subscribe_",
-        };
-        for (retaining_prefixes) |prefix| {
-            if (std.mem.startsWith(u8, callee_name, prefix)) return true;
-        }
-    }
-    // NOTE: For C/Rust/Zig callers, C_RETAINING_FUNCTIONS above already covers
-    // all truly escaping patterns (pthread_create, signal, atexit, etc.).
-    // Functions like set_error(), add_data(), register_callback() are NOT
-    // real escapes — they just write through a pointer parameter and return
-    // before the caller's stack frame ends.
-
-    return false;
-}
-
-/// Detect C.CBytes pattern in function names.
-/// Uses word boundary matching to prevent false positives from names like
-/// "myCBytesHandler" or "CBytesUtils".
-///
-/// V2 ENHANCEMENT: Now also supports data flow verification via CallGraph.
-/// Use `isCBytesEscapeWithDataFlow()` for more precise detection that checks
-/// whether the CBytes return value actually reaches a retaining FFI call.
-pub fn isCBytesPattern(name: []const u8) bool {
-    // Use word boundary for precise matching (not substring)
-    return word_boundary.isWordBoundaryMatch(name, "C.CBytes") or
-        word_boundary.isWordBoundaryMatch(name, "C.GoString") or
-        word_boundary.isWordBoundaryMatch(name, "C.GoStringN");
-}
-
-/// Enhanced CBytes escape detection with data flow analysis.
-///
-/// This V2 function combines:
-/// 1. Name-based pattern matching (isCBytesPattern) - fast pre-filter
-/// 2. Data flow verification via MemoryGraph - confirms return value is used in FFI context
-///
-/// When to use:
-///   - Use this instead of isCBytesPattern() when you have access to ctx (PassContext)
-///   - Provides fewer false positives than name-only checking
-///
-/// Example of false positive avoided by data flow check:
-/// ```go
-/// func safeUsage() {
-///     buf := C.CBytes("hello")  // Matches pattern ✓
-///     defer C.free(unsafe.Pointer(buf))  // Properly freed, NOT an escape ✗
-/// }
-/// ```
-/// vs true positive:
-/// ```go
-/// func dangerousUsage() {
-///     buf := C.CBytes("hello")  // Matches pattern ✓
-///     C.storeGlobally(buf)      // Retained by C code → ESCAPE ✓
-/// }
-/// ```
-pub fn isCBytesEscapeWithDataFlow(
-    callee_name: []const u8,
-    ptr_val: u64,
-    ctx: *const PassContext,
-) bool {
-    // Step 1: Fast pre-filter by name (avoids expensive graph traversal for non-CBytes calls)
-    if (!isCBytesPattern(callee_name)) return false;
-
-    // Step 2: Check if the pointer value is tracked as passed to any FFI call
-    // This uses MemoryGraph's cross-function tracking to verify actual data flow
-    const mg = &ctx.memory_graph;
-
-    // Check if this pointer is passed as argument to any external/FFI function
-    if (mg.isPassedAsArg(ptr_val)) {
-        // The pointer from C.Bytes is actually used in a call → potential escape
-        return true;
-    }
-
-    // Step 3: Check if pointer is stored to global (another form of escape)
-    if (mg.isStoredToGlobal(ptr_val)) {
-        return true;
-    }
-
-    // Name matched but no data flow evidence found → likely safe usage
-    return false;
-}
-
-/// Detect unsafe.Pointer conversion pattern.
-pub fn isUnsafePtrConversion(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "unsafe.Pointer") != null or
-        std.mem.indexOf(u8, name, "uintptr") != null;
-}
-
-/// Detect JNI RegisterNatives pattern for callback signature validation.
-pub fn isRegisterNativesPattern(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "RegisterNatives") != null;
-}
-
-/// Detect pthread_create pattern for callback thread safety.
-pub fn isPthreadCreatePattern(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "pthread_create") != null;
-}
-
-/// Check if function is a known callback receiver that requires type-safe pointers.
-pub fn isCallbackReceiver(name: []const u8) bool {
-    const receivers = [_][]const u8{
-        "RegisterNatives",  "SetCallback",            "set_callback",
-        "pthread_create",   "pthread_setcancelstate", "signal",
-        "sigaction",        "SDL_SetEventCallback",   "glfwSetCallback",
-        "curl_easy_setopt",
-    };
-    for (receivers) |r| {
-        if (std.mem.indexOf(u8, name, r) != null) return true;
-    }
-    return false;
-}
-
-/// Validate callback function pointer has compatible signature.
-/// This is a heuristic check based on naming conventions.
-pub fn validate_callback_signature(func_name: []const u8, callback_arg_type: []const u8) bool {
-    if (callback_arg_type.len == 0) return false;
-    if (std.mem.indexOf(u8, func_name, "RegisterNatives") != null) {
-        if (std.mem.indexOf(u8, callback_arg_type, "JNINativeMethod") != null) return true;
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "*") != null) return true;
-        return false;
-    }
-    if (std.mem.indexOf(u8, func_name, "pthread_create") != null) {
-        if (std.mem.indexOf(u8, callback_arg_type, "void*") != null) return true;
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "*") != null) return true;
-        return false;
-    }
-    if (std.mem.indexOf(u8, func_name, "signal") != null or
-        std.mem.indexOf(u8, func_name, "sigaction") != null)
-    {
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "int") != null) return true;
-        return false;
-    }
-    const generic_patterns = [_][]const u8{
-        "atexit",  "qsort",              "bsearch",
-        "on_exit", "pthread_key_create",
-    };
-    for (generic_patterns) |p| {
-        if (std.mem.indexOf(u8, func_name, p) != null) {
-            if (callback_arg_type.len > 0 and
-                (std.mem.indexOf(u8, callback_arg_type, "void") != null or
-                    std.mem.indexOf(u8, callback_arg_type, "*") != null))
-            {
-                return true;
-            }
-            return false;
-        }
-    }
-    return false;
-}
+// Types and helpers from centralized types module
+const cb_types = @import("../../types/callback_escape_types.zig");
+pub const EscapeViolation = cb_types.EscapeViolation;
+pub const EscapePattern = cb_types.EscapePattern;
+pub const EscapeStats = cb_types.EscapeStats;
+pub const AllocSiteInfo = cb_types.AllocSiteInfo;
+pub const FreeSiteInfo = cb_types.FreeSiteInfo;
+const CGO_GLUE_PATTERNS = cb_types.CGO_GLUE_PATTERNS;
+const GO_RUNTIME_SAFETY_FUNCTIONS = cb_types.GO_RUNTIME_SAFETY_FUNCTIONS;
+const C_RETAINING_FUNCTIONS = cb_types.C_RETAINING_FUNCTIONS;
+const CGO_ENHANCED_PATTERNS = cb_types.CGO_ENHANCED_PATTERNS;
+const GO_UNSAFE_PATTERNS = cb_types.GO_UNSAFE_PATTERNS;
+const isCgoBoundary = cb_types.isCgoBoundary;
+const isGoUnsafeOperation = cb_types.isGoUnsafeOperation;
+const detectGoMemoryPattern = cb_types.detectGoMemoryPattern;
+const hasCgoEvidence = cb_types.hasCgoEvidence;
+const isCgoBoundaryByLinkage = cb_types.isCgoBoundaryByLinkage;
+const isCgoBoundaryFromLLVM = cb_types.isCgoBoundaryFromLLVM;
+const isCgoGlueByPattern = cb_types.isCgoGlueByPattern;
+const isGoSafetyFunction = cb_types.isGoSafetyFunction;
+const mayRetainInCLanguageAware = cb_types.mayRetainInCLanguageAware;
+const isCBytesPattern = cb_types.isCBytesPattern;
+const isCBytesEscapeWithDataFlow = cb_types.isCBytesEscapeWithDataFlow;
+const isUnsafePtrConversion = cb_types.isUnsafePtrConversion;
+const isRegisterNativesPattern = cb_types.isRegisterNativesPattern;
+const isPthreadCreatePattern = cb_types.isPthreadCreatePattern;
+const isCallbackReceiver = cb_types.isCallbackReceiver;
+const validate_callback_signature = cb_types.validate_callback_signature;
 
 // ============================================================================
 // Main Pass
@@ -1466,18 +1007,8 @@ pub const CallbackEscapePass = struct {
 };
 
 // ============================================================================
-// Data Structures
+// Data Structures — now imported from cb_types
 // ============================================================================
-
-const AllocSiteInfo = struct {
-    inst_id: c.LLVMValueRef,
-    func_name: []const u8,
-};
-
-const FreeSiteInfo = struct {
-    inst_id: c.LLVMValueRef,
-    func_name: []const u8,
-};
 
 // Re-export reporting functions from callback_escape_report.zig
 pub const reportMissingKeepAlive = cb_report.reportMissingKeepAlive;

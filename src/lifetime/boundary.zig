@@ -21,7 +21,7 @@
 
 const std = @import("std");
 const engine = @import("engine.zig");
-const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
+const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 // NOTE: mapper module removed (dead code, 2026-05-04)
 // See untodo.md DEAD-13 for details
 

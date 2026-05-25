@@ -20,13 +20,13 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
-const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
+const ValueOrigin = @import("../ffi/ffi_semantics.zig").ValueOrigin;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const rust_drop_semantics = @import("../../../semantics/rust_drop_semantics.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
-const ffi_utils = @import("../ffi_utils.zig");
-const ptr_types = @import("../ptr_lifetime_types.zig");
-const classify = @import("../ptr_lifetime_classify.zig");
+const ffi_utils = @import("../ffi/ffi_utils.zig");
+const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
+const classify = @import("../ptr_lifetime/ptr_lifetime_classify.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which

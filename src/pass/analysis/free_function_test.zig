@@ -5,7 +5,7 @@
 
 const std = @import("std");
 
-const ptr_lifetime_classify = @import("ptr_lifetime_classify.zig");
+const ptr_lifetime_classify = @import("ptr_lifetime/ptr_lifetime_classify.zig");
 
 // ============================================================================
 // PHASE3-TASK-2 Core: Verify Free function list completeness

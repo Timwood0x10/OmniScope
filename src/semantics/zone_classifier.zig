@@ -18,7 +18,7 @@ const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 const debug_info = @import("../ir/debug_info.zig");
 const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
-const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
+const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 pub const Language = FFIBoundary.Language;
 
 // C5 FIX: Add thread-local cache for classifyFunction results

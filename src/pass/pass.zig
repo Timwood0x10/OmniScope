@@ -19,7 +19,7 @@ const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
 const language_detector = @import("../semantics/language_detector.zig");
-const issue_suppression = @import("analysis/issue_suppression.zig");
+const issue_suppression = @import("analysis/noise/issue_suppression.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
@@ -213,8 +213,8 @@ pub const PassContext = struct {
     raii_func_set: std.AutoHashMap(usize, void),
     meyers_singleton_set: std.AutoHashMap(usize, void),
     rc_container_func_set: std.AutoHashMap(usize, void),
-    rust_into_raw_set: std.AutoHashMap(usize, void),
-    rust_from_raw_set: std.AutoHashMap(usize, void),
+    rust_into_raw_set: std.StringHashMap(void),
+    rust_from_raw_set: std.StringHashMap(void),
 
     /// Cross-pass deduplication: tracks (func_name, issue_kind) pairs
     /// that have already been reported by a previous pass.
@@ -346,8 +346,8 @@ pub const PassContext = struct {
             .raii_func_set = std.AutoHashMap(usize, void).init(allocator),
             .meyers_singleton_set = std.AutoHashMap(usize, void).init(allocator),
             .rc_container_func_set = std.AutoHashMap(usize, void).init(allocator),
-            .rust_into_raw_set = std.AutoHashMap(usize, void).init(allocator),
-            .rust_from_raw_set = std.AutoHashMap(usize, void).init(allocator),
+            .rust_into_raw_set = std.StringHashMap(void).init(allocator),
+            .rust_from_raw_set = std.StringHashMap(void).init(allocator),
             .reported_keys = std.AutoHashMap(u64, void).init(allocator),
             .registry_cache = std.StringHashMap(FunctionSemantics).init(allocator),
             .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(allocator),
@@ -1078,11 +1078,16 @@ pub const PassContext = struct {
         if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
 
         // Build ffi_set cache lazily on first call (unchanged from before)
+        // POT-BUG-2 FIX: propagate OOM instead of silently dropping FFI names,
+        // which would cause false negatives in isOnDangerPathFull.
         if (self.ffi_set_cache == null) {
             var ffi_set = std.StringHashMap(void).init(self.allocator);
             for (raw_ffis) |ffe| {
                 if (ffe.is_ffi_boundary) {
-                    ffi_set.put(ffe.callee_name, {}) catch {};
+                    ffi_set.put(ffe.callee_name, {}) catch {
+                        ffi_set.deinit();
+                        return false;
+                    };
                 }
             }
             self.ffi_set_cache = ffi_set;
@@ -1149,7 +1154,11 @@ pub const PassContext = struct {
     /// Errors:
     ///   - Propagates from markRelevantFunction if HashMap insertion fails
     ///   - Silently returns if inst_ptr is null or cannot be resolved
-    pub fn markFunctionFromInst(self: *PassContext, inst_ptr: u64) void {
+    ///
+    /// POT-BUG-3 FIX: Now propagates OOM error instead of silently swallowing it,
+    /// which previously caused false-negative tier gating (functions that should
+    /// have been Tier 2-analyzed fell through to Tier 1 skip path).
+    pub fn markFunctionFromInst(self: *PassContext, inst_ptr: u64) !void {
         if (inst_ptr == 0) return;
 
         const inst = @as(c.LLVMValueRef, @ptrFromInt(inst_ptr));
@@ -1165,10 +1174,7 @@ pub const PassContext = struct {
 
         // Step 3: Convert function pointer to u64 and mark as relevant
         const func_ptr = @as(u64, @intFromPtr(func));
-        self.relevant_functions.put(func_ptr, {}) catch |err| {
-            // Log failure but don't crash — function gating degradation is acceptable
-            log.warn("[P0-1] markFunctionFromInst: failed to mark function (ptr=0x{x}): {}", .{ func_ptr, err });
-        };
+        try self.relevant_functions.put(func_ptr, {});
     }
 };
 

@@ -14,7 +14,7 @@ const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
-const ffi_language_classifier = @import("../pass/analysis/ffi_language_classifier.zig");
+const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 
 /// How the language was detected
 pub const DetectionMethod = enum {
@@ -69,7 +69,7 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     const PERSONALITY_WEIGHT: f32 = 0.8;
     const GLOBALS_WEIGHT: f32 = 0.6;
 
-    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, csharp, java, unknown]
+    var weighted_votes = [_]f32{ 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // [rust, go, zig, cpp, c, csharp, java, python, unknown]
 
     if (sampling_result) |r| {
         const lang_idx = langToIndex(r.language);
@@ -148,6 +148,7 @@ fn indexToLang(idx: usize) Language {
         5 => .csharp,
         6 => .java,
         7 => .python,
+        8 => .unknown,
         else => .unknown,
     };
 }
@@ -505,12 +506,12 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
 /// This is the **single canonical implementation** used by all analysis passes.
 /// Do NOT duplicate this logic elsewhere -- always call through here.
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
-    return @import("../pass/analysis/ffi_language_classifier.zig").identifyLanguage(func);
+    return @import("../pass/analysis/ffi/ffi_language_classifier.zig").identifyLanguage(func);
 }
 
 /// Identify the language of a called function by name string.
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
-    return @import("../pass/analysis/ffi_language_classifier.zig").identifyCalleeLanguage(func_name);
+    return @import("../pass/analysis/ffi/ffi_language_classifier.zig").identifyCalleeLanguage(func_name);
 }
 
 /// Multi-layer Rust mangled name detector for _ZN disambiguation.

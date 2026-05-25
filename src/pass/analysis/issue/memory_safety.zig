@@ -35,7 +35,7 @@ const FuzzyMatcher = @import("../../../semantics/memory_graph.zig").FuzzyMatcher
 const MemoryRelations = @import("../../../semantics/memory_relations.zig").MemoryRelations;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
-const ffi_utils = @import("../ffi_utils.zig");
+const ffi_utils = @import("../ffi/ffi_utils.zig");
 
 /// Hash a string slice to u64 for zero-copy operations
 fn hashString(s: []const u8) u64 {

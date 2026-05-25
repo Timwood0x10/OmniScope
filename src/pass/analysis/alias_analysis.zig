@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
-const ptr_types = @import("ptr_lifetime_types.zig");
+const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 
 // ============================================================================
 // Value Alias Analysis

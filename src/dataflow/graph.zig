@@ -455,20 +455,38 @@ pub const DataFlowGraph = struct {
         }
 
         if (count == 0) {
-            return &[_]Issue{};
+            // Allocate a heap-backed empty slice so the caller can uniformly
+            // free the returned memory without special-casing the empty path.
+            // Returning a pointer to a function-local zero-length array literal
+            // would be a dangling reference once the stack frame unwinds.
+            return try self.allocator.alloc(Issue, 0);
         }
 
         const result = try self.allocator.alloc(Issue, count);
+        // FIX: Clean up partially allocated entries on OOM
+        var filled: usize = 0;
+        errdefer {
+            // Free already-copied strings and the result array itself on error
+            for (result[0..filled]) |*item| {
+                if (item.owned) self.allocator.free(item.message);
+                if (item.function_owned) self.allocator.free(item.location.func);
+            }
+            self.allocator.free(result);
+        }
 
         var index: usize = 0;
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
                 const message_copy = try self.allocator.dupe(u8, issue.message);
                 // DC-C9 FIX: Deep copy location.func to prevent dangling pointer
+                errdefer self.allocator.free(message_copy);
                 const func_copy = if (issue.location.func.len > 0)
                     try self.allocator.dupe(u8, issue.location.func)
                 else
                     issue.location.func;
+                errdefer {
+                    if (func_copy.len > 0) self.allocator.free(func_copy);
+                }
 
                 result[index] = .{
                     .kind = issue.kind,
@@ -488,6 +506,7 @@ pub const DataFlowGraph = struct {
                     .owned = true,
                     .function_owned = (func_copy.len > 0),
                 };
+                filled = index + 1;
                 index += 1;
             }
         }
@@ -799,4 +818,77 @@ test "DataFlowGraph - clear" {
 
     try std.testing.expectEqual(@as(usize, 0), dfg.nodes.count());
     try std.testing.expectEqual(@as(usize, 0), dfg.edges.items.len);
+}
+
+// Deep-free a slice produced by getIssuesBySeverity.
+// Mirrors the ownership contract documented on the function: every entry
+// owns its message and (optionally) its function name, plus the slice itself.
+fn freeIssuesSlice(allocator: Allocator, slice: []Issue) void {
+    for (slice) |*item| {
+        if (item.owned and item.message.len > 0) allocator.free(item.message);
+        if (item.function_owned and item.location.func.len > 0) allocator.free(item.location.func);
+    }
+    allocator.free(slice);
+}
+
+test "DataFlowGraph - getIssuesBySeverity returns heap-backed empty slice when no matches" {
+    // Boundary: a query that returns zero matches must still hand back a slice
+    // that is safe to free. Returning a stack-local literal would dangle.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "DataFlowGraph - getIssuesBySeverity returns empty slice when severities do not match" {
+    // Boundary: graph has issues but none at the queried severity.
+    // Same heap-backed empty slice contract as the prior test.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    const location = Location.init("only_high");
+    try dfg.addIssue(Issue.init(.ffi_unsafe_call, "only-high entry", location, .high, 0.9));
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "DataFlowGraph - getIssuesBySeverity filters and deep-copies matches" {
+    // Happy path: mixed severities, verify only matching issues come back
+    // and that the deep-copied strings outlive any source mutation.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    try dfg.addIssue(Issue.init(.ffi_unsafe_call, "h-1", Location.init("f_a"), .high, 0.9));
+    try dfg.addIssue(Issue.init(.memory_leak, "c-1", Location.init("f_b"), .critical, 0.95));
+    try dfg.addIssue(Issue.init(.memory_leak, "c-2", Location.init("f_c"), .critical, 0.95));
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+    try std.testing.expect(result[0].severity == .critical);
+    try std.testing.expect(result[1].severity == .critical);
+    try std.testing.expect(result[0].owned);
+    try std.testing.expect(result[0].function_owned);
 }

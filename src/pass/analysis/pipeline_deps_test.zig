@@ -6,11 +6,11 @@
 const std = @import("std");
 
 // Import all FFI-related passes
-const PtrLifetimePass = @import("ptr_lifetime.zig").PtrLifetimePass;
-const FFIBoundaryPass = @import("ffi_boundary.zig").FFIBoundaryPass;
+const PtrLifetimePass = @import("ptr_lifetime/ptr_lifetime.zig").PtrLifetimePass;
+const FFIBoundaryPass = @import("ffi/ffi_boundary.zig").FFIBoundaryPass;
 const CallbackEscapePass = @import("callback_escape.zig").CallbackEscapePass;
 const DangerSurfacePass = @import("danger_surface.zig").DangerSurfacePass;
-const FFITypeMismatchPass = @import("ffi_type_mismatch.zig").FFITypeMismatchPass;
+const FFITypeMismatchPass = @import("ffi/ffi_type_mismatch.zig").FFITypeMismatchPass;
 
 const PassKind = @import("../pass.zig").PassKind;
 

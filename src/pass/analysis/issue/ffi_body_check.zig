@@ -19,7 +19,7 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 
-const ffi_semantics = @import("../ffi_semantics.zig");
+const ffi_semantics = @import("../ffi/ffi_semantics.zig");
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 

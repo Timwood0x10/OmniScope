@@ -75,22 +75,22 @@ pub const cross_lang = struct {
     pub const CallGraphPass = @import("pass/analysis/call_graph.zig").CallGraphPass;
     pub const SurfaceClassifierPass = @import("pass/analysis/surface_classifier_pass.zig").SurfaceClassifierPass;
     pub const DangerSurfacePass = @import("pass/analysis/danger_surface.zig").DangerSurfacePass;
-    pub const TaintPropagationPass = @import("pass/analysis/taint_propagation.zig").TaintPropagationPass;
-    pub const FFIBoundaryPass = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryPass;
+    pub const TaintPropagationPass = @import("pass/analysis/taint/taint_propagation.zig").TaintPropagationPass;
+    pub const FFIBoundaryPass = @import("pass/analysis/ffi/ffi_boundary.zig").FFIBoundaryPass;
     pub const PointerOwnershipPass = @import("pass/analysis/pointer_ownership.zig").PointerOwnershipPass;
     pub const OwnershipError = @import("pass/analysis/pointer_ownership.zig").OwnershipError;
-    pub const TaintError = @import("pass/analysis/taint_propagation.zig").TaintError;
-    pub const FFIBoundaryError = @import("pass/analysis/ffi_boundary.zig").FFIBoundaryError;
+    pub const TaintError = @import("pass/analysis/taint/taint_propagation.zig").TaintError;
+    pub const FFIBoundaryError = @import("pass/analysis/ffi/ffi_boundary.zig").FFIBoundaryError;
 
-    pub const TaintState = @import("pass/analysis/taint_state.zig").TaintState;
-    pub const TaintInfo = @import("pass/analysis/taint_state.zig").TaintInfo;
-    pub const TaintContext = @import("pass/analysis/taint_state.zig").TaintContext;
+    pub const TaintState = @import("pass/analysis/taint/taint_state.zig").TaintState;
+    pub const TaintInfo = @import("pass/analysis/taint/taint_state.zig").TaintInfo;
+    pub const TaintContext = @import("pass/analysis/taint/taint_state.zig").TaintContext;
 
-    pub const FFIDetector = @import("pass/analysis/ffi_detector.zig").FFIDetector;
-    pub const getCWEID = @import("pass/analysis/ffi_detector.zig").getCWEID;
-    pub const FFIVulnerability = @import("pass/analysis/ffi_detector.zig").FFIVulnerability;
-    pub const FFIVulnerabilityType = @import("pass/analysis/ffi_detector.zig").FFIVulnerabilityType;
-    pub const FFISeverity = @import("pass/analysis/ffi_detector.zig").FFISeverity;
+    pub const FFIDetector = @import("pass/analysis/ffi/ffi_detector.zig").FFIDetector;
+    pub const getCWEID = @import("pass/analysis/ffi/ffi_detector.zig").getCWEID;
+    pub const FFIVulnerability = @import("pass/analysis/ffi/ffi_detector.zig").FFIVulnerability;
+    pub const FFIVulnerabilityType = @import("pass/analysis/ffi/ffi_detector.zig").FFIVulnerabilityType;
+    pub const FFISeverity = @import("pass/analysis/ffi/ffi_detector.zig").FFISeverity;
 
     pub const FFIMatcher = @import("ffi/ffi_matcher.zig").FFIMatcher;
     pub const FunctionInfo = @import("ffi/ffi_matcher.zig").FunctionInfo;
@@ -98,24 +98,24 @@ pub const cross_lang = struct {
     pub const FFIMatcherError = @import("ffi/ffi_matcher.zig").FFIMatcherError;
     pub const FFIFunctionKind = @import("ffi/ffi_matcher.zig").FunctionKind;
 
-    pub const FFIKind = @import("pass/analysis/ffi_info.zig").FFIKind;
-    pub const FFIBoundaryInfo = @import("pass/analysis/ffi_info.zig").FFIBoundaryInfo;
-    pub const FFIBoundaryDetector = @import("pass/analysis/ffi_info.zig").FFIBoundaryDetector;
+    pub const FFIKind = @import("pass/analysis/ffi/ffi_info.zig").FFIKind;
+    pub const FFIBoundaryInfo = @import("pass/analysis/ffi/ffi_info.zig").FFIBoundaryInfo;
+    pub const FFIBoundaryDetector = @import("pass/analysis/ffi/ffi_info.zig").FFIBoundaryDetector;
 
-    pub const RiskLevel = @import("pass/analysis/flow_path.zig").RiskLevel;
-    pub const FlowStep = @import("pass/analysis/flow_path.zig").FlowStep;
-    pub const FlowPath = @import("pass/analysis/flow_path.zig").FlowPath;
-    pub const VulnerabilityReport = @import("pass/analysis/flow_path.zig").VulnerabilityReport;
+    pub const RiskLevel = @import("pass/analysis/taint/flow_path.zig").RiskLevel;
+    pub const FlowStep = @import("pass/analysis/taint/flow_path.zig").FlowStep;
+    pub const FlowPath = @import("pass/analysis/taint/flow_path.zig").FlowPath;
+    pub const VulnerabilityReport = @import("pass/analysis/taint/flow_path.zig").VulnerabilityReport;
 
-    pub const classifyRiskLevel = @import("pass/analysis/flow_path.zig").classifyRiskLevel;
+    pub const classifyRiskLevel = @import("pass/analysis/taint/flow_path.zig").classifyRiskLevel;
     pub const isDangerousSink = @import("registry/semantic_registry.zig").SemanticRegistry.isDangerousSink;
 
-    pub const PtrLifetimePass = @import("pass/analysis/ptr_lifetime.zig").PtrLifetimePass;
-    pub const PtrAllocSite = @import("pass/analysis/ptr_lifetime.zig").PtrAllocSite;
-    pub const LifetimeViolation = @import("pass/analysis/ptr_lifetime.zig").LifetimeViolation;
-    pub const LifetimeStats = @import("pass/analysis/ptr_lifetime.zig").LifetimeStats;
-    pub const is_extern_function = @import("pass/analysis/ptr_lifetime.zig").is_extern_function;
-    pub const may_retain_pointer = @import("pass/analysis/ptr_lifetime.zig").may_retain_pointer;
+    pub const PtrLifetimePass = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").PtrLifetimePass;
+    pub const PtrAllocSite = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").PtrAllocSite;
+    pub const LifetimeViolation = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").LifetimeViolation;
+    pub const LifetimeStats = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").LifetimeStats;
+    pub const is_extern_function = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").is_extern_function;
+    pub const may_retain_pointer = @import("pass/analysis/ptr_lifetime/ptr_lifetime.zig").may_retain_pointer;
 
     pub const CallbackEscapePass = @import("pass/analysis/callback_escape.zig").CallbackEscapePass;
     pub const EscapeViolation = @import("pass/analysis/callback_escape.zig").EscapeViolation;
@@ -146,36 +146,36 @@ pub const cross_lang = struct {
     pub const MallocCheckPass = @import("pass/analysis/issue/malloc_check.zig").MallocCheckPass;
     pub const FreeValidationPass = @import("pass/analysis/issue/free_validation.zig").FreeValidationPass;
     pub const BufferOverflowPass = @import("pass/analysis/buffer_overflow.zig").BufferOverflowPass;
-    pub const FFITypeMismatchPass = @import("pass/analysis/ffi_type_mismatch.zig").FFITypeMismatchPass;
-    pub const RustFfiAuditor = @import("pass/analysis/rust_ffi_auditor.zig").RustFfiAuditor;
-    pub const FFIAnalysisPass = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisPass;
-    pub const FFIAnalysisResult = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisResult;
-    pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisVulnerability;
-    pub const FFIAnalysisError = @import("pass/analysis/ffi_analysis.zig").FFIAnalysisError;
+    pub const FFITypeMismatchPass = @import("pass/analysis/ffi/ffi_type_mismatch.zig").FFITypeMismatchPass;
+    pub const RustFfiAuditor = @import("pass/analysis/rust_ffi/rust_ffi_auditor.zig").RustFfiAuditor;
+    pub const FFIAnalysisPass = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisPass;
+    pub const FFIAnalysisResult = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisResult;
+    pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisVulnerability;
+    pub const FFIAnalysisError = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisError;
 
     // Semantic resolution pass
     pub const SemanticResolverPass = @import("pass/analysis/semantic_resolver_pass.zig").SemanticResolverPass;
 
-    pub const IntrinsicRisk = @import("pass/analysis/ffi_enhancement.zig").IntrinsicRisk;
-    pub const FnOrigin = @import("pass/analysis/ffi_enhancement.zig").FnOrigin;
-    pub const classifyRustIntrinsic = @import("pass/analysis/ffi_enhancement.zig").classifyRustIntrinsic;
-    pub const classifyFunctionOrigin = @import("pass/analysis/ffi_enhancement.zig").classifyFunctionOrigin;
-    pub const EnhancementStats = @import("pass/analysis/ffi_enhancement.zig").EnhancementStats;
+    pub const IntrinsicRisk = @import("pass/analysis/ffi/ffi_enhancement.zig").IntrinsicRisk;
+    pub const FnOrigin = @import("pass/analysis/ffi/ffi_enhancement.zig").FnOrigin;
+    pub const classifyRustIntrinsic = @import("pass/analysis/ffi/ffi_enhancement.zig").classifyRustIntrinsic;
+    pub const classifyFunctionOrigin = @import("pass/analysis/ffi/ffi_enhancement.zig").classifyFunctionOrigin;
+    pub const EnhancementStats = @import("pass/analysis/ffi/ffi_enhancement.zig").EnhancementStats;
 };
 
 // Export noise reduction system (Phase 4)
 // NOTE: FunctionOrigin here is a re-export of semantics/noise_filter.FunctionOrigin (canonical definition)
 pub const noise_reduction = struct {
-    pub const FunctionOrigin = @import("pass/analysis/noise_reduction.zig").FunctionOrigin;
-    pub const RiskWeight = @import("pass/analysis/noise_reduction.zig").RiskWeight;
-    pub const NoiseReductionConfig = @import("pass/analysis/noise_reduction.zig").NoiseReductionConfig;
-    pub const AttributionSummary = @import("pass/analysis/noise_reduction.zig").AttributionSummary;
-    pub const layer1_NameBasedFilter = @import("pass/analysis/noise_reduction.zig").layer1_NameBasedFilter;
-    pub const layer2_PathBasedFilter = @import("pass/analysis/noise_reduction.zig").layer2_PathBasedFilter;
-    pub const classifyFunction = @import("pass/analysis/noise_reduction.zig").classifyFunction;
-    pub const isRustDropGlueBehavior = @import("pass/analysis/noise_reduction.zig").isRustDropGlueBehavior;
-    pub const isZigAllocatorWrapperBehavior = @import("pass/analysis/noise_reduction.zig").isZigAllocatorWrapperBehavior;
-    pub const isSTLVectorGrowBehavior = @import("pass/analysis/noise_reduction.zig").isSTLVectorGrowBehavior;
+    pub const FunctionOrigin = @import("pass/analysis/noise/noise_reduction.zig").FunctionOrigin;
+    pub const RiskWeight = @import("pass/analysis/noise/noise_reduction.zig").RiskWeight;
+    pub const NoiseReductionConfig = @import("pass/analysis/noise/noise_reduction.zig").NoiseReductionConfig;
+    pub const AttributionSummary = @import("pass/analysis/noise/noise_reduction.zig").AttributionSummary;
+    pub const layer1_NameBasedFilter = @import("pass/analysis/noise/noise_reduction.zig").layer1_NameBasedFilter;
+    pub const layer2_PathBasedFilter = @import("pass/analysis/noise/noise_reduction.zig").layer2_PathBasedFilter;
+    pub const classifyFunction = @import("pass/analysis/noise/noise_reduction.zig").classifyFunction;
+    pub const isRustDropGlueBehavior = @import("pass/analysis/noise/noise_reduction.zig").isRustDropGlueBehavior;
+    pub const isZigAllocatorWrapperBehavior = @import("pass/analysis/noise/noise_reduction.zig").isZigAllocatorWrapperBehavior;
+    pub const isSTLVectorGrowBehavior = @import("pass/analysis/noise/noise_reduction.zig").isSTLVectorGrowBehavior;
 };
 
 // Export semantics analysis (Zone Classification + Noise Reduction)
@@ -288,9 +288,9 @@ test "root.zig - module import test" {
 // Wire up previously disconnected test modules
 test {
     _ = @import("pass/analysis/callback_escape_enhanced_test.zig");
-    _ = @import("pass/analysis/ffi_type_mismatch_test.zig");
-    _ = @import("pass/analysis/free_function_test.zig");
-    _ = @import("pass/analysis/noise_reduction_test.zig");
+    _ = @import("pass/analysis/ffi/ffi_type_mismatch_test.zig");
+    _ = @import("pass/analysis/ptr_lifetime/ptr_lifetime_test.zig");
+    _ = @import("pass/analysis/noise/noise_reduction_test.zig");
     _ = @import("pass/analysis/pipeline_deps_test.zig");
-    _ = @import("pass/analysis/rust_ffi_auditor_test.zig");
+    _ = @import("pass/analysis/rust_ffi/rust_ffi_auditor_test.zig");
 }

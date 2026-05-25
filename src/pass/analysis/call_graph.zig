@@ -12,7 +12,7 @@ const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const CrossLangEdge = @import("../pass.zig").CrossLangEdge;
-const ptr_types = @import("ptr_lifetime_types.zig");
+const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 const language_detector = @import("../../semantics/language_detector.zig");
 const semantics_call_graph = @import("../../semantics/call_graph.zig");
 

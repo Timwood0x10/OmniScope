@@ -152,11 +152,15 @@ pub const DangerSurfacePass = struct {
             // Mark caller functions for all call_args/call_rets involving this ptr
             const arg_indices2 = mg.getCallArgsForPtr(ptr_val);
             for (arg_indices2) |aidx| {
-                ctx.markFunctionFromInst(mg.call_args.items[aidx].caller_inst);
+                ctx.markFunctionFromInst(mg.call_args.items[aidx].caller_inst) catch |err| {
+                    diag.debug("[P0-1] markFunctionFromInst (call_arg) failed: {}", .{err});
+                };
             }
             const ret_indices2 = mg.getCallRetsForPtr(ptr_val);
             for (ret_indices2) |ridx| {
-                ctx.markFunctionFromInst(mg.call_rets.items[ridx].caller_inst);
+                ctx.markFunctionFromInst(mg.call_rets.items[ridx].caller_inst) catch |err| {
+                    diag.debug("[P0-1] markFunctionFromInst (call_ret) failed: {}", .{err});
+                };
             }
 
             total_alias_traces += 1;
