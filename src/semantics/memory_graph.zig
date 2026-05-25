@@ -11,6 +11,7 @@
 //! Uses direct allocator (no arena) for clean deinit and zero leaks.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 
 const zone = @import("zone_classifier.zig");
 pub const ZoneKind = zone.ZoneKind;
@@ -199,18 +200,54 @@ pub const MemoryGraph = struct {
     ///
     /// For backward compatibility, use trackAliasStrong() which defaults is_weak=false.
     pub fn trackAlias(graph: *MemoryGraph, from_val: u64, to_val: u64, is_weak: bool) !void {
-        const target_node = graph.nodes.get(to_val) orelse {
-            return MemoryGraphError.NodeNotFound;
-        };
+        var target_node = graph.nodes.get(to_val);
 
-        try target_node.aliases.put(from_val, {});
+        if (target_node == null) {
+            // Lazy node creation: if target doesn't exist, create a placeholder
+            // This handles cases where store/alias instructions reference values
+            // that haven't been explicitly tracked via trackAlloc yet.
+            // Common in FFI scenarios where pointers cross ABI boundaries.
+            target_node = try graph.createLazyNode(to_val);
+        }
+
+        try target_node.?.aliases.put(from_val, {});
         // V2: Store weak flag for downstream double-free decision making
         if (is_weak) {
             try graph.weak_aliases.put(from_val, {});
         }
-        try graph.nodes.put(from_val, target_node);
+        try graph.nodes.put(from_val, target_node.?);
         // Build reverse index for O(1) alias→canonical lookup
         try graph.alias_to_canonical.put(from_val, to_val);
+    }
+
+    /// Create a placeholder node for lazy initialization during alias tracking.
+    /// Used when trackAlias references a value not yet tracked via trackAlloc.
+    fn createLazyNode(graph: *MemoryGraph, val: u64) !*AllocNode {
+        const lazy_id = graph.next_id;
+        graph.next_id += 1;
+
+        const lazy_node = try graph.allocator.create(AllocNode);
+        errdefer graph.allocator.destroy(lazy_node);
+
+        lazy_node.* = AllocNode{
+            .id = lazy_id,
+            .alloc_inst = val,
+            .merkle_root = hashValues(&.{ val, lazy_id }),
+            .aliases = std.AutoHashMap(u64, void).init(graph.allocator),
+            .freed = false,
+            .freed_by = null,
+            .source_kind = .unknown,
+            .zone = .unknown,
+            .alloc_lang = .unknown,
+            .free_lang = null,
+            .free_sites = std.ArrayList(FreeRecord).empty,
+        };
+
+        try graph.node_store.append(graph.allocator, lazy_node);
+        try graph.nodes.put(val, lazy_node);
+
+        log.debug("[MG] Lazy-created node for alias target {x} (id={d})", .{ val, lazy_id });
+        return lazy_node;
     }
 
     /// Backward-compatible version of trackAlias that defaults to strong alias (is_weak=false).
@@ -763,7 +800,7 @@ pub const MemoryGraph = struct {
         visited: *std.AutoHashMap(u64, void),
         ffi_set: ?*const std.StringHashMap(void),
     ) DangerPathKind {
-        // H1 FIX: Add ptr_val to visited at entry to prevent infinite recursion
+        // FIX: Add ptr_val to visited at entry to prevent infinite recursion
         // when alias closure contains cycles back to the original pointer.
         if (visited.contains(ptr_val)) return .none;
         visited.put(ptr_val, {}) catch {

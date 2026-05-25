@@ -193,18 +193,28 @@ pub const MemorySafetyPass = struct {
         // Check if this pointer was already freed in a DIFFERENT basic block
         // within the same function. If so, the frees are likely in mutually
         // exclusive branches (if/else) — not a real double free.
-        if (free_bb_map.get(ptr_value)) |prev_bb_count| {
-            if (prev_bb_count >= 1) {
-                // Already freed in at least one other BB in this function.
-                // This is the mutually-exclusive-branch pattern.
-                diag.debug("[SUPPRESSED] Mutually exclusive branch free (BB #{d}, ptr=0x{x}): {s}", .{
-                    prev_bb_count + 1,
-                    ptr_value,
-                    free_func_name,
-                });
-                // Update BB count but do NOT report or add to freed_pointers.
-                _ = free_bb_map.put(ptr_value, prev_bb_count + 1) catch {};
-                return false;
+        //
+        // EXCEPTION: FFI-related frees (cross-language deallocators like
+        // __rust_dealloc, external C free()) should NOT be suppressed because:
+        //   1. Loop-pattern calls (e.g., MerkleTree::new calling sha256 N times)
+        //      trigger multiple alloc/free cycles that are NOT mutually exclusive
+        //   2. Cross-language memory bugs are inherently more dangerous
+        //   3. The "mutually exclusive" assumption doesn't hold across ABI boundaries
+        const is_ffi_free = isFFIRelatedFree(free_func_name);
+        if (!is_ffi_free) {
+            if (free_bb_map.get(ptr_value)) |prev_bb_count| {
+                if (prev_bb_count >= 1) {
+                    // Already freed in at least one other BB in this function.
+                    // This is the mutually-exclusive-branch pattern.
+                    diag.debug("[SUPPRESSED] Mutually exclusive branch free (BB #{d}, ptr=0x{x}): {s}", .{
+                        prev_bb_count + 1,
+                        ptr_value,
+                        free_func_name,
+                    });
+                    // Update BB count but do NOT report or add to freed_pointers.
+                    _ = free_bb_map.put(ptr_value, prev_bb_count + 1) catch {};
+                    return false;
+                }
             }
         }
 
@@ -352,6 +362,32 @@ pub const MemorySafetyPass = struct {
             std.mem.indexOf(u8, func_name, "_R") != null;
         if (!is_rust) return false;
         return ffi_utils.isRustDropGlue(func_name);
+    }
+
+    /// Check if a free function is FFI-related (cross-language deallocator).
+    ///
+    /// These functions should NOT be subject to "mutually exclusive branch"
+    /// suppression because:
+    ///   - Loop-pattern FFI calls (e.g., N iterations of c_hash) produce
+    ///     multiple alloc/free cycles that are NOT in mutually exclusive branches
+    ///   - Cross-language memory bugs are higher risk and should be reported
+    ///   - The "if/else" assumption doesn't hold across ABI boundaries
+    fn isFFIRelatedFree(func_name: []const u8) bool {
+        // Rust global allocator (used in FFI contexts)
+        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__rust_alloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__rust_free") != null) return true;
+
+        // C standard library frees (commonly used in C bridges)
+        if (std.mem.eql(u8, func_name, "free")) return true;
+        if (std.mem.eql(u8, func_name, "realloc")) return true;
+
+        // Known FFI bridge patterns
+        if (std.mem.startsWith(u8, func_name, "c_")) return true;
+        if (std.mem.startsWith(u8, func_name, "cpp_")) return true;
+        if (std.mem.startsWith(u8, func_name, "ffi_")) return true;
+
+        return false;
     }
 };
 

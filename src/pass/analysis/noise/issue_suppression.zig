@@ -157,6 +157,19 @@ pub fn isRustDropChainLeak(issue: *const Issue) bool {
     const reason = issue.reason;
     const func = issue.location.func;
 
+    // EXCEPTION: Real memory safety bugs (double_free, invalid_free, use_after_free,
+    // memory_leak) that happen to involve Rust allocators should NOT be suppressed.
+    // These are genuine bugs, not Drop chain false positives.
+    // The __rust_dealloc/__rust_alloc in the message indicates WHERE the bug
+    // occurred, not that it's a false positive.
+    const is_real_memory_bug = switch (issue.kind) {
+        .double_free, .invalid_free, .use_after_free, .memory_leak,
+        .cross_language_leak, .cross_language_free,
+        => true,
+        else => false,
+    };
+    if (is_real_memory_bug) return false;
+
     // ── A1: Rust allocator / drop glue in free side ──
     // "__rust_dealloc" appears when Rust's global allocator frees memory
     // that was allocated in a different function's scope

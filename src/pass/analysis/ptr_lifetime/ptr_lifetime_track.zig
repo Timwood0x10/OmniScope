@@ -436,7 +436,9 @@ pub fn handleStore(ctx: *TrackContext) !void {
         if (ctx.mgEffective()) |mg| {
             const from_hash = @as(u64, @intFromPtr(dest));
             const to_hash = @as(u64, @intFromPtr(value));
-            _ = mg.trackAliasStrong(from_hash, to_hash) catch {};
+            if (mg.trackAliasStrong(from_hash, to_hash)) |_| {} else |err| {
+                log.debug("[TRACK] trackAliasStrong FAILED err={} from={x} to={x}", .{ err, from_hash, to_hash });
+            }
         }
     } else {
         if (ctx.mgEffective()) |mg| {

@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const log = @import("../../../common/log.zig");
 
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const allocator_kb = @import("../../../semantics/allocator_kb.zig");
@@ -146,7 +147,9 @@ pub fn propagateOrigin(
         if (mem_graph) |mg| {
             const from_hash = @as(u64, @intFromPtr(dst));
             const to_hash = @as(u64, @intFromPtr(src));
-            _ = mg.trackAliasStrong(from_hash, to_hash) catch {};
+            if (mg.trackAliasStrong(from_hash, to_hash)) |_| {} else |err| {
+                log.debug("[HELPERS] trackAliasStrong FAILED err={} from={x} to={x}", .{ err, from_hash, to_hash });
+            }
         }
     }
 }
