@@ -10,6 +10,9 @@ const zone = @import("../semantics/zone_classifier.zig");
 pub const ZoneKind = zone.ZoneKind;
 pub const Language = zone.Language;
 
+const resource_family = @import("../semantics/resource/family.zig");
+pub const FamilyId = resource_family.FamilyId;
+
 /// Error set for memory graph operations.
 pub const MemoryGraphError = error{
     OutOfMemory,
@@ -116,6 +119,9 @@ pub const FreeRecord = struct {
     bb_id: u32,
     /// Language of the free site.
     free_lang: Language,
+    /// Resource family of the free/deallocator (from family registry).
+    /// null = unclassified; .invalid = lookup failed.
+    release_family: ?FamilyId = null,
 };
 
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
@@ -140,6 +146,9 @@ pub const AllocNode = struct {
     zone: ZoneKind = .unknown,
     /// Language of the module/function where this allocation was made.
     alloc_lang: Language = .unknown,
+    /// Resource family of the allocator (from family registry).
+    /// null = unclassified; .invalid = lookup failed.
+    alloc_family: ?FamilyId = null,
     /// Language of the module/function where this was freed (? = not yet freed).
     free_lang: ?Language = null,
     /// All free operations on this allocation (path-sensitive).

@@ -10,6 +10,11 @@ const safe = @import("../../../ir/llvm_safe.zig"); // Issue2: Standardized LLVM 
 const PassContext = @import("../../../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../../../pass/pass.zig").DiagnosticWriter;
 const memory_graph = @import("../../../semantics/memory_graph.zig");
+const family_mod = @import("../../../semantics/resource/family.zig");
+const FamilyId = family_mod.FamilyId;
+const FamilyMatchResult = family_mod.FamilyMatchResult;
+const registry_mod = @import("../../../semantics/resource/family_registry.zig");
+const ResourceFamilyRegistry = registry_mod.ResourceFamilyRegistry;
 const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
@@ -130,6 +135,56 @@ pub fn checkCrossLanguageFree(
     if (mem_graph) |mg| {
         if (mg.nodes.get(ptr_hash)) |node| {
             const alloc_lang = node.alloc_lang;
+
+            // =================================================================
+            // P3: Family-first cross-free判定 (优先于 language-based 分支)
+            // 当 alloc_family 和 release_family 都已知时, 使用 family 匹配
+            // 替代 alloc_lang != free_lang 作为核心漏洞条件.
+            // =================================================================
+            if (node.alloc_family != null) {
+                if (mg.family_registry) |reg| {
+                    const alloc_family = node.alloc_family.?;
+                    // Look up release family from callee name
+                    const release_op = reg.lookupRelease(callee_name, null);
+                    if (release_op) |rop| {
+                        const match_result = reg.compareFamilies(alloc_family, rop.family);
+                        switch (match_result) {
+                            .same_family => {
+                                log.debug("FAMILY-MATCH: same_family ({s}+{s}) — valid release in {s}", .{
+                                    @tagName(alloc_family), @tagName(rop.family), func_name,
+                                });
+                                return; // Valid same-family release, not a bug
+                            },
+                            .compatible_family => {
+                                log.debug("FAMILY-MATCH: compatible_family ({s}+{s}) — valid release in {s}", .{
+                                    @tagName(alloc_family), @tagName(rop.family), func_name,
+                                });
+                                return; // Compatible families (e.g., python_mem + python_mem_raw)
+                            },
+                            .mismatch => {
+                                log.debug("FAMILY-MISMATCH: {s} alloc + {s} release → cross_family_free in {s}", .{
+                                    @tagName(alloc_family), @tagName(rop.family), func_name,
+                                });
+                                // Report as cross_family_free with family evidence
+                                try reportCrossLanguageFree(ctx, func_name, callee_name, @tagName(alloc_family), @tagName(rop.family), inst, diag);
+                                return;
+                            },
+                            .unknown_alloc, .unknown_release, .unknown_both => {
+                                // Family unknown for one side — fall through to legacy language check
+                                log.debug("FAMILY-UNKNOWN: match={s} in {s} — fallback to language check", .{
+                                    @tagName(match_result), func_name,
+                                });
+                            },
+                        }
+                    } else {
+                        // Release name not in registry — fall through to legacy check
+                        log.debug("FAMILY-NOOP: release '{s}' not in registry in {s}", .{ callee_name, func_name });
+                    }
+                } // end if (family_registry)
+            } // end if (alloc_family != null)
+            // End P3 family-first block. Below is legacy language-based fallback.
+            // =================================================================
+
             const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
             const alloc_is_c = alloc_lang == .c; // C only — NOT cpp
             const alloc_is_rust = alloc_lang == .rust;

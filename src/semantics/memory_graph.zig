@@ -26,10 +26,14 @@ pub const ResourceLifecycle = mg_types.ResourceLifecycle;
 pub const CallArgEdge = mg_types.CallArgEdge;
 pub const CallRetEdge = mg_types.CallRetEdge;
 pub const FreeRecord = mg_types.FreeRecord;
+pub const FamilyId = mg_types.FamilyId;
 const AllocNode = mg_types.AllocNode;
 pub const DangerPathKind = mg_types.DangerPathKind;
 pub const DangerSurface = mg_types.DangerSurface;
 const hashValues = mg_types.hashValues;
+
+const family_registry_mod = @import("resource/family_registry.zig");
+const ResourceFamilyRegistry = family_registry_mod.ResourceFamilyRegistry;
 
 const mg_methods = @import("../types/memory_graph_methods.zig");
 
@@ -80,6 +84,11 @@ pub const MemoryGraph = struct {
     /// execution path → real double-free. If not reachable → multi-path cleanup.
     bb_edges: std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
 
+    /// Optional resource family registry for family-based classification.
+    /// When set, trackAlloc/trackFree will automatically classify alloc/release
+    /// families via registry lookup. null = legacy language-only mode (no family data).
+    family_registry: ?*ResourceFamilyRegistry,
+
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
         return MemoryGraph{
@@ -98,7 +107,16 @@ pub const MemoryGraph = struct {
             .alias_to_canonical = std.AutoHashMap(u64, u64).init(allocator),
             .weak_aliases = std.AutoHashMap(u64, void).init(allocator),
             .bb_edges = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator),
+            .family_registry = null,
         };
+    }
+
+    /// Inject a resource family registry for automatic family classification.
+    /// When set, trackAlloc/trackFree will look up callee names in the registry
+    /// and populate alloc_family / release_family fields on nodes.
+    /// Pass null to disable family classification (legacy mode).
+    pub fn setFamilyRegistry(graph: *MemoryGraph, registry: ?*ResourceFamilyRegistry) void {
+        graph.family_registry = registry;
     }
 
     /// Deinitializes the memory graph. Frees all nodes and internal state.
@@ -291,6 +309,36 @@ pub const MemoryGraph = struct {
             node.free_lang = free_lang;
         }
         return is_double;
+    }
+
+    /// Classify the allocation family for a node by callee name.
+    /// Call this after trackAlloc when the allocator function name is known.
+    /// No-op if family_registry is not set or name is null.
+    pub fn classifyAllocFamily(graph: *MemoryGraph, ptr_val: u64, callee_name: []const u8) void {
+        const node = graph.nodes.get(ptr_val) orelse return;
+        const registry = graph.family_registry orelse return;
+        if (registry.lookupAcquire(callee_name, null)) |op| {
+            node.alloc_family = op.family;
+            log.debug("alloc_family={s} for alloc at 0x{x} (callee={s})", .{
+                @tagName(op.family), ptr_val, callee_name,
+            });
+        }
+    }
+
+    /// Classify the release family for a free site by callee name.
+    /// Call this after trackFree when the deallocator function name is known.
+    /// Applies to the most recent FreeRecord on the node's free_sites list.
+    pub fn classifyReleaseFamily(graph: *MemoryGraph, ptr_val: u64, callee_name: []const u8) void {
+        const node = graph.nodes.get(ptr_val) orelse return;
+        const registry = graph.family_registry orelse return;
+        if (node.free_sites.items.len == 0) return;
+        if (registry.lookupRelease(callee_name, null)) |op| {
+            var last = &node.free_sites.items[node.free_sites.items.len - 1];
+            last.release_family = op.family;
+            log.debug("release_family={s} for free at 0x{x} (callee={s})", .{
+                @tagName(op.family), ptr_val, callee_name,
+            });
+        }
     }
 
     // =====================================================================

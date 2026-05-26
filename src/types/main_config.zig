@@ -51,6 +51,7 @@ pub const Config = struct {
     ffi_only: bool = false,
     include_stdlib: bool = false,
     perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
+    debug_resource_contract: bool = false, // Enable resource contract debugging (implies --debug)
 
     pub fn init(allocator: Allocator) !Config {
         return .{
@@ -129,6 +130,9 @@ pub fn parseArgs(allocator: Allocator) !Config {
             config.include_stdlib = true;
         } else if (std.mem.eql(u8, arg, "--perf-stats")) {
             config.perf_stats = true;
+        } else if (std.mem.eql(u8, arg, "--debug-resource-contract")) {
+            config.debug_resource_contract = true;
+            config.debug = true; // implicitly enable debug
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -156,7 +160,8 @@ pub fn showHelp() void {
         \\  --focus-user-code   Only report issues from user code
         \\  --ffi-only          Only report FFI boundary issues
         \\  --include-stdlib    Include stdlib issues
-        \\  --perf-stats        Enable per-pass performance profiling (time, RSS, allocations)
+        \\  --perf-stats                      Enable per-pass performance profiling (time, RSS, allocations)
+        \\  --debug-resource-contract         Enable resource contract debugging (implies --debug)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format
