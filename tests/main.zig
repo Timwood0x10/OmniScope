@@ -168,10 +168,10 @@ test "SemanticRegistry: layer counts" {
     try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
-    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 9), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 311), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 312), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {
@@ -301,10 +301,10 @@ test "Regression: layer counts unchanged" {
     try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
-    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 9), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 311), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 312), registry.SemanticRegistry.totalCount());
 }
 
 test "Regression: critical functions always detected" {

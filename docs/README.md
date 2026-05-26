@@ -7,10 +7,10 @@ docs/
 ├── en/                          # English documentation
 │   ├── QUICK_START.md           # Getting started guide
 │   ├── API_REFERENCE.md         # API reference
+│   ├── REPORT_INTERPRETATION.md  # How to read analysis reports
 │   ├── architecture.md          # Architecture overview
 │   ├── WHITEPAPER.md            # Technical whitepaper
 │   ├── developer_guide.md       # Contributor guide
-│   ├── BENCHMARK.md             # Performance benchmarks
 │   ├── modules.md               # Module documentation
 │   ├── passes.md                # Analysis passes documentation
 │   ├── RED_BLUE_TEAM_EN.md      # Red/Blue team testing guide
@@ -21,20 +21,15 @@ docs/
 │   │   ├── GO_GC_IR_SPEC.md
 │   │   ├── TINYGO_IR_SPEC.md
 │   │   ├── JDK_IR_SPEC.md
-│   │   ├── PYTHON_IR_SPEC.md
-│   │   └── SWIFT_IR_SPEC.md
-│   └── reports/                 # Analysis reports
-│       ├── CORPUS_ANALYSIS.md
-│       ├── TEST_REPORT_v017.md
-│       └── investigation/       # Detailed audit reports
+│   │   └── PYTHON_IR_SPEC.md
 │
 ├── zh/                          # 简体中文文档
 │   ├── QUICK_START.md           # 快速入门
 │   ├── API_REFERENCE.md         # API 参考
+│   ├── REPORT_INTERPRETATION.md  # 分析结果解读指南
 │   ├── architecture.md          # 架构概述
 │   ├── WHITEPAPER.md            # 技术白皮书
 │   ├── developer_guide.md       # 开发者指南
-│   ├── BENCHMARK.md             # 性能基准
 │   ├── modules.md               # 模块文档
 │   ├── passes.md                # 分析 pass 文档
 │   ├── RED_BLUE_TEAM.md         # 红蓝队测试指南
@@ -45,11 +40,7 @@ docs/
 │   │   ├── GO_GC_IR_SPEC.md
 │   │   ├── TINYGO_IR_SPEC.md
 │   │   ├── JDK_IR_SPEC.md
-│   │   ├── PYTHON_IR_SPEC.md
-│   │   └── SWIFT_IR_SPEC.md
-│   └── reports/                 # 分析报告
-│       ├── CORPUS_ANALYSIS.md
-│       └── investigation/       # 详细审计报告
+│   │   └── PYTHON_IR_SPEC.md
 │
 └── TOUSER/                      # User-facing letters (bilingual)
     ├── en.md
@@ -70,4 +61,4 @@ Each document distinguishes **user-defined symbols** from **compiler-reserved sy
 | **TinyGo** | Go | `runtime.*`, CGo `_Cgo_*`, transform passes |
 | **JDK** (HotSpot) | Java | C2 Sea-of-Nodes, JNI, GC barriers, 200+ intrinsics |
 | **CPython** | Python | PyObject refcount, GC, C API, buffer protocol |
-| **Swift** | Swift | ARC, protocol/value witness tables, metadata, @objc interop |
+| **C#/.NET** | C# | P/Invoke, delegates, GC handles, COM/native interop |

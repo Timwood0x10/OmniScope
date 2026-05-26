@@ -5,6 +5,54 @@ OmniScope 的所有重要变更都将记录在此文件。
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
+## [0.2.0] - 2026-05-26
+
+### 发布重点
+
+OmniScope 0.2.0 将 0.1.9 的稳定性修复与新的语义解析、Surface Classifier、跨语言 FFI 证据链能力合并发布。本次计划不单独发布 0.1.9，而是并入 0.2.0 一起交付。
+
+### 新增
+
+- 通用语义解析流水线：识别编译器/运行时符号、语言属性、平台运行时画像和 ABI 相关语义。
+- 四层 Surface Classifier：结合边界识别、调用图上下文、链接属性、符号名解析、平台线索和 debug-origin 证据。
+- 平台 profile 与跨语言检测增强，覆盖 C/C++、Rust、Zig、Go/TinyGo、Python、Java/JNI、C#/.NET 等 FFI 场景。
+- 模块级 IR 证据收集：报告可以解释函数为什么被视为用户代码、运行时代码、编译器生成代码或 FFI 边界。
+- 并行分析、pass 级性能 profiling、pass context bump-pointer arena、字符串 interning 等性能基础设施。
+- 扩展红队语料：C++ operator `new`、Rust FFI、Go CGo/TinyGo、Python CFFI、Java JNI、C#/.NET、Zig `@cImport`。
+
+### 变更
+
+- 将分析代码拆分为更聚焦的 `ptr_lifetime`、`ffi`、`rust_ffi`、`taint`、`noise`、`types`、`pipeline` 等模块。
+- 语言方向上用 C#/.NET FFI 支持替换原 Swift 方向。
+- 改进 Rust allocator 符号、C/C++ mangled deallocator、所有权转移、callback escape、write-to-immutable、use-after-free 等模式识别。
+- 通过 C++ 内部泄漏 gate、issue suppression、vulnerability rules、runtime filter 和语言感知语义分类降低误报。
+
+### 修复
+
+- 修复 Rust Drop 语义、allocator callee tracking、C/Rust 所有权转换相关的跨语言 free 误报。
+- 修复 FFI Boundary issue 生成与依赖顺序，让下游 pass 能使用边界证据。
+- 修复多个分析基础设施和报告生成中的 leak/OOM 路径。
+- 合并 0.1.9 中版本号、SARIF CWE 映射和性能优化相关稳定性修复。
+
+### 文档
+
+- 新增 `docs/en/REPORT_INTERPRETATION.md` 与 `docs/zh/REPORT_INTERPRETATION.md`，结合仓库示例说明如何解读分析结果。
+- 更新 README 与文档索引，修正重组后的 `docs/en`、`docs/zh` 链接。
+
+## [0.1.9] - 2026-05-22
+
+> **发布计划更新**：0.1.9 的修复内容会并入 0.2.0 发布线。合并版发布说明见 `RELEASE_NOTE.md`。
+
+### Bug 修复与性能优化
+
+- 修复 `integer_overflow` 的 IssueKind/CWE 映射，SARIF 正确输出 CWE-190。
+- 修复 `call_graph.zig` 错误路径中的内存释放问题。
+- 修复 `ffi_detector.zig` opcode 比较方式，避免未知 opcode 场景下 panic。
+- 统一 `--version`、JSON、SARIF 中的版本号。
+- 将 `pointer_ownership.zig` 多次模块遍历合并，减少 LLVM API 调用。
+- 使用已有索引优化 `isLeaked`/`isDoubleFreed`，降低复杂度。
+- 增加 `classifyFunction` 与 Rust FFI relevance 缓存，并增量维护 `reverse_flow`。
+
 ## [0.1.8] - 2026-05-13
 
 ### S+ 质量审计

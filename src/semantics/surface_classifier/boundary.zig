@@ -212,9 +212,9 @@ fn isExportSection(section: []const u8) bool {
 
     // COFF/PE import/export tables (Windows DLL boundaries)
     if (std.mem.indexOf(u8, section, ".idata$") != null) return true;
-    if (std.mem.indexOf(u8, section, ".CRT$XCA") != null) return true;  // C++ static init array
-    if (std.mem.indexOf(u8, section, ".CRT$XCU") != null) return true;  // C++ static init array
-    if (std.mem.eql(u8, section, ".edata")) return true;       // Export data
+    if (std.mem.indexOf(u8, section, ".CRT$XCA") != null) return true; // C++ static init array
+    if (std.mem.indexOf(u8, section, ".CRT$XCU") != null) return true; // C++ static init array
+    if (std.mem.eql(u8, section, ".edata")) return true; // Export data
 
     return false;
 }
@@ -339,17 +339,17 @@ test "isUnmangledName - MSVC mangled names (P1-a)" {
     // MSVC x64 mangling always starts with ?
     try std.testing.expect(!isUnmangledName("?square@@YAHH@Z"));
     try std.testing.expect(!isUnmangledName("??0 MyClass @@ QAEAAV1@ABV1@"));
-    try std.testing.expect(!isUnmangledName("??_G"));  // scalar deleting destructor
+    try std.testing.expect(!isUnmangledName("??_G")); // scalar deleting destructor
     try std.testing.expect(!isUnmangledName("??1?type_info@@"));
     try std.testing.expect(!isUnmangledName("??2@YAPEAX_K@Z")); // operator new
-    try std.testing.expect(!isUnmangledName("??3@YAXPEAX@Z"));   // operator delete
+    try std.testing.expect(!isUnmangledName("??3@YAXPEAX@Z")); // operator delete
 }
 
 test "isUnmangledName - MSVC C names are unmangled" {
     // Plain C names on Windows are NOT mangled (no ? prefix)
     try std.testing.expect(isUnmangledName("square"));
     try std.testing.expect(isUnmangledName("main"));
-    try std.testing.expect(isUnmangledName("_square"));  // MinGW uses _ prefix for C
+    try std.testing.expect(isUnmangledName("_square")); // MinGW uses _ prefix for C
     try std.testing.expect(isUnmangledName("malloc"));
 }
 

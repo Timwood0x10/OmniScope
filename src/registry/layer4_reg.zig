@@ -10,10 +10,11 @@ pub const layer4_functions = [_]types.FunctionSemantics{
     .{ .pattern = "IntPtr", .match_type = .contains, .kind = .allocator, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = false, .requires_taint_check = false, .description = "C# IntPtr - platform-specific integer as pointer, caller owns memory" },
     .{ .pattern = "GCHandle", .match_type = .contains, .kind = .rust_ownership, .severity = .medium, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = false, .requires_taint_check = false, .description = "C# GCHandle - manual GC handle management, transfer ownership" },
     .{ .pattern = "GC.KeepAlive", .match_type = .contains, .kind = .borrow_escaped, .severity = .low, .consumes_ownership = false, .transfers_ownership = false, .requires_null_check = false, .requires_taint_check = false, .description = "C# GC.KeepAlive - object lifetime extension until this point" },
+    .{ .pattern = "UnsafeMutablePointer", .match_type = .contains, .kind = .allocator, .severity = .high, .consumes_ownership = false, .transfers_ownership = true, .requires_null_check = true, .requires_taint_check = false, .description = "C# UnsafeMutablePointer<T> - raw mutable pointer from fixed/stackalloc, caller owns lifetime" },
 };
 
 test "layer4_reg: function count" {
-    try std.testing.expectEqual(@as(usize, 8), layer4_functions.len);
+    try std.testing.expectEqual(@as(usize, 9), layer4_functions.len);
 }
 
 test "layer4_reg: Marshal transfers ownership" {

@@ -17,9 +17,9 @@ OmniScope is a specialized LLVM IR auditor for **cross-language FFI boundaries**
 It is designed to surface high-confidence risks with traceable evidence, not to
 prove every possible vulnerability in a general-purpose static analysis sense.
 
-Supports **C / C++ / Rust / Zig / Go / Python / Java**.
+Supports **C / C++ / Rust / Zig / Go / Python / Java / C#/.NET**.
 
-### Detection Capabilities (v0.1.9)
+### Detection Capabilities (v0.2.0)
 
 | Capability | Status | Notes |
 |-----------|--------|-------|
@@ -28,7 +28,7 @@ Supports **C / C++ / Rust / Zig / Go / Python / Java**.
 | **Null dereference** | ✅ Stable | Unchecked malloc return values |
 | **Taint analysis** | ✅ Stable | User input to sink data flow |
 | **cross_lang_free_mismatch** | ✅ Working | Both C-alloc/Rust-free and Rust-alloc/C-free directions detected |
-| **FFI Boundary issue** | ✅ Working | Generated after dependency chain fix (v0.1.9) |
+| **FFI Boundary issue** | ✅ Working | Generated after dependency chain fix and enriched with semantic evidence |
 
 **Best for**: Rust↔C, Zig↔C, Python C extensions, JNI boundaries, and other cross-language ownership boundaries.
 
@@ -41,17 +41,19 @@ Supports **C / C++ / Rust / Zig / Go / Python / Java**.
 
 **Not a general-purpose static analyzer**: OmniScope focuses on FFI security auditing, not broad source-level bug finding.
 
-*All data based on v0.1.9 actual tests. See [VALIDATION_REPORT.md](./VALIDATION_REPORT.md).*
+*0.2.0 folds the 0.1.9 stabilization work into the semantic-resolution release. See [RELEASE_NOTE.md](./RELEASE_NOTE.md).*
 
-**v0.1.9 Completed**:
-- ✅ `cross_lang_free_mismatch` detection (both directions)
-- ✅ FFI Boundary issue type generation (dependency chain fix)
-- ✅ IR spec-based language classifier rules (Rust v0/legacy mangling, TinyGo CGo, Zig compiler-reserved, JDK JNI/Panama FFM)
+**0.2.0 Highlights**:
+- ✅ `cross_lang_free_mismatch` detection improvements from 0.1.9
+- ✅ FFI Boundary issue generation and dependency-chain fixes
+- ✅ Universal semantic resolution for runtime/compiler/user-code classification
+- ✅ Surface Classifier for boundary, linkage, mangled-name, platform, and debug-origin evidence
+- ✅ C#/.NET FFI direction added to the language roadmap
 
-**v0.2.1 Roadmap**:
-- Add custom allocator recognition (sqlite3_malloc, curl_easy_cleanup, etc.)
-- Add TinyGo runtime function filtering (runtime.alloc, runtime.free, etc.)
-- Add JDK Unsafe memory access intrinsics detection
+**Post-0.2.0 Roadmap**:
+- Add deeper custom allocator recognition (`sqlite3_malloc`, `curl_easy_cleanup`, etc.)
+- Extend TinyGo runtime filtering (`runtime.alloc`, `runtime.free`, etc.)
+- Add JDK Unsafe and Panama FFM memory-access modeling
 
 [English](./README.md) | [简体中文](./README_zh.md)
 
@@ -162,10 +164,10 @@ flowchart LR
         C3[zig build-llvm]
     end
 
-    subgraph Pipeline["OmniScope Pipeline (v0.1.8)"]
+    subgraph Pipeline["OmniScope Pipeline (v0.2.0)"]
         Pre[Language Detection<br/>CallSiteIndex]
         ZC[Zone Classification]
-        PM[Pass Manager<br/>15 passes · 5 layers]
+        PM[Pass Manager<br/>semantic resolver · surface classifier · analysis passes]
         Out[Output Formatter<br/>JSON · SARIF · Text]
     end
 
@@ -204,7 +206,7 @@ flowchart TD
 
 **Tier 2 (Graph-Driven)**: FFI/unsafe code → 15-pass pipeline (topological order via Kahn's algorithm) → Ownership tracking + FFI detection + Taint propagation + Memory Safety validation
 
-*Full details*: [Architecture Documentation](./docs/architecture.md)
+*Full details*: [Architecture Documentation](./docs/en/architecture.md)
 
 ***
 
@@ -266,7 +268,7 @@ zig build -Drelease-fast
 # Summary: 40/42 files analyzed (95.2% success rate), 586 issues found
 ```
 
-*Detailed tutorial*: [Quick Start Guide (10 min)](./docs/QUICK_START.md)
+*Detailed tutorial*: [Quick Start Guide (10 min)](./docs/en/QUICK_START.md)
 
 ***
 
@@ -276,8 +278,8 @@ OmniScope outputs three formats: **Text** (human-readable), **JSON** (CI/CD), **
 
 For **detailed log interpretation with source code mapping**, see:
 
-- [Red/Blue Team Testing Guide (English)](./docs/RED_BLUE_TEAM_EN.md) — line-by-line log analysis, source code navigation, corpus file mapping
-- [Red/Blue Team Testing Guide (Chinese)](./docs/RED_BLUE_TEAM_ZH.md) — Chinese version, line-by-line log analysis with source mapping
+- [Report Interpretation Guide](./docs/en/REPORT_INTERPRETATION.md) — severity, confidence, CWE, source mapping, and FFI ownership triage
+- [Red/Blue Team Testing Guide](./docs/en/RED_BLUE_TEAM_EN.md) — line-by-line log analysis and corpus file mapping
 
 ### Quick Reference: JSON Output
 
@@ -313,7 +315,7 @@ make blue-team      # Defensive: false positive audit (precision)
 make corpus-test    # Run both
 ```
 
-For line-by-line log interpretation and source code navigation, see [docs/RED_BLUE_TEAM_EN.md](./docs/RED_BLUE_TEAM_EN.md).
+For line-by-line log interpretation and source code navigation, see [docs/en/REPORT_INTERPRETATION.md](./docs/en/REPORT_INTERPRETATION.md) and [docs/en/RED_BLUE_TEAM_EN.md](./docs/en/RED_BLUE_TEAM_EN.md).
 
 ### Severity Guide
 
@@ -332,13 +334,13 @@ For line-by-line log interpretation and source code navigation, see [docs/RED_BL
 | `MEDIUM`   | Pattern is likely but may have false positives        |
 | `LOW`      | Heuristic match — verify manually                     |
 
-*Full issue type reference*: [API Reference](./docs/API_REFERENCE.md)
+*Full issue type reference*: [API Reference](./docs/en/API_REFERENCE.md)
 
 ***
 
 ## Real-World Validation
 
-Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
+Validated on **42 real-world projects + expanded adversarial tests** (0.2.0 release train, LLVM 22):
 
 | Project            | Language | Functions | Issues  | FFI Boundaries | Success |
 | ------------------ | -------- | --------- | ------- | -------------- | ------- |
@@ -358,7 +360,7 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 
 **Success Rate**: 95.2% (40/42 files), 0 crashes.
 
-*Validation report*: [VALIDATION_REPORT.md](./VALIDATION_REPORT.md) — v0.1.9 actual test results
+*Release note*: [RELEASE_NOTE.md](./RELEASE_NOTE.md) — combined 0.1.9 → 0.2.0 release details
 
 ***
 
@@ -385,7 +387,7 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 
 | Tool          | Input           | Cross-Language FFI    | IR-Level      | Taint Analysis | Ownership Tracking | Open Source    | Performance        |
 | ------------- | --------------- | --------------------- | ------------- | -------------- | ------------------ | -------------- | ------------------ |
-| **OmniScope** | **LLVM IR**     | **✅ (5 languages)**   | **✅**         | **✅**          | **✅**              | **Apache 2.0** | **\~150ms/Kfuncs** |
+| **OmniScope** | **LLVM IR**     | **✅ (8 language/runtime families)**   | **✅**         | **✅**          | **✅**              | **Apache 2.0** | **\~150ms/Kfuncs** |
 | CodeQL        | Source/AST      | ⚠️ (per-lang queries) | ❌             | ✅              | ⚠️                 | MIT            | \~minutes          |
 | Clang SA      | AST             | ❌ (C/C++ only)        | ❌             | ✅              | ⚠️                 | Apache 2.0     | \~seconds          |
 | Infer         | Source/AST      | ❌                     | ❌             | ✅              | ⚠️                 | MIT            | \~seconds          |
@@ -397,7 +399,7 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 1. ✅ **Only tool** focused on **cross-language FFI boundaries**
 2. ✅ **Only tool** analyzing at **LLVM IR level** (language-agnostic)
 3. ✅ **Only tool** with **Zone Classification** (smart filtering)
-4. ✅ **Only tool** supporting **5 languages** in unified analysis
+4. ✅ **Only tool** supporting **8 language/runtime families** in unified analysis
 
 ***
 
@@ -417,12 +419,11 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 
 | Document                                                                                  | Content                                               |
 | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **[VALIDATION_REPORT.md](./VALIDATION_REPORT.md)** | v0.1.9 actual test results — detection capabilities and known limitations |
-| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)**                                                | v0.1.9 release details                                |
-| **[Benchmarks](./docs/en/BENCHMARK.md)**                                                  | Performance benchmarks                                |
-| **[Corpus Analysis](./docs/en/reports/CORPUS_ANALYSIS.md)**                               | Full corpus test results                              |
+| **[RELEASE_NOTE.md](./RELEASE_NOTE.md)**                                                  | Combined 0.1.9 → 0.2.0 release details              |
+| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)**                                                | Archived 0.1.9 stabilization details                  |
+| **[Report Interpretation](./docs/en/REPORT_INTERPRETATION.md)**                          | How to read findings and map them to source examples  |
 
-### IR Specifications (8 Compilers)
+### IR Specifications
 
 | Document                                                                | Language   |
 | ----------------------------------------------------------------------- | ---------- |
@@ -433,7 +434,7 @@ Tested on **42 real-world projects + 19 adversarial tests** (v0.1.8, LLVM 22):
 | **[TinyGo](./docs/en/ir-specs/TINYGO_IR_SPEC.md)**                     | Go (TinyGo)|
 | **[JDK](./docs/en/ir-specs/JDK_IR_SPEC.md)**                           | Java       |
 | **[Python](./docs/en/ir-specs/PYTHON_IR_SPEC.md)**                     | Python     |
-| **[Swift](./docs/en/ir-specs/SWIFT_IR_SPEC.md)**                       | Swift      |
+| **[C#/.NET direction](./docs/en/REPORT_INTERPRETATION.md)**              | C#/.NET FFI triage notes |
 
 ### Concept Papers
 
@@ -468,7 +469,7 @@ We welcome contributions! See [Developer Guide](./docs/en/developer_guide.md) fo
 - Testing requirements (all tests must pass)
 - Pull request process
 
-**Current Test Status**: ✅ All tests passing (v0.1.8)
+**Current Test Status**: ✅ 0.2.0 release-train documentation updated; run `zig build test` before tagging
 
 ***
 

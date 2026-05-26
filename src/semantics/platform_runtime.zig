@@ -645,24 +645,25 @@ test "classifyRuntimeFunction - empty string" {
 
 test "classifyRuntimeFunction - similar but not runtime names" {
     var profile = PlatformProfile{ .platform = .linux, .object_format = .elf, .target_triple = "", .datalayout = "", .arch = "", .vendor = "" };
-    
+
     // These look like they could be runtime but are actually user code
     const ambiguous = [_][]const u8{
-        "my_malloc_wrapper",     // Contains "malloc" but is user code
-        "custom_new_operator",   // Contains "operator new" but not exact match
-        "runtime_config",       // Contains "runtime." but user config
-        "my_objc_helper",       // Contains "objc" but user helper
-        "swiftUI_view",        // Contains "Swift" but user UI code
-        "__my_private_func",   // Starts with __ but user-defined
+        "my_malloc_wrapper", // Contains "malloc" but is user code
+        "custom_new_operator", // Contains "operator new" but not exact match
+        "runtime_config", // Contains "runtime." but user config
+        "my_objc_helper", // Contains "objc" but user helper
+        "swiftUI_view", // Contains "Swift" but user UI code
+        "__my_private_func", // Starts with __ but user-defined
     };
-    
+
     for (ambiguous) |name| {
         const r = classifyRuntimeFunction(name, &profile);
         // Most of these should NOT be classified as runtime
         // (__my_private_func might be borderline but we're conservative)
-        if (std.mem.indexOf(u8, name, "operator ") == null and 
+        if (std.mem.indexOf(u8, name, "operator ") == null and
             !std.mem.startsWith(u8, name, "llvm.") and
-            !std.mem.startsWith(u8, name, "__asan_")) {
+            !std.mem.startsWith(u8, name, "__asan_"))
+        {
             try std.testing.expect(!r.is_runtime, "'{s}' should not be runtime", .{name});
         }
     }
@@ -677,15 +678,15 @@ test "classifyRuntimeFunction - MSVC C++ allocators" {
         .arch = "",
         .vendor = "",
     };
-    
+
     // MSVC decorated forms
     const msvc_allocs = [_][]const u8{
-        "??2@YAPEAX_K@Z",  // operator new(unsigned __int64)
-        "??3@YAXPEAX@Z",   // operator delete(void*)
+        "??2@YAPEAX_K@Z", // operator new(unsigned __int64)
+        "??3@YAXPEAX@Z", // operator delete(void*)
         "??_U@YAPEAX_K@Z", // operator new[](unsigned __int64)
-        "??_V@YAXPEAX@Z",  // operator delete[](void*)
+        "??_V@YAXPEAX@Z", // operator delete[](void*)
     };
-    
+
     for (msvc_allocs) |name| {
         const r = classifyRuntimeFunction(name, &profile);
         try std.testing.expect(r.is_runtime, "'{s}' should be MSVC allocator", .{name});
@@ -695,7 +696,7 @@ test "classifyRuntimeFunction - MSVC C++ allocators" {
 
 test "classifyRuntimeFunction - Go runtime variants" {
     var profile = PlatformProfile{ .platform = .linux, .object_format = .elf, .target_triple = "", .datalayout = "", .arch = "", .vendor = "" };
-    
+
     // Various Go runtime patterns
     const go_runtime = [_][]const u8{
         "runtime.gc",
@@ -704,7 +705,7 @@ test "classifyRuntimeFunction - Go runtime variants" {
         "runtime._panic",
         "internal/task.schedule",
     };
-    
+
     for (go_runtime) |name| {
         const r = classifyRuntimeFunction(name, &profile);
         try std.testing.expect(r.is_runtime, "'{s}' should be Go runtime", .{name});
@@ -885,11 +886,10 @@ test "classifyRuntimeFunction - profiling and coverage instrumentation" {
 
 test "RuntimeCategory enum completeness" {
     const cats = [_]RuntimeCategory{
-        .libc, .cpp_abi, .cpp_allocator, .objc_runtime, .swift_runtime,
-        .gcd_runtime, .go_runtime, .rust_runtime, .zig_runtime,
-        .llvm_intrinsic, .sanitizer, .profiling, .static_init,
-        .static_fini, .exception_handler, .tls_init, .stack_protection,
-        .dynamic_linker, .unknown,
+        .libc,        .cpp_abi,          .cpp_allocator,  .objc_runtime, .swift_runtime,
+        .gcd_runtime, .go_runtime,       .rust_runtime,   .zig_runtime,  .llvm_intrinsic,
+        .sanitizer,   .profiling,        .static_init,    .static_fini,  .exception_handler,
+        .tls_init,    .stack_protection, .dynamic_linker, .unknown,
     };
     for (cats) |cat| {
         const name = cat.displayName();

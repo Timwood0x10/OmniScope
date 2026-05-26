@@ -434,10 +434,14 @@ pub const FFIBoundaryPass = struct {
         // classification (Bug 2 fix). Zig functions like "main" (no special prefix)
         // and "main.main" (Go-like naming) must be classified correctly.
         var caller_lang = lang_classifier.identifyCalleeLanguageWithContext(
-            caller_name, ctx.module_language.language, ctx.platform_profile,
+            caller_name,
+            ctx.module_language.language,
+            ctx.platform_profile,
         );
         var callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
-            called_name, ctx.module_language.language, ctx.platform_profile,
+            called_name,
+            ctx.module_language.language,
+            ctx.platform_profile,
         );
 
         // Bug 2 final fix: Transitive Zig inference for entry-point callers.

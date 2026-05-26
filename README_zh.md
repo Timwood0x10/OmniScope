@@ -16,9 +16,9 @@
 OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具。
 它的目标是输出高置信风险和可追踪证据链，而不是作为通用静态分析器证明所有漏洞。
 
-支持 **C / C++ / Rust / Zig / Go / Python / Java** 七种语言。
+支持 **C / C++ / Rust / Zig / Go / Python / Java / C#/.NET**。
 
-### 检测能力（v0.1.9 实测）
+### 检测能力（v0.2.0）
 
 | 能力 | 实测状态 | 说明 |
 |------|---------|------|
@@ -26,8 +26,8 @@ OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具�
 | **Memory leak** | ✅ 稳定检出 | 跨语言/单语言都能检出 |
 | **Null dereference** | ✅ 稳定检出 | malloc 返回值未检查 |
 | **Taint analysis** | ✅ 稳定检出 | 用户输入到 sink 的数据流 |
-| **cross_lang_free_mismatch** | ⚠️ 部分工作 | C分配/Rust释放 可检出；Rust分配/C释放 未检出 |
-| **FFI Boundary issue** | ❌ 未工作 | 从未被任何 pass 生成 |
+| **cross_lang_free_mismatch** | ✅ 可用 | C 分配/Rust 释放与 Rust 分配/C 释放方向均增强 |
+| **FFI Boundary issue** | ✅ 可用 | 0.1.9 修复依赖链，0.2.0 增加语义证据 |
 
 **适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析，以及其他跨语言所有权边界。
 
@@ -40,12 +40,18 @@ OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具�
 
 **不是通用静态分析器**：OmniScope 聚焦 FFI 安全审计，不做广义源码级缺陷检测。
 
-*以上数据基于 v0.1.9 实测，详见 [VALIDATION_REPORT.md](./VALIDATION_REPORT.md)。*
+*0.2.0 将 0.1.9 稳定性修复并入语义解析版本，详见 [RELEASE_NOTE.md](./RELEASE_NOTE.md)。*
 
-**v0.1.9 路线图**：
-- 完善 `cross_lang_free_mismatch` 检测（Rust分配/C释放 方向）
-- 添加自定义分配器识别（sqlite3_malloc、curl_easy_cleanup 等）
-- 添加 FFI Boundary issue 类型生成
+**0.2.0 重点**：
+- ✅ 合并 0.1.9 的 `cross_lang_free_mismatch` 与 FFI Boundary 修复
+- ✅ 新增通用语义解析，用于区分 runtime/compiler/user-code
+- ✅ 新增 Surface Classifier，提供 boundary、linkage、mangled name、platform、debug-origin 证据
+- ✅ 增加 C#/.NET FFI 方向
+
+**0.2.0 之后路线图**：
+- 深化自定义分配器识别（`sqlite3_malloc`、`curl_easy_cleanup` 等）
+- 扩展 TinyGo runtime filter（`runtime.alloc`、`runtime.free` 等）
+- 增加 JDK Unsafe 与 Panama FFM 内存访问建模
 
 [English](./README.md) | 简体中文
 
@@ -133,7 +139,7 @@ Rust 通过 `Box::into_raw()` 将内存交给 C，C 调用了 `free()`，但 Rus
 
 ### 独有能力
 
-- **五语言支持**：C、C++、Rust、Zig、Go（唯一具备此覆盖范围的工具）
+- **多语言/运行时支持**：C、C++、Rust、Zig、Go/TinyGo、Python、Java/JNI、C#/.NET
 - **LLVM IR 层分析**：语言无关，可直接分析编译产物
 - **Rust FFI 专项**：检测 `Box::into_raw`/`Box::from_raw` 不匹配、`&mut *ptr` 逃逸模式
 - **SARIF 输出**：直接集成 GitHub Code Scanning
@@ -158,10 +164,10 @@ flowchart LR
         C3[zig build-llvm]
     end
 
-    subgraph Pipeline["OmniScope 流水线 (v0.1.8)"]
+    subgraph Pipeline["OmniScope 流水线 (v0.2.0)"]
         Pre[语言检测<br/>CallSiteIndex]
         ZC[区域分类]
-        PM[Pass 管理器<br/>15 pass · 5 层]
+        PM[Pass 管理器<br/>语义解析 · Surface Classifier · 分析 pass]
         Out[输出格式化<br/>JSON · SARIF · 文本]
     end
 
@@ -200,7 +206,7 @@ flowchart TD
 
 **第二层 (图驱动)**: FFI/unsafe 代码 → 15 pass 流水线（Kahn 算法拓扑排序）→ 所有权追踪 + FFI 检测 + 污点传播 + 内存安全验证
 
-*详细文档*: [架构文档](./docs/architecture.md)
+*详细文档*: [架构文档](./docs/en/architecture.md)
 
 ---
 
@@ -262,7 +268,7 @@ zig build -Drelease-fast
 # 摘要: 40/42 文件分析成功（95.2% 成功率），发现 586 个问题
 ```
 
-*详细教程*: [快速入门指南（10分钟）](./docs/QUICK_START.md)
+*详细教程*: [快速入门指南（10分钟）](./docs/en/QUICK_START.md)
 
 ---
 
@@ -272,8 +278,8 @@ OmniScope 输出三种格式：**Text**（人类可读）、**JSON**（CI/CD 集
 
 **详细的日志解读与源码定位**，请参阅：
 
-- [红蓝队测试指南（中文）](./docs/RED_BLUE_TEAM_ZH.md) — 逐行日志解读、源码定位、语料库文件映射
-- [Red/Blue Team Testing Guide (English)](./docs/RED_BLUE_TEAM_EN.md) — line-by-line log analysis, source code navigation
+- [分析结果解读](./docs/zh/REPORT_INTERPRETATION.md) — severity、confidence、CWE、源码映射和 FFI 所有权排查
+- [红蓝队测试指南](./docs/zh/RED_BLUE_TEAM.md) — 逐行日志解读和语料映射
 
 ### 快速参考：JSON 输出
 
@@ -326,13 +332,13 @@ make corpus-test    # 两个都跑
 | `MEDIUM` | 模式很可能但可能有假阳性 |
 | `LOW` | 启发式匹配 — 需要人工验证 |
 
-*完整 issue 类型参考*：[API 参考文档](./docs/API_REFERENCE.md)
+*完整 issue 类型参考*：[API 参考文档](./docs/en/API_REFERENCE.md)
 
 ---
 
 ## 真实世界验证
 
-已在 **42 个真实项目 + 19 个对抗性测试** 上测试（v0.1.8，LLVM 22）：
+已在 **42 个真实项目 + 扩展对抗性测试** 上验证（0.2.0 发布线，LLVM 22）：
 
 | 项目 | 语言 | 函数数 | Issues | FFI 边界 | 成功 |
 |------|------|--------|--------|----------|------|
@@ -352,7 +358,7 @@ make corpus-test    # 两个都跑
 
 **成功率**：95.2%（40/42 文件），0 次崩溃。
 
-*验证报告*: [VALIDATION_REPORT.md](./VALIDATION_REPORT.md) — v0.1.9 实测结果
+*发布说明*: [RELEASE_NOTE.md](./RELEASE_NOTE.md) — 0.1.9 → 0.2.0 合并发布详情
 
 ---
 
@@ -379,7 +385,7 @@ make corpus-test    # 两个都跑
 
 | 工具 | 输入 | 跨语言 FFI | IR 级 | 污点分析 | 所有权追踪 | 开源协议 | 性能 |
 |------|------|-----------|-------|---------|-----------|---------|------|
-| **OmniScope** | **LLVM IR** | **✅（5 种语言）** | **✅** | **✅** | **✅** | **Apache 2.0** | **~150ms/K函数** |
+| **OmniScope** | **LLVM IR** | **✅（8 类语言/运行时族）** | **✅** | **✅** | **✅** | **Apache 2.0** | **~150ms/K函数** |
 | CodeQL | 源码/AST | ⚠️（按语言查询） | ❌ | ✅ | ⚠️ | MIT | ~分钟级 |
 | Clang SA | AST | ❌（仅 C/C++） | ❌ | ✅ | ⚠️ | Apache 2.0 | ~秒级 |
 | Infer | 源码/AST | ❌ | ❌ | ✅ | ⚠️ | MIT | ~秒级 |
@@ -391,7 +397,7 @@ make corpus-test    # 两个都跑
 1. ✅ **唯一工具**专注于**跨语言 FFI 边界**
 2. ✅ **唯一工具**在 **LLVM IR 层**分析（语言无关）
 3. ✅ **唯一工具**拥有 **Zone Classification**（智能过滤）
-4. ✅ **唯一工具**支持 **5 种语言**统一分析
+4. ✅ **唯一工具**支持 **8 类语言/运行时族**统一分析
 
 ---
 
@@ -401,9 +407,9 @@ make corpus-test    # 两个都跑
 
 | 文档 | 适合读者 | 预计时间 |
 |------|----------|----------|
-| **[快速入门指南](./docs/zh/QUICK_START.md)** ⭐ | 新用户 | 10 分钟 |
-| **[API 参考文档](./docs/zh/API_REFERENCE.md)** | 集成开发者 | 30 分钟 |
-| **[架构文档](./docs/zh/architecture.md)** | 架构师 | 20 分钟 |
+| **[快速入门指南](./docs/en/QUICK_START.md)** ⭐ | 新用户 | 10 分钟 |
+| **[API 参考文档](./docs/en/API_REFERENCE.md)** | 集成开发者 | 30 分钟 |
+| **[架构文档](./docs/README.md)** | 架构师 | 20 分钟 |
 | **[开发者指南](./docs/zh/developer_guide.md)** | 贡献者 | 15 分钟 |
 | **[IR 规范文档](./docs/zh/ir-specs/)** | 编译器分析 | — |
 
@@ -411,10 +417,9 @@ make corpus-test    # 两个都跑
 
 | 文档 | 内容 |
 |------|------|
-| **[VALIDATION_REPORT.md](./VALIDATION_REPORT.md)** | v0.1.9 实测结果 — 检测能力与已知限制 |
-| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** | v0.1.9 发布详情 |
-| **[性能基准](./docs/zh/BENCHMARK.md)** | 性能基准测试 |
-| **[语料库分析](./docs/zh/reports/CORPUS_ANALYSIS.md)** | 全量语料库测试结果 |
+| **[RELEASE_NOTE.md](./RELEASE_NOTE.md)** | 0.1.9 → 0.2.0 合并发布详情 |
+| **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** | 归档的 0.1.9 稳定性发布详情 |
+| **[分析结果解读](./docs/zh/REPORT_INTERPRETATION.md)** | 如何解读 findings 并映射到源码示例 |
 
 ### IR 规范文档（8 个编译器）
 
@@ -427,7 +432,7 @@ make corpus-test    # 两个都跑
 | **[TinyGo](./docs/zh/ir-specs/TINYGO_IR_SPEC.md)** | Go (TinyGo) |
 | **[JDK](./docs/zh/ir-specs/JDK_IR_SPEC.md)** | Java |
 | **[Python](./docs/zh/ir-specs/PYTHON_IR_SPEC.md)** | Python |
-| **[Swift](./docs/zh/ir-specs/SWIFT_IR_SPEC.md)** | Swift |
+| **[C#/.NET 方向](./docs/zh/REPORT_INTERPRETATION.md)** | C#/.NET FFI 排查说明 |
 
 ### 概念文档
 

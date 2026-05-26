@@ -270,7 +270,7 @@ test "mergePlatformHint - high confidence overrides user_code" {
 test "mergePlatformHint - null hint returns current surface" {
     const result = mergePlatformHint(.user_code, null, false);
     try std.testing.expectEqual(.user_code, result);
-    
+
     // Boundary should still be boundary even with null hint
     const bnd_result = mergePlatformHint(.boundary, null, true);
     try std.testing.expectEqual(.boundary, bnd_result);
@@ -283,7 +283,7 @@ test "mergePlatformHint - low confidence hint ignored for user_code" {
         .reason = "Weak evidence",
         .runtime_category = null,
     };
-    
+
     // Low-confidence hint should NOT override user_code
     const result = mergePlatformHint(.user_code, &hint, false);
     try std.testing.expectEqual(.user_code, result);
@@ -296,13 +296,13 @@ test "mergePlatformHint - medium confidence only affects user_code" {
         .reason = "Some evidence",
         .runtime_category = null,
     };
-    
+
     // Medium hint overrides user_code
     try std.testing.expectEqual(.compiler_generated, mergePlatformHint(.user_code, &hint, false));
-    
+
     // But does NOT override dependency (stronger than user_code)
     try std.testing.expectEqual(.dependency, mergePlatformHint(.dependency, &hint, false));
-    
+
     // And does NOT override standard_library (already a skip signal)
     try std.testing.expectEqual(.standard_library, mergePlatformHint(.standard_library, &hint, false));
 }
@@ -314,11 +314,11 @@ test "mergePlatformHint - high confidence does not downgrade existing classifica
         .reason = "Strong evidence",
         .runtime_category = .llvm_intrinsic,
     };
-    
+
     // High-confidence hint should NOT downgrade boundary or unknown
     try std.testing.expectEqual(.boundary, mergePlatformHint(.boundary, &hint, true));
     try std.testing.expectEqual(.unknown, mergePlatformHint(.unknown, &hint, false));
-    
+
     // Should NOT downgrade standard_library to compiler_generated
     try std.testing.expectEqual(.standard_library, mergePlatformHint(.standard_library, &hint, false));
 }

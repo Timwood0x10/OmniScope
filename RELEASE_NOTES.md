@@ -1,194 +1,89 @@
-# v0.1.9 — Bug Fixes & Performance
+# OmniScope 0.2.0 Release Note
 
-**Release Date**: 2026-05-22
-**Version**: 0.1.9
-**Commits**: ~30 changes across 15 files
-**Binary**: `zig-out/bin/OmniScope`
-
----
+**Release train**: 0.1.9 → 0.2.0  
+**Planned release date**: 2026-05-26  
+**Status**: 0.1.9 is folded into 0.2.0 and is not planned as a separate public release.
 
 ## Summary
 
-Critical bug fixes and performance optimizations. This release focuses on correctness (SARIF output, memory safety) and performance (reducing redundant traversals, adding caches) with **zero precision loss**.
+OmniScope 0.2.0 is the semantic-analysis release. It combines the 0.1.9 stabilization work with a larger refactor around semantic resolution, surface classification, platform runtime profiles, evidence collection, and cross-language FFI precision.
 
-| Metric | v0.1.8 | v0.1.9 | Change |
-|--------|--------|--------|--------|
-| Precision | 100.00% | **100.00%** | Unchanged |
-| Recall | 100.00% | **100.00%** | Unchanged |
-| F1 Score | 100.00% | **100.00%** | Unchanged |
-| Active bugs | 6 | **0** | All fixed |
-| Module traversals | 9× | **3×** | −67% |
-| Memory leaks | 0 | **0** | Unchanged |
+The main user-visible improvement is that findings should be easier to trust and explain: the analyzer has more context about why a symbol is a real FFI boundary, which runtime owns an allocation, and whether a report is likely user-code risk or compiler/runtime noise.
 
----
+## Highlights
 
-## Bug Fixes
+- **Semantic resolution**: new language/runtime/platform semantic model for compiler-generated symbols, ABI surfaces, allocator families, and FFI metadata.
+- **Surface classification**: layered classification for boundary, call graph, linkage, mangled names, platform clues, and debug-origin evidence.
+- **FFI precision**: improved C/Rust allocator matching, Rust Drop semantics, C++ deallocator names, callback escape, ownership transfer, and cross-language free handling.
+- **Noise reduction**: stronger runtime filters, C++ internal leak gate, issue suppression, vulnerability rules, and language-aware classification.
+- **Performance work**: parallel pipeline support, pass profiling, pass-context arena allocation, string interning, traversal reduction, and caching.
+- **Corpus coverage**: expanded red-team cases for C++, Rust, Go/TinyGo, Python CFFI, Java JNI, C#/.NET, and Zig `@cImport`.
 
-### P0: integer_overflow IssueKind Mapping (CRITICAL)
+## Included from 0.1.9
 
-**Problem**: `integer_overflow` issues were incorrectly mapped to `.buffer_overflow`, causing wrong CWE ID in SARIF output (CWE-120 instead of CWE-190).
+0.1.9 focused on correctness and performance fixes. These changes are included in 0.2.0:
 
-**Fix**: Added `integer_overflow` to `IssueKind` enum with correct CWE-190 mapping.
+- Correct `integer_overflow` IssueKind and CWE-190 SARIF mapping.
+- Memory-leak fixes in call graph error paths.
+- Safer LLVM opcode comparisons in FFI detection.
+- Version consistency across CLI, JSON, and SARIF output.
+- Reduced redundant module traversals in pointer ownership analysis.
+- Faster leak/double-free lookups through existing memory-graph indices.
+- Caches for zone classification and Rust FFI relevance checks.
 
-**Files**: `src/common/types.zig`, `src/pass/analysis/issue/integer_overflow.zig`
+## New in 0.2.0
 
-**Impact**: SARIF reports now show correct CWE IDs for integer overflow issues.
+### Semantic engine
 
----
+- Adds `semantic_resolver_pass` and semantic tree/profile components.
+- Normalizes platform/runtime attributes before downstream analysis.
+- Collects IR evidence used to justify boundary and ownership decisions.
+- Distinguishes user code, compiler-generated code, runtime internals, and cross-language surfaces more explicitly.
 
-### P1: call_graph.zig Memory Leak in Error Paths
+### Surface classifier
 
-**Problem**: `ptr_args_owned` leaked when `addCrossLangEdge` failed after `toOwnedSlice`.
+- Adds boundary, call graph, debug-origin, linkage, mangled-name, and platform classifiers.
+- Improves detection of real FFI surfaces while suppressing runtime/compiler implementation details.
+- Provides the foundation for clearer report explanations and lower false positives.
 
-**Fix**: Changed `catch return` to `catch |e| return e` to trigger errdefer, added `errdefer ctx.allocator.free(ptr_args_owned)`.
+### Analysis pipeline
 
-**Files**: `src/pass/analysis/call_graph.zig:529,552`
+- Reorganizes pointer lifetime, FFI, Rust FFI, taint, and noise analysis into smaller modules.
+- Adds parallel analysis scaffolding and pass-level performance profiling.
+- Moves common data structures into `src/types` to reduce coupling across passes.
 
-**Impact**: No memory leaks in error paths.
+### Language coverage
 
----
+- Keeps focus on C/C++, Rust, Zig, Go/TinyGo, Python, and Java/JNI.
+- Adds C#/.NET FFI direction and removes the previous Swift-oriented roadmap focus.
+- Updates language configuration for runtime and compiler-reserved symbol handling.
 
-### P2: ffi_detector.zig Opcode Comparison
+## Compatibility
 
-**Problem**: Used `@enumFromInt(opcode)` which panics on invalid opcodes, inconsistent with other passes.
+- **Input**: LLVM IR (`.ll`) and bitcode (`.bc`) remain the primary inputs.
+- **Output**: text, JSON, and SARIF remain supported.
+- **Breaking changes**: no intentional CLI-level breaking change is documented for this release.
+- **Behavioral changes**: issue counts may differ from 0.1.8/0.1.9 because semantic classification suppresses more runtime/compiler noise and identifies more FFI-specific evidence.
 
-**Fix**: Changed to direct `c.LLVMCall` comparison (3 sites).
+## How to read reports
 
-**Files**: `src/pass/analysis/ffi_detector.zig:443,482,555`
+New report interpretation guides were added:
 
-**Impact**: Consistent opcode handling, no panics on unknown opcodes.
+- English: `docs/en/REPORT_INTERPRETATION.md`
+- 中文: `docs/zh/REPORT_INTERPRETATION.md`
 
----
+Use these guides when triaging findings. They explain severity, confidence, CWE, function names, FFI boundary evidence, and how to map a report back to source examples in `examples/` and `corpus/red_team_test/`.
 
-### L4: Version Number Inconsistency
+## Upgrade guidance
 
-**Problem**: `--version` output `v0.1.8`, SARIF/JSON output `0.1.9`.
+1. Rebuild OmniScope with the same Zig/LLVM toolchain used for 0.1.9 validation.
+2. Re-run JSON or SARIF generation for CI baselines because issue counts and classifier explanations may change.
+3. Prioritize `critical` and `high` findings with `HIGH` or `MEDIUM` confidence.
+4. For FFI ownership findings, verify allocator/deallocator families before changing code.
+5. Use SARIF for code scanning and JSON for automated diffing across release baselines.
 
-**Fix**: Unified to `v0.1.9`.
+## Known follow-ups
 
-**Files**: `src/main.zig:608`
-
----
-
-## Performance Optimizations
-
-### C1: Merge 8 Independent Module Traversals
-
-**Problem**: `pointer_ownership.zig` performed 8 separate traversals of all functions (main analysis + 7 detection tasks).
-
-**Fix**: Merged 7 detection tasks into main traversal, reducing to 3 necessary traversals.
-
-**Files**: `src/pass/analysis/pointer_ownership.zig`
-
-**Impact**: ~67% reduction in LLVM C API calls, 5-8× faster on large modules (1000+ functions).
-
----
-
-### C3: Use Existing Indices in isLeaked/isDoubleFreed
-
-**Problem**: O(N²) nested loops scanning all `call_rets` for each pointer.
-
-**Fix**: Use existing `call_ret_by_ptr` index for O(1) lookup.
-
-**Files**: `src/semantics/memory_graph.zig:815,857`
-
-**Impact**: Eliminates O(N²) complexity, significant speedup on modules with many call edges.
-
----
-
-### C5: Cache zone_classifier Results
-
-**Problem**: `classifyFunction` is a pure function called repeatedly with same inputs.
-
-**Fix**: Added 1024-entry cache using pointer as key (no string allocation).
-
-**Files**: `src/semantics/zone_classifier.zig`, `src/main.zig`, `src/root.zig`
-
-**Impact**: Avoids redundant string matching, ~5-10% speedup.
-
----
-
-### OPT #1: Incrementally Build reverse_flow
-
-**Problem**: `reverse_flow` built in separate pass after main traversal.
-
-**Fix**: Build incrementally during `addFlowEdge`, eliminating one full traversal.
-
-**Files**: `src/pass/analysis/pointer_ownership.zig`
-
-**Impact**: Reduces passes from 4 to 3, ~10-20% speedup.
-
----
-
-### OPT #2: Cache isRustFFIRelevantFunction
-
-**Problem**: Pure function with expensive IR scan called repeatedly.
-
-**Fix**: Added `ffi_relevant_cache` HashMap.
-
-**Files**: `src/pass/analysis/pointer_ownership.zig`
-
-**Impact**: Avoids redundant IR scans, ~5-10% speedup.
-
----
-
-## Precision Verification
-
-All optimizations verified with zero precision loss:
-
-| Test Case | v0.1.8 | v0.1.9 | Precision Loss |
-|-----------|--------|--------|----------------|
-| Rust | 15 | 15 | ✅ None |
-| C++ | 13 | 13 | ✅ None |
-| Zig | 213 | 213 | ✅ None |
-| Go | 8 | 8 | ✅ None |
-| Real-world | 46 | 46 | ✅ None |
-
-**Guarantee**: All optimizations are pure functions or data structure refactorings on immutable LLVM IR. Results are deterministic and identical to v0.1.8.
-
----
-
-## Technical Debt Status
-
-### Completed (4/6 Active Bugs)
-
-- ✅ P0: integer_overflow IssueKind
-- ✅ P1: call_graph memory leak
-- ✅ P2: ffi_detector opcode comparison
-- ✅ L4: Version number
-
-### Technical Debt (Deferred Optimizations)
-
-- **P1**: ptr_lifetime is_ffi_func gate - Could relax for better coverage, but current strictness is intentional
-- **P2**: pipeline duplicate IR traversal - Could merge, but separation improves maintainability
-
-These are **design tradeoffs**, not bugs. Current behavior is correct and intentional.
-
-### Technical Debt (41 items)
-
-- CRITICAL: 5 (C1-C5, 4 addressed)
-- HIGH: 13
-- MEDIUM: 14
-- LOW: 9
-
----
-
-## Test Results
-
-```
-zig build               ✅
-zig build test          ✅
-make rust-run           ✅ 15 issues
-make cpp-run            ✅ 13 issues
-make zig-run            ✅ 213 issues
-make go-run             ✅ 8 issues
-make real-world-run     ✅ 46 issues
-```
-
----
-
-## Upgrade Notes
-
-No breaking changes. Binary drop-in replacement for v0.1.8.
-
-**Recommended**: Update to v0.1.9 for correct SARIF CWE IDs and improved performance on large modules.
+- Add deeper custom allocator models for project-specific APIs such as `sqlite3_malloc`/`sqlite3_free`.
+- Extend TinyGo runtime filtering and JDK Unsafe/Panama FFM modeling.
+- Continue improving report evidence so each issue includes a concise source-to-sink explanation.

@@ -5,7 +5,43 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-05-26
+
+### Release Focus
+
+OmniScope 0.2.0 consolidates the 0.1.9 fixes with the new semantic-resolution and surface-classification work. This release is intended as the next public release instead of shipping 0.1.9 separately.
+
+### Added
+
+- Universal semantic resolution pipeline for compiler/runtime symbols, language attributes, platform runtime profiles, and ABI-facing semantics.
+- Four-layer surface classifier covering boundary detection, call graph context, linkage, mangled-name interpretation, platform hints, and debug-origin evidence.
+- Platform profile support and cross-language detection improvements for C/C++, Rust, Zig, Go/TinyGo, Python, Java/JNI, and C#/.NET FFI surfaces.
+- Module-level IR evidence collection so reports can explain why a function was treated as user code, runtime code, compiler-generated code, or an FFI boundary.
+- Parallel analysis support, pass-level profiling, bump-pointer arena allocation in pass context, and string interning for lower analysis overhead.
+- Expanded adversarial corpus for C++ operator `new`, Rust FFI, Go CGo/TinyGo, Python CFFI, Java JNI, C#/.NET, and Zig `@cImport` patterns.
+
+### Changed
+
+- Reorganized analysis code into focused submodules: `ptr_lifetime`, `ffi`, `rust_ffi`, `taint`, `noise`, `types`, and `pipeline`.
+- Replaced Swift-oriented language support with C#/.NET FFI support in language configuration and documentation direction.
+- Improved allocator/deallocator matching for Rust allocator symbols, C/C++ mangled deallocator names, ownership transfer, callback escape, write-to-immutable, and use-after-free patterns.
+- Reduced false positives with C++ internal leak gates, issue suppression rules, vulnerability rules, runtime filters, and language-aware semantic classification.
+
+### Fixed
+
+- Cross-language free false positives around Rust drop semantics, allocator callee tracking, and C/Rust ownership transitions.
+- FFI boundary issue generation and dependency ordering so boundary evidence is available to downstream passes.
+- Multiple leak and OOM paths in analysis infrastructure and report generation.
+- Version/report consistency issues carried from the 0.1.9 stabilization work.
+
+### Documentation
+
+- Added report interpretation guides under `docs/en/REPORT_INTERPRETATION.md` and `docs/zh/REPORT_INTERPRETATION.md` with examples from the repository corpus.
+- Updated README links to the reorganized `docs/en` and `docs/zh` structure.
+
 ## [0.1.9] - 2026-05-22
+
+> **Release plan update**: the 0.1.9 work is being rolled into the 0.2.0 release train. See `RELEASE_NOTE.md` for the combined 0.1.9 → 0.2.0 release notes.
 
 ### Bug Fixes & Performance Optimizations
 

@@ -28,421 +28,174 @@
 核心原则：
 
 - 不依赖 crate 名白名单。
-- 不依赖 per-function body 扫描来判断“是否值得分析”。
+- 不依赖 per-function body 扫描来判断"是否值得分析"。
 - 保留 FFI producer、boundary、unknown 场景。
 - 让所有 heavy pass 共享同一份 surface 分类结果。
 - 单文件保持在 1000 行以内，模块职责清晰。
 
 ---
 
-## 当前状态
+## 待修复问题
 
-### 已完成或基本完成
-
-- `PassContext` 中已有 `ffi_set_cache`、`danger_surfaces_cache`、`danger_path_visited_cache`。
-- `isOnDangerPathFull()` 已按懒加载缓存方式工作。
-- `origin_classifier.zig` 已存在雏形实现。
-- `PassContext.function_origin` 已经预留。
-- `PointerOwnership` 已经接入 MemoryGraph、GlobalAllocTracker 和 IR fallback 三来源。
-
-### 仍需收敛
-
-- surface 分类和 noise filter 的职责边界还不清晰。
-- `PointerOwnership` 仍有重复扫描和重复分类。
-- pipeline 里还没有统一的通用噪声过滤 pass 接线。
-- 多处注释和实现状态不一致，需要同步。
-- 平台特定 IR 信息尚未统一过滤，例如 macOS / Linux / Windows 编译出的 `*.ll` / `*.bc` 中 target triple、datalayout、section、COMDAT、Mach-O/ELF/COFF 符号前缀、runtime shim 可能不同，当前还没有独立设计。
-
-### 已知限制
-
-- ⚠️ `cpp_fft` 仍有 2 个 high-severity issue：已知限制是 C++ 跨函数追踪不完整，当前不能稳定还原所有跨过程 ownership / lifetime 关系。
-- ⚠️ `main.main` 仍被识别为 go：纯小写函数名缺少 camelCase 特征，当前 language detector 对这种命名模式置信度不足。
+以下任务来自 2026-05-26 对 ffi-demo + 4 个真实开源项目（crc32fast / python-xxhash / zstd-rs / go-sqlite3 C 桥）的实测。每个任务都有具体重现来源与影响范围。
 
 ---
 
-## 推荐架构
+### P0：OmniScope 在 Rust SIMD intrinsics 上崩溃 ⚠️
 
-### 分层职责
+**重现**：克隆 `srijs/rust-crc32fast`，`RUSTFLAGS="--emit=llvm-bc -C opt-level=0" cargo build --release --lib`，对生成的 `crc32fast-*.bc` 跑 OmniScope。
 
-1. `ZoneClassifier`
-   - 只做轻量 zone 判断。
-   - 适合作为第一道 gate。
+**症状**：
+```
+Segmentation fault at address 0x100000000000005e
+0x100734f03 in _pass.analysis.pointer_ownership.PointerOwnershipPass.run
+```
 
-2. `SurfaceClassifierPass`
-   - 做跨语言通用的函数表面分类。
-   - 输出 `FunctionSurface`。
-   - 供所有 heavy pass 共享。
+**任务**：
 
-3. `DangerSurfacePass`
-   - 做 pointer 级别的 danger path 识别。
-   - 依赖 `SurfaceClassifierPass` 的结果做早期过滤。
-
-4. `PointerOwnership`
-   - 只分析需要分析的函数。
-   - 不能再为“是否值得分析”而扫描整个函数体。
-
-5. `noise_filter`
-   - 只负责 issue/report 侧的降噪与风险分级。
-   - 不再承担主 surface 决策。
+- [ ] P0-1：在 `src/pass/analysis/pointer_ownership/` 内,加 LLVM intrinsic 检测，跳过 `llvm.x86.*` / `llvm.aarch64.*` / `core::arch::*` 调用的指针 op 分析。
+- [ ] P0-2：用 `crc32fast.bc` 作为回归测试 fixture，加进 `corpus/`。
+- [ ] P0-3：单文件最小重现脚本：写一个 Zig fixture 调用 `@cImport` 引入 `<immintrin.h>` 并用 `_mm_clmulepi64_si128`，确认 crash gone。
 
 ---
 
-## 数据结构设计
+### P1：Python C API 所有权未建模（影响所有 Python C 扩展）
 
-### 1. `FunctionSurface`
+**重现**：克隆 `ifduyue/python-xxhash`，`clang -emit-llvm -c -O0 src/_xxhash.c`，对 `_xxhash.bc` 跑 OmniScope → 6 issues 全 FP。
 
-建议作为全局统一分类结果：
+**根因**：OmniScope 不识别 Python C API 的所有权语义。
 
-```zig
-pub const FunctionSurface = enum {
-    user_code,
-    dependency,
-    runtime,
-    standard_library,
-    compiler_generated,
-    boundary,
-    unknown,
-};
-```
+**任务**：
 
-语义：
-
-- `user_code`：默认完整分析。
-- `dependency`：完整分析，但报告优先级可以更低。
-- `boundary`：FFI、导出、跨语言边界，永远保留。
-- `runtime` / `standard_library` / `compiler_generated`：默认跳过 heavy analysis。
-- `unknown`：保留分析，安全优先。
-
-### 2. `FunctionSurfaceHint`
-
-每层分类先给 hint，再做最终合并：
-
-```zig
-pub const FunctionSurfaceHint = struct {
-    surface: FunctionSurface,
-    confidence: Confidence,
-    reason: []const u8,
-};
-
-pub const Confidence = enum(u8) {
-    low,
-    medium,
-    high,
-};
-```
-
-用途：
-
-- 便于调试分类来源。
-- 便于测试每一层信号。
-- 便于报告阶段打印“为什么跳过/保留”。
-
-### 3. `FunctionSurfaceRecord`
-
-建议在 `PassContext` 中缓存最终结果：
-
-```zig
-pub const FunctionSurfaceRecord = struct {
-    func_ptr: u64,
-    surface: FunctionSurface,
-    confidence: Confidence,
-    reason: []const u8,
-};
-```
-
-更推荐的实际存储形式：
-
-- `std.AutoHashMap(u64, FunctionSurface)` 作为主查询表。
-- 如需调试，再补一个 `surface_reason_cache`。
-
-### 4. `PassContext` 新增字段
-
-建议增加：
-
-```zig
-function_surface: std.AutoHashMap(u64, surface_classifier.FunctionSurface),
-function_surface_reason: std.StringHashMap([]const u8),
-```
-
-如果后续觉得字符串太重，可以只保留 surface，不保留 reason。
-
-### 5. `Origin / Surface` 查询 API
-
-建议在 `PassContext` 提供：
-
-```zig
-pub fn getFunctionSurface(self: *const PassContext, func_ptr: u64) surface_classifier.FunctionSurface
-pub fn shouldAnalyzeFunctionSurface(self: *const PassContext, func_ptr: u64) bool
-```
-
-规则：
-
-- `unknown` 返回 `true`。
-- `boundary` 返回 `true`。
-- `user_code` / `dependency` 返回 `true`。
-- `runtime` / `standard_library` / `compiler_generated` 返回 `false`。
+- [ ] P1-1：在 `src/semantics/allocator_kb.zig`（或对应知识库）中注册以下 Python alloc 函数及其配对 free：
+  - `PyObject_New` / `PyObject_NewVar` / `PyType_GenericAlloc` → `PyObject_Del` / `PyObject_Free`
+  - `PyMem_Malloc` / `PyMem_Calloc` / `PyMem_Realloc` → `PyMem_Free`
+  - `PyMem_RawMalloc` 等 raw 系列 → `PyMem_RawFree`
+- [ ] P1-2：在 `src/pass/analysis/ptr_lifetime/ptr_lifetime_violations.zig` 中,当 `alloc_lang == python` 且 `free_lang == python` 时**不报** `cross_language_free`。
+- [ ] P1-3：注册 Python "返回 owned reference" 函数族（`PyLong_From*`、`PyUnicode_From*`、`PyTuple_New`、`PyList_New`、`PyDict_New`、`PyBytes_FromString*` 等），其调用结果的 `Py_DECREF` / `Py_XDECREF` 视为标准 release，**不报** refcount imbalance / use_after_free。
+- [ ] P1-4：单元测试用 `python-xxhash` 的 `_xxhash.bc` 验证：6 FP → 0 FP。
 
 ---
 
-## 文件结构设计
+### P2：Rust Drop trait + C free 配对未识别（影响 bindgen 风格 wrapper）
 
-目标是让每个文件都容易读，且不超过 1000 行。
+**重现**：克隆 `gyscos/zstd-rs`，build → `zstd_safe.bc` 报 4 个 `use_after_free` on Drop（CCtx/DCtx/CDict/DDict）。源码 `zstd-safe/src/lib.rs:859-866` 是标准 RAII，无 Clone/Copy。
 
-### 推荐目录
+**根因**：`impl Drop` 内调 `extern "C"` 的 free 被识别为"FFI-transferred pointer 被 free"。
 
-```text
-src/semantics/
-  surface_classifier.zig
-  surface_classifier_linkage.zig
-  surface_classifier_debug.zig
-  surface_classifier_callgraph.zig
-  surface_classifier_tests.zig
+**任务**：
 
-src/pass/
-  pass.zig
-  manager.zig
-  analysis/
-    origin_classifier_pass.zig
-    pointer_ownership.zig
-    danger_surface.zig
-
-src/semantics/
-  noise_filter.zig
-  language_detector.zig
-  zone_classifier.zig
-  call_graph.zig
-```
-
-### 拆分原则
-
-- 每个文件只解决一个问题。
-- 分类逻辑和 pipeline 执行逻辑分离。
-- 单个分类文件不要同时做“定义 + 扫描 + 报告 + 测试”。
-- 测试尽量跟实现邻近，但避免把主文件撑得过长。
-
-### 建议文件职责
-
-- `surface_classifier.zig`
-  - 公共类型。
-  - 聚合入口。
-  - 最终 merge 逻辑。
-
-- `surface_classifier_linkage.zig`
-  - linkage / debug presence 相关的廉价启发式。
-
-- `surface_classifier_debug.zig`
-  - debug metadata / provenance 解析。
-
-- `surface_classifier_callgraph.zig`
-  - reachability / boundary propagation。
-
-- `origin_classifier_pass.zig`
-  - pass 入口，负责遍历 module、填充 `PassContext`。
+- [ ] P2-1：在 `src/pass/analysis/ptr_lifetime/ptr_lifetime_violations.zig` 增加规则：当 caller 是 Rust 函数且函数名形如 `_ZN<...>4drop17h<hash>E`（Drop trait impl 的 demangled 形式）时，调用的 C free 是标准 RAII 移交，不报 use_after_free。
+- [ ] P2-2：可选增强：检查 owner type 是否有 `impl Clone` / `impl Copy`。无 Clone+Copy 表示严格单一所有权，Drop 是唯一 release 路径，置信度更高。
+- [ ] P2-3：单元测试 fixture：用 zstd-rs 的 `_ZN57_$LT$zstd_safe..CCtx$u20$as$u20$core..ops..drop..Drop$GT$4drop*` 作为正样本（不应报警）。
 
 ---
 
-## 分类信号设计
+### P3：FFI helper 函数返回 raw ptr 被误判 borrow_escape
 
-### Layer 1: Linkage
+**重现**：zstd_safe.bc 中 `ptr_mut_void(&mut [u8]) -> *mut c_void` 和 `Vec<u8>::as_mut_ptr() -> *mut u8` 被报 borrow_escape。这些是 FFI 标准入口函数,**有意**返回 raw ptr。
 
-低成本信号：
+**任务**：
 
-- `LLVMGetLinkage`
-- `LLVMIsDeclaration`
-- debug info 是否存在
-
-用途：
-
-- 快速识别 compiler-generated 风格函数。
-- 只能做 hint，不能单独做最终决策。
-
-### Layer 2: Debug Provenance
-
-统一读取：
-
-- `!DISubprogram`
-- `!DIFile`
-- path / directory provenance
+- [ ] P3-1：在 `src/pass/analysis/callback_escape.zig`（或对应模块）的 borrow_escape 检测中，识别以下"FFI surface helper"模式并跳过：
+  - 函数签名 `fn(&[T]) -> *const T` 或 `fn(&mut [T]) -> *mut T`
+  - 函数体只有一条 `as_ptr()` / `as_mut_ptr()` 或等价 `getelementptr` + 返回
+  - 函数名包含 `as_ptr` / `as_mut_ptr` / `ptr_mut_void` / `ptr_void` / `_ptr` 等模式
+- [ ] P3-2：单元测试：zstd_safe `_ZN9zstd_safe12ptr_mut_void17h*E` 不应报警。
 
 ---
 
-## 平台特定 IR 信息过滤设计
+### P4：非指针返回值被识别为 ptr escape
 
-### 背景
+**重现**：zstd_safe `ZSTD_CCtx_setParameter` 返回 `size_t`(错误码)，但被报 `borrow_escape "FFI return value escape: ZSTD_CCtx_setParameter result"`。
 
-同一份源码在 macOS、Linux、Windows 上编译出的 `*.ll` / `*.bc` 会包含不同的平台信息。
-这些信息会影响符号命名、runtime 函数、section、linkage、debug path 和 ABI 细节，容易造成误报、重复报告或 language / surface 误判。
+**任务**：
 
-典型差异：
-
-- macOS / Mach-O：符号可能带 `_` 前缀，存在 `__TEXT`、`__DATA`、Objective-C / Swift runtime、Darwin libc shim。
-- Linux / ELF：常见 `.text`、`.rodata`、`.init_array`、glibc / musl runtime、PLT/GOT 相关符号。
-- Windows / COFF：常见 `.CRT$XCU`、`.pdata`、`.xdata`、MSVC / MinGW runtime、decorated symbol、import thunk。
-- LLVM Target：`target triple`、`target datalayout`、calling convention、address space、visibility、DLL storage class 不同。
-- Debug Metadata：绝对路径、SDK path、toolchain path、build directory 会带平台特征，不应直接作为用户代码判断依据。
-
-### 设计原则
-
-- 平台信息只作为 `PlatformProfile` / `PlatformHint`，不能单独决定漏洞是否存在。
-- 安全优先：无法确认的平台特征归为 `unknown`，继续保留分析。
-- boundary 优先：FFI export/import、cross-language edge、extern callback 永远不能因平台 runtime 规则被过滤。
-- 归一化优先于白名单：先把符号、路径、section、target 信息标准化，再进入 language / surface / noise 逻辑。
-- report 侧只展示与风险相关的平台证据，避免把 target triple / SDK path 当成风险本身。
-
-### 新增数据结构建议
-
-```zig
-pub const PlatformKind = enum {
-    macos,
-    linux,
-    windows,
-    wasi,
-    unknown,
-};
-
-pub const ObjectFormat = enum {
-    macho,
-    elf,
-    coff,
-    wasm,
-    unknown,
-};
-
-pub const PlatformProfile = struct {
-    platform: PlatformKind,
-    object_format: ObjectFormat,
-    target_triple: []const u8,
-    datalayout: []const u8,
-};
-
-pub const PlatformHint = struct {
-    surface: FunctionSurface,
-    confidence: Confidence,
-    reason: []const u8,
-};
-```
-
-### 推荐模块
-
-```text
-src/semantics/platform_profile.zig
-src/semantics/platform_normalizer.zig
-src/semantics/platform_runtime.zig
-src/semantics/surface_classifier/platform.zig
-```
-
-职责划分：
-
-- `platform_profile.zig`：解析 `target triple`、`datalayout`、module flags，产出 `PlatformProfile`。
-- `platform_normalizer.zig`：归一化符号名、debug path、section name、import/export decoration。
-- `platform_runtime.zig`：识别平台 runtime / toolchain runtime / compiler-generated shim。
-- `surface_classifier/platform.zig`：把平台 hint 合并进 `SurfaceClassifierPass`，只输出 hint，不直接过滤。
-
-### 归一化规则
-
-- Symbol：统一处理 Mach-O leading underscore、COFF decorated symbol、LLVM intrinsic suffix、import thunk 前后缀。
-- Path：把 SDK path、toolchain path、系统 include path、临时 build path 归一为 platform/runtime provenance。
-- Section：把 Mach-O / ELF / COFF section 映射为统一类别：code、rodata、data、init_array、exception、debug、unknown。
-- ABI：记录 calling convention、DLL storage class、visibility，但只作为 boundary / runtime hint。
-- Runtime：识别 libc、compiler-rt、libstdc++、libc++、MSVC CRT、Darwin runtime、Go/Rust/Zig startup shim。
-
-### Pipeline 接入点
-
-1. 在 module 初始化阶段生成 `PlatformProfile`，缓存到 `PassContext`。
-2. 在 `SurfaceClassifierPass` Phase 1 前先做符号和路径归一化。
-3. `surface_classifier/platform.zig` 只提供 platform hint，参与 `mergeLayers()`。
-4. `noise_filter` 只在报告侧使用 platform 信息做降噪，不参与主分类。
-5. 输出报告增加可选 `Platform Evidence`，仅在 verbose/debug 中展示。
-
-### 测试矩阵
-
-- 同一 C FFI 样例分别生成 macOS / Linux / Windows 风格 `*.ll`，检查 normalized symbol 一致。
-- Mach-O `_foo` 与 ELF `foo` 应归一为同一 canonical symbol。
-- COFF decorated symbol 不应导致重复 issue。
-- SDK / toolchain path 不应被误判为用户代码 path。
-- Runtime startup 函数应标记为 `runtime` / `compiler_generated`，但 export / FFI boundary 仍保留。
-- `target triple` 缺失时应回退到 `unknown`，不得误杀。
-
-### 平台过滤 TODO
-
-- [ ] P1 定义 `PlatformKind`、`ObjectFormat`、`PlatformProfile`、`PlatformHint`。
-- [ ] P2 从 LLVM module 读取 `target triple` 与 `target datalayout`。
-- [ ] P3 实现 Mach-O / ELF / COFF symbol canonicalization。
-- [ ] P4 实现 debug path / SDK path / toolchain path 归一化。
-- [ ] P5 实现 section category 归一化。
-- [ ] P6 实现平台 runtime / compiler-generated shim 识别。
-- [ ] P7 将 platform hint 接入 `SurfaceClassifierPass.mergeLayers()`。
-- [ ] P8 确保 boundary / unknown 优先级高于 platform runtime hint。
-- [ ] P9 增加跨平台 fixture 和回归测试。
-- [ ] P10 在 verbose/debug 报告中展示 platform evidence。
-- [ ] P11 复测 macOS / Linux / Windows 生成的 `*.ll` / `*.bc`，比较 issue 数、symbol canonicalization 和 FN/FP 变化。
-
-用途：
-
-- 区分 workspace、stdlib、dependency、runtime、generated。
-- 优先使用 provenance，不使用 crate 名白名单。
-
-### Layer 3: CallGraph Reachability
-
-用途：
-
-- 捞回被误判为 generated 的可达函数。
-- 保留 FFI producer 和 boundary 相关函数。
-- 避免只靠 path / linkage 误杀。
-
-### Layer 4: Language / ABI / Boundary Hints
-
-输入信号：
-
-- `language_detector`
-- calling convention / ABI
-- `CrossLangEdge`
-- exported symbols
-
-用途：
-
-- 标记 `boundary`。
-- 对依赖 crate 的 FFI 函数做保留。
+- [ ] P4-1：在 borrow_escape / FFI return escape 检测的入口加 return-type guard：通过 LLVM `LLVMGetReturnType()` 取 callee 返回类型，若是 integer（i8/i16/i32/i64/usize/isize）或 void，**不报** borrow_escape。
+- [ ] P4-2：仅 pointer 类型（`PointerTypeKind`）和包含 pointer 的 aggregate 返回值才进入 escape 分析。
+- [ ] P4-3：单元测试：用 `ZSTD_CCtx_setParameter` 调用（返回 size_t）和 `malloc` 调用（返回 ptr）做对比 fixture。
 
 ---
 
-## 实施待办
+### P5：Rust stdlib `core::*` 函数 FP
 
-### 阶段 1：接入 surface classifier
+**重现**：zstd.bc OMI-002 报 `integer_overflow` in `_ZN4core3cmp5impls50_$LT$impl$u20$core..cmp..Ord$u20$for$u20$usize$GT$3cmp*`。这是 Rust stdlib `core::cmp` 内部实现，不是用户代码。
 
-1. 完成 `SurfaceClassifierPass`。
-2. 在 `PassManager` 中注册到 zone classifier 后、heavy analysis 前。
-3. 将最终结果写入 `ctx.function_surface`。
-4. 补 `PassContext.getFunctionSurface()` 和 `shouldAnalyzeFunctionSurface()`。
+**任务**：
 
-### 阶段 2：统一下游消费
+- [ ] P5-1：在 `src/pass/analysis/noise/issue_suppression.zig` 的 `isStdlibInternalFunction()` 中,补充 Rust 分支：
+  - 函数名以 `_ZN4core` / `_ZN5alloc` / `_ZN3std` / `_R{N,I}{...}4core` 等前缀开头视为 stdlib 内部
+  - 已有 v0 mangling 检测,但 demangled 后包含 `core::` / `alloc::` / `std::` 的也归入此类
+- [ ] P5-2：注意例外：用户代码可能有 `core::` namespace shadow（罕见）；保留 confidence 降级而非完全压制，让 verbose mode 仍能看见。
+- [ ] P5-3：回归用 zstd.bc 验证 OMI-002 消失，但用户代码中真正的 integer_overflow 仍报。
 
-1. `PointerOwnership` 改为先查 surface 再决定是否分析。
-2. `DangerSurfacePass` 优先使用 surface 结果做 pruning。
-3. `noise_filter` 只保留 issue/report 侧逻辑。
-4. 清理重复的 origin/surface 概念，保留一套 canonical 定义。
+---
 
-### 阶段 3：优化 PointerOwnership init
+### P6：C++ `_Znam` / `_Znwm` 未注册为堆 alloc
 
-1. 给 `MemoryGraph` 缓存函数信息，减少 `resolveInstFuncName()` 重复调用。
-2. 优化 Source 3 的 IR fallback scan。
-3. 预构建 free 函数名集合，减少重复 registry lookup。
-4. 避免对所有函数做无意义的 body 扫描。
+**重现**：ffi-demo `cpp_fft.bc` v3 仍有 1 个 hard FP——OMI-001 `invalid_free` "non-heap source pointer"。trace 自相矛盾："Pointer origin: from `_Znam()`" 然后 "Free called on non-heap pointer"。`_Znam` 就是 C++ `operator new[]`，明显是堆。
 
-### 阶段 4：优化 analysis 阶段
+**任务**：
 
-1. 在 heavy 子步骤前统一加 surface gate。
-2. 对 `runtime` / `standard_library` / `compiler_generated` 默认跳过。
-3. `unknown` 保留分析。
-4. `boundary` 永远保留。
+- [ ] P6-1：在 `src/pass/analysis/ptr_lifetime/ptr_lifetime_classify.zig` 的 alloc 函数集合中，注册：
+  - `_Znwm` / `_Znwj` / `_Znw_` → C++ `operator new`
+  - `_Znam` / `_Znaj` / `_Zna_` → C++ `operator new[]`
+  - `_Znw*RKSt9nothrow_t` → `operator new(nothrow)` 变体
+- [ ] P6-2：对应 free 端配对：`_ZdlPv` → `delete`，`_ZdaPv` → `delete[]`。
+- [ ] P6-3：单元测试用 ffi-demo `cpp_fft.bc` 验证 OMI-001 消失（同时确保 OMI-002 InitTwiddle 的 TP 仍报）。
 
-### 阶段 5：测试和回归
+---
 
-1. `FunctionSurface` 分类测试。
-2. `mergeLayers()` 测试。
-3. `PassContext` 查询 API 测试。
-4. 小型 FFI 样例回归。
-5. `wasmtime_test.bc` 和 `sqlite3.bc` 性能回归。
+### P7：C++ 单对象 new + 静态 new[] 漏检
+
+**重现**：ffi-demo `cpp_hash.bc` 只检出 BUG-4a，漏掉：
+- BUG-4b：`Hash` 中 `new PadHelper()` 单对象漏 delete
+- BUG-4c：`S0` 中 `static uint32_t* tbl = new uint32_t[1024]` 静态生命周期 leak
+
+**任务**：
+
+- [ ] P7-1（依赖 P6）：扩展 alloc tracking 到单对象 `new T`（`_Znwm` 返回值不仅是 `void*`,而是 specific type pointer 后会做 `bitcast`,要 follow 这条 chain）。
+- [ ] P7-2：识别"静态变量首次初始化"模式 — alloc 结果存到 global / static 变量后,若该 global 没有 free 路径,**应报为 leak**（即使生命周期是进程级）。区分用户意图（"一次性分配,永不释放"）和真 leak（每次调用都 alloc）需要 trip-counting。
+- [ ] P7-3：回归用 cpp_hash.bc 验证 BUG-4b / BUG-4c 命中。
+
+---
+
+### P8：路径敏感 leak 漏检
+
+**重现**：
+- ffi-demo `c_fft_c_bridge.bc` 漏检 FFT-LEAK-3：`real_copy` / `imag_copy` 仅在 success path free，error path leak。
+- ffi-demo `cpp_fft.bc` 漏检 FFT-LEAK-2：`BitReverseTable` 返回 `new[]`,FFT 中只在 success path `delete[] rev`，error path leak。
+
+**任务**：
+
+- [ ] P8-1：在 leak detector 中加 path-sensitive 分析：枚举 alloc 后所有 reachable 的 free instructions，若存在一条 path 从 alloc 到 function return（或 throw）**不经过 free**，报 `conditional_leak`。
+- [ ] P8-2：confidence 分级：
+  - 所有 path 都 leak → HIGH leak
+  - 部分 path leak → MEDIUM conditional_leak
+  - 跨过程返回（无 caller 上下文）→ LOW boundary_leak
+- [ ] P8-3：回归 FFT-LEAK-3 / FFT-LEAK-2 应至少报 MEDIUM。
+
+---
+
+### P9：已知遗留限制（不属任务，仅记录）
+
+- ⚠️ C++ 跨函数 ownership / lifetime 追踪不完整：当 alloc 在 callee 而 free 在 caller 时,可能漏检或多报。需要完整 interprocedural alias analysis。
+- ⚠️ Zig 0.16+ 项目无法用当前测试环境编译：`@Tuple` / `@Int` / `process.Init` 等新 builtin 在 0.15 不支持。如需测试更多真实 Zig 项目,升级 toolchain 或 stage 多版本 zig。
+- ⚠️ Go cgo 项目无法走标准 `go build` 获取 LLVM IR；TinyGo 对 cgo 兼容性有限（build constraints 不支持）。当前只能扫 cgo 项目中的纯 C 桥文件。
+
+---
+
+## 平台特定 IR 信息过滤（设计仍在演进）
+
+平台信息只作为 `PlatformProfile` / `PlatformHint`,不能单独决定漏洞是否存在。安全优先：无法确认的平台特征归为 `unknown`，继续保留分析。boundary 优先：FFI export/import、cross-language edge、extern callback 永远不能因平台 runtime 规则被过滤。
+
+已有数据结构（`PlatformKind`、`ObjectFormat`、`PlatformProfile`、`WindowsAbi`）在 `src/semantics/platform_profile.zig`。
+
+待补充任务：
+
+- [ ] PF-1：当前 `PlatformProfile` 在 macOS target 上验证通过，但未在 Windows MSVC / Linux ELF 真实 bitcode 上做交叉验证。需要 stage 一份 `x86_64-pc-windows-msvc` triple + `?<sym>@@YA...` mangling 的 bitcode 来验证 MSVC `?` 前缀 -> cpp 识别走通。
+- [ ] PF-2：`identifyCalleeLanguageWithContext` 的 Zig/Go 消歧已实现，但 Mach-O leading underscore (`_main`) 与 ELF/COFF 裸名 (`main`) 的归一化尚未统一进 `platform_normalizer.zig`。
+- [ ] PF-3：跨平台 fixture：同一 C FFI 源码分别用 macOS / Linux / Windows toolchain 编译，验证 issue 数 / canonical symbol 一致。
 
 ---
 
@@ -452,13 +205,11 @@ src/semantics/surface_classifier/platform.zig
 
 - 单文件不超过 1000 行。
 - 过长的枚举、长表、测试数据都要拆分。
-- 大型分类规则应拆成多个小模块，不要堆在一个文件里。
+- 大型分类规则应拆成多个小模块,不要堆在一个文件里。
 
-### 建议检查点
+### 当前超标文件
 
-- `surface_classifier.zig` 不超过 400~500 行。
-- `pointer_ownership.zig` 拆分辅助逻辑，避免继续膨胀。
-- 测试表格和长样例单独放测试文件。
+- [ ] FS-1：清点当前 src/ 下超过 1000 行的文件,逐个拆分。截至 2026-05-26 有 7 个文件超标（历史遗留）。
 
 ---
 
@@ -500,6 +251,7 @@ src/semantics/surface_classifier/platform.zig
 - `extern "C" fn` producer 场景。
 - 依赖 crate 的 boundary 场景。
 - 编译器生成函数的噪声过滤场景。
+- **新增**：上述 P0-P8 每个任务的修复都必须有对应单元 / 回归测试 fixture。
 
 ---
 
@@ -516,19 +268,7 @@ src/semantics/surface_classifier/platform.zig
 
 - `PointerOwnership init` 明显下降。
 - `PointerOwnership analysis` 明显下降。
-- recall 不下降，尤其不能漏掉 FFI producer 和 boundary 场景。
-
----
-
-## 推荐执行顺序
-
-1. 定义 `FunctionSurface` 和查询 API。
-2. 接入 `SurfaceClassifierPass`。
-3. 让 `PassContext` 统一缓存 surface 结果。
-4. 改造 `PointerOwnership` 的 gate 逻辑。
-5. 拆分 `surface_classifier` 相关模块。
-6. 优化 `MemoryGraph` 和 Source 3 fallback。
-7. 补测试和性能回归。
+- recall 不下降,尤其不能漏掉 FFI producer 和 boundary 场景。
 
 ---
 
@@ -547,138 +287,3 @@ src/semantics/surface_classifier/platform.zig
 - [ ] Error handling is appropriate
 - [ ] Memory management is correct
 - [ ] Changes are surgical and minimal
-
----
-
-## 开发计划（基于可行性分析，分 4 阶段推进）
-
-### 架构决策：统一目录 + 单一注册
-
-SurfaceClassifier 是一个完整子系统，包含多层分类逻辑和一个 pass。
-所有子模块放在 `src/semantics/surface_classifier/` 目录下，对外通过
-`surface_classifier.zig`（目录 root）提供统一接口。
-
-Pipeline 只注册一个 pass `SurfaceClassifierPass`。该 pass 内部自行编排
-两阶段执行：
-  - Phase 1（L1+L2+L3+L4-early）：CallGraphPass 之前，用 linkage / debug
-    / reachability / exported symbols 完成首次分类
-  - Phase 2（L4-late）：CallGraphPass 之后，用 CrossLangEdge 补标 boundary
-
-这样 pipeline 只需一个注册点，内部时序由 pass 自己管理。
-
-```
-src/semantics/surface_classifier/
-  surface_classifier.zig       ← 目录 root，导出类型 + 公共 API
-  linkage.zig                  ← L1 linkage heuristic
-  debug_origin.zig             ← L2 debug provenance
-  callgraph.zig                ← L3 reachability logic
-  boundary.zig                 ← L4 boundary detection
-
-src/pass/analysis/
-  surface_classifier_pass.zig  ← 唯一 pass 入口，对外注册
-```
-
-### 阶段 1：重命名 + 目录重组 + 新增 boundary（低风险）
-
-- [x] 1.1 创建 `src/semantics/surface_classifier/` 目录
-- [x] 1.2 创建 `surface_classifier.zig`（目录 root）：`FunctionSurface` enum（含 `boundary`）、`SurfaceHint`、`Confidence`、`mergeLayers()`、re-exports
-- [x] 1.3 创建 `linkage.zig`：L1 linkage heuristic（从 origin_classifier.zig 迁移）
-- [x] 1.4 创建 `debug_origin.zig`：L2 debug provenance（从 origin_classifier.zig 迁移）
-- [x] 1.5 创建 `callgraph.zig`：L3 reachability placeholder
-- [x] 1.6 创建 `boundary.zig`：L4 boundary detection（exported symbols + CrossLangEdge）
-- [x] 1.7 创建 `surface_classifier_pass.zig`：统一 pass 入口（Phase 1 + Phase 2）
-- [x] 1.8 删除旧文件 `src/semantics/origin_classifier.zig` 和 `src/pass/analysis/origin_classifier.zig`
-- [x] 1.9 更新 `PassContext`：`function_origin` → `function_surface`，API 方法对齐新命名
-- [x] 1.10 更新 `pipeline.zig` 初始化 `function_surface`
-- [x] 1.11 更新 `root.zig` 导出：`SurfaceClassifierPass` + `FunctionSurface`
-- [x] 1.12 更新 `main.zig` 注册：`SurfaceClassifierPass`（替换 `OriginClassifierPass`）
-- [x] 1.13 验证：`zig build` 通过 + 60/60 测试通过
-
-### 阶段 2：统一下游消费 + 消除双体系（中风险）
-
-- [x] 2.1 将 `pass.zig` 中 `classifyFunctionOrigin()` 改为 `classifyFunctionSurface()`，返回类型对齐 `FunctionSurface`
-- [x] 2.2 将 `pass.zig` 中 `shouldAnalyzeFunctionByName()` 改为 `shouldAnalyzeFunctionSurfaceByName()`
-- [x] 2.3 逐个替换 12 个 `noise_filter.classifyFunctionFull()` 调用点为 `ctx.classifyFunctionSurface()`：
-  - [x] 2.3.1 `pointer_ownership.zig:497`
-  - [x] 2.3.2 `ffi_type_mismatch.zig:168`
-  - [x] 2.3.3 `cpp_fp_reduction.zig:705`
-  - [x] 2.3.4 `callback_escape.zig:723`
-  - [x] 2.3.5 `ptr_lifetime.zig:250`
-  - [x] 2.3.6 `return_check.zig:73`
-  - [x] 2.3.7 `ffi_body_check.zig:564`
-  - [x] 2.3.8 `memory_safety.zig:111`
-  - [x] 2.3.9 `memory_safety.zig:223`
-  - [x] 2.3.10 `free_validation.zig:91`
-  - [x] 2.3.11 `pass.zig:606`（报告逻辑）
-  - [x] 2.3.12 `ffi_type_mismatch.zig` 其他引用
-- [x] 2.4 统一 `noise_filter.zig:FunctionOrigin` → 添加 `FunctionSurface` re-export + `functionSurfaceToOrigin()` 转换函数
-- [x] 2.5 统一 `noise_reduction.zig:FunctionOrigin` → 添加 `FunctionSurface` + `functionSurfaceToOrigin` re-export
-- [x] 2.6 更新 `path_filter.zig` 中 `FunctionOrigin` 引用为 `FunctionSurface`（通过 `noise_filter.FunctionSurface` 已可访问）
-- [x] 2.7 更新 `root.zig` 中 `NoiseFunctionOrigin` 导出为 `FunctionSurface`（添加 `FunctionSurface` + `functionSurfaceToOrigin` re-export）
-- [x] 2.8 验证：`zig build` 通过 + 60/60 测试通过
-
-### 阶段 3：noise_filter 瘦身 + pass 内部两阶段编排（高风险）
-
-- [x] 3.1 SurfaceClassifierPass 实现两阶段编排：
-  - Phase 1：在 CallGraphPass 之前运行（L1+L2+L3+L4-early）
-  - Phase 2：在 CallGraphPass 之后运行（L4-late，用 CrossLangEdge 补标 boundary）
-  - 通过 `ctx.function_surface_phase` 标记当前阶段，同一 pass 两次 run()
-- [x] 3.2 `noise_filter.zig` 瘦身：删除白名单数组（RUST_STDLIB_PREFIXES 等 ~200 行）
-- [x] 3.3 `noise_filter.zig` 瘦身：删除 `classifyFunction()` 和各语言 `classifyXxxFunction()`（~600 行）
-- [x] 3.4 `noise_filter.zig` 瘦身：删除 `classifyFunctionFull()` 和 `shouldAnalyze()`（~50 行）
-- [x] 3.5 `noise_filter.zig` 保留：`RiskLevel` + `getRiskLevel()` + `ClassificationResult`（报告侧核心）
-- [x] 3.6 `noise_filter.zig` 保留：`FunctionSurface` re-export（向后兼容 shim）
-- [x] 3.7 验证：`zig build` 通过 + 60/60 测试通过
-
-### 阶段 4：性能验证 + 回归测试
-
-- [x] 4.1 `FunctionSurface` 分类单元测试（linkage/debug/callgraph/boundary 各层）
-- [x] 4.2 `mergeLayers()` 单元测试（覆盖所有 L1+L2+L3+L4 组合）
-- [x] 4.3 `PassContext.getFunctionSurface()` / `shouldAnalyzeFunctionSurface()` 测试
-- [x] 4.4 小型 FFI 样例回归：Rust `Box::into_raw` / `extern "C" fn` 场景
-- [x] 4.5 `wasmtime_test.bc` 性能回归：对比 init/detect/analysis 时间
-- [x] 4.6 `sqlite3.bc` 性能回归：对比 init/detect/analysis 时间
-- [x] 4.7 确认 recall 不下降：FFI producer 和 boundary 场景不被误杀
-- [ ] 4.8 确认 `noise_filter.zig` 行数 < 200（当前 305 行，含测试 ~100 行，需进一步拆分测试）
-- [ ] 4.9 确认所有单文件 ≤ 1000 行（当前 7 个文件超标，属历史遗留问题）
-
-### 阶段 4 补充：ffi-demo TP/FP 分析
-
-使用 `/Users/scc/code/ffi-demo/output/` 中的 7 个 .bc 文件进行了完整分析。
-
-结果：TP=2, FP=0, FN=8, Precision=100%, Recall=20%, F1=0.333
-
-检测到的真实漏洞：
-- LEAK-MALLOC: `c_hash()` 中 malloc 在 len==0 时不 free
-- FFT-LEAK-5: `c_fft_test_signal()` 中 temp_buf malloc 未 free
-
-FN 主要原因：fd 泄漏(不在 scope)、C++ new/delete(未跟踪)、静态分配、跨过程 ownership。
-
-报告已保存至 `outputs/ffi_demo_tp_fp_analysis.md`，原始 JSON 至 `outputs/ffi_demo/`。
-
-### 阶段 4 性能结果
-
-| 文件 | 基线 total | 当前 total | 变化 |
-|------|-----------|------------|------|
-| wasmtime_test.bc | 53407ms | 38276ms | -28% |
-| sqlite3.bc | 20033ms | 17753ms | -11% |
-
-FFI 回归：rust_ffi_bugs.ll (20 函数, 13 issues), cross_lang_free_bugs.ll (22 函数, 3 issues), red_team_cpp_ffi.bc (124 函数, 5 issues) — recall 正常。
-
-新增测试：39 个（surface_classifier 15 + debug_origin 10 + linkage 3 + boundary 1 + noise_filter 10）。
-
-### 阶段 5：输出优化（基于 improve.md 反馈）
-
-- [x] 5.1 DiagnosticWriter.info() 改为只在 verbose/debug 输出（分离 pipeline telemetry）
-- [x] 5.2 新增 formatStructuredReport()：Findings → Coverage → Summary → Verdict
-- [x] 5.3 printZoneSummary() 改为只在 verbose/debug 输出
-- [x] 5.4 Performance Profile 改为只在 verbose/debug 输出
-- [x] 5.5 LANG-DETECT 改为 log.debug（只在 debug 输出）
-- [x] 5.6 RustFfiFilter 重命名为 FFIAuditor（跨语言通用）
-- [x] 5.7 main.zig 中 pipeline log 改为 log.debug
-- [x] 5.8 验证：构建通过 + 60/60 测试通过
-
-输出效果：
-- **默认模式**：只有结构化报告（Findings/Coverage/Summary），干净专业
-- **--verbose**：+ Zone Summary + SurfaceClassifier + Pipeline pass 统计
-- **--debug**：+ 全部内部 trace

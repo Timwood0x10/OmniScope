@@ -45,9 +45,9 @@ pub const FramePointerPolicy = enum {
 
 /// Sanitizer kind detected from function attributes or module flags.
 pub const SanitizerKind = enum {
-    address,  // AddressSanitizer (ASAN)
-    memory,   // MemorySanitizer (MSAN)
-    thread,   // ThreadSanitizer (TSAN)
+    address, // AddressSanitizer (ASAN)
+    memory, // MemorySanitizer (MSAN)
+    thread, // ThreadSanitizer (TSAN)
     undefined_behavior, // UBSan
     coverage, // gcov / llvm-profdata instrumentation
     unknown,
@@ -171,11 +171,11 @@ pub fn getCallingConventionName(cc: u32) []const u8 {
         0 => "C",
         c.LLVCFastCallCC => "FastCall",
         c.LLVMCCallConv => "C",
-        c.LLVMX86_64SysVCallConv => "X86_64-SysV",     // Linux/macOS default
-        c.LLVMX86_64Win64CallConv => "X86_64-Win64",    // Windows MSVC default
+        c.LLVMX86_64SysVCallConv => "X86_64-SysV", // Linux/macOS default
+        c.LLVMX86_64Win64CallConv => "X86_64-Win64", // Windows MSVC default
         c.LLVMX86StdcallCallConv => "stdcall",
         c.LLVMX86FastcallCallConv => "fastcall",
-        else => |v| blk: {
+        else => |_| blk: {
             // Format as number for unknown conventions
             break :blk "(unknown)";
         },
@@ -216,7 +216,7 @@ pub fn detectModuleSanitizer(mod: c.LLVMModuleRef) SanitizerKind {
     if (@intFromPtr(msan_global) != 0) return .memory;
 
     // Check for TSan global variable
-    const tsan_global = c.LLVMGetNamedGlobal(mod, "__tsan_unaligned);
+    const tsan_global = c.LLVMGetNamedGlobal(mod, "__tsan_unaligned");
     if (@intFromPtr(tsan_global) != 0) return .thread;
 
     // Check for UBSan function types (less reliable but still useful)
