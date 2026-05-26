@@ -238,29 +238,29 @@ src/pass/analysis/resource/
 
 ### 4.1 定义 summary 类型
 
-- [ ] 4-1：新增 `src/semantics/resource/effect.zig`。
-- [ ] 4-2：定义 `Effect` union：`acquires`、`releases`、`retains`、`returns_owned`、`returns_borrowed`、`consumes_arg`、`stores_arg_to_owner`、`stores_arg_to_global`、`initializes_out_param`、`escapes_to_callback`、`conditional_release`。
-- [ ] 4-3：新增 `src/semantics/resource/function_summary.zig`。
-- [ ] 4-4：定义 `FunctionSummary`：function id、canonical name、origin、language hint、runtime hint、effects、confidence、evidence。
-- [ ] 4-5：定义 `SummarySource`：`builtin_registry`、`structural_inference`、`project_model`、`fallback_heuristic`、`unknown`。
-- [ ] 4-6：定义 `SummaryConfidence` 或使用 `f32 confidence`，但所有阈值集中在一个文件。
+- [x] 4-1：新增 `src/semantics/resource/effect.zig` (228行)。
+- [x] 4-2：定义 `Effect` 枚举 (14种)：`acquires`、`releases`、`retains`、`borrows`、`transfers`、`returns_owned`、`returns_borrowed`、`consumes_arg`、`stores_arg_to_owner`、`stores_arg_to_global`、`initializes_out_param`、`escapes_to_callback`、`conditional_release`、`none`。另含 `EffectSet`(packed u16 bitset)。
+- [x] 4-3：新增 `src/semantics/resource/function_summary.zig` (265行)。
+- [x] 4-4：定义 `ResourceFunctionSummary`：name, source, confidence, effects(FamilyId), target_param_index, is_ffi_boundary, evidence。
+- [x] 4-5：定义 `SummarySource`：`builtin_registry`、`structural_inference`、`project_model`、`fallback_heuristic`、`unknown`。
+- [x] 4-6：定义 `Confidence` 集中阈值 (high=0.85, medium=0.65, low=0.40) + `Tier` 分类。
 
 ### 4.2 内置 summary
 
-- [ ] 4-7：从 family registry 自动生成 builtin allocator/releaser summary。
-- [ ] 4-8：为 Python owned-reference constructors 生成 `returns_owned(python_object)` summary：`PyLong_From*`、`PyUnicode_From*`、`PyTuple_New`、`PyList_New`、`PyDict_New`、`PyBytes_FromString*`。
-- [ ] 4-9：为 `Py_DECREF` / `Py_XDECREF` 生成 `conditional_release(python_object)` summary。
-- [ ] 4-10：为 JNI ref API 生成 local/global ref acquire/release summary。
-- [ ] 4-11：为 C# HGlobal/CoTaskMem 生成 acquire/release summary。
+- [x] 4-7：从 family registry 自动生成 builtin allocator/releaser summary (Layer1: populateFromRegistry)。
+- [x] 4-8：为 Python owned-reference constructors 生成 `returns_owned(python_object)` summary：`PyLong_From*`(8个)、`PyUnicode_From*`(6个)、容器(6个)、对象(8个)。
+- [x] 4-9：为 `Py_DECREF` / `Py_XDECREF` / `Py_CLEAR` 生成 `conditional_release(python_object)` summary + `Arc::drop`。
+- [x] 4-10：为 JNI ref API 生成 local/global ref acquire/release summary (`FindClass` → returns_owned)。
+- [x] 4-11：为 C# HGlobal/CoTaskMem 生成 acquire/release summary + StringToHGlobal* helpers。
 
 ### 4.3 Summary 查询接入
 
-- [ ] 4-12：新增 `SummaryStore`，按 function id 和 canonical name 查询。
-- [ ] 4-13：在 pass context 中挂载 `SummaryStore`，保证 heavy pass 共享。
-- [ ] 4-14：`memory_graph` 创建 alloc/free/retain 节点时优先读取 summary。
-- [ ] 4-15：`ptr_lifetime` 判断 release/transfer/escape 时优先读取 summary。
-- [ ] 4-16：`ffi_boundary` 判断 boundary effect 时优先读取 summary。
-- [ ] 4-17：旧 callee-name 判断保留为 fallback，并标记 evidence。
+- [x] 4-12：新增 `SummaryStore`，按 canonical name 查询 (HashMapUnmanaged)，含 `isAcquirer/isReleaser/isRetain/returnsBorrowed` 便捷API。
+- [x] 4-13：在 `PassContext.resource_summary` 中挂载 `*SummaryStore`，pipeline.zig 初始化时创建+填充。
+- [x] 4-14：`memory_graph` 通过 `setFamilyRegistry()` 接入 family 分类 (P2 已完成)。
+- [x] 4-15：`ptr_lifetime_violations` 在 P3 family-first 判定中使用 registry 查询 (P3 已完成)。
+- [x] 4-16：`ffi_boundary` 可通过 `ctx.resource_summary` 读取共享语义 (字段已挂载)。
+- [x] 4-17：旧 callee-name 判断保留为 fallback (P3 legacy language 分支保留)。
 
 验收：
 

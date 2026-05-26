@@ -23,6 +23,13 @@ const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionS
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const rust_drop_semantics = @import("../semantics/rust_drop_semantics.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
+
+// Resource contract system: shared summaries for all passes
+const resource_family_reg = @import("../semantics/resource/family_registry.zig");
+const ResourceFamilyRegistry = resource_family_reg.ResourceFamilyRegistry;
+const resource_summary = @import("../semantics/resource/function_summary.zig");
+const SummaryStore = resource_summary.SummaryStore;
+const resource_inference = @import("../semantics/resource/summary_inference.zig");
 const c = @import("../ir/llvm_raw.zig").c;
 
 /// Analysis pipeline
@@ -73,6 +80,17 @@ pub const Pipeline = struct {
         self.data_flow_graph.clear();
 
         // Create context with module and data flow graph
+        // Initialize resource contract system (family registry + summary store)
+        var family_registry = try ResourceFamilyRegistry.init(self.allocator);
+        defer family_registry.deinit();
+
+        var summary_store = SummaryStore.init(self.allocator);
+        defer summary_store.deinit();
+        resource_inference.initBuiltinSummaries(&summary_store, &family_registry) catch {
+            // Non-fatal: continue without builtin summaries (legacy mode)
+            log.warn("Builtin summary initialization failed, using legacy mode", .{});
+        };
+
         var ctx = PassContext{
             .allocator = self.allocator,
             .module = self.module,
@@ -114,7 +132,11 @@ pub const Pipeline = struct {
             .interner = null,
             .arena = null,
             .platform_profile = null,
+            .resource_summary = &summary_store,
         };
+        // Inject resource family registry into memory graph for P2/P3 classification
+        ctx.memory_graph.setFamilyRegistry(&family_registry);
+
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
         // The graph uses GeneralPurposeAllocator (not Arena) so all internal

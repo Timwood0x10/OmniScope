@@ -83,7 +83,7 @@ const builtin_families = [_]ResourceFamily{
         .name = "python_object",
         .kind = .refcounted_object,
         .lifetime_domain = .refcounted,
-        .compatible_release_families = &.{.python_mem, .python_mem_raw},
+        .compatible_release_families = &.{ .python_mem, .python_mem_raw },
         .default_confidence = 1.0,
     },
     .{
@@ -91,7 +91,7 @@ const builtin_families = [_]ResourceFamily{
         .name = "python_mem",
         .kind = .heap_memory,
         .lifetime_domain = .manual,
-        .compatible_release_families = &.{.python_object, .python_mem_raw},
+        .compatible_release_families = &.{ .python_object, .python_mem_raw },
         .default_confidence = 1.0,
     },
     .{
@@ -99,7 +99,7 @@ const builtin_families = [_]ResourceFamily{
         .name = "python_mem_raw",
         .kind = .heap_memory,
         .lifetime_domain = .manual,
-        .compatible_release_families = &.{.python_object, .python_mem},
+        .compatible_release_families = &.{ .python_object, .python_mem },
         .default_confidence = 1.0,
     },
     .{

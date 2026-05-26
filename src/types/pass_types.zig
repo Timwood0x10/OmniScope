@@ -36,6 +36,9 @@ const NoiseSeverity = noise_filter.Severity;
 const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 
+const resource_summary_mod = @import("../semantics/resource/function_summary.zig");
+pub const SummaryStore = resource_summary_mod.SummaryStore;
+
 /// Pass kind classification
 pub const PassKind = enum {
     foundation,
@@ -218,6 +221,11 @@ pub const PassContext = struct {
     /// Populated during pipeline initialization, read-only thereafter.
     /// Used by SurfaceClassifier, language detector, and noise suppressor.
     platform_profile: ?@import("../semantics/platform_profile.zig").PlatformProfile,
+    /// Resource function summary store for shared callee semantics.
+    /// All heavy passes (memory_graph, ptr_lifetime, ffi_boundary) read
+    /// from this single source instead of independently classifying callees.
+    /// null = legacy mode (per-pass guessing). Set during pipeline init.
+    resource_summary: ?*SummaryStore,
 
     pub fn init(
         allocator: Allocator,
@@ -268,6 +276,7 @@ pub const PassContext = struct {
             .interner = null,
             .arena = null,
             .platform_profile = null,
+            .resource_summary = null,
         };
     }
 
