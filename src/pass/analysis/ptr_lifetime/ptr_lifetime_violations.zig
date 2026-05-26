@@ -128,28 +128,28 @@ pub fn checkCrossLanguageFree(
 
     // Path 1: Memory graph has alloc_lang info
     if (mem_graph) |mg| {
-            if (mg.nodes.get(ptr_hash)) |node| {
-                const alloc_lang = node.alloc_lang;
-                const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
-                const alloc_is_c = alloc_lang == .c; // C only — NOT cpp
-                const alloc_is_rust = alloc_lang == .rust;
+        if (mg.nodes.get(ptr_hash)) |node| {
+            const alloc_lang = node.alloc_lang;
+            const free_is_rust = std.mem.eql(u8, free_lang.?, "rust");
+            const alloc_is_c = alloc_lang == .c; // C only — NOT cpp
+            const alloc_is_rust = alloc_lang == .rust;
 
-                if (free_is_rust and alloc_is_c) {
-                    try reportCrossLanguageFree(ctx, func_name, callee_name, "C", "Rust", inst, diag);
-                    return;
-                }
-                if (!free_is_rust and alloc_is_rust) {
-                    try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", free_lang.?, inst, diag);
-                    return;
-                }
+            if (free_is_rust and alloc_is_c) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name, "C", "Rust", inst, diag);
+                return;
+            }
+            if (!free_is_rust and alloc_is_rust) {
+                try reportCrossLanguageFree(ctx, func_name, callee_name, "Rust", free_lang.?, inst, diag);
+                return;
+            }
 
-                // C# / .NET P/Invoke cross-language free detection
-                // Marshal.FreeHGlobal / CoTaskMemFree on non-.NET allocated memory
-                const free_is_csharp = std.mem.eql(u8, free_lang.?, "csharp");
-                const free_is_cpp = std.mem.eql(u8, free_lang.?, "cpp");
-                // IMPORTANT: Only report as cross-language when alloc/free languages DIFFER.
-                // Same-language frees (e.g., C++ delete on C++ new) are normal, not bugs.
-                if ((free_is_csharp or free_is_cpp) and (alloc_is_c or alloc_is_rust)) {
+            // C# / .NET P/Invoke cross-language free detection
+            // Marshal.FreeHGlobal / CoTaskMemFree on non-.NET allocated memory
+            const free_is_csharp = std.mem.eql(u8, free_lang.?, "csharp");
+            const free_is_cpp = std.mem.eql(u8, free_lang.?, "cpp");
+            // IMPORTANT: Only report as cross-language when alloc/free languages DIFFER.
+            // Same-language frees (e.g., C++ delete on C++ new) are normal, not bugs.
+            if ((free_is_csharp or free_is_cpp) and (alloc_is_c or alloc_is_rust)) {
                 try reportCrossLanguageFree(ctx, func_name, callee_name, langToString(alloc_lang), free_lang.?, inst, diag);
                 return;
             }
@@ -192,6 +192,37 @@ pub fn checkCrossLanguageFree(
             // langToString(.c) returns "C/C++" — string comparison always
             // fails and causes false positives on every malloc+free pair.
             const free_lang_enum = freeLangToLanguage(free_lang.?);
+
+            // SAME-LANGUAGE MERGE GUARD: When alloc_lang is .unknown (common
+            // for cross-function return values like BitReverseTable()), don't
+            // report cross_language_free if the CALLER MODULE's language matches
+            // the free_lang. This prevents FPs in pure C++ modules where
+            // internal allocations flow through helper functions.
+            //
+            // Example: cpp_fft.FFT() calls BitReverseTable() which returns
+            // a new[]'d buffer. The graph node's alloc_lang is .unknown
+            // (cross-function return), but both caller and free are C++.
+            if (alloc_lang == .unknown) {
+                const caller_module_lang = ctx.module_language.language;
+                const is_same_language = switch (free_lang_enum) {
+                    .cpp => caller_module_lang == .cpp or caller_module_lang == .c,
+                    .c => caller_module_lang == .c or caller_module_lang == .cpp,
+                    .rust => caller_module_lang == .rust,
+                    .zig => caller_module_lang == .zig,
+                    .go => caller_module_lang == .go,
+                    else => false,
+                };
+                if (is_same_language) {
+                    log.debug("SAME-LANG-MERGE: skipping cross_language_free (alloc=.unknown, free={s}, module={s}) in {s}", .{
+                        free_lang.?, @tagName(caller_module_lang), func_name,
+                    });
+                    // Don't report — same-language operation, just unclear tracking
+                } else {
+                    try reportCrossLanguageFree(ctx, func_name, callee_name, langToString(alloc_lang), free_lang.?, inst, diag);
+                }
+                return;
+            }
+
             if (free_lang_enum != .unknown and alloc_lang != .unknown and
                 free_lang_enum != alloc_lang)
             {
@@ -234,7 +265,27 @@ pub fn checkCrossLanguageFree(
                     }
 
                     if (!std.mem.eql(u8, alloc_l, free_lang.?)) {
-                        try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
+                        // SAME-LANGUAGE MERGE GUARD (Path 2): When src_alloc_lang comes
+                        // from name-based classification (e.g., "new" → "cpp") and free_lang
+                        // matches the caller module's language, don't report FP.
+                        const caller_module_lang = ctx.module_language.language;
+                        const free_lang_enum = freeLangToLanguage(free_lang.?);
+                        const is_same_language = switch (free_lang_enum) {
+                            .cpp => caller_module_lang == .cpp or caller_module_lang == .c,
+                            .c => caller_module_lang == .c or caller_module_lang == .cpp,
+                            .rust => caller_module_lang == .rust,
+                            .zig => caller_module_lang == .zig,
+                            .go => caller_module_lang == .go,
+                            else => false,
+                        };
+
+                        if (is_same_language) {
+                            log.debug("SAME-LANG-MERGE [PATH2]: skipping cross_language_free (alloc={s}, free={s}, module={s}) in {s}", .{
+                                alloc_l, free_lang.?, @tagName(caller_module_lang), func_name,
+                            });
+                        } else {
+                            try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
+                        }
                     }
                 }
             }

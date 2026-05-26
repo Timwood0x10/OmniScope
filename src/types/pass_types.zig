@@ -210,6 +210,10 @@ pub const PassContext = struct {
     evidence: ?ir_evidence.IREvidence,
     interner: ?StringInterner,
     arena: ?Arena,
+    /// Detected platform profile from LLVM module metadata.
+    /// Populated during pipeline initialization, read-only thereafter.
+    /// Used by SurfaceClassifier, language detector, and noise suppressor.
+    platform_profile: ?@import("../semantics/platform_profile.zig").PlatformProfile,
 
     pub fn init(
         allocator: Allocator,
@@ -259,6 +263,7 @@ pub const PassContext = struct {
             .evidence = null,
             .interner = null,
             .arena = null,
+            .platform_profile = null,
         };
     }
 
@@ -319,6 +324,9 @@ pub const PassContext = struct {
             cache.deinit();
         }
         self.function_surface.deinit();
+        if (self.platform_profile) |*profile| {
+            profile.deinit(self.allocator);
+        }
         if (self.semantic_resolution) |engine| {
             engine.deinit();
             self.allocator.destroy(engine);
@@ -421,7 +429,10 @@ pub const PassContext = struct {
     }
 
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
-        if (issue_suppression.shouldSuppress(issue)) {
+        // Pass the cached platform profile to suppression so platform-specific
+        // patterns (e.g. Windows MSVC CRT) are only consulted when relevant.
+        const profile_ptr = if (self.platform_profile) |*p| p else null;
+        if (issue_suppression.shouldSuppressWithProfile(issue, profile_ptr)) {
             // Record which pattern caused suppression for accurate stats
             if (issue_suppression.isPanicCleanupDoubleFree(issue)) {
                 self.suppression_stats.record(.panic_cleanup);

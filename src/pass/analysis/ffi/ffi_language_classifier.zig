@@ -19,6 +19,10 @@ const ffi_utils = @import("ffi_utils.zig");
 /// Rust allocator intrinsic patterns — single source of truth from ptr_types.
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 
+/// Platform profile for platform-aware language classification (P2-a).
+const PlatformProfile = @import("../../../semantics/platform_profile.zig").PlatformProfile;
+const WindowsAbi = @import("../../../semantics/platform_profile.zig").WindowsAbi;
+
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 const Language = FFIBoundary.Language;
 const BoundaryKind = FFIBoundary.BoundaryKind;
@@ -121,6 +125,9 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
         return .cpp;
     }
 
+    // P2-a: MSVC x64 / Itanium for C++ mangling detection (?name@@...).
+    if (func_name.len > 0 and func_name[0] == '?') return .cpp;
+
     // Check for Zig patterns (be more specific to avoid false positives)
     var has_zig_indicator = false;
     for (FFIPatterns.zig_patterns) |pattern| {
@@ -169,11 +176,57 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
     // TinyGo (IR spec §1.2): runtime.alloc, runtime.free, runtime._panic, etc.
     // TinyGo CGo (IR spec §1.3): _Cgo_*, _Cgo_static_<hash>_*, unionfield_*, bitfield_*
     // TinyGo scheduler: internal/task.*
-    if (std.mem.startsWith(u8, func_name, "main.") or
+    //
+    // IMPORTANT: Zig also uses "main." prefix for its entry point (main.main).
+    // To avoid misclassifying Zig's main.* as Go, we check for Zig indicators first.
+    const is_main_prefix = std.mem.startsWith(u8, func_name, "main.");
+    if (is_main_prefix or
         std.mem.startsWith(u8, func_name, "runtime.") or
         std.mem.startsWith(u8, func_name, "syscall.") or
         std.mem.startsWith(u8, func_name, "internal/task."))
     {
+        // ZIG GUARD: If this looks like a Go function but has Zig characteristics,
+        // it's likely a Zig function (e.g., main.main is Zig's entry point).
+        // Zig-specific patterns that override Go detection:
+        const has_zig_override = blk: {
+            // Zig FQN pattern: Type.functionName (e.g., Io.Writer.defaultFlush)
+            // Check for uppercase letter after dot — Zig uses PascalCase for types
+            if (std.mem.indexOf(u8, func_name, ".") != null) {
+                for (func_name, 0..) |ch, i| {
+                    if (ch == '.' and i + 1 < func_name.len) {
+                        const next = func_name[i + 1];
+                        // PascalCase type name (Io.Writer, std.builtin, etc.) → Zig
+                        if (next >= 'A' and next <= 'Z') break :blk true;
+                    }
+                }
+            }
+
+            // Explicit Zig patterns in the function name
+            if (std.mem.indexOf(u8, func_name, "@") != null) break :blk true;
+            if (std.mem.indexOf(u8, func_name, "__zig_") != null) break :blk true;
+            if (std.mem.indexOf(u8, func_name, "Allocator") != null) break :blk true;
+            if (std.mem.indexOf(u8, func_name, "zig_") != null) break :blk true;
+
+            // Zig camelCase function names: lowercaseWord followed by UppercaseWord
+            // Examples: doubleFreeDemo, useAfterFreeDemo, bufferOverflowDemo
+            // This is a strong indicator of Zig/Go-style naming, but combined with
+            // other context (like FFI boundary with C functions) it's likely Zig.
+            var prev_is_lower = false;
+            for (func_name) |ch| {
+                if (prev_is_lower and ch >= 'A' and ch <= 'Z') {
+                    // Found camelCase transition (e.g., "doubleFree")
+                    break :blk true;
+                }
+                prev_is_lower = ch >= 'a' and ch <= 'z';
+            }
+
+            break :blk false;
+        };
+
+        if (has_zig_override) {
+            return .zig;
+        }
+
         return .go;
     }
     if (std.mem.startsWith(u8, func_name, "C.") or
@@ -267,6 +320,10 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
         if (isRustMangledName(func_name)) return .rust;
         return .cpp; // Default _ZN without Rust markers → C++
     }
+
+    // P2-a: MSVC x64 / Itanium for C++ mangling detection (?name@@...).
+    // MSVC mangling is unambiguous — only Microsoft toolchain uses `?` prefix.
+    if (func_name.len > 0 and func_name[0] == '?') return .cpp;
 
     // Check for Zig patterns (be more specific to avoid false positives)
     for (FFIPatterns.zig_patterns) |pattern| {
@@ -644,6 +701,78 @@ pub fn isRustMangledName(name: []const u8) bool {
     return false;
 }
 
+/// Check if a function name uses MSVC x64 / Itanium for C++ mangling.
+///
+/// MSVC mangled names always start with `?` and contain `@@` separators.
+/// Examples:
+///   ?square@@YAHH@Z           — int square(int)
+///   ??0 MyClass @@ QAEAAV1@ABV1@ — copy constructor
+///   ?operator new@@YAPEAX_K@Z  — operator new
+pub fn isMsvcMangledName(name: []const u8) bool {
+    if (name.len < 2) return false;
+    if (name[0] != '?') return false;
+    // Must contain @@ (MSVC name/type separator)
+    return std.mem.indexOf(u8, name, "@@") != null;
+}
+
+/// Attempt to decode an MSVC mangled name to a human-readable format.
+///
+/// This is a simplified decoder that extracts the base function name from
+/// the mangled form. Full MSVC demangling is extremely complex; this provides
+/// a best-effort readable representation for diagnostics.
+///
+/// Examples:
+///   "?square@@YAHH@Z"           → "square"
+///   "??0MyClass@@QAE..."       → "MyClass::ctor"
+///   "?operator new@@YAPEAX_K@Z" → "operator new"
+///
+/// Parameters:
+///   - allocator: Memory allocator for output string
+///   - mangled: MSVC-mangled symbol name (must start with '?')
+///
+/// Returns:
+///   - Decoded name string, or null if not a valid MSVC mangled name
+pub fn demangleMsvcName(allocator: std.mem.Allocator, mangled: []const u8) error{OutOfMemory}!?[]u8 {
+    if (!isMsvcMangledName(mangled)) return null;
+
+    // Extract the name between '?' and first '@'
+    const at_pos = std.mem.indexOf(u8, mangled, "@") orelse return null;
+    if (at_pos <= 1) return null;
+
+    var name = mangled[1..at_pos];
+
+    // Handle special names: ??0 = ctor, ??1 = dtor, etc.
+    if (name.len >= 2 and name[0] == '?' and name[1] == '?') {
+        const special = name[2..];
+        if (special.len >= 1) switch (special[0]) {
+            '0' => return try allocator.dupe(u8, "<ctor>"),
+            '1' => return try allocator.dupe(u8, "<dtor>"),
+            '2' => return try allocator.dupe(u8, "<new>"),
+            'G' => return try allocator.dupe(u8, "<scalar_dtor>"),
+            else => {},
+        };
+        return try allocator.dupe(u8, special);
+    }
+
+    // Handle operator overloads: ?<op>@
+    const operators = [_][]const u8{
+        "operator ",    "operator=",       "operator+",      "operator-",         "operator*",
+        "operator/",    "operator%",       "operator^",      "operator&",         "operator|",
+        "operator~",    "operator!",       "operator<",      "operator>",         "operator+=",
+        "operator-=",   "operator*=",      "operator/=",     "operator%=",        "operator^=",
+        "operator&=",   "operator|=",      "operator<<",     "operator>>",        "operator<<=",
+        "operator>>=",  "operator==",      "operator!=",     "operator<=",        "operator>=",
+        "operator()",   "operator[]",      "operator->",     "operator->*",       "operator,",
+        "operator new", "operator delete", "operator new[]", "operator delete[]",
+    };
+    for (operators) |op| {
+        if (std.mem.eql(u8, name, op)) return try allocator.dupe(u8, op);
+    }
+
+    // Plain name — return as-is
+    return try allocator.dupe(u8, name);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════
@@ -711,4 +840,78 @@ test "delegation equivalence - isStlInternalFunction matches ffi_utils" {
         const authority = ffi_utils.isStlInternalFunction(name);
         try std.testing.expectEqual(authority, local);
     }
+}
+
+// ============================================================================
+// P2-a: MSVC Mangling Detection Tests
+// ============================================================================
+
+test "isMsvcMangledName - basic detection" {
+    // Standard MSVC mangled names
+    try std.testing.expect(isMsvcMangledName("?square@@YAHH@Z"));
+    try std.testing.expect(isMsvcMangledName("??0MyClass@@QAEAAV1@ABV1@"));
+    try std.testing.expect(isMsvcMangledName("?operator new@@YAPEAX_K@Z"));
+
+    // Non-MSVC names
+    try std.testing.expect(!isMsvcMangledName("_ZN4core3ptr5dangleE")); // Rust Itanium
+    try std.testing.expect(!isMsvcMangledName("_Z3fooi")); // C++ Itanium
+    try std.testing.expect(!isMsvcMangledName("malloc")); // Plain C
+    try std.testing.expect(!isMsvcMangledName("main")); // Plain C
+    try std.testing.expect(!isMsvcMangledName("?single_no_at")); // ? without @@
+}
+
+test "identifyCalleeLanguage - MSVC mangled names classified as cpp (P2-a)" {
+    // All MSVC-mangled names should be identified as C++
+    try std.testing.expectEqual(.cpp, identifyCalleeLanguage("?square@@YAHH@Z"));
+    try std.testing.expectEqual(.cpp, identifyCalleeLanguage("??0MyClass@@QAEAAV1@ABV1@"));
+    try std.testing.expectEqual(.cpp, identifyCalleeLanguage("?operator new@@YAPEAX_K@Z"));
+    try std.testing.expectEqual(.cpp, identifyCalleeLanguage("??1MyClass@@UAE@XZ")); // dtor
+    try std.testing.expectEqual(.cpp, identifyCalleeLanguage("??_G@@AEPAXI@Z")); // scalar_dtor
+
+    // MinGW plain C names should NOT be misclassified as C++ (no ? prefix)
+    try std.testing.expectEqual(.c, identifyCalleeLanguage("malloc"));
+    try std.testing.expectEqual(.c, identifyCalleeLanguage("_malloc")); // MinGW underscore prefix
+}
+
+test "demangleMsvcName - basic name extraction" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const r1 = try demangleMsvcName(allocator, "?square@@YAHH@Z");
+    if (r1) |v| {
+        defer allocator.free(v);
+        try std.testing.expectEqualStrings("square", v);
+    }
+
+    const r2 = try demangleMsvcName(allocator, "?operator new@@YAPEAX_K@Z");
+    if (r2) |v| {
+        defer allocator.free(v);
+        try std.testing.expectEqualStrings("operator new", v);
+    }
+
+    // Constructor: ??0 → <ctor>
+    const r3 = try demangleMsvcName(allocator, "??0MyClass@@QAEAAV1@");
+    if (r3) |v| {
+        defer allocator.free(v);
+        try std.testing.expectEqualStrings("<ctor>", v);
+    }
+
+    // Destructor: ??1 → <dtor>
+    const r4 = try demangleMsvcName(allocator, "??1MyClass@@UAE@XZ");
+    if (r4) |v| {
+        defer allocator.free(v);
+        try std.testing.expectEqualStrings("<dtor>", v);
+    }
+
+    // Scalar deleting destructor: ??G
+    const r5 = try demangleMsvcName(allocator, "??_G@@AEPAXI@Z");
+    if (r5) |v| {
+        defer allocator.free(v);
+        try std.testing.expectEqualStrings("<scalar_dtor>", v);
+    }
+
+    // Non-MSVC name returns null
+    const r6 = try demangleMsvcName(allocator, "malloc");
+    try std.testing.expect(r6 == null);
 }

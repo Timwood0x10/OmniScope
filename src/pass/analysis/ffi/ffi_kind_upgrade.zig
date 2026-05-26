@@ -45,39 +45,45 @@ pub fn upgradeKindFromCallName(current_kind: IssueKind, caller_name: []const u8)
     if (std.mem.indexOf(u8, caller_name, "DoubleFree") != null) return .double_free;
     if (std.mem.indexOf(u8, caller_name, "doubleFree") != null) return .double_free;
 
-    // Use-after-free patterns (support both naming conventions)
+    // Use-after-free patterns (support snake_case, camelCase, and PascalCase)
     if (std.mem.indexOf(u8, caller_name, "dangling") != null) return .use_after_free;
     if (std.mem.indexOf(u8, caller_name, "after_free") != null) return .use_after_free;
     if (std.mem.indexOf(u8, caller_name, "afterFree") != null) return .use_after_free;
+    if (std.mem.indexOf(u8, caller_name, "AfterFree") != null) return .use_after_free;
     if (std.mem.indexOf(u8, caller_name, "UAF") != null or std.mem.indexOf(u8, caller_name, "uaf") != null) return .use_after_free;
 
-    // Type mismatch / confusion patterns
+    // Type mismatch / confusion patterns (support all naming conventions)
     if (std.mem.indexOf(u8, caller_name, "type_mismatch") != null) return .type_mismatch;
     if (std.mem.indexOf(u8, caller_name, "typeMismatch") != null) return .type_mismatch;
     if (std.mem.indexOf(u8, caller_name, "confusion") != null) return .type_mismatch;
     if (std.mem.indexOf(u8, caller_name, "Confusion") != null) return .type_mismatch;
     if (std.mem.indexOf(u8, caller_name, "apply_config") != null) return .type_mismatch;
 
-    // Buffer overflow patterns (support both naming conventions)
+    // Buffer overflow patterns (support all naming conventions)
     if (std.mem.indexOf(u8, caller_name, "buffer_overflow") != null) return .buffer_overflow;
     if (std.mem.indexOf(u8, caller_name, "bufferOverflow") != null) return .buffer_overflow;
+    if (std.mem.indexOf(u8, caller_name, "BufferOverflow") != null) return .buffer_overflow;
     if (std.mem.indexOf(u8, caller_name, "overflow") != null) return .buffer_overflow;
 
     // Memory leak patterns (more specific than generic memory_leak)
     if (std.mem.indexOf(u8, caller_name, "memory_leak") != null) return .memory_leak;
     if (std.mem.indexOf(u8, caller_name, "memoryLeak") != null) return .memory_leak;
+    if (std.mem.indexOf(u8, caller_name, "MemoryLeak") != null) return .memory_leak;
     if (std.mem.indexOf(u8, caller_name, "Leak") != null) return .memory_leak;
 
-    // Cross-language free patterns (support both naming conventions)
+    // Cross-language free patterns (support all naming conventions)
     if (std.mem.indexOf(u8, caller_name, "cross_language_free") != null) return .cross_language_free;
     if (std.mem.indexOf(u8, caller_name, "crossLanguageFree") != null) return .cross_language_free;
+    if (std.mem.indexOf(u8, caller_name, "CrossLanguageFree") != null) return .cross_language_free;
     if (std.mem.indexOf(u8, caller_name, "cross_free") != null) return .cross_language_free;
     if (std.mem.indexOf(u8, caller_name, "crossFree") != null) return .cross_language_free;
+    if (std.mem.indexOf(u8, caller_name, "CrossFree") != null) return .cross_language_free;
     if (std.mem.indexOf(u8, caller_name, "cross_lang") != null) return .cross_language_leak;
 
-    // Borrow escape patterns
+    // Borrow escape patterns (support all naming conventions)
     if (std.mem.indexOf(u8, caller_name, "borrow_escape") != null) return .borrow_escape;
     if (std.mem.indexOf(u8, caller_name, "borrowEscape") != null) return .borrow_escape;
+    if (std.mem.indexOf(u8, caller_name, "BorrowEscape") != null) return .borrow_escape;
 
     // No match → keep original kind
     return null;

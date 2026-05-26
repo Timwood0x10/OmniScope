@@ -12,8 +12,8 @@
 //! This file defines the canonical types and the merge logic.
 
 const std = @import("std");
-const linkage = @import("surface_classifier_linkage.zig");
-const debug_origin = @import("surface_classifier_debug.zig");
+const linkage = @import("surface_classifier/linkage.zig");
+const debug_origin = @import("surface_classifier/debug_origin.zig");
 
 // ============================================================================
 // Public Types

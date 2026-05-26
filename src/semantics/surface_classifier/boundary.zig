@@ -120,6 +120,34 @@ pub fn detectLibraryExport(func: c.LLVMValueRef) bool {
     return !detectBoundaryFromLLVM(func);
 }
 
+/// Detect if a function is a Windows DLL import/export boundary.
+///
+/// On Windows COFF, DLL boundaries are identified by:
+///   - LLVM DLL storage class (DLLImportStorageClass / DLLEXportStorageClass)
+///   - Functions with dllexport attribute are FFI exports
+///   - Functions with dllimport attribute are FFI imports
+///
+/// This complements detectBoundaryFromLLVM() for Windows-specific patterns.
+pub fn detectDllImportExport(func: c.LLVMValueRef) bool {
+    // Only meaningful for defined functions (not declarations)
+    if (c.LLVMIsDeclaration(func) != 0) return false;
+
+    const linkage = c.LLVMGetLinkage(func);
+
+    // Check for dllexport — this function is exported from the DLL
+    if (linkage == c.LLVMDLLExportStorageClass) {
+        log.debug("[BOUNDARY-DLL] '{s}': dllexport -> FFI boundary", .{
+            if (@intFromPtr(c.LLVMGetValueName(func)) != 0)
+                std.mem.span(c.LLVMGetValueName(func))
+            else
+                "<anon>",
+        });
+        return true;
+    }
+
+    return false;
+}
+
 // ============================================================================
 // Name Analysis Helpers
 // ============================================================================
@@ -130,6 +158,7 @@ pub fn detectLibraryExport(func: c.LLVMValueRef) bool {
 ///   _ZN<seq>E       — legacy Itanium (Rust/C++)
 ///   _R<var>_<hash>_ — v0 Itanium (Rust newer)
 ///   __Z             — some vendor extensions
+///   ?<name>@...     — MSVC x64 / Itanium for C++ (Windows)
 ///
 /// Everything else (including names starting with single underscore like
 /// `_start`, `_init`) is considered unmangled → potential FFI boundary.
@@ -150,6 +179,13 @@ fn isUnmangledName(name: []const u8) bool {
         }
     }
 
+    // MSVC x64 mangling prefix — starts with ?
+    // Examples:
+    //   ?square@@YAHH@Z           — int square(int)
+    //   ??0 MyClass @@ QAEAAV1@ABV1@ — copy constructor
+    //   ??_G                      — scalar deleting destructor
+    if (name.len > 0 and name[0] == '?') return false;
+
     // All other names are unmangled → potential FFI boundary
     return true;
 }
@@ -160,6 +196,7 @@ fn isUnmangledName(name: []const u8) bool {
 ///   WebAssembly: .export.*, .wasm.*
 ///   ELF:         .dynsym, .got, .plt (indirect signals)
 ///   macOS:       __DATA,__la_symbol_ptr, __DATA,__nl_symbol_ptr
+///   COFF/PE:     .idata$2, .idata$5, .CRT$XCA, .CRT$XCU (DLL exports)
 fn isExportSection(section: []const u8) bool {
     // WebAssembly export sections
     if (std.mem.indexOf(u8, section, ".export.") != null) return true;
@@ -168,6 +205,16 @@ fn isExportSection(section: []const u8) bool {
 
     // Dynamic linking export indicators
     if (std.mem.eql(u8, section, ".dynsym")) return true;
+
+    // Mach-O lazy symbol pointer sections (macOS/iOS FFI exports)
+    if (std.mem.indexOf(u8, section, "__DATA,__la_symbol_ptr") != null) return true;
+    if (std.mem.indexOf(u8, section, "__DATA,__nl_symbol_ptr") != null) return true;
+
+    // COFF/PE import/export tables (Windows DLL boundaries)
+    if (std.mem.indexOf(u8, section, ".idata$") != null) return true;
+    if (std.mem.indexOf(u8, section, ".CRT$XCA") != null) return true;  // C++ static init array
+    if (std.mem.indexOf(u8, section, ".CRT$XCU") != null) return true;  // C++ static init array
+    if (std.mem.eql(u8, section, ".edata")) return true;       // Export data
 
     return false;
 }
@@ -282,4 +329,46 @@ test "isExportSection - wasm exports" {
     try std.testing.expect(!isExportSection(".text"));
     try std.testing.expect(!isExportSection(".rodata"));
     try std.testing.expect(isExportSection(".dynsym"));
+}
+
+// ============================================================================
+// P1: Platform-Aware Boundary Detection Tests
+// ============================================================================
+
+test "isUnmangledName - MSVC mangled names (P1-a)" {
+    // MSVC x64 mangling always starts with ?
+    try std.testing.expect(!isUnmangledName("?square@@YAHH@Z"));
+    try std.testing.expect(!isUnmangledName("??0 MyClass @@ QAEAAV1@ABV1@"));
+    try std.testing.expect(!isUnmangledName("??_G"));  // scalar deleting destructor
+    try std.testing.expect(!isUnmangledName("??1?type_info@@"));
+    try std.testing.expect(!isUnmangledName("??2@YAPEAX_K@Z")); // operator new
+    try std.testing.expect(!isUnmangledName("??3@YAXPEAX@Z"));   // operator delete
+}
+
+test "isUnmangledName - MSVC C names are unmangled" {
+    // Plain C names on Windows are NOT mangled (no ? prefix)
+    try std.testing.expect(isUnmangledName("square"));
+    try std.testing.expect(isUnmangledName("main"));
+    try std.testing.expect(isUnmangledName("_square"));  // MinGW uses _ prefix for C
+    try std.testing.expect(isUnmangledName("malloc"));
+}
+
+test "isExportSection - Mach-O lazy symbol pointers (P1-b)" {
+    try std.testing.expect(isExportSection("__DATA,__la_symbol_ptr"));
+    try std.testing.expect(isExportSection("__DATA,__la_symbol_ptr.local"));
+    try std.testing.expect(isExportSection("__DATA,__nl_symbol_ptr"));
+    try std.testing.expect(isExportSection("__DATA,__nl_symbol_ptr.local"));
+    try std.testing.expect(!isExportSection("__DATA,__data"));
+    try std.testing.expect(!isExportSection("__TEXT,__text"));
+}
+
+test "isExportSection - COFF/PE DLL sections (P1-b)" {
+    try std.testing.expect(isExportSection(".idata$2"));
+    try std.testing.expect(isExportSection(".idata$5"));
+    try std.testing.expect(isExportSection(".idata$6"));
+    try std.testing.expect(isExportSection(".CRT$XCA"));
+    try std.testing.expect(isExportSection(".CRT$XCU"));
+    try std.testing.expect(isExportSection(".edata"));
+    try std.testing.expect(!isExportSection(".text$mn"));
+    try std.testing.expect(!isExportSection(".rdata"));
 }

@@ -113,6 +113,7 @@ pub const Pipeline = struct {
             .evidence = null,
             .interner = null,
             .arena = null,
+            .platform_profile = null,
         };
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
@@ -128,6 +129,22 @@ pub const Pipeline = struct {
         // R7.2 Language-First: detect module language ONCE before any passes run.
         // This activates the correct zone rules channel for all subsequent analysis.
         ctx.initModuleLanguage(self.module);
+
+        // Platform Profile: detect target OS/object format from LLVM metadata ONCE.
+        // Used by SurfaceClassifier (runtime shim ID), language detector (symbol canonicalization),
+        // and noise suppressor (toolchain path normalization).
+        if (self.module) |mod| {
+            const raw_mod = mod.raw;
+            ctx.platform_profile = @import("../semantics/platform_profile.zig").PlatformProfile.detect(raw_mod, self.allocator) catch null;
+            if (ctx.platform_profile) |*prof| {
+                log.info("Platform: {s} ({s}) arch={s} triple={s}", .{
+                    prof.platform.displayName(),
+                    prof.object_format.displayName(),
+                    prof.arch,
+                    prof.target_triple,
+                });
+            }
+        }
 
         // P0-2: Build shared callee→call_sites index ONCE before any passes run.
         // All call_graph and ffi_boundary lookups become O(1) instead of O(F).

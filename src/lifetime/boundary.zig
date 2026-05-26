@@ -22,6 +22,9 @@
 const std = @import("std");
 const engine = @import("engine.zig");
 const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
+// Platform profile is consulted when available to disambiguate
+// MSVC `?` mangling from plain C names on Windows.
+const platform_profile_mod = @import("../semantics/platform_profile.zig");
 // NOTE: mapper module removed (dead code, 2026-05-04)
 // See untodo.md DEAD-13 for details
 
@@ -31,6 +34,7 @@ pub const Owner = engine.Owner;
 pub const LanguageHint = engine.LanguageHint;
 pub const ResourceFact = engine.ResourceFact;
 pub const IssueType = engine.IssueType;
+pub const PlatformProfile = platform_profile_mod.PlatformProfile;
 
 /// FFI boundary direction.
 pub const BoundaryDirection = enum(u8) {
@@ -291,8 +295,49 @@ pub const BoundaryAnalyzer = struct {
     }
 };
 
-/// Detect language from function name patterns.
+/// Detect language from function name patterns (platform-agnostic shortcut).
+///
+/// This is the legacy entry point kept for backward compatibility. It assumes
+/// no platform context is available and falls back to pure-name heuristics.
+/// New code should prefer [`detectLanguageWithProfile`] so MSVC `?`-mangled
+/// symbols are classified as C++ instead of being treated as plain C names.
 pub fn detectLanguage(func_name: []const u8) LanguageHint {
+    return detectLanguageWithProfile(func_name, null);
+}
+
+/// Detect language with optional [`PlatformProfile`] context.
+///
+/// When `profile` indicates an MSVC Windows target, any name starting with
+/// `?` is classified as C++ (Microsoft Visual C++ mangling). Without that
+/// context we cannot reliably distinguish MSVC mangled names from plain
+/// C symbols that happen to begin with `?` in non-Windows pipelines, so
+/// `?`-prefixed names fall through to the default C bucket.
+///
+/// All other classification rules remain identical to [`detectLanguage`].
+///
+/// Arguments:
+///
+///   func_name - Raw function symbol name (mangled or unmangled)
+///   profile   - Optional platform profile from the LLVM module
+///
+/// Returns:
+///
+///   The detected language hint, defaulting to `.c` when no rule matches.
+pub fn detectLanguageWithProfile(
+    func_name: []const u8,
+    profile: ?*const PlatformProfile,
+) LanguageHint {
+    // MSVC mangled names always start with `?`. We only honor this signal
+    // when the profile confirms a Windows + MSVC ABI; otherwise a stray
+    // `?` could be a literal artifact and not a C++ symbol.
+    if (func_name.len > 0 and func_name[0] == '?') {
+        if (profile) |p| {
+            if (p.platform == .windows and p.windows_abi == .msvc) {
+                return .cpp;
+            }
+        }
+    }
+
     // Rust v0 mangling prefix (RFC 2603) — _R<hash>...
     // This is the most reliable Rust indicator for modern Rust (1.37+).
     if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') {
@@ -615,4 +660,97 @@ test "formatViolationMessage - generic violations include language" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "Rust") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "C") != null);
     try std.testing.expect(std.mem.indexOf(u8, msg, "FFI boundary") != null);
+}
+
+// ============================================================================
+// detectLanguageWithProfile — platform-aware classification tests
+// ============================================================================
+
+// Builds a minimal PlatformProfile suitable for the no-allocation tests below.
+// All string slices are empty literals so deinit() is never required.
+fn makeProfile(
+    platform: platform_profile_mod.PlatformKind,
+    object_format: platform_profile_mod.ObjectFormat,
+    abi: platform_profile_mod.WindowsAbi,
+) PlatformProfile {
+    return PlatformProfile{
+        .platform = platform,
+        .object_format = object_format,
+        .target_triple = "",
+        .datalayout = "",
+        .arch = "",
+        .vendor = "",
+        .windows_abi = abi,
+    };
+}
+
+test "detectLanguageWithProfile - MSVC ? prefix classifies as cpp on Windows MSVC" {
+    // The `?` prefix is unambiguous only on Windows + MSVC. With that profile
+    // we expect any leading `?` to map to C++ (MSVC mangling).
+    const profile = makeProfile(.windows, .coff, .msvc);
+    try std.testing.expectEqual(
+        LanguageHint.cpp,
+        detectLanguageWithProfile("?square@@YAHH@Z", &profile),
+    );
+    try std.testing.expectEqual(
+        LanguageHint.cpp,
+        detectLanguageWithProfile("??0MyClass@@QAE@XZ", &profile),
+    );
+}
+
+test "detectLanguageWithProfile - MinGW does NOT trigger MSVC ? branch" {
+    // MinGW emits Itanium-style mangling, not MSVC `?`. A `?`-prefixed name
+    // under MinGW should fall through to the default classifier (C).
+    const profile = makeProfile(.windows, .coff, .gnu);
+    try std.testing.expectEqual(
+        LanguageHint.c,
+        detectLanguageWithProfile("?weird_name", &profile),
+    );
+}
+
+test "detectLanguageWithProfile - non-Windows ignores ? prefix" {
+    // Without a Windows+MSVC profile we cannot trust `?` as a C++ signal.
+    const linux_profile = makeProfile(.linux, .elf, .unknown);
+    try std.testing.expectEqual(
+        LanguageHint.c,
+        detectLanguageWithProfile("?notcpp", &linux_profile),
+    );
+
+    // A null profile (legacy callers) preserves the pre-existing behavior.
+    try std.testing.expectEqual(
+        LanguageHint.c,
+        detectLanguageWithProfile("?notcpp", null),
+    );
+}
+
+test "detectLanguageWithProfile - Itanium rules still win over profile" {
+    // _ZN/_R classification must work regardless of profile so MinGW
+    // mangled symbols keep landing in the right bucket.
+    const profile = makeProfile(.windows, .coff, .gnu);
+    try std.testing.expectEqual(
+        LanguageHint.rust,
+        detectLanguageWithProfile("_RNvCsfLfy6EI15iL_7___rustc", &profile),
+    );
+    try std.testing.expectEqual(
+        LanguageHint.cpp,
+        detectLanguageWithProfile("_ZN4absl4CordC2", &profile),
+    );
+}
+
+test "detectLanguage - legacy entry point still works without profile" {
+    // The legacy signature must remain compatible with existing callers
+    // (e.g. root.zig re-export).
+    try std.testing.expectEqual(LanguageHint.rust, detectLanguage("_RXX"));
+    try std.testing.expectEqual(LanguageHint.cpp, detectLanguage("_ZSt4cout"));
+    try std.testing.expectEqual(LanguageHint.c, detectLanguage("malloc"));
+}
+
+test "detectLanguageWithProfile - boundary: empty / single-char names" {
+    const profile = makeProfile(.windows, .coff, .msvc);
+    // Empty input should never crash and should default to .c.
+    try std.testing.expectEqual(LanguageHint.c, detectLanguageWithProfile("", &profile));
+    // A single `?` on MSVC is still a C++ signal (matches the prefix rule).
+    try std.testing.expectEqual(LanguageHint.cpp, detectLanguageWithProfile("?", &profile));
+    // A single `?` without an MSVC profile must NOT short-circuit.
+    try std.testing.expectEqual(LanguageHint.c, detectLanguageWithProfile("?", null));
 }

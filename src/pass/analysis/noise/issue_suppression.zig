@@ -49,6 +49,11 @@ const std = @import("std");
 const log = @import("../../../common/log.zig");
 
 const Issue = @import("../../../diag/issue.zig").Issue;
+// Platform profile is consulted when available so platform-specific
+// suppression rules (e.g. Windows MSVC CRT) are gated to the matching
+// target, instead of being scanned unconditionally on every issue.
+const platform_profile_mod = @import("../../../semantics/platform_profile.zig");
+pub const PlatformProfile = platform_profile_mod.PlatformProfile;
 
 // ============================================================================
 // Public API
@@ -62,7 +67,41 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 ///
 /// Called from PassContext.addIssue() BEFORE dedup, severity adjustment,
 /// and output — suppressed issues consume zero resources.
+///
+/// This is the legacy entry point kept for backward compatibility. It
+/// assumes no platform context is available and falls back to
+/// platform-agnostic checks. New callers should use
+/// [`shouldSuppressWithProfile`].
 pub fn shouldSuppress(issue: *const Issue) bool {
+    return shouldSuppressWithProfile(issue, null);
+}
+
+/// Platform-aware variant of [`shouldSuppress`].
+///
+/// When a [`PlatformProfile`] is provided, platform-specific suppression
+/// patterns are gated to the matching target:
+///
+///   - Windows MSVC CRT / SEH / typeinfo patterns are only consulted when
+///     `profile.platform == .windows`. This avoids spurious matches on
+///     Linux/macOS where these symbols would never legitimately appear.
+///
+/// All non-Windows / generic patterns (Rust drop chain, defensive coding,
+/// static provenance, etc.) run unconditionally — they are inherently
+/// language-/platform-agnostic and cheap.
+///
+/// Arguments:
+///
+///   issue   - The issue under consideration
+///   profile - Optional platform profile from the LLVM module. May be null
+///             when invoked outside the pass pipeline (e.g. unit tests).
+///
+/// Returns:
+///
+///   true if the issue matches a known-safe pattern and should be dropped.
+pub fn shouldSuppressWithProfile(
+    issue: *const Issue,
+    profile: ?*const PlatformProfile,
+) bool {
     // ════════════════════════════════════════════════════════════
     // GLOBAL GUARD: Real memory safety bugs are NEVER suppressed
     // ════════════════════════════════════════════════════════════
@@ -135,6 +174,33 @@ pub fn shouldSuppress(issue: *const Issue) bool {
     //   - __zig_* (Zig compiler builtins)
     if (isStdlibInternalFunction(issue)) {
         log.debug("[SUPPRESS-STDLIB] {s}: Stdlib internal function", .{issue.location.func});
+        return true;
+    }
+
+    // Pattern H: Platform Runtime / Compiler-Generated Shim
+    //
+    // Issues from platform-specific runtime functions (C++ allocators, Objective-C
+    // runtime, Swift runtime, Go runtime, etc.) are almost always false positives.
+    // These functions are compiler-generated or provided by the OS/runtime environment.
+    //
+    // This pattern complements Pattern G by catching runtime functions that don't
+    // match stdlib naming conventions but are still not user code.
+    //
+    // Examples:
+    //   - _Znam / _ZdaPv (C++ operator new[] / delete[])
+    //   - _objc_msgSend (Objective-C message dispatch)
+    //   - __cxa_throw (C++ exception handling)
+    //   - runtime.gc (Go garbage collector)
+    //   - __rust_dealloc (Rust global allocator)
+    //
+    // When `profile` is provided we narrow the scan: Windows-only MSVC CRT
+    // checks are skipped for non-Windows targets. The generic shim list is
+    // always consulted because most patterns (C++/ObjC/Swift/Rust) are
+    // cross-platform.
+    if (isPlatformRuntimeShimGated(issue.location.func, profile)) {
+        log.debug("[SUPPRESS-RUNTIME] {s}: Platform runtime shim", .{
+            issue.location.func,
+        });
         return true;
     }
 
@@ -574,6 +640,22 @@ pub fn isStdlibInternalFunction(issue: *const Issue) bool {
         "builtin.", // Zig compiler builtins
         "mem.", // Zig memory module
         "log.", // Zig logging
+        "Io.", // Zig I/O module (Writer, Reader, Stream, etc.)
+        "fs.", // Zig filesystem module
+        "os.", // Zig OS abstraction layer
+        "process.", // Zig process management
+        "Thread.", // Zig threading primitives
+        "crypto.", // Zig crypto module (hashing, etc.)
+        "compress.", // Zig compression (zstd, etc.)
+        "http.", // Zig HTTP client/server
+        "json.", // Zig JSON parser
+        "ascii.", // Zig ASCII utilities
+        "base64.", // Zig base64 encoding
+        "random.", // Zig random number generation
+        "time.", // Zig time utilities
+        "unicode.", // Zig Unicode handling
+        "net.", // Zig networking
+        "async.", // Zig async runtime
     };
     for (zig_stdlib_prefixes) |prefix| {
         if (startsWith(func, prefix)) return true;
@@ -600,6 +682,216 @@ pub fn isStdlibInternalFunction(issue: *const Issue) bool {
 
     // Generic compiler builtin patterns (any language)
     if (startsWith(func, "__")) return true;
+
+    return false;
+}
+
+/// Check if function name matches a known platform runtime / compiler-generated shim.
+///
+/// This complements isStdlibInternalFunction() by catching platform-specific
+/// runtime functions that don't match stdlib naming conventions but are still
+/// not user code.
+///
+/// Uses a subset of PlatformRuntime.classifyRuntimeFunction() patterns that are
+/// safe to apply without knowing the target platform (conservative: only match
+/// patterns that are unambiguous across all platforms).
+fn isPlatformRuntimeShim(func_name: []const u8) bool {
+    // Legacy entry point: no platform context available, scan every pattern
+    // (including Windows MSVC runtime) for backward compatibility with
+    // callers that have not been wired up to PlatformProfile yet.
+    return isPlatformRuntimeShimGated(func_name, null);
+}
+
+/// Platform-aware variant of [`isPlatformRuntimeShim`].
+///
+/// Runs all generic runtime checks unconditionally, but only consults
+/// the Windows MSVC CRT pattern set when `profile` indicates a Windows
+/// target. A null profile preserves the legacy "scan everything"
+/// behavior so the function remains drop-in safe.
+///
+/// Arguments:
+///
+///   func_name - The function name to classify
+///   profile   - Optional platform profile (null = legacy mode)
+///
+/// Returns:
+///
+///   true if `func_name` matches any runtime/shim pattern enabled for
+///   the given profile.
+fn isPlatformRuntimeShimGated(
+    func_name: []const u8,
+    profile: ?*const PlatformProfile,
+) bool {
+    // Generic cross-platform runtime patterns are always evaluated.
+    // They cover C++/ObjC/Swift/Rust/Go/Zig/LLVM/sanitizer/CRT shims
+    // that may legitimately appear on any target.
+    if (isGenericPlatformRuntimeShim(func_name)) return true;
+
+    // Windows MSVC CRT is only meaningful on Windows. Skipping the scan
+    // on Linux/macOS avoids spurious matches against symbols that share
+    // a prefix but are unrelated.
+    const consult_windows = if (profile) |p|
+        p.platform == .windows
+    else
+        true; // Null profile → preserve legacy unconditional behavior.
+
+    if (consult_windows and isWindowsMsvcRuntime(func_name)) return true;
+
+    return false;
+}
+
+/// Generic (cross-platform) runtime / compiler-generated shim patterns.
+///
+/// Extracted from [`isPlatformRuntimeShim`] so callers with a
+/// [`PlatformProfile`] can run platform-specific checks separately via
+/// [`isPlatformRuntimeShimGated`]. The patterns covered here are valid
+/// on any target.
+fn isGenericPlatformRuntimeShim(func_name: []const u8) bool {
+    // C++ allocator operators (Itanium ABI mangled forms)
+    const cpp_alloc_patterns = [_][]const u8{
+        "_Znw",         "_Zdl",            "_Zna", "_Zda", // operator new/delete/new[]/delete[]
+        "operator new", "operator delete",
+    };
+    for (cpp_alloc_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // C++ ABI runtime
+    const cpp_abi_prefixes = [_][]const u8{
+        "__cxa_", "__gxx_personality", "_ZTI", "_ZTS", "_ZTV",
+    };
+    for (cpp_abi_prefixes) |p| {
+        if (std.mem.startsWith(u8, func_name, p)) return true;
+    }
+
+    // Objective-C runtime (macOS)
+    const objc_patterns = [_][]const u8{
+        "_objc_",     "objc_msgSend",   "objc_alloc",    "objc_release",
+        "_dispatch_", "dispatch_async", "dispatch_sync",
+    };
+    for (objc_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // Swift runtime
+    const swift_patterns = [_][]const u8{
+        "swift_retain", "swift_release", "swift_allocObject",
+        "$sS", "$sSo", // Swift symbol mangling
+    };
+    for (swift_patterns) |p| {
+        if (std.mem.startsWith(u8, func_name, p)) return true;
+    }
+
+    // Go runtime
+    const go_patterns = [_][]const u8{
+        "runtime.",       "runtime.alloc",  "runtime.free",
+        "internal/task.", "runtime._panic",
+    };
+    for (go_patterns) |p| {
+        if (std.mem.startsWith(u8, func_name, p)) return true;
+    }
+
+    // Rust runtime
+    const rust_patterns = [_][]const u8{
+        "__rust_alloc",  "__rust_dealloc",
+        "drop_in_place", "rust_begin_unwind",
+        "rust_panic",
+    };
+    for (rust_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // Zig runtime
+    const zig_patterns = [_][]const u8{
+        "__zig_probe_stack", "__zig_tag_name_",
+        "reachUnreachable",  "unwrapNull",
+    };
+    for (zig_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // LLVM intrinsics
+    if (std.mem.startsWith(u8, func_name, "llvm.")) return true;
+
+    // Sanitizer runtimes
+    const sanitizer_prefixes = [_][]const u8{
+        "__asan_", "__msan_", "__tsan_", "__ubsan_", "__sanitizer_",
+    };
+    for (sanitizer_prefixes) |p| {
+        if (std.mem.startsWith(u8, func_name, p)) return true;
+    }
+
+    // Stack protection
+    if (std.mem.indexOf(u8, func_name, "__stack_chk") != null) return true;
+
+    // Dynamic linker / CRT (Unix/macOS + Windows)
+    const dl_patterns = [_][]const u8{
+        "_dyld_",             "_dl_",  "__security_init_cookie",
+        "__report_gsfailure", "_CRT$", ".CRT$",
+    };
+    for (dl_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    return false;
+}
+
+/// Check if a function name matches a Windows MSVC CRT / runtime pattern.
+///
+/// Covers:
+///   - SEH exception handlers (__except_handler*, ___CxxFrameHandler*)
+///   - CRT initialization (_initterm, _crt_init)
+///   - Security cookie functions
+///   - Thread-local storage helpers
+///   - C++ RTTI/typeinfo on MSVC (?_type_info@@, ??_R*)
+fn isWindowsMsvcRuntime(func_name: []const u8) bool {
+    // SEH handlers — structured exception handling (compiler-generated)
+    const seh_patterns = [_][]const u8{
+        "__except_handler",     "___CxxFrameHandler", "__CxxFrameHandler3",
+        "__C_specific_handler", "__GSHandlerCheck",   "__GSHandlerCheck_Common",
+    };
+    for (seh_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // CRT initialization / termination
+    const crt_init_patterns = [_][]const u8{
+        "_initterm_e",             "_initterm",   "_crtInit",       "_crtExit",
+        "_CRT_INIT",               "_crt_atexit", "_atexit_helper", "_register_onexit_function",
+        "_cinit_compute_numpages",
+    };
+    for (crt_init_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // MSVC security / guard patterns
+    const msvc_security = [_][]const u8{
+        "__security_check_cookie",    "__report_gsfailure",
+        "__report_rangecheckfailure", "__report_error",
+        "__fail_fast_handler",        "__fastfail",
+    };
+    for (msvc_security) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // TLS (thread-local storage) callbacks
+    const tls_patterns = [_][]const u8{
+        "TlsCallback_", "__dyn_tls_init", "__tlregdtor",
+    };
+    for (tls_patterns) |p| {
+        if (std.mem.indexOf(u8, func_name, p) != null) return true;
+    }
+
+    // MSVC C++ RTTI via mangling (?_type_info@, ??_R*)
+    // CRTP base class detection: ?_type_info@@... or ??_R<name>...
+    if (func_name[0] == '?') {
+        // CRTP type info: ?_type_info@class_name@@...
+        if (std.mem.indexOf(u8, func_name, "?_type_info@") != null) return true;
+        // RTTI locator: ??_R0?AVclass_name@...
+        if (std.mem.indexOf(u8, func_name, "??_R") != null) return true;
+        // VTable: ??_7...
+        if (std.mem.indexOf(u8, func_name, "??_7") != null) return true;
+    }
 
     return false;
 }
@@ -732,7 +1024,20 @@ fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
 /// Even when they occur in "safe_*" named functions, involve __rust_dealloc,
 /// or mention NonNull types — the detector found a real problem, not a FP.
 fn isRealMemorySafetyBug(issue: *const Issue) bool {
-    // EXCEPTION: Pure-Rust-internal drop chain double_free
+    // EXCEPTION 1: Stdlib internal functions — always let Pattern G handle them
+    //
+    // Even if the issue kind looks serious (callback_ownership_risk, etc.),
+    // if it comes from a known stdlib internal function (Io.Writer.*, debug.*,
+    // fs.*, etc.), it's almost certainly a FP from stdlib internals.
+    // Pattern G will suppress it properly.
+    if (isStdlibInternalFunction(issue)) {
+        log.debug("[STDLIB-EXEMPT] {s} in {s} -> let Pattern G handle", .{
+            @tagName(issue.kind), issue.location.func,
+        });
+        return false;
+    }
+
+    // EXCEPTION 2: Pure-Rust-internal drop chain double_free
     //
     // When a Rust function like format_digest() does String::with_capacity + format!,
     // the IR shows multiple __rust_dealloc calls (one per String allocation).
@@ -747,6 +1052,22 @@ fn isRealMemorySafetyBug(issue: *const Issue) bool {
     // In this case, let Pattern A handle it (Rust drop chain FP suppression).
     if (issue.kind == .double_free) {
         if (isPureRustInternalDoubleFree(issue)) return false;
+
+        // ADDITIONAL GUARD: Even when cross-FFI alias is detected,
+        // if the issue is purely internal to a Rust module (mangled caller +
+        // _RNv mangled callee + __rust_dealloc), it's still a drop chain FP.
+        // The "[cross-FFI alias detected]" tag can be misleading for Rust
+        // internal allocations that happen to share aliases within the same module.
+        const func = issue.location.func;
+        const msg = issue.message;
+        const is_mangled_caller = std.mem.startsWith(u8, func, "_ZN");
+        const has_rnv_callee = std.mem.indexOf(u8, msg, "_RNv") != null;
+        const has_rust_dealloc = std.mem.indexOf(u8, msg, "__rust_dealloc") != null;
+
+        if (is_mangled_caller and has_rnv_callee and has_rust_dealloc) {
+            log.debug("[PURE-RUST-FP-GUARD] double_free in {s} with _RNv+__rust_dealloc -> let Pattern A handle", .{func});
+            return false;
+        }
     }
 
     return switch (issue.kind) {
@@ -955,4 +1276,102 @@ test "Pattern F — buffer_near_overflow bounded copy" {
 test "Pattern F — real overflow NOT suppressed" {
     var i = Issue.init(.borrow_escape, "overflow in buffer_at_overflow", .{ .func = "buffer_at_overflow" }, .critical, 0.9);
     try std.testing.expect(!isDefensiveCodingPattern(&i));
+}
+
+// ============================================================================
+// shouldSuppressWithProfile — platform-gated suppression tests
+// ============================================================================
+
+// Helper: build a minimal PlatformProfile for tests (no allocation).
+fn makeTestProfile(
+    platform: platform_profile_mod.PlatformKind,
+    object_format: platform_profile_mod.ObjectFormat,
+    abi: platform_profile_mod.WindowsAbi,
+) PlatformProfile {
+    return PlatformProfile{
+        .platform = platform,
+        .object_format = object_format,
+        .target_triple = "",
+        .datalayout = "",
+        .arch = "",
+        .vendor = "",
+        .windows_abi = abi,
+    };
+}
+
+test "shouldSuppressWithProfile — null profile preserves legacy behavior" {
+    // The legacy entry point must behave identically when null is passed.
+    // We use a Windows MSVC runtime name to exercise the platform branch.
+    var i = Issue.init(
+        .memory_leak,
+        "leak in __except_handler4",
+        .{ .file = null, .func = "__except_handler4" },
+        .high,
+        0.8,
+    );
+    try std.testing.expectEqual(
+        shouldSuppress(&i),
+        shouldSuppressWithProfile(&i, null),
+    );
+}
+
+test "shouldSuppressWithProfile — Windows MSVC pattern fires on Windows" {
+    // On a Windows MSVC target, the MSVC CRT pattern set should be consulted
+    // and suppress the issue.
+    const profile = makeTestProfile(.windows, .coff, .msvc);
+    var i = Issue.init(
+        .memory_leak,
+        "leak in __except_handler4",
+        .{ .file = null, .func = "__except_handler4" },
+        .high,
+        0.8,
+    );
+    try std.testing.expect(shouldSuppressWithProfile(&i, &profile));
+}
+
+test "shouldSuppressWithProfile — Windows MSVC pattern skipped on Linux" {
+    // The same SEH-named symbol on Linux is almost certainly NOT the
+    // Windows runtime, so the platform-gated path must skip the MSVC scan.
+    //
+    // We must pick a name that ONLY matches Windows MSVC patterns and does
+    // not collide with any generic (cross-platform) runtime pattern.
+    const profile = makeTestProfile(.linux, .elf, .unknown);
+    var i = Issue.init(
+        .memory_leak,
+        "leak in __except_handler4",
+        .{ .file = null, .func = "__except_handler4" },
+        .high,
+        0.8,
+    );
+    try std.testing.expect(!shouldSuppressWithProfile(&i, &profile));
+}
+
+test "shouldSuppressWithProfile — generic patterns work on every platform" {
+    // C++ allocator `_Znwm` is cross-platform; it should suppress on both
+    // Linux and Windows profiles regardless of MSVC gating.
+    const linux_profile = makeTestProfile(.linux, .elf, .unknown);
+    const win_profile = makeTestProfile(.windows, .coff, .msvc);
+    var i = Issue.init(
+        .memory_leak,
+        "leak in _Znwm",
+        .{ .file = null, .func = "_Znwm" },
+        .high,
+        0.8,
+    );
+    try std.testing.expect(shouldSuppressWithProfile(&i, &linux_profile));
+    try std.testing.expect(shouldSuppressWithProfile(&i, &win_profile));
+}
+
+test "shouldSuppressWithProfile — real memory bug never suppressed regardless of profile" {
+    // The global guard must keep priority — a genuine double-free in a user
+    // function should pass through even on a Windows MSVC profile.
+    const profile = makeTestProfile(.windows, .coff, .msvc);
+    var i = Issue.init(
+        .double_free,
+        "double free in app_handler",
+        .{ .file = null, .func = "app_handler" },
+        .critical,
+        0.95,
+    );
+    try std.testing.expect(!shouldSuppressWithProfile(&i, &profile));
 }

@@ -1,6 +1,6 @@
 # OmniScope 重构设计与待办
 
-编码风格与约束：`./plan/rules/rules.md`
+编码风格与约束：严格遵循 `./plan/rules/*.*`，包括 `./plan/rules/rules.md` 与 `./plan/rules/skills.md`。
 
 ---
 
@@ -51,6 +51,12 @@
 - `PointerOwnership` 仍有重复扫描和重复分类。
 - pipeline 里还没有统一的通用噪声过滤 pass 接线。
 - 多处注释和实现状态不一致，需要同步。
+- 平台特定 IR 信息尚未统一过滤，例如 macOS / Linux / Windows 编译出的 `*.ll` / `*.bc` 中 target triple、datalayout、section、COMDAT、Mach-O/ELF/COFF 符号前缀、runtime shim 可能不同，当前还没有独立设计。
+
+### 已知限制
+
+- ⚠️ `cpp_fft` 仍有 2 个 high-severity issue：已知限制是 C++ 跨函数追踪不完整，当前不能稳定还原所有跨过程 ownership / lifetime 关系。
+- ⚠️ `main.main` 仍被识别为 go：纯小写函数名缺少 camelCase 特征，当前 language detector 对这种命名模式置信度不足。
 
 ---
 
@@ -257,6 +263,119 @@ src/semantics/
 - `!DISubprogram`
 - `!DIFile`
 - path / directory provenance
+
+---
+
+## 平台特定 IR 信息过滤设计
+
+### 背景
+
+同一份源码在 macOS、Linux、Windows 上编译出的 `*.ll` / `*.bc` 会包含不同的平台信息。
+这些信息会影响符号命名、runtime 函数、section、linkage、debug path 和 ABI 细节，容易造成误报、重复报告或 language / surface 误判。
+
+典型差异：
+
+- macOS / Mach-O：符号可能带 `_` 前缀，存在 `__TEXT`、`__DATA`、Objective-C / Swift runtime、Darwin libc shim。
+- Linux / ELF：常见 `.text`、`.rodata`、`.init_array`、glibc / musl runtime、PLT/GOT 相关符号。
+- Windows / COFF：常见 `.CRT$XCU`、`.pdata`、`.xdata`、MSVC / MinGW runtime、decorated symbol、import thunk。
+- LLVM Target：`target triple`、`target datalayout`、calling convention、address space、visibility、DLL storage class 不同。
+- Debug Metadata：绝对路径、SDK path、toolchain path、build directory 会带平台特征，不应直接作为用户代码判断依据。
+
+### 设计原则
+
+- 平台信息只作为 `PlatformProfile` / `PlatformHint`，不能单独决定漏洞是否存在。
+- 安全优先：无法确认的平台特征归为 `unknown`，继续保留分析。
+- boundary 优先：FFI export/import、cross-language edge、extern callback 永远不能因平台 runtime 规则被过滤。
+- 归一化优先于白名单：先把符号、路径、section、target 信息标准化，再进入 language / surface / noise 逻辑。
+- report 侧只展示与风险相关的平台证据，避免把 target triple / SDK path 当成风险本身。
+
+### 新增数据结构建议
+
+```zig
+pub const PlatformKind = enum {
+    macos,
+    linux,
+    windows,
+    wasi,
+    unknown,
+};
+
+pub const ObjectFormat = enum {
+    macho,
+    elf,
+    coff,
+    wasm,
+    unknown,
+};
+
+pub const PlatformProfile = struct {
+    platform: PlatformKind,
+    object_format: ObjectFormat,
+    target_triple: []const u8,
+    datalayout: []const u8,
+};
+
+pub const PlatformHint = struct {
+    surface: FunctionSurface,
+    confidence: Confidence,
+    reason: []const u8,
+};
+```
+
+### 推荐模块
+
+```text
+src/semantics/platform_profile.zig
+src/semantics/platform_normalizer.zig
+src/semantics/platform_runtime.zig
+src/semantics/surface_classifier/platform.zig
+```
+
+职责划分：
+
+- `platform_profile.zig`：解析 `target triple`、`datalayout`、module flags，产出 `PlatformProfile`。
+- `platform_normalizer.zig`：归一化符号名、debug path、section name、import/export decoration。
+- `platform_runtime.zig`：识别平台 runtime / toolchain runtime / compiler-generated shim。
+- `surface_classifier/platform.zig`：把平台 hint 合并进 `SurfaceClassifierPass`，只输出 hint，不直接过滤。
+
+### 归一化规则
+
+- Symbol：统一处理 Mach-O leading underscore、COFF decorated symbol、LLVM intrinsic suffix、import thunk 前后缀。
+- Path：把 SDK path、toolchain path、系统 include path、临时 build path 归一为 platform/runtime provenance。
+- Section：把 Mach-O / ELF / COFF section 映射为统一类别：code、rodata、data、init_array、exception、debug、unknown。
+- ABI：记录 calling convention、DLL storage class、visibility，但只作为 boundary / runtime hint。
+- Runtime：识别 libc、compiler-rt、libstdc++、libc++、MSVC CRT、Darwin runtime、Go/Rust/Zig startup shim。
+
+### Pipeline 接入点
+
+1. 在 module 初始化阶段生成 `PlatformProfile`，缓存到 `PassContext`。
+2. 在 `SurfaceClassifierPass` Phase 1 前先做符号和路径归一化。
+3. `surface_classifier/platform.zig` 只提供 platform hint，参与 `mergeLayers()`。
+4. `noise_filter` 只在报告侧使用 platform 信息做降噪，不参与主分类。
+5. 输出报告增加可选 `Platform Evidence`，仅在 verbose/debug 中展示。
+
+### 测试矩阵
+
+- 同一 C FFI 样例分别生成 macOS / Linux / Windows 风格 `*.ll`，检查 normalized symbol 一致。
+- Mach-O `_foo` 与 ELF `foo` 应归一为同一 canonical symbol。
+- COFF decorated symbol 不应导致重复 issue。
+- SDK / toolchain path 不应被误判为用户代码 path。
+- Runtime startup 函数应标记为 `runtime` / `compiler_generated`，但 export / FFI boundary 仍保留。
+- `target triple` 缺失时应回退到 `unknown`，不得误杀。
+
+### 平台过滤 TODO
+
+- [ ] P1 定义 `PlatformKind`、`ObjectFormat`、`PlatformProfile`、`PlatformHint`。
+- [ ] P2 从 LLVM module 读取 `target triple` 与 `target datalayout`。
+- [ ] P3 实现 Mach-O / ELF / COFF symbol canonicalization。
+- [ ] P4 实现 debug path / SDK path / toolchain path 归一化。
+- [ ] P5 实现 section category 归一化。
+- [ ] P6 实现平台 runtime / compiler-generated shim 识别。
+- [ ] P7 将 platform hint 接入 `SurfaceClassifierPass.mergeLayers()`。
+- [ ] P8 确保 boundary / unknown 优先级高于 platform runtime hint。
+- [ ] P9 增加跨平台 fixture 和回归测试。
+- [ ] P10 在 verbose/debug 报告中展示 platform evidence。
+- [ ] P11 复测 macOS / Linux / Windows 生成的 `*.ll` / `*.bc`，比较 issue 数、symbol canonicalization 和 FN/FP 变化。
 
 用途：
 

@@ -9,6 +9,7 @@
 //! - Report violations with traceable reasoning
 
 const std = @import("std");
+const log = std.log.scoped(.free_validation);
 const c = @import("../../../ir/llvm_raw.zig").c;
 
 const PassContext = @import("../../pass.zig").PassContext;
@@ -573,6 +574,29 @@ pub const FreeValidationPass = struct {
             std.mem.span(caller_name_ptr)
         else
             "unknown";
+
+        // SAME-LANGUAGE MERGE GUARD for invalid_free:
+        // When free_func is C++ delete/delete[] (_ZdlPv, _ZdaPv) and the pointer
+        // origin is unknown/non-heap, this is often a FP caused by incomplete
+        // cross-function return value tracking (e.g., BitReverseTable() returns
+        // new[]'d memory but the graph node doesn't know it's heap-allocated).
+        //
+        // If the caller module is C/C++ and the free is a known C++ deallocator,
+        // skip reporting — it's likely legitimate internal deallocation.
+        const is_cpp_deallocator = std.mem.indexOf(u8, free_func_name, "_ZdlPv") != null or
+            std.mem.indexOf(u8, free_func_name, "_ZdaPv") != null;
+        const is_unknown_origin = origin == .unknown or origin == .from_param or
+            origin == .from_global or origin == .from_constant;
+
+        if (is_cpp_deallocator and is_unknown_origin) {
+            const module_lang = ctx.module_language.language;
+            if (module_lang == .cpp or module_lang == .c) {
+                log.debug("SAME-LANG-MERGE [invalid_free]: skipping {s} in {s} (origin={s}, module={s})", .{
+                    free_func_name, caller_name, @tagName(origin), @tagName(module_lang),
+                });
+                return;
+            }
+        }
 
         const location = Location.init(caller_name);
 

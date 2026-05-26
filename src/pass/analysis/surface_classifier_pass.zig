@@ -27,6 +27,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
 const surface = @import("../../semantics/surface_classifier/surface_classifier.zig");
 const boundary = @import("../../semantics/surface_classifier/boundary.zig");
+const platform_surface = @import("../../semantics/surface_classifier/platform.zig");
 
 pub const SurfaceClassifierPass = struct {
     pub const name = "surface-classifier";
@@ -81,11 +82,32 @@ pub const SurfaceClassifierPass = struct {
             // L2: Debug origin (requires debug metadata in IR)
             const l2_hint = surface.classifyDebugOriginDiagnostic(func, func_name);
 
+            // L-Platform: Platform-specific runtime shim / toolchain detection.
+            // Uses target triple, symbol naming conventions, and known runtime patterns
+            // to identify compiler-generated functions that should be skipped.
+            var plat_hint: ?platform_surface.PlatformSurfaceHint = null;
+            if (ctx.platform_profile) |*prof| {
+                plat_hint = platform_surface.generatePlatformHint(func_name, prof);
+            }
+
             // Merge all layers into final decision
             //
             // Critical: is_real_ffi_boundary (not is_lib_export) controls the
             // .boundary surface. Library exports are just dependency code.
-            const surf = surface.mergeLayers(l0_hint, l1_hint, l2_hint, true, is_real_ffi_boundary);
+            var surf = surface.mergeLayers(l0_hint, l1_hint, l2_hint, true, is_real_ffi_boundary);
+
+            // Apply platform hint (P8: boundary and unknown take priority)
+            if (plat_hint) |*ph| {
+                surf = platform_surface.mergePlatformHint(surf, ph.*, is_real_ffi_boundary);
+                if (logged_count < 30) {
+                    log.debug("[Platform-Layer] {s}: {s} (conf={s}) -> {s}", .{
+                        func_name,
+                        @tagName(ph.suggested_surface),
+                        @tagName(ph.confidence),
+                        @tagName(surf),
+                    });
+                }
+            }
 
             // Track per-layer hit rates
             if (l0_hint != null) l0_hits += 1;
