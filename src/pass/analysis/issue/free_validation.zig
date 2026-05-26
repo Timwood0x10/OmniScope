@@ -389,8 +389,21 @@ pub const FreeValidationPass = struct {
                 // by C free), this is a normal ownership transfer pattern.
                 // Only flag when using a non-standard deallocator that might
                 // mismatch the FFI source's allocator.
+                //
+                // Covers both demangled ("operator delete", "operator delete[]")
+                // AND mangled (_ZdlPv, _ZdaPv, _Zdl, _Zda) C++ deallocator names.
+                // LLVM IR uses mangled names for C++ symbols — demangled names only
+                // appear in debug output. Without mangled name support, _ZdaPv
+                // (operator delete[]) on _Znam (operator new[]) memory was falsely
+                // reported as invalid_free (FP).
                 if (std.mem.eql(u8, callee_name, "free") or
-                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete") or
+                    std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zdl") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zda") != null)
                 {
                     return false;
                 }
@@ -408,8 +421,18 @@ pub const FreeValidationPass = struct {
                 // The cross-allocator check above already catches the real bugs
                 // (malloc + __rust_dealloc, __rust_alloc + free). Only flag
                 // if using a clearly mismatched deallocator on malloc'd memory.
+                //
+                // Covers both demangled AND mangled C++ deallocator names.
+                // _ZdaPv (operator delete[]) on _Znam (operator new[]) memory
+                // is valid C++ — must not be reported as invalid_free.
                 if (std.mem.eql(u8, callee_name, "free") or
-                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete") or
+                    std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zdl") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zda") != null)
                 {
                     return false;
                 }
