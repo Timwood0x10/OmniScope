@@ -35,6 +35,11 @@ const hashValues = mg_types.hashValues;
 const family_registry_mod = @import("resource/family_registry.zig");
 const ResourceFamilyRegistry = family_registry_mod.ResourceFamilyRegistry;
 
+const escape_mod = @import("resource/escape.zig");
+const EscapeKind = escape_mod.EscapeKind;
+const EscapeRecord = escape_mod.EscapeRecord;
+const EscapeList = escape_mod.EscapeList;
+
 const mg_methods = @import("../types/memory_graph_methods.zig");
 
 /// Main memory graph structure.
@@ -195,6 +200,7 @@ pub const MemoryGraph = struct {
             .zone = alloc_zone,
             .alloc_lang = alloc_lang,
             .free_sites = std.ArrayList(FreeRecord).empty,
+            .escapes = null,
         };
         errdefer node.aliases.deinit();
         try node.aliases.put(ret_value_ptr, {});
@@ -259,6 +265,7 @@ pub const MemoryGraph = struct {
             .alloc_lang = .unknown,
             .free_lang = null,
             .free_sites = std.ArrayList(FreeRecord).empty,
+            .escapes = null,
         };
 
         try graph.node_store.append(graph.allocator, lazy_node);
@@ -340,10 +347,101 @@ pub const MemoryGraph = struct {
             });
         }
     }
+    // =====================================================================
+    // Escape Tracking (P6: PointerContract integration)
+    // =====================================================================
 
-    // =====================================================================
-    // Per-function alloc/free balance
-    // =====================================================================
+    /// Record that a pointer escaped via return to caller (P6-6).
+    /// This is a valid disposal of ownership — the caller now owns it.
+    pub fn recordEscapeReturnToCaller(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64) void {
+        graph.recordEscape(ptr_val, EscapeRecord.init(.return_to_caller, inst_addr));
+        log.debug("ESCAPE: ptr=0x{x} returned to caller at inst=0x{x}", .{ ptr_val, inst_addr });
+    }
+
+    /// Record that a pointer escaped via out-parameter (P6-7).
+    /// Valid disposal — caller receives ownership through out-param.
+    pub fn recordEscapeOutParam(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64) void {
+        graph.recordEscape(ptr_val, EscapeRecord.init(.out_param, inst_addr));
+        log.debug("ESCAPE: ptr=0x{x} written to out-param at inst=0x{x}", .{ ptr_val, inst_addr });
+    }
+
+    /// Record that a pointer escaped into an owner object's field (P6-8).
+    /// Valid disposal if owner object is properly managed.
+    pub fn recordEscapeFieldStore(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64, field_name: []const u8) void {
+        var rec = EscapeRecord.init(.field_store, inst_addr);
+        rec.withTarget(field_name);
+        rec.withConfidence(0.85);
+        graph.recordEscape(ptr_val, rec);
+        log.debug("ESCAPE: ptr=0x{x} stored to field '{s}' at inst=0x{x}", .{ ptr_val, field_name, inst_addr });
+    }
+
+    /// Record that a pointer escaped to global/static storage (P6-9).
+    /// Process-lifetime — NOT a leak.
+    pub fn recordEscapeGlobalStore(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64, var_name: []const u8) void {
+        var rec = EscapeRecord.init(.global_store, inst_addr);
+        rec.withTarget(var_name);
+        rec.withConfidence(0.9);
+        graph.recordEscape(ptr_val, rec);
+        log.debug("ESCAPE: ptr=0x{x} stored to global '{s}' at inst=0x{x}", .{ ptr_val, var_name, inst_addr });
+    }
+
+    /// Record static-lifetime escape specifically (C++ static initializers).
+    pub fn recordEscapeStaticLifetime(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64) void {
+        var rec = EscapeRecord.init(.static_lifetime, inst_addr);
+        rec.withConfidence(0.85);
+        graph.recordEscape(ptr_val, rec);
+        log.debug("ESCAPE: ptr=0x{x} has static lifetime at inst=0x{x}", .{ ptr_val, inst_addr });
+    }
+
+    /// Record that a pointer escaped to a callback/closure (P6-10).
+    /// Lifetime risk — callback must not outlive the resource.
+    pub fn recordEscapeCallback(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64, callback_name: []const u8) void {
+        var rec = EscapeRecord.init(.callback, inst_addr);
+        rec.withTarget(callback_name);
+        rec.withConfidence(0.7);
+        graph.recordEscape(ptr_val, rec);
+        log.debug("ESCAPE: ptr=0x{x} passed to callback '{s}' at inst=0x{x}", .{ ptr_val, callback_name, inst_addr });
+    }
+
+    /// Record that a pointer escaped to a spawned thread (P6-11).
+    /// Lifetime risk — thread may access after spawn returns.
+    pub fn recordEscapeThread(graph: *MemoryGraph, ptr_val: u64, inst_addr: u64, thread_api: []const u8) void {
+        var rec = EscapeRecord.init(.thread, inst_addr);
+        rec.withTarget(thread_api);
+        rec.withConfidence(0.7);
+        graph.recordEscape(ptr_val, rec);
+        log.debug("ESCAPE: ptr=0x{x} passed to thread API '{s}' at inst=0x{x}", .{ ptr_val, thread_api, inst_addr });
+    }
+
+    /// Internal: record an escape event on a node's escape list.
+    fn recordEscape(graph: *MemoryGraph, ptr_val: u64, rec: EscapeRecord) void {
+        const node = graph.nodes.get(ptr_val) orelse return;
+        if (node.escapes == null) {
+            // Lazily initialize escape list
+            const list = graph.allocator.create(EscapeList) catch {
+                log.warn("Failed to allocate EscapeList for ptr=0x{x}", .{ptr_val});
+                return;
+            };
+            list.* = EscapeList.init(graph.allocator);
+            node.escapes = list;
+        }
+        node.escapes.?.add(rec) catch {};
+    }
+
+    /// Check if a resource has any valid-disposal escape.
+    /// Used by leak detector (P6-12): `owned && !released && !valid_escape` → leak.
+    pub fn hasValidEscape(graph: *const MemoryGraph, ptr_val: u64) bool {
+        const node = graph.nodes.get(ptr_val) orelse return false;
+        const escapes = node.escapes orelse return false;
+        return escapes.hasValidEscape();
+    }
+
+    /// Check if a resource has any lifetime-risk escape (callback/thread).
+    pub fn hasLifetimeRiskEscape(graph: *const MemoryGraph, ptr_val: u64) bool {
+        const node = graph.nodes.get(ptr_val) orelse return false;
+        const escapes = node.escapes orelse return false;
+        return escapes.hasLifetimeRisk();
+    }
 
     /// Records a heap allocation in a function's counter.
     pub fn recordFuncAlloc(graph: *MemoryGraph, func_ptr: u64) void {

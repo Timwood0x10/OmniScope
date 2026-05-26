@@ -18,6 +18,9 @@ const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const provenance = @import("../provenance.zig");
+const memory_graph = @import("../../../semantics/memory_graph.zig");
+const escape_mod = @import("../../../semantics/resource/escape.zig");
+pub const EscapeRecord = escape_mod.EscapeRecord;
 
 pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
     const desc = try std.fmt.allocPrint(allocator, fmt, args);
@@ -493,6 +496,15 @@ pub fn reportBorrowEscapeFFI(
     diag: *DiagnosticWriter,
 ) !void {
     _ = inst;
+
+    // P6-13: Check if callee is a known bridge helper (returns_borrowed).
+    // Bridge helpers like as_ptr, as_mut_ptr, c_str, data() return borrowed
+    // pointers into existing data — they are NOT borrow_escape bugs.
+    if (isBridgeHelper(ctx, callee_name)) {
+        diag.debug("[BORROW-ESCAPE-FFI SUPPRESSED] '{s}' is known bridge helper (returns_borrowed) in {s}", .{ callee_name, func_name });
+        return;
+    }
+
     if (ptr_info.source_inst) |src_inst| {
         const ptr_val = @as(u64, @intFromPtr(src_inst));
         if (!ctx.isOnDangerPathFull(ptr_val)) {
@@ -599,4 +611,210 @@ pub fn reportFFITypeMismatch(
 
     try ctx.addIssue(&issue);
     diag.warn("[OMI-HIGH] [FFI-TYPE-MISMATCH] {s} -> {s}() in {s}", .{ mismatch_desc, callee_name, func_name });
+}
+
+// ============================================================================
+// P6: Contract-Based Leak Guard
+//
+// Before reporting any leak, check if the resource has valid escapes.
+// A resource that escaped via return/out-param/field/global is NOT a leak —
+// ownership was transferred to someone else who is now responsible.
+// ============================================================================
+
+const contract_mod = @import("../../../semantics/resource/contract.zig");
+const PointerContract = contract_mod.PointerContract;
+const ViolationSeverity = contract_mod.ViolationSeverity;
+
+/// Result of contract-based leak evaluation.
+pub const LeakCheckResult = enum(u8) {
+    /// Definitely a leak: owned, not released, no valid escapes.
+    confirmed_leak,
+    /// Probably a leak but some uncertainty (maybe_owned state).
+    probable_leak,
+    /// Not a leak: has valid disposal (return, out-param, field, global).
+    valid_escape,
+    /// Not a leak but lifetime risk (callback/thread escape).
+    lifetime_risk,
+    /// Cannot determine (no graph data available).
+    unknown,
+};
+
+/// Evaluate whether an unfreed allocation is actually a leak using
+/// PointerContract + EscapeKind analysis (P6-12).
+///
+/// Replaces the naive `allocated && !freed → leak` condition with:
+///   `owned && !released && !hasValidEscape() → leak`
+///
+/// Returns what action the caller should take regarding this potential leak.
+pub fn evaluateLeakWithContract(
+    mem_graph: ?*memory_graph.MemoryGraph,
+    ptr_val: u64,
+) LeakCheckResult {
+    const mg = mem_graph orelse return .unknown;
+    const node = mg.nodes.get(ptr_val) orelse return .unknown;
+
+    // Already freed → not a leak (could be use-after-release though)
+    if (node.freed) return .valid_escape;
+
+    // Has free sites recorded → was released somehow
+    if (node.free_sites.items.len > 0) return .valid_escape;
+
+    // Check escape list (P6 core logic)
+    if (node.escapes) |escapes| {
+        if (escapes.hasValidEscape()) {
+            return .valid_escape;
+        }
+        if (escapes.hasLifetimeRiskEscape()) {
+            return .lifetime_risk;
+        }
+    }
+
+    // No escapes, no frees → this IS a leak
+    // Check confidence based on alloc_family
+    if (node.alloc_family != null) {
+        return .confirmed_leak; // Family known → high confidence
+    }
+
+    return .probable_leak; // No family info → medium confidence
+}
+
+/// Check if a leak report should be suppressed due to valid escape.
+/// Returns true if the report should be skipped/downgraded.
+pub fn shouldSuppressLeakDueToEscape(
+    mem_graph: ?*memory_graph.MemoryGraph,
+    ptr_val: u64,
+) bool {
+    const result = evaluateLeakWithContract(mem_graph, ptr_val);
+    return result == .valid_escape or result == .lifetime_risk or result == .unknown;
+}
+
+/// Get severity adjustment for a leak based on contract analysis.
+/// Downgrades high-severity leaks that have partial evidence of escape.
+pub fn getContractAdjustedSeverity(
+    mem_graph: ?*memory_graph.MemoryGraph,
+    ptr_val: u64,
+    base_severity: Issue.Severity,
+) Issue.Severity {
+    const result = evaluateLeakWithContract(mem_graph, ptr_val);
+
+    // Confirmed leak: keep original severity
+    if (result == .confirmed_leak) return base_severity;
+
+    // Probable leak: downgrade by one level
+    if (result == .probable_leak) {
+        return switch (base_severity) {
+            .critical => .high,
+            .high => .medium,
+            else => base_severity,
+        };
+    }
+
+    // Valid escape / lifetime risk / unknown: downgrade to diagnostic
+    return .diagnostic;
+}
+
+/// Format a contract-based explanation string for issue messages.
+/// Provides human-readable reason why something was/wasn't reported as leak.
+pub fn formatContractExplanation(
+    mem_graph: ?*memory_graph.MemoryGraph,
+    ptr_val: u64,
+) ![]const u8 {
+    const mg = mem_graph orelse return "(no memory graph available)";
+    const node = mg.nodes.get(ptr_val) orelse return "(node not found)";
+
+    var parts = std.ArrayList([]const u8).init(mg.allocator);
+    defer parts.deinit();
+
+    // Show family info
+    if (node.alloc_family) |f| {
+        try parts.append(try std.fmt.allocPrint(mg.allocator, "alloc_family={s}", .{@tagName(f)}));
+    }
+
+    // Show escape info
+    if (node.escapes) |escapes| {
+        if (escapes.count() > 0) {
+            var buf = std.ArrayList(u8).init(mg.allocator);
+            defer buf.deinit();
+            const writer = buf.writer();
+            try writer.writeAll("escapes=[");
+            _ = escapes.count(); // count available for future use
+            try writer.writeAll("]");
+            try parts.append(buf.toOwnedSlice());
+        }
+    }
+
+    // Show free site count
+    if (node.free_sites.items.len > 0) {
+        try parts.append(try std.fmt.allocPrint(mg.allocator, "free_sites={d}", .{node.free_sites.items.len}));
+    }
+
+    if (parts.items.len == 0) {
+        return "(no contract data)";
+    }
+
+    var result = std.ArrayList(u8).init(mg.allocator);
+    const writer = result.writer();
+    for (parts.items, 0..) |part, i| {
+        if (i > 0) try writer.writeAll(", ");
+        try writer.writeAll(part);
+    }
+    return result.toOwnedSlice();
+}
+
+// ============================================================================
+// P6-13: Bridge Helper Detection
+//
+// Before reporting borrow_escape, check if the callee is a known bridge
+// helper that returns borrowed pointers. These are NOT bugs — they're
+// intentional safe-to-unsafe conversions.
+// ============================================================================
+
+/// Check if a callee function is a known bridge helper (returns borrowed pointer).
+/// Uses SummaryStore for high-confidence matches, falls back to name patterns.
+pub fn isBridgeHelper(ctx: *PassContext, callee_name: []const u8) bool {
+    // 1. Check SummaryStore first (highest confidence)
+    if (ctx.resource_summary) |store| {
+        if (store.returnsBorrowed(callee_name)) {
+            return true;
+        }
+    }
+
+    // 2. Fallback: name pattern matching (from P5 bridge helper inference)
+    const bridge_suffixes = [_][]const u8{
+        "as_ptr", "as_mut_ptr", "ptr", "ptr_mut", "c_str",
+        "data", "get_pointer", "slice::ptr",
+    };
+    for (bridge_suffixes) |suffix| {
+        if (endsWithIgnoreCase(callee_name, suffix)) {
+            // Higher confidence for qualified names (module::function)
+            if (std.mem.indexOf(u8, callee_name, ".") != null or
+                std.mem.indexOf(u8, callee_name, "::") != null)
+            {
+                return true;
+            }
+        }
+    }
+
+    // 3. Exact match for well-known bridge helpers
+    const exact_matches = [_][]const u8{
+        "@ptrCast",
+    };
+    for (exact_matches) |name| {
+        if (std.mem.eql(u8, callee_name, name)) return true;
+    }
+
+    return false;
+}
+
+/// Case-insensitive suffix check (local helper).
+fn endsWithIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len > haystack.len) return false;
+    const start = haystack.len - needle.len;
+    for (needle, 0..) |nc, i| {
+        const hc = haystack[start + i];
+        const nlc = if (nc >= 'A' and nc <= 'Z') nc + 32 else nc;
+        const hlc = if (hc >= 'A' and hc <= 'Z') hc + 32 else hc;
+        if (hlc != nlc) return false;
+    }
+    return true;
 }

@@ -13,6 +13,11 @@ pub const Language = zone.Language;
 const resource_family = @import("../semantics/resource/family.zig");
 pub const FamilyId = resource_family.FamilyId;
 
+const escape_mod = @import("../semantics/resource/escape.zig");
+pub const EscapeKind = escape_mod.EscapeKind;
+pub const EscapeRecord = escape_mod.EscapeRecord;
+pub const EscapeList = escape_mod.EscapeList;
+
 /// Error set for memory graph operations.
 pub const MemoryGraphError = error{
     OutOfMemory,
@@ -155,6 +160,12 @@ pub const AllocNode = struct {
     /// Multiple entries = potential double-free; use isDoubleFreedOnSamePath
     /// to distinguish same-path (real bug) from multi-path cleanup (not a bug).
     free_sites: std.ArrayList(FreeRecord),
+    /// All escape events for this allocation.
+    /// Tracks how this pointer escaped the allocating function's scope:
+    /// return_to_caller, out_param, field_store, global_store,
+    /// callback, thread, container, consumed_by_function.
+    /// null = no escapes recorded yet (or not initialized).
+    escapes: ?*EscapeList,
 };
 
 /// Result of isOnDangerPath — why a pointer matters (or doesn't).
