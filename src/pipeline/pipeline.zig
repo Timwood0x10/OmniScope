@@ -250,7 +250,17 @@ pub const Pipeline = struct {
                     // D1-4: Check if leaked ptr reaches FFI boundary → promote severity
                     const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
                     const severity: Severity = if (is_on_ffi_path) .high else .low;
-                    const confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
+
+                    // Bug 4: Path-sensitive confidence reduction for conditional allocs.
+                    // If allocation is inside a conditional branch (if/else, loop body),
+                    // it may not execute on all code paths → reduce confidence by ~25%.
+                    // This fixes FFT-LEAK-3 / FFT-LEAK-2 / BUG-4c conditional path FPs.
+                    var base_confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
+                    if (rec.is_conditional) {
+                        base_confidence *= 0.75; // e.g., 0.78 → 0.585, 0.50 → 0.375
+                        if (base_confidence < 0.30) base_confidence = 0.30; // Floor at 30%
+                    }
+                    const confidence = base_confidence;
                     if (is_on_ffi_path) confirmed_high += 1;
 
                     // FIX: Let addIssue take ownership by setting owned=true.

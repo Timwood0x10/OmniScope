@@ -410,7 +410,18 @@ pub const CallbackEscapePass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(ctx.allocator, inst, &keepalive_protected, &alloc_sites, &free_sites, &cgo_calls, &callback_escapes, ctx.isGoModule());
+                try scanInstruction(
+                    ctx.allocator,
+                    inst,
+                    &keepalive_protected,
+                    &alloc_sites,
+                    &free_sites,
+                    &cgo_calls,
+                    &callback_escapes,
+                    ctx.isGoModule(),
+                    ctx.module_language.language,
+                    ctx.platform_profile,
+                );
             }
         }
 

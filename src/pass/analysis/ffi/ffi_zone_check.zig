@@ -9,6 +9,7 @@ const c = @import("../../../ir/llvm_raw.zig").c;
 
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const BoundaryKind = @import("../../../diag/issue.zig").FFIBoundary.BoundaryKind;
+const PlatformProfile = @import("../../../semantics/platform_profile.zig").PlatformProfile;
 const FunctionSemantics = @import("../../../registry/semantic_registry.zig").FunctionSemantics;
 const SemanticRegistry = @import("../../../registry/semantic_registry.zig").SemanticRegistry;
 
@@ -200,6 +201,16 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
 /// Delegates to unified language_detector (single source of truth).
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
     return @import("../../../semantics/language_detector.zig").identifyCalleeLanguage(func_name);
+}
+
+/// Platform-aware callee language classification (Bug 2 fix).
+/// Uses module-level language and PlatformProfile to disambiguate Zig vs Go.
+pub fn identifyCalleeLanguageWithContext(
+    func_name: []const u8,
+    module_lang: Language,
+    platform_profile: ?PlatformProfile,
+) Language {
+    return lang_classifier.identifyCalleeLanguageWithContext(func_name, module_lang, platform_profile);
 }
 
 /// Classify the boundary kind based on caller and callee languages.

@@ -430,9 +430,37 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // Identify languages of caller and callee
-        const caller_lang = zone_check.identifyLanguage(caller_func);
-        var callee_lang = zone_check.identifyCalleeLanguage(called_name);
+        // Identify languages of caller and callee — both use platform-aware
+        // classification (Bug 2 fix). Zig functions like "main" (no special prefix)
+        // and "main.main" (Go-like naming) must be classified correctly.
+        var caller_lang = lang_classifier.identifyCalleeLanguageWithContext(
+            caller_name, ctx.module_language.language, ctx.platform_profile,
+        );
+        var callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
+            called_name, ctx.module_language.language, ctx.platform_profile,
+        );
+
+        // Bug 2 final fix: Transitive Zig inference for entry-point callers.
+        //
+        // When callee is classified as .zig (e.g., "main.main" via RULE 3) but
+        // caller is .c/.unknown (e.g., plain "main" with no Zig prefix), the
+        // caller is likely ALSO Zig. This happens because:
+        //   - Zig's LLVM IR entry point is often named "main" (no prefix)
+        //   - "main" doesn't match any zig_patterns → defaults to .c
+        //   - But "main" calling "main.main" (Zig's package-qualified name)
+        //     is an internal Zig call, NOT a C→Zig FFI boundary
+        //
+        // Generic entry-point names that trigger this inference:
+        //   "main", "_start", "__main" — common LLVM entry points that are
+        //   ambiguous without module context.
+        if (callee_lang == .zig and (caller_lang == .c or caller_lang == .unknown)) {
+            const is_generic_entry = std.mem.eql(u8, caller_name, "main") or
+                std.mem.eql(u8, caller_name, "_start") or
+                std.mem.eql(u8, caller_name, "__main");
+            if (is_generic_entry) {
+                caller_lang = .zig;
+            }
+        }
 
         // T1.3: Call-site language context enhancement.
         // Use module-level language as cross-validation to improve FFI boundary

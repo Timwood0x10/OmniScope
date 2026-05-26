@@ -98,7 +98,10 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     }
     // C++ operator delete — mangled (Itanium ABI) and unmangled
     if (std.mem.indexOf(u8, fn_name, "operator delete") != null) return true;
-    if (containsAny(fn_name, &[_][]const u8{ "_ZdlPv", "_ZdaPv", "_Zdl", "_Zda" }))
+    if (containsAny(fn_name, &[_][]const u8{
+        "_ZdlPv",  "_ZdaPv",  "_Zdl",  "_Zda",
+        "__ZdlPv", "__ZdaPv", "__Zdl", "__Zda",
+    }))
         return true;
     return false;
 }
@@ -113,7 +116,10 @@ pub fn classifyAllocLanguage(fn_name: []const u8) ?[]const u8 {
     // NOTE: _Znwm may also appear in Rust modules (Rust's std::alloc::alloc
     // can compile to _Znwm). Use classifyAllocLanguageEnum with module_lang
     // to disambiguate. Here we conservatively return "cpp".
-    if (containsAny(fn_name, &[_][]const u8{ "_Znwm", "_Znam", "_Znw", "_Zna" }))
+    if (containsAny(fn_name, &[_][]const u8{
+        "_Znwm",  "_Znam",  "_Znw",  "_Zna",
+        "__Znwm", "__Znam", "__Znw", "__Zna",
+    }))
         return "cpp";
     if (std.mem.indexOf(u8, fn_name, "operator new") != null)
         return "cpp";
@@ -194,7 +200,10 @@ pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?L
     // C++ operator new (Itanium ABI mangled) — ambiguous with Rust.
     // Rust's std::alloc::alloc compiles to _Znwm in some configurations.
     // Disambiguate by module language.
-    if (containsAny(fn_name, &[_][]const u8{ "_Znwm", "_Znam", "_Znw", "_Zna" })) {
+    if (containsAny(fn_name, &[_][]const u8{
+        "_Znwm",  "_Znam",  "_Znw",  "_Zna",
+        "__Znwm", "__Znam", "__Znw", "__Zna",
+    })) {
         if (module_lang) |ml| {
             if (ml == .rust) return .rust;
         }
@@ -243,7 +252,10 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
     if (containsAny(fn_name, &[_][]const u8{ "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc" }))
         return "rust";
     // C++ operator delete — Itanium ABI mangled names + unmangled
-    if (containsAny(fn_name, &[_][]const u8{ "_ZdlPv", "_ZdaPv", "_Zdl", "_Zda" }))
+    if (containsAny(fn_name, &[_][]const u8{
+        "_ZdlPv",  "_ZdaPv",  "_Zdl",  "_Zda",
+        "__ZdlPv", "__ZdaPv", "__Zdl", "__Zda",
+    }))
         return "cpp";
     if (std.mem.indexOf(u8, fn_name, "operator delete") != null)
         return "cpp";

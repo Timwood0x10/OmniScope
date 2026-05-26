@@ -204,14 +204,8 @@ pub fn checkCrossLanguageFree(
             // (cross-function return), but both caller and free are C++.
             if (alloc_lang == .unknown) {
                 const caller_module_lang = ctx.module_language.language;
-                const is_same_language = switch (free_lang_enum) {
-                    .cpp => caller_module_lang == .cpp or caller_module_lang == .c,
-                    .c => caller_module_lang == .c or caller_module_lang == .cpp,
-                    .rust => caller_module_lang == .rust,
-                    .zig => caller_module_lang == .zig,
-                    .go => caller_module_lang == .go,
-                    else => false,
-                };
+                // Use ABI-compatible check: C/C++ share the same heap
+                const is_same_language = isAbiCompatibleAllocFree(free_lang_enum, caller_module_lang);
                 if (is_same_language) {
                     log.debug("SAME-LANG-MERGE: skipping cross_language_free (alloc=.unknown, free={s}, module={s}) in {s}", .{
                         free_lang.?, @tagName(caller_module_lang), func_name,
@@ -223,8 +217,11 @@ pub fn checkCrossLanguageFree(
                 return;
             }
 
+            // BUGFIX: Use isAbiCompatibleAllocFree instead of != comparison.
+            // C++ alloc (.cpp) + C++ free (.cpp) now matches correctly.
+            // Also handles C alloc + C++ free (same heap/ABI).
             if (free_lang_enum != .unknown and alloc_lang != .unknown and
-                free_lang_enum != alloc_lang)
+                !isAbiCompatibleAllocFree(alloc_lang, free_lang_enum))
             {
                 try reportCrossLanguageFree(ctx, func_name, callee_name, langToString(alloc_lang), free_lang.?, inst, diag);
                 return;
@@ -268,16 +265,10 @@ pub fn checkCrossLanguageFree(
                         // SAME-LANGUAGE MERGE GUARD (Path 2): When src_alloc_lang comes
                         // from name-based classification (e.g., "new" → "cpp") and free_lang
                         // matches the caller module's language, don't report FP.
+                        // Uses isAbiCompatibleAllocFree for C/C++ equivalence.
                         const caller_module_lang = ctx.module_language.language;
                         const free_lang_enum = freeLangToLanguage(free_lang.?);
-                        const is_same_language = switch (free_lang_enum) {
-                            .cpp => caller_module_lang == .cpp or caller_module_lang == .c,
-                            .c => caller_module_lang == .c or caller_module_lang == .cpp,
-                            .rust => caller_module_lang == .rust,
-                            .zig => caller_module_lang == .zig,
-                            .go => caller_module_lang == .go,
-                            else => false,
-                        };
+                        const is_same_language = isAbiCompatibleAllocFree(free_lang_enum, caller_module_lang);
 
                         if (is_same_language) {
                             log.debug("SAME-LANG-MERGE [PATH2]: skipping cross_language_free (alloc={s}, free={s}, module={s}) in {s}", .{
@@ -310,16 +301,32 @@ fn langToString(lang: memory_graph.Language) []const u8 {
 
 /// Convert free_lang string (from classifyFreeLanguage) to Language enum.
 /// Enables enum-vs-enum comparison instead of broken string-vs-string.
+///
+/// IMPORTANT: C++ ("cpp") maps to .cpp (NOT .c). While C and C++ share
+/// the same heap at runtime, we preserve the distinction for accurate
+/// diagnostics. Same-language merge guards handle C/C++ equivalence.
 fn freeLangToLanguage(free_lang: []const u8) memory_graph.Language {
     if (std.mem.eql(u8, free_lang, "rust")) return .rust;
     if (std.mem.eql(u8, free_lang, "c")) return .c;
-    if (std.mem.eql(u8, free_lang, "cpp")) return .c; // C++ uses same heap as C
+    if (std.mem.eql(u8, free_lang, "cpp")) return .cpp; // Keep distinct from .c
     if (std.mem.eql(u8, free_lang, "go")) return .go;
     if (std.mem.eql(u8, free_lang, "java")) return .java;
     if (std.mem.eql(u8, free_lang, "python")) return .python;
-    if (std.mem.eql(u8, free_lang, "csharp")) return .csharp; // .NET P/Invoke
-    if (std.mem.eql(u8, free_lang, "zig")) return .zig; // Zig runtime allocator
+    if (std.mem.eql(u8, free_lang, "csharp")) return .csharp;
+    if (std.mem.eql(u8, free_lang, "zig")) return .zig;
     return .unknown;
+}
+
+/// Check if two languages are ABI-compatible for alloc/free pairing.
+/// C and C++ share the same heap and allocator (malloc/free/new/delete
+/// are interchangeable within a single module). Rust, Go, Zig each have
+/// their own allocators that are NOT interchangeable with C/C++ or each other.
+fn isAbiCompatibleAllocFree(alloc_lang: memory_graph.Language, free_lang: memory_graph.Language) bool {
+    if (alloc_lang == free_lang) return true;
+    // C and C++ share the same ABI/heap — new[]/delete[] pairs are valid
+    if ((alloc_lang == .c and free_lang == .cpp) or
+        (alloc_lang == .cpp and free_lang == .c)) return true;
+    return false;
 }
 
 /// Check for FFI type mismatch via bitcast

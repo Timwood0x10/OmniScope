@@ -82,6 +82,10 @@ pub const PtrInfo = struct {
     /// Whether this alloca is used only for storing function parameters.
     /// If true, it's a "param storage alloca" — safe, not a borrow_escape risk.
     is_param_storage: bool = false,
+    /// Whether this allocation occurs inside a conditional branch (Bug 4 fix).
+    /// If true, the allocation may not execute on all code paths →
+    /// path-insensitive leak detection may produce FP. Reduces confidence.
+    is_conditional_alloc: bool = false,
 };
 
 /// Resource types for lifecycle tracking.
@@ -318,8 +322,18 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     "valloc",          "pvalloc",        "memalign",     "operator new",
     "operator new[]",  "allocImpl",      "mmap",
     // C++ operator new — Itanium ABI mangled names
+    // Scalar: _Znw*, _Znwm (operator new / operator new(unsigned long))
+    // Array:  _Zna*, _Znam (operator new[] / operator new[](unsigned long))
+    // Covers standard + aligned (C++17) + nothrow + placement variants
+    // Substring matching ensures all suffixes are caught (_ZnamSt9align_val_t, etc.)
             "_Znwm",
     "_Znam",           "_Znw",           "_Zna",
+    // C++17 aligned new/delete (double underscore prefix on some platforms)
+            "__Znwm",
+    "__Znam",          "__Znw",          "__Zna",
+    // Bug 3 fix: also catch MSVC-mangled operator new (when cross-compiled to ELF)
+            "?operator new@@",
+    "?operator new[]@@",
     // v0.1.7 FIX: Removed "into_raw" from this list.
     // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
     // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was

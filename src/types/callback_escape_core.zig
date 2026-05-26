@@ -11,6 +11,9 @@ const safe = @import("../ir/llvm_safe.zig");
 const word_boundary = @import("../utils/word_boundary.zig");
 const lang_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 
+const Language = @import("../diag/issue.zig").FFIBoundary.Language;
+const PlatformProfile = @import("../semantics/platform_profile.zig").PlatformProfile;
+
 const cb_types = @import("./callback_escape_types.zig");
 const AllocSiteInfo = cb_types.AllocSiteInfo;
 const FreeSiteInfo = cb_types.FreeSiteInfo;
@@ -50,6 +53,8 @@ pub fn scanInstruction(
     cgo_calls: *std.ArrayList(CGoCallInfo),
     callback_escapes: *std.ArrayList(CallbackEscapeInfo),
     is_go_module: bool,
+    module_lang: Language,
+    platform_profile: ?PlatformProfile,
 ) !void {
     const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -128,7 +133,12 @@ pub fn scanInstruction(
                 const called_name_ptr = c.LLVMGetValueName(called_val);
                 if (@intFromPtr(called_name_ptr) == 0) continue;
                 const called_name = std.mem.span(called_name_ptr);
-                const callee_lang = lang_classifier.identifyCalleeLanguage(called_name);
+                // Use platform-aware classification (Bug 2 fix: Zig vs Go disambiguation)
+                const callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
+                    called_name,
+                    module_lang,
+                    platform_profile,
+                );
                 if (callee_lang != .unknown) {
                     try callback_escapes.append(allocator, .{
                         .inst = user,

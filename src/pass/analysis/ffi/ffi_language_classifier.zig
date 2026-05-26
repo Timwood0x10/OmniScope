@@ -410,6 +410,84 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
     return .c;
 }
 
+/// Platform-aware language classification with Zig/Go disambiguation.
+///
+/// Extends `identifyCalleeLanguage()` by using module-level context
+/// to resolve ambiguities between Zig and Go, which share naming patterns
+/// (`main.*` prefix, camelCase function names).
+///
+/// Disambiguation rules (P2-c / Bug 2 fix):
+///   1. If classifyCalleeLanguage returns .go but module_lang == .zig → .zig
+///      (Zig's main.main entry point looks like Go's main.main)
+///   2. If target triple contains "-none-" (Zig default) and name matches
+///      Go patterns → .zig (Zig-compiled modules use -unknown-none-unknown)
+///   3. Otherwise: delegate to identifyCalleeLanguage unchanged
+///
+/// Parameters:
+///   - func_name: Function name string
+///   - module_lang: The detected language of the containing module (from PassContext)
+///   - profile: Optional platform profile for triple-based disambiguation (can be null)
+pub fn identifyCalleeLanguageWithContext(
+    func_name: []const u8,
+    module_lang: Language,
+    profile: ?PlatformProfile,
+) Language {
+    const base_result = identifyCalleeLanguage(func_name);
+
+    // Only disambiguate when base result is .go — other languages are unambiguous
+    if (base_result != .go) return base_result;
+
+    // RULE 1: Module-level language override.
+    // If the MODULE was detected as Zig (e.g., via __zig_probe_stack presence,
+    // zig-specific FQN patterns like Io.Writer.defaultFlush), then even
+    // "main.*" prefixed functions are Zig, not Go.
+    if (module_lang == .zig) {
+        return .zig;
+    }
+
+    // RULE 2: Target triple based disambiguation.
+    // Zig-compiled modules typically have target triples ending in -none-unknown
+    // or -unknown-none-*, while Go (via llgo/Go LLVM IR) uses different triples.
+    if (profile) |*prof| {
+        const triple = prof.target_triple;
+        if (std.mem.indexOf(u8, triple, "-none-") != null) {
+            return .zig;
+        }
+        if (std.mem.indexOf(u8, triple, "-zig-") != null) {
+            return .zig;
+        }
+    }
+
+    // RULE 3: main.* prefixed functions in a non-Go module → Zig (Bug 2 final fix).
+    //
+    // CRITICAL CONTEXT: combined.bc (linked bitcode) has the C module's triple
+    // (e.g., aarch64-apple-macosx15.7.3-unknown), NOT Zig's -none- triple.
+    // So RULE 2 (-none- check) NEVER fires for linked bitcode files.
+    //
+    // Key insight: Real Go modules ALWAYS produce strong Go detection signals
+    // (runtime.*, syscall.*, _Cgo_*, gcops.*) that make detectModuleLanguage()
+    // return .go with high confidence. If module_lang is .c/.unknown/.cpp despite
+    // seeing "main.*" prefixed functions, those functions are from Zig, not Go.
+    //
+    // Both Zig and Go use "package.function" naming with "main." prefix:
+    //   - Zig: main.main, main.dangerousFFICalls, main.safeFFICalls
+    //   - Go:  main.main, main.foo, runtime.gcstart
+    //
+    // Disambiguation: Go modules have abundant runtime.* signals that make
+    // detectModuleLanguage() return .go. Zig modules lack these signals.
+    //
+    // This rule is safe because:
+    //   - Go modules → detectModuleLanguage() returns .go → RULE 3 skipped
+    //   - Zig modules → detectModuleLanguage() returns .c/.unknown → RULE 3 fires
+    //   - Mixed modules → handled by RULE 1 (module_lang == .zig override)
+    if (std.mem.startsWith(u8, func_name, "main.") and module_lang != .go) {
+        return .zig;
+    }
+
+    // No override applicable — keep original .go classification
+    return base_result;
+}
+
 /// Demangle a Rust mangled name to a readable format.
 ///
 /// Rust uses Itanium-style mangling (`_ZN...E`). This function extracts

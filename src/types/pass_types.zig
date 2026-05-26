@@ -101,6 +101,9 @@ pub const GlobalAllocTracker = struct {
         freed: bool,
         free_func: ?[]const u8,
         is_global_or_static: bool,
+        /// Bug 4: Whether this allocation is inside a conditional branch.
+        /// If true, reduces leak report confidence (may not execute on all paths).
+        is_conditional: bool = false,
     };
 
     allocator: Allocator,
@@ -125,7 +128,7 @@ pub const GlobalAllocTracker = struct {
         self.records_by_ptr.deinit();
     }
 
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32) !void {
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool) !void {
         const name_owned = try self.allocator.dupe(u8, func_name);
         const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
         const idx = @as(u32, @intCast(self.records.items.len));
@@ -136,6 +139,7 @@ pub const GlobalAllocTracker = struct {
             .freed = false,
             .free_func = null,
             .is_global_or_static = is_global,
+            .is_conditional = is_conditional,
         });
         try self.records_by_ptr.put(ptr_val, idx);
     }
