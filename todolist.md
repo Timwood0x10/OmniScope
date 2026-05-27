@@ -614,7 +614,162 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 
 ---
 
-## Phase 16：性能与文件大小控制 (原 Phase 15)
+## Phase 16：Severity Downgrade 机制重设计 ⚡ 当前优先级
+
+> **目标**: 修复 P15 引入的 CRITICAL→LOW 塌缩问题，从根因层面解决 severity 失真。
+> **背景**: `pass_types.zig:536-556` 的 downgrade 逻辑过激；60% 函数 origin=unknown 导致 noise filter 误触发。
+> **状态**: 🟡 进行中（P16-1 工作树已有初版，未提交）。
+> **依赖**: Phase 15 已定位 root cause。
+> **参考**: [P15_DIFF_REPORT.md](./P15_DIFF_REPORT.md)、`docs/REPORT_INTERPRETATION.md`。
+
+### 16.1 P0 修复 — 与 P15_DIFF_REPORT 对齐
+
+**位置**: `src/types/pass_types.zig:536-556`
+
+- [x] **P16-1**：在 `addIssue()` 中新增 `is_core_memory_safety_bug` 白名单：`.use_after_free` `.double_free` `.invalid_free` `.null_dereference` `.buffer_overflow` `.cross_language_free` `.cross_language_leak`（工作树已存在，未提交）
+- [x] **P16-2**：将 `should_downgrade` 改为 `!is_core_memory_safety_bug and switch(...)` 短路（工作树已存在）
+- [ ] **P16-3**：**审查决定 `.memory_leak` 是否保留在白名单**。当前工作树包含 `.memory_leak`，与 P15_DIFF_REPORT 提议不一致。报告 TC9 leak downgrade 标 ⚠️ 非 🔴，建议移除以避免 leak FP 推高 severity 拉低 precision
+- [ ] **P16-4**：补充 doc comment 说明白名单依据（"core memory safety bug 是否真实，由 verifier 决定，不再由 noise filter 决定"）
+- [ ] **P16-5**：`zig build` 验证编译通过（exit code 0）
+- [ ] **P16-6**：`zig fmt --check src/types/pass_types.zig` 验证格式
+- [ ] **P16-7**：手工跑 `corpus/red_team/rust_ffi_bugs.ll`，确认 TC6 (rust_06_double_free_cross) 输出 CRITICAL
+- [ ] **P16-8**：手工跑 `corpus/red_team/cross_lang_free_bugs.ll`，确认 TC1/TC2 输出 HIGH/CRITICAL
+- [ ] **P16-9**：跑完整 red team benchmark（9 个 .ll 文件），记录 CRITICAL/HIGH/MEDIUM/LOW 分布
+- [ ] **P16-10**：验收阈值 — CRITICAL ≥ 4, HIGH ≥ 18, F1 ≥ 0.89；若不达预期回到 16-3 重审 `.memory_leak`
+
+### 16.2 P0.5 防塌缩机制 — 最多降一档
+
+**位置**: `src/types/pass_types.zig:548-556`
+**问题**: 即便 P0 保护了 core memory safety bug，其它 issue kind（如 `borrow_escape` `type_mismatch` `ffi_unsafe_call`）仍可能从 `.critical` 直接塌缩到 `.low`。需要把"塌缩式"改成"渐进式"。
+
+- [ ] **P16-11**：在 `pass_types.zig` 内部新增 helper `fn stepDown(s: DiagSeverity) DiagSeverity` — 映射：`.critical→.high` `.high→.medium` `.medium→.low` `.low→.low`
+- [ ] **P16-12**：新增 helper `fn severityRank(s: DiagSeverity) u8` 或 `fn severityMax(a: DiagSeverity, b: DiagSeverity) DiagSeverity`，用于 severity 比较
+- [ ] **P16-13**：修改 downgrade 实际赋值：`final_issue.severity = max(risk_severity, stepDown(issue.severity))`，确保最多降一档
+- [ ] **P16-14**：在 should_downgrade 上方加 doc comment：说明"最多降一档"语义、动机（防止 unknown origin 触发塌缩）、与 16.1 白名单的关系
+- [ ] **P16-15**：单测：构造 `(.critical, risk=.low)` 输入，期望输出 `.high` 而非 `.low`
+- [ ] **P16-16**：单测：构造 `(.high, risk=.suppressed)` 输入，期望输出 `.medium` 而非 `.low`
+- [ ] **P16-17**：`zig build` + `zig fmt` 验证
+- [ ] **P16-18**：跑全 benchmark，对比 P0 后 vs P0+P0.5 后的 severity 分布
+- [ ] **P16-19**：验收 — CRITICAL/HIGH 数量不下降；LOW 总数应略减（因为 HIGH→LOW 塌缩被拦截）
+- [ ] **P16-20**：跑 `zig build test`，确认无新增 panic/crash
+
+### 16.3 P1 函数来源分类改进
+
+**目标**: 把当前 ~60% "unknown" 比例降到 < 20%，让 noise filter 在合法用户代码上不再误触发。
+**位置**: `classifyFunctionSurface()`、surface classifier 实现文件（待 P16-21 定位）
+
+#### 16.3.1 定位与基线
+
+- [ ] **P16-21**：定位 `classifyFunctionSurface()` 实现入口与 `FunctionOrigin` 枚举定义文件路径
+- [ ] **P16-22**：grep 所有产出 `.unknown` origin 的代码路径，逐条记录触发条件
+- [ ] **P16-23**：在 surface classifier 增加 debug trace（受 `--debug-resource-contract` 控制），打印 `(func_name, debug_path, decision_reason, origin)` 元组
+- [ ] **P16-24**：跑 rust_ffi_bugs.ll，收集 unknown 样本，分类统计："缺 debug info" / "路径不匹配 stdlib pattern" / "其它"
+
+#### 16.3.2 路径启发式
+
+- [ ] **P16-25**：path heuristic — debug info 路径含 `corpus/`、`tests/`、`benches/`、`examples/` → origin = `.user`
+- [ ] **P16-26**：path heuristic — workspace member 路径（`crates/<name>/src/`、`packages/<name>/`）→ origin = `.user`
+- [ ] **P16-27**：保留并强化 stdlib path 判定：`/rustlib/`、`/sysroot/`、`~/.cargo/registry/`、`/usr/include/` → `.stdlib` / `.dep`，确保 16-25/16-26 不会误吃这些路径
+
+#### 16.3.3 FFI boundary fallback
+
+- [ ] **P16-28**：扫描函数体内 FFI boundary call（`extern "C"` import/export、JNI/CFFI/cgo 入口、`_Z*` 符号互调）
+- [ ] **P16-29**：若函数有 FFI boundary call 且 origin 仍是 `.unknown` → 兜底为 `.user`
+- [ ] **P16-30**：在 `Evidence` 中记录该 fallback 的触发原因，确保 trace 可审计
+
+#### 16.3.4 CLI / Bench 集成
+
+- [ ] **P16-31**：在 `src/cli/` 添加 flag `--treat-test-corpus-as-user`（默认 false）
+- [ ] **P16-32**：在 `scripts/`、`benches/` 调用 OmniScope 的入口默认启用该 flag
+- [ ] **P16-33**：在 `--help` 输出与 `docs/zh/USAGE.md`、`docs/en/USAGE.md`（如不存在则新建）记录该 flag 用途
+
+#### 16.3.5 验证
+
+- [ ] **P16-34**：跑 rust_ffi_bugs.ll，确认 debug log 中 unknown 比例 < 20%
+- [ ] **P16-35**：跑全 red team benchmark，确认 CRITICAL/HIGH 数量稳定或上升
+- [ ] **P16-36**：跑真实项目（python-xxhash、zstd-rs、crc32fast），确认 stdlib/dep 函数未被误标为 user（FP 数不上升）
+- [ ] **P16-37**：在 `tests/` 中加单测：`corpus/foo/bar.zig` 路径分类应为 `.user`；`~/.cargo/registry/.../mod.rs` 应为 `.dep`
+
+### 16.4 P2 架构重构 — Severity / Confidence 解耦
+
+> **范围**: 大改动，独立于 16.1/16.2/16.3 提 PR。
+> **预估**: 1-2 周。
+> **依赖**: 16.1/16.2/16.3 完成且 benchmark 稳定一周以上。
+> **目标**: severity 由 `issue.kind` 决定（不可降级）；confidence 由 origin/path/evidence 决定（受 noise filter 影响）。
+
+#### 16.4.1 语义梳理
+
+- [ ] **P16-38**：审计所有 `Issue.init` 调用点（grep `Issue.init(`），记录当前传入的 severity 和 confidence 值
+- [ ] **P16-39**：定义"kind → default severity"映射表，作为 severity 唯一来源（建议放 `src/diag/issue.zig` 或新建 `src/diag/severity_policy.zig`）
+- [ ] **P16-40**：定义 confidence 语义：`[0.0, 1.0]` 浮点，由 origin baseline + verifier evidence 累加调整
+- [ ] **P16-41**：在 `docs/zh/ARCHITECTURE.md` 写入新的 severity/confidence policy（不存在则新建）
+
+#### 16.4.2 noise_filter 重构
+
+- [ ] **P16-42**：`noise_filter.getRiskLevel()` 返回值改为 `ConfidenceAdjustment`（带正负 delta + 解释字符串），不再返回 severity-like enum
+- [ ] **P16-43**：所有调用 `getRiskLevel` 的 site 改为调整 confidence 字段，不再 mutate severity
+- [ ] **P16-44**：删除 `pass_types.zig` 的 `should_downgrade` 块及 16.1/16.2 的过渡补丁（清理）
+- [ ] **P16-45**：删除 `is_core_memory_safety_bug` 白名单（因为不再需要保护机制 — severity 不会被改）
+
+#### 16.4.3 输出层调整
+
+- [ ] **P16-46**：SARIF/JSON 输出按 `(severity, confidence)` 联合排序（severity DESC, confidence DESC）
+- [ ] **P16-47**：report header 按 severity 分组，组内按 confidence 排序
+- [ ] **P16-48**：text report 显式打印 severity 和 confidence 两个字段（如 `[CRITICAL conf=0.82]`）
+- [ ] **P16-49**：SARIF properties 中加 `confidence` 字段（schema 兼容性确认）
+
+#### 16.4.4 兼容性与文档
+
+- [ ] **P16-50**：JSON schema 文档化 `confidence` 字段；如改动现有字段含义则在 CHANGELOG 标 breaking change
+- [ ] **P16-51**：更新 `docs/zh/REPORT_INTERPRETATION.md` 与 `docs/en/REPORT_INTERPRETATION.md`
+- [ ] **P16-52**：CHANGELOG.md / CHANGELOG_zh.md 增加 P16 重构条目
+
+#### 16.4.5 验证
+
+- [ ] **P16-53**：跑全 red team benchmark + 真实项目，确认 severity 分布完全由 kind 决定（即同 kind 在不同函数 origin 下 severity 相同）
+- [ ] **P16-54**：confidence 分布检查 — 同 kind 在 user origin 下 confidence > unknown origin
+- [ ] **P16-55**：与 P16.3 完成后的基线对比，确认 F1 不下降
+
+### 16.5 文档与最终验收
+
+- [ ] **P16-56**：在 `docs/zh/ARCHITECTURE.md`（不存在则新建）记录最终 severity adjustment policy（"kind 决定 severity，origin/evidence 决定 confidence"）
+- [ ] **P16-57**：更新 `EXPECTED_RESULTS.md` 或等价文件中的 baseline 数据
+- [ ] **P16-58**：生成 P16 final benchmark report → `docs/P16_BENCHMARK_REPORT.md`，对比 P14/P15/P16 三阶段数据
+- [ ] **P16-59**：在 CHANGELOG.md / CHANGELOG_zh.md 添加 P16 条目，标明 breaking changes（如有）
+- [ ] **P16-60**：bump VERSION 至 0.2.1（16.1+16.2 完成）或 0.3.0（16.4 重构完成）
+- [ ] **P16-61**：删除 / 归档已过时的 `P15_DIFF_REPORT.md` P0 提议（移到 `docs/history/`）
+
+### 16.6 验收标准（一票否决项）
+
+- [ ] CRITICAL issue 数 ≥ 4（rust_ffi_bugs TC6 双重释放 + cross_lang_free_bugs TC1/TC2）
+- [ ] HIGH issue 数 ≥ 18
+- [ ] F1 score ≥ 0.89
+- [ ] unknown 函数 origin 占比 < 20%（16.3 完成后）
+- [ ] 无 CRITICAL→LOW 塌缩案例（即便 origin=unknown）
+- [ ] 真实项目 FP 数不上升（python-xxhash、zstd-rs、crc32fast、go-sqlite3）
+- [ ] 所有改动通过 `zig build` 与 `zig fmt`
+- [ ] 所有新增 helper / 字段有英文 doc comment 说明决策理由
+- [ ] 受影响的 SARIF/JSON schema 在 `docs/REPORT_INTERPRETATION.md` 中文档化
+
+### 16.7 执行顺序与里程碑
+
+| 里程碑 | 包含任务 | 预期产出 | 验收 |
+|--------|---------|----------|------|
+| M1: P0 落地 | 16.1 (P16-1 ~ P16-10) | severity 不再 CRITICAL→LOW 塌缩（core kinds） | F1 ≥ 0.89 |
+| M2: 防塌缩 | 16.2 (P16-11 ~ P16-20) | 所有 kind 最多降一档 | LOW 总数下降 |
+| M3: 分类修复 | 16.3 (P16-21 ~ P16-37) | unknown < 20% | 真实项目 FP 不上升 |
+| M4: 架构解耦 | 16.4 (P16-38 ~ P16-55) | severity / confidence 完全独立 | breaking change CHANGELOG 完整 |
+| M5: 发布 | 16.5 (P16-56 ~ P16-61) | 文档 + 版本号 | docs/P16_BENCHMARK_REPORT.md 完成 |
+
+**风险与回退策略**:
+
+- M1 / M2 改动 < 50 行，回退成本极低
+- M3 影响 surface classifier，回退方式 — 关闭 `--treat-test-corpus-as-user` flag
+- M4 涉及 schema 改动，必须先打 git tag 备份当前 master；如真实项目 FP 飙升，回退到 M3 + 关闭 confidence 字段输出
+
+---
+
+## Phase 17：性能与文件大小控制 (原 Phase 16)
 
 ### 文件大小原则
 
@@ -624,13 +779,13 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 
 ### 任务
 
-- [ ] 15-1：清点当前 `src/` 下超过 1000 行的文件，逐个建立拆分任务。
-- [ ] 15-2：Resource family 长表拆分为 registry 数据和查询逻辑两个文件。
-- [ ] 15-3：Summary inference 每个结构模式独立小函数或小文件，避免形成新的巨型 suppression 文件。
-- [ ] 15-4：SummaryStore 使用 interning/canonical name id，避免热路径字符串分配。
-- [ ] 15-5：ResourceContractGraph 使用 compact id，不在边上保存大对象。
-- [ ] 15-6：Path-sensitive leak 设置 path budget 和 node budget。
-- [ ] 15-7：对比基线性能：`PointerOwnership init`、`PointerOwnership analysis`、总耗时、峰值内存。
+- [ ] 17-1：清点当前 `src/` 下超过 1000 行的文件，逐个建立拆分任务。
+- [ ] 17-2：Resource family 长表拆分为 registry 数据和查询逻辑两个文件。
+- [ ] 17-3：Summary inference 每个结构模式独立小函数或小文件，避免形成新的巨型 suppression 文件。
+- [ ] 17-4：SummaryStore 使用 interning/canonical name id，避免热路径字符串分配。
+- [ ] 17-5：ResourceContractGraph 使用 compact id，不在边上保存大对象。
+- [ ] 17-6：Path-sensitive leak 设置 path budget 和 node budget。
+- [ ] 17-7：对比基线性能：`PointerOwnership init`、`PointerOwnership analysis`、总耗时、峰值内存。
 
 基线参考：
 
@@ -648,7 +803,7 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 
 ---
 
-## Phase 17：测试矩阵 (原 Phase 16)
+## Phase 18：测试矩阵 (原 Phase 17)
 
 ### 必测边界
 
@@ -660,29 +815,29 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 
 ### 回归样例
 
-- [ ] 16-1：小型 Rust FFI 样例。
-- [ ] 16-2：`Box::into_raw` / `Box::from_raw` 场景。
-- [ ] 16-3：`extern "C" fn` producer 场景。
-- [ ] 16-4：依赖 crate 的 boundary 场景。
-- [ ] 16-5：编译器生成函数的噪声过滤场景。
-- [ ] 16-6：Python C API owned reference + DECREF 场景。
-- [ ] 16-7：Rust Drop + C free RAII 场景。
-- [ ] 16-8：slice/ref → raw pointer bridge helper 场景。
-- [ ] 16-9：C++ `new[]` / `delete[]` 和 `malloc` / `delete[]` 场景。
-- [ ] 16-10：JNI local/global ref mismatch 场景。
-- [ ] 16-11：C# HGlobal / CoTaskMem mismatch 场景。
-- [ ] 16-12：out-param、return-owned、field-store、global-store escape 场景。
-- [ ] 16-13：FFT conditional leak error path 场景。
-- [ ] 16-14：SIMD intrinsic crash regression。
-- [ ] 16-15：非指针返回值 type guard regression。
+- [ ] 18-1：小型 Rust FFI 样例。
+- [ ] 18-2：`Box::into_raw` / `Box::from_raw` 场景。
+- [ ] 18-3：`extern "C" fn` producer 场景。
+- [ ] 18-4：依赖 crate 的 boundary 场景。
+- [ ] 18-5：编译器生成函数的噪声过滤场景。
+- [ ] 18-6：Python C API owned reference + DECREF 场景。
+- [ ] 18-7：Rust Drop + C free RAII 场景。
+- [ ] 18-8：slice/ref → raw pointer bridge helper 场景。
+- [ ] 18-9：C++ `new[]` / `delete[]` 和 `malloc` / `delete[]` 场景。
+- [ ] 18-10：JNI local/global ref mismatch 场景。
+- [ ] 18-11：C# HGlobal / CoTaskMem mismatch 场景。
+- [ ] 18-12：out-param、return-owned、field-store、global-store escape 场景。
+- [ ] 18-13：FFT conditional leak error path 场景。
+- [ ] 18-14：SIMD intrinsic crash regression。
+- [ ] 18-15：非指针返回值 type guard regression。
 
 ### 真实项目验收
 
-- [ ] 16-16：`python-xxhash`：Python same-family FP 应降为 0 或 explained/diagnostic。
-- [ ] 16-17：`zstd-rs`：Drop RAII 与 bridge helper FP 应降为 0 或 explained/diagnostic。
-- [ ] 16-18：`crc32fast`：不 crash。
-- [ ] 16-19：`go-sqlite3` C bridge：不因 Go/cgo 限制误杀 C bridge boundary。
-- [ ] 16-20：ffi-demo FFT：conditional leak 至少 MEDIUM。
+- [ ] 18-16：`python-xxhash`：Python same-family FP 应降为 0 或 explained/diagnostic。
+- [ ] 18-17：`zstd-rs`：Drop RAII 与 bridge helper FP 应降为 0 或 explained/diagnostic。
+- [ ] 18-18：`crc32fast`：不 crash。
+- [ ] 18-19：`go-sqlite3` C bridge：不因 Go/cgo 限制误杀 C bridge boundary。
+- [ ] 18-20：ffi-demo FFT：conditional leak 至少 MEDIUM。
 
 ---
 

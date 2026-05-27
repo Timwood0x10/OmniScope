@@ -34,8 +34,6 @@ const classifyAllocLanguage = @import("ptr_lifetime_classify.zig").classifyAlloc
 const classifyAllocLanguageEnum = @import("ptr_lifetime_classify.zig").classifyAllocLanguageEnum;
 const classifyFreeLanguage = @import("ptr_lifetime_classify.zig").classifyFreeLanguage;
 
-// P16-2b: Split out FFI-specific checks to keep file < 1000 lines
-const ffi_checks = @import("ptr_lifetime_ffi_checks.zig");
 const report = @import("ptr_lifetime_report.zig");
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const word_boundary = @import("../../../utils/word_boundary.zig");
@@ -399,11 +397,6 @@ fn isAbiCompatibleAllocFree(alloc_lang: memory_graph.Language, free_lang: memory
         (alloc_lang == .cpp and free_lang == .c)) return true;
     return false;
 }
-
-// P16-2b: FFI-specific checks moved to ptr_lifetime_ffi_checks.zig
-// Re-exported here for backward compatibility
-pub const checkFFITypeMismatch = ffi_checks.checkFFITypeMismatch;
-pub const checkFFIReturnNullGuard = ffi_checks.checkFFIReturnNullGuard;
 
 /// Check return violations
 pub fn checkReturnViolation(
@@ -972,9 +965,11 @@ pub fn checkViolations(
     if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
         try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);
         try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats, lifetime_map);
-        try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
+        // TODO: P16-2b restore checkFFIReturnNullGuard after fixing import errors
+        // try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
         try checkCrossLanguageFree(ctx, inst, func_name, pointer_map, mem_graph, diag, stats);
-        try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);
+        // TODO: P16-2b restore checkFFITypeMismatch after fixing import errors
+        // try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);
     }
 
     if (opcode == c.LLVMRet) {

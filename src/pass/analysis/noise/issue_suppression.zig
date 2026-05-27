@@ -142,35 +142,46 @@ pub fn shouldSuppressWithProfile(
         return false;
     }
 
-    if (isRustDropChainLeak(issue)) {
-        log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
-        return true;
-    }
+    // P16-3: Patterns A-F deprecated — replaced by Resource Contract Graph system:
+    //   - Pattern A (Rust Drop) → summary_inference.zig inferDestructorLikeSummary()
+    //   - Pattern B (Static) → family_registry.zig + EscapeKind.static_lifetime
+    //   - Pattern C (Panic cleanup) → OwnershipStateSolver.conditional_release
+    //   - Pattern D (OS API) → PlatformFilter + FFI boundary classification
+    //   - Pattern E (Safe example) → CandidateBuilder scoring (BONUS_FFI_BOUNDARY)
+    //   - Pattern F (Defensive coding) → IssueVerifier structural pattern inference
+    //
+    // Kept as comments for reference until all call sites fully migrated.
+    // TODO: Remove these comment blocks in P17 after regression validation.
 
-    if (isStaticProvenanceEscape(issue)) {
-        log.debug("[SUPPRESS-STATIC] {s}: Static/code provenance", .{issue.location.func});
-        return true;
-    }
-
-    if (isPanicCleanupDoubleFree(issue)) {
-        log.debug("[SUPPRESS-PANIC] {s}: Panic cleanup double-free", .{issue.location.func});
-        return true;
-    }
-
-    if (isOsApiStandardUsage(issue)) {
-        log.debug("[SUPPRESS-OSAPI] {s}: OS API standard usage", .{issue.location.func});
-        return true;
-    }
-
-    if (isSafeExampleFunction(issue)) {
-        log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
-        return true;
-    }
-
-    if (isDefensiveCodingPattern(issue)) {
-        log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
-        return true;
-    }
+    // if (isRustDropChainLeak(issue)) {
+    //     log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
+    //     return true;
+    // }
+    //
+    // if (isStaticProvenanceEscape(issue)) {
+    //     log.debug("[SUPPRESS-STATIC] {s}: Static/code provenance", .{issue.location.func});
+    //     return true;
+    // }
+    //
+    // if (isPanicCleanupDoubleFree(issue)) {
+    //     log.debug("[SUPPRESS-PANIC] {s}: Panic cleanup double-free", .{issue.location.func});
+    //     return true;
+    // }
+    //
+    // if (isOsApiStandardUsage(issue)) {
+    //     log.debug("[SUPPRESS-OSAPI] {s}: OS API standard usage", .{issue.location.func});
+    //     return true;
+    // }
+    //
+    // if (isSafeExampleFunction(issue)) {
+    //     log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
+    //     return true;
+    // }
+    //
+    // if (isDefensiveCodingPattern(issue)) {
+    //     log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
+    //     return true;
+    // }
 
     // Pattern G: Stdlib internal function (language runtime / standard library)
     //
