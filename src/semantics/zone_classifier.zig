@@ -2,24 +2,19 @@
 //!
 //! Core principle: Analyze only where language guarantees stop.
 //!
-//! Safe Zone (default trusted):
-//! - Rust: safe fn, Vec/String normal use, borrow checker constraints
-//! - Zig: normal slice/allocator idiom, defer/errdefer paths
-//! - Go: non-cgo, normal GC objects
-//! - C++: RAII container internals
-//!
-//! Escape Zone (focus analysis):
-//! - Rust: unsafe block, extern "C", raw pointer, transmute
-//! - Zig: @ptrCast, @intToPtr, @cImport, extern fn
-//! - Go: cgo, unsafe.Pointer, uintptr tricks
-//! - C++: extern C, reinterpret_cast, manual malloc/free
+//! This is the main entry point for zone classification. Language-specific
+//! classifiers are delegated to submodules:
+//!   - zone_lang_rust.zig  → Rust classification
+//!   - zone_lang_zig.zig   → Zig classification
+//!   - zone_lang_go.zig    → Go classification
+//!   - zone_lang_cpp.zig   → C/C++ classification
+//!   - zone_llvm_path.zig  → LLVM debug path classification
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
-const debug_info = @import("../ir/debug_info.zig");
 const FFIBoundary = @import("../diag/issue.zig").FFIBoundary;
-const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 pub const Language = FFIBoundary.Language;
+
 const zone_types = @import("../types/zone_types.zig");
 pub const ZoneKind = zone_types.ZoneKind;
 pub const EscapeTrigger = zone_types.EscapeTrigger;
@@ -35,11 +30,36 @@ pub const CPP_ESCAPE_PATTERNS = zone_types.CPP_ESCAPE_PATTERNS;
 pub const C_ESCAPE_PATTERNS = zone_types.C_ESCAPE_PATTERNS;
 
 const language_detector = @import("language_detector.zig");
-const LanguageProfile = language_detector.LanguageProfile;
+pub const LanguageProfile = language_detector.LanguageProfile;
+const lang_detectors = @import("zone_lang_detectors.zig");
 
-// C5 FIX: Add thread-local cache for classifyFunction results
-// This is a pure function that was being called repeatedly with the same inputs
-// Cache size: 1024 entries (covers most common function patterns)
+// Re-export language detection functions for backward compatibility
+pub const isRustFunction = lang_detectors.isRustFunction;
+pub const isZigFunction = lang_detectors.isZigFunction;
+pub const isGoFunction = lang_detectors.isGoFunction;
+pub const isCppFunction = lang_detectors.isCppFunction;
+pub const isCFunction = lang_detectors.isCFunction;
+pub const classifyCFunction = lang_detectors.classifyCFunction;
+
+// Import language-specific classifiers
+const rust_classifier = @import("zone_lang_rust.zig");
+const zig_classifier = @import("zone_lang_zig.zig");
+const go_classifier = @import("zone_lang_go.zig");
+const cpp_classifier = @import("zone_lang_cpp.zig");
+const llvm_path = @import("zone_llvm_path.zig");
+
+// Re-export classifier functions
+pub const classifyRustFunction = rust_classifier.classifyRustFunction;
+pub const classifyZigFunction = zig_classifier.classifyZigFunction;
+pub const classifyGoFunction = go_classifier.classifyGoFunction;
+pub const classifyCppFunction = cpp_classifier.classifyCppFunction;
+pub const isGoRuntimeInternal = go_classifier.isGoRuntimeInternal;
+pub const isCppStlInternal = cpp_classifier.isCppStlInternal;
+pub const isCppOperatorNewDelete = cpp_classifier.isCppOperatorNewDelete;
+pub const isLibcFunction = cpp_classifier.isLibcFunction;
+pub const isLikelyRuntimeInternal = cpp_classifier.isLikelyRuntimeInternal;
+pub const classifyBySubprogramPath = llvm_path.classifyBySubprogramPath;
+
 const CacheSize = 1024;
 threadlocal var classify_cache: ?std.AutoHashMap(usize, ZoneKind) = null;
 
@@ -58,25 +78,14 @@ pub fn deinitCache() void {
     }
 }
 
-/// Classify a function name into zone kind.
-///
-/// Arguments:
-///   func_name - The function name to classify
-///   lang - The source language (if known)
-///
-/// Returns:
-///   ZoneKind classification
 fn isAlphaNumeric(ch: u8) bool {
-    // ASCII alphanumeric check (UTF-8 bytes outside ASCII range are non-alphanumeric)
-    // This is conservative: multi-byte UTF-8 chars (ch > 127) return false,
-    // which is safe because we only care about ASCII separators/punctuation.
     return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9');
 }
 
+/// Classify a function name into zone kind.
 pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
     if (func_name.len == 0) return .unknown;
 
-    // C5 FIX: Check cache first (use pointer as key to avoid string allocation)
     const name_ptr = @intFromPtr(func_name.ptr);
     if (classify_cache) |*cache| {
         if (cache.get(name_ptr)) |cached_result| {
@@ -84,24 +93,16 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         }
     }
 
-    // LLVM intrinsics (llvm.* prefix) are always runtime_internal.
-    // Check this before language-specific patterns to prevent misclassification
-    // (e.g., llvm.threadlocal.address.p0 matching "threadlocal" zig_allocator).
     if (std.mem.startsWith(u8, func_name, "llvm.")) {
         return .runtime_internal;
     }
 
-    // Compiler FORTIFY_SOURCE functions (__*_chk suffix) are runtime-internal.
-    // These are auto-inserted by -D_FORTIFY_SOURCE=2 and indicate the code is
-    // MORE safe (bounds-checked), not less. Examples: __memcpy_chk, __strcpy_chk,
-    // __snprintf_chk, __memmove_chk, __printf_chk, __fprintf_chk.
     if (std.mem.endsWith(u8, func_name, "_chk")) {
         return .runtime_internal;
     }
 
     var result: ZoneKind = undefined;
 
-    // Check language-specific patterns
     if (lang) |l| {
         result = switch (l) {
             .rust => classifyRustFunction(func_name),
@@ -111,11 +112,6 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
             else => .unknown,
         };
     } else {
-        // Auto-detect language from patterns
-        // P0 FIX: Check __rust_ prefix BEFORE Rust mangled name patterns.
-        // __rust_dealloc/__rust_alloc/__rust_realloc are Rust compiler intrinsics
-        // that don't have _ZN/_R prefixes and would otherwise be misclassified
-        // as C/C++ functions, causing false positives in FFIBoundary analysis.
         if (std.mem.startsWith(u8, func_name, "__rust_") or
             std.mem.startsWith(u8, func_name, "__rdl_") or
             std.mem.startsWith(u8, func_name, "__rg_"))
@@ -136,7 +132,6 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
         }
     }
 
-    // C5 FIX: Cache the result using pointer as key
     if (classify_cache) |*cache| {
         if (cache.count() < CacheSize) {
             cache.put(name_ptr, result) catch {};
@@ -147,16 +142,6 @@ pub fn classifyFunction(func_name: []const u8, lang: ?Language) ZoneKind {
 }
 
 /// Evidence-driven zone classification using module-level language detection.
-///
-/// T4.1 Enhancement: Uses LanguageProfile (from language_detector) to select
-/// language-specific rule subsets, improving accuracy for mangled names.
-///
-/// Key improvements over classifyFunction():
-///   1. C++ STL internal helpers (_ZNSt*) → .safe (was .unknown/.unsafe)
-///   2. Rust compiler intrinsics (__rust_*) → .runtime_internal (consistent)
-///   3. C stdlib functions → .safe when in C module context
-///
-/// Fallback: If evidence is null, delegates to original classifyFunction().
 pub fn classifyFunctionWithEvidence(
     func_name: []const u8,
     lang: ?Language,
@@ -185,13 +170,11 @@ fn classifyWithEvidence(
         .rust => {
             log.debug("Rust module: applying Rust-aware rules for {s}", .{func_name});
 
-            // Rust module: _ZN* and __rust_* are safe/compiler-generated
             if (std.mem.startsWith(u8, func_name, "_ZN") or
                 std.mem.startsWith(u8, func_name, "__rust_") or
                 std.mem.startsWith(u8, func_name, "__rdl_") or
                 std.mem.startswith(u8, func_name, "__rg_"))
             {
-                // Check for Rust allocator intrinsics → runtime_internal
                 const rust_alloc_patterns = [_][]const u8{
                     "__rust_dealloc",      "__rust_alloc",  "__rust_realloc",
                     "__rust_alloc_zeroed", "__rdl_dealloc", "__rdl_alloc",
@@ -203,7 +186,6 @@ fn classifyWithEvidence(
                         return .runtime_internal;
                     }
                 }
-                // Other _ZN* in Rust modules are stdlib/user code → safe or unknown
                 if (std.mem.startsWith(u8, func_name, "_ZN4core") or
                     std.mem.startsWith(u8, func_name, "_ZN5alloc") or
                     std.mem.startsWith(u8, func_name, "_ZN3std"))
@@ -212,39 +194,32 @@ fn classifyWithEvidence(
                 }
             }
 
-            // extern "C" wrappers in Rust → unsafe (FFI boundary)
             if (std.mem.indexOf(u8, func_name, "extern") != null) {
                 return .ffi;
             }
 
-            // Delegate to standard Rust classifier for escape pattern detection
             return classifyRustFunction(func_name);
         },
         .cpp => {
             log.debug("C++ module: applying C++-aware rules for {s}", .{func_name});
 
-            // C++ module: _ZSt* (std) and _ZNSt* (STL internals) → safe
             if (isCppStlInternal(func_name)) {
                 return .safe;
             }
 
-            // operator new/delete → safe (RAII-managed)
             if (isCppOperatorNewDelete(func_name)) {
                 return .safe;
             }
 
-            // Delegate to standard C++ classifier for user code analysis
             return classifyCppFunction(func_name);
         },
         .c => {
             log.debug("C module: applying C-aware rules for {s}", .{func_name});
 
-            // C module: known libc functions → safe
             if (isLibcFunction(func_name)) {
                 return .safe;
             }
 
-            // Delegate to standard C classifier for user code
             return classifyCFunction(func_name);
         },
         else => {
@@ -254,100 +229,21 @@ fn classifyWithEvidence(
     }
 }
 
-/// Check if function name is a C++ STL internal helper (_ZNSt*).
-///
-/// These are Itanium-mangled names from the C++ standard library:
-///   - _ZNSt6vector* → std::vector methods
-///   - _ZNSt3map* → std::map methods
-///   - _ZNSt6string* → std::string methods
-///   - _ZSt* → STL algorithm functions (e.g., std::sort)
-fn isCppStlInternal(func_name: []const u8) bool {
-    // _ZNSt* prefix: STL class method (Itanium mangling)
-    if (std.mem.startsWith(u8, func_name, "_ZNSt")) {
-        return true;
-    }
-
-    // _ZSt* prefix: STL standalone function (e.g., _ZSt4sort)
-    if (std.mem.startsWith(u8, func_name, "_ZSt")) {
-        return true;
-    }
-
-    return false;
-}
-
-/// Check if function is C++ operator new/delete (RAII-managed memory).
-fn isCppOperatorNewDelete(func_name: []const u8) bool {
-    const operators = [_][]const u8{
-        "_Znwm", // operator new
-        "_Znam", // operator new[]
-        "_ZdlPv", // operator delete
-        "_ZdaPv", // operator delete[]
-        "_ZnwmRKSt9nothrow_t", // operator new (nothrow)
-        "_ZnamRKSt9nothrow_t", // operator new[] (nothrow)
-    };
-
-    for (operators) |op| {
-        if (std.mem.startsWith(u8, func_name, op)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/// Check if function is a known libc/C standard library function.
-fn isLibcFunction(func_name: []const u8) bool {
-    const libc_prefixes = [_][]const u8{
-        "memcpy",  "memmove",  "memset", "memcmp",  "memchr",
-        "strcpy",  "strncpy",  "strcat", "strncat", "strlen",
-        "strcmp",  "strncmp",  "strchr", "strrchr", "strstr",
-        "sprintf", "snprintf", "printf", "fprintf", "vprintf",
-        "atoi",    "atol",     "atof",   "strtol",  "strtod",
-        "strtoul", "abs",      "labs",   "fabs",    "ceil",
-        "floor",   "round",    "qsort",  "bsearch",
-    };
-
-    for (libc_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, func_name, prefix)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 /// Classify a function using LLVM metadata (more precise than string matching).
-///
-/// Uses LLVM API to check (in priority order):
-///   1. IsDeclaration: external declarations are typically library/runtime code
-///   2. Linkage type: internal linkage = user code, external = library
-///   3. IntrinsicID: compiler intrinsics should be skipped
-///   4. Subprogram debug info path: source file location for stdlib detection
-///   5. String-based fallback: name pattern matching
 pub fn classifyFunctionFromLLVM(
     func: c.LLVMValueRef,
     func_name: []const u8,
 ) ZoneKind {
-    // Check if it's a declaration (external, no definition)
     if (c.LLVMIsDeclaration(func) != 0) {
-        // Declarations are typically runtime/library functions
-        // But some may be user-defined extern functions
         const linkage = c.LLVMGetLinkage(func);
 
-        // External linkage + declaration = likely runtime/library
         if (linkage == c.LLVMExternalLinkage or
             linkage == c.LLVMExternalWeakLinkage or
             linkage == c.LLVMCommonLinkage)
         {
-            // Further check if it looks like user FFI vs stdlib
             if (isLikelyRuntimeInternal(func_name)) {
                 return .runtime_internal;
             }
-            // P1 FIX: Rust allocator intrinsics embedded in mangled names.
-            // E.g., _RNvCsfLfy6EI15iL_7___rustc14___rust_dealloc is a compiler-
-            // generated shim for the global allocator, NOT an FFI boundary.
-            // isLikelyRuntimeInternal uses startsWith("__rust_") which misses
-            // these because they start with _R. Must use indexOf for substring.
             const rust_alloc_patterns = [_][]const u8{
                 "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
                 "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
@@ -358,764 +254,26 @@ pub fn classifyFunctionFromLLVM(
                     return .runtime_internal;
                 }
             }
-            return .ffi; // External declarations are FFI boundaries
+            return .ffi;
         }
 
-        // Internal/private declarations = likely user code
         return .unknown;
     }
 
-    // Check for compiler intrinsics using intrinsic ID
     const intrinsic_id = c.LLVMGetIntrinsicID(func);
     if (intrinsic_id != 0) {
-        return .runtime_internal; // All intrinsics are safe
+        return .runtime_internal;
     }
 
-    // Layer 4: Use LLVM subprogram debug metadata for source-path-based classification
-    // This is more accurate than string matching because it uses actual source locations
     if (classifyBySubprogramPath(func)) |zone| {
         return zone;
     }
 
-    // For defined functions, use string-based classification as fallback
-    // But first check for LLVM intrinsic prefix — llvm.* functions
-    // are compiler-generated intrinsics, not user code or language allocators.
-    // This prevents misclassification like llvm.threadlocal.address.p0
-    // being classified as zig_allocator (via "threadlocal" contains match).
     if (std.mem.startsWith(u8, func_name, "llvm.")) {
         return .runtime_internal;
     }
 
     return classifyFunction(func_name, null);
-}
-
-/// Classify a function by its LLVM DISubprogram debug metadata source path.
-///
-/// Checks the source file location from debug info to determine if the function
-/// comes from standard library vs user code. This is significantly more accurate
-/// than name-based heuristics, especially for mangled names (Rust _ZN*, C++ _Z*).
-///
-/// Returns:
-///   ZoneKind if classification succeeded via debug path, null otherwise
-fn classifyBySubprogramPath(func: c.LLVMValueRef) ?ZoneKind {
-    const subprogram = debug_info.DebugInfoUtils.getFunctionSubprogram(func) orelse return null;
-
-    // Use the same approach as ffi_boundary.extractDebugFilePath (verified working)
-    const file_ref = c.LLVMDIScopeGetFile(subprogram.raw);
-    if (@intFromPtr(file_ref) == 0) return null;
-
-    var filename_len: c_uint = undefined;
-    const filename_ptr = c.LLVMDIFileGetFilename(file_ref, &filename_len);
-    if (@intFromPtr(filename_ptr) == 0 or filename_len == 0) return null;
-
-    const max_path_len: c_uint = 4096;
-    if (filename_len > max_path_len) return null;
-    if (filename_ptr[0] == 0) return null;
-
-    const filename = filename_ptr[0..filename_len];
-
-    // Rust standard library paths → runtime_internal (skip analysis)
-    const rust_stdlib_paths = [_][]const u8{
-        "/rustc/",         "/.rustup/",        "/rustlib/",
-        "library/core/",   "library/alloc/",   "library/std/",
-        "/src/libcore/",   "/src/liballoc/",   "/src/libstd/",
-        "cargo/registry/", ".cargo/registry/",
-    };
-    for (rust_stdlib_paths) |pat| {
-        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
-    }
-
-    // Zig standard library paths → runtime_internal
-    const zig_stdlib_paths = [_][]const u8{
-        "/zig/lib/std/", "/zig/lib/builtin/",
-        "lib/std/",      "lib/builtin/",
-    };
-    for (zig_stdlib_paths) |pat| {
-        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
-    }
-
-    // Go runtime paths → runtime_internal
-    const go_runtime_paths = [_][]const u8{
-        "/usr/local/go/src/runtime/", "/go/src/runtime/",
-        "go/src/runtime/",            "_cgo_gotypes.go",
-    };
-    for (go_runtime_paths) |pat| {
-        if (std.mem.indexOf(u8, filename, pat) != null) return .runtime_internal;
-    }
-
-    // C/C++ system header paths → safe
-    // NOTE: "/include/" alone is too broad (matches user project headers).
-    // Only match known system include paths where headers are trusted.
-    const system_paths = [_][]const u8{
-        "/usr/include/", "/usr/local/include/",
-        "/sysroot/",     "/llvm-project/",
-        "/libcxx/",
-    };
-    for (system_paths) |pat| {
-        if (std.mem.indexOf(u8, filename, pat) != null) return .safe;
-    }
-
-    // CGo generated files → runtime_internal (compiler-generated glue)
-    if (std.mem.indexOf(u8, filename, "_cgo_") != null) return .runtime_internal;
-
-    return null; // No match — fall through to string-based classification
-}
-
-/// Check if function name looks like runtime internal code.
-fn isLikelyRuntimeInternal(name: []const u8) bool {
-    // Rust standard library patterns
-    const rust_stdlib_patterns = [_][]const u8{
-        "_ZN4core",      "_ZN5alloc", "_ZN3std",
-        "llvm.",         "__rust_",   "__cg",
-        // Drop glue, panic, etc.
-        "drop_in_place", "panic_",
-    };
-
-    for (rust_stdlib_patterns) |pat| {
-        if (std.mem.startsWith(u8, name, pat)) return true;
-    }
-
-    // P1 FIX: Rust allocator intrinsics can appear as substrings in mangled names.
-    // E.g., _RNv...__rust_dealloc is a compiler shim, not user FFI code.
-    // startsWith("__rust_") misses these because the prefix is _R, not __rust.
-    const rust_alloc_substrings = [_][]const u8{
-        "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
-        "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
-        "__rg_alloc",     "__rg_realloc",
-    };
-    for (rust_alloc_substrings) |pat| {
-        if (std.mem.indexOf(u8, name, pat) != null) return true;
-    }
-
-    // Go runtime patterns (fine-grained classification)
-    // Beyond basic prefixes, detect specific Go runtime internal categories
-    // to ensure they are classified as .runtime_internal (not .unknown/.unsafe).
-    const go_runtime_patterns = [_][]const u8{
-        "runtime.",            "_cgo_",              "crosscall2",
-        "__go_",               "__gcc_",
-        // GC internals
-                    "runtime.gc",
-        "runtime.mallocgc",    "runtime.scanobject", "runtime.markroot",
-        "runtime.sweep",       "runtime.scanstack",
-        // Scheduler
-         "runtime.schedule",
-        "runtime.park",        "runtime.wake",       "runtime.stopm",
-        "runtime.startm",      "runtime.handoffp",
-        // Channel operations
-          "runtime.chan",
-        "runtime.select",
-        // Interface conversions
-             "runtime.interface",  "runtime.assertI2I",
-        "runtime.assertE2I",   "runtime.convI2E",
-        // Map operations
-           "runtime.mapaccess",
-        "runtime.mapassign",   "runtime.mapdelete",  "runtime.mapiter",
-        // Goroutine lifecycle
-        "runtime.newproc",     "runtime.goexit",     "runtime.systemstack",
-        "runtime.morestack",   "runtime.lessstack",
-        // Defer mechanism
-         "runtime.defer",
-        "runtime.deferreturn",
-        // Reflect package
-        "reflect.",
-    };
-
-    for (go_runtime_patterns) |pat| {
-        if (std.mem.startsWith(u8, name, pat)) return true;
-    }
-
-    // C/C++ standard library patterns
-    const cc_stdlib_patterns = [_][]const u8{
-        "__gnu_cxx",              "__cxa_",
-        "__clang_call_terminate", "llvm.",
-    };
-
-    for (cc_stdlib_patterns) |pat| {
-        if (std.mem.indexOf(u8, name, pat) != null) return true;
-    }
-
-    return false;
-}
-
-/// Classify a Rust function.
-fn classifyRustFunction(func_name: []const u8) ZoneKind {
-    // P0 FIX: Rust global allocator intrinsics are runtime internal.
-    // These appear as _RNv...__rust_dealloc or __rust_dealloc in LLVM IR.
-    // They are compiler-generated shims, NOT FFI boundaries.
-    // Without this check, they are classified as .unknown and generate
-    // false "FFI unsafe call" and "invalid free" reports.
-    const rust_allocator_patterns = [_][]const u8{
-        "__rust_dealloc", "__rust_alloc", "__rust_realloc", "__rust_alloc_zeroed",
-        "__rdl_dealloc",  "__rdl_alloc",  "__rdl_realloc",  "__rg_dealloc",
-        "__rg_alloc",     "__rg_realloc",
-    };
-    for (rust_allocator_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .runtime_internal;
-        }
-    }
-
-    // Check escape triggers first
-    for (RUST_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .unsafe;
-        }
-    }
-
-    // Check for runtime internal (core/alloc/std stdlib)
-    if (std.mem.startsWith(u8, func_name, "_ZN4core") or
-        std.mem.startsWith(u8, func_name, "_ZN5alloc") or
-        std.mem.startsWith(u8, func_name, "_ZN3std"))
-    {
-        return .runtime_internal;
-    }
-
-    // Check safe patterns
-    for (RUST_SAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .safe;
-        }
-    }
-
-    // Check for extern C
-    if (std.mem.indexOf(u8, func_name, "extern") != null) {
-        return .ffi;
-    }
-
-    // Default: user Rust code classification (v0.1.7 relaxed).
-    // Old behavior: all user Rust functions → .safe (overly conservative, blocks FFI analysis).
-    // New behavior: use .unknown to let downstream passes (isRustFFIRelevantFunction,
-    // DangerSurface, etc.) make the final decision based on IR-level analysis.
-    // This fixes the "three-layer break" where zone gate filtered ALL Rust functions.
-    // Note: This function is only called when isRustFunction() returns true,
-    // so _ZN here is guaranteed to be Rust (not C++).
-    if (std.mem.startsWith(u8, func_name, "_ZN") or
-        std.mem.startsWith(u8, func_name, "_R"))
-    {
-        return .unknown;
-    }
-
-    return .unknown;
-}
-
-/// Classify a Zig function.
-fn classifyZigFunction(func_name: []const u8) ZoneKind {
-    for (ZIG_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .unsafe;
-        }
-    }
-
-    for (ZIG_SAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .safe;
-        }
-    }
-
-    if (std.mem.indexOf(u8, func_name, "extern") != null) {
-        return .ffi;
-    }
-
-    return .unknown;
-}
-
-/// Classify a Go function.
-fn classifyGoFunction(func_name: []const u8) ZoneKind {
-    // Go runtime internal functions → .runtime_internal (safe, skip analysis)
-    // These are compiler-generated runtime support functions, not user code.
-    // They should never be classified as .unsafe or .ffi.
-    if (isGoRuntimeInternal(func_name)) {
-        return .runtime_internal;
-    }
-
-    for (GO_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .unsafe;
-        }
-    }
-
-    for (GO_SAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .safe;
-        }
-    }
-
-    if (std.mem.indexOf(u8, func_name, "C.") != null) {
-        return .ffi;
-    }
-
-    return .unknown;
-}
-
-/// Check if function is a Go runtime internal function.
-///
-/// These are fine-grained patterns for specific Go runtime subsystems:
-///   GC: gc*, mallocgc, scanobject, markroot, sweep, scanstack
-///   Scheduler: schedule*, park*, wake*, stopm, startm, handoffp
-///   Channel: chan*, select*
-///   Interface: interface*, assertI2I*, assertE2I*, convI2E*
-///   Map: mapaccess*, mapassign*, mapdelete*, mapiter*
-///   Goroutine: newproc*, goexit*, systemstack*, morestack*, lessstack*
-///   Defer: defer*, deferreturn
-fn isGoRuntimeInternal(func_name: []const u8) bool {
-    if (!std.mem.startsWith(u8, func_name, "runtime.")) return false;
-
-    const rest = func_name["runtime.".len..];
-
-    // GC internals
-    if (std.mem.startsWith(u8, rest, "gc") or
-        std.mem.startsWith(u8, rest, "mallocgc") or
-        std.mem.startsWith(u8, rest, "scanobject") or
-        std.mem.startsWith(u8, rest, "markroot") or
-        std.mem.startsWith(u8, rest, "sweep") or
-        std.mem.startsWith(u8, rest, "scanstack"))
-    {
-        return true;
-    }
-
-    // Scheduler
-    if (std.mem.startsWith(u8, rest, "schedule") or
-        std.mem.startsWith(u8, rest, "park") or
-        std.mem.startsWith(u8, rest, "wake") or
-        std.mem.startsWith(u8, rest, "stopm") or
-        std.mem.startsWith(u8, rest, "startm") or
-        std.mem.startsWith(u8, rest, "handoffp"))
-    {
-        return true;
-    }
-
-    // Channel operations
-    if (std.mem.startsWith(u8, rest, "chan") or
-        std.mem.startsWith(u8, rest, "select"))
-    {
-        return true;
-    }
-
-    // Interface conversions
-    if (std.mem.startsWith(u8, rest, "interface") or
-        std.mem.startsWith(u8, rest, "assertI2I") or
-        std.mem.startsWith(u8, rest, "assertE2I") or
-        std.mem.startsWith(u8, rest, "convI2E"))
-    {
-        return true;
-    }
-
-    // Map operations
-    if (std.mem.startsWith(u8, rest, "mapaccess") or
-        std.mem.startsWith(u8, rest, "mapassign") or
-        std.mem.startsWith(u8, rest, "mapdelete") or
-        std.mem.startsWith(u8, rest, "mapiter"))
-    {
-        return true;
-    }
-
-    // Goroutine lifecycle
-    if (std.mem.startsWith(u8, rest, "newproc") or
-        std.mem.startsWith(u8, rest, "goexit") or
-        std.mem.startsWith(u8, rest, "systemstack") or
-        std.mem.startsWith(u8, rest, "morestack") or
-        std.mem.startsWith(u8, rest, "lessstack"))
-    {
-        return true;
-    }
-
-    // Defer mechanism
-    if (std.mem.startsWith(u8, rest, "defer")) {
-        return true;
-    }
-
-    return false;
-}
-
-/// Classify a C++ function.
-fn classifyCppFunction(func_name: []const u8) ZoneKind {
-    const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
-
-    // Step 1: Check C++ unsafe patterns (highest priority)
-    for (CPP_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .unsafe;
-        }
-    }
-
-    // Step 2: Check C++ safe patterns (RAII, smart pointers)
-    for (CPP_SAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .safe;
-        }
-    }
-
-    // Step 3: Check C escape patterns (FFI-related)
-    for (C_ESCAPE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .ffi;
-        }
-    }
-
-    // Step 4: Check extern "C" declaration (FFI boundary)
-    if (std.mem.indexOf(u8, func_name, "extern \"C\"") != null) {
-        return .ffi;
-    }
-
-    // Step 5: SemanticRegistry lookup (fallback for known functions)
-    if (SemanticRegistry.lookup(func_name)) |sem| {
-        switch (sem.kind) {
-            .command_exec,
-            .unchecked_copy,
-            .format_string,
-            .memory_map,
-            .dynamic_loading,
-            .jni,
-            .python_c_api,
-            .allocator,
-            .deallocator,
-            .network_io,
-            .file_io,
-            .signal_handler,
-            .thread_mgmt,
-            .process_mgmt,
-            .rust_ownership,
-            .borrow_escaped,
-            .go_cgo_alloc,
-            .zig_allocator,
-            .cpp_allocator,
-            .static_buffer,
-            => return .ffi,
-        }
-    }
-
-    return .unknown;
-}
-
-/// Detect if function is Rust.
-fn isRustFunction(func_name: []const u8) bool {
-    // Check for Rust v0 mangling prefix (_R...)
-    if (std.mem.startsWith(u8, func_name, "_R")) return true;
-
-    // Check for _ZN (Itanium nested name mangling) — could be Rust or C++
-    if (std.mem.startsWith(u8, func_name, "_ZN")) {
-        return ffi_language_classifier.isRustMangledName(func_name);
-    }
-
-    // Check for Rust-specific markers in mangled names
-    if (std.mem.indexOf(u8, func_name, "$u20$") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "$LT$") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "$GT$") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "$C$") != null) return true;
-
-    // Check for Rust namespace patterns (demangled form)
-    if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "core::") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "alloc::") != null) return true;
-
-    return false;
-}
-
-/// Detect if function is Zig.
-fn isZigFunction(func_name: []const u8) bool {
-    if (std.mem.startsWith(u8, func_name, "std.")) return true;
-    // Only match Zig builtins (@ptrCast, @intToPtr, etc.), not LLVM globals
-    if (std.mem.indexOf(u8, func_name, "@ptrCast") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@alignCast") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@intToPtr") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@ptrToInt") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@cImport") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@cInclude") != null) return true;
-    if (std.mem.indexOf(u8, func_name, "@bitCast") != null) return true;
-    return false;
-}
-
-/// Detect if function is Go.
-fn isGoFunction(func_name: []const u8) bool {
-    if (std.mem.startsWith(u8, func_name, "runtime.")) return true;
-    if (std.mem.startsWith(u8, func_name, "main.")) return true;
-    if (std.mem.indexOf(u8, func_name, "C.") != null) return true;
-
-    // Go runtime internal symbols (fine-grained detection)
-    // These are unambiguous Go runtime markers that should be classified
-    // as Go functions for correct zone classification (.runtime_internal).
-    const is_go_runtime_internal = blk: {
-        if (!std.mem.startsWith(u8, func_name, "runtime.")) break :blk false;
-
-        const rest = func_name["runtime.".len..];
-
-        if (std.mem.startsWith(u8, rest, "gc") or
-            std.mem.startsWith(u8, rest, "mallocgc") or
-            std.mem.startsWith(u8, rest, "scanobject") or
-            std.mem.startsWith(u8, rest, "markroot") or
-            std.mem.startsWith(u8, rest, "sweep") or
-            std.mem.startsWith(u8, rest, "scanstack"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "schedule") or
-            std.mem.startsWith(u8, rest, "park") or
-            std.mem.startsWith(u8, rest, "wake") or
-            std.mem.startsWith(u8, rest, "stopm") or
-            std.mem.startsWith(u8, rest, "startm") or
-            std.mem.startsWith(u8, rest, "handoffp"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "chan") or
-            std.mem.startsWith(u8, rest, "select"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "interface") or
-            std.mem.startsWith(u8, rest, "assertI2I") or
-            std.mem.startsWith(u8, rest, "assertE2I") or
-            std.mem.startsWith(u8, rest, "convI2E"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "mapaccess") or
-            std.mem.startsWith(u8, rest, "mapassign") or
-            std.mem.startsWith(u8, rest, "mapdelete") or
-            std.mem.startsWith(u8, rest, "mapiter"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "newproc") or
-            std.mem.startsWith(u8, rest, "goexit") or
-            std.mem.startsWith(u8, rest, "systemstack") or
-            std.mem.startsWith(u8, rest, "morestack") or
-            std.mem.startsWith(u8, rest, "lessstack"))
-        {
-            break :blk true;
-        }
-
-        if (std.mem.startsWith(u8, rest, "defer")) {
-            break :blk true;
-        }
-
-        break :blk false;
-    };
-
-    if (is_go_runtime_internal) return true;
-
-    return false;
-}
-
-/// Detect if function is C++.
-fn isCppFunction(func_name: []const u8) bool {
-    if (std.mem.startsWith(u8, func_name, "_Z")) return true;
-    if (std.mem.indexOf(u8, func_name, "std::") != null) return true;
-    return false;
-}
-
-/// Detect if function is C using name-based heuristics.
-///
-/// C functions typically use snake_case naming and don't have
-/// Rust/Zig/Go/C++ specific prefixes.
-fn isCFunction(func_name: []const u8) bool {
-    if (func_name.len == 0) return false;
-
-    if (isRustFunction(func_name)) return false;
-    if (isZigFunction(func_name)) return false;
-    if (isGoFunction(func_name)) return false;
-    if (isCppFunction(func_name)) return false;
-
-    if (std.mem.startsWith(u8, func_name, "_")) return false;
-    if (std.mem.indexOf(u8, func_name, "$") != null) return false;
-
-    if (std.mem.indexOf(u8, func_name, "llvm.") != null) return false;
-    if (std.mem.indexOf(u8, func_name, "__gnu_cxx") != null) return false;
-    if (std.mem.indexOf(u8, func_name, "__cxa_") != null) return false;
-
-    return true;
-}
-
-/// Classify a C function based on name patterns.
-///
-/// For pure C code, we use name heuristics to detect FFI relevance:
-/// - snake_case with known FFI patterns → .ffi
-/// - pure internal C logic → .unknown (conservative)
-fn classifyCFunction(func_name: []const u8) ZoneKind {
-    // R7.0: Library internal patterns — these are runtime-internal, NOT FFI boundaries.
-    // Migrated from FPWhitelist Category 3 (project-specific contextual suppressions).
-    const C_INTERNAL_PATTERNS = [_][]const u8{
-        "uv__", // libuv internal functions (e.g., uv__socket)
-        "sqlite3Mem", // SQLite custom allocator shims
-        "__pthread", // glibc pthread internals
-    };
-    for (C_INTERNAL_PATTERNS) |pat| {
-        if (std.mem.startsWith(u8, func_name, pat) or
-            std.mem.indexOf(u8, func_name, pat) != null)
-        {
-            return .runtime_internal;
-        }
-    }
-
-    const C_FFI_PATTERNS = [_][]const u8{
-        // FFI boundary markers
-        "FFI_",
-        "ffi_",
-
-        // Dynamic loading
-        "dlopen",
-        "dlsym",
-        "dlclose",
-
-        // Memory mapping
-        "mmap",
-        "munmap",
-        "mprotect",
-
-        // Network I/O
-        "socket",
-        "connect",
-        "bind",
-        "listen",
-        "accept",
-        "send",
-        "recv",
-
-        // File I/O (specific variants with prefixes)
-        "fopen",
-        "fclose",
-
-        // Threading
-        "pthread_",
-        "sem_",
-        "shm_",
-        "msg_",
-        "mkfifo",
-
-        // Process management
-        "fork",
-        "exec",
-        "wait",
-        "kill",
-        "signal",
-        "alarm",
-
-        // Control flow
-        "setjmp",
-        "longjmp",
-        "exit",
-
-        // Memory allocation
-        "malloc",
-        "calloc",
-        "realloc",
-        "free",
-        "memcpy",
-        "memmove",
-        "memset",
-        "memcmp",
-
-        // String operations (buffer overflow risk)
-        "strcpy",
-        "strncpy",
-        "strcat",
-        "strncat",
-        "strlen",
-        "strcmp",
-        "strncmp",
-        "sprintf",
-        "snprintf",
-
-        // Conversion
-        "atoi",
-        "atol",
-        "strtol",
-        "strtod",
-
-        // Platform-specific allocators
-        "malloc_zone",
-
-        // Python C API
-        "Py_",
-        "py_",
-        "PyObject",
-
-        // JNI
-        "JNI_",
-        "NewGlobalRef",
-        "DeleteGlobalRef",
-        "GetMethodID",
-        "GetFieldID",
-        "FindClass",
-        "Call",
-
-        // Resource lifecycle patterns with word-boundary matching
-        // to avoid false positives (e.g., "get_handle_count", "handle_event")
-    };
-
-    for (C_FFI_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return .ffi;
-        }
-    }
-
-    // Broad prefix patterns that need word-boundary matching to reduce FP.
-    // Without boundary checks, "handle_" matches "get_handle_count",
-    // "init_" matches "reinitialize", etc.
-    const C_FFI_BROAD_PREFIXES = [_][]const u8{
-        "destroy_",  "create_",  "init_",     "cleanup_",
-        "release_",  "acquire_", "allocate_", "deallocate_",
-        "resource_", "handle_",
-        // Also include the previously ambiguous short words
-         "close",     "open",
-        "read",      "write",    "pipe",
-    };
-    for (C_FFI_BROAD_PREFIXES) |word| {
-        const idx = std.mem.indexOf(u8, func_name, word);
-        if (idx) |i| {
-            const is_component = std.mem.endsWith(u8, word, "_");
-            // Component prefixes (ending in _): must be at name start
-            // e.g., "cleanup_" matches "cleanup_init" but NOT "my_cleanup_func"
-            // Bare words (no _): must be at name start AND followed by boundary
-            // e.g., "close" matches "close_file" but NOT "disclose"
-            if (is_component and i == 0) return .ffi;
-            const is_bare_word = !is_component;
-            if (is_bare_word and i == 0) {
-                const after_idx = i + word.len;
-                const after_ok = after_idx >= func_name.len or !isAlphaNumeric(func_name[after_idx]);
-                if (after_ok) return .ffi;
-            }
-        }
-    }
-
-    if (std.mem.indexOf(u8, func_name, "_cb") != null) return .ffi;
-    if (std.mem.indexOf(u8, func_name, "_callback") != null) return .ffi;
-    if (std.mem.indexOf(u8, func_name, "_handler") != null) return .ffi;
-    if (std.mem.indexOf(u8, func_name, "_hook") != null) return .ffi;
-
-    // M17 FIX: Use word-boundary matching for _init to avoid false positives.
-    // Previous code matched "_init" as substring, causing "initialize" to be classified as FFI.
-    // Now check that _init is followed by non-alphanumeric character (word boundary).
-    if (std.mem.indexOf(u8, func_name, "_init")) |idx| {
-        const next_idx = idx + "_init".len;
-        if (next_idx >= func_name.len or !isAlphaNumeric(func_name[next_idx])) {
-            return .ffi;
-        }
-    }
-    if (std.mem.indexOf(u8, func_name, "_cleanup") != null) return .ffi;
-    if (std.mem.indexOf(u8, func_name, "_destroy") != null) return .ffi;
-
-    return .unknown;
-}
-
-test "classifyRustFunction - safe patterns" {
-    try std.testing.expectEqual(ZoneKind.safe, classifyRustFunction("std::vec::Vec::push"));
-    try std.testing.expectEqual(ZoneKind.safe, classifyRustFunction("std::sync::Arc::clone"));
-    try std.testing.expectEqual(ZoneKind.runtime_internal, classifyRustFunction("_ZN4core3ptr13drop_in_place"));
-    // _ZN4ring... is user code (not stdlib, not compiler-generated), classified as safe by default
-    const ring_result = classifyRustFunction("_ZN4ring3rsa7keypair7KeyPair8from_der");
-    // Accept either .safe or .unknown (depends on whether it's recognized as Rust mangled name)
-    try std.testing.expect(ring_result == .safe or ring_result == .unknown);
-}
-
-test "classifyRustFunction - escape patterns" {
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyRustFunction("std::mem::transmute"));
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyRustFunction("as_ptr"));
 }
 
 test "ZoneStats" {
@@ -1128,54 +286,6 @@ test "ZoneStats" {
     try std.testing.expectEqual(@as(u32, 4), stats.total());
     try std.testing.expectEqual(@as(u32, 2), stats.safe_count);
     try std.testing.expectEqual(@as(f64, 0.75), stats.skipRatio());
-}
-
-test "isLikelyRuntimeInternal - Rust stdlib" {
-    try std.testing.expect(isLikelyRuntimeInternal("_ZN4core3ptr13drop_in_place"));
-    try std.testing.expect(isLikelyRuntimeInternal("_ZN5alloc6raw_vec17RawVec"));
-    try std.testing.expect(isLikelyRuntimeInternal("_ZN3std3fmt9Arguments"));
-    try std.testing.expect(isLikelyRuntimeInternal("llvm.memcpy.p0i8.p0i8.i64"));
-    try std.testing.expect(!isLikelyRuntimeInternal("_ZN4my_crate3foo3bar"));
-}
-
-test "isLikelyRuntimeInternal - Go runtime" {
-    try std.testing.expect(isLikelyRuntimeInternal("runtime.mallocgc"));
-    try std.testing.expect(isLikelyRuntimeInternal("_cgo_12345"));
-    try std.testing.expect(isLikelyRuntimeInternal("crosscall2"));
-    try std.testing.expect(!isLikelyRuntimeInternal("main.main"));
-}
-
-test "isLikelyRuntimeInternal - C/C++ stdlib" {
-    try std.testing.expect(isLikelyRuntimeInternal("__gnu_cxx::__enable_if"));
-    try std.testing.expect(isLikelyRuntimeInternal("__cxa_begin_catch"));
-    try std.testing.expect(isLikelyRuntimeInternal("__clang_call_terminate"));
-    try std.testing.expect(!isLikelyRuntimeInternal("my_function"));
-}
-
-test "classifyCppFunction - CPP_ESCAPE_PATTERNS" {
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("reinterpret_cast<int*>"));
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("const_cast<int*>"));
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("static_cast<void*>"));
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("std::thread"));
-    try std.testing.expectEqual(ZoneKind.unsafe, classifyCppFunction("CreateThread"));
-}
-
-test "classifyCppFunction - CPP_SAFE_PATTERNS" {
-    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::vector<int>::push_back"));
-    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::string::c_str"));
-    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::unique_ptr::get"));
-    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::shared_ptr::clone"));
-    try std.testing.expectEqual(ZoneKind.safe, classifyCppFunction("std::map::insert"));
-}
-
-test "classifyCppFunction - extern C" {
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" my_func"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCppFunction("extern \"C\" void foo()"));
-}
-
-test "classifyCppFunction - unknown" {
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("my_custom_function"));
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCppFunction("some_internal_func"));
 }
 
 test "isCFunction - positive detection" {
@@ -1220,63 +330,55 @@ test "classifyCFunction - non-FFI returns unknown" {
     try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("process_data_internal"));
 }
 
-// R8.0-P1-13: Word-boundary matching for broad C_FFI patterns (no FP)
 test "classifyCFunction - word boundary prevents FP" {
-    // Valid FFI: broad patterns at word start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("close_file")); // close at start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("open_socket")); // open at start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("read_data")); // read at start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("write_buffer")); // write at start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pipe_create")); // pipe at start
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_handle")); // destroy_ prefix
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("create_resource")); // create_ prefix
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("init_module")); // init_ prefix
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("handle_event")); // handle_ prefix
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("close_file"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("open_socket"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("read_data"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("write_buffer"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pipe_create"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_handle"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("create_resource"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("init_module"));
+    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("handle_event"));
 
-    // Invalid (FP): broad pattern as substring
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("disclose")); // contains "close"
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reopen")); // contains "open"
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("threadsafe")); // contains "read"
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("overwrite")); // contains "write"
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipeline")); // "pipe" followed by alpha → not a word boundary
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("get_handle_count")); // contains "handle"
-    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reinitialize")); // contains "init"
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("disclose"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reopen"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("threadsafe"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("overwrite"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipeline"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("get_handle_count"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("reinitialize"));
 }
 
-// T4.1: Evidence-driven classification tests
-test "classifyFunctionWithEvidence - C++ STL mangled names → .safe" {
+test "classifyFunctionWithEvidence - C++ STL mangled names -> .safe" {
     const cpp_evidence = LanguageProfile{
         .language = .cpp,
         .confidence = 0.9,
         .method = .sampling,
     };
 
-    // std::vector<int>::push_back (mangled: _ZNSt6vectorIiEE9push_backERKi)
     try std.testing.expectEqual(
         ZoneKind.safe,
         classifyFunctionWithEvidence("_ZNSt6vectorIiEE9push_backERKi", null, cpp_evidence),
     );
 
-    // std::string::c_str (mangled: _ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv)
     try std.testing.expectEqual(
         ZoneKind.safe,
         classifyFunctionWithEvidence("_ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv", null, cpp_evidence),
     );
 
-    // std::map::insert (mangled: _ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi)
     try std.testing.expectEqual(
         ZoneKind.safe,
         classifyFunctionWithEvidence("_ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi", null, cpp_evidence),
     );
 
-    // std::sort (mangled: _ZSt4sortIPiEvT_S3_)
     try std.testing.expectEqual(
         ZoneKind.safe,
         classifyFunctionWithEvidence("_ZSt4sortIPiEvT_S3_", null, cpp_evidence),
     );
 }
 
-test "classifyFunctionWithEvidence - C++ operator new/delete → .safe" {
+test "classifyFunctionWithEvidence - C++ operator new/delete -> .safe" {
     const cpp_evidence = LanguageProfile{
         .language = .cpp,
         .confidence = 0.85,
@@ -1285,12 +387,12 @@ test "classifyFunctionWithEvidence - C++ operator new/delete → .safe" {
 
     try std.testing.expectEqual(
         ZoneKind.safe,
-        classifyFunctionWithEvidence("_Znwm", null, cpp_evidence), // operator new
+        classifyFunctionWithEvidence("_Znwm", null, cpp_evidence),
     );
 
     try std.testing.expectEqual(
         ZoneKind.safe,
-        classifyFunctionWithEvidence("_ZdlPv", null, cpp_evidence), // operator delete
+        classifyFunctionWithEvidence("_ZdlPv", null, cpp_evidence),
     );
 }
 
@@ -1301,27 +403,24 @@ test "classifyFunctionWithEvidence - C++ user code still uses standard rules" {
         .method = .sampling,
     };
 
-    // User-defined unsafe function (reinterpret_cast) → .unsafe
     try std.testing.expectEqual(
         ZoneKind.unsafe,
         classifyFunctionWithEvidence("reinterpret_cast<int*>", null, cpp_evidence),
     );
 
-    // Unknown user function → .unknown
     try std.testing.expectEqual(
         ZoneKind.unknown,
         classifyFunctionWithEvidence("my_custom_function", null, cpp_evidence),
     );
 }
 
-test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics → .runtime_internal" {
+test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics -> .runtime_internal" {
     const rust_evidence = LanguageProfile{
         .language = .rust,
         .confidence = 0.95,
         .method = .sampling,
     };
 
-    // Rust allocator intrinsics → runtime_internal
     try std.testing.expectEqual(
         ZoneKind.runtime_internal,
         classifyFunctionWithEvidence("__rust_dealloc", null, rust_evidence),
@@ -1332,21 +431,19 @@ test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics → .ru
         classifyFunctionWithEvidence("__rust_alloc", null, rust_evidence),
     );
 
-    // Rust stdlib (_ZN4core*) → runtime_internal
     try std.testing.expectEqual(
         ZoneKind.runtime_internal,
         classifyFunctionWithEvidence("_ZN4core3ptr13drop_in_place", null, rust_evidence),
     );
 }
 
-test "classifyFunctionWithEvidence - C module with libc functions → .safe" {
+test "classifyFunctionWithEvidence - C module with libc functions -> .safe" {
     const c_evidence = LanguageProfile{
         .language = .c,
         .confidence = 0.9,
         .method = .globals,
     };
 
-    // Known libc functions → safe in C module context
     try std.testing.expectEqual(
         ZoneKind.safe,
         classifyFunctionWithEvidence("memcpy", null, c_evidence),
@@ -1364,193 +461,8 @@ test "classifyFunctionWithEvidence - C module with libc functions → .safe" {
 }
 
 test "classifyFunctionWithEvidence - null evidence falls back to original logic" {
-    // Without evidence, should behave exactly like classifyFunction()
     const result_with_null = classifyFunctionWithEvidence("my_function", null, null);
     const result_original = classifyFunction("my_function", null);
 
     try std.testing.expectEqual(result_original, result_with_null);
-}
-
-test "isCppStlInternal - detects STL mangled names" {
-    // _ZNSt* prefix (STL class methods)
-    try std.testing.expect(isCppStlInternal("_ZNSt6vectorIiEE9push_backERKi"));
-    try std.testing.expect(isCppStlInternal("_ZNSt7basic_stringIcSt11char_traitsIcESaIcEE5c_strEv"));
-    try std.testing.expect(isCppStlInternal("_ZNSt3mapIiiSt4lessIiSaIiEE6insertERKi"));
-
-    // _ZSt* prefix (STL standalone functions)
-    try std.testing.expect(isCppStlInternal("_ZSt4sortIPiEvT_S3_"));
-    try std.testing.expect(isCppStlInternal("_ZSt3maxIiET_RKS1_S1_"));
-
-    // Non-STL _Z* names should not match
-    try std.testing.expect(!isCppStlInternal("_Z9my_funcv"));
-    try std.testing.expect(!isCppStlInternal("_ZN4user6class3fooEv"));
-}
-
-test "isCppOperatorNewDelete - detects memory operators" {
-    try std.testing.expect(isCppOperatorNewDelete("_Znwm")); // operator new
-    try std.testing.expect(isCppOperatorNewDelete("_Znam")); // operator new[]
-    try std.testing.expect(isCppOperatorNewDelete("_ZdlPv")); // operator delete
-    try std.testing.expect(isCppOperatorNewDelete("_ZdaPv")); // operator delete[]
-
-    // Non-operator names
-    try std.testing.expect(!isCppOperatorNewDelete("_Z9my_funcv"));
-    try std.testing.expect(!isCppOperatorNewDelete("malloc"));
-}
-
-test "isLibcFunction - detects known libc functions" {
-    // String operations
-    try std.testing.expect(isLibcFunction("memcpy"));
-    try std.testing.expect(isLibcFunction("strlen"));
-    try std.testing.expect(isLibcFunction("strcpy"));
-
-    // Math functions
-    try std.testing.expect(isLibcFunction("fabs"));
-    try std.testing.expect(isLibcFunction("ceil"));
-
-    // Stdlib functions
-    try std.testing.expect(isLibcFunction("qsort"));
-    try std.testing.expect(isLibcFunction("atoi"));
-
-    // Non-libc functions
-    try std.testing.expect(!isLibcFunction("my_custom_function"));
-    try std.testing.expect(!isLibcFunction("pthread_create"));
-}
-
-test "Go runtime internal symbols are classified as .runtime_internal" {
-    // GC internals → .runtime_internal
-    const gc_symbols = [_][]const u8{
-        "runtime.gcStart",
-        "runtime.gcDrain",
-        "runtime.mallocgc",
-        "runtime.scanobject",
-        "runtime.markroot",
-        "runtime.sweep",
-        "runtime.scanstack",
-    };
-
-    for (gc_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Scheduler internals → .runtime_internal
-    const scheduler_symbols = [_][]const u8{
-        "runtime.schedule",
-        "runtime.park0",
-        "runtime.wakep",
-        "runtime.stopm",
-        "runtime.startm",
-        "runtime.handoffp",
-    };
-
-    for (scheduler_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Channel operations → .runtime_internal
-    const channel_symbols = [_][]const u8{
-        "runtime.chansend1",
-        "runtime.chanrecv1",
-        "runtime.chanclose",
-        "runtime.selectgo",
-        "runtime.selectnbrecv",
-    };
-
-    for (channel_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Interface conversions → .runtime_internal
-    const interface_symbols = [_][]const u8{
-        "runtime.interface",
-        "runtime.assertI2I",
-        "runtime.assertI2I2",
-        "runtime.assertE2I",
-        "runtime.convI2E",
-    };
-
-    for (interface_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Map operations → .runtime_internal
-    const map_symbols = [_][]const u8{
-        "runtime.mapaccess1",
-        "runtime.mapaccess2",
-        "runtime.mapassign",
-        "runtime.mapdelete",
-        "runtime.mapiterinit",
-        "runtime.mapiternext",
-    };
-
-    for (map_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Goroutine lifecycle → .runtime_internal
-    const goroutine_symbols = [_][]const u8{
-        "runtime.newproc",
-        "runtime.newproc1",
-        "runtime.goexit",
-        "runtime.systemstack",
-        "runtime.morestack",
-        "runtime.lessstack",
-    };
-
-    for (goroutine_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-
-    // Defer mechanism → .runtime_internal
-    const defer_symbols = [_][]const u8{
-        "runtime.deferproc",
-        "runtime.deferreturn",
-        "runtime.deferprocStack",
-    };
-
-    for (defer_symbols) |sym| {
-        try std.testing.expectEqual(ZoneKind.runtime_internal, classifyGoFunction(sym));
-    }
-}
-
-test "Go runtime internal symbols detected by isLikelyRuntimeInternal" {
-    // All Go runtime internal categories should be detected as runtime internal
-    const go_runtime_test_cases = [_][]const u8{
-        // GC
-        "runtime.gcStart",     "runtime.mallocgc",   "runtime.scanobject",
-        // Scheduler
-        "runtime.schedule",    "runtime.park0",      "runtime.wakep",
-        // Channel
-        "runtime.chansend1",   "runtime.selectgo",
-        // Interface
-          "runtime.assertI2I",
-        "runtime.convI2E",
-        // Map
-            "runtime.mapaccess1", "runtime.mapassign",
-        // Goroutine
-        "runtime.newproc",     "runtime.goexit",     "runtime.systemstack",
-        // Defer
-        "runtime.deferreturn",
-        // Reflect
-        "reflect.MakeFunc",
-    };
-
-    for (go_runtime_test_cases) |sym| {
-        try std.testing.expect(isLikelyRuntimeInternal(sym), "{s} should be runtime internal", .{sym});
-    }
-}
-
-test "Non-Go runtime symbols not falsely classified" {
-    // Ensure non-Go symbols are not classified as Go runtime internals
-    const non_go_runtime = [_][]const u8{
-        "main.main", // User code, not runtime
-        "my_package.func", // User code
-        "runtime_custom", // Not prefixed with "runtime."
-        "_ZN4core3ptr", // Rust
-        "std::vector", // C++
-    };
-
-    for (non_go_runtime) |sym| {
-        const result = isGoRuntimeInternal(sym);
-        try std.testing.expect(!result, "{s} should NOT be Go runtime internal", .{sym});
-    }
 }
