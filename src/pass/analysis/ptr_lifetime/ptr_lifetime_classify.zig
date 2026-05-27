@@ -286,7 +286,23 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
     // Note: C's "free()" called from Zig code (via @cImport) is NOT
     // classified here — it remains "c" because that's the correct
     // classification for interop scenarios where C allocs and Zig frees via C API.
-    if (containsAny(fn_name, &[_][]const u8{
+    //
+    // Reason: POSIX attribute cleanup functions contain "destroy" but are
+    // NOT Zig deallocators. They clean up pthread attribute objects (stack or
+    // struct-embedded), not heap memory. Must exclude BEFORE matching "destroy"
+    // to prevent false positives like _pthread_mutexattr_destroy() being
+    // classified as a Zig deallocator → cross_language_free CRITICAL FP.
+    const posix_attr_cleanup = [_][]const u8{
+        "pthread_mutexattr_destroy",
+        "pthread_condattr_destroy",
+        "pthread_rwlockattr_destroy",
+        "_pthread_mutexattr_destroy", // macOS variant
+        "_pthread_condattr_destroy",
+        "_pthread_rwlockattr_destroy",
+    };
+    if (containsAny(fn_name, &posix_attr_cleanup)) {
+        // Not a Zig deallocator — fall through to return null
+    } else if (containsAny(fn_name, &[_][]const u8{
         "__zig_dealloc",
         "zig_free",
         "PageAllocator.free",

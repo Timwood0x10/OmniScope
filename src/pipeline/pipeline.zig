@@ -30,6 +30,7 @@ const ResourceFamilyRegistry = resource_family_reg.ResourceFamilyRegistry;
 const resource_summary = @import("../semantics/resource/function_summary.zig");
 const SummaryStore = resource_summary.SummaryStore;
 const resource_inference = @import("../semantics/resource/summary_inference.zig");
+const transfer_infer = @import("../semantics/resource/transfer_inference.zig");
 const c = @import("../ir/llvm_raw.zig").c;
 
 /// Analysis pipeline
@@ -266,6 +267,21 @@ pub const Pipeline = struct {
                         }
                         if (is_rust_alloc) continue;
                     }
+
+                    // P19-2: Structural transfer inference — check if alloc result
+                    // is returned to caller (factory pattern) before reporting leak.
+                    // This is NAME-INDEPENDENT: works by analyzing IR instruction
+                    // patterns (ret <alloc_result>), not function names.
+                    if (rec.alloc_func_val) |func_val| {
+                        const transfer = transfer_infer.detectTransferInFunction(func_val);
+                        if (transfer) |t| {
+                            if (t.detected) {
+                                diag.debug("LEAK-SKIP: {s} has structural transfer ({any}) — not a leak", .{ rec.alloc_func, t });
+                                continue;
+                            }
+                        }
+                    }
+
                     const msg = try std.fmt.allocPrint(self.allocator, "Potential memory leak: heap allocation in {s}() was never freed", .{rec.alloc_func});
                     const trace = try self.allocator.alloc(TraceEntry, 1);
                     trace[0] = TraceEntry.init("Allocation tracked by GlobalAllocTracker but no matching free found in module");

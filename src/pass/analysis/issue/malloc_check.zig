@@ -165,8 +165,12 @@ pub const MallocCheckPass = struct {
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
-        // Skip the allocation call itself and null checks
-        if (opcode == c.LLVMCall or opcode == c.LLVMICmp) {
+        // Skip the allocation call itself, null checks, and ret instructions.
+        // Reason: ret instruction = factory pattern (return malloc result to caller).
+        // Caller is responsible for null checking, not this function.
+        // Example: XXH32_createState() { return XXH_malloc(sizeof(...)); }
+        // Reporting this as HIGH creates massive FPs on C API factory functions.
+        if (opcode == c.LLVMCall or opcode == c.LLVMICmp or opcode == c.LLVMRet) {
             return false;
         }
 

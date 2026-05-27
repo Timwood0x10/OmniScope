@@ -17,6 +17,8 @@ pub const Location = CommonTypes.Location;
 pub const Severity = CommonTypes.Severity;
 pub const IssueKind = CommonTypes.IssueKind;
 pub const Confidence = CommonTypes.Confidence;
+pub const SemanticSurface = CommonTypes.SemanticSurface;
+const ContractTransition = @import("../semantics/resource/contract.zig").ContractTransition;
 
 /// Trace entry for issue reasoning path
 ///
@@ -126,6 +128,21 @@ pub const Issue = struct {
     confidence_level: Confidence,
     /// Reason explaining why this confidence level was assigned
     reason: []const u8,
+
+    // P19: Structural evidence fields (optional, default null for backward compat)
+    /// Semantic surface: where does this issue originate?
+    /// Used by pass_types.addIssue() for severity gating per Phase 19.2.
+    semantic_surface: ?SemanticSurface = null,
+
+    /// Escape/transfer evidence: how did the pointer escape the function?
+    /// Derived from IR structural analysis (P19-2).
+    /// Maps to ContractTransition.Trigger values.
+    escape_evidence: ?ContractTransition.Trigger = null,
+
+    /// Whether this issue has been explained as safe by structural analysis.
+    /// When true, severity should be capped at .low or suppressed entirely.
+    explained_safe: bool = false,
+
     /// Related FFI boundary if applicable
     ffi_boundary: ?FFIBoundary,
     /// Trace entries showing reasoning path

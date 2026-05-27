@@ -34,6 +34,38 @@ pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
     return false;
 }
 
+/// P18-FP3: Factory/constructor function pattern detection.
+/// Functions whose names indicate they allocate and RETURN ownership to the caller.
+/// Examples: XXH32_createState, sqlite3_open, malloc_wrapper, make_object.
+/// These functions intentionally don't free — the caller must do it.
+pub fn isFactoryFunction(func_name: []const u8) bool {
+    const factory_suffixes = [_][]const u8{
+        "Create", "create", // XXH32_createState, CreateWindow
+        "New", "new", // NewStringUTF, new_buffer
+        "Alloc", "alloc", // AllocX, alloc_buffer
+        "Make", "make", // MakeString, make_context
+        "Open", "open", // fopen, open_db
+        "Init", "init", // InitWithConfig (if returns ptr)
+        "From", "from", // FromRaw, from_cstr
+        "State", "state", // createState, resetState
+        "Dup", "dup", // strdup, dup_fd
+        "Clone", "clone", // clone_object
+    };
+    for (factory_suffixes) |suffix| {
+        if (std.mem.endsWith(u8, func_name, suffix)) return true;
+    }
+    // Also check common FFI factory prefixes
+    const factory_prefixes = [_][]const u8{
+        "create", "new", "alloc", "make",
+    };
+    for (factory_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix) and func_name.len > prefix.len + 2) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Check if a function is Rust's drop_in_place (destructor glue).
 pub fn isRustDropGlue(func_name: []const u8) bool {
     return @import("../pass/analysis/ffi/ffi_utils.zig").isRustDropGlue(func_name);

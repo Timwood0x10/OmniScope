@@ -102,6 +102,8 @@ pub const GlobalAllocTracker = struct {
     pub const AllocRecord = struct {
         ptr_id: u32,
         alloc_func: []const u8,
+        /// P19-2: LLVM function value for structural transfer inference
+        alloc_func_val: ?c.LLVMValueRef = null,
         alloc_callee: []const u8,
         freed: bool,
         free_func: ?[]const u8,
@@ -133,13 +135,14 @@ pub const GlobalAllocTracker = struct {
         self.records_by_ptr.deinit();
     }
 
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool) !void {
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool, func_val: ?c.LLVMValueRef) !void {
         const name_owned = try self.allocator.dupe(u8, func_name);
         const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
         const idx = @as(u32, @intCast(self.records.items.len));
         try self.records.append(self.allocator, .{
             .ptr_id = inst_id,
             .alloc_func = name_owned,
+            .alloc_func_val = func_val,
             .alloc_callee = callee_owned,
             .freed = false,
             .free_func = null,

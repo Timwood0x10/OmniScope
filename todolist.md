@@ -983,6 +983,78 @@ const fn_origin_heuristic = ffi_enhancement.classifyFunctionOrigin(func_name);
 
 ---
 
+## Phase 19：通用语义门控与 FP 收敛方案
+
+目标：不按语言、项目名、库名或函数名白名单过滤噪声，而是把真实项目暴露的问题统一收敛到可解释的语义证据链：resource provenance、function summary、escape/transfer、boundary reachability、verifier verdict。
+
+核心原则：
+
+- `name` 只能作为弱 hint，不能单独 suppress 或 report。
+- `project/library` 不能作为规则条件。
+- `unknown`、`heuristic_only`、`no_boundary_reachability` 默认进入 diagnostic，不进入高危报告。
+- HIGH/CRITICAL 必须有结构证据：ownership violation、resource family mismatch、immutable memory proof、boundary-reachable path 至少组合成立。
+
+### 19.1 统一处理返回/逃逸导致的 LOW `memory_leak`
+
+问题：剩余 LOW 多来自某些 pass 直接报告 leak；同一个“分配后返回给 caller / 存入 owner / 传入 callback context”的语义，在不同检测路径中被解释不一致。
+
+原则：不要复制 `isFactoryFunction()` 或扩展命名规则；应从 IR 行为推断 `returns_owned`、`escapes_to_owner`、`escapes_to_callback_context`、`transfer_to_caller`，统一写入 `FunctionSummary` 与 `PointerContract`。
+
+任务：
+
+- [ ] 19-1：清点所有直接产生 `memory_leak` 的入口，标注是否绕过 `IssueCandidateBuilder` / `IssueVerifier`。
+- [ ] 19-2：新增结构性 transfer inference：若 allocation-derived pointer 直接 return、写入 out-param、写入 owner field、写入 callback context，则生成 transfer/escape summary。
+- [ ] 19-3：把 `isFactoryFunction()` 降级为弱 evidence provider；最终 verdict 只由结构性 transfer/escape 证据决定。
+- [ ] 19-4：所有 leak 入口在报出前必须查询 `FunctionSummary` 与 `PointerContract`，遇到 valid transfer/escape 时生成 `diagnostic` 或 `explained_safe`。
+- [ ] 19-5：为 callback/global/field/out-param/return escape 增加统一 `EscapeEvidence`：`return_to_caller`、`out_param_store`、`stored_in_owner`、`stored_global`、`callback_context`、`unknown_escape`。
+- [ ] 19-6：所有 leak candidate 必须带 `ownership_state`、`escape_evidence`、`cleanup_evidence`；缺任一关键证据时最高只能是 `diagnostic`。
+- [ ] 19-7：新增通用 fixture：分配后 return/out-param/field-store/callback-store 四种 transfer；期望默认不报 leak，debug trace 显示 explained/diagnostic。
+
+验收：
+
+- [ ] callback escape、ptr lifetime、memory graph 不再绕过 verifier 直接输出 LOW leak。
+- [ ] 同一 transfer/escape 语义在所有 pass 中表现一致。
+- [ ] 真实项目剩余 LOW leak 必须能解释为 confirmed、diagnostic 或 explained，不能只有函数名依据。
+
+### 19.2 处理第三方/内部核心 heuristic HIGH 噪声
+
+问题：大量 HIGH 来自 C/第三方核心内部 heuristic 报告，例如 `write_to_immutable`、`invalid_free`。这些不是单个明显 FP，而是“证据不足却高定级”的系统性问题。
+
+原则：不能靠库名或路径白名单压掉；要基于 call graph / value flow / resource provenance 区分“boundary-relevant security issue”和“内部 heuristic diagnostic”。默认报告只保留前者，后者进入 diagnostic/needs-model。
+
+任务：
+
+- [ ] 19-8：给每个 issue candidate 增加来源无关的 `semantic_surface`：`boundary`、`ffi_producer`、`reachable_from_boundary`、`internal_core`、`runtime_internal`、`unknown`。
+- [ ] 19-9：给 verifier 增加 `boundary_relevance` 打分：跨语言边、FFI entry/export、pointer crossing、ownership transfer、tainted boundary input 任一成立才可保持 HIGH。
+- [ ] 19-10：`write_to_immutable` 必须具备“写目标来自 immutable region/const global/readonly section”的结构证据；仅 name/type heuristic 不得超过 diagnostic。
+- [ ] 19-11：`invalid_free` 必须具备 alloc/free family mismatch、non-owned pointer release、stack/static/global free、double release 之一；unknown alloc provenance 不得报 HIGH。
+- [ ] 19-12：对 `internal_core` issue 应用渐进降级：无 boundary reachability → diagnostic；有 boundary reachable 但缺结构证据 → probable MEDIUM；证据完整才 HIGH。
+- [ ] 19-13：新增通用 allocator-family inference：通过 acquire/release 成对关系、同一前缀只作弱 hint、参数角色、返回值流、释放调用参数位置，推断 project-local resource family。
+- [ ] 19-14：新增 arena/owner-scope inference：若 allocation 只在 context/arena owner 生命周期内释放，标记 `arena_scoped` / `owner_scoped`，不能按普通 leak/free 强判。
+- [ ] 19-15：输出 `--debug-resource-contract` 时列出每个降级原因：`internal_core`、`no_boundary_reachability`、`heuristic_only`、`unknown_provenance`、`arena_scoped`、`owner_scoped`。
+
+验收：
+
+- [ ] C/第三方核心内部 `write_to_immutable` / `invalid_free` HIGH 大幅下降，默认报告集中在 boundary-reachable issue。
+- [ ] 不因语言 runtime hint suppress native bridge boundary。
+- [ ] 若存在明确跨边界 ownership mismatch，仍保持 HIGH/CRITICAL。
+
+### 19.3 执行顺序
+
+1. 先做 `19-1`：列出所有 direct report 入口，防止某些 pass 绕过 verifier。
+2. 再做 `19-2` 到 `19-7`：用结构性 transfer/escape 替代 per-pass factory suppression。
+3. 然后做 `19-8` 到 `19-12`：让 verifier 接管 internal/core heuristic 的定级。
+4. 最后做 `19-13` 到 `19-15`：补通用 family/arena/owner-scope inference 与 debug evidence。
+
+### 19.4 不做的事
+
+- [ ] 不新增项目名、库名、源文件名白名单。
+- [ ] 不把所有 dependency/internal issue 一刀切 suppress。
+- [ ] 不因为语言 runtime 限制降低 native bridge boundary 的覆盖。
+- [ ] 不让 unknown provenance 直接输出 HIGH/CRITICAL。
+
+---
+
 ## 代码可维护性要求
 
 ### 必须满足

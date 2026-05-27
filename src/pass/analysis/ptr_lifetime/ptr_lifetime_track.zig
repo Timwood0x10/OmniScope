@@ -217,7 +217,7 @@ fn handleHeapAlloc(ctx: *TrackContext, callee_name: []const u8) void {
         const fn_name_raw = c.LLVMGetValueName(ctx.func);
         const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
         const inst_id = @as(u32, @truncate(inst_ptr_val));
-        _ = ctx.global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id, is_conditional) catch return;
+        _ = ctx.global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id, is_conditional, ctx.func) catch return;
     }
 }
 

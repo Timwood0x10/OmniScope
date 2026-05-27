@@ -29,6 +29,7 @@ const cpp_types = @import("cpp_fp_types.zig");
 const isStlInternalFunction = cpp_helpers.isStlInternalFunction;
 const isCppSpecialMemberFunction = cpp_helpers.isCppSpecialMemberFunction;
 const is_likely_intentional_pattern = cpp_helpers.is_likely_intentional_pattern;
+const isFactoryFunction = cpp_helpers.isFactoryFunction;
 const isCppAbiInternalFunction = cpp_helpers.isCppAbiInternalFunction;
 const isMeyersSingletonPattern = cpp_helpers.isMeyersSingletonPattern;
 const isCppInternalLeakPattern = cpp_helpers.isCppInternalLeakPattern;
@@ -304,6 +305,13 @@ pub fn detectMemoryLeaks(
         const has_free_path = can_reach_free.contains(alloc_info.inst_id) or
             can_reach_free.contains(alloc_info.ptr_value_id);
         if (!has_free_path) {
+            // P18-FP3: Factory function pattern — alloc result returned to caller.
+            // Not a leak if the function name indicates ownership transfer.
+            // Example: XXH32_createState() { return malloc(...); } → caller frees
+            if (isFactoryFunction(alloc_info.func_name)) {
+                diag.debug("LEAK-SKIP: {s} is factory function — caller owns result", .{alloc_info.func_name});
+                continue;
+            }
             if (is_likely_intentional_pattern(alloc_info.func_name)) {
                 continue;
             }

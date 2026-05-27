@@ -441,6 +441,77 @@ pub const Tag = enum {
 };
 
 // ============================================================================
+// SemanticSurface — Where does this issue originate? (P19-8)
+//
+// Classifies the "surface" or origin layer of an issue to enable
+// differential severity policies: boundary issues stay HIGH, internal
+// core heuristics get downgraded to diagnostic.
+// ============================================================================
+
+/// Semantic surface classification for issue provenance.
+/// Determines which severity policy applies per Phase 19.2 rules.
+pub const SemanticSurface = enum(u8) {
+    /// Issue is directly at an FFI/language boundary.
+    /// Examples: cross_language_free at JNI boundary, unsafe FFI call.
+    /// Policy: HIGH/CRITICAL allowed with standard evidence.
+    boundary,
+
+    /// Issue is in a function that PRODUCES values for FFI boundary.
+    /// Examples: factory function called by FFI wrapper, allocator used by bridge.
+    /// Policy: HIGH allowed if evidence is strong.
+    ffi_producer,
+
+    /// Issue can REACH an FFI boundary via data flow / call graph.
+    /// Examples: leaked pointer passed to FFI function 3 frames up.
+    /// Policy: MEDIUM max unless ownership violation is clear.
+    reachable_from_boundary,
+
+    /// Issue is inside third-party / dependency core code.
+    /// Examples: SQLite internals, OpenSSL EVP functions, libc++ std::*.
+    /// Policy: diagnostic default; MEDIUM only with strong structural evidence.
+    internal_core,
+
+    /// Issue is inside language runtime internals.
+    /// Examples: Rust drop_in_place, Go runtime.mallocgc, Zig __zig_dealloc.
+    /// Policy: diagnostic or suppressed.
+    runtime_internal,
+
+    /// Surface could not be determined.
+    /// Policy: conservative — treat as internal_core for safety.
+    unknown,
+
+    /// Human-readable name for logging and debug output.
+    pub fn name(self: SemanticSurface) []const u8 {
+        return switch (self) {
+            .boundary => "boundary",
+            .ffi_producer => "ffi_producer",
+            .reachable_from_boundary => "reachable_from_boundary",
+            .internal_core => "internal_core",
+            .runtime_internal => "runtime_internal",
+            .unknown => "unknown",
+        };
+    }
+
+    /// Check if this surface allows HIGH severity reports.
+    pub fn allowsHigh(self: SemanticSurface) bool {
+        return switch (self) {
+            .boundary, .ffi_producer => true,
+            .reachable_from_boundary => false,
+            .internal_core, .runtime_internal, .unknown => false,
+        };
+    }
+
+    /// Check if this surface allows MEDIUM severity reports.
+    pub fn allowsMedium(self: SemanticSurface) bool {
+        return switch (self) {
+            .boundary, .ffi_producer, .reachable_from_boundary => true,
+            .internal_core => false,
+            .runtime_internal, .unknown => false,
+        };
+    }
+};
+
+// ============================================================================
 // Tests
 // ============================================================================
 
