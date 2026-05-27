@@ -48,6 +48,11 @@ const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
 
+const CandidateBuilder = @import("resource/issue_candidate_builder.zig").CandidateBuilder;
+const IssueCandidate = @import("resource/issue_candidate_builder.zig").IssueCandidate;
+const IssueVerifier = @import("resource/issue_verifier.zig").IssueVerifier;
+const Confidence = @import("callback_escape_report.zig").Confidence;
+
 // : Integrated Hook system for semantic analysis.
 // Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
 const hooks = @import("../../registry/hooks.zig");
@@ -523,14 +528,86 @@ pub const CallbackEscapePass = struct {
                     }
                     if (cgo_ptr_val != 0) {
                         if (!ctx.isRelevantAlloc(cgo_ptr_val)) continue;
-                        try reportCBytesEscape(ctx, func_name, call, diag);
+                        // Generate candidate instead of direct reporting
+                        var candidate = try cb_report.generateCBytesEscapeCandidate(ctx, func_name, call, diag);
+                        defer candidate.deinit();
+                        // Verify candidate through IssueVerifier
+                        if (ctx.issue_verifier) |verifier| {
+                            const result = try verifier.verify(&candidate);
+                            if (result.shouldReport()) {
+                                const sev: Severity = switch (result.severity) {
+                                    .critical => .critical,
+                                    .high => .high,
+                                    .medium => .medium,
+                                    .low => .low,
+                                    else => .medium,
+                                };
+                                // Convert candidate to Issue and add to context
+                                const issue = Issue.initWithTrace(
+                                    .memory_leak,
+                                    candidate.reason orelse "CBytes escape detected",
+                                    Location.init(func_name),
+                                    sev,
+                                    result.adjusted_score,
+                                    &[_]TraceEntry{},
+                                );
+                                try ctx.addIssue(&issue);
+                            }
+                        } else {
+                            // Legacy mode: direct reporting
+                            const issue = Issue.initWithTrace(
+                                .memory_leak,
+                                candidate.reason orelse "CBytes escape detected",
+                                Location.init(func_name),
+                                .medium,
+                                0.65, // med_cbytes_escape confidence
+                                &[_]TraceEntry{},
+                            );
+                            try ctx.addIssue(&issue);
+                        }
                         stats.cbytes_escapes += 1;
                     }
                 }
             }
 
             if (isUnsafePtrConversion(call.callee_name)) {
-                try reportUnsafePtrRisk(ctx, func_name, call, diag);
+                // Generate candidate instead of direct reporting
+                var candidate = try cb_report.generateUnsafePtrRiskCandidate(ctx, func_name, call, diag);
+                defer candidate.deinit();
+                // Verify candidate through IssueVerifier
+                if (ctx.issue_verifier) |verifier| {
+                    const result = try verifier.verify(&candidate);
+                    if (result.shouldReport()) {
+                        const sev2: Severity = switch (result.severity) {
+                            .critical => .critical,
+                            .high => .high,
+                            .medium => .medium,
+                            .low => .low,
+                            else => .medium,
+                        };
+                        // Convert candidate to Issue and add to context
+                        const issue = Issue.initWithTrace(
+                            .borrow_escape,
+                            candidate.reason orelse "Unsafe pointer risk detected",
+                            Location.init(func_name),
+                            sev2,
+                            result.adjusted_score,
+                            &[_]TraceEntry{},
+                        );
+                        try ctx.addIssue(&issue);
+                    }
+                } else {
+                    // Legacy mode: direct reporting
+                    const issue = Issue.initWithTrace(
+                        .borrow_escape,
+                        candidate.reason orelse "Unsafe pointer risk detected",
+                        Location.init(func_name),
+                        .high,
+                        0.72, // med_unsafe_ptr confidence
+                        &[_]TraceEntry{},
+                    );
+                    try ctx.addIssue(&issue);
+                }
                 stats.unsafeptr_risks += 1;
             }
         }
@@ -623,7 +700,43 @@ pub const CallbackEscapePass = struct {
                 }
             }
             if (!has_call_ret_transfer) {
-                try reportMallocLeak(ctx, func_name, pair_result.malloc_count, pair_result.free_count, diag);
+                // Generate candidate instead of direct reporting
+                var candidate = try cb_report.generateMallocLeakCandidate(ctx, func_name, pair_result.malloc_count, pair_result.free_count, diag);
+                defer candidate.deinit();
+                // Verify candidate through IssueVerifier
+                if (ctx.issue_verifier) |verifier| {
+                    const result = try verifier.verify(&candidate);
+                    if (result.shouldReport()) {
+                        const sev3: Severity = switch (result.severity) {
+                            .critical => .critical,
+                            .high => .high,
+                            .medium => .medium,
+                            .low => .low,
+                            else => .medium,
+                        };
+                        // Convert candidate to Issue and add to context
+                        const issue = Issue.initWithTrace(
+                            .memory_leak,
+                            candidate.reason orelse "Memory leak detected",
+                            Location.init(func_name),
+                            sev3,
+                            result.adjusted_score,
+                            &[_]TraceEntry{},
+                        );
+                        try ctx.addIssue(&issue);
+                    }
+                } else {
+                    // Legacy mode: direct reporting
+                    const issue = Issue.initWithTrace(
+                        .memory_leak,
+                        candidate.reason orelse "Memory leak detected",
+                        Location.init(func_name),
+                        .medium,
+                        Confidence.med_malloc_leak,
+                        &[_]TraceEntry{},
+                    );
+                    try ctx.addIssue(&issue);
+                }
                 stats.malloc_leaks += @as(u32, @intCast(pair_result.malloc_count - pair_result.free_count));
             } else {
                 diag.debug("[R8.0-SUPPRESSED] {s}: {d} allocs > {d} frees but ptr returned from call", .{ func_name, pair_result.malloc_count, pair_result.free_count });

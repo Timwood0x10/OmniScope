@@ -335,6 +335,34 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
                 try w.print("{s}\n", .{issue.message});
             }
 
+            // P19-15: Debug resource contract — show surface classification and downgrade reasons
+            if (issue.semantic_surface) |surface| {
+                try w.writeAll(term.dim);
+                try w.print("    Surface:    ", .{});
+                const surf_color = switch (surface) {
+                    .boundary, .ffi_producer => term.green,
+                    .reachable_from_boundary => term.bright_cyan,
+                    .internal_core => term.yellow,
+                    .runtime_internal, .unknown => term.red,
+                };
+                try w.writeAll(surf_color);
+                try w.print("{s}", .{surface.name()});
+                try w.writeAll(term.reset);
+                if (issue.escape_evidence) |esc| {
+                    try w.writeAll(term.dim);
+                    try w.print(" (escape={s})", .{@tagName(esc)});
+                }
+                try w.writeAll("\n");
+                try w.writeAll(term.reset);
+            }
+            if (issue.explained_safe) {
+                try w.writeAll(term.dim);
+                try w.print("    Status:     ", .{});
+                try w.writeAll(term.green);
+                try w.writeAll("explained-safe (downgraded by semantic gating)\n");
+                try w.writeAll(term.reset);
+            }
+
             // Rich context for high-confidence issues: detection path + call graph + FFI boundary
             if (issue.severity == .critical or issue.severity == .high) {
 

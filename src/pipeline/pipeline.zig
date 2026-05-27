@@ -31,6 +31,10 @@ const resource_summary = @import("../semantics/resource/function_summary.zig");
 const SummaryStore = resource_summary.SummaryStore;
 const resource_inference = @import("../semantics/resource/summary_inference.zig");
 const transfer_infer = @import("../semantics/resource/transfer_inference.zig");
+const resource_candidate = @import("../pass/analysis/resource/issue_candidate_builder.zig");
+const CandidateBuilder = resource_candidate.CandidateBuilder;
+const resource_verifier = @import("../pass/analysis/resource/issue_verifier.zig");
+const IssueVerifier = resource_verifier.IssueVerifier;
 const c = @import("../ir/llvm_raw.zig").c;
 
 /// Analysis pipeline
@@ -92,6 +96,13 @@ pub const Pipeline = struct {
             log.warn("Builtin summary initialization failed, using legacy mode", .{});
         };
 
+        // Initialize two-stage issue verification system
+        var candidate_builder = CandidateBuilder.init(self.allocator);
+        defer candidate_builder.deinit();
+
+        var issue_verifier = IssueVerifier.init(self.allocator);
+        defer issue_verifier.deinit();
+
         var ctx = PassContext{
             .allocator = self.allocator,
             .module = self.module,
@@ -134,6 +145,8 @@ pub const Pipeline = struct {
             .arena = null,
             .platform_profile = null,
             .resource_summary = &summary_store,
+            .candidate_builder = &candidate_builder,
+            .issue_verifier = &issue_verifier,
         };
         // Inject resource family registry into memory graph for P2/P3 classification
         ctx.memory_graph.setFamilyRegistry(&family_registry);

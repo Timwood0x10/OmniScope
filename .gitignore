@@ -5,8 +5,9 @@
 .claude/
 .codeartsdoer/
 .arts/
+.codegraph/
 
-Claude.md
+#Claude.md
 AGENTS.md
 
 *.swp

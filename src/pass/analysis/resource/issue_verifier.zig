@@ -18,9 +18,9 @@ pub const IssueCandidate = candidate_mod.IssueCandidate;
 pub const IssueKind = candidate_mod.IssueKind;
 pub const issueKindName = candidate_mod.issueKindName;
 
-const contract = @import("../../semantics/resource/contract.zig");
+const contract = @import("../../../semantics/resource/contract.zig");
 pub const ViolationSeverity = contract.ViolationSeverity;
-const effect = @import("../../semantics/resource/effect.zig");
+const effect = @import("../../../semantics/resource/effect.zig");
 pub const Confidence = effect.Confidence;
 
 // ============================================================================
@@ -135,20 +135,21 @@ pub const IssueVerifier = struct {
     pub fn init(allocator: std.mem.Allocator) IssueVerifier {
         return .{
             .allocator = allocator,
-            .results = std.ArrayList(VerificationResult).init(allocator),
+            .results = .{ .items = &[_]VerificationResult{}, .capacity = 0 },
+            .stats = .{},
         };
     }
 
     pub fn deinit(self: *IssueVerifier) void {
-        self.results.deinit();
+        self.results.deinit(self.allocator);
     }
 
     /// Verify a single candidate and produce a verdict.
     pub fn verify(self: *IssueVerifier, candidate: *const IssueCandidate) !VerificationResult {
         var score = candidate.raw_score;
         var severity: ViolationSeverity = .medium;
-        var influencers = std.ArrayList(VerifierId).init(self.allocator);
-        defer influencers.deinit();
+        var influencers = std.ArrayList(VerifierId){ .items = &[_]VerifierId{}, .capacity = 0 };
+        defer influencers.deinit(self.allocator);
 
         // P8-10: Family verifier
         score = self.applyFamilyVerifier(candidate, score, &influencers);
@@ -187,7 +188,7 @@ pub const IssueVerifier = struct {
             .skipped => self.stats.skipped += 1,
         }
 
-        try self.results.append(result);
+        try self.results.append(self.allocator, result);
         return result;
     }
 
@@ -197,24 +198,23 @@ pub const IssueVerifier = struct {
 
     /// P8-10: Family verifier — same/compatible family explains as safe.
     fn applyFamilyVerifier(self: *IssueVerifier, cand: *const IssueCandidate, score: f32, influencers: *std.ArrayList(VerifierId)) f32 {
-        _ = self;
 
         // If both families present and same/compatible → explain safe
         if (cand.alloc_family != null and cand.release_family != null) {
             const af = cand.alloc_family.?;
             const rf = cand.release_family.?;
             if (std.mem.eql(u8, af, rf)) {
-                influencers.append(.family_verifier) catch {};
+                influencers.append(self.allocator, .family_verifier) catch {};
                 return @max(0.0, score - ScoringParams.PENALTY_SAME_FAMILY);
             }
             // Mismatch → bonus (this IS interesting)
-            influencers.append(.family_verifier) catch {};
+            influencers.append(self.allocator, .family_verifier) catch {};
             return @min(1.0, score + ScoringParams.BONUS_FAMILY_MISMATCH);
         }
 
         // Unknown one side → penalty
         if (cand.alloc_family == null or cand.release_family == null) {
-            influencers.append(.family_verifier) catch {};
+            influencers.append(self.allocator, .family_verifier) catch {};
             return @max(0.0, score - ScoringParams.PENALTY_UNKNOWN_EVIDENCE);
         }
 
@@ -223,19 +223,17 @@ pub const IssueVerifier = struct {
 
     /// P8-11: Escape verifier — valid escapes downgrade or suppress.
     fn applyEscapeVerifier(self: *IssueVerifier, cand: *const IssueCandidate, score: f32, influencers: *std.ArrayList(VerifierId)) f32 {
-        _ = self;
-
         if (cand.escape_kind) |ek| {
             if (std.mem.indexOf(u8, ek, "valid") != null) {
                 // Has valid escape → significant downgrade
-                influencers.append(.escape_verifier) catch {};
+                influencers.append(self.allocator, .escape_verifier) catch {};
                 return @max(0.0, score - ScoringParams.PENALTY_VALID_ESCAPE);
             }
             if (std.mem.indexOf(u8, ek, "callback") != null or
                 std.mem.indexOf(u8, ek, "thread") != null)
             {
                 // Lifetime risk escape → small penalty
-                influencers.append(.escape_verifier) catch {};
+                influencers.append(self.allocator, .escape_verifier) catch {};
                 return @max(0.0, score - ScoringParams.PENALTY_LIFETIME_RISK_ESCAPE);
             }
         }
@@ -245,7 +243,6 @@ pub const IssueVerifier = struct {
 
     /// P8-12: Destructor verifier — RAII path exists?
     fn applyDestructorVerifier(self: *IssueVerifier, cand: *const IssueCandidate, score: f32, influencers: *std.ArrayList(VerifierId)) f32 {
-        _ = self;
 
         // Check evidence for destructor/drop/cleanup mentions
         for (cand.evidence.items) |ev| {
@@ -253,7 +250,7 @@ pub const IssueVerifier = struct {
                 std.mem.indexOf(u8, ev, "Drop") != null or
                 std.mem.indexOf(u8, ev, "RAII") != null)
             {
-                influencers.append(.destructor_verifier) catch {};
+                influencers.append(self.allocator, .destructor_verifier) catch {};
                 return @max(0.0, score - ScoringParams.PENALTY_VALID_DESTRUCTOR);
             }
         }
@@ -263,10 +260,8 @@ pub const IssueVerifier = struct {
 
     /// P8-14: FFI priority verifier — boundary issues get weight boost.
     fn applyFFIPriorityVerifier(self: *IssueVerifier, cand: *const IssueCandidate, score: f32, severity: *ViolationSeverity, influencers: *std.ArrayList(VerifierId)) f32 {
-        _ = self;
-
         if (cand.is_on_ffi_path) {
-            influencers.append(.ffi_priority_verifier) catch {};
+            influencers.append(self.allocator, .ffi_priority_verifier) catch {};
             const bonus = ScoringParams.BONUS_FFI_BOUNDARY *
                 @as(f32, @floatFromInt(255 - cand.ffi_boundary_distance)) / 255.0;
             if (bonus > 0.03) {
@@ -289,10 +284,7 @@ pub const IssueVerifier = struct {
         return .explained_safe;
     }
 
-    fn buildExplanation(self: *IssueVerifier, cand: *const IssueCandidate, verdict: VerifiedVerdict, score: f32) []const u8 {
-        _ = self;
-        _ = verdict;
-        _ = score;
+    fn buildExplanation(_: *IssueVerifier, cand: *const IssueCandidate, _: VerifiedVerdict, _: f32) []const u8 {
         return cand.reason orelse switch (cand.kind) {
             .leak => "Memory leak detected",
             .cross_family_free => "Cross-family free detected",
@@ -303,6 +295,8 @@ pub const IssueVerifier = struct {
             .thread_escape => "Thread escape detected",
             .needs_model => "Function semantics unknown",
             .diagnostic => "Diagnostic information",
+            .unchecked_return => "Unchecked return value from FFI function",
+            .ffi_type_mismatch => "FFI type mismatch detected",
         };
     }
 

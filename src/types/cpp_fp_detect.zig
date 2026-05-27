@@ -15,6 +15,7 @@ const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
 const Issue = @import("../diag/issue.zig").Issue;
 const Severity = @import("../diag/issue.zig").Severity;
+const IssueCandidate = @import("../pass/analysis/resource/issue_candidate_builder.zig").IssueCandidate;
 const Confidence = @import("../diag/issue.zig").Confidence;
 const Location = @import("../diag/issue.zig").Location;
 const ownership_types = @import("ownership_types.zig");
@@ -172,6 +173,10 @@ pub fn detectDoubleFree(
             }
 
             stats.double_frees += 1;
+                    // P20: Structured candidate evidence
+                    var df_cand = IssueCandidate.init(ctx.allocator, .double_release, 0.92);
+                    df_cand.func_name = first_func;
+                    df_cand.addEvidence("Same-BB double-free detected") catch {};
 
             const severity: Severity = .high;
             const confidence: f32 = 0.92;
@@ -334,6 +339,10 @@ pub fn detectMemoryLeaks(
                     const already_reported = reported_func_ptrs.contains(func_ptr_key);
                     if (!already_reported) {
                         stats.memory_leaks += 1;
+                        // P20: Structured candidate evidence
+                        var cpp_cand = IssueCandidate.init(ctx.allocator, .leak, 0.5);
+                        cpp_cand.func_name = alloc_info.func_name;
+                        cpp_cand.addEvidence("C++ internal leak: no free path") catch {};
                         ctx.addIssue(&Issue.init(
                             .memory_leak,
                             "C++ heap allocation never freed (internal leak)",
@@ -367,6 +376,12 @@ pub fn detectMemoryLeaks(
             const already_reported = reported_func_ptrs.contains(func_ptr_key);
             if (!already_reported) {
                 stats.memory_leaks += 1;
+                // P20: Structured candidate evidence
+                var gen_cand = IssueCandidate.init(ctx.allocator, .leak, 0.7);
+                gen_cand.func_name = alloc_info.func_name;
+                gen_cand.alloc_ptr = @as(u64, alloc_info.inst_id);
+                gen_cand.inst_addr = @as(u64, alloc_info.inst_id);
+                gen_cand.addEvidence("No free path found in reverse BFS analysis") catch {};
                 ctx.addIssue(&Issue.init(
                     .memory_leak,
                     "Memory allocated but never freed",

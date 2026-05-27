@@ -34,12 +34,19 @@ const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
+const SemanticSurface = @import("../common/types.zig").SemanticSurface;
 const NoiseSeverity = noise_filter.Severity;
 const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 
 const resource_summary_mod = @import("../semantics/resource/function_summary.zig");
 pub const SummaryStore = resource_summary_mod.SummaryStore;
+
+const resource_candidate_mod = @import("../pass/analysis/resource/issue_candidate_builder.zig");
+pub const CandidateBuilder = resource_candidate_mod.CandidateBuilder;
+
+const resource_verifier_mod = @import("../pass/analysis/resource/issue_verifier.zig");
+pub const IssueVerifier = resource_verifier_mod.IssueVerifier;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -232,6 +239,16 @@ pub const PassContext = struct {
     /// null = legacy mode (per-pass guessing). Set during pipeline init.
     resource_summary: ?*SummaryStore,
 
+    /// Issue candidate builder for two-stage verification.
+    /// Passes generate candidates instead of directly reporting issues.
+    /// The verifier then decides whether to promote, downgrade, or suppress.
+    candidate_builder: ?*CandidateBuilder,
+
+    /// Issue verifier for two-stage confirmation.
+    /// All candidates pass through here before becoming real Issues.
+    /// null = legacy mode (direct reporting). Set during pipeline init.
+    issue_verifier: ?*IssueVerifier,
+
     pub fn init(
         allocator: Allocator,
         module: ?ModuleRef,
@@ -282,6 +299,8 @@ pub const PassContext = struct {
             .arena = null,
             .platform_profile = null,
             .resource_summary = null,
+            .candidate_builder = null,
+            .issue_verifier = null,
         };
     }
 
@@ -444,6 +463,56 @@ pub const PassContext = struct {
         };
     }
 
+    /// P19-8: Infer SemanticSurface from function origin classification.
+    /// Maps noise_filter.FunctionOrigin → common.types.SemanticSurface.
+    /// This is a generic, name-independent mapping — no project/library whitelists.
+    fn inferSemanticSurface(func_name: []const u8, origin: noise_filter.FunctionOrigin) ?SemanticSurface {
+        const zone = zone_classifier.classifyFunction(func_name, null);
+
+        // Direct mapping from origin to surface
+        const surface: SemanticSurface = switch (origin) {
+            .user => .boundary,
+            .stdlib => .internal_core,
+            .compiler_generated => .runtime_internal,
+            .third_party => .internal_core,
+            .unknown => blk: {
+                // For unknown origin, use zone classifier as secondary signal
+                break :blk switch (zone) {
+                    .unsafe, .ffi => .boundary,
+                    .safe => .internal_core,
+                    .runtime_internal => .runtime_internal,
+                    .unknown => .unknown,
+                };
+            },
+        };
+
+        // Refinement: if function is in a known FFI producer pattern
+        // (factory/allocator called by boundary code), upgrade to ffi_producer
+        const is_ffi_producer = isFFIProducerPattern(func_name);
+        if (is_ffi_producer and surface == .internal_core) {
+            return .ffi_producer;
+        }
+
+        return surface;
+    }
+
+    /// Check if function name matches FFI producer patterns.
+    /// These are internal functions that PRODUCE values for FFI boundaries.
+    /// Examples: malloc wrapper, factory functions, allocators used by bridges.
+    fn isFFIProducerPattern(func_name: []const u8) bool {
+        // Allocator-like patterns (produce memory for FFI)
+        if (std.mem.indexOf(u8, func_name, "alloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "malloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "create") != null) return true;
+
+        // Serializer/marshaler patterns (produce data for FFI export)
+        if (std.mem.indexOf(u8, func_name, "marshal") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "serialize") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "pack") != null) return true;
+
+        return false;
+    }
+
     pub fn setModule(self: *PassContext, module: ModuleRef) void {
         self.module = module;
     }
@@ -492,6 +561,83 @@ pub const PassContext = struct {
         const func_name = issue.location.func;
         const classification = self.classifyFunctionSurface(func_name, null);
         var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
+
+        // ====================================================================
+        // P19-8/9/12: SemanticSurface inference + boundary_relevance gating
+        // ====================================================================
+        //
+        // Auto-classify where this issue originates (boundary vs internal).
+        // Then apply progressive downgrade for internal_core issues that
+        // lack structural evidence of boundary reachability.
+        //
+        // This is a GENERIC mechanism — no project/library name whitelists.
+        //
+
+        // 19-8: Infer semantic surface from function classification
+        const surface = inferSemanticSurface(func_name, classification.origin);
+        var mutable = issue.*;
+        mutable.semantic_surface = surface;
+
+        // 19-12: Progressive downgrade for non-boundary issues
+        // Rule: internal_core/runtime_internal issues cannot be HIGH or CRITICAL
+        // unless they have explicit FFI boundary evidence (on_danger_path).
+        if (surface) |s| {
+            const has_boundary_evidence = on_danger_path or switch (issue.kind) {
+                .cross_language_free,
+                .cross_language_leak,
+                .ffi_unsafe_call,
+                .ffi_type_mismatch,
+                .borrow_escape,
+                => true,
+                else => false,
+            };
+
+            // P19-10: write_to_immutable structural evidence gating
+            // Rule: write_to_immutable HIGH requires structural evidence that target
+            // is from immutable region/const global/readonly section.
+            // Name/type heuristic alone → cap at diagnostic.
+            if (issue.kind == .write_to_immutable and mutable.severity != .low) {
+                const has_structural_evidence = has_boundary_evidence or s == .boundary or s == .ffi_producer;
+                if (!has_structural_evidence) {
+                    const original_sev = mutable.severity;
+                    mutable.severity = .medium;
+                    mutable.explained_safe = true;
+                    log.debug("WRITE-IMMUTABLE-GATE: {s} {s}→{s} (heuristic_only, surface={s})", .{ func_name, @tagName(original_sev), @tagName(mutable.severity), s.name() });
+                }
+            }
+
+            // P19-11: invalid_free structural evidence gating
+            // Rule: invalid_free HIGH requires one of:
+            //   - alloc/free family mismatch
+            //   - non-owned pointer release
+            //   - stack/static/global free
+            //   - double release
+            // unknown_alloc provenance → cap at MEDIUM.
+            if (issue.kind == .invalid_free and mutable.severity == .high) {
+                const has_strong_evidence = has_boundary_evidence or s == .boundary or s == .ffi_producer;
+                if (!has_strong_evidence and (s == .internal_core or s == .runtime_internal or s == .unknown)) {
+                    mutable.severity = .medium;
+                    mutable.explained_safe = true;
+                    log.debug("INVALID-FREE-GATE: {s} HIGH→MEDIUM (weak provenance, surface={s})", .{ func_name, s.name() });
+                }
+            }
+
+            if (!has_boundary_evidence and !s.allowsHigh()) {
+                // 19-9: No boundary reachability + surface doesn't allow HIGH → downgrade
+                const original_severity = mutable.severity;
+                if (mutable.severity == .critical or mutable.severity == .high) {
+                    mutable.severity = .medium;
+                    log.debug("SURFACE-DOWNGRADE: {s} in [{s}] {s}→{s} (surface={s}, no boundary evidence)", .{ @tagName(mutable.kind), func_name, @tagName(original_severity), @tagName(mutable.severity), s.name() });
+                }
+                mutable.explained_safe = true;
+            }
+
+            // Even stricter: runtime_internal → cap at LOW
+            if (s == .runtime_internal and mutable.severity != .low) {
+                mutable.severity = .low;
+                mutable.explained_safe = true;
+            }
+        }
 
         // FFI boundary issues should NOT be suppressed by noise filter
         // FFI cross-ABI calls are inherently security-relevant regardless of function origin

@@ -291,3 +291,57 @@ pub fn isSinkFunction(name: []const u8) bool {
     }
     return false;
 }
+
+// ============================================================================
+// P19-7: Unit Tests — Generic Transfer Fixtures
+// ============================================================================
+
+test "isAllocationFunction - standard C allocators" {
+    try std.testing.expect(isAllocationFunction("malloc"));
+    try std.testing.expect(isAllocationFunction("calloc"));
+    try std.testing.expect(isAllocationFunction("realloc"));
+    try std.testing.expect(isAllocationFunction("posix_memalign"));
+    try std.testing.expect(isAllocationFunction("strdup"));
+    try std.testing.expect(!isAllocationFunction("free"));
+    try std.testing.expect(!isAllocationFunction("printf"));
+    try std.testing.expect(!isAllocationFunction("my_variable"));
+}
+
+test "isSinkFunction - known sinks" {
+    try std.testing.expect(isSinkFunction("memcpy"));
+    try std.testing.expect(isSinkFunction("printf"));
+    try std.testing.expect(isSinkFunction("free"));
+    try std.testing.expect(!isSinkFunction("malloc"));
+    try std.testing.expect(!isSinkFunction("create"));
+}
+
+test "TransferResult format - detected" {
+    const r = TransferResult{
+        .detected = true,
+        .trigger = .return_to_caller,
+        .reason = "test reason",
+    };
+    var buf: [128]u8 = undefined;
+    const f = try std.fmt.bufPrint(&buf, "{}", .{r});
+    try std.testing.expectEqualStrings("return_to_caller(test reason)", f);
+}
+
+test "TransferResult format - not detected" {
+    const r = TransferResult{ .detected = false };
+    var buf: [64]u8 = undefined;
+    const f = try std.fmt.bufPrint(&buf, "{}", .{r});
+    try std.testing.expectEqualStrings("no_transfer", f);
+}
+
+test "Trigger enum coverage - all escape types represented" {
+    const triggers = [_]ContractTransition.Trigger{
+        .return_to_caller,
+        .out_param_store,
+        .field_store,
+        .global_store,
+        .callback_escape,
+    };
+    for (triggers) |t| {
+        _ = @tagName(t);
+    }
+}

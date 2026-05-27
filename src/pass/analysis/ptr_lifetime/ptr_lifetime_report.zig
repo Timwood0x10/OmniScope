@@ -21,6 +21,7 @@ const provenance = @import("../provenance.zig");
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const escape_mod = @import("../../../semantics/resource/escape.zig");
 pub const EscapeRecord = escape_mod.EscapeRecord;
+const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;
 
 pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !TraceEntry {
     const desc = try std.fmt.allocPrint(allocator, fmt, args);
@@ -835,4 +836,26 @@ fn endsWithIgnoreCase(haystack: []const u8, needle: []const u8) bool {
         if (hlc != nlc) return false;
     }
     return true;
+}
+
+/// P20: Generate structured IssueCandidate for heap pointer return (factory pattern).
+/// Used by ptr_lifetime_violations.zig for verifier integration.
+pub fn generateReturnHeapPtrCandidate(
+    ctx: *PassContext,
+    func_name: []const u8,
+    ptr_info: *const PtrInfo,
+    _inst: c.LLVMValueRef,
+    diag: *DiagnosticWriter,
+) !?IssueCandidate {
+    _ = diag;
+    var candidate = IssueCandidate.init(ctx.allocator, .leak, 0.72);
+    candidate.func_name = func_name;
+    if (ptr_info.source_inst) |s| {
+        candidate.alloc_ptr = @as(u64, @intFromPtr(s));
+        candidate.inst_addr = @as(u64, @intFromPtr(s));
+    }
+    candidate.is_on_ffi_path = ctx.isOnDangerPathFull(@as(u64, @intFromPtr(_inst)));
+    candidate.addEvidence("Heap pointer returned to caller (potential factory pattern)") catch {};
+    candidate.addEvidence(std.fmt.allocPrint(ctx.allocator, "Function: {s}", .{func_name}) catch unreachable) catch {};
+    return candidate;
 }

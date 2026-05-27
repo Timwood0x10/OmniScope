@@ -546,8 +546,49 @@ pub fn checkReturnViolation(
                     diag.debug("[MARKED] Lifecycle-bound return: {s} -> {s} (handle-dependent lifetime)", .{ func_name, ptr_info.source_desc });
                     stats.heap_intentional_transfer += 1;
                 } else {
-                    try reportReturnHeapPtr(ctx, func_name, ptr_info, inst, diag);
-                    stats.heap_ambiguous_found += 1;
+                    // Generate candidate instead of direct reporting
+                    if (try report.generateReturnHeapPtrCandidate(ctx, func_name, &ptr_info, inst, diag)) |candidate| {
+                        defer {
+                            var mut_candidate = candidate;
+                            mut_candidate.deinit();
+                        }
+                        // Verify candidate through IssueVerifier
+                        if (ctx.issue_verifier) |verifier| {
+                            const result = try verifier.verify(&candidate);
+                                                    if (result.shouldReport()) {
+                                                        // Convert ViolationSeverity to Severity
+                                                        const severity: Severity = switch (result.severity) {
+                                                            .critical => .critical,
+                                                            .high => .high,
+                                                            .medium => .medium,
+                                                            .low => .low,
+                                                            .diagnostic => .low,
+                                                            .explained => .low,
+                                                        };
+                                                        // Convert candidate to Issue and add to context
+                                                        const issue = Issue.initWithTrace(
+                                                            .memory_leak,
+                                                            candidate.reason orelse "Memory leak detected",
+                                                            Location.init(func_name),
+                                                            severity,
+                                                            result.adjusted_score,
+                                                            &[_]TraceEntry{},
+                                                        );
+                                                        try ctx.addIssue(&issue);
+                                                    }                        } else {
+                            // Legacy mode: direct reporting
+                            const issue = Issue.initWithTrace(
+                                .memory_leak,
+                                candidate.reason orelse "Memory leak detected",
+                                Location.init(func_name),
+                                .high,
+                                0.72,
+                                &[_]TraceEntry{},
+                            );
+                            try ctx.addIssue(&issue);
+                        }
+                        stats.heap_ambiguous_found += 1;
+                    }
                 }
             } else {
                 diag.debug("[SUPPRESSED] Heap return in factory function: {s} (intentional ownership transfer)", .{func_name});

@@ -34,6 +34,10 @@ pub const IssueKind = enum(u8) {
     needs_model,
     /// Informational diagnostic (not a bug).
     diagnostic,
+    /// Unchecked return value from FFI function (null guard missing).
+    unchecked_return,
+    /// FFI type mismatch between caller and callee.
+    ffi_type_mismatch,
 };
 
 pub fn issueKindName(kind: IssueKind) []const u8 {
@@ -47,6 +51,8 @@ pub fn issueKindName(kind: IssueKind) []const u8 {
         .thread_escape => "thread_escape",
         .needs_model => "needs_model",
         .diagnostic => "diagnostic",
+        .unchecked_return => "unchecked_return",
+        .ffi_type_mismatch => "ffi_type_mismatch",
     };
 }
 
@@ -83,6 +89,8 @@ pub const IssueCandidate = struct {
     ffi_boundary_distance: u8 = 255,
     /// Evidence items explaining why this candidate was generated.
     evidence: std.ArrayList([]const u8),
+    /// Allocator for evidence list.
+    allocator: std.mem.Allocator,
     /// Human-readable reason summary.
     reason: ?[]const u8 = null,
 
@@ -93,17 +101,18 @@ pub const IssueCandidate = struct {
             .alloc_ptr = 0,
             .func_name = "",
             .inst_addr = 0,
-            .evidence = std.ArrayList([]const u8).init(allocator),
+            .evidence = .{ .items = &[_][]const u8{}, .capacity = 0 },
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *IssueCandidate) void {
-        self.evidence.deinit();
+        self.evidence.deinit(self.allocator);
     }
 
     /// Add an evidence item to this candidate.
     pub fn addEvidence(self: *IssueCandidate, item: []const u8) !void {
-        try self.evidence.append(item);
+        try self.evidence.append(self.allocator, item);
     }
 };
 
@@ -121,7 +130,7 @@ pub const CandidateBuilder = struct {
     pub fn init(allocator: std.mem.Allocator) CandidateBuilder {
         return .{
             .allocator = allocator,
-            .candidates = std.ArrayList(IssueCandidate).init(allocator),
+            .candidates = .{ .items = &[_]IssueCandidate{}, .capacity = 0 },
         };
     }
 
@@ -129,7 +138,7 @@ pub const CandidateBuilder = struct {
         for (self.candidates.items) |*c| {
             c.deinit();
         }
-        self.candidates.deinit();
+        self.candidates.deinit(self.allocator);
     }
 
     // ========================================================================
@@ -164,7 +173,7 @@ pub const CandidateBuilder = struct {
             "{s} freed by {s}-family deallocator in {s}",
             .{ alloc_fam, release_fam, callee_name },
         );
-        try self.candidates.append(c);
+        try self.candidates.append(self.allocator, c);
         return &self.candidates.items[self.candidates.items.len - 1];
     }
 
@@ -197,7 +206,7 @@ pub const CandidateBuilder = struct {
             "Use after release by {s} in {s}",
             .{ release_callee, func_name },
         );
-        try self.candidates.append(c);
+        try self.candidates.append(self.allocator, c);
         return &self.candidates.items[self.candidates.items.len - 1];
     }
 
@@ -244,7 +253,7 @@ pub const CandidateBuilder = struct {
                 if (has_valid_escape) " (has valid escape)" else "",
             },
         );
-        try self.candidates.append(c);
+        try self.candidates.append(self.allocator, c);
         return &self.candidates.items[self.candidates.items.len - 1];
     }
 
@@ -287,7 +296,7 @@ pub const CandidateBuilder = struct {
                 issueKindName(kind), callee_name, func_name,
             },
         );
-        try self.candidates.append(c);
+        try self.candidates.append(self.allocator, c);
         return &self.candidates.items[self.candidates.items.len - 1];
     }
 
@@ -321,7 +330,7 @@ pub const CandidateBuilder = struct {
                 unknown_callee, func_name,
             },
         );
-        try self.candidates.append(c);
+        try self.candidates.append(self.allocator, c);
         return &self.candidates.items[self.candidates.items.len - 1];
     }
 
@@ -343,7 +352,7 @@ pub const CandidateBuilder = struct {
 
     /// Take ownership of all candidates (for transfer to verifier).
     pub fn takeCandidates(self: *CandidateBuilder) std.ArrayList(IssueCandidate) {
-        var result = std.ArrayList(IssueCandidate).init(self.allocator);
+        var result = std.ArrayList(IssueCandidate){};
         for (self.candidates.items) |c| {
             result.append(c) catch {};
         }

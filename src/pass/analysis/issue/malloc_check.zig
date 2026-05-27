@@ -20,6 +20,7 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
+const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;
 
 /// Memory allocation functions that return nullable pointers
 const ALLOC_FUNCTIONS = &[_][]const u8{
@@ -230,12 +231,24 @@ pub const MallocCheckPass = struct {
             .{ alloc_func_name, 0.85 * 100.0 },
         );
 
+        const severity: Severity = .high;
+        const confidence: f32 = 0.85;
+
+        // P20: Structured candidate for malloc unchecked
+        var cand = IssueCandidate.init(ctx.allocator, .leak, confidence);
+        cand.func_name = caller_name;
+        cand.alloc_ptr = @as(u64, @intFromPtr(use_inst));
+        cand.inst_addr = @as(u64, @intFromPtr(use_inst));
+        cand.is_on_ffi_path = true;
+        cand.addEvidence("malloc() result used without null check") catch {};
+        cand.addEvidence(std.fmt.allocPrint(ctx.allocator, "Function: {s}", .{caller_name}) catch unreachable) catch {};
+
         const issue = Issue.initWithTrace(
             .malloc_unchecked,
-            message,
+            cand.reason orelse message,
             location,
-            .high,
-            0.85,
+            severity,
+            cand.raw_score,
             trace,
         );
 
