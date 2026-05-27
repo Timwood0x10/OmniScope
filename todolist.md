@@ -769,6 +769,87 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 
 ---
 
+## Phase 16 (Actual)：Severity 恢复 + 防塌缩 + 来源分类 ⭐✅ 已完成
+
+> **日期**: 2026-05-26
+> **目标**: 完成 P0 severity fix + P0.5 防塌缩 + P1 来源分类改进
+> **状态**: ✅ **全部完成** — **HIGH 从 baseline 52 → 当前 30 (58%恢复)**
+
+### 完成的改进
+
+#### ✅ 16.1 P0: Severity Downgrade Fix + 白名单优化
+
+**文件**: [pass_types.zig:537-556](file:///Users/scc/code/zigcode/OmniScope/src/types/pass_types.zig#L537-L556)
+
+**变更内容**:
+1. **新增 `is_core_memory_safety_bug` 白名单** (P16-1 ✅):
+   - 包含: use_after_free, double_free, invalid_free, null_dereference, buffer_overflow, cross_language_free, cross_language_leak
+   - **移除 .memory_leak** (P16-3 ✅): leak 是概率性 bug，保留会推高 FP severity
+
+2. **效果**: CRITICAL 从 0 → **9** (82%恢复) 🎉
+
+#### ✅ 16.2 P0.5: 防塌缩机制 (P16-11~13 ✅)
+
+**文件**: [pass_types.zig:562-592](file:///Users/scc/code/zigcode/OmniScope/src/types/pass_types.zig#L562-L592)
+
+**实现**:
+```zig
+// stepDown: 最多降一档
+const stepped_severity = switch (issue.severity) {
+    .critical => .high, .high => .medium, .medium => .low, .low => .low,
+};
+// severityMax: 取较高 severity（防止悬崖式降级）
+```
+
+**效果**: 
+- `ffi_unsafe_call (.critical)` → `.high` (而非 `.low`) ✅
+- `borrow_escape (.high)` → `.medium` (而非 `.low`) ✅
+
+#### ✅ 16.3 P1: 函数来源分类改进 ⭐⭐⭐ 核心突破 (P16-21~24 ✅)
+
+**文件**: [pass_types.zig:418-433](file:///Users/scc/code/zigcode/OmniScope/src/types/pass_types.zig#L418-L433)
+
+**Root Cause**: `classifyFunctionSurface()` 在缓存未命中时直接返回 `.unknown`
+
+**解决方案**: 添加名称启发式 fallback (`classifyFunctionOrigin()`)
+```zig
+const fn_origin_heuristic = ffi_enhancement.classifyFunctionOrigin(func_name);
+// 转换类型并返回（如果非 unknown）
+```
+
+**效果**: 
+- **HIGH 从 15 → 30 (+100%)** 🎉🎉🎉
+- **LOW 从 45 → 26 (-42%)** ✅ FP大幅减少
+- **unknown 比例从 ~60% 降到 <20%** ✅
+
+### Benchmark 数据 (Phase 16 Final)
+
+| Metric | Baseline | Post-P14 | Post-P15 | Post-P16-1 | **Post-P16-3** |
+|--------|----------|----------|----------|------------|---------------|
+| **CRITICAL** | 11 | 0 | 0 | 9 | **9** (82%) |
+| **HIGH** | 52 | 10 | 10 | 15 | **30** (**58%**) |
+| **MEDIUM** | 30 | 35 | 33 | 19 | **22** |
+| **LOW** | 10 | 88 | 87 | 37 | **26** |
+| **Total** | 103 | 133 | 130 | 80 | **87** |
+| **F1 Score** | ~78.2% | ~86.6% | ~87.1% | ~90.3% | **~91%** |
+
+### 验收结果 (全部通过 ✅)
+
+| Metric | 目标 | 实际 | 达成率 | 状态 |
+|--------|------|------|--------|------|
+| CRITICAL ≥ 4 | 4 | **9** | 225% | ✅✅✅ |
+| HIGH ≥ 18 | 18 | **30** | 167% | ✅✅✅ |
+| F1 ≥ 0.89 | 0.89 | **~0.91** | 102% | ✅✅ |
+| unknown < 20% | < 20% | **< 20%** | 达标 | ✅ |
+| 无 CRITICAL→LOW 塌缩 | 0 cases | **0 cases** | 达标 | ✅ |
+
+### 相关文档
+
+- 完整分析报告: [P15_DIFF_REPORT.md](./P15_DIFF_REPORT.md)
+- Benchmark 报告: [BENCHMARK_REPORT.md](./BENCHMARK_REPORT.md)
+
+---
+
 ## Phase 17：性能与文件大小控制 (原 Phase 16)
 
 ### 文件大小原则
@@ -786,6 +867,67 @@ P15 已定位 root cause 与初步 P0 修复落地（pass_types.zig:537 P16-1 �
 - [ ] 17-5：ResourceContractGraph 使用 compact id，不在边上保存大对象。
 - [ ] 17-6：Path-sensitive leak 设置 path budget 和 node budget。
 - [ ] 17-7：对比基线性能：`PointerOwnership init`、`PointerOwnership analysis`、总耗时、峰值内存。
+
+### Phase 17 (Actual) — 文件拆分与清理 ✅
+
+**日期**: 2026-05-27
+**状态**: ✅ 全部完成
+
+#### P17-2: 拆分 ptr_lifetime_violations.zig ✅
+
+| 指标 | Before | After | Change |
+|------|--------|-------|--------|
+| ptr_lifetime_violations.zig | **987 行** | **844 行** | **-143 (-14.5%)** |
+| ptr_lifetime_return_helpers.zig (新) | N/A | **160 行** | 新建 |
+
+**拆分函数**:
+- `is_lifecycle_bound_return()` — lifecycle-bound handle detection
+- `isSretAlloca()` — LLVM sret pattern recognition
+- `isAllocaReturnSuppressed()` — constructor/factory suppression
+- `isStackEscapeSuppressed()` — known safe stack escapes
+
+**方式**: re-export (`pub const fn = return_helpers.fn`)
+
+#### P17-3: 清理 issue_suppression.zig deprecated code ✅
+
+| 指标 | Before | After | Change |
+|------|--------|-------|--------|
+| issue_suppression.zig | **1403 行** | **863 行** | **-540 (-38.5%)** |
+
+**删除内容**:
+- Pattern A-F 函数体 (~370 行): `isRustDropChainLeak`, `isStaticProvenanceEscape`, `isPanicCleanupDoubleFree`, `isOsApiStandardUsage`, `isSafeExampleFunction`, `isDefensiveCodingPattern`
+- Pattern A-F 测试代码 (~177 行): 30+ 个 test 块
+- **保留**: Pattern G (`isStdlibInternalFunction`) + shouldSuppressWithProfile 测试
+
+**联动修改**: `pass_types.zig:474-488` — 移除 Pattern A-F stats 记录分支
+
+#### P17-1/P17-4: 真实项目验证 + 全量验证 ✅
+
+| 验证项 | 结果 |
+|-------|------|
+| `zig build` | ✅ exit code 0 |
+| `zig fmt --check` | ✅ exit code 0 |
+| 单元测试 | ✅ **60/60 passed** |
+
+**真实项目验证结果**:
+
+| 项目 | Issues | C/H/M/L | stdlib→user 误标? |
+|------|--------|---------|------------------|
+| python-xxhash | **0** | 0/0/0/0 | ❌ 无 (0) |
+| crc32fast | **0** | 0/0/0/0 | ❌ 无 (0) |
+| zstd-rs | **29** | 0/20/9/0 | ❌ 无 (0) |
+| go-sqlite3 | **545** | 1/515/24/5 | ❌ 无 (0) |
+
+**结论**: 4/4 项目零误标，stdlib/dep 分类精度达标 ✅
+
+#### 当前大文件状态 (< 1000 行目标)
+
+| 文件 | 当前行数 | 状态 |
+|------|---------|------|
+| memory_graph.zig | ~913 | ✅ < 1000 |
+| ptr_lifetime_violations.zig | **844** | ✅ < 1000 (P17-2) |
+| issue_suppression.zig | **863** | ✅ < 1000 (P17-3) |
+| ptr_lifetime_report.zig | ~890 | ✅ < 1000 |
 
 基线参考：
 

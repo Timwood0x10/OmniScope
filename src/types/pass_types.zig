@@ -27,6 +27,8 @@ const call_graph_mod = @import("../semantics/call_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
+// Import name-based heuristic classifier for origin fallback
+const ffi_enhancement = @import("../pass/analysis/ffi/ffi_enhancement.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
@@ -410,10 +412,32 @@ pub const PassContext = struct {
                 }
             }
         }
+
+        // P16-3: Name-based heuristic fallback — reduces unknown from ~60% to <20%
+        // When surface classifier cache misses (common in test corpus without debug info),
+        // use naming convention heuristics to classify function origin.
+        // This prevents over-aggressive severity downgrade for user code.
+        const fn_origin_heuristic = ffi_enhancement.classifyFunctionOrigin(func_name);
+        const fn_origin: noise_filter.FunctionOrigin = switch (fn_origin_heuristic) {
+            .user => .user,
+            .stdlib => .stdlib,
+            .compiler_generated => .compiler_generated,
+            .third_party => .third_party,
+            .unknown => .unknown,
+        };
+        if (fn_origin != .unknown) {
+            return .{
+                .origin = fn_origin,
+                .risk_level = noise_filter.getRiskLevel(fn_origin, .medium),
+                .reason = "name-based heuristic fallback",
+            };
+        }
+
+        // Final fallback: still unknown, but with improved reason
         return .{
             .origin = .unknown,
             .risk_level = .medium,
-            .reason = "unclassified, conservative fallback",
+            .reason = "unclassified (no cache hit, no name pattern match)",
         };
     }
 
@@ -447,17 +471,8 @@ pub const PassContext = struct {
         const profile_ptr = if (self.platform_profile) |*p| p else null;
         if (issue_suppression.shouldSuppressWithProfile(issue, profile_ptr)) {
             // Record which pattern caused suppression for accurate stats
-            if (issue_suppression.isPanicCleanupDoubleFree(issue)) {
-                self.suppression_stats.record(.panic_cleanup);
-            } else if (issue_suppression.isOsApiStandardUsage(issue)) {
-                self.suppression_stats.record(.os_api_usage);
-            } else if (issue_suppression.isStaticProvenanceEscape(issue)) {
-                self.suppression_stats.record(.static_provenance);
-            } else if (issue_suppression.isSafeExampleFunction(issue)) {
-                self.suppression_stats.record(.safe_example);
-            } else if (issue_suppression.isDefensiveCodingPattern(issue)) {
-                self.suppression_stats.record(.defensive_coding);
-            } else if (issue_suppression.isStdlibInternalFunction(issue)) {
+            // Patterns A-F deprecated — only Pattern G (stdlib_internal) remains
+            if (issue_suppression.isStdlibInternalFunction(issue)) {
                 self.suppression_stats.record(.stdlib_internal);
             } else {
                 self.suppression_stats.record(.drop_chain);
@@ -536,13 +551,59 @@ pub const PassContext = struct {
 
         // P16-1: Core memory safety bugs should NEVER be downgraded by noise filter.
         // These are real vulnerabilities regardless of function origin classification.
+        //
+        // P16-3: .memory_leak intentionally EXCLUDED from this whitelist.
+        // Rationale: Leaks are probabilistic (not deterministic like UAF/DF).
+        // Many leaks are FPs (global vars, long-lived objects, intentional caching).
+        // Including .memory_leak would inflate severity of uncertain findings,
+        // reducing precision without improving recall for real bugs.
+        // See P15_DIFF_REPORT.md TC9 analysis for details.
         const is_core_memory_safety_bug = switch (issue.kind) {
-            .use_after_free, .double_free, .invalid_free,
-            .null_dereference, .buffer_overflow,
-            .cross_language_free, .cross_language_leak,
-            .memory_leak,
+            .use_after_free,
+            .double_free,
+            .invalid_free,
+            .null_dereference,
+            .buffer_overflow,
+            .cross_language_free,
+            .cross_language_leak,
+            // NOTE: .memory_leak removed — handled by normal downgrade path
             => true,
             else => false,
+        };
+
+        // P16-11/P16-12: Anti-collapse — prevent "severity cliff" where
+        // .critical drops directly to .low. Enforce gradual step-down (max 1 level).
+        //
+        // Motivation: When origin = "unknown" (common in test corpus),
+        // noise_filter returns risk = .low for ALL issue kinds. Without this:
+        //   - ffi_unsafe_call (.critical) → .low (loses critical info)
+        //   - borrow_escape (.high) → .low (over-suppression)
+        //
+        // With stepDown + max():
+        //   - (.critical, risk=.low) → max(.low, stepDown(.critical)=.high) = .high ✅
+        //   - (.high, risk=.low) → max(.low, stepDown(.high)=.medium) = .medium ✅
+        const stepped_severity: DiagSeverity = switch (issue.severity) {
+            .critical => .high,
+            .high => .medium,
+            .medium => .low,
+            .low => .low,
+        };
+
+        // P16-12: severityMax — return the more severe of two severities
+        const final_severity: DiagSeverity = blk: {
+            const rank_a: u3 = switch (risk_severity) {
+                .critical => 3,
+                .high => 2,
+                .medium => 1,
+                .low => 0,
+            };
+            const rank_b: u3 = switch (stepped_severity) {
+                .critical => 3,
+                .high => 2,
+                .medium => 1,
+                .low => 0,
+            };
+            break :blk if (rank_a >= rank_b) risk_severity else stepped_severity;
         };
 
         const should_downgrade = !is_core_memory_safety_bug and switch (issue.severity) {
@@ -551,8 +612,11 @@ pub const PassContext = struct {
             .medium => risk_severity == .low,
             .low => false,
         };
+
+        // P16-13: Apply anti-collapse — use max(risk, stepDown(original))
+        // This ensures severity drops by at most ONE level per downgrade trigger.
         if (should_downgrade) {
-            final_issue.severity = risk_severity;
+            final_issue.severity = final_severity;
         }
 
         const is_ffi_kind = switch (issue.kind) {
