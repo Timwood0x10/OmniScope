@@ -69,9 +69,7 @@ pub const EscapeKind = enum(u8) {
 
     pub fn isValidDisposal(kind: EscapeKind) bool {
         return switch (kind) {
-            .return_to_caller, .out_param, .field_store,
-            .global_store, .static_lifetime, .consumed_by_function,
-            .container => true,
+            .return_to_caller, .out_param, .field_store, .global_store, .static_lifetime, .consumed_by_function, .container => true,
             .callback, .thread => false,
             .unknown, .no_escape => false,
         };
@@ -211,23 +209,23 @@ pub const EscapeList = struct {
 pub const EscapeClassifier = struct {
     /// Known callback-registering functions whose pointer argument escapes.
     const callback_patterns = [_][]const u8{
-        "pthread_create",      "thrd_create",
-        "register_atexit",     "atexit",
-        "signal",              "sigaction",
-        "SDL_AddTimer",        "SDL_SetEventFilter",
-        "glfwSetKeyCallback",  "glfwSetCursorPosCallback",
-        "RegisterClass",       "SetWindowLongPtrW",
+        "pthread_create",           "thrd_create",
+        "register_atexit",          "atexit",
+        "signal",                   "sigaction",
+        "SDL_AddTimer",             "SDL_SetEventFilter",
+        "glfwSetKeyCallback",       "glfwSetCursorPosCallback",
+        "RegisterClass",            "SetWindowLongPtrW",
         "objc_setAssociatedObject",
     };
 
     /// Known thread-spawning functions.
     const thread_patterns = [_][]const u8{
-        "pthread_create",      "thrd_create",
-        "std::thread",         "_ZNSt6thread",
-        "CreateThread",        "_beginthreadex",
-        "std::async",          "std::spawn",
-        "Task::spawn",         "tokio::spawn",
-        "go_cgo_invoke",       // Go cgo
+        "pthread_create", "thrd_create",
+        "std::thread",    "_ZNSt6thread",
+        "CreateThread",   "_beginthreadex",
+        "std::async",     "std::spawn",
+        "Task::spawn",    "tokio::spawn",
+        "go_cgo_invoke", // Go cgo
     };
 
     /// Known container-insertion functions.

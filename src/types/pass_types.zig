@@ -533,7 +533,19 @@ pub const PassContext = struct {
             .low => .low,
             .suppressed => .low,
         };
-        const should_downgrade = switch (issue.severity) {
+
+        // P16-1: Core memory safety bugs should NEVER be downgraded by noise filter.
+        // These are real vulnerabilities regardless of function origin classification.
+        const is_core_memory_safety_bug = switch (issue.kind) {
+            .use_after_free, .double_free, .invalid_free,
+            .null_dereference, .buffer_overflow,
+            .cross_language_free, .cross_language_leak,
+            .memory_leak,
+            => true,
+            else => false,
+        };
+
+        const should_downgrade = !is_core_memory_safety_bug and switch (issue.severity) {
             .critical => risk_severity != .critical,
             .high => risk_severity == .medium or risk_severity == .low,
             .medium => risk_severity == .low,

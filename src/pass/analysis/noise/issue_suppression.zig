@@ -55,6 +55,21 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const platform_profile_mod = @import("../../../semantics/platform_profile.zig");
 pub const PlatformProfile = platform_profile_mod.PlatformProfile;
 
+/// ═══════════════════════════════════════════════════════════════
+/// DEPRECATED: This module is being replaced by the Resource Contract Graph system.
+///
+/// Migration path:
+///   - Pattern A (Rust Drop Chain) → summary_inference.zig inferDestructorLikeSummary()
+///   - Pattern B (C++ destructor) → same as above
+///   - Pattern C (Python same-family) → family_registry.zig compareFamilies(.same_family)
+///   - Pattern D (Slice-to-ptr bridge) → inferBridgeHelperSummary() + isBridgeHelper()
+///   - Pattern E (Py_DECREF conditional) → Effect.conditional_release in SummaryStore
+///   - Pattern F (Static lifetime) → inferStaticLifetimeSink() + EscapeKind.static_lifetime
+///
+/// New code should use CandidateBuilder + IssueVerifier instead of direct suppression.
+/// This file will be removed once all call sites are migrated.
+/// ═══════════════════════════════════════════════════════════════
+
 // ============================================================================
 // Public API
 // ============================================================================

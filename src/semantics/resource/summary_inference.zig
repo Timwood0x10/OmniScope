@@ -423,7 +423,7 @@ pub fn inferFunctionSummary(
 const destructor_patterns = [_]struct { []const u8, bool }{
     // (pattern, is_suffix)
     .{ "drop", true },
-    .{ "Drop", true },           // Rust Drop trait impl
+    .{ "Drop", true }, // Rust Drop trait impl
     .{ "destroy", true },
     .{ "Destroy", true },
     .{ "dealloc", true },
@@ -436,8 +436,8 @@ const destructor_patterns = [_]struct { []const u8, bool }{
     .{ "dispose", true },
     .{ "finalize", true },
     .{ "Finalize", true },
-    .{ "__del__", false },       // Python special method
-    .{ "__dealloc__", false },   // Python special method
+    .{ "__del__", false }, // Python special method
+    .{ "__dealloc__", false }, // Python special method
     .{ "cleanup", true },
     .{ "Cleanup", true },
     .{ "release", true },
@@ -445,9 +445,9 @@ const destructor_patterns = [_]struct { []const u8, bool }{
     .{ "close", true },
     .{ "Close", true },
     // C++ Itanium destructor mangling
-    .{ "D0ev", true },          // complete object destructor
-    .{ "D1ev", true },          // base object destructor
-    .{ "D2ev", true },          // deleting destructor
+    .{ "D0ev", true }, // complete object destructor
+    .{ "D1ev", true }, // base object destructor
+    .{ "D2ev", true }, // deleting destructor
     .{ "D0Ev", true },
     .{ "D1Ev", true },
     .{ "D2Ev", true },
@@ -455,7 +455,7 @@ const destructor_patterns = [_]struct { []const u8, bool }{
     .{ "drop_in_place", false },
     .{ "__rust_dealloc", false },
     // Objective-C
-    .{ "dealloc", false },       // NSObject subclass
+    .{ "dealloc", false }, // NSObject subclass
 };
 
 /// Infer that a function is a destructor-like resource consumer.
@@ -492,15 +492,15 @@ pub fn inferDestructorLikeSummary(
                 confidence = 0.95;
             } else if (startsWith(pattern, "D") and
                 (std.mem.eql(u8, pattern, "D0ev") or
-                 std.mem.eql(u8, pattern, "D1ev") or
-                 std.mem.eql(u8, pattern, "D2ev") or
-                 std.mem.eql(u8, pattern, "D0Ev") or
-                 std.mem.eql(u8, pattern, "D1Ev") or
-                 std.mem.eql(u8, pattern, "D2Ev")))
+                    std.mem.eql(u8, pattern, "D1ev") or
+                    std.mem.eql(u8, pattern, "D2ev") or
+                    std.mem.eql(u8, pattern, "D0Ev") or
+                    std.mem.eql(u8, pattern, "D1Ev") or
+                    std.mem.eql(u8, pattern, "D2Ev")))
             {
                 confidence = 0.92; // C++ destructor mangling is very reliable
             } else if (indexOfIgnoreCase(func_name, "Drop") != null or
-                       indexOfIgnoreCase(func_name, "drop_in_place") != null)
+                indexOfIgnoreCase(func_name, "drop_in_place") != null)
             {
                 confidence = 0.9; // Rust Drop is well-defined
             }
@@ -569,11 +569,9 @@ fn startsWith(haystack: []const u8, prefix: []const u8) bool {
 /// Known bridge helper name patterns that convert safe references to raw pointers.
 /// These functions do NOT transfer ownership — they borrow.
 const bridge_helper_patterns = [_][]const u8{
-    "as_ptr", "as_mut_ptr", "ptr", "ptr_mut", "ptr_mut_void",
-    "as_slice", "as_bytes", "as_mut_slice",
-    "get_pointer", "data", "c_str",
-    "slice::ptr", "str::as_ptr",
-    "@ptrCast",
+    "as_ptr",   "as_mut_ptr", "ptr",          "ptr_mut",     "ptr_mut_void",
+    "as_slice", "as_bytes",   "as_mut_slice", "get_pointer", "data",
+    "c_str",    "slice::ptr", "str::as_ptr",  "@ptrCast",
 };
 
 /// Infer that a function is a bridge helper (returns borrowed pointer).
@@ -599,7 +597,7 @@ pub fn inferBridgeHelperSummary(
                 // Qualified name like "slice.as_ptr" — very likely real bridge
                 confidence = 0.88;
             } else if (std.mem.eql(u8, func_name, "as_ptr") or
-                       std.mem.eql(u8, func_name, "as_mut_ptr"))
+                std.mem.eql(u8, func_name, "as_mut_ptr"))
             {
                 confidence = 0.85;
             }
@@ -635,7 +633,7 @@ const refcount_release_patterns = [_]struct { []const u8, ?FamilyId, f32 }{
     .{ "Arc::drop", null, 0.75 },
     .{ "arc_drop", null, 0.7 },
     .{ "CFRelease", null, 0.85 },
-    .{ "CFRetain", null, 0.7 },     // retain is not release but related
+    .{ "CFRetain", null, 0.7 }, // retain is not release but related
     .{ "IUnknown::Release", null, 0.8 },
     .{ "IUnknown_AddRef", null, 0.7 },
     .{ "objc_release", null, 0.85 },
@@ -666,7 +664,6 @@ pub fn inferRefcountReleaseSummary(
     store: *SummaryStore,
     func_name: []const u8,
 ) !?InferredSummary {
-
     for (refcount_release_patterns) |entry| {
         const pattern = entry[0];
         const entry_fam = entry[1];
@@ -720,13 +717,13 @@ pub fn inferRefcountReleaseSummary(
 /// Known patterns where resources are intentionally stored with process lifetime.
 /// These are NOT leaks — they live until process exit.
 const static_lifetime_patterns = [_][]const u8{
-    "_init_", "_global_init", "_static_init",
+    "_init_",                       "_global_init", "_static_init",
     "__attribute__((constructor))",
-    "DllMain",  // Windows DLL entry point
-    "atexit",   // atexit handler registration
+    "DllMain", // Windows DLL entry point
+    "atexit", // atexit handler registration
     "pthread_once_init",
     "__mod_init_func",
-    "_GLOBAL__sub_I_",  // C++ static initializer
+    "_GLOBAL__sub_I_", // C++ static initializer
 };
 
 /// Infer that a function stores a resource into a global/static variable.

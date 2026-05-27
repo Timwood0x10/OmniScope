@@ -771,6 +771,7 @@ pub fn formatContractExplanation(
 
 /// Check if a callee function is a known bridge helper (returns borrowed pointer).
 /// Uses SummaryStore for high-confidence matches, falls back to name patterns.
+/// P15-tightened: Only match highly-specific suffixes, not generic ones like "ptr" or "data".
 pub fn isBridgeHelper(ctx: *PassContext, callee_name: []const u8) bool {
     // 1. Check SummaryStore first (highest confidence)
     if (ctx.resource_summary) |store| {
@@ -779,10 +780,11 @@ pub fn isBridgeHelper(ctx: *PassContext, callee_name: []const u8) bool {
         }
     }
 
-    // 2. Fallback: name pattern matching (from P5 bridge helper inference)
+    // 2. Fallback: name pattern matching — P15 restricted to specific bridge helpers only
     const bridge_suffixes = [_][]const u8{
-        "as_ptr", "as_mut_ptr", "ptr", "ptr_mut", "c_str",
-        "data", "get_pointer", "slice::ptr",
+        "as_ptr", "as_mut_ptr", // Rust-style
+        "c_str", // Rust CStr conversion
+        "slice::ptr", // Rust slice::as_ptr()
     };
     for (bridge_suffixes) |suffix| {
         if (endsWithIgnoreCase(callee_name, suffix)) {
@@ -801,6 +803,22 @@ pub fn isBridgeHelper(ctx: *PassContext, callee_name: []const u8) bool {
     };
     for (exact_matches) |name| {
         if (std.mem.eql(u8, callee_name, name)) return true;
+    }
+
+    // 4. P15: Negative whitelist — known dangerous cross-language free patterns that should NEVER be suppressed
+    const cross_lang_dangerous = [_][]const u8{
+        "free",         "malloc_free",    "dealloc",       "delete",
+        "release",      "unref",          "decref",        "destroy",
+        "dispose",      "close",          "fclose",        "munmap",
+        "VirtualFree",  "GlobalFree",     "CoTaskMemFree", "PyObject_Free",
+        "JNI_Release",  "g_object_unref", "cairo_destroy", "gtk_widget_destroy",
+        "rust_dealloc", "drop_in_place",
+    };
+    for (cross_lang_dangerous) |dangerous| {
+        if (endsWithIgnoreCase(callee_name, dangerous)) {
+            // This looks like a release/free function — NOT a bridge helper
+            return false;
+        }
     }
 
     return false;

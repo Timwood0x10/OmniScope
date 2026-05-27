@@ -33,6 +33,9 @@ const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 const classifyAllocLanguage = @import("ptr_lifetime_classify.zig").classifyAllocLanguage;
 const classifyAllocLanguageEnum = @import("ptr_lifetime_classify.zig").classifyAllocLanguageEnum;
 const classifyFreeLanguage = @import("ptr_lifetime_classify.zig").classifyFreeLanguage;
+
+// P16-2b: Split out FFI-specific checks to keep file < 1000 lines
+const ffi_checks = @import("ptr_lifetime_ffi_checks.zig");
 const report = @import("ptr_lifetime_report.zig");
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const word_boundary = @import("../../../utils/word_boundary.zig");
@@ -156,10 +159,23 @@ pub fn checkCrossLanguageFree(
                                 return; // Valid same-family release, not a bug
                             },
                             .compatible_family => {
-                                log.debug("FAMILY-MATCH: compatible_family ({s}+{s}) — valid release in {s}", .{
+                                // P15: Don't skip compatible families blindly.
+                                // Only skip if BOTH are from the same runtime (e.g., python_object + python_mem).
+                                // Cross-runtime compatible (e.g., rust_box + c_heap) should still be reported.
+                                const alloc_domain = reg.getFamily(alloc_family).?.lifetime_domain;
+                                const release_domain = reg.getFamily(rop.family).?.lifetime_domain;
+                                if (alloc_domain == release_domain) {
+                                    log.debug("FAMILY-MATCH: compatible_family same-domain ({s}+{s}) — valid release in {s}", .{
+                                        @tagName(alloc_family), @tagName(rop.family), func_name,
+                                    });
+                                    return; // Same-domain compatible is likely valid
+                                }
+                                // Different-domain compatible → treat as suspicious but not definite mismatch
+                                log.debug("FAMILY-MATCH: compatible_family cross-domain ({s}+{s}) → downgrade to cross_family_free in {s}", .{
                                     @tagName(alloc_family), @tagName(rop.family), func_name,
                                 });
-                                return; // Compatible families (e.g., python_mem + python_mem_raw)
+                                try reportCrossLanguageFree(ctx, func_name, callee_name, @tagName(alloc_family), @tagName(rop.family), inst, diag);
+                                return;
                             },
                             .mismatch => {
                                 log.debug("FAMILY-MISMATCH: {s} alloc + {s} release → cross_family_free in {s}", .{
@@ -384,148 +400,10 @@ fn isAbiCompatibleAllocFree(alloc_lang: memory_graph.Language, free_lang: memory
     return false;
 }
 
-/// Check for FFI type mismatch via bitcast
-pub fn checkFFITypeMismatch(
-    ctx: *PassContext,
-    inst: c.LLVMValueRef,
-    func: c.LLVMValueRef,
-    func_name: []const u8,
-    pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-    diag: *DiagnosticWriter,
-    stats: *LifetimeStats,
-) !void {
-    _ = func;
-    _ = stats;
-    const called = c.LLVMGetCalledValue(inst);
-    if (@intFromPtr(called) == 0) return;
-
-    const name_ptr = c.LLVMGetValueName(called);
-    if (@intFromPtr(name_ptr) == 0) return;
-    const callee_name = std.mem.span(name_ptr);
-
-    if (!is_extern_function(callee_name)) return;
-
-    // Issue2 FIX: Use standardized helper for consistent arg iteration
-    const num_args = safe.getCallInstArgCount(inst);
-    var arg_i: u32 = 0;
-    while (arg_i < num_args) : (arg_i += 1) {
-        const arg = c.LLVMGetOperand(inst, arg_i);
-        if (@intFromPtr(arg) == 0) continue;
-
-        const arg_opcode = c.LLVMGetInstructionOpcode(arg);
-        if (arg_opcode == c.LLVMBitCast) {
-            const src = c.LLVMGetOperand(arg, 0);
-            if (@intFromPtr(src) == 0) return; // continue in callback = return
-
-            const src_type = c.LLVMTypeOf(src);
-            const arg_type = c.LLVMTypeOf(arg);
-            if (@intFromPtr(src_type) == 0 or @intFromPtr(arg_type) == 0) return;
-
-            if (c.LLVMGetTypeKind(src_type) == c.LLVMPointerTypeKind and
-                c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
-            {
-                const src_pointee = c.LLVMGetElementType(src_type);
-                const arg_pointee = c.LLVMGetElementType(arg_type);
-                if (@intFromPtr(src_pointee) != 0 and @intFromPtr(arg_pointee) != 0) {
-                    if (c.LLVMGetTypeKind(src_pointee) != c.LLVMGetTypeKind(arg_pointee)) {
-                        if (pointer_map.get(src)) |ptr_info| {
-                            const mismatch_desc = try std.fmt.allocPrint(ctx.allocator, "const-cast: {s} type changed via bitcast", .{ptr_info.source_desc});
-                            defer ctx.allocator.free(mismatch_desc);
-                            try reportFFITypeMismatch(ctx, func_name, callee_name, mismatch_desc, inst, diag);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Check if FFI return value has NULL guard
-pub fn checkFFIReturnNullGuard(
-    ctx: *PassContext,
-    inst: c.LLVMValueRef,
-    func: c.LLVMValueRef,
-    func_name: []const u8,
-    pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
-    diag: *DiagnosticWriter,
-    stats: *LifetimeStats,
-) !void {
-    _ = func;
-    const called = c.LLVMGetCalledValue(inst);
-    if (@intFromPtr(called) == 0) return;
-
-    const name_ptr = c.LLVMGetValueName(called);
-    if (@intFromPtr(name_ptr) == 0) return;
-    const callee_name = std.mem.span(name_ptr);
-
-    if (!is_extern_function(callee_name)) return;
-
-    const ret_type = c.LLVMTypeOf(inst);
-    if (@intFromPtr(ret_type) == 0) return;
-    if (c.LLVMGetTypeKind(ret_type) != c.LLVMPointerTypeKind) return;
-
-    if (pointer_map.contains(inst)) return;
-
-    // Safety check: verify instruction is valid before FFI analysis
-    if (@intFromPtr(inst) == 0) return;
-    const opcode = c.LLVMGetInstructionOpcode(inst);
-    if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return;
-
-    // Wrap FFI checks with safety for large modules (libuv150 has 877 funcs)
-    var has_null_guard = false;
-    var is_result_used = false;
-
-    // Use a panic-safe wrapper for complex IR patterns
-    const safe_check = struct {
-        fn run(call_inst: c.LLVMValueRef) struct { has_guard: bool, used: bool } {
-            var guard = false;
-            var used = false;
-
-            // Inline simplified version that won't crash on complex IR
-            var scan_inst = c.LLVMGetNextInstruction(call_inst);
-            var scanned: u32 = 0;
-            const max_scan: u32 = 200; // Limit scan depth for safety
-
-            while (@intFromPtr(scan_inst) != 0 and scanned < max_scan) : ({
-                scan_inst = c.LLVMGetNextInstruction(scan_inst);
-                scanned += 1;
-
-                if (@intFromPtr(scan_inst) == 0) break;
-
-                const op = c.LLVMGetInstructionOpcode(scan_inst);
-                if (op == c.LLVMICmp) {
-                    // Found potential null check - set guard and stop scanning
-                    guard = true;
-                    // Issue2 FIX: Restore break to prevent false positives from continued scanning
-                    break;
-                }
-
-                // DC-C5 FIX: Check if return value is used (store, call arg, etc.)
-                // This runs BEFORE finding the null guard to track usage patterns
-                if (op == c.LLVMStore or op == c.LLVMCall or op == c.LLVMInvoke) {
-                    used = true;
-                }
-
-                // Also check for bitcast/ptrtoint which indicate usage
-                if (op == c.LLVMBitCast or op == c.LLVMPtrToInt) {
-                    used = true;
-                }
-            }) {}
-
-            return .{ .has_guard = guard, .used = used };
-        }
-    }.run;
-
-    const result = safe_check(inst);
-    has_null_guard = result.has_guard;
-    is_result_used = result.used;
-
-    if (!has_null_guard and is_result_used) {
-        try reportFFINullGuardMissing(ctx, func_name, callee_name, inst, diag);
-        stats.use_after_free_found += 1;
-    }
-}
+// P16-2b: FFI-specific checks moved to ptr_lifetime_ffi_checks.zig
+// Re-exported here for backward compatibility
+pub const checkFFITypeMismatch = ffi_checks.checkFFITypeMismatch;
+pub const checkFFIReturnNullGuard = ffi_checks.checkFFIReturnNullGuard;
 
 /// Check return violations
 pub fn checkReturnViolation(
