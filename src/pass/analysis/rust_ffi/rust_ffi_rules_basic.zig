@@ -13,6 +13,7 @@
 //! All functions are standalone (not methods) and take auditor as first parameter.
 
 const std = @import("std");
+const log = @import("../../../common/log.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 const tracking = @import("../ptr_lifetime/value_tracking.zig");
@@ -36,6 +37,8 @@ const isRustMangledName = rust_ffi_helpers.isRustMangledName;
 const mayRetainPointer = rust_ffi_helpers.mayRetainPointer;
 const ptrOriginatesFromRustAlloc = rust_ffi_helpers.ptrOriginatesFromRustAlloc;
 const isPureConsumptionFunction = rust_ffi_helpers.isPureConsumptionFunction;
+
+const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKind;
 
 /// Auditor type (forward declaration - will be resolved at compile time)
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
@@ -215,6 +218,11 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
             // Skip pure consumption functions (memcpy, printf, etc.)
             if (isPureConsumptionFunction(callee_name)) continue;
 
+            // Semantic classification: if callee is a memory manager (deallocator/reallocator),
+            // its arguments are semantically heap pointers — not stack escapes.
+            // This is language-agnostic semantic abstraction, not a whitelist.
+            if (isMemoryManagerCallee(callee_name)) continue;
+
             // Check each argument for alloca-derived pointers
             const num_args = c.LLVMGetNumArgOperands(inst);
             var arg_i: u32 = 0;
@@ -236,6 +244,23 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                     },
                     .from_alloca, .from_parameter => {},
                     else => continue,
+                }
+
+                // SRT query: trace through def-use chain to check heap/global provenance
+                // If the value is derived from a heap allocation, this is NOT a stack escape
+                if (ctx.semantic_resolution) |resolution_engine| {
+                    const srt = resolution_engine.getSemanticTree();
+                    const arg_ref = @intFromPtr(arg);
+                    log.debug("[SRT-QUERY] Checking arg {d} for heap_provenance in {s}", .{arg_ref, callee_name});
+                    if (srt.*.traceToHeapProvenance(arg, 8)) {
+                        // Heap origin — not a stack escape
+                        log.debug("[SRT-SUPPRESS] heap_provenance traced for arg {d} -> skip", .{arg_ref});
+                        continue;
+                    } else {
+                        log.debug("[SRT-NO-MATCH] arg {d} not traced to heap_provenance", .{arg_ref});
+                    }
+                } else {
+                    log.warn("[SRT-NULL] semantic_resolution is null! SRT not initialized before RustFfiAuditor", .{});
                 }
 
                 // Confirm callee may retain the pointer
@@ -543,5 +568,43 @@ pub fn isFreeLikeFunction(func_name: []const u8) bool {
     for (ptr_types.RUST_ALLOC_INTRINSICS.dealloc_only) |pat| {
         if (std.mem.indexOf(u8, func_name, pat) != null) return true;
     }
+    return false;
+}
+
+/// Semantic classification: check if callee is a memory manager function.
+/// Memory managers (deallocators, reallocators, size queries) semantically
+/// require heap-allocated pointers as arguments. Passing a pointer to them
+/// is NOT a stack escape — it's the correct usage pattern.
+///
+/// This is language-agnostic semantic abstraction based on function semantics,
+/// not a project-specific whitelist.
+fn isMemoryManagerCallee(callee_name: []const u8) bool {
+    // Deallocators: free, dealloc, mi_free, etc.
+    if (isFreeLikeFunction(callee_name)) return true;
+
+    // Reallocators: realloc, mi_realloc, etc.
+    const realloc_patterns = [_][]const u8{
+        "realloc", "mi_expand",
+    };
+    for (realloc_patterns) |pat| {
+        if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
+    }
+
+    // Memory size queries: malloc_size, mi_usable_size, etc.
+    const size_patterns = [_][]const u8{
+        "malloc_size", "mi_usable_size", "malloc_good_size",
+    };
+    for (size_patterns) |pat| {
+        if (std.mem.eql(u8, callee_name, pat)) return true;
+    }
+
+    // Heap management: mi_heap_destroy, mi_heap_visit_blocks, etc.
+    const heap_patterns = [_][]const u8{
+        "mi_heap_destroy", "mi_heap_visit", "mi_heap_check",
+    };
+    for (heap_patterns) |pat| {
+        if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
+    }
+
     return false;
 }

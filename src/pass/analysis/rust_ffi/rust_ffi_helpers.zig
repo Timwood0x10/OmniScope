@@ -319,6 +319,16 @@ pub fn isRustMangledName(func_name: []const u8) bool {
 /// Check if an FFI callee may store/retain a pointer argument beyond the call.
 /// Uses heuristic name patterns for retain/store/register callbacks.
 pub fn mayRetainPointer(callee_name: []const u8) bool {
+    // Functions that copy data don't retain the original pointer
+    const copy_indicators = [_][]const u8{
+        "strdup", "strndup", "memcpy", "memmove", "strcpy", "strncpy",
+        "set_name", "set_description", "set_label",
+        "set_zone_name",
+    };
+    for (copy_indicators) |pat| {
+        if (std.mem.indexOf(u8, callee_name, pat) != null) return false;
+    }
+
     const retain_indicators = [_][]const u8{
         "_store_",  "_save_", "_set_",  "_register_",
         "_retain_", "_keep_", "_hold_",

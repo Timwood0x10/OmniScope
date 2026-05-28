@@ -21,6 +21,8 @@ const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const rust_ffi_helpers = @import("rust_ffi_helpers.zig");
 const getFunctionName = rust_ffi_helpers.getFunctionName;
 
+const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKind;
+
 /// Auditor type
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
 
@@ -83,6 +85,25 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
 
             for (struct_field_ptrs[0..field_ptr_count]) |field_load| {
                 if (ptrTracesTo(dest_ptr, field_load)) {
+                    // SRT query: trace through def-use chain to check interior mutability
+                    // If the value is derived from UnsafeCell, this is legal interior mutability
+                    if (ctx.semantic_resolution) |resolution_engine| {
+                        const srt = resolution_engine.getSemanticTree();
+                        if (srt.*.traceToInteriorMutability(dest_ptr, 8)) {
+                            // Interior mutability via UnsafeCell — legal write
+                            continue;
+                        }
+                    }
+
+                    // Check if the base pointer is from a readonly parameter.
+                    // In Rust: &T → readonly, &mut T → NOT readonly.
+                    // If the base is NOT from a readonly param, the write is legal (&mut T).
+                    const gep_base = c.LLVMGetOperand(field_load, 0);
+                    if (@intFromPtr(gep_base) != 0 and !isFromReadonlyParam(gep_base, func)) {
+                        // Base is from &mut T — legal write, skip
+                        continue;
+                    }
+
                     const struct_name = getStructNameForValue(field_load) orelse "unknown_struct";
 
                     const trace = try auditor.allocator.alloc(TraceEntry, 4);
@@ -124,6 +145,72 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
 /// Check if `user_value` ultimately derives from `source_value`.
 pub fn ptrTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef) bool {
     return tracking.valueTracesTo(user_value, source_value);
+}
+
+/// Check if a value is derived from a function parameter that has `readonly` attribute.
+/// In LLVM IR: Rust's &T (shared reference) → readonly, &mut T (mutable reference) → no readonly.
+/// Returns true ONLY if the value traces to a readonly parameter.
+/// Returns false if: (a) not a parameter, (b) parameter is NOT readonly, or (c) can't determine.
+///
+/// This is the key heuristic: if the store destination is from a non-readonly param,
+/// the write is to &mut T and is legal (not a write_to_immutable violation).
+pub fn isFromReadonlyParam(value: c.LLVMValueRef, enclosing_func: c.LLVMValueRef) bool {
+    // Walk back through GEP/Load/BitCast to find the origin
+    var current = value;
+    var depth: u32 = 0;
+    while (depth < 8) : (depth += 1) {
+        // Check if current is a function argument
+        if (@intFromPtr(c.LLVMIsAArgument(current)) != 0) {
+            // Find parameter index by iterating
+            const num_params = c.LLVMCountParams(enclosing_func);
+            var pi: u32 = 0;
+            while (pi < num_params) : (pi += 1) {
+                if (c.LLVMGetParam(enclosing_func, pi) == current) {
+                    return hasReadonlyAttribute(enclosing_func, pi);
+                }
+            }
+            return false;
+        }
+        // Not an instruction — can't trace further
+        if (@intFromPtr(c.LLVMIsAInstruction(current)) == 0) return false;
+        const opcode = c.LLVMGetInstructionOpcode(current);
+        // Follow GEP base, Load source, BitCast operand
+        if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMLoad or
+            opcode == c.LLVMBitCast or opcode == c.LLVMIntToPtr)
+        {
+            current = c.LLVMGetOperand(current, 0);
+            if (@intFromPtr(current) == 0) return false;
+            continue;
+        }
+        // PHI: check if ANY incoming value is from readonly param
+        if (opcode == c.LLVMPHI) {
+            const num = c.LLVMCountIncoming(current);
+            var i: u32 = 0;
+            while (i < num) : (i += 1) {
+                const incoming = c.LLVMGetIncomingValue(current, i);
+                if (@intFromPtr(incoming) != 0 and isFromReadonlyParam(incoming, enclosing_func)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // Call/Invoke: check if callee has readonly return (unlikely but possible)
+        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+            // For now, assume calls don't return readonly pointers
+            return false;
+        }
+        break;
+    }
+    return false;
+}
+
+/// Check if a function parameter has the `readonly` attribute.
+/// Uses LLVM's attribute API to check for the "readonly" enum attribute at the given param index.
+fn hasReadonlyAttribute(func: c.LLVMValueRef, param_idx: u32) bool {
+    // LLVM 22: check for "readonly" string attribute at parameter index
+    const readonly_name: [*:0]const u8 = "readonly";
+    return c.LLVMGetAttributeCountAtIndex(func, param_idx) > 0 and
+        c.LLVMGetStringAttributeAtIndex(func, param_idx, readonly_name, 8) != null;
 }
 
 /// Try to extract struct name from a value (GEP or load from GEP).
@@ -313,6 +400,24 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
             const callee_name = std.mem.span(callee_name_ptr);
 
             if (!isDeallocator(callee_name)) continue;
+
+            // SRT query: check if this dealloc is RAII drop
+            // If so, it's a compiler-inserted release — not a bug
+            const inst_ref = @intFromPtr(inst);
+            if (ctx.semantic_resolution) |resolution_engine| {
+                const srt = resolution_engine.getSemanticTree();
+                if (srt.hasKind(inst_ref, .raii_drop_release) != null) {
+                    // RAII drop — not a use-after-free
+                    continue;
+                }
+                // Also check if it's a non-memory syscall (file/net/proc)
+                if (srt.hasKind(inst_ref, .file_operation) != null) {
+                    continue;
+                }
+                if (srt.hasKind(inst_ref, .network_operation) != null) {
+                    continue;
+                }
+            }
 
             const freed_ptr = c.LLVMGetOperand(inst, 0);
             if (@intFromPtr(freed_ptr) == 0) continue;

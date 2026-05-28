@@ -53,7 +53,7 @@ const advanced_rules = @import("rust_ffi_rules_advanced.zig");
 pub const RustFfiAuditor = struct {
     pub const name = "rust-ffi-filter";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{};
+    pub const deps = &[_][]const u8{"SemanticResolver"};
 
     allocator: std.mem.Allocator,
     findings: std.ArrayList(RustFfiFinding),

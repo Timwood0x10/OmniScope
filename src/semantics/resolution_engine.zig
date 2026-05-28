@@ -247,7 +247,8 @@ pub const ResolutionEngine = struct {
         const resolution = Resolution{
             .kind = convertPatternTypeToSemanticKind(pattern.pattern_type),
             .confidence = 0.9,
-            .data = pattern.description,
+            .nomicon_chapter = null,
+            .evidence = pattern.description,
             .pattern_id = null,
         };
 
@@ -266,7 +267,7 @@ pub const ResolutionEngine = struct {
     }
 
     /// Get the semantic tree
-    pub fn getSemanticTree(self: *const Self) *const SemanticTree {
+    pub fn getSemanticTree(self: *Self) *SemanticTree {
         return &self.semantic_tree;
     }
 

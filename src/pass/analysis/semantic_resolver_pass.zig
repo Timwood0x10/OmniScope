@@ -15,6 +15,12 @@ const semantic_patterns = @import("../../semantics/semantic_patterns.zig");
 
 const c = @import("../../ir/llvm_raw.zig").c;
 
+// Nomicon detectors
+const nomicon_ch06 = @import("../../semantics/nomicon/ch06_obrm.zig");
+const nomicon_ch09 = @import("../../semantics/nomicon/ch09_vec_box.zig");
+const nomicon_ch10 = @import("../../semantics/nomicon/ch10_pin_box.zig");
+const nomicon_posix = @import("../../semantics/nomicon/posix_syscalls.zig");
+
 /// Semantic resolver pass
 pub const SemanticResolverPass = struct {
     pub const name = "SemanticResolver";
@@ -77,6 +83,34 @@ pub const SemanticResolverPass = struct {
             }
         }
 
+        // Run Nomicon detectors to populate SRT with semantic resolutions
+        if (ctx.module) |mod| {
+            const raw_mod = mod.raw;
+            const srt = engine.getSemanticTree();
+
+            log.debug("[SemanticResolver] Running Nomicon detectors...", .{});
+
+            // Ch6: OBRM (Drop / drop_in_place / tail dealloc)
+            nomicon_ch06.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch06_obrm detector failed: {any}", .{err});
+            };
+
+            // Ch9: Vec/Box heap ownership
+            nomicon_ch09.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch09_vec_box detector failed: {any}", .{err});
+            };
+
+            // Ch10: Pin/ManuallyDrop/OnceLock + UnsafeCell chain
+            nomicon_ch10.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch10_pin_box detector failed: {any}", .{err});
+            };
+
+            // POSIX syscall classification
+            nomicon_posix.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] posix_syscalls detector failed: {any}", .{err});
+            };
+        }
+
         const end_time = std.time.nanoTimestamp();
         const duration_ms = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000.0;
 
@@ -93,8 +127,6 @@ pub const SemanticResolverPass = struct {
         ctx.semantic_resolution = engine_ptr;
 
         // Note: We don't deinit the engine here since it's now owned by PassContext
-
-        _ = diag;
     }
 
     /// Register built-in patterns for common allocation/release functions.

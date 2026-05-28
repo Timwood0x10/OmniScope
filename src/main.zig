@@ -537,35 +537,45 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
         try w.print("      \"severity\": \"{s}\",\n", .{@tagName(issue.severity)});
         try w.print("      \"confidence\": {d:.2},\n", .{issue.confidence});
         try w.writeAll("      \"location\": {\n");
-        try w.print("        \"function\": ", .{});
+        try w.print("        \"function\": \"", .{});
         try writeJsonEscaped(w, issue.location.func);
-        try w.writeAll(",\n");
+        try w.writeAll("\",\n");
         if (issue.location.file) |f| {
-            try w.print("        \"file\": ", .{});
+            try w.print("        \"file\": \"", .{});
             try writeJsonEscaped(w, f);
-            try w.writeAll(",\n");
+            try w.writeAll("\",\n");
             try w.print("        \"line\": {d}\n", .{issue.location.line});
         } else {
             try w.print("        \"line\": {d}\n", .{issue.location.line});
         }
         try w.writeAll("      },\n");
-        try w.writeAll("      \"reason\": ");
+        try w.writeAll("      \"reason\": \"");
         try writeJsonEscaped(w, issue.reason);
-        try w.writeAll(",\n");
-        if (issue.message.len > 0 and !std.mem.eql(u8, issue.message, issue.reason)) {
-            try w.writeAll("      \"message\": ");
+        try w.writeAll("\"");
+        const has_message = issue.message.len > 0 and !std.mem.eql(u8, issue.message, issue.reason);
+        const has_boundary = issue.ffi_boundary != null;
+        if (has_message or has_boundary) {
+            try w.writeAll(",");
+        }
+        try w.writeAll("\n");
+        if (has_message) {
+            try w.writeAll("      \"message\": \"");
             try writeJsonEscaped(w, issue.message);
-            try w.writeAll(",\n");
+            try w.writeAll("\"");
+            if (has_boundary) {
+                try w.writeAll(",");
+            }
+            try w.writeAll("\n");
         }
         if (issue.ffi_boundary) |bnd| {
             try w.writeAll("      \"ffi_boundary\": {\n");
-            try w.print("        \"function_name\": ", .{});
+            try w.print("        \"function_name\": \"", .{});
             try writeJsonEscaped(w, bnd.function_name);
-            try w.writeAll(",\n");
+            try w.writeAll("\",\n");
             try w.print("        \"caller_language\": \"{s}\",\n", .{@tagName(bnd.caller_language)});
             try w.print("        \"callee_language\": \"{s}\",\n", .{@tagName(bnd.callee_language)});
             try w.print("        \"kind\": \"{s}\"\n", .{@tagName(bnd.kind)});
-            try w.writeAll("      },\n");
+            try w.writeAll("      }\n");
         }
         if (idx < issues.len - 1) {
             try w.writeAll("    },\n");

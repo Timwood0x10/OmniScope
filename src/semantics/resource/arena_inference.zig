@@ -83,7 +83,6 @@ pub const ArenaInferenceEngine = struct {
 
     /// Analyze an allocation within its function to determine lifetime scope.
     pub fn inferScope(
-        self: *ArenaInferenceEngine,
         func: c.LLVMValueRef,
         alloc_inst: c.LLVMValueRef,
     ) ScopeEvidence {
