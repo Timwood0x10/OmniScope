@@ -261,14 +261,16 @@ pub fn detectResourceLeaks(
                     continue;
                 }
 
-                const is_heap_msg: bool = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch {
+                const is_heap_msg: []const u8 = std.fmt.allocPrint(ctx.allocator, "RESOURCE LEAK: {s} called but {s} missing in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name }) catch {
                     ctx.addIssue(&Issue.init(.memory_leak, "Resource leak detected", Location.init(func_name), .medium, 0.75)) catch {};
                     diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
                     continue;
                 };
                 ctx.addIssue(&Issue.init(.memory_leak, is_heap_msg, Location.init(func_name), .medium, 0.75)) catch {
                     ctx.allocator.free(is_heap_msg);
+                    continue;
                 };
+                ctx.allocator.free(is_heap_msg);
                 diag.warn("RESOURCE-LEAK [MEDIUM]: {s}() without matching {s}() in {s}", .{ entry.key_ptr.*, entry.value_ptr.*, func_name });
             }
         }

@@ -229,12 +229,14 @@ pub const QueryEngine = struct {
         kind: FactKind,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        self.store.mutex.lock();
-        defer self.store.mutex.unlock();
-
+        // Don't lock here — queryByKind() will lock if needed,
+        // and when index is built we lock below.
         if (!self.index_built) {
             return self.queryByKind(kind, allocator);
         }
+
+        self.store.mutex.lock();
+        defer self.store.mutex.unlock();
 
         const indices = self.kind_index.get(kind) orelse return &.{};
         var facts = try std.ArrayList(Fact).initCapacity(allocator, indices.items.len);
@@ -255,12 +257,14 @@ pub const QueryEngine = struct {
         subject: u32,
         allocator: std.mem.Allocator,
     ) ![]Fact {
-        self.store.mutex.lock();
-        defer self.store.mutex.unlock();
-
+        // Don't lock here — queryBySubject() will lock if needed,
+        // and when index is built we lock below.
         if (!self.index_built) {
             return self.queryBySubject(subject, allocator);
         }
+
+        self.store.mutex.lock();
+        defer self.store.mutex.unlock();
 
         const indices = self.subj_index.get(subject) orelse return &.{};
         var facts = try std.ArrayList(Fact).initCapacity(allocator, indices.items.len);

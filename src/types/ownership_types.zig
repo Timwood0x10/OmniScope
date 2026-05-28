@@ -239,47 +239,6 @@ pub fn isStdlibCall(callee_name: []const u8) bool {
     return false;
 }
 
-/// Check if a value ID corresponds to a memory access instruction.
-/// Memory accesses include: Load, Store, GetElementPtr (GEP),
-/// and memory intrinsic calls (memcpy, memmove, memset).
-pub fn isMemoryAccess(value_id: u32) bool {
-    const inst: c.LLVMValueRef = @ptrFromInt(@as(usize, value_id));
-    if (@intFromPtr(inst) == 0) return false;
-
-    const opcode = c.LLVMGetInstructionOpcode(inst);
-    return switch (opcode) {
-        c.LLVMLoad, c.LLVMStore, c.LLVMGetElementPtr => true,
-        else => {
-            const intrinsic_name_raw = c.LLVMGetValueName(inst);
-            if (intrinsic_name_raw != null) {
-                const intrinsic_name = std.mem.span(intrinsic_name_raw);
-                for (mem_intrinsics) |intrinsic| {
-                    if (std.mem.indexOf(u8, intrinsic_name, intrinsic) != null) return true;
-                }
-            }
-            return false;
-        },
-    };
-}
-
-/// Return the debug/instruction name for a value ID.
-/// Used in diagnostic messages to show which instruction is involved.
-pub fn getInstName(value_id: u32) []const u8 {
-    const inst: c.LLVMValueRef = @ptrFromInt(@as(usize, value_id));
-    if (@intFromPtr(inst) == 0) return "<null>";
-
-    const name_raw = c.LLVMGetValueName(inst);
-    if (name_raw != null) {
-        return std.mem.span(name_raw);
-    }
-
-    const opcode = c.LLVMGetInstructionOpcode(inst);
-    if (opcode < opcode_names.len) {
-        return opcode_names[opcode];
-    }
-    return "<unknown>";
-}
-
 /// Check if a Rust-mangled function has name-based FFI hints.
 /// Returns the matching hint or null if no pattern matched.
 pub fn checkFfiNamePatterns(func_name: []const u8) ?FFIRelevanceHint {

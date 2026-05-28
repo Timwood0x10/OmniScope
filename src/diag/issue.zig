@@ -318,34 +318,6 @@ pub const Issue = struct {
     }
 };
 
-/// Format contract evidence information for this issue.
-///
-/// Returns a human-readable string containing resource family and
-/// release family information if available, or null if no contract
-/// data is attached.
-pub fn formatContractEvidence(self: *const Issue) ?[]const u8 {
-    if (self.resource_family == null and self.release_family == null) {
-        return null;
-    }
-
-    var buf: [256]u8 = undefined;
-    var fbs = std.heap.FixedBufferAllocator.init(&buf);
-    const allocator = fbs.allocator();
-
-    var parts = std.ArrayList([]const u8).init(allocator);
-
-    if (self.resource_family) |family| {
-        try parts.append(family);
-    }
-
-    if (self.release_family) |family| {
-        try parts.append(family);
-    }
-
-    const result = try std.mem.join(allocator, " → ", parts.items);
-    return result;
-}
-
 /// FFI boundary information
 ///
 /// Contains information about a Foreign Function Interface boundary
