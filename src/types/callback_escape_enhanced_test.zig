@@ -4,12 +4,11 @@
 
 const std = @import("std");
 
-const callback_escape = @import("../pass/analysis/callback_escape.zig");
+const callback_escape_types = @import("callback_escape_types.zig");
 
-const isCgoBoundary = callback_escape.isCgoBoundary;
-const isGoUnsafeOperation = callback_escape.isGoUnsafeOperation;
-const detectGoMemoryPattern = callback_escape.detectGoMemoryPattern;
-const isGoSafetyFunction = callback_escape.isGoSafetyFunction;
+const isCgoBoundary = callback_escape_types.isCgoBoundary;
+const isGoSafetyFunction = callback_escape_types.isGoSafetyFunction;
+const detectGoMemoryPattern = callback_escape_types.detectGoMemoryPattern;
 
 // ============================================================================
 // Test: Enhanced cgo boundary detection (20+ patterns)
@@ -146,7 +145,7 @@ fn isGoUnsafeOperation_from_name(name: []const u8) bool {
 test "detectGoMemoryPattern - safe GC-managed memory" {
     // Pure Go code without manual memory management
     const result1 = detectGoMemoryPattern("myPureFunction");
-    try std.testing.expectEqual(@as(@typeInfo(@TypeOf(result1)).Enum.tag_type, .safe), result1);
+    try std.testing.expectEqual(.safe, result1);
 
     const result2 = detectGoMemoryPattern("processData");
     try std.testing.expectEqual(.safe, result2);
@@ -193,12 +192,11 @@ test "detectGoMemoryPattern - mixed mode" {
 
 test "Integration - comprehensive FFI safety check" {
     // Simulate a complete analysis scenario
-    const MemPatternType = @TypeOf(detectGoMemoryPattern("")).Enum().tag_type;
-    const test_cases = [_][]struct {
+    const test_cases = [_]struct {
         func_name: []const u8,
         is_cgo: bool,
         has_unsafe: bool,
-        mem_pattern: MemPatternType,
+        mem_pattern: @TypeOf(detectGoMemoryPattern("")),
         risk_level: enum { safe, low, medium, high },
     }{
         // Safe cases
@@ -224,7 +222,7 @@ test "Integration - comprehensive FFI safety check" {
         if (is_cgo_result == tc.is_cgo) correct_classifications += 1;
 
         // Verify memory pattern matches expected risk level
-        const actual_risk = switch (mem_result) {
+        const actual_risk: @TypeOf(tc.risk_level) = switch (mem_result) {
             .safe => .safe,
             .keepalive_guarded => .low,
             .manual_c_memory => .medium,
@@ -240,7 +238,7 @@ test "Integration - comprehensive FFI safety check" {
     const accuracy: f32 = @as(f32, @floatFromInt(correct_classifications)) /
         @as(f32, @floatFromInt(total_checks));
 
-    try std.testing.expectGreaterThanOrEqual(accuracy, 0.95); // ≥95% accuracy required
+    try std.testing.expect(accuracy >= 0.95); // ≥95% accuracy required
 }
 
 // ============================================================================
@@ -291,10 +289,9 @@ test "Accuracy - cgo boundary detection precision" {
 
 test "Accuracy - memory pattern classification coverage" {
     // Ensure all memory patterns can be correctly identified
-    const MemPatternType2 = @TypeOf(detectGoMemoryPattern("")).Enum().tag_type;
-    const test_patterns = [_][]struct {
+    const test_patterns = [_]struct {
         name: []const u8,
-        expected_pattern: MemPatternType2,
+        expected_pattern: @TypeOf(detectGoMemoryPattern("")),
     }{
         .{ .name = "normal_function", .expected_pattern = .safe },
         .{ .name = "with_KeepAlive_proper", .expected_pattern = .keepalive_guarded },
@@ -310,5 +307,5 @@ test "Accuracy - memory pattern classification coverage" {
     }
 
     // All patterns should be correctly classified
-    try std.testing.expectGreaterThanOrEqual(correct, @as(u32, @divTrunc(3 * test_patterns.len, 4)));
+    try std.testing.expect(correct >= @as(u32, @divTrunc(3 * test_patterns.len, 4)));
 }

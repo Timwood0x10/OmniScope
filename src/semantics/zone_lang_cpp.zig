@@ -263,6 +263,6 @@ test "Go runtime internal symbols detected by isLikelyRuntimeInternal" {
     };
 
     for (go_runtime_test_cases) |sym| {
-        try std.testing.expect(isLikelyRuntimeInternal(sym), "{s} should be runtime internal", .{sym});
+        try std.testing.expect(isLikelyRuntimeInternal(sym));
     }
 }

@@ -297,7 +297,7 @@ pub const IntrinsicFilter = struct {
 // ============================================================================
 
 test "intrinsic_filter - safe intrinsics" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Thread local should be suppressed.
     const result1 = filter.check("llvm.threadlocal.address.p0i8");
@@ -316,7 +316,7 @@ test "intrinsic_filter - safe intrinsics" {
 }
 
 test "intrinsic_filter - safe prefixes" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // llvm.mem* family should be suppressed.
     const result1 = filter.check("llvm.memcpy.p0i8.p0i8.i64");
@@ -330,7 +330,7 @@ test "intrinsic_filter - safe prefixes" {
 }
 
 test "intrinsic_filter - should_suppress" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Should suppress known safe intrinsics.
     try std.testing.expect(filter.shouldSuppress("llvm.dbg.value"));
@@ -344,7 +344,7 @@ test "intrinsic_filter - should_suppress" {
 }
 
 test "intrinsic_filter - non_intrinsic" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Regular functions should not be flagged as intrinsics.
     const result1 = filter.check("main");
@@ -358,7 +358,7 @@ test "intrinsic_filter - non_intrinsic" {
 }
 
 test "intrinsic_filter - conditional intrinsics" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Inline memcpy should be conditional (not suppressed).
     const result = filter.check("llvm.memcpy.inline");
@@ -368,7 +368,7 @@ test "intrinsic_filter - conditional intrinsics" {
 }
 
 test "intrinsic_filter - is_intrinsic" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Known intrinsics should be detected.
     try std.testing.expect(filter.isIntrinsic("llvm.trap"));
@@ -382,7 +382,7 @@ test "intrinsic_filter - is_intrinsic" {
 }
 
 test "intrinsic_filter - get_category" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Safe intrinsics should return safe category.
     const cat1 = filter.getCategory("llvm.dbg.declare");
@@ -402,7 +402,7 @@ test "intrinsic_filter - get_category" {
 }
 
 test "intrinsic_filter - unknown llvm intrinsic" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Unknown LLVM intrinsic should not be suppressed (caution).
     const result = filter.check("llvm.unknown.intrinsic.xyz");
@@ -412,7 +412,7 @@ test "intrinsic_filter - unknown llvm intrinsic" {
 }
 
 test "intrinsic_filter - math intrinsics" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Floating-point math should be suppressed.
     try std.testing.expect(filter.shouldSuppress("llvm.sqrt.f64"));
@@ -422,7 +422,7 @@ test "intrinsic_filter - math intrinsics" {
 }
 
 test "intrinsic_filter - memory intrinsics" {
-    const filter = IntrinsicFilter.init();
+    var filter = IntrinsicFilter.init();
 
     // Memory operations should be suppressed.
     try std.testing.expect(filter.shouldSuppress("llvm.memset.p0i8.i64"));

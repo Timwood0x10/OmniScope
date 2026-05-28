@@ -19,17 +19,17 @@ test "is_llvm_intrinsic_noise - __rust_alloc is NOT noise (FIX-1 happy path)" {
     // CRITICAL: __rust_alloc must NOT be filtered as noise
     // because ptr_lifetime needs to track it for FFI boundary detection
     const result = is_llvm_intrinsic_noise("__rust_alloc");
-    try std.testing.expect(!result, "__rust_alloc should NOT be intrinsic noise");
+    try std.testing.expect(!result);
 }
 
 test "is_llvm_intrinsic_noise - __rust_dealloc is NOT noise (FIX-1 happy path)" {
     const result = is_llvm_intrinsic_noise("__rust_dealloc");
-    try std.testing.expect(!result, "__rust_dealloc should NOT be intrinsic noise");
+    try std.testing.expect(!result);
 }
 
 test "is_llvm_intrinsic_noise - __rust_realloc is NOT noise (FIX-1 happy path)" {
     const result = is_llvm_intrinsic_noise("__rust_realloc");
-    try std.testing.expect(!result, "__rust_realloc should NOT be intrinsic noise");
+    try std.testing.expect(!result);
 }
 
 // ============================================================================
@@ -75,7 +75,7 @@ test "is_llvm_intrinsic_noise - non-LLVM functions are NOT noise (boundary)" {
 
 test "is_llvm_intrinsic_noise - empty string is NOT noise (error case)" {
     const result = is_llvm_intrinsic_noise("");
-    try std.testing.expect(!result, "empty string should not crash or be noise");
+    try std.testing.expect(!result);
 }
 
 test "is_llvm_intrinsic_noise - single char is NOT noise (error case)" {
@@ -114,21 +114,21 @@ test "is_llvm_intrinsic_noise - Go runtime NOT noise (lang boundary)" {
 // ============================================================================
 
 test "classifyFunction - __rust_alloc gets analyzed (not skipped) (FIX-1)" {
-    var config = NoiseReduction.NoiseReductionConfig{};
-    const result = classifyFunction("__rust_alloc", "", &config);
-    // Should NOT return .noise (which would skip analysis)
+    const config = NoiseReduction.NoiseReductionConfig{};
+    const result = classifyFunction("__rust_alloc", "", config);
+    // Should NOT return .ignored (which would skip analysis)
     // Should return a weight that allows further processing
-    try std.testing.expect(result.weight != .noise, "__rust_alloc should not be classified as noise");
+    try std.testing.expect(result.weight != .ignored);
 }
 
 test "classifyFunction - __rust_dealloc gets analyzed (not skipped) (FIX-1)" {
-    var config = NoiseReduction.NoiseReductionConfig{};
-    const result = classifyFunction("__rust_dealloc", "", &config);
-    try std.testing.expect(result.weight != .noise, "__rust_dealloc should not be classified as noise");
+    const config = NoiseReduction.NoiseReductionConfig{};
+    const result = classifyFunction("__rust_dealloc", "", config);
+    try std.testing.expect(result.weight != .ignored);
 }
 
 test "classifyFunction - sync_channel:: gets filtered (regression test)" {
-    var config = NoiseReduction.NoiseReductionConfig{};
-    const result = classifyFunction("sync_channel::recv", "", &config);
-    try std.testing.expectEqual(.noise, result.weight, "Channel primitives should still be noise");
+    const config = NoiseReduction.NoiseReductionConfig{};
+    const result = classifyFunction("sync_channel::recv", "", config);
+    try std.testing.expectEqual(.ignored, result.weight);
 }

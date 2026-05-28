@@ -381,7 +381,7 @@ test "StringHashMap pairing stability - mangled Rust names" {
     try testing.expectEqual(@as(usize, 3), set.count());
 
     for (mangled_names) |name| {
-        const dup = try testing.dupe(u8, name);
+        const dup = try testing.allocator.dupe(u8, name);
         defer testing.allocator.free(dup);
         try testing.expect(set.contains(dup));
     }

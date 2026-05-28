@@ -40,14 +40,14 @@ const FfiLang = @import("../../../diag/issue.zig").FFIBoundary.Language;
 
 // Import utility functions from separate module (code organization)
 const ptr_utils = @import("ptr_lifetime_utils.zig");
-const toZoneLanguage = ptr_utils.toZoneLanguage;
-const isCppDestructorOrConstructor = ptr_utils.isCppDestructorOrConstructor;
-const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
-const isResourceCloseFunction = ptr_utils.isResourceCloseFunction;
-const isSocketClose = ptr_utils.isSocketClose;
-const isRustBorrowPattern = ptr_utils.isRustBorrowPattern;
-const is_resource_alloc_function = ptr_utils.is_resource_alloc_function;
-const get_resource_type = ptr_utils.get_resource_type;
+pub const toZoneLanguage = ptr_utils.toZoneLanguage;
+pub const isCppDestructorOrConstructor = ptr_utils.isCppDestructorOrConstructor;
+pub const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
+pub const isResourceCloseFunction = ptr_utils.isResourceCloseFunction;
+pub const isSocketClose = ptr_utils.isSocketClose;
+pub const isRustBorrowPattern = ptr_utils.isRustBorrowPattern;
+pub const is_resource_alloc_function = ptr_utils.is_resource_alloc_function;
+pub const get_resource_type = ptr_utils.get_resource_type;
 const isDerivedFrom = ptr_utils.isDerivedFrom;
 
 const violations = @import("ptr_lifetime_violations.zig");

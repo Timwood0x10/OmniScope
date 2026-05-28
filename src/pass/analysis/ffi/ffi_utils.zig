@@ -287,8 +287,8 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
     }
 
     var pos: usize = 3;
-    var components = std.ArrayList([]const u8).init(allocator);
-    defer components.deinit();
+    var components = std.ArrayList([]const u8).initCapacity(allocator, 0) catch return null;
+    defer components.deinit(allocator);
 
     const max_components = 32;
     var truncated = false;
@@ -322,7 +322,7 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
                 std.mem.eql(u8, slice, "std") or
                 std.mem.eql(u8, slice, "rust_ffi_demo"))
             {
-                try components.append(slice);
+                try components.append(allocator, slice);
                 continue;
             }
         }
@@ -332,7 +332,7 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
                 !std.mem.eql(u8, slice, "alloc") and
                 !std.mem.eql(u8, slice, "std")))
         {
-            try components.append(slice);
+            try components.append(allocator, slice);
         }
 
         if (pos < mangled.len and mangled[pos] == 'E') {
@@ -347,13 +347,13 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
     }
 
     if (components.items.len >= 2) {
-        var result = std.ArrayList(u8).init(allocator);
-        defer result.deinit();
+        var result = std.ArrayList(u8).initCapacity(allocator, 0) catch return null;
+        defer result.deinit(allocator);
         for (components.items, 0..) |comp, i| {
-            if (i > 0) try result.appendSlice("::");
-            try result.appendSlice(comp);
+            if (i > 0) try result.appendSlice(allocator, "::");
+            try result.appendSlice(allocator, comp);
         }
-        return result.toOwnedSlice();
+        return (try result.toOwnedSlice(allocator));
     } else if (components.items.len == 1) {
         return (try allocator.dupe(u8, components.items[0]));
     }

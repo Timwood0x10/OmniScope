@@ -200,6 +200,6 @@ test "Non-Go runtime symbols not falsely classified" {
 
     for (non_go_runtime) |sym| {
         const result = isGoRuntimeInternal(sym);
-        try std.testing.expect(!result, "{s} should NOT be Go runtime internal", .{sym});
+        try std.testing.expect(!result);
     }
 }

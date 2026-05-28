@@ -273,7 +273,7 @@ test "Pattern matching" {
     var registry = PatternRegistry.init(allocator);
     defer registry.deinit();
 
-    try registry.registerPattern(
+    _ = try registry.registerPattern(
         "malloc_pattern",
         "malloc pattern",
         .allocation,
@@ -282,7 +282,7 @@ test "Pattern matching" {
         "c",
     );
 
-    try registry.registerPattern(
+    _ = try registry.registerPattern(
         "free_pattern",
         "free pattern",
         .release,

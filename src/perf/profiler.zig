@@ -425,7 +425,7 @@ fn sampleHeapAllocs() u64 {
 
 test "Timer - elapsed time" {
     const timer = try Timer.start();
-    std.time.sleep(1_000_000); // 1ms
+    std.Thread.sleep(1_000_000); // 1ms
     const elapsed = try timer.elapsedNs();
     try std.testing.expect(elapsed >= 1_000_000);
 }
@@ -463,7 +463,7 @@ test "ScopedTimer - automatic recording" {
 
     {
         var scoped = try ScopedTimer.start(&profiler, "scoped_test");
-        std.time.sleep(100_000); // 100us
+        std.Thread.sleep(100_000); // 100us
         try scoped.stop();
     }
 
@@ -474,7 +474,7 @@ test "ScopedTimer - automatic recording" {
 test "PassTimer - timing accuracy" {
     // Verify PassTimer measures elapsed time accurately
     var pass_timer = try PassTimer.startPass();
-    std.time.sleep(1_000_000); // 1ms
+    std.Thread.sleep(1_000_000); // 1ms
     const stats = try pass_timer.stopPass("test-pass");
 
     // Should have measured at least 1ms (allowing for scheduling variance)
@@ -516,14 +516,14 @@ test "PassStatsCollector - record and report" {
     // Simulate recording multiple passes
     {
         var timer = try PassTimer.startPass();
-        std.time.sleep(100_000); // 100us
+        std.Thread.sleep(100_000); // 100us
         const stats = try timer.stopPass("pass-A");
         try collector.record(stats);
     }
 
     {
         var timer = try PassTimer.startPass();
-        std.time.sleep(200_000); // 200us
+        std.Thread.sleep(200_000); // 200us
         const stats = try timer.stopPass("pass-B");
         try collector.record(stats);
     }

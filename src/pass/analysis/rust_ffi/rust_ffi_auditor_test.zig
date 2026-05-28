@@ -163,7 +163,7 @@ test "isLibcFunction - negative cases" {
 
 test "classifyFfiBoundaryType - standard extern C" {
     const result = classifyFfiBoundaryType("malloc", null);
-    try std.testing.expectEqual(@as(@typeInfo(@TypeOf(result)).Enum.tag_type, .standard), result);
+    try std.testing.expectEqual(.standard, result);
 }
 
 test "classifyFfiBoundaryType - core::ffi utilities" {
@@ -315,12 +315,12 @@ test "Accuracy - core::ffi detection precision" {
     const precision: f32 = @as(f32, @floatFromInt(tp_detected)) / @as(f32, @floatFromInt(total_detected));
 
     // Precision should be >= 95%
-    try std.testing.expectGreaterThanOrEqual(precision, 0.95);
+    try std.testing.expect(precision >= 0.95);
 }
 
 test "Accuracy - libc function detection precision" {
     // Sample of common libc functions
-    const test_functions = [_][]struct { name: []const u8, expected: bool }{
+    const test_functions = [_]struct { name: []const u8, expected: bool }{
         .{ .name = "malloc", .expected = true },
         .{ .name = "free", .expected = true },
         .{ .name = "pthread_create", .expected = true },
@@ -346,9 +346,9 @@ test "Accuracy - libc function detection precision" {
 
 test "Accuracy - FFI boundary classification coverage" {
     // Test that we can classify various FFI patterns correctly
-    const test_cases = [_][]struct {
+    const test_cases = [_]struct {
         name: []const u8,
-        expected_kind: @TypeOf(classifyFfiBoundaryType("", null).Enum().tag_type),
+        expected_kind: @TypeOf(classifyFfiBoundaryType("", null)),
     }{
         .{ .name = "malloc", .expected_kind = .standard },
         .{ .name = "CStr.from_bytes", .expected_kind = .core_ffi },

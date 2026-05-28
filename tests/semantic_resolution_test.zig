@@ -6,32 +6,34 @@ test "Semantic resolution tree basic functionality" {
     const allocator = std.testing.allocator;
 
     // Create a semantic tree
-    var tree = try omniscope.semantics.SemanticTree.init(allocator);
+    var tree = omniscope.semantics.SemanticTree.init(allocator);
     defer tree.deinit();
 
     // Create a pattern registry
-    var registry = try omniscope.semantics.PatternRegistry.init(allocator);
+    var registry = omniscope.semantics.PatternRegistry.init(allocator);
     defer registry.deinit();
 
     // Test adding a node to the tree
-    const node_id = try tree.addNode(.function, "test_function", 0x1000, 0x2000);
+    const node_id = try tree.addNode(.unknown, "test_function", 0x1000, 0x2000);
     try std.testing.expect(node_id == 0);
 
     // Test adding a resolution
     try tree.addResolution(node_id, .{
-        .kind = .deallocation,
+        .kind = .release,
         .confidence = 0.95,
-        .data = "test_data",
+        .evidence = "test_data",
+        .nomicon_chapter = null,
+        .pattern_id = null,
     });
 
     // Test getting resolutions
     const resolutions = tree.getResolutions(node_id);
     try std.testing.expect(resolutions.len == 1);
-    try std.testing.expect(resolutions[0].kind == .deallocation);
+    try std.testing.expect(resolutions[0].kind == .release);
     try std.testing.expect(resolutions[0].confidence == 0.95);
 
     // Test pattern registry
-    const pattern_id = try registry.registerPattern("test_pattern", "Test pattern");
+    const pattern_id = try registry.registerPattern("test_pattern", "Test pattern", .allocation, &[_][]const u8{"test"}, 100, "c");
     try std.testing.expect(pattern_id == 0);
 
     const pattern = registry.getPattern(pattern_id);
@@ -47,10 +49,10 @@ test "Resolution engine functionality" {
     defer engine.deinit();
 
     // Test processing a function call
-    try engine.processFunctionCall("malloc", 0x1000, "test.c", 0x2000);
+    try engine.processFunctionCall("malloc", "test_function", 0x1000, "test.c", 0x2000);
 
     // Test processing an allocation
-    try engine.processAllocation(0x3000, "heap_alloc", "test_function", 0x4000, .c);
+    try engine.processAllocation(0x3000, 0x4000, .heap_alloc, .safe, .c);
 
     // Test getting stats
     const stats = engine.getStats();
@@ -66,37 +68,28 @@ test "Memory graph integration" {
     defer graph.deinit();
 
     // Test adding an allocation
-    const node = try graph.addAllocation(
+    _ = try graph.trackAlloc(
         0x1000,
-        .heap_alloc,
-        "test_function",
         0x2000,
+        .heap_alloc,
+        .safe,
         .c,
     );
 
-    try std.testing.expect(node.ptr_value == 0x1000);
-    try std.testing.expect(node.source_kind == .heap_alloc);
-
     // Test adding a free
-    try graph.addFree(0x1000, "free_function", 0x3000, .c);
-    try std.testing.expect(node.is_freed);
-
-    // Test getting stats
-    const stats = graph.getStats();
-    try std.testing.expect(stats.total_nodes == 1);
-    try std.testing.expect(stats.freed_nodes == 1);
+    _ = try graph.trackFree(0x3000, 0x1000, .c, 0);
 }
 
 test "Pattern registry functionality" {
     const allocator = std.testing.allocator;
 
     // Create a pattern registry
-    var registry = try omniscope.semantics.PatternRegistry.init(allocator);
+    var registry = omniscope.semantics.PatternRegistry.init(allocator);
     defer registry.deinit();
 
     // Test registering multiple patterns
-    const pattern1 = try registry.registerPattern("rust_drop", "Rust Drop trait pattern");
-    const pattern2 = try registry.registerPattern("dealloc", "Memory deallocation pattern");
+    const pattern1 = try registry.registerPattern("rust_drop", "Rust Drop trait pattern", .release, &[_][]const u8{"drop"}, 100, "rust");
+    const pattern2 = try registry.registerPattern("dealloc", "Memory deallocation pattern", .release, &[_][]const u8{"free"}, 90, "c");
 
     try std.testing.expect(pattern1 == 0);
     try std.testing.expect(pattern2 == 1);

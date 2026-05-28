@@ -17,6 +17,14 @@ const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
 const may_retain_pointer = @import("ptr_lifetime_types.zig").may_retain_pointer;
 const classify_ptr_origin = @import("ptr_lifetime_types.zig").classify_ptr_origin;
+const is_known_deallocator = @import("ptr_lifetime_types.zig").is_known_deallocator;
+const is_intentional_free = @import("ptr_lifetime_types.zig").is_intentional_free;
+
+const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
+const isResourceCloseFunction = @import("ptr_lifetime_utils.zig").isResourceCloseFunction;
+const get_resource_type = @import("ptr_lifetime_utils.zig").get_resource_type;
+const is_resource_alloc_function = @import("ptr_lifetime_utils.zig").is_resource_alloc_function;
+const is_lifecycle_bound_return = @import("ptr_lifetime_return_helpers.zig").is_lifecycle_bound_return;
 
 const FfiLang = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const Lang = @import("../../../semantics/zone_classifier.zig").Language;
@@ -106,55 +114,56 @@ test "LifetimeAnalysisResult - initialization" {
 }
 
 test "classify_ptr_origin - pattern matching" {
-    try std.testing.expect(classify_ptr_origin(null, c.LLVMAlloca, null, std.testing.allocator) != null);
+    const result = classify_ptr_origin(null, c.LLVMAlloca, null, std.testing.allocator) catch null;
+    try std.testing.expect(result != null);
 }
 
 test "isFreeFunction - detection" {
-    try std.testing.expect(PtrLifetimePass.isFreeFunction("free"));
-    try std.testing.expect(PtrLifetimePass.isFreeFunction("dealloc"));
-    try std.testing.expect(PtrLifetimePass.isFreeFunction("operator delete"));
-    try std.testing.expect(!PtrLifetimePass.isFreeFunction("malloc"));
-    try std.testing.expect(!PtrLifetimePass.isFreeFunction("printf"));
+    try std.testing.expect(isFreeFunction("free"));
+    try std.testing.expect(isFreeFunction("dealloc"));
+    try std.testing.expect(isFreeFunction("operator delete"));
+    try std.testing.expect(!isFreeFunction("malloc"));
+    try std.testing.expect(!isFreeFunction("printf"));
 }
 
 test "isResourceCloseFunction - detection" {
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("dlclose"));
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("munmap"));
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("fclose"));
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("close"));
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("DeleteGlobalRef"));
-    try std.testing.expect(PtrLifetimePass.isResourceCloseFunction("Py_DECREF"));
-    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("dlopen"));
-    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("malloc"));
-    try std.testing.expect(!PtrLifetimePass.isResourceCloseFunction("printf"));
+    try std.testing.expect(isResourceCloseFunction("dlclose") != null);
+    try std.testing.expect(isResourceCloseFunction("munmap") != null);
+    try std.testing.expect(isResourceCloseFunction("fclose") != null);
+    try std.testing.expect(isResourceCloseFunction("close") != null);
+    try std.testing.expect(isResourceCloseFunction("DeleteGlobalRef") != null);
+    try std.testing.expect(isResourceCloseFunction("Py_DECREF") != null);
+    try std.testing.expect(isResourceCloseFunction("dlopen") == null);
+    try std.testing.expect(isResourceCloseFunction("malloc") == null);
+    try std.testing.expect(isResourceCloseFunction("printf") == null);
 }
 
 test "getResourceType - classification" {
-    try std.testing.expectEqualStrings("dlhandle", PtrLifetimePass.getResourceType("dlopen"));
-    try std.testing.expectEqualStrings("dlhandle", PtrLifetimePass.getResourceType("dlsym"));
-    try std.testing.expectEqualStrings("mmap", PtrLifetimePass.getResourceType("mmap"));
-    try std.testing.expectEqualStrings("file", PtrLifetimePass.getResourceType("fopen"));
-    try std.testing.expectEqualStrings("socket", PtrLifetimePass.getResourceType("socket"));
-    try std.testing.expectEqualStrings("jni", PtrLifetimePass.getResourceType("JNI_OnLoad"));
-    try std.testing.expectEqualStrings("python", PtrLifetimePass.getResourceType("Py_BuildValue"));
-    try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("malloc"));
-    try std.testing.expectEqual(null, PtrLifetimePass.getResourceType("printf"));
+    try std.testing.expectEqualStrings("dlopen handle", get_resource_type("dlopen").?);
+    try std.testing.expectEqualStrings("dlopen handle", get_resource_type("dlsym").?);
+    try std.testing.expectEqualStrings("mmap region", get_resource_type("mmap").?);
+    try std.testing.expectEqualStrings("file handle", get_resource_type("fopen").?);
+    try std.testing.expectEqualStrings("socket", get_resource_type("socket").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), get_resource_type("JNI_OnLoad"));
+    try std.testing.expectEqualStrings("Python object", get_resource_type("Py_BuildValue").?);
+    try std.testing.expectEqual(@as(?[]const u8, null), get_resource_type("malloc"));
+    try std.testing.expectEqual(@as(?[]const u8, null), get_resource_type("printf"));
 }
 
 test "is_resource_alloc_function - returns ResourceType" {
-    try std.testing.expectEqual(ResourceType.dlopen_handle, PtrLifetimePass.is_resource_alloc_function("dlopen"));
-    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap"));
-    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap64"));
-    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("mmap2"));
-    try std.testing.expectEqual(ResourceType.mmap_region, PtrLifetimePass.is_resource_alloc_function("shm_open"));
-    try std.testing.expectEqual(ResourceType.file_handle, PtrLifetimePass.is_resource_alloc_function("fopen"));
-    try std.testing.expectEqual(ResourceType.socket_fd, PtrLifetimePass.is_resource_alloc_function("socket"));
-    try std.testing.expectEqual(ResourceType.jni_ref, PtrLifetimePass.is_resource_alloc_function("JNI_OnLoad"));
-    try std.testing.expectEqual(ResourceType.jni_ref, PtrLifetimePass.is_resource_alloc_function("Java_com_example_MyClass"));
-    try std.testing.expectEqual(ResourceType.python_obj, PtrLifetimePass.is_resource_alloc_function("Py_BuildValue"));
-    try std.testing.expectEqual(ResourceType.python_obj, PtrLifetimePass.is_resource_alloc_function("PyObject_Call"));
-    try std.testing.expectEqual(null, PtrLifetimePass.is_resource_alloc_function("malloc"));
-    try std.testing.expectEqual(null, PtrLifetimePass.is_resource_alloc_function("free"));
+    try std.testing.expectEqual(ResourceType.dlopen_handle, is_resource_alloc_function("dlopen").?);
+    try std.testing.expectEqual(ResourceType.mmap_region, is_resource_alloc_function("mmap").?);
+    try std.testing.expectEqual(ResourceType.mmap_region, is_resource_alloc_function("mmap64").?);
+    try std.testing.expectEqual(ResourceType.mmap_region, is_resource_alloc_function("mmap2").?);
+    try std.testing.expectEqual(ResourceType.mmap_region, is_resource_alloc_function("shm_open").?);
+    try std.testing.expectEqual(ResourceType.file_handle, is_resource_alloc_function("fopen").?);
+    try std.testing.expectEqual(ResourceType.socket_fd, is_resource_alloc_function("socket").?);
+    try std.testing.expectEqual(ResourceType.jni_ref, is_resource_alloc_function("JNI_OnLoad").?);
+    try std.testing.expectEqual(ResourceType.jni_ref, is_resource_alloc_function("Java_com_example_MyClass").?);
+    try std.testing.expectEqual(ResourceType.python_obj, is_resource_alloc_function("Py_BuildValue").?);
+    try std.testing.expectEqual(ResourceType.python_obj, is_resource_alloc_function("PyObject_Call").?);
+    try std.testing.expectEqual(@as(?ResourceType, null), is_resource_alloc_function("malloc"));
+    try std.testing.expectEqual(@as(?ResourceType, null), is_resource_alloc_function("free"));
 }
 
 test "ResourceType - enum values" {
@@ -174,8 +183,8 @@ test "is_lifecycle_bound_return - dlsym" {
         .source_desc = "resource via dlsym()",
         .resource_type = .dlopen_handle,
     };
-    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("dlsym", info));
-    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("malloc", info));
+    try std.testing.expect(is_lifecycle_bound_return("dlsym", info));
+    try std.testing.expect(!is_lifecycle_bound_return("malloc", info));
 }
 
 test "is_lifecycle_bound_return - mmap" {
@@ -185,9 +194,9 @@ test "is_lifecycle_bound_return - mmap" {
         .source_desc = "resource via mmap()",
         .resource_type = .mmap_region,
     };
-    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("mmap", info));
-    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("mmap64", info));
-    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("malloc", info));
+    try std.testing.expect(is_lifecycle_bound_return("mmap", info));
+    try std.testing.expect(is_lifecycle_bound_return("mmap64", info));
+    try std.testing.expect(!is_lifecycle_bound_return("malloc", info));
 }
 
 test "is_lifecycle_bound_return - file/socket" {
@@ -197,8 +206,8 @@ test "is_lifecycle_bound_return - file/socket" {
         .source_desc = "resource via fopen()",
         .resource_type = .file_handle,
     };
-    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("fopen", file_info));
-    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("open", file_info));
+    try std.testing.expect(is_lifecycle_bound_return("fopen", file_info));
+    try std.testing.expect(!is_lifecycle_bound_return("open", file_info));
 
     const sock_info = PtrInfo{
         .alloc_site = .heap,
@@ -206,59 +215,59 @@ test "is_lifecycle_bound_return - file/socket" {
         .source_desc = "resource via socket()",
         .resource_type = .socket_fd,
     };
-    try std.testing.expect(PtrLifetimePass.is_lifecycle_bound_return("socket", sock_info));
-    try std.testing.expect(!PtrLifetimePass.is_lifecycle_bound_return("accept", sock_info));
+    try std.testing.expect(is_lifecycle_bound_return("socket", sock_info));
+    try std.testing.expect(!is_lifecycle_bound_return("accept", sock_info));
 }
 
 test "is_known_deallocator - finalize" {
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_finalize"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_stmt_close"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("stmt_finalize"));
+    try std.testing.expect(is_known_deallocator("sqlite3_finalize"));
+    try std.testing.expect(is_known_deallocator("mysql_stmt_close"));
+    try std.testing.expect(is_known_deallocator("stmt_finalize"));
 }
 
 test "is_known_deallocator - close" {
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("fclose"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("close"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("SSL_shutdown"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("EVP_CIPHER_CTX_free"));
+    try std.testing.expect(is_known_deallocator("fclose"));
+    try std.testing.expect(is_known_deallocator("close"));
+    try std.testing.expect(is_known_deallocator("SSL_shutdown"));
+    try std.testing.expect(is_known_deallocator("EVP_CIPHER_CTX_free"));
 }
 
 test "is_known_deallocator - free" {
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_free"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_free_result"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("PQclear"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("curl_easy_cleanup"));
+    try std.testing.expect(is_known_deallocator("sqlite3_free"));
+    try std.testing.expect(is_known_deallocator("mysql_free_result"));
+    try std.testing.expect(is_known_deallocator("PQclear"));
+    try std.testing.expect(is_known_deallocator("curl_easy_cleanup"));
 }
 
 test "is_known_deallocator - destroy" {
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("sqlite3_close"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("mysql_close"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("Delete"));
-    try std.testing.expect(PtrLifetimePass.is_known_deallocator("Release"));
+    try std.testing.expect(is_known_deallocator("sqlite3_close"));
+    try std.testing.expect(is_known_deallocator("mysql_close"));
+    try std.testing.expect(is_known_deallocator("Delete"));
+    try std.testing.expect(is_known_deallocator("Release"));
 }
 
 test "is_known_deallocator - negative" {
-    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("malloc"));
-    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("calloc"));
-    try std.testing.expect(!PtrLifetimePass.is_known_deallocator("dlopen"));
+    try std.testing.expect(!is_known_deallocator("malloc"));
+    try std.testing.expect(!is_known_deallocator("calloc"));
+    try std.testing.expect(!is_known_deallocator("dlopen"));
 }
 
 test "is_intentional_free - known deallocators" {
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("sqlite3_finalize"));
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("fclose"));
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("curl_easy_cleanup"));
+    try std.testing.expect(is_intentional_free("sqlite3_finalize"));
+    try std.testing.expect(is_intentional_free("fclose"));
+    try std.testing.expect(is_intentional_free("curl_easy_cleanup"));
 }
 
 test "is_intentional_free - resource close" {
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("dlclose"));
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("munmap"));
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("DeleteGlobalRef"));
-    try std.testing.expect(PtrLifetimePass.is_intentional_free("Py_DECREF"));
+    try std.testing.expect(is_intentional_free("dlclose"));
+    try std.testing.expect(is_intentional_free("munmap"));
+    try std.testing.expect(is_intentional_free("DeleteGlobalRef"));
+    try std.testing.expect(is_intentional_free("Py_DECREF"));
 }
 
 test "is_intentional_free - negative" {
-    try std.testing.expect(!PtrLifetimePass.is_intentional_free("malloc"));
-    try std.testing.expect(!PtrLifetimePass.is_intentional_free("dlopen"));
+    try std.testing.expect(!is_intentional_free("malloc"));
+    try std.testing.expect(!is_intentional_free("dlopen"));
 }
 
 test "toZoneLanguage - explicit mapping correctness" {
@@ -399,8 +408,8 @@ test "T1.2 - isAllocaAliveAt - unknown alloca not in map" {
     const escape_inst: c.LLVMValueRef = @ptrFromInt(@as(usize, 3000));
 
     try lifetime_map.put(known_alloca, LifetimeInterval{
-        .start_inst = @ptrFromInt(@as(usize, 2000)),
-        .end_inst = @ptrFromInt(@as(usize, 5000)),
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 2000))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 5000))),
     });
 
     // Unknown alloca not in map → returns false → no suppression
@@ -413,8 +422,8 @@ test "T1.2 - LifetimeMap put and get roundtrip" {
 
     const alloca_ref: c.LLVMValueRef = @ptrFromInt(@as(usize, 42));
     const interval = LifetimeInterval{
-        .start_inst = @ptrFromInt(@as(usize, 100)),
-        .end_inst = @ptrFromInt(@as(usize, 200)),
+        .start_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 100))),
+        .end_inst = @as(c.LLVMValueRef, @ptrFromInt(@as(usize, 200))),
     };
 
     try lifetime_map.put(alloca_ref, interval);

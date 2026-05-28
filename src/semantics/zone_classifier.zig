@@ -173,7 +173,7 @@ fn classifyWithEvidence(
             if (std.mem.startsWith(u8, func_name, "_ZN") or
                 std.mem.startsWith(u8, func_name, "__rust_") or
                 std.mem.startsWith(u8, func_name, "__rdl_") or
-                std.mem.startswith(u8, func_name, "__rg_"))
+                std.mem.startsWith(u8, func_name, "__rg_"))
             {
                 const rust_alloc_patterns = [_][]const u8{
                     "__rust_dealloc",      "__rust_alloc",  "__rust_realloc",

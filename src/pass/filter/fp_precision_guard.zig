@@ -199,12 +199,12 @@ pub const FPPrecisionGuard = struct {
     pub fn init(allocator: std.mem.Allocator) FPPrecisionGuard {
         return .{
             .allocator = allocator,
-            .violations_list = std.ArrayList(GateViolation).init(allocator),
+            .violations_list = std.ArrayList(GateViolation).initCapacity(allocator, 0) catch unreachable,
         };
     }
 
     pub fn deinit(self: *FPPrecisionGuard) void {
-        self.violations_list.deinit();
+        self.violations_list.deinit(self.allocator);
     }
 
     /// Run gate check comparing candidate metrics against baseline.
@@ -233,7 +233,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 1: FFI-Precision must be ≥ threshold
         if (candidate_precision < t.min_ffi_precision) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "min_ffi_precision",
                 .message = "FFI-Precision below minimum threshold",
                 .actual = candidate_precision,
@@ -243,7 +243,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 2: Precision drop must be ≤ max_precision_drop
         if (precision_drop > t.max_precision_drop) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "max_precision_drop",
                 .message = "Precision dropped more than allowed from baseline",
                 .actual = precision_drop,
@@ -253,7 +253,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 3: FP count must not exceed max
         if (candidate.false_positives > t.max_fp_count) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "max_fp_count",
                 .message = "False positive count exceeds maximum allowed",
                 .actual = @floatFromInt(candidate.false_positives),
@@ -264,7 +264,7 @@ pub const FPPrecisionGuard = struct {
         // Rule 4: Noise reduction must meet minimum
         const noise_ratio = candidate.noiseReductionRatio(issues_before_filter);
         if (noise_ratio < t.min_noise_reduction) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "min_noise_reduction",
                 .message = "Noise reduction ratio below minimum threshold",
                 .actual = noise_ratio,
@@ -272,7 +272,7 @@ pub const FPPrecisionGuard = struct {
             });
         }
 
-        const violations_slice = try self.violations_list.toOwnedSlice();
+        const violations_slice = try self.violations_list.toOwnedSlice(self.allocator);
         errdefer self.allocator.free(violations_slice);
 
         return .{

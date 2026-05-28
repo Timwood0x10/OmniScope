@@ -25,7 +25,7 @@ test "FFITypeMismatchPass - deps includes call-graph (FIX-2 happy path)" {
     const deps = FFITypeMismatchPass.deps;
 
     // Verify deps is not empty (was empty before FIX-2)
-    try std.testing.expect(deps.len > 0, "deps should not be empty after FIX-2");
+    try std.testing.expect(deps.len > 0);
 
     // Verify call-graph dependency exists
     var found_call_graph = false;
@@ -35,7 +35,7 @@ test "FFITypeMismatchPass - deps includes call-graph (FIX-2 happy path)" {
             break;
         }
     }
-    try std.testing.expect(found_call_graph, "deps must include 'call-graph' for CrossLangEdges");
+    try std.testing.expect(found_call_graph);
 }
 
 // ============================================================================
@@ -63,7 +63,7 @@ test "TypeMismatchKind - all variants exist (coverage)" {
     }
 
     // Total count should match expectation (regression test)
-    try std.testing.expectEqual(@as(usize, 9), kinds.len, "TypeMismatchKind should have 9 variants");
+    try std.testing.expectEqual(@as(usize, 9), kinds.len);
 }
 
 // ============================================================================
@@ -111,5 +111,5 @@ test "FFITypeMismatchPass - deps length is reasonable (boundary)" {
 
     // Should have exactly 1 dependency (call-graph)
     // Not 0 (before FIX-2) and not excessive (>5 would be suspicious)
-    try std.testing.expect(deps.len >= 1 and deps.len <= 5, "deps count should be 1-5");
+    try std.testing.expect(deps.len >= 1 and deps.len <= 5);
 }

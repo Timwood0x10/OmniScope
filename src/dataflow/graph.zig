@@ -505,6 +505,7 @@ pub const DataFlowGraph = struct {
                     .trace = null,
                     .owned = true,
                     .function_owned = (func_copy.len > 0),
+                    .classification = issue.classification,
                 };
                 filled = index + 1;
                 index += 1;

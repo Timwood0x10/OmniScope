@@ -26,20 +26,20 @@ test "PtrLifetimePass - depends on call-graph only (v0.1.9 circular dep fix)" {
     const deps = PtrLifetimePass.deps;
 
     // Must have exactly 1 dependency (call-graph only)
-    try std.testing.expectEqual(@as(usize, 1), deps.len, "ptr_lifetime should have 1 dependency");
+    try std.testing.expectEqual(@as(usize, 1), deps.len);
 
     var has_call_graph = false;
     for (deps) |dep| {
         if (std.mem.eql(u8, dep, "call-graph")) has_call_graph = true;
     }
 
-    try std.testing.expect(has_call_graph, "ptr_lifetime must depend on call-graph");
+    try std.testing.expect(has_call_graph);
 }
 
 test "FFIBoundaryPass - depends on call-graph and danger-surface (FIX-4 happy path)" {
     const deps = FFIBoundaryPass.deps;
 
-    try std.testing.expect(deps.len >= 2, "ffi_boundary should have at least 2 dependencies");
+    try std.testing.expect(deps.len >= 2);
 
     var has_call_graph = false;
     var has_danger_surface = false;
@@ -48,14 +48,14 @@ test "FFIBoundaryPass - depends on call-graph and danger-surface (FIX-4 happy pa
         if (std.mem.eql(u8, dep, "danger-surface")) has_danger_surface = true;
     }
 
-    try std.testing.expect(has_call_graph, "ffi_boundary must depend on call-graph");
-    try std.testing.expect(has_danger_surface, "ffi_boundary must depend on danger-surface");
+    try std.testing.expect(has_call_graph);
+    try std.testing.expect(has_danger_surface);
 }
 
 test "CallbackEscapePass - depends on call-graph and danger-surface (FIX-4 happy path)" {
     const deps = CallbackEscapePass.deps;
 
-    try std.testing.expect(deps.len >= 2, "callback_escape should have at least 2 dependencies");
+    try std.testing.expect(deps.len >= 2);
 
     var has_call_graph = false;
     var has_danger_surface = false;
@@ -64,8 +64,8 @@ test "CallbackEscapePass - depends on call-graph and danger-surface (FIX-4 happy
         if (std.mem.eql(u8, dep, "danger-surface")) has_danger_surface = true;
     }
 
-    try std.testing.expect(has_call_graph, "callback_escape must depend on call-graph");
-    try std.testing.expect(has_danger_surface, "callback_escape must depend on danger-surface");
+    try std.testing.expect(has_call_graph);
+    try std.testing.expect(has_danger_surface);
 }
 
 test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.1.9 happy path)" {
@@ -74,7 +74,7 @@ test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.1.9 happy p
     // that was needed when MemoryGraph was empty.
     const deps = DangerSurfacePass.deps;
 
-    try std.testing.expectEqual(@as(usize, 2), deps.len, "danger_surface should have 2 dependencies");
+    try std.testing.expectEqual(@as(usize, 2), deps.len);
 
     var has_call_graph = false;
     var has_ptr_lifetime = false;
@@ -83,22 +83,22 @@ test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.1.9 happy p
         if (std.mem.eql(u8, dep, "ptr-lifetime")) has_ptr_lifetime = true;
     }
 
-    try std.testing.expect(has_call_graph, "danger_surface must depend on call-graph");
-    try std.testing.expect(has_ptr_lifetime, "danger_surface must depend on ptr-lifetime (MemoryGraph)");
+    try std.testing.expect(has_call_graph);
+    try std.testing.expect(has_ptr_lifetime);
 }
 
 test "FFITypeMismatchPass - depends on call-graph (FIX-2 + FIX-4)" {
     // Verified in FIX-2 test, but re-check here for completeness
     const deps = FFITypeMismatchPass.deps;
 
-    try std.testing.expect(deps.len >= 1, "ffi_type_mismatch must have at least 1 dependency");
+    try std.testing.expect(deps.len >= 1);
 
     var has_call_graph = false;
     for (deps) |dep| {
         if (std.mem.eql(u8, dep, "call-graph")) has_call_graph = true;
     }
 
-    try std.testing.expect(has_call_graph, "ffi_type_mismatch must depend on call-graph");
+    try std.testing.expect(has_call_graph);
 }
 
 // ============================================================================
@@ -109,11 +109,11 @@ test "Regression - no FFI pass has empty deps (regression test)" {
     // Before FIX-2/FIX-4, several FFI passes had empty deps arrays
     // This caused fragile execution order dependent on registration order
 
-    try std.testing.expect(PtrLifetimePass.deps.len > 0, "ptr_lifetime deps should not be empty");
-    try std.testing.expect(FFIBoundaryPass.deps.len > 0, "ffi_boundary deps should not be empty");
-    try std.testing.expect(CallbackEscapePass.deps.len > 0, "callback_escape deps should not be empty");
-    try std.testing.expect(DangerSurfacePass.deps.len > 0, "danger_surface deps should not be empty");
-    try std.testing.expect(FFITypeMismatchPass.deps.len > 0, "ffi_type_mismatch deps should not be empty");
+    try std.testing.expect(PtrLifetimePass.deps.len > 0);
+    try std.testing.expect(FFIBoundaryPass.deps.len > 0);
+    try std.testing.expect(CallbackEscapePass.deps.len > 0);
+    try std.testing.expect(DangerSurfacePass.deps.len > 0);
+    try std.testing.expect(FFITypeMismatchPass.deps.len > 0);
 }
 
 // ============================================================================
