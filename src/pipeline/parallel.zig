@@ -103,10 +103,13 @@ fn WorkStealingDeque(comptime T: type) type {
         /// Allocator used for array storage (needed for deinit in Zig 0.15.2).
         gpa: Allocator,
 
-        /// Circular buffer holding work items.
+        /// Raw circular buffer holding work items.
         /// Uses plain storage — element access is protected by index atomics + fences.
         /// Grows on push if full (owner-only operation).
-        array: std.ArrayList(T),
+        array: []T,
+
+        /// Current capacity of the array (number of slots allocated).
+        capacity: usize,
 
         /// Bottom index (owner-written, stealer-read).
         /// Points to the next slot below which valid items exist.
@@ -118,10 +121,11 @@ fn WorkStealingDeque(comptime T: type) type {
 
         /// Create a new empty deque with initial capacity.
         pub fn init(allocator: Allocator, initial_capacity: usize) !Self {
-            const arr = try std.ArrayList(T).initCapacity(allocator, initial_capacity);
+            const arr = try allocator.alloc(T, initial_capacity);
             return .{
                 .gpa = allocator,
                 .array = arr,
+                .capacity = initial_capacity,
                 .bottom = std.atomic.Value(usize).init(0),
                 .top = std.atomic.Value(usize).init(0),
             };
@@ -129,7 +133,7 @@ fn WorkStealingDeque(comptime T: type) type {
 
         /// Free the underlying array storage.
         pub fn deinit(self: *Self) void {
-            self.array.deinit(self.gpa);
+            self.gpa.free(self.array);
         }
 
         /// Push an item to the bottom (owner-only).
@@ -138,18 +142,24 @@ fn WorkStealingDeque(comptime T: type) type {
             const b = self.bottom.load(.monotonic);
             const t = self.top.load(.acquire);
             const size = b - t;
-            const cap = self.array.items.len;
-            if (size >= cap) {
-                const new_cap = @max(cap * 2, 4);
-                var new_arr = try std.ArrayList(T).initCapacity(allocator, new_cap);
-                var i: usize = 0;
-                while (i < cap) : (i += 1) {
-                    new_arr.appendAssumeCapacity(self.array.items[i]);
+            if (size >= self.capacity) {
+                const new_cap = @max(self.capacity * 2, 4);
+                const new_arr = allocator.alloc(T, new_cap) catch |err| {
+                    return err;
+                };
+                // Copy existing items from top to bottom
+                var i: usize = t;
+                while (i < b) : (i += 1) {
+                    new_arr[i - t] = self.array[i];
                 }
-                self.array.deinit(self.gpa);
+                self.gpa.free(self.array);
                 self.array = new_arr;
+                self.capacity = new_cap;
+                // Reset indices after growth
+                self.bottom.store(size, .monotonic);
+                self.top.store(0, .monotonic);
             }
-            self.array.appendAssumeCapacity(value);
+            self.array[b] = value;
             self.bottom.store(b + 1, .release);
         }
 
@@ -163,7 +173,7 @@ fn WorkStealingDeque(comptime T: type) type {
                 self.bottom.store(b + 1, .unordered);
                 return null;
             }
-            const val = self.array.items[b];
+            const val = self.array[b];
             if (t == b) {
                 // CAS: if top still equals t, increment to claim this item
                 if (self.top.cmpxchgStrong(t, t + 1, .acquire, .acquire)) |_| {
@@ -182,7 +192,7 @@ fn WorkStealingDeque(comptime T: type) type {
             const t = self.top.load(.acquire);
             const b = self.bottom.load(.acquire);
             if (t >= b) return null;
-            const val = self.array.items[t];
+            const val = self.array[t];
             // CAS: if top still equals t, increment to steal this item
             if (self.top.cmpxchgStrong(t, t + 1, .seq_cst, .seq_cst)) |_| return null;
             return val;
@@ -245,7 +255,13 @@ pub const ParallelExecutor = struct {
 
         const deques = try allocator.alloc(WorkStealingDeque(usize), actual_workers);
         errdefer allocator.free(deques);
-        for (deques) |*deque| {
+        for (deques, 0..) |*deque, i| {
+            errdefer {
+                // Clean up already-initialized deques on failure
+                for (deques[0..i]) |*d| {
+                    d.deinit();
+                }
+            }
             deque.* = try WorkStealingDeque(usize).init(allocator, 64);
         }
 

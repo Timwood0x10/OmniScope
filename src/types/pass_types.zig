@@ -1207,7 +1207,12 @@ fn getSeverityColor(comptime severity: []const u8) []const u8 {
 }
 
 fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
-    return @enumFromInt(@intFromEnum(sev));
+    return switch (sev) {
+        .low => .low,
+        .medium => .medium,
+        .high => .high,
+        .critical => .critical,
+    };
 }
 
 fn isZigStdlibFunction(func_name: []const u8) bool {

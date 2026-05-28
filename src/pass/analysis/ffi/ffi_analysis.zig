@@ -200,13 +200,14 @@ pub const FFIAnalysisPass = struct {
         }
         if (hooks.pythonUnbalancedDecrefCount() > 0) {
             const count = hooks.pythonUnbalancedDecrefCount();
+            const desc = std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch null;
             try self.violations.append(.{
                 .violation_type = .use_after_free,
                 .severity = .high,
                 .function_name = "python_ffi_boundary",
-                .description = std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch "Python refcount imbalance",
+                .description = desc orelse "Python refcount imbalance",
                 .confidence = 0.80,
-                .owns_description = true,
+                .owns_description = desc != null,
             });
         }
 

@@ -188,18 +188,21 @@ pub const BufferOverflowPass = struct {
                 func_name_str,
             });
 
-            const msg = std.fmt.allocPrint(ctx.allocator, "Stack buffer overflow: element index {d} exceeds allocation of {d} elements", .{ last_index_value, max_elements }) catch "Stack buffer overflow detected";
+            const msg = std.fmt.allocPrint(ctx.allocator, "Stack buffer overflow: element index {d} exceeds allocation of {d} elements", .{ last_index_value, max_elements }) catch null;
             // E2-1d: MemoryGraph gate - only report stack overflows if the base pointer
             // (alloca result) flows into an FFI call (is on danger path).
             const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
             if (!ctx.isRelevantAlloc(base_ptr_val)) {
                 diag.debug("[STACK-OVERFLOW SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
-                ctx.allocator.free(msg); // R8-M11 FIX: Free heap-allocated message on early return
+                if (msg) |m| {
+                    ctx.allocator.free(m); // R8-M11 FIX: Free heap-allocated message on early return
+                }
                 return null;
             }
             // R8-M11 FIX: Set owned=true for heap-allocated message to prevent memory leak
-            var issue = Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.85);
-            issue.owned = true;
+            const final_msg = msg orelse "Stack buffer overflow detected";
+            var issue = Issue.init(.buffer_overflow, final_msg, Location.init(func_name_str), .high, 0.85);
+            issue.owned = msg != null;
             return issue;
         }
 
@@ -256,18 +259,21 @@ pub const BufferOverflowPass = struct {
                 last_index_value, array_size,
             });
 
-            const msg = std.fmt.allocPrint(ctx.allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch "Array out-of-bounds detected";
+            const msg = std.fmt.allocPrint(ctx.allocator, "Array out-of-bounds: index {d} exceeds array length {d}", .{ last_index_value, array_size }) catch null;
             // E2-1d: MemoryGraph gate - only report array OOB if the base pointer
             // flows into an FFI call (is on danger path).
             const base_ptr_val = @as(u64, @intFromPtr(base_ptr));
             if (!ctx.isRelevantAlloc(base_ptr_val)) {
                 diag.debug("[ARRAY-OOB SUPPRESSED] Base pointer not on FFI danger path in {s}", .{func_name_str});
-                ctx.allocator.free(msg); // R8-M11 FIX: Free heap-allocated message on early return
+                if (msg) |m| {
+                    ctx.allocator.free(m); // R8-M11 FIX: Free heap-allocated message on early return
+                }
                 return null;
             }
             // R8-M11 FIX: Set owned=true for heap-allocated message
-            var issue = Issue.init(.buffer_overflow, msg, Location.init(func_name_str), .high, 0.8);
-            issue.owned = true;
+            const final_msg = msg orelse "Array out-of-bounds detected";
+            var issue = Issue.init(.buffer_overflow, final_msg, Location.init(func_name_str), .high, 0.8);
+            issue.owned = msg != null;
             return issue;
         }
 
