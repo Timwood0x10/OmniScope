@@ -173,10 +173,10 @@ pub fn detectDoubleFree(
             }
 
             stats.double_frees += 1;
-                    // P20: Structured candidate evidence
-                    var df_cand = IssueCandidate.init(ctx.allocator, .double_release, 0.92);
-                    df_cand.func_name = first_func;
-                    df_cand.addEvidence("Same-BB double-free detected") catch {};
+            // P20: Structured candidate evidence
+            var df_cand = IssueCandidate.init(ctx.allocator, .double_release, 0.92);
+            df_cand.func_name = first_func;
+            df_cand.addEvidence("Same-BB double-free detected") catch {};
 
             const severity: Severity = .high;
             const confidence: f32 = 0.92;

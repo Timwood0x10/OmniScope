@@ -321,9 +321,8 @@ pub fn isRustMangledName(func_name: []const u8) bool {
 pub fn mayRetainPointer(callee_name: []const u8) bool {
     // Functions that copy data don't retain the original pointer
     const copy_indicators = [_][]const u8{
-        "strdup", "strndup", "memcpy", "memmove", "strcpy", "strncpy",
-        "set_name", "set_description", "set_label",
-        "set_zone_name",
+        "strdup",   "strndup",         "memcpy",    "memmove",       "strcpy", "strncpy",
+        "set_name", "set_description", "set_label", "set_zone_name",
     };
     for (copy_indicators) |pat| {
         if (std.mem.indexOf(u8, callee_name, pat) != null) return false;

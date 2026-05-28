@@ -555,27 +555,28 @@ pub fn checkReturnViolation(
                         // Verify candidate through IssueVerifier
                         if (ctx.issue_verifier) |verifier| {
                             const result = try verifier.verify(&candidate);
-                                                    if (result.shouldReport()) {
-                                                        // Convert ViolationSeverity to Severity
-                                                        const severity: Severity = switch (result.severity) {
-                                                            .critical => .critical,
-                                                            .high => .high,
-                                                            .medium => .medium,
-                                                            .low => .low,
-                                                            .diagnostic => .low,
-                                                            .explained => .low,
-                                                        };
-                                                        // Convert candidate to Issue and add to context
-                                                        const issue = Issue.initWithTrace(
-                                                            .memory_leak,
-                                                            candidate.reason orelse "Memory leak detected",
-                                                            Location.init(func_name),
-                                                            severity,
-                                                            result.adjusted_score,
-                                                            &[_]TraceEntry{},
-                                                        );
-                                                        try ctx.addIssue(&issue);
-                                                    }                        } else {
+                            if (result.shouldReport()) {
+                                // Convert ViolationSeverity to Severity
+                                const severity: Severity = switch (result.severity) {
+                                    .critical => .critical,
+                                    .high => .high,
+                                    .medium => .medium,
+                                    .low => .low,
+                                    .diagnostic => .low,
+                                    .explained => .low,
+                                };
+                                // Convert candidate to Issue and add to context
+                                const issue = Issue.initWithTrace(
+                                    .memory_leak,
+                                    candidate.reason orelse "Memory leak detected",
+                                    Location.init(func_name),
+                                    severity,
+                                    result.adjusted_score,
+                                    &[_]TraceEntry{},
+                                );
+                                try ctx.addIssue(&issue);
+                            }
+                        } else {
                             // Legacy mode: direct reporting
                             const issue = Issue.initWithTrace(
                                 .memory_leak,

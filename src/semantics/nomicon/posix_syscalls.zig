@@ -17,37 +17,32 @@ const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
 
 /// Syscall semantic classification
 pub const SyscallClass = enum {
-    file_operation,      // unlink, close, open, rename, symlink, readlink, fcntl
-    network_operation,   // socket, bind, connect, listen, send, recv
-    memory_operation,    // free, dealloc, realloc, calloc, mmap, munmap
-    process_operation,   // fork, vfork, execve, waitpid, kill, exit
+    file_operation, // unlink, close, open, rename, symlink, readlink, fcntl
+    network_operation, // socket, bind, connect, listen, send, recv
+    memory_operation, // free, dealloc, realloc, calloc, mmap, munmap
+    process_operation, // fork, vfork, execve, waitpid, kill, exit
     unknown,
 };
 
 /// File operation syscalls
 const FILE_SYSCALLS = [_][]const u8{
-    "unlink", "unlinkat",
-    "close",
-    "open", "openat",
-    "rename", "renameat",
-    "symlink", "symlinkat",
-    "readlink", "readlinkat",
-    "fcntl",
-    "fstat", "fstatat",
-    "lstat",
-    "stat",
-    "access", "faccessat",
-    "chmod", "fchmodat",
-    "chown", "fchownat",
-    "lchown",
-    "truncate", "ftruncate",
-    "link", "linkat",
-    "mkdir", "mkdirat",
-    "rmdir",
-    "getcwd",
-    "chdir",
-    "opendir",
-    "readdir",
+    "unlink",     "unlinkat",
+    "close",      "open",
+    "openat",     "rename",
+    "renameat",   "symlink",
+    "symlinkat",  "readlink",
+    "readlinkat", "fcntl",
+    "fstat",      "fstatat",
+    "lstat",      "stat",
+    "access",     "faccessat",
+    "chmod",      "fchmodat",
+    "chown",      "fchownat",
+    "lchown",     "truncate",
+    "ftruncate",  "link",
+    "linkat",     "mkdir",
+    "mkdirat",    "rmdir",
+    "getcwd",     "chdir",
+    "opendir",    "readdir",
     "closedir",
 };
 
@@ -56,18 +51,30 @@ const NET_SYSCALLS = [_][]const u8{
     "socket",
     "bind",
     "listen",
-    "accept", "accept4",
+    "accept",
+    "accept4",
     "connect",
-    "send", "sendto", "sendmsg",
-    "recv", "recvfrom", "recvmsg",
+    "send",
+    "sendto",
+    "sendmsg",
+    "recv",
+    "recvfrom",
+    "recvmsg",
     "shutdown",
-    "getsockopt", "setsockopt",
-    "getsockname", "getpeername",
+    "getsockopt",
+    "setsockopt",
+    "getsockname",
+    "getpeername",
     "socketpair",
-    "poll", "ppoll",
-    "select", "pselect",
-    "epoll_create", "epoll_ctl", "epoll_wait",
-    "kqueue", "kevent",
+    "poll",
+    "ppoll",
+    "select",
+    "pselect",
+    "epoll_create",
+    "epoll_ctl",
+    "epoll_wait",
+    "kqueue",
+    "kevent",
 };
 
 /// Memory operation syscalls (the ONLY ones that participate in free/UAF)
@@ -85,26 +92,27 @@ const MEM_SYSCALLS = [_][]const u8{
     "mmap",
     "munmap",
     "mprotect",
-    "mlock", "munlock",
+    "mlock",
+    "munlock",
 };
 
 /// Process operation syscalls
 const PROC_SYSCALLS = [_][]const u8{
-    "fork", "vfork",
-    "execve", "execv", "execvp", "execvpe",
+    "fork",        "vfork",
+    "execve",      "execv",
+    "execvp",      "execvpe",
     "posix_spawn", "posix_spawnp",
-    "wait", "waitpid", "waitid",
-    "kill",
-    "exit", "_exit",
-    "abort",
-    "getpid", "getppid",
-    "getuid", "geteuid",
-    "getgid", "getegid",
-    "setuid", "seteuid",
-    "setgid", "setegid",
-    "setsid",
-    "getpgid", "setpgid",
-    "tcsetpgrp", "tcgetpgrp",
+    "wait",        "waitpid",
+    "waitid",      "kill",
+    "exit",        "_exit",
+    "abort",       "getpid",
+    "getppid",     "getuid",
+    "geteuid",     "getgid",
+    "getegid",     "setuid",
+    "seteuid",     "setgid",
+    "setegid",     "setsid",
+    "getpgid",     "setpgid",
+    "tcsetpgrp",   "tcgetpgrp",
 };
 
 /// Classify a syscall name into a semantic category.

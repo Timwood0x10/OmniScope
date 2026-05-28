@@ -19,7 +19,7 @@ const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
 const DROP_PATTERNS = [_][]const u8{
     "drop_in_place",
     "::drop",
-    "~",  // C++ destructors
+    "~", // C++ destructors
 };
 
 /// Rust dealloc symbol
