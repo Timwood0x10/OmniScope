@@ -93,6 +93,15 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                             // Interior mutability via UnsafeCell — legal write
                             continue;
                         }
+
+                        // R-0: Check if dest traces back to a mutable_param (&mut T).
+                        // In LLVM IR: Rust's &mut T → NO readonly attribute.
+                        // Writing to a pointer derived from &mut T is legal.
+                        // Only writing to readonly_param (&T) is a true immutable violation.
+                        if (isFromMutableParamSRT(dest_ptr, func, srt)) {
+                            // Base is from &mut T — legal write, skip
+                            continue;
+                        }
                     }
 
                     // Check if the base pointer is from a readonly parameter.
@@ -211,6 +220,69 @@ fn hasReadonlyAttribute(func: c.LLVMValueRef, param_idx: u32) bool {
     const readonly_name: [*:0]const u8 = "readonly";
     return c.LLVMGetAttributeCountAtIndex(func, param_idx) > 0 and
         c.LLVMGetStringAttributeAtIndex(func, param_idx, readonly_name, 8) != null;
+}
+
+/// R-0: Check if a value traces back to a mutable_param via SRT.
+/// Uses the Semantic Resolution Tree populated by param_attr.zig detector.
+/// If the value comes from a function parameter WITHOUT readonly attribute,
+/// it's &mut T — a legal mutable write destination.
+///
+/// This is the primary FP suppression path for write_to_immutable:
+/// In Rust, &mut T does NOT get the `readonly` LLVM attribute.
+/// Only &T gets `readonly`. So if the param is mutable_param, the
+/// write is to &mut T and is completely legal.
+fn isFromMutableParamSRT(value: c.LLVMValueRef, enclosing_func: c.LLVMValueRef, srt: anytype) bool {
+    var current = value;
+    var depth: u32 = 0;
+    while (depth < 8) : (depth += 1) {
+        // Check SRT for mutable_param resolution
+        const ref = @intFromPtr(current);
+        if (srt.hasKind(ref, .mutable_param) != null) return true;
+
+        // If we hit a readonly param, it's NOT mutable
+        if (srt.hasKind(ref, .readonly_param) != null) return false;
+
+        // Check if current is a function argument (may not be in SRT yet)
+        if (@intFromPtr(c.LLVMIsAArgument(current)) != 0) {
+            // Fall back to direct LLVM attribute check
+            const num_params = c.LLVMCountParams(enclosing_func);
+            var pi: u32 = 0;
+            while (pi < num_params) : (pi += 1) {
+                if (c.LLVMGetParam(enclosing_func, pi) == current) {
+                    // If NOT readonly → it's mutable
+                    return !hasReadonlyAttribute(enclosing_func, pi);
+                }
+            }
+            return false;
+        }
+
+        // Not an instruction — can't trace further
+        if (@intFromPtr(c.LLVMIsAInstruction(current)) == 0) return false;
+        const opcode = c.LLVMGetInstructionOpcode(current);
+
+        // Follow GEP base, Load source, BitCast operand
+        if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMLoad or
+            opcode == c.LLVMBitCast or opcode == c.LLVMIntToPtr)
+        {
+            current = c.LLVMGetOperand(current, 0);
+            if (@intFromPtr(current) == 0) return false;
+            continue;
+        }
+        // PHI: check if ANY incoming value is from mutable param
+        if (opcode == c.LLVMPHI) {
+            const num = c.LLVMCountIncoming(current);
+            var i: u32 = 0;
+            while (i < num) : (i += 1) {
+                const incoming = c.LLVMGetIncomingValue(current, i);
+                if (@intFromPtr(incoming) != 0 and isFromMutableParamSRT(incoming, enclosing_func, srt)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        break;
+    }
+    return false;
 }
 
 /// Try to extract struct name from a value (GEP or load from GEP).
@@ -495,6 +567,12 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
             for (freed_ptrs[0..freed_count]) |fp| {
                 if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
                 if (instructionUsesValue(inst, fp.ptr_val)) {
+                    // Defense-in-depth: check SRT on free_inst before reporting.
+                    // The first SRT check (line ~481) may be bypassed by LLVMIsAFunction filter.
+                    if (ctx.semantic_resolution) |resolution_engine| {
+                        const srt = resolution_engine.getSemanticTree();
+                        if (srt.hasKind(@intFromPtr(fp.free_inst), .raii_drop_release) != null) continue;
+                    }
                     try reportUafIssue(auditor, func, ctx, diag, func_name, fp.free_func_name, inst, "direct", null);
                     break;
                 }
@@ -543,6 +621,14 @@ fn reportUafIssue(
     global_name: ?[]const u8,
 ) !void {
     _ = func;
+
+    // R-3: Skip UAF in Rust drop_in_place functions — these are
+    // compiler-generated destructors where use-after-free patterns
+    // are part of normal RAII cleanup, not real bugs.
+    if (isDropContext(func_name)) {
+        diag.debug("UAF-SKIP [R-3]: {s} is drop_in_place context — RAII destructor", .{func_name});
+        return;
+    }
 
     const opcode = c.LLVMGetInstructionOpcode(use_inst);
     const op_desc = switch (opcode) {
@@ -622,6 +708,14 @@ pub fn instructionUsesLoadedFromGlobal(
 /// Check if a function name matches known deallocator patterns across languages.
 pub fn isDeallocator(func_name: []const u8) bool {
     return tracking.isDeallocator(func_name);
+}
+
+/// R-3: Check if function is a Rust drop context (drop_in_place / destructor).
+/// UAF patterns in these functions are compiler-generated RAII cleanup, not bugs.
+fn isDropContext(func_name: []const u8) bool {
+    return std.mem.indexOf(u8, func_name, "drop_in_place") != null or
+        std.mem.indexOf(u8, func_name, "::drop") != null or
+        std.mem.indexOf(u8, func_name, "~") != null; // C++ destructors
 }
 
 /// Check if instruction A comes before (or at) instruction B in the same basic block.

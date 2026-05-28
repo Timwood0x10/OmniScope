@@ -35,6 +35,7 @@ const AnalysisContext = struct {
     allocator: std.mem.Allocator,
     boundary: *const FFIBoundary,
     value_map: std.AutoHashMap(c.LLVMValueRef, ValueInfo),
+    pass_ctx: *PassContext,
 };
 
 /// Vulnerability information with traceable path
@@ -387,10 +388,14 @@ fn checkFormatStringVulnerability(
 
 /// Check if function call has command injection vulnerability
 ///
+/// W7: Requires taint confirmation — the argument must be tainted by
+/// the taint engine (user-controlled input) before reporting.
+/// SRT checks (global_provenance, readonly_param) suppress known-safe sources.
+///
 /// Arguments:
 ///   - func_name: Name of the called function
 ///   - args: Array of argument values
-///   - ctx: Analysis context
+///   - ctx: Analysis context (includes pass_ctx for taint/SRT access)
 ///
 /// Returns:
 ///   - Vulnerability info if detected, null otherwise
@@ -407,32 +412,43 @@ fn checkCommandInjectionVulnerability(
         return null;
     }
 
-    // Check if first argument is from parameter
     if (args.len == 0) return null;
 
     const command_arg = args[0];
-    if (ctx.value_map.get(command_arg)) |info| {
-        if (info.origin == .from_param) {
-            // Command from parameter - potential injection
-            const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.func});
-            trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without validation", .{func_name});
+    const arg_ref = @as(u64, @intFromPtr(command_arg));
 
-            return VulnerabilityInfo{
-                .vuln_type = .command_injection,
-                .severity = .critical,
-                .message = try std.fmt.allocPrint(
-                    ctx.allocator,
-                    "Command injection vulnerability: command from parameter used in {s}",
-                    .{func_name},
-                ),
-                .trace = trace,
-                .confidence = 0.95,
-            };
-        }
+    // R-4 + SRT: suppress known-safe argument sources
+    if (ctx.pass_ctx.semantic_resolution) |resolution_engine| {
+        const srt = resolution_engine.getSemanticTree();
+        // Global/const provenance — command is compile-time known, not injection
+        if (srt.hasKind(arg_ref, .global_provenance) != null) return null;
+        // Readonly param — const reference, unlikely injection vector
+        if (srt.hasKind(arg_ref, .readonly_param) != null) return null;
     }
 
-    return null;
+    // W7: Taint confirmation — only report if the argument is actually tainted
+    // by the taint engine (propagated from user-controlled source like argv/env).
+    // This eliminates FP where command strings come from hardcoded values,
+    // internal state, or non-user-controlled sources.
+    const arg_val_id = ctx.pass_ctx.getValueId(@intFromPtr(command_arg)) catch return null;
+    if (!ctx.pass_ctx.isTainted(arg_val_id)) return null;
+
+    // Taint confirmed — this is a real injection risk
+    const trace = try ctx.allocator.alloc([]const u8, 2);
+    trace[0] = try std.fmt.allocPrint(ctx.allocator, "Tainted command argument in function {s}", .{ctx.boundary.function_name});
+    trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without sanitization", .{func_name});
+
+    return VulnerabilityInfo{
+        .vuln_type = .command_injection,
+        .severity = .critical,
+        .message = try std.fmt.allocPrint(
+            ctx.allocator,
+            "Command injection: tainted user input passed to {s}()",
+            .{func_name},
+        ),
+        .trace = trace,
+        .confidence = 0.90,
+    };
 }
 
 /// Get vulnerability description
@@ -569,6 +585,7 @@ pub const FFIBodyCheckPass = struct {
             .allocator = ctx.allocator,
             .boundary = boundary,
             .value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(ctx.allocator),
+            .pass_ctx = ctx,
         };
         defer analysis_ctx.value_map.deinit();
 
@@ -870,10 +887,21 @@ test "FFIBodyCheckPass - vulnerability descriptions" {
 }
 
 test "FFIBodyCheckPass - format string vulnerability check" {
+    const FactStore = @import("../../../fact/store.zig").FactStore;
+    const QueryEngine = @import("../../../fact/query.zig").QueryEngine;
+    const DataFlowGraph = @import("../../../dataflow/graph.zig").DataFlowGraph;
+
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
+    var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    defer pass_ctx.deinit();
+
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);
     defer value_map.deinit();
 
-    // Create test analysis context
     const boundary = FFIBoundary{
         .id = 0,
         .kind = undefined,
@@ -887,6 +915,7 @@ test "FFIBodyCheckPass - format string vulnerability check" {
         .allocator = std.testing.allocator,
         .boundary = &boundary,
         .value_map = value_map,
+        .pass_ctx = &pass_ctx,
     };
 
     // Mock format string from parameter
@@ -908,11 +937,22 @@ test "FFIBodyCheckPass - format string vulnerability check" {
     try std.testing.expect(vuln.?.trace.len == 2);
 }
 
-test "FFIBodyCheckPass - command injection vulnerability check" {
+test "FFIBodyCheckPass - command injection requires taint" {
+    const FactStore = @import("../../../fact/store.zig").FactStore;
+    const QueryEngine = @import("../../../fact/query.zig").QueryEngine;
+    const DataFlowGraph = @import("../../../dataflow/graph.zig").DataFlowGraph;
+
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
+    var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    defer pass_ctx.deinit();
+
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);
     defer value_map.deinit();
 
-    // Create test analysis context
     const boundary = FFIBoundary{
         .id = 1,
         .kind = undefined,
@@ -926,6 +966,7 @@ test "FFIBodyCheckPass - command injection vulnerability check" {
         .allocator = std.testing.allocator,
         .boundary = &boundary,
         .value_map = value_map,
+        .pass_ctx = &pass_ctx,
     };
 
     // Mock command from parameter
@@ -939,7 +980,15 @@ test "FFIBodyCheckPass - command injection vulnerability check" {
 
     const args = [_]c.LLVMValueRef{mock_param};
 
-    // Should detect command injection vulnerability
+    // Without taint: should NOT detect (taint gate prevents FP)
+    const no_vuln = try checkCommandInjectionVulnerability("system", &args, &analysis_ctx);
+    try std.testing.expect(no_vuln == null);
+
+    // Mark the value as tainted (simulating user-controlled input)
+    const val_id = try pass_ctx.getValueId(@intFromPtr(mock_param));
+    try pass_ctx.markTainted(val_id, null);
+
+    // With taint: SHOULD detect command injection
     const vuln = try checkCommandInjectionVulnerability("system", &args, &analysis_ctx);
     try std.testing.expect(vuln != null);
     try std.testing.expectEqual(IssueKind.command_injection, vuln.?.vuln_type);

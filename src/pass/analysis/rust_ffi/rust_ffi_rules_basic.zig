@@ -63,6 +63,22 @@ pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCont
 
             if (!isRustAsPtrCall(name_slice)) continue;
 
+            // R-1/R-8: Check SRT for provenance — heap/global pointers are
+            // not stack escapes; from_parameter is not a local stack escape.
+            // R-8: Function parameters are NOT stack escapes — the caller
+            // owns the pointer and is responsible for its lifetime.
+            // R-1: Heap provenance (Box/Arc/Vec/String) — pointer from heap
+            // allocation passed to FFI is not a borrow escape.
+            if (ctx.semantic_resolution) |resolution_engine| {
+                const srt = resolution_engine.getSemanticTree();
+                // Check the as_ptr return value's provenance
+                const inst_ref = @intFromPtr(inst);
+                if (srt.hasKind(inst_ref, .heap_provenance) != null) continue;
+                if (srt.hasKind(inst_ref, .global_provenance) != null) continue;
+                // Trace the as_ptr base pointer back to check provenance
+                if (srt.*.traceToHeapProvenance(inst, 8)) continue;
+            }
+
             auditor.stats.as_ptr_escapes += 1;
             const func_name = getFunctionName(func);
 
@@ -116,9 +132,34 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
 
             if (!isCFreeCall(name_slice)) continue;
 
+            // R-6: If the freed pointer came from into_raw, ownership was
+            // explicitly transferred — C free() is legal, not a bug.
+            // R-7: If the callee is a library allocator release function
+            // (e.g., mi_free, sqlite3_finalize), it's not cross-language.
+            const inst_ref = @intFromPtr(inst);
+            if (ctx.semantic_resolution) |resolution_engine| {
+                const srt = resolution_engine.getSemanticTree();
+                // R-7: Library allocator release — not cross-language
+                if (srt.hasKind(inst_ref, .library_release) != null) continue;
+                // R-4: Non-memory syscall (file/net/proc) — not a free
+                if (srt.hasKind(inst_ref, .file_operation) != null) continue;
+                if (srt.hasKind(inst_ref, .network_operation) != null) continue;
+                if (srt.hasKind(inst_ref, .process_operation) != null) continue;
+            }
+
             // Get the pointer argument to free() and trace its origin
             const ptr_arg = c.LLVMGetOperand(inst, 0);
             if (@intFromPtr(ptr_arg) == 0) continue;
+
+            // R-6: Check if the pointer came from into_raw (ownership transfer)
+            const ptr_ref = @intFromPtr(ptr_arg);
+            if (ctx.semantic_resolution) |resolution_engine| {
+                const srt = resolution_engine.getSemanticTree();
+                if (srt.hasKind(ptr_ref, .into_raw_transfer) != null) {
+                    // Ownership was transferred via into_raw — C free() is legal
+                    continue;
+                }
+            }
 
             // Only report if the pointer can be traced back to a Rust allocator
             if (!ptrOriginatesFromRustAlloc(func, ptr_arg, &visited)) continue;
@@ -242,7 +283,13 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                     .from_code_section, .from_constant => {
                         continue;
                     },
-                    .from_alloca, .from_parameter => {},
+                    .from_alloca => {},
+                    .from_parameter => {
+                        // Parameters are not stack escapes in the current function.
+                        // The caller owns the pointer and is responsible for its lifetime.
+                        // Only local alloca (stack allocation) is a real stack escape.
+                        continue;
+                    },
                     else => continue,
                 }
 
@@ -251,7 +298,7 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                 if (ctx.semantic_resolution) |resolution_engine| {
                     const srt = resolution_engine.getSemanticTree();
                     const arg_ref = @intFromPtr(arg);
-                    log.debug("[SRT-QUERY] Checking arg {d} for heap_provenance in {s}", .{arg_ref, callee_name});
+                    log.debug("[SRT-QUERY] Checking arg {d} for heap_provenance in {s}", .{ arg_ref, callee_name });
                     if (srt.*.traceToHeapProvenance(arg, 8)) {
                         // Heap origin — not a stack escape
                         log.debug("[SRT-SUPPRESS] heap_provenance traced for arg {d} -> skip", .{arg_ref});
@@ -412,6 +459,25 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
             const key = @as(usize, @intFromPtr(free_entry.val)) * 31 + @as(usize, @intFromPtr(ffi_ptr));
             if (reported.contains(key)) continue;
             try reported.put(key, {});
+
+            // R-3: Skip ownership violations in Rust drop_in_place functions.
+            // These are compiler-generated destructors where the dealloc is
+            // part of normal RAII cleanup, not a real ownership violation.
+            if (std.mem.indexOf(u8, func_name, "drop_in_place") != null or
+                std.mem.indexOf(u8, func_name, "::drop") != null)
+            {
+                continue;
+            }
+
+            // R-3: Skip if the free is __rust_dealloc in a Rust function.
+            // __rust_dealloc is Rust's global allocator — calling it from
+            // Rust code is always RAII scope-end cleanup, not a real
+            // ownership violation. Real cross-lang free uses C free().
+            if (std.mem.indexOf(u8, free_entry.free_name, "__rust_dealloc") != null and
+                isRustMangledName(func_name))
+            {
+                continue;
+            }
 
             auditor.stats.unpaired_into_raw += 1;
 

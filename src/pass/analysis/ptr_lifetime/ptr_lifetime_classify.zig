@@ -6,6 +6,7 @@ const ResourceType = pt.ResourceType;
 const HEAP_ALLOC_FUNCTIONS = pt.HEAP_ALLOC_FUNCTIONS;
 const KNOWN_DEALLOCATORS = pt.KNOWN_DEALLOCATORS;
 const Language = @import("../../../semantics/zone_classifier.zig").Language;
+const posix_syscalls = @import("../../../semantics/nomicon/posix_syscalls.zig");
 
 /// Function classification and identification utilities for PtrLifetimePass.
 /// Extracted from ptr_lifetime.zig to improve code organization.
@@ -249,6 +250,13 @@ pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?L
 
 /// Classify a free/dealloc function's language/runtime origin.
 pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
+    // POSIX syscall classification: file/network/process operations are NOT memory frees
+    // This prevents false positives like Bun__unlink being classified as a free function
+    const syscall_class = posix_syscalls.classifySyscall(fn_name);
+    if (syscall_class == .file_operation or syscall_class == .network_operation or syscall_class == .process_operation) {
+        return null; // Not a memory free operation
+    }
+
     if (containsAny(fn_name, &[_][]const u8{ "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc" }))
         return "rust";
     // C++ operator delete — Itanium ABI mangled names + unmangled

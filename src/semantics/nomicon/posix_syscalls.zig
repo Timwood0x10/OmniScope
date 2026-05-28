@@ -108,6 +108,7 @@ const PROC_SYSCALLS = [_][]const u8{
 };
 
 /// Classify a syscall name into a semantic category.
+/// Uses substring matching to handle prefixed function names (e.g., Bun__unlink).
 pub fn classifySyscall(name: []const u8) SyscallClass {
     // Check memory operations first (most critical for free/UAF)
     for (MEM_SYSCALLS) |mem_name| {
@@ -117,19 +118,22 @@ pub fn classifySyscall(name: []const u8) SyscallClass {
         if (std.mem.startsWith(u8, name, "__rust_dealloc")) return .memory_operation;
     }
 
-    // Check file operations
+    // Check file operations (substring matching for prefixed names like Bun__unlink)
     for (FILE_SYSCALLS) |file_name| {
         if (std.mem.eql(u8, name, file_name)) return .file_operation;
+        if (std.mem.indexOf(u8, name, file_name) != null) return .file_operation;
     }
 
     // Check network operations
     for (NET_SYSCALLS) |net_name| {
         if (std.mem.eql(u8, name, net_name)) return .network_operation;
+        if (std.mem.indexOf(u8, name, net_name) != null) return .network_operation;
     }
 
     // Check process operations
     for (PROC_SYSCALLS) |proc_name| {
         if (std.mem.eql(u8, name, proc_name)) return .process_operation;
+        if (std.mem.indexOf(u8, name, proc_name) != null) return .process_operation;
     }
 
     return .unknown;

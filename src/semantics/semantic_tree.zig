@@ -12,14 +12,15 @@ const c = @import("../ir/llvm_raw.zig").c;
 /// Semantic kind — what the SRT needs to answer:
 /// "Can this value be explained away by language semantics?"
 ///
-/// Extended from 4 to 11 variants to cover Rust Nomicon patterns:
+/// Extended from 4 to 15 variants to cover bun FP patterns (R-0~R-8):
+/// - readonly_param/mutable_param: LLVM parameter attributes (R-0, 1877 FP main cause)
 /// - interior_mutability: UnsafeCell/Once/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic*
-/// - heap_provenance: Box/Arc/Vec/String heap-owning pointers
+/// - heap_provenance: Box/Arc/Rc/Vec/String/*mut heap-owning pointers (R-1)
 /// - global_provenance: static/const/&'static
-/// - file_operation: unlink/close/open/rename
-/// - network_operation: socket/bind/connect/listen
-/// - process_operation: fork/execve/exit
-/// - raii_drop_release: compiler-inserted Drop/dealloc
+/// - file_operation/network_operation/process_operation: POSIX syscall classes (R-4)
+/// - raii_drop_release: compiler-inserted Drop/dealloc (R-3)
+/// - into_raw_transfer: Box/CString/Vec::into_raw ownership transfer (R-6)
+/// - library_release: mimalloc/zlib/openssl/sqlite library dealloc (R-7)
 pub const SemanticKind = enum(u8) {
     // ── Existing (kept) ──
     unknown,
@@ -27,20 +28,36 @@ pub const SemanticKind = enum(u8) {
     release,
     provenance,
 
-    // ── Interior mutability (covers F2: write_to_immutable FP) ──
+    // ── R-0: LLVM parameter attributes (covers F2: write_to_immutable 1877 FP) ──
+    readonly_param, // function param has LLVM `readonly` attr → Rust &T / C const ptr
+    mutable_param, // function param has no `readonly` attr → Rust &mut T / C plain ptr
+    //   Writing to a mutable_param-derived pointer is legal &mut T write.
+    //   Only writing to a readonly_param-derived pointer is a true immutable violation.
+
+    // ── R-2: Interior mutability (covers remaining write_to_immutable FP) ──
     interior_mutability,
 
-    // ── Provenance细化 (covers F1: borrow_escape FP) ──
-    heap_provenance,
-    global_provenance,
+    // ── R-1: Provenance refinement (covers F1: borrow_escape 71 FP) ──
+    heap_provenance, // value from __rust_alloc/malloc/Box::new; or alloca DI type
+    //   is Box/Arc/Rc/Vec/String/*mut (SROA field load)
+    global_provenance, // static/const/&'static/compile-time known source
 
-    // ── Syscall semantics (covers F3/F5) ──
-    file_operation,
-    network_operation,
-    process_operation,
+    // ── R-6: Ownership transfer (covers F4: cross_language_free 4 FP) ──
+    into_raw_transfer, // Box/CString/Vec::into_raw return value — ownership
+    //   transferred to caller; subsequent C free() is legal
 
-    // ── RAII drop (covers F4: use_after_free FP) ──
-    raii_drop_release,
+    // ── R-4: POSIX syscall semantics (cross_language_free / command_injection) ──
+    file_operation, // unlink/close/open/rename/symlink/fcntl
+    network_operation, // socket/bind/connect/listen/send/recv
+    process_operation, // fork/vfork/execve/waitpid/kill
+
+    // ── R-3: RAII drop (covers F3: use_after_free 3 FP) ──
+    raii_drop_release, // compiler-inserted scope-end dealloc / drop_in_place
+    //   function's dealloc. Includes Arc/Rc refcount conditional release.
+
+    // ── R-7: Library-level allocator release (covers mimalloc/zlib/openssl/sqlite etc.) ──
+    library_release, // mi_free/inflateEnd/EVP_CIPHER_CTX_free/sqlite3_finalize etc.
+    //   cross_language_free detection hitting this kind → not reported
 };
 
 /// A semantic resolution - the result of applying a pattern to a node
@@ -265,28 +282,28 @@ pub const SemanticTree = struct {
     ) bool {
         var current = value;
         var depth: u32 = 0;
-        
+
         while (depth < max_depth) : (depth += 1) {
             const ref = @intFromPtr(current);
-            
+
             // Check SRT for this value
             if (self.hasKind(ref, .heap_provenance) != null) {
-                std.debug.print("[TRACE] Found heap_provenance at depth {d}, ref={d}\n", .{depth, ref});
+                std.debug.print("[TRACE] Found heap_provenance at depth {d}, ref={d}\n", .{ depth, ref });
                 return true;
             }
             if (self.hasKind(ref, .global_provenance) != null) {
-                std.debug.print("[TRACE] Found global_provenance at depth {d}, ref={d}\n", .{depth, ref});
+                std.debug.print("[TRACE] Found global_provenance at depth {d}, ref={d}\n", .{ depth, ref });
                 return true;
             }
-            
+
             if (@intFromPtr(c.LLVMIsAInstruction(current)) == 0) {
                 // Check what type of value this is
                 const is_global = @intFromPtr(c.LLVMIsAGlobalValue(current)) != 0;
                 const is_arg = @intFromPtr(c.LLVMIsAArgument(current)) != 0;
                 const is_const = @intFromPtr(c.LLVMIsAConstant(current)) != 0;
                 const value_kind = c.LLVMGetValueKind(current);
-                std.debug.print("[TRACE] Not an instruction at depth {d}: is_global={}, is_arg={}, is_const={}, value_kind={d}\n", .{depth, is_global, is_arg, is_const, value_kind});
-                
+                std.debug.print("[TRACE] Not an instruction at depth {d}: is_global={}, is_arg={}, is_const={}, value_kind={d}\n", .{ depth, is_global, is_arg, is_const, value_kind });
+
                 // If it's a global variable, it might have heap_provenance
                 if (is_global) {
                     const global_ref = @intFromPtr(current);
@@ -295,7 +312,7 @@ pub const SemanticTree = struct {
                         return true;
                     }
                 }
-                
+
                 // If it's a function argument, it should already be marked
                 // by forward propagation in ch09
                 if (is_arg) {
@@ -303,11 +320,11 @@ pub const SemanticTree = struct {
                 }
                 break;
             }
-            
+
             const opcode = c.LLVMGetInstructionOpcode(current);
             const opcode_name = getOpcodeName(opcode);
-            std.debug.print("[TRACE] Depth {d}: opcode={s} ref={d}\n", .{depth, opcode_name, ref});
-            
+            std.debug.print("[TRACE] Depth {d}: opcode={s} ref={d}\n", .{ depth, opcode_name, ref });
+
             if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMLoad) {
                 const base = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(base) == 0) break;
@@ -315,7 +332,7 @@ pub const SemanticTree = struct {
                 current = base;
                 continue;
             }
-            
+
             if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                 // Check if this call instruction itself has heap_provenance
                 if (self.hasKind(ref, .heap_provenance) != null) {
@@ -325,7 +342,7 @@ pub const SemanticTree = struct {
                 std.debug.print("[TRACE] Call instruction without heap_provenance, stopping\n", .{});
                 break;
             }
-            
+
             if (opcode == c.LLVMPHI) {
                 const num_incoming = c.LLVMCountIncoming(current);
                 std.debug.print("[TRACE] PHI node with {d} incoming values\n", .{num_incoming});
@@ -338,7 +355,7 @@ pub const SemanticTree = struct {
                 }
                 break;
             }
-            
+
             if (opcode == c.LLVMBitCast or opcode == c.LLVMIntToPtr) {
                 const operand = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(operand) == 0) break;
@@ -346,15 +363,15 @@ pub const SemanticTree = struct {
                 current = operand;
                 continue;
             }
-            
+
             std.debug.print("[TRACE] Unhandled opcode {s}, stopping\n", .{opcode_name});
             break;
         }
-        
+
         std.debug.print("[TRACE] No heap_provenance found after {d} steps\n", .{depth});
         return false;
     }
-    
+
     fn getOpcodeName(opcode: c_uint) []const u8 {
         return switch (opcode) {
             c.LLVMRet => "ret",
@@ -434,33 +451,33 @@ pub const SemanticTree = struct {
     ) bool {
         var current = value;
         var depth: u32 = 0;
-        
+
         while (depth < max_depth) : (depth += 1) {
             const ref = @intFromPtr(current);
-            
+
             if (self.hasKind(ref, .interior_mutability) != null) return true;
-            
+
             if (@intFromPtr(c.LLVMIsAInstruction(current)) == 0) break;
-            
+
             const opcode = c.LLVMGetInstructionOpcode(current);
-            
+
             if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMLoad) {
                 const base = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(base) == 0) break;
                 current = base;
                 continue;
             }
-            
+
             if (opcode == c.LLVMBitCast) {
                 const operand = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(operand) == 0) break;
                 current = operand;
                 continue;
             }
-            
+
             break;
         }
-        
+
         return false;
     }
 };

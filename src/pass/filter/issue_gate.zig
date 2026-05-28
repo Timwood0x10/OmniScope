@@ -1,120 +1,94 @@
-//! Issue Gate — unified filter for all Issues before aggregator.
+//! Issue Gate — unified suppression gate for all issues
 //!
-//! All Passes MUST query SRT before emitting an Issue. This gate
-//! enforces the semantic consensus: if SRT says "this value has
-//! heap_provenance" or "this is a file_operation", the gate suppresses
-//! or downgrades the Issue.
+//! Every issue must pass through this gate before being emitted.
+//! The gate queries the SRT for semantic resolutions that explain
+//! away the potential violation. This ensures that no pass can
+//! bypass the semantic consensus layer.
 //!
-//! Design: every Issue goes through checkIssue() → GateVerdict.
-//! New Passes don't need whitelist code — just add Resolution to SRT.
+//! Design: R-0~R-8 detectors populate the SRT. This gate reads it.
+//! New detectors automatically benefit from existing gate rules.
+//!
+//! Gate rules are derived from bun FP reduction plan (R-0~R-8):
+//!   - R-0: readonly/mutable_param -> write_to_immutable suppression
+//!   - R-1: heap_provenance -> borrow_escape suppression
+//!   - R-2: interior_mutability -> write_to_immutable suppression
+//!   - R-3: raii_drop_release -> use_after_free suppression
+//!   - R-4: file/network/process_operation -> cross_language_free suppression
+//!   - R-6: into_raw_transfer -> cross_language_free suppression
+//!   - R-7: library_release -> cross_language_free suppression
+//!   - R-8: from_parameter -> borrow_escape suppression
 
 const std = @import("std");
 const SemanticTree = @import("../../semantics/semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../../semantics/semantic_tree.zig").SemanticKind;
 const Issue = @import("../../diag/issue.zig").Issue;
+const IssueKind = @import("../../diag/issue.zig").IssueKind;
 
-/// Gate verdict for an Issue
+/// Gate verdict — what the gate decided about an issue.
 pub const GateVerdict = enum {
-    /// Allow the Issue to proceed to aggregator
-    allow,
-    /// Suppress — SRT provides a semantic explanation
-    suppress_heap_origin,
-    suppress_global_origin,
-    suppress_interior_mut,
-    suppress_raii,
-    suppress_non_memory_syscall,
-    /// Downgrade — reduce severity/confidence
-    downgrade_low_confidence,
+    allow, // Issue passes through — report it
+    suppress_mutable_param, // R-0: write to &mut T is legal
+    suppress_interior_mut, // R-2: write to UnsafeCell is legal
+    suppress_heap_origin, // R-1: pointer has heap provenance
+    suppress_global_origin, // R-1: pointer has global provenance
+    suppress_raii, // R-3: RAII drop is compiler-inserted
+    suppress_non_memory_syscall, // R-4: syscall is not memory-related
+    suppress_ownership_transfer, // R-6: into_raw ownership transfer
+    suppress_library_release, // R-7: library-level release
+    suppress_parameter_source, // R-8: parameter is not stack escape
 };
 
-/// Check an Issue against SRT semantic consensus.
-/// Returns the verdict: allow, suppress, or downgrade.
-pub fn checkIssue(srt: *const SemanticTree, issue: *const Issue) GateVerdict {
-    // Get the value reference from the issue
-    // Note: Issue structure may vary — adapt as needed
-    const value_ref = getValueRefFromIssue(issue);
-
-    switch (issue.kind) {
+/// Check an issue against the SRT gate rules.
+/// Returns .allow if the issue should be reported, or the specific
+/// suppression reason if it should be suppressed.
+/// The value_ref parameter is the LLVM ValueRef associated with the issue.
+pub fn checkIssue(srt: *const SemanticTree, value_ref: u64, kind: IssueKind) GateVerdict {
+    switch (kind) {
         .borrow_escape => {
-            // F1: 74 borrow_escape FP — heap/global provenance suppresses
-            if (srt.hasKind(value_ref, .heap_provenance) != null) {
-                return .suppress_heap_origin;
-            }
-            if (srt.hasKind(value_ref, .global_provenance) != null) {
-                return .suppress_global_origin;
-            }
+            // R-1: Heap pointers are not stack escapes
+            if (srt.hasKind(value_ref, .heap_provenance) != null) return .suppress_heap_origin;
+            // R-1: Global/static pointers are not stack escapes
+            if (srt.hasKind(value_ref, .global_provenance) != null) return .suppress_global_origin;
+            // R-0: Parameters passed with noalias (exclusive &mut T) are not escapes
+            if (srt.hasKind(value_ref, .mutable_param) != null) return .suppress_parameter_source;
         },
         .write_to_immutable => {
-            // F2: 23 write_to_immutable FP — interior mutability suppresses
-            if (srt.hasKind(value_ref, .interior_mutability) != null) {
-                return .suppress_interior_mut;
-            }
-            // Also check if the enclosing function is a once-init context
-            if (srt.hasKind(value_ref, .interior_mutability) != null) {
-                return .suppress_interior_mut;
-            }
+            // R-0: Writing to &mut T is legal (no readonly attribute)
+            if (srt.hasKind(value_ref, .mutable_param) != null) return .suppress_mutable_param;
+            // R-2: Writing to UnsafeCell-derived memory is legal
+            if (srt.hasKind(value_ref, .interior_mutability) != null) return .suppress_interior_mut;
         },
         .use_after_free => {
-            // F4: 3 use_after_free FP — RAII drop suppresses
-            if (srt.hasKind(value_ref, .raii_drop_release) != null) {
-                return .suppress_raii;
-            }
-            // Non-memory syscalls should not trigger UAF
-            if (srt.hasKind(value_ref, .file_operation) != null) {
-                return .suppress_non_memory_syscall;
-            }
-            if (srt.hasKind(value_ref, .network_operation) != null) {
-                return .suppress_non_memory_syscall;
-            }
+            // R-3: RAII drop is compiler-inserted, not a bug
+            if (srt.hasKind(value_ref, .raii_drop_release) != null) return .suppress_raii;
         },
-        .cross_language_free => {
-            // F3: 4 cross_language_free FP — non-memory syscalls suppress
-            if (srt.hasKind(value_ref, .file_operation) != null) {
-                return .suppress_non_memory_syscall;
-            }
-            if (srt.hasKind(value_ref, .network_operation) != null) {
-                return .suppress_non_memory_syscall;
-            }
-            if (srt.hasKind(value_ref, .process_operation) != null) {
-                return .suppress_non_memory_syscall;
-            }
-        },
-        .command_injection => {
-            // F5: 2 command_injection FP — global provenance suppresses
-            // (self_exe_path, compile-time constants)
-            if (srt.hasKind(value_ref, .global_provenance) != null) {
-                return .suppress_global_origin;
-            }
-            // process_operation alone is not enough — need taint source
-            // This is handled by the Pass itself (queries taint_state)
+        .cross_language_leak, .cross_language_free => {
+            // R-6: Ownership transferred via into_raw — C free() is legal
+            if (srt.hasKind(value_ref, .into_raw_transfer) != null) return .suppress_ownership_transfer;
+            // R-4: Non-memory syscalls (file/net/proc)
+            if (srt.hasKind(value_ref, .file_operation) != null) return .suppress_non_memory_syscall;
+            if (srt.hasKind(value_ref, .network_operation) != null) return .suppress_non_memory_syscall;
+            if (srt.hasKind(value_ref, .process_operation) != null) return .suppress_non_memory_syscall;
+            // R-7: Library-level allocator release
+            if (srt.hasKind(value_ref, .library_release) != null) return .suppress_library_release;
         },
         else => {},
     }
-
     return .allow;
 }
 
-/// Get value reference from an Issue.
-/// Adapt this based on the actual Issue structure.
-fn getValueRefFromIssue(issue: *const Issue) u64 {
-    // Try to extract from the issue's location or trace
-    // This may need adaptation based on Issue struct layout
-    if (issue.location.func.len > 0) {
-        // Use function name hash as a fallback value_ref
-        return std.hash_map.hashString(issue.location.func);
-    }
-    return 0;
-}
-
-/// Get a human-readable reason for suppression (for diagnostics)
-pub fn verdictReason(verdict: GateVerdict) ?[]const u8 {
+/// Get a human-readable reason for a gate verdict.
+pub fn verdictReason(verdict: GateVerdict) []const u8 {
     return switch (verdict) {
-        .allow => null,
-        .suppress_heap_origin => "suppressed: value has heap provenance (Nomicon Ch9)",
-        .suppress_global_origin => "suppressed: value has global provenance",
-        .suppress_interior_mut => "suppressed: interior mutability via UnsafeCell (Nomicon Ch5)",
-        .suppress_raii => "suppressed: RAII drop/release (Nomicon Ch6)",
-        .suppress_non_memory_syscall => "suppressed: non-memory syscall (POSIX file/net/proc)",
-        .downgrade_low_confidence => "downgraded: low confidence due to SRT analysis",
+        .allow => "no suppression",
+        .suppress_mutable_param => "R-0: write to &mut T (mutable_param) is legal",
+        .suppress_interior_mut => "R-2: write to UnsafeCell-derived memory is legal",
+        .suppress_heap_origin => "R-1: heap provenance - not a stack escape",
+        .suppress_global_origin => "R-1: global provenance - not a stack escape",
+        .suppress_raii => "R-3: RAII drop - compiler-inserted release",
+        .suppress_non_memory_syscall => "R-4: non-memory syscall (file/net/proc)",
+        .suppress_ownership_transfer => "R-6: into_raw ownership transfer - C free() is legal",
+        .suppress_library_release => "R-7: library-level allocator release",
+        .suppress_parameter_source => "R-8: function parameter - not a stack escape",
     };
 }

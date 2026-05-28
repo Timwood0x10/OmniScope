@@ -21,6 +21,14 @@ const nomicon_ch09 = @import("../../semantics/nomicon/ch09_vec_box.zig");
 const nomicon_ch10 = @import("../../semantics/nomicon/ch10_pin_box.zig");
 const nomicon_posix = @import("../../semantics/nomicon/posix_syscalls.zig");
 
+// R-0~R-7 pattern detectors (new patterns/ directory)
+const patterns_param_attr = @import("../../semantics/patterns/param_attr.zig");
+const patterns_heap_provenance = @import("../../semantics/patterns/heap_provenance.zig");
+const patterns_into_raw = @import("../../semantics/patterns/into_raw_transfer.zig");
+const patterns_library_alloc = @import("../../semantics/patterns/library_alloc_pairs.zig");
+const patterns_lang_detector = @import("../../semantics/patterns/lang_detector.zig");
+const patterns_interior_mut = @import("../../semantics/patterns/interior_mut.zig");
+
 /// Semantic resolver pass
 pub const SemanticResolverPass = struct {
     pub const name = "SemanticResolver";
@@ -108,6 +116,36 @@ pub const SemanticResolverPass = struct {
             // POSIX syscall classification
             nomicon_posix.detect(raw_mod, srt, diag) catch |err| {
                 log.warn("[SemanticResolver] posix_syscalls detector failed: {any}", .{err});
+            };
+
+            // ── R-0: LLVM parameter attributes (readonly/noalias → 1877 FP main cause) ──
+            patterns_param_attr.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] param_attr detector failed: {any}", .{err});
+            };
+
+            // ── R-1: Heap provenance (SROA + DI → borrow_escape 71 FP) ──
+            patterns_heap_provenance.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] heap_provenance detector failed: {any}", .{err});
+            };
+
+            // ── R-2: Interior mutability (UnsafeCell DI chain → write_to_immutable FP) ──
+            patterns_interior_mut.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] interior_mut detector failed: {any}", .{err});
+            };
+
+            // ── R-6: into_raw ownership transfer (Box/CString::into_raw → cross_lang_free 4 FP) ──
+            patterns_into_raw.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] into_raw_transfer detector failed: {any}", .{err});
+            };
+
+            // ── R-7: Library allocator pairs (mimalloc/zlib/openssl/sqlite/cgo/JNI/Python/Zig) ──
+            patterns_library_alloc.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] library_alloc_pairs detector failed: {any}", .{err});
+            };
+
+            // ── R-5: Language detection (query-only, no SRT writes) ──
+            patterns_lang_detector.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] lang_detector failed: {any}", .{err});
             };
         }
 
