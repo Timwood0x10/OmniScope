@@ -14,6 +14,7 @@
 const std = @import("std");
 const OmniScope = @import("OmniScope");
 const IRLoader = OmniScope.engine.IRLoader;
+const Pipeline = OmniScope.pipeline.Pipeline;
 
 /// Write inline IR to a temp .ll file, load it, and return the loader.
 /// Caller must call deinit() on the returned loader and clean up temp files.
@@ -25,6 +26,54 @@ fn loadInlineIR(allocator: std.mem.Allocator, tmp_path: []const u8, ir: []const 
 // ============================================================================
 // Go CGO Tests
 // ============================================================================
+
+fn registerAllPasses(pipeline: *Pipeline) !void {
+    try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SurfaceClassifierPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SemanticResolverPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+    try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
+    try pipeline.registerPass(OmniScope.cross_lang.CrossLangDataFlowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.GcSafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ErrorPropagationTracer);
+    try pipeline.registerPass(OmniScope.cross_lang.LockPass);
+}
+
+fn analyzeIR(allocator: std.mem.Allocator, tmp_path: []const u8, ir: []const u8) !usize {
+    try std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = ir });
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    var loader = try IRLoader.loadFile(allocator, tmp_path);
+    defer loader.deinit();
+
+    var pipeline = try Pipeline.init(allocator);
+    defer pipeline.deinit();
+
+    try registerAllPasses(&pipeline);
+
+    const module = loader.getModule() orelse return error.NoModule;
+    pipeline.setModule(module);
+    try pipeline.run();
+
+    return pipeline.getIssues().len;
+}
 
 test "Go CGO 01: _cgo_allocate -> free (cross-allocator)" {
     const ir =
@@ -61,6 +110,9 @@ test "Go CGO 01: _cgo_allocate -> free (cross-allocator)" {
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_01_go_alloc_c_free") != null);
     try std.testing.expect(loader.getFunctionCount() >= 1);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_01.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 02: malloc -> _cgo_free (reverse cross-allocator)" {
@@ -97,6 +149,9 @@ test "Go CGO 02: malloc -> _cgo_free (reverse cross-allocator)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_02_c_alloc_go_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_02.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 03: slice.data escapes to C global (dangling pointer)" {
@@ -134,6 +189,9 @@ test "Go CGO 03: slice.data escapes to C global (dangling pointer)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_03_go_slice_escape") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_03.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 04: callback ptr freed then invoked (UAF)" {
@@ -175,6 +233,9 @@ test "Go CGO 04: callback ptr freed then invoked (UAF)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_04_go_callback_use_after_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_04.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 05: C mutates Go string data (immutability violation)" {
@@ -214,6 +275,9 @@ test "Go CGO 05: C mutates Go string data (immutability violation)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_05_go_string_mutate") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_05.ll", ir);
+    _ = issue_count;
 }
 
 // ============================================================================
@@ -259,6 +323,9 @@ test "Python C API 06: borrowed ref from PyList_GetItem then Py_DECREF (refcount
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_06_borrowed_ref_decref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_06.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python C API 07: new ref from PyBytes_FromStringAndSize never decref (leak)" {
@@ -300,6 +367,9 @@ test "Python C API 07: new ref from PyBytes_FromStringAndSize never decref (leak
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_07_new_ref_leak") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_07.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python C API 08: PyTuple_SetItem steals ref then use stolen ref (UAF)" {
@@ -342,6 +412,9 @@ test "Python C API 08: PyTuple_SetItem steals ref then use stolen ref (UAF)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_08_steal_ref_misuse") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_08.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python C API 09: Py_DECREF then access object data (UAF)" {
@@ -381,6 +454,9 @@ test "Python C API 09: Py_DECREF then access object data (UAF)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_09_decref_then_use") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_09.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python C API 10: PyObject_GetBuffer without PyBuffer_Release (resource leak)" {
@@ -427,6 +503,9 @@ test "Python C API 10: PyObject_GetBuffer without PyBuffer_Release (resource lea
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_10_buffer_not_released") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_10.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -473,6 +552,9 @@ test "Java JNI 11: NewGlobalRef without DeleteGlobalRef (leak)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_11_global_ref_leak") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_11.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 12: GetStringUTFChars without ReleaseStringUTFChars (leak)" {
@@ -516,6 +598,9 @@ test "Java JNI 12: GetStringUTFChars without ReleaseStringUTFChars (leak)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_12_string_not_released") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_12.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 13: loop creating local refs without DeleteLocalRef (table overflow)" {
@@ -571,6 +656,9 @@ test "Java JNI 13: loop creating local refs without DeleteLocalRef (table overfl
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_13_local_ref_overflow") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_13.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 14: ReleaseStringUTFChars then access string (UAF)" {
@@ -621,6 +709,9 @@ test "Java JNI 14: ReleaseStringUTFChars then access string (UAF)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_14_use_after_release") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_14.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 15: JNI array elements freed with C free() instead of ReleaseByteArrayElements" {
@@ -667,6 +758,9 @@ test "Java JNI 15: JNI array elements freed with C free() instead of ReleaseByte
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_15_wrong_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_15.ll", ir);
+    _ = issue_count;
 }
 
 // ============================================================================
@@ -711,6 +805,9 @@ test "Go CGO 16: correct _cgo_allocate -> use -> _cgo_free (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_16_cgo_correct_pair") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_16.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Go CGO 17: correct malloc -> use -> free from Go (NOT a bug)" {
@@ -751,6 +848,9 @@ test "Go CGO 17: correct malloc -> use -> free from Go (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_17_malloc_free_pair") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_17.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Go CGO 18: pass ptr to C and back, then _cgo_free (NOT a bug)" {
@@ -793,6 +893,9 @@ test "Go CGO 18: pass ptr to C and back, then _cgo_free (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_18_pass_ptr_to_c_and_back") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_18.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -837,6 +940,9 @@ test "Go CGO 19: double free via _cgo_allocate then _cgo_free twice (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_19_double_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_19.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 20: slice data escapes to global then freed (BUG)" {
@@ -880,6 +986,9 @@ test "Go CGO 20: slice data escapes to global then freed (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_20_slice_data_to_global") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_20.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 21: callback function ptr freed then called via global (BUG)" {
@@ -925,6 +1034,9 @@ test "Go CGO 21: callback function ptr freed then called via global (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_21_callback_freed_then_called") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_21.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -978,6 +1090,9 @@ test "Python 22: correct INCREF on borrowed then DECREF (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_22_correct_incref_decref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_22.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Python 23: new ref from PyBytes_FromStringAndSize then DECREF (NOT a bug)" {
@@ -1026,6 +1141,9 @@ test "Python 23: new ref from PyBytes_FromStringAndSize then DECREF (NOT a bug)"
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_23_new_ref_then_decref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_23.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python 24: correct buffer get and release (NOT a bug)" {
@@ -1074,6 +1192,9 @@ test "Python 24: correct buffer get and release (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_24_buffer_get_and_release") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_24.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -1125,6 +1246,9 @@ test "Python 25: double DECREF on new ref (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_25_double_decref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_25.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python 26: INCREF then PyTuple_SetItem steals ref then DECREF (BUG)" {
@@ -1171,6 +1295,9 @@ test "Python 26: INCREF then PyTuple_SetItem steals ref then DECREF (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_26_incref_steal_fail") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_26.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Python 27: DECREF on null pointer (BUG)" {
@@ -1207,6 +1334,9 @@ test "Python 27: DECREF on null pointer (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_27_decref_null") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_27.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -1261,6 +1391,9 @@ test "Java JNI 28: correct local ref lifecycle (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_28_correct_local_ref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_28.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Java JNI 29: correct global ref lifecycle (NOT a bug)" {
@@ -1311,6 +1444,9 @@ test "Java JNI 29: correct global ref lifecycle (NOT a bug)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_29_correct_global_ref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_29.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Java JNI 30: correct GetStringUTFChars then ReleaseStringUTFChars (NOT a bug)" {
@@ -1361,6 +1497,9 @@ test "Java JNI 30: correct GetStringUTFChars then ReleaseStringUTFChars (NOT a b
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_30_correct_string_release") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_30.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -1414,6 +1553,9 @@ test "Java JNI 31: double DeleteGlobalRef (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_31_double_delete_global") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_31.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 32: use local ref after DeleteLocalRef (BUG)" {
@@ -1465,6 +1607,9 @@ test "Java JNI 32: use local ref after DeleteLocalRef (BUG)" {
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_32_use_after_delete_local") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_32.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 33: wrong release method - ReleaseStringUTFChars on byte array (BUG)" {
@@ -1512,6 +1657,9 @@ test "Java JNI 33: wrong release method - ReleaseStringUTFChars on byte array (B
 
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_33_wrong_release_method") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_33.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -1575,6 +1723,9 @@ test "Python 34: DECREF through helper function after already decremented (BUG)"
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("py_34_decref_through_helper") != null);
     try std.testing.expect(loader.getFunction("py_34_helper_decref") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_34.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Go CGO 35: Go allocates via _cgo_allocate, C bridge frees (BUG)" {
@@ -1624,6 +1775,9 @@ test "Go CGO 35: Go allocates via _cgo_allocate, C bridge frees (BUG)" {
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("go_35_alloc_through_c_bridge") != null);
     try std.testing.expect(loader.getFunction("c_bridge_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_35.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Java JNI 36: global ref created in func A, deleted in func B and func A (BUG)" {
@@ -1689,4 +1843,7 @@ test "Java JNI 36: global ref created in func A, deleted in func B and func A (B
     try std.testing.expect(loader.hasModule());
     try std.testing.expect(loader.getFunction("jni_36_ref_passed_between_functions") != null);
     try std.testing.expect(loader.getFunction("jni_36_func_b_delete") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_gopyjava_test_36.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }

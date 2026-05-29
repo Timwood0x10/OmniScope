@@ -10,12 +10,61 @@
 const std = @import("std");
 const OmniScope = @import("OmniScope");
 const IRLoader = OmniScope.engine.IRLoader;
+const Pipeline = OmniScope.pipeline.Pipeline;
 
 const TMP_BASE = "/tmp/omniscope_cscpp_ffi_inline_ir_test";
 
 // ============================================================================
 // C# / .NET Tests (4)
 // ============================================================================
+
+fn registerAllPasses(pipeline: *Pipeline) !void {
+    try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SurfaceClassifierPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SemanticResolverPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+    try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
+    try pipeline.registerPass(OmniScope.cross_lang.CrossLangDataFlowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.GcSafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ErrorPropagationTracer);
+    try pipeline.registerPass(OmniScope.cross_lang.LockPass);
+}
+
+fn analyzeIR(allocator: std.mem.Allocator, tmp_path: []const u8, ir: []const u8) !usize {
+    try std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = ir });
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    var loader = try IRLoader.loadFile(allocator, tmp_path);
+    defer loader.deinit();
+
+    var pipeline = try Pipeline.init(allocator);
+    defer pipeline.deinit();
+
+    try registerAllPasses(&pipeline);
+
+    const module = loader.getModule() orelse return error.NoModule;
+    pipeline.setModule(module);
+    try pipeline.run();
+
+    return pipeline.getIssues().len;
+}
 
 test "C#: Marshal_AllocHGlobal -> free (allocator mismatch)" {
     const ir =
@@ -52,6 +101,9 @@ test "C#: Marshal_AllocHGlobal -> free (allocator mismatch)" {
     try std.testing.expect(loader.getFunction("cs_01_csharp_alloc_c_free") != null);
     try std.testing.expect(loader.getFunction("Marshal_AllocHGlobal") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_1.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C#: malloc -> Marshal_FreeHGlobal (reverse mismatch)" {
@@ -89,6 +141,9 @@ test "C#: malloc -> Marshal_FreeHGlobal (reverse mismatch)" {
     try std.testing.expect(loader.getFunction("cs_02_c_alloc_cs_free") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("Marshal_FreeHGlobal") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_2.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C#: CoTaskMemAlloc -> no free (leak)" {
@@ -126,6 +181,9 @@ test "C#: CoTaskMemAlloc -> no free (leak)" {
     try std.testing.expect(loader.getFunction("CoTaskMemAlloc") != null);
     // No CoTaskMemFree declared -- confirms leak pattern
     try std.testing.expect(loader.getFunction("CoTaskMemFree") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_3.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C#: GCHandle_Alloc -> never GCHandle_Free (GC pin leak)" {
@@ -163,6 +221,9 @@ test "C#: GCHandle_Alloc -> never GCHandle_Free (GC pin leak)" {
     try std.testing.expect(loader.getFunction("GCHandle_Alloc") != null);
     // No GCHandle_Free declared -- confirms GC pin leak
     try std.testing.expect(loader.getFunction("GCHandle_Free") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_4.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -205,6 +266,9 @@ test "C++: new[] -> delete (array/scalar mismatch)" {
     try std.testing.expect(loader.getFunction("_Z36cpp_bug_01_new_array_delete_mismatchv") != null);
     try std.testing.expect(loader.getFunction("_Znam") != null);
     try std.testing.expect(loader.getFunction("_ZdlPv") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_5.ll", ir);
+    _ = issue_count;
 }
 
 test "C++: operator new -> no delete (leak)" {
@@ -243,6 +307,9 @@ test "C++: operator new -> no delete (leak)" {
     try std.testing.expect(loader.getFunction("_Znwm") != null);
     // No delete declared -- confirms leak
     try std.testing.expect(loader.getFunction("_ZdlPv") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_6.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C++: shared_ptr cycle (two mallocs referencing each other, no free)" {
@@ -286,6 +353,9 @@ test "C++: shared_ptr cycle (two mallocs referencing each other, no free)" {
     try std.testing.expect(loader.getFunction("malloc") != null);
     // No free declared -- confirms cycle leak
     try std.testing.expect(loader.getFunction("free") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_7.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C++: placement new (malloc -> placement new -> free, safe pattern)" {
@@ -325,6 +395,9 @@ test "C++: placement new (malloc -> placement new -> free, safe pattern)" {
     try std.testing.expect(loader.getFunction("cpp_04_placement_new") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_8.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -365,6 +438,9 @@ test "Cross-lang: rust_box_new -> free (Rust->C mismatch)" {
     try std.testing.expect(loader.getFunction("bug_rust_alloc_c_free") != null);
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_9.ll", ir);
+    _ = issue_count;
 }
 
 test "Cross-lang: _cgo_allocate -> _RZN4alloc5alloc17h_deallocate (Go->Rust)" {
@@ -401,6 +477,9 @@ test "Cross-lang: _cgo_allocate -> _RZN4alloc5alloc17h_deallocate (Go->Rust)" {
     try std.testing.expect(loader.getFunction("bug_go_alloc_rust_free") != null);
     try std.testing.expect(loader.getFunction("_cgo_allocate") != null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_deallocate") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_10.ll", ir);
+    _ = issue_count;
 }
 
 test "Cross-lang: malloc -> PyMem_Free (C->Python)" {
@@ -442,6 +521,9 @@ test "Cross-lang: malloc -> PyMem_Free (C->Python)" {
     try std.testing.expect(loader.getFunction("bug_c_alloc_python_free") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("PyMem_Free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_11.ll", ir);
+    _ = issue_count;
 }
 
 test "Cross-lang: Go alloc -> C passes to Rust -> Rust frees (triple chain)" {
@@ -485,6 +567,9 @@ test "Cross-lang: Go alloc -> C passes to Rust -> Rust frees (triple chain)" {
     try std.testing.expect(loader.getFunction("c_pass_to_rust") != null);
     try std.testing.expect(loader.getFunction("_cgo_allocate") != null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_deallocate") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_12.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -530,6 +615,9 @@ test "Zig: zig_allocator_alloc -> free (allocator mismatch)" {
     try std.testing.expect(loader.getFunction("zig_01_page_alloc_c_free") != null);
     try std.testing.expect(loader.getFunction("zig_allocator_alloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_13.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Zig: malloc -> zig_allocator_free (reverse mismatch)" {
@@ -571,6 +659,9 @@ test "Zig: malloc -> zig_allocator_free (reverse mismatch)" {
     try std.testing.expect(loader.getFunction("zig_02_c_alloc_zig_free") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("zig_allocator_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_14.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Zig: malloc -> free (correct C pairing, should NOT trigger)" {
@@ -613,6 +704,9 @@ test "Zig: malloc -> free (correct C pairing, should NOT trigger)" {
     try std.testing.expect(loader.getFunction("zig_03_safe_c_pair") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_15.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -659,6 +753,9 @@ test "C#: Marshal_AllocHGlobal -> Marshal_FreeHGlobal (correct pairing, NO bug)"
     try std.testing.expect(loader.getFunction("cs_16_correct_marshal_pair") != null);
     try std.testing.expect(loader.getFunction("Marshal_AllocHGlobal") != null);
     try std.testing.expect(loader.getFunction("Marshal_FreeHGlobal") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_16.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "C#: CoTaskMemAlloc -> CoTaskMemFree (correct COM pairing, NO bug)" {
@@ -701,6 +798,9 @@ test "C#: CoTaskMemAlloc -> CoTaskMemFree (correct COM pairing, NO bug)" {
     try std.testing.expect(loader.getFunction("cs_17_correct_cotask_pair") != null);
     try std.testing.expect(loader.getFunction("CoTaskMemAlloc") != null);
     try std.testing.expect(loader.getFunction("CoTaskMemFree") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_17.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "C#: GCHandle_Alloc -> GCHandle_Free (correct GC handle lifecycle, NO bug)" {
@@ -740,6 +840,9 @@ test "C#: GCHandle_Alloc -> GCHandle_Free (correct GC handle lifecycle, NO bug)"
     try std.testing.expect(loader.getFunction("cs_18_correct_gchandle_pair") != null);
     try std.testing.expect(loader.getFunction("GCHandle_Alloc") != null);
     try std.testing.expect(loader.getFunction("GCHandle_Free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_18.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -783,6 +886,9 @@ test "C#: GCHandle_Alloc -> GCHandle_Free -> GCHandle_Free (double free)" {
     try std.testing.expect(loader.getFunction("cs_19_double_gchandle_free") != null);
     try std.testing.expect(loader.getFunction("GCHandle_Alloc") != null);
     try std.testing.expect(loader.getFunction("GCHandle_Free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_19.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C#: Marshal_AllocHGlobal -> CoTaskMemFree (wrong free function)" {
@@ -824,6 +930,9 @@ test "C#: Marshal_AllocHGlobal -> CoTaskMemFree (wrong free function)" {
     try std.testing.expect(loader.getFunction("cs_20_marshal_alloc_cotask_free") != null);
     try std.testing.expect(loader.getFunction("Marshal_AllocHGlobal") != null);
     try std.testing.expect(loader.getFunction("CoTaskMemFree") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_20.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C#: store delegate ptr -> free delegate -> call stored ptr (callback UAF)" {
@@ -861,6 +970,9 @@ test "C#: store delegate ptr -> free delegate -> call stored ptr (callback UAF)"
     try std.testing.expect(loader.getFunction("cs_21_callback_uaf") != null);
     try std.testing.expect(loader.getFunction("Marshal_GetDelegateForFunctionPtr") != null);
     try std.testing.expect(loader.getFunction("Marshal_FreeHGlobal") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_21.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -904,6 +1016,9 @@ test "C++: _Znwm -> _ZdlPv (correct new/delete pairing, NO bug)" {
     try std.testing.expect(loader.getFunction("cpp_22_correct_new_delete") != null);
     try std.testing.expect(loader.getFunction("_Znwm") != null);
     try std.testing.expect(loader.getFunction("_ZdlPv") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_22.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "C++: _Znam -> _ZdaPv (correct new[]/delete[] pairing, NO bug)" {
@@ -943,6 +1058,9 @@ test "C++: _Znam -> _ZdaPv (correct new[]/delete[] pairing, NO bug)" {
     try std.testing.expect(loader.getFunction("cpp_23_correct_array_pair") != null);
     try std.testing.expect(loader.getFunction("_Znam") != null);
     try std.testing.expect(loader.getFunction("_ZdaPv") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_23.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "C++: shared_ptr control blocks (two mallocs, two frees, correct lifecycle, NO bug)" {
@@ -991,6 +1109,9 @@ test "C++: shared_ptr control blocks (two mallocs, two frees, correct lifecycle,
     try std.testing.expect(loader.getFunction("cpp_24_shared_ptr_correct") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_24.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -1035,6 +1156,9 @@ test "C++: _Znwm -> _Znwm again on same ptr (second alloc overwrites, first leak
     try std.testing.expect(loader.getFunction("_Znwm") != null);
     // No delete declared -- confirms leak
     try std.testing.expect(loader.getFunction("_ZdlPv") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_25.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "C++: _Znam (new[]) -> _ZdlPv (scalar delete, array/scalar mismatch)" {
@@ -1073,6 +1197,9 @@ test "C++: _Znam (new[]) -> _ZdlPv (scalar delete, array/scalar mismatch)" {
     try std.testing.expect(loader.getFunction("cpp_26_array_new_scalar_delete") != null);
     try std.testing.expect(loader.getFunction("_Znam") != null);
     try std.testing.expect(loader.getFunction("_ZdlPv") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_26.ll", ir);
+    _ = issue_count;
 }
 
 test "C++: malloc -> placement new (store) -> free (C alloc+free, detectable as C pair)" {
@@ -1113,6 +1240,9 @@ test "C++: malloc -> placement new (store) -> free (C alloc+free, detectable as 
     try std.testing.expect(loader.getFunction("cpp_27_placement_new_then_free") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_27.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -1166,6 +1296,9 @@ test "Cross-lang: malloc -> free (C alloc+C free from any language, NO bug)" {
     try std.testing.expect(loader.getFunction("foreign_use") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_28.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Cross-lang: __rust_alloc -> __rust_dealloc (same allocator family, NO bug)" {
@@ -1215,6 +1348,9 @@ test "Cross-lang: __rust_alloc -> __rust_dealloc (same allocator family, NO bug)
     try std.testing.expect(loader.getFunction("c_intermediate_call") != null);
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("__rust_dealloc") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_29.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Cross-lang: malloc -> pass to function -> return -> free (ptr never stored, NO bug)" {
@@ -1264,6 +1400,9 @@ test "Cross-lang: malloc -> pass to function -> return -> free (ptr never stored
     try std.testing.expect(loader.getFunction("sink_function") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_30.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -1309,6 +1448,9 @@ test "Cross-lang: malloc (C) -> _cgo_free (Go, allocator mismatch)" {
     try std.testing.expect(loader.getFunction("cross_31_c_alloc_go_free") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("_cgo_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_31.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Cross-lang: PyMem_Malloc -> free (Python allocator -> C free, mismatch)" {
@@ -1350,6 +1492,9 @@ test "Cross-lang: PyMem_Malloc -> free (Python allocator -> C free, mismatch)" {
     try std.testing.expect(loader.getFunction("cross_32_python_alloc_c_free") != null);
     try std.testing.expect(loader.getFunction("PyMem_Malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_32.ll", ir);
+    _ = issue_count;
 }
 
 test "Cross-lang: __rust_alloc -> store to global -> pass to C -> _cgo_free (three-lang chain)" {
@@ -1399,6 +1544,9 @@ test "Cross-lang: __rust_alloc -> store to global -> pass to C -> _cgo_free (thr
     try std.testing.expect(loader.getFunction("c_bridge") != null);
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("_cgo_free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_33.ll", ir);
+    _ = issue_count;
 }
 
 // ============================================================================
@@ -1446,6 +1594,9 @@ test "Zig: malloc -> free (correct C pair from Zig, NO bug)" {
     try std.testing.expect(loader.getFunction("zig_34_correct_c_pair") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_34.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -1498,6 +1649,9 @@ test "C++: helper calls _Znwm, main calls _ZdlPv on result (new/delete mismatch 
     try std.testing.expect(loader.getFunction("cpp_35_helper_new_main_delete") != null);
     try std.testing.expect(loader.getFunction("_Znam") != null);
     try std.testing.expect(loader.getFunction("_ZdlPv") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_35.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Cross-lang: malloc -> branch with phi (one path Rust frees, other path C frees)" {
@@ -1548,4 +1702,7 @@ test "Cross-lang: malloc -> branch with phi (one path Rust frees, other path C f
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("__rust_dealloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_test_36.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }

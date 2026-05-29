@@ -119,26 +119,17 @@ pub fn isRustBorrowPattern(source_desc: []const u8) bool {
 /// Check if a function name indicates a resource allocation function
 pub fn is_resource_alloc_function(fn_name: []const u8) ?ResourceType {
     if (std.mem.indexOf(u8, fn_name, "dlopen") != null) return .dlopen_handle;
-    if (std.mem.indexOf(u8, fn_name, "mmap") != null and std.mem.indexOf(u8, fn_name, "munmap") == null) return .mmap_region;
+    if (std.mem.indexOf(u8, fn_name, "mmap64") != null or
+        std.mem.indexOf(u8, fn_name, "mmap2") != null or
+        std.mem.indexOf(u8, fn_name, "mmap") != null) return .mmap_region;
+    if (std.mem.indexOf(u8, fn_name, "shm_open") != null) return .mmap_region;
     if (std.mem.indexOf(u8, fn_name, "fopen") != null) return .file_handle;
-    if (std.mem.indexOf(u8, fn_name, "socket") != null and std.mem.indexOf(u8, fn_name, "close") == null) return .socket_fd;
+    if (std.mem.indexOf(u8, fn_name, "socket") != null) return .socket_fd;
     // JNI resource allocations
-    if (std.mem.indexOf(u8, fn_name, "FindClass") != null or
-        std.mem.indexOf(u8, fn_name, "NewGlobalRef") != null or
-        std.mem.indexOf(u8, fn_name, "NewLocalRef") != null or
-        std.mem.indexOf(u8, fn_name, "GetStringUTFChars") != null or
-        std.mem.indexOf(u8, fn_name, "GetByteArrayElements") != null)
-    {
-        return .jni_ref;
-    }
+    if (std.mem.indexOf(u8, fn_name, "JNI_") != null or
+        std.mem.indexOf(u8, fn_name, "Java_") != null) return .jni_ref;
     // Python C API resource allocations
-    if (std.mem.startsWith(u8, fn_name, "Py") and
-        (std.mem.indexOf(u8, fn_name, "_New") != null or
-            std.mem.indexOf(u8, fn_name, "_From") != null or
-            std.mem.indexOf(u8, fn_name, "BuildValue") != null))
-    {
-        return .python_obj;
-    }
+    if (std.mem.startsWith(u8, fn_name, "Py")) return .python_obj;
     return null;
 }
 

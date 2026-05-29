@@ -20,10 +20,59 @@
 const std = @import("std");
 const OmniScope = @import("OmniScope");
 const IRLoader = OmniScope.engine.IRLoader;
+const Pipeline = OmniScope.pipeline.Pipeline;
 
 // ============================================================================
 // Part 1: Rust FFI Bugs
 // ============================================================================
+
+fn registerAllPasses(pipeline: *Pipeline) !void {
+    try pipeline.registerPass(OmniScope.cross_lang.CFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.DFGPass);
+    try pipeline.registerPass(OmniScope.cross_lang.AliasPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SurfaceClassifierPass);
+    try pipeline.registerPass(OmniScope.cross_lang.SemanticResolverPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+    try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
+    try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+    try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
+    try pipeline.registerPass(OmniScope.cross_lang.CrossLangDataFlowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.GcSafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.ErrorPropagationTracer);
+    try pipeline.registerPass(OmniScope.cross_lang.LockPass);
+}
+
+fn analyzeIR(allocator: std.mem.Allocator, tmp_path: []const u8, ir: []const u8) !usize {
+    try std.fs.cwd().writeFile(.{ .sub_path = tmp_path, .data = ir });
+    defer std.fs.cwd().deleteFile(tmp_path) catch {};
+
+    var loader = try IRLoader.loadFile(allocator, tmp_path);
+    defer loader.deinit();
+
+    var pipeline = try Pipeline.init(allocator);
+    defer pipeline.deinit();
+
+    try registerAllPasses(&pipeline);
+
+    const module = loader.getModule() orelse return error.NoModule;
+    pipeline.setModule(module);
+    try pipeline.run();
+
+    return pipeline.getIssues().len;
+}
 
 test "Rust FFI bug: Rust alloc -> C free (cross-allocator mismatch)" {
     // Scenario: Rust's allocator produces a pointer, C's free() releases it.
@@ -65,6 +114,9 @@ test "Rust FFI bug: Rust alloc -> C free (cross-allocator mismatch)" {
     try std.testing.expect(loader.getFunction("rust_01_alloc_c_free") != null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_allocate") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_alloc_c_free.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust FFI bug: C alloc -> Rust dealloc (reverse mismatch)" {
@@ -106,6 +158,9 @@ test "Rust FFI bug: C alloc -> Rust dealloc (reverse mismatch)" {
     try std.testing.expect(loader.getFunction("c_alloc_rust_dealloc") != null);
     try std.testing.expect(loader.getFunction("malloc") != null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_deallocate") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_c_alloc_rust_dealloc.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust FFI bug: Box::into_raw then C free then Rust drop (double free)" {
@@ -155,6 +210,9 @@ test "Rust FFI bug: Box::into_raw then C free then Rust drop (double free)" {
     try std.testing.expect(loader.getFunction("free") != null);
     // Global should be visible through the module
     try std.testing.expect(loader.getModule() != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_box_into_raw_double_free.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust FFI bug: String::into_raw with no from_raw (memory leak)" {
@@ -199,6 +257,9 @@ test "Rust FFI bug: String::into_raw with no from_raw (memory leak)" {
     try std.testing.expect(loader.getFunction("rust_string_into_raw") != null);
     // free should NOT be in the module — it was never declared or called
     try std.testing.expect(loader.getFunction("free") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_string_into_raw_leak.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust FFI bug: Vec leak + C realloc + C free (allocator mismatch)" {
@@ -241,6 +302,9 @@ test "Rust FFI bug: Vec leak + C realloc + C free (allocator mismatch)" {
     try std.testing.expect(loader.getFunction("rust_vec_leak") != null);
     try std.testing.expect(loader.getFunction("realloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_vec_leak_realloc_mismatch.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust FFI bug: alias escape with double write (aliasing violation)" {
@@ -288,6 +352,9 @@ test "Rust FFI bug: alias escape with double write (aliasing violation)" {
     try std.testing.expectEqual(@as(usize, 2), loader.getFunctionCount());
     try std.testing.expect(loader.getFunction("alias_escape_double_write") != null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_allocate") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_alias_escape_double_write.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -332,6 +399,9 @@ test "Rust noise: drop glue with correct internal alloc/dealloc pairing" {
     try std.testing.expect(loader.getFunction("rust_drop_glue_noise") != null);
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("__rust_dealloc") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_drop_glue_noise.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: panic unwind path with rust_begin_unwind" {
@@ -382,6 +452,9 @@ test "Rust noise: panic unwind path with rust_begin_unwind" {
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("__rust_dealloc") != null);
     try std.testing.expect(loader.getFunction("rust_begin_unwind") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_panic_unwind_noise.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: __rust_realloc on __rust_alloc'd memory (same allocator family)" {
@@ -424,6 +497,9 @@ test "Rust noise: __rust_realloc on __rust_alloc'd memory (same allocator family
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("__rust_dealloc") != null);
     try std.testing.expect(loader.getFunction("__rust_realloc") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_realloc_internal.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: safe FFI with malloc -> free (correct C pairing, no bug)" {
@@ -466,6 +542,9 @@ test "Rust noise: safe FFI with malloc -> free (correct C pairing, no bug)" {
     // No Rust allocator functions should be present
     try std.testing.expect(loader.getFunction("__rust_alloc") == null);
     try std.testing.expect(loader.getFunction("_RZN4alloc5alloc17h_allocate") == null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_safe_rust_ffi_no_bug.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -510,6 +589,9 @@ test "Rust noise: Box new + use + drop (correct ownership lifecycle)" {
     try std.testing.expect(loader.getFunction("rust_box_new_drop_correct") != null);
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("rust_box_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_11.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: Arc clone + release cycle (correct refcount pattern)" {
@@ -553,6 +635,9 @@ test "Rust noise: Arc clone + release cycle (correct refcount pattern)" {
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("rust_arc_clone") != null);
     try std.testing.expect(loader.getFunction("rust_arc_release") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_12.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: Vec push + pop + drop (correct Vec lifecycle)" {
@@ -598,6 +683,9 @@ test "Rust noise: Vec push + pop + drop (correct Vec lifecycle)" {
     try std.testing.expect(loader.getFunction("rust_vec_push") != null);
     try std.testing.expect(loader.getFunction("rust_vec_pop") != null);
     try std.testing.expect(loader.getFunction("rust_vec_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_13.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: Cow clone then free (Cow owns cloned data)" {
@@ -638,6 +726,9 @@ test "Rust noise: Cow clone then free (Cow owns cloned data)" {
     try std.testing.expect(loader.getFunction("rust_cow_clone_free") != null);
     try std.testing.expect(loader.getFunction("rust_cow_clone") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_14.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: HashMap insert + remove + drop (correct HashMap lifecycle)" {
@@ -683,6 +774,9 @@ test "Rust noise: HashMap insert + remove + drop (correct HashMap lifecycle)" {
     try std.testing.expect(loader.getFunction("rust_hashmap_insert") != null);
     try std.testing.expect(loader.getFunction("rust_hashmap_remove") != null);
     try std.testing.expect(loader.getFunction("rust_hashmap_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_15.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: Mutex lock + unlock + drop (correct Mutex usage)" {
@@ -729,6 +823,9 @@ test "Rust noise: Mutex lock + unlock + drop (correct Mutex usage)" {
     try std.testing.expect(loader.getFunction("rust_mutex_lock") != null);
     try std.testing.expect(loader.getFunction("rust_mutex_unlock") != null);
     try std.testing.expect(loader.getFunction("rust_mutex_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_16.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 test "Rust noise: Channel send + recv + drop (correct channel lifecycle)" {
@@ -774,6 +871,9 @@ test "Rust noise: Channel send + recv + drop (correct channel lifecycle)" {
     try std.testing.expect(loader.getFunction("rust_channel_send") != null);
     try std.testing.expect(loader.getFunction("rust_channel_recv") != null);
     try std.testing.expect(loader.getFunction("rust_channel_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_17.ll", ir);
+    try std.testing.expect(issue_count == 0);
 }
 
 // ============================================================================
@@ -817,6 +917,9 @@ test "Rust bug: Arc release without prior clone (refcount underflow)" {
     try std.testing.expect(loader.getFunction("rust_arc_release_without_clone") != null);
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("rust_arc_release") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_18.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust bug: double Box drop (double free)" {
@@ -857,6 +960,9 @@ test "Rust bug: double Box drop (double free)" {
     try std.testing.expect(loader.getFunction("rust_double_box_drop") != null);
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("rust_box_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_19.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust bug: Vec leak then C free on inner pointer (allocator mismatch)" {
@@ -900,6 +1006,9 @@ test "Rust bug: Vec leak then C free on inner pointer (allocator mismatch)" {
     try std.testing.expect(loader.getFunction("rust_vec_with_capacity") != null);
     try std.testing.expect(loader.getFunction("rust_vec_as_ptr") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_20.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust bug: poisoned mutex access (lock after panic unwind)" {
@@ -959,6 +1068,9 @@ test "Rust bug: poisoned mutex access (lock after panic unwind)" {
     try std.testing.expect(loader.getFunction("rust_mutex_unlock") != null);
     try std.testing.expect(loader.getFunction("rust_begin_unwind") != null);
     try std.testing.expect(loader.getModule() != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_21.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust bug: inttoptr to raw pointer then free (invalid free)" {
@@ -996,6 +1108,9 @@ test "Rust bug: inttoptr to raw pointer then free (invalid free)" {
     try std.testing.expectEqual(@as(usize, 2), loader.getFunctionCount());
     try std.testing.expect(loader.getFunction("rust_raw_ptr_from_int_then_free") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_22.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 // ============================================================================
@@ -1047,6 +1162,9 @@ test "Rust edge case: cross-allocator through helper function call chain" {
     try std.testing.expect(loader.getFunction("rust_alloc_through_helper") != null);
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_23.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust edge case: conditional double free through both branches" {
@@ -1098,6 +1216,9 @@ test "Rust edge case: conditional double free through both branches" {
     try std.testing.expect(loader.getFunction("rust_conditional_double_free") != null);
     try std.testing.expect(loader.getFunction("rust_box_new") != null);
     try std.testing.expect(loader.getFunction("rust_box_drop") != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_24.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
 
 test "Rust edge case: alloc in loop then free all with C free (cross-allocator)" {
@@ -1163,4 +1284,7 @@ test "Rust edge case: alloc in loop then free all with C free (cross-allocator)"
     try std.testing.expect(loader.getFunction("__rust_alloc") != null);
     try std.testing.expect(loader.getFunction("free") != null);
     try std.testing.expect(loader.getModule() != null);
+
+    const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_25.ll", ir);
+    try std.testing.expect(issue_count > 0);
 }
