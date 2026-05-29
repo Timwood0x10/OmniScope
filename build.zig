@@ -280,6 +280,63 @@ pub fn build(b: *std.Build) void {
     run_e2e_tests.step.dependOn(b.getInstallStep());
     e2e_test_step.dependOn(&run_e2e_tests.step);
 
+    // Rust FFI inline IR tests step
+    const rust_ffi_test_step = b.step("test-rust-ffi", "Run Rust FFI + noise inline IR tests");
+    const rust_ffi_test_mod = b.addModule("rust_ffi_test", .{
+        .root_source_file = b.path("tests/rust_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    rust_ffi_test_mod.addImport("OmniScope", lib_mod);
+    rust_ffi_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const rust_ffi_tests = b.addTest(.{
+        .root_module = rust_ffi_test_mod,
+    });
+    configureLLVM(b, rust_ffi_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        rust_ffi_tests.want_lto = true;
+    }
+    const run_rust_ffi_tests = b.addRunArtifact(rust_ffi_tests);
+    run_rust_ffi_tests.step.dependOn(b.getInstallStep());
+    rust_ffi_test_step.dependOn(&run_rust_ffi_tests.step);
+
+    // Go/Python/Java FFI inline IR tests step
+    const gopyjava_test_step = b.step("test-gopyjava-ffi", "Run Go/Python/Java FFI inline IR tests");
+    const gopyjava_test_mod = b.addModule("gopyjava_test", .{
+        .root_source_file = b.path("tests/gopyjava_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    gopyjava_test_mod.addImport("OmniScope", lib_mod);
+    gopyjava_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const gopyjava_tests = b.addTest(.{
+        .root_module = gopyjava_test_mod,
+    });
+    configureLLVM(b, gopyjava_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        gopyjava_tests.want_lto = true;
+    }
+    const run_gopyjava_tests = b.addRunArtifact(gopyjava_tests);
+    run_gopyjava_tests.step.dependOn(b.getInstallStep());
+    gopyjava_test_step.dependOn(&run_gopyjava_tests.step);
+
+    // C#/C++/Zig FFI inline IR tests step
+    const cscpp_ffi_test_step = b.step("test-cscpp-ffi", "Run C#/C++/Zig FFI inline IR tests");
+    const cscpp_ffi_test_mod = b.addModule("cscpp_ffi_test", .{
+        .root_source_file = b.path("tests/cscpp_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    cscpp_ffi_test_mod.addImport("OmniScope", lib_mod);
+    cscpp_ffi_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const cscpp_ffi_tests = b.addTest(.{
+        .root_module = cscpp_ffi_test_mod,
+    });
+    configureLLVM(b, cscpp_ffi_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        cscpp_ffi_tests.want_lto = true;
+    }
+    const run_cscpp_ffi_tests = b.addRunArtifact(cscpp_ffi_tests);
+    run_cscpp_ffi_tests.step.dependOn(b.getInstallStep());
+    cscpp_ffi_test_step.dependOn(&run_cscpp_ffi_tests.step);
+
     // Benchmark performance tests step
     const bench_test_step = b.step("test-benchmark", "Run performance benchmark tests (latency, memory, throughput)");
     const bench_test_mod = b.addModule("bench_test", .{

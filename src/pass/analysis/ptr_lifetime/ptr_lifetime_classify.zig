@@ -54,30 +54,34 @@ pub fn isFreeFunction(fn_name: []const u8) bool {
     // Exact matches for well-known free/dealloc functions
     const exact_fns = [_][]const u8{
         // C standard library
-        "free",           "cfree",                 "realloc",
-        "g_free",         "kfree",                 "vfree",
-        "c_free",         "c_malloc",
+        "free",                  "cfree",           "realloc",
+        "g_free",                "kfree",           "vfree",
+        "c_free",                "c_malloc",
 
         // Rust global allocator
-                     "__rust_dealloc",
-        "__rdl_dealloc",  "__rg_dealloc",
+               "__rust_dealloc",
+        "__rdl_dealloc",         "__rg_dealloc",
 
         // Go/cgo runtime (official cgo naming convention)
-                 "_cgo_free",
+           "_cgo_free",
+
+        // Common deallocators
+        "dealloc",               "deallocate",
 
         // Objective-C runtime
-        "objc_release",   "objc_autorelease",      "CFRelease",
-        "CGImageRelease", "NSDeallocateObject",
+             "objc_release",
+        "objc_autorelease",      "CFRelease",       "CGImageRelease",
+        "NSDeallocateObject",
 
         // Python C API
-           "PyMem_Free",
-        "PyObject_Free",
+           "PyMem_Free",      "PyObject_Free",
 
         // JNI
-         "DeleteLocalRef",        "DeleteGlobalRef",
+        "DeleteLocalRef",        "DeleteGlobalRef",
 
         // Node.js N-API
-        "napi_unref",     "napi_delete_reference",
+        "napi_unref",
+        "napi_delete_reference",
     };
     for (exact_fns) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;

@@ -250,9 +250,12 @@ fn parsePlatformKind(triple: []const u8) PlatformKind {
         break :blk lower_buf[0..triple.len];
     } else triple; // Fallback: use original if too long
 
-    // Check for macOS / Darwin patterns
+    // Check for macOS / Darwin patterns (including iOS, tvOS, watchOS - all Darwin family)
     if (std.mem.indexOf(u8, lower, "macos") != null or
-        std.mem.indexOf(u8, lower, "darwin") != null)
+        std.mem.indexOf(u8, lower, "darwin") != null or
+        std.mem.indexOf(u8, lower, "ios") != null or
+        std.mem.indexOf(u8, lower, "tvos") != null or
+        std.mem.indexOf(u8, lower, "watchos") != null)
     {
         return .macos;
     }
@@ -314,7 +317,10 @@ fn parseObjectFormat(triple: []const u8, platform: PlatformKind) ObjectFormat {
     } else triple;
 
     if (std.mem.indexOf(u8, lower, "macos") != null or
-        std.mem.indexOf(u8, lower, "darwin") != null)
+        std.mem.indexOf(u8, lower, "darwin") != null or
+        std.mem.indexOf(u8, lower, "ios") != null or
+        std.mem.indexOf(u8, lower, "tvos") != null or
+        std.mem.indexOf(u8, lower, "watchos") != null)
     {
         return .macho;
     }
@@ -379,8 +385,9 @@ fn parseWindowsAbi(triple: []const u8) WindowsAbi {
     } else triple;
 
     // Check for MinGW indicators: -gnu suffix or mingw in vendor
+    // Only match if the triple contains "windows" to avoid false positives on Linux triples
     if (std.mem.indexOf(u8, lower, "mingw") != null) return .gnu;
-    if (std.mem.endsWith(u8, lower, "-gnu")) return .gnu;
+    if (std.mem.indexOf(u8, lower, "windows") != null and std.mem.endsWith(u8, lower, "-gnu")) return .gnu;
 
     // Check for MSVC indicators: -msvc suffix
     if (std.mem.endsWith(u8, lower, "-msvc")) return .msvc;
@@ -595,7 +602,8 @@ test "usesCoffDecoration - only COFF returns true" {
 }
 
 test "parsePlatformKind - embedded targets" {
-    try std.testing.expectEqual(.linux, parsePlatformKind("arm-none-eabi"));
+    // arm-none-eabi is typically bare-metal/embedded with no OS
+    try std.testing.expectEqual(.unknown, parsePlatformKind("arm-none-eabi"));
     try std.testing.expectEqual(.unknown, parsePlatformKind("riscv32-unknown-unknown"));
 }
 

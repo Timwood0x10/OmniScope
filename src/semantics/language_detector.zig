@@ -811,7 +811,12 @@ fn classifyGlobalName(name: []const u8) ?Language {
             std.mem.startsWith(u8, rest, "mfixed") or
             std.mem.startsWith(u8, rest, "allg") or
             std.mem.startsWith(u8, rest, "allm") or
-            std.mem.startsWith(u8, rest, "allp"))
+            std.mem.startsWith(u8, rest, "allp") or
+            std.mem.startsWith(u8, rest, "park") or
+            std.mem.startsWith(u8, rest, "wake") or
+            std.mem.startsWith(u8, rest, "stopm") or
+            std.mem.startsWith(u8, rest, "startm") or
+            std.mem.startsWith(u8, rest, "handoffp"))
         {
             break :blk true;
         }

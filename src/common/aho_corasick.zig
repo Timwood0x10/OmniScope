@@ -4,7 +4,15 @@
 //! where n is text length, m is total pattern length, and z is number of matches.
 //!
 //! Runtime-allocating implementation designed for integration with PatternRegistry.
-//! Supports prefix, contains, and exact matching modes.
+//!
+//! ## Matching Modes
+//!
+//! - **contains**: Find any occurrence of pattern within text (default behavior).
+//!   Returns the first match found scanning left-to-right.
+//! - **prefix**: Match only if pattern appears at the start of text.
+//!   Useful for checking if text begins with specific patterns.
+//! - **exact**: Match only if text exactly equals pattern.
+//!   Useful for exact string comparison against multiple patterns.
 //!
 //! ## Usage
 //! ```zig
@@ -389,28 +397,40 @@ pub const AhoCorasick = struct {
         return self.pattern_count;
     }
 
-    /// Lookup stored pattern length by pattern ID via trie traversal.
+    /// Lookup stored pattern length by pattern ID via iterative trie traversal.
+    ///
+    /// Uses an explicit DFS stack (iterative) instead of recursion to
+    /// avoid stack overflow on deep tries with many nodes.
     fn getPatternLen(self: *const Self, pattern_id: usize) usize {
         if (self.nodes.items.len == 0) return 0;
-        return self.measureDepth(pattern_id, 0, 0);
-    }
 
-    /// Recursive depth measurement for a pattern ID.
-    fn measureDepth(self: *const Self, target_id: usize, node_idx: usize, depth: usize) usize {
-        const node = &self.nodes.items[node_idx];
+        // Each stack entry: { node_index, depth }
+        const Entry = struct { node_idx: usize, depth: usize };
+        var stack = ArrayList(Entry).initCapacity(self.allocator, 16) catch return 0;
+        defer stack.deinit(self.allocator);
 
-        // Check if this node stores the target pattern
-        for (0..node.output_len) |i| {
-            if (node.output[i] == target_id) {
-                return depth;
+        // Seed the stack with the root node at depth 0
+        stack.appendAssumeCapacity(.{ .node_idx = 0, .depth = 0 });
+
+        while (stack.items.len > 0) {
+            const top = stack.pop();
+            const node = &self.nodes.items[top.node_idx];
+
+            // Check if this node stores the target pattern
+            for (0..node.output_len) |i| {
+                if (node.output[i] == pattern_id) {
+                    return top.depth;
+                }
             }
-        }
 
-        // Recurse into children
-        var child_it = node.children.iterator();
-        while (child_it.next()) |entry| {
-            const result = self.measureDepth(target_id, entry.value_ptr.*, depth + 1);
-            if (result > 0) return result;
+            // Push children onto the stack (iterate in insertion order)
+            var child_it = node.children.iterator();
+            while (child_it.next()) |entry| {
+                stack.appendAssumeCapacity(.{
+                    .node_idx = entry.value_ptr.*,
+                    .depth = top.depth + 1,
+                });
+            }
         }
 
         return 0;

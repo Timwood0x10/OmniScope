@@ -524,6 +524,68 @@ pub const ThreadLocalArena = struct {
             self.global_stats.block_count += local_stats.block_count;
         }
     }
+
+    /// Clean up the current thread's thread-local arena reference.
+    ///
+    /// Zig does not support C++-style thread-local destructors, so callers
+    /// MUST invoke this method on every worker thread before that thread
+    /// exits. Failing to do so leaves a dangling pointer in the
+    /// `threadlocal var` that will never be reclaimed.
+    ///
+    /// After calling this the thread-local pointer is `null`, but the
+    /// underlying `Arena` object remains alive (and tracked in `all_arenas`)
+    /// until the owning `ThreadLocalArena` is itself deinitialized.
+    ///
+    /// Typical usage pattern for worker threads:
+    ///
+    /// ```zig
+    /// fn worker(tla: *ThreadLocalArena) void {
+    ///     const alloc = tla.allocator() catch return;
+    ///     // ... do work ...
+    ///     tla.cleanupCurrentThread();   // REQUIRED before thread exit
+    /// }
+    /// ```
+    pub fn cleanupCurrentThread(self: *ThreadLocalArena) void {
+        _ = self;
+        thread_arena_ptr = null;
+    }
+
+    /// Execute `func` inside a scope that guarantees per-thread arena cleanup.
+    ///
+    /// Obtains (or lazily creates) the thread-local arena, calls `func` with
+    /// the resulting `std.mem.Allocator`, and then clears the thread-local
+    /// pointer regardless of whether `func` succeeded or returned an error.
+    ///
+    /// This is the recommended way to use `ThreadLocalArena` when the caller
+    /// is a thread-entry function, because the cleanup happens automatically
+    /// even in error paths.
+    ///
+    /// Parameters:
+    ///   self   - The `ThreadLocalArena` instance
+    ///   func   - A function that accepts `std.mem.Allocator` and returns `!T`
+    ///
+    /// Returns: The return value of `func`, or the first error it produced.
+    ///
+    /// Example:
+    /// ```zig
+    /// fn worker(tla: *ThreadLocalArena) !void {
+    ///     try tla.withArena(struct {
+    ///         fn run(alloc: std.mem.Allocator) !void {
+    ///             var list = std.ArrayList(u8).init(alloc);
+    ///             // ... work ...
+    ///         }
+    ///     }.run);
+    ///     // thread-local is automatically cleaned up here
+    /// }
+    /// ```
+    pub fn withArena(self: *ThreadLocalArena, func: *const fn (std.mem.Allocator) anyerror!void) !void {
+        const alloc = try self.allocator();
+        func(alloc) catch |err| {
+            self.cleanupCurrentThread();
+            return err;
+        };
+        self.cleanupCurrentThread();
+    }
 };
 
 /// Thread-local storage for Arena pointers.
@@ -943,4 +1005,73 @@ test "Arena - concurrent usage simulation" {
     const stats2 = arena2.getStats();
     try testing.expectEqual(@as(usize, 1), stats1.allocation_count);
     try testing.expectEqual(@as(usize, 1), stats2.allocation_count);
+}
+
+test "ThreadLocalArena - cleanupCurrentThread" {
+    const testing = std.testing;
+
+    var thread_arena = ThreadLocalArena.init(testing.allocator);
+    defer thread_arena.deinit();
+
+    // Allocate through the thread-local arena
+    const alloc1 = try thread_arena.allocator();
+    var list = std.array_list.Managed(u8).init(alloc1);
+    try list.append(0xAA);
+    try testing.expectEqual(@as(u8, 0xAA), list.items[0]);
+
+    // cleanupCurrentThread clears the thread-local pointer
+    thread_arena.cleanupCurrentThread();
+
+    // A subsequent allocator() call should create a fresh arena
+    // (the old Arena object is still tracked in all_arenas and will
+    // be freed by deinit, but the thread-local pointer is now null).
+    const alloc2 = try thread_arena.allocator();
+    var list2 = std.array_list.Managed(u8).init(alloc2);
+    try list2.append(0xBB);
+    try testing.expectEqual(@as(u8, 0xBB), list2.items[0]);
+}
+
+test "ThreadLocalArena - withArena success" {
+    const testing = std.testing;
+
+    var thread_arena = ThreadLocalArena.init(testing.allocator);
+    defer thread_arena.deinit();
+
+    try thread_arena.withArena(testSuccessFn);
+
+    // thread-local pointer should have been cleaned up;
+    // a fresh call to getArena should succeed without error.
+    _ = try thread_arena.getArena();
+}
+
+test "ThreadLocalArena - withArena cleanup on error" {
+    const testing = std.testing;
+
+    var thread_arena = ThreadLocalArena.init(testing.allocator);
+    defer thread_arena.deinit();
+
+    // First, prime the thread-local arena so the function runs inside it
+    _ = try thread_arena.getArena();
+
+    // The function returns an error; cleanup should still happen.
+    const result = thread_arena.withArena(testErrorFn);
+
+    try testing.expectError(error.DeliberateTestError, result);
+
+    // Verify cleanup happened: getArena should lazily create a new arena
+    // (the thread-local ptr was null after cleanup).
+    const arena = try thread_arena.getArena();
+    _ = try arena.alloc(8, 0);
+}
+
+/// Helper: allocation succeeds and uses the arena.
+fn testSuccessFn(alloc: std.mem.Allocator) !void {
+    var list = std.array_list.Managed(u32).init(alloc);
+    try list.append(123);
+    if (list.items[0] != 123) return error.Unexpected;
+}
+
+/// Helper: deliberately returns an error.
+fn testErrorFn(_: std.mem.Allocator) !void {
+    return error.DeliberateTestError;
 }

@@ -358,3 +358,119 @@ test "TraversalIndex - CallRecord" {
     try std.testing.expectEqualStrings("malloc", record.callee);
     try std.testing.expect(record.inst == null);
 }
+
+test "TraversalIndex - isAllocFunction with empty string" {
+    // Empty string should not be detected as allocation function
+    try std.testing.expect(!isAllocFunction(""));
+}
+
+test "TraversalIndex - isAllocFunction with case variations" {
+    // Test case sensitivity
+    try std.testing.expect(isAllocFunction("malloc"));
+    try std.testing.expect(!isAllocFunction("Malloc"));
+    try std.testing.expect(!isAllocFunction("MALLOC"));
+
+    // Test with "alloc" pattern
+    try std.testing.expect(isAllocFunction("my_alloc"));
+    try std.testing.expect(isAllocFunction("my_Alloc"));
+    try std.testing.expect(isAllocFunction("my_ALLOC"));
+}
+
+test "TraversalIndex - isAllocFunction with partial matches" {
+    // Test that "alloc" pattern matches as substring
+    try std.testing.expect(isAllocFunction("allocate"));
+    try std.testing.expect(isAllocFunction("deallocate"));
+    try std.testing.expect(isAllocFunction("allocator"));
+    try std.testing.expect(isAllocFunction("custom_allocator_func"));
+
+    // Test that "alloc" pattern doesn't match non-substring
+    try std.testing.expect(!isAllocFunction("aloc"));
+    try std.testing.expect(!isAllocFunction("allocx"));
+}
+
+test "TraversalIndex - isFreeFunction with empty string" {
+    // Empty string should not be detected as free function
+    try std.testing.expect(!isFreeFunction(""));
+}
+
+test "TraversalIndex - isFreeFunction with case variations" {
+    // Test case sensitivity
+    try std.testing.expect(isFreeFunction("free"));
+    try std.testing.expect(!isFreeFunction("Free"));
+    try std.testing.expect(!isFreeFunction("FREE"));
+
+    // Test with "free" pattern
+    try std.testing.expect(isFreeFunction("my_free"));
+    try std.testing.expect(isFreeFunction("my_Free"));
+    try std.testing.expect(isFreeFunction("my_FREE"));
+}
+
+test "TraversalIndex - isFreeFunction with partial matches" {
+    // Test that "free" pattern matches as substring
+    try std.testing.expect(isFreeFunction("freedom"));
+    try std.testing.expect(isFreeFunction("free_func"));
+    try std.testing.expect(isFreeFunction("my_free_func"));
+
+    // Test that "dealloc" pattern matches as substring
+    try std.testing.expect(isFreeFunction("deallocate"));
+    try std.testing.expect(isFreeFunction("my_deallocator"));
+
+    // Test that "free" pattern doesn't match non-substring
+    try std.testing.expect(!isFreeFunction("fre"));
+    try std.testing.expect(!isFreeFunction("freex"));
+}
+
+test "TraversalIndex - isAllocFunction with language-specific allocators" {
+    // Test C++ new operators
+    try std.testing.expect(isAllocFunction("_Znwm"));
+    try std.testing.expect(isAllocFunction("_Znam"));
+    try std.testing.expect(isAllocFunction("_ZnwmSt11align_val_t"));
+    try std.testing.expect(isAllocFunction("_ZnamSt11align_val_t"));
+
+    // Test Rust allocators
+    try std.testing.expect(isAllocFunction("__rust_alloc"));
+    try std.testing.expect(isAllocFunction("__rust_alloc_zeroed"));
+    try std.testing.expect(isAllocFunction("__rust_realloc"));
+
+    // Test Python allocators
+    try std.testing.expect(isAllocFunction("PyMem_Malloc"));
+    try std.testing.expect(isAllocFunction("PyObject_Malloc"));
+}
+
+test "TraversalIndex - isFreeFunction with language-specific deallocators" {
+    // Test C++ delete operators
+    try std.testing.expect(isFreeFunction("_ZdlPv"));
+    try std.testing.expect(isFreeFunction("_ZdaPv"));
+    try std.testing.expect(isFreeFunction("_ZdlPvm"));
+    try std.testing.expect(isFreeFunction("_ZdaPvm"));
+
+    // Test Rust deallocators
+    try std.testing.expect(isFreeFunction("__rust_dealloc"));
+
+    // Test Python deallocators
+    try std.testing.expect(isFreeFunction("PyMem_Free"));
+    try std.testing.expect(isFreeFunction("PyObject_Free"));
+}
+
+test "TraversalIndex - isAllocFunction with custom allocator patterns" {
+    // Test custom allocator naming patterns
+    try std.testing.expect(isAllocFunction("custom_allocator"));
+    try std.testing.expect(isAllocFunction("my_alloc_func"));
+    try std.testing.expect(isAllocFunction("jemalloc"));
+    try std.testing.expect(isAllocFunction("tc_malloc"));
+    try std.testing.expect(isAllocFunction("GC_malloc"));
+    try std.testing.expect(isAllocFunction("rb_alloc"));
+    try std.testing.expect(isAllocFunction("ruby_xmalloc"));
+    try std.testing.expect(isAllocFunction("lua_newuserdata"));
+}
+
+test "TraversalIndex - isFreeFunction with custom deallocator patterns" {
+    // Test custom deallocator naming patterns
+    try std.testing.expect(isFreeFunction("custom_dealloc"));
+    try std.testing.expect(isFreeFunction("my_free_func"));
+    try std.testing.expect(isFreeFunction("cfree"));
+    try std.testing.expect(isFreeFunction("tc_free"));
+    try std.testing.expect(isFreeFunction("GC_free"));
+    try std.testing.expect(isFreeFunction("rb_free"));
+    try std.testing.expect(isFreeFunction("ruby_xfree"));
+}

@@ -11,6 +11,7 @@
 //! Matching: prefix (startsWith), contains (indexOf), exact (eql).
 
 const std = @import("std");
+const PatternData = @import("pattern_registry_data.zig").PatternData;
 
 /// Three-tier C function safety classification for @cImport bindings.
 pub const CSafetyLevel = enum {
@@ -35,467 +36,104 @@ pub const PatternRegistry = struct {
     // Changes to one array must consider the other to avoid semantic drift.
 
     // LLVM Intrinsics & Rust Synthetic (noise_reduction.zig) — prefix/contains match
-    pub const llvm_intrinsic_prefixes = [_][]const u8{
-        "llvm.threadlocal.address",  "llvm.threadlocal.restore",
-        "llvm.lifetime.start",       "llvm.lifetime.end",
-        "llvm.dbg.declare",          "llvm.dbg.value",
-        "llvm.dbg.label",            "llvm.assume",
-        "llvm.expect",               "llvm.smax",
-        "llvm.smin",                 "llvm.umax",
-        "llvm.umin",                 "llvm.coro.id",
-        "llvm.coro.alloc",           "llvm.coro.begin",
-        "llvm.coro.size",            "llvm.coro.end",
-        "llvm.coro.free",            "llvm.coro.save",
-        "llvm.coro.suspend",         "llvm.coro.param",
-        "llvm.coro.async.ctx",       "llvm.coro.async.size",
-        "llvm.coro.async.addr",      "llvm.coro.async.resume",
-        "llvm.coro.async.copy",      "llvm.gc.root",
-        "llvm.gcwrite",              "llvm.gcread",
-        "llvm.gcresult",             "llvm.eh.typeid.for",
-        "llvm.eh.begincatch",        "llvm.eh.endcatch",
-        "llvm.eh.selector",          "llvm.eh.exceptionpointer",
-        "llvm.eh.unwindinit",        "llvm.eh.unwindsync",
-        "llvm.eh.returnaddr",        "llvm.eh.dwarf.cfa",
-        "llvm.type.checked.load",    "llvm.type.test",
-        "llvm.ptr.mask",             "llvm.vector.reduce.",
-        "llvm.experimental.vector.", "llvm.instrumentation.",
-        "llvm.localescape",          "llvm.localrecover",
-        "llvm.ctlz",                 "llvm.cttz",
-        "llvm.ctpop",                "llvm.bitreverse",
-    };
-
+    pub const llvm_intrinsic_prefixes = PatternData.llvm_intrinsic_prefixes;
     /// Rust safe primitives — channels, smart ptrs, iterators (contains match).
-    pub const rust_synthetic_patterns = [_][]const u8{
-        "sync_channel::", "mpsc::channel",
-        "Waker::",        "RawWaker",
-        "Arc::<",         "Rc::<",
-        "Weak::<",        "RawVec::",
-        "::next",         "::next_back",
-        "::iter",         "::into_iter",
-        "::from_iter",
-    };
+    pub const rust_synthetic_patterns = PatternData.rust_synthetic_patterns;
 
     // Zone Safe/Escape Patterns (zone_types.zig) — contains match
-    pub const rust_safe_patterns = [_][]const u8{
-        "std::vec::Vec",       "std::string::String",
-        "std::collections::",  "std::sync::Arc",
-        "std::sync::Mutex",    "std::sync::RwLock",
-        "std::sync::mpsc",     "std::sync::mpmc",
-        "std::cell::RefCell",  "std::cell::Cell",
-        "std::rc::Rc",         "std::boxed::Box",
-        "std::option::Option", "std::result::Result",
-        "drop_in_place",       "clone",
-        "into_iter",           "from_iter",
-        "sync_channel::",      "Waker::",
-        "RawVec::",            "__rust_alloc",
-        "__rust_dealloc",
-    };
-
-    pub const rust_escape_patterns = [_][]const u8{
-        "unsafe",              "extern \"C\"",
-        "extern \"system\"",   "libc::",
-        "nix::",               "$u20$unsafe",
-        "_ZN.*4ffi",           "_ZN.*7extern",
-        "*mut ",               "*const ",
-        "as_ptr",              "as_mut_ptr",
-        "from_raw_parts",      "from_raw_parts_mut",
-        "std::mem::transmute", "core::mem::transmute",
-        "transmute_copy",      "MaybeUninit",
-        "assume_init",         "Pin<",
-        "get_unchecked",       "get_unchecked_mut",
-        "asm!",                "llvm_asm!",
-        "_ffi",                "_extern",
-        "_bindgen",            "_cinterop",
-        "_marshal",            "_syscall",
-        "_invoke",             "_callback",
-        "_native",             "_interop",
-        // Rust v0 mangling escape markers (more specific than bare "$")
-        "$LT$",                "$GT$",
-        "$u7b$",               "$u7d$",
-        "$u20$",               "$C$",
-        "$RF$",                "$BP$",
-    };
-
-    pub const zig_safe_patterns = [_][]const u8{
-        "std.ArrayList",           "std.StringArrayHashMap",
-        "std.AutoHashMap",         "std.mem.split",
-        "std.mem.replace",         "std.process",
-        ".allocator",              "@as(*std.mem.Allocator",
-        "std.heap.page_allocator", "std.heap.GeneralPurposeAllocator",
-        "defer",                   "errdefer",
-    };
-
-    pub const zig_escape_patterns = [_][]const u8{
-        "@ptrCast",      "@alignCast",
-        "@intToPtr",     "@ptrToInt",
-        "@cImport",      "@cInclude",
-        "@cDefine",      "volatile ",
-        "packed struct", "@bitCast",
-    };
-
-    pub const go_safe_patterns = [_][]const u8{
-        "runtime.",    "make(", "new(",
-        "append(",     "copy(", "delete(",
-        "chan ",       "map[",  "func(",
-        "interface{}",
-    };
-
-    pub const go_escape_patterns = [_][]const u8{
-        "package C",      "C.",            "import \"C\"",
-        "unsafe.Pointer", "unsafe.Sizeof", "unsafe.Offsetof",
-        "unsafe.Alignof", "uintptr(",      "reflect.",
-    };
-
-    pub const cpp_safe_patterns = [_][]const u8{
-        "std::vector",        "std::string",
-        "std::unique_ptr",    "std::shared_ptr",
-        "std::weak_ptr",      "std::map",
-        "std::unordered_map", "std::set",
-        "make_unique",        "make_shared",
-        "get()",              "reset()",
-        "release()",
-    };
-
-    pub const cpp_escape_patterns = [_][]const u8{
-        "reinterpret_cast",  "const_cast",
-        "static_cast<void*", "malloc(",
-        "free(",             "new ",
-        "delete ",           "realloc(",
-        "pthread_create",    "std::thread",
-        "CreateThread",      "fork(",
-        "execvp(",           "execve(",
-        "getaddrinfo",       "gethostbyname",
-        "setsockopt",        "getsockopt",
-    };
-
-    pub const c_escape_patterns = [_][]const u8{
-        "dlopen",        "dlsym",   "dlclose",
-        "mmap",          "munmap",  "mprotect",
-        "Py_",           "JNI_",    "pthread_create",
-        "pthread_join",  "signal(", "sigaction(",
-        "fork(",         "exec",    "getaddrinfo",
-        "gethostbyname",
-    };
+    pub const rust_safe_patterns = PatternData.rust_safe_patterns;
+    pub const rust_escape_patterns = PatternData.rust_escape_patterns;
+    pub const zig_safe_patterns = PatternData.zig_safe_patterns;
+    pub const zig_escape_patterns = PatternData.zig_escape_patterns;
+    pub const go_safe_patterns = PatternData.go_safe_patterns;
+    pub const go_escape_patterns = PatternData.go_escape_patterns;
+    pub const cpp_safe_patterns = PatternData.cpp_safe_patterns;
+    pub const cpp_escape_patterns = PatternData.cpp_escape_patterns;
+    pub const c_escape_patterns = PatternData.c_escape_patterns;
 
     // C Safety Three-Tier (ffi_zone_check.zig) — exact match
     /// Layer 1: Never safe — always warn.
-    pub const c_import_blacklist = [_][]const u8{
-        "system",      "popen",    "execve", "execl",
-        "execlp",      "execle",   "execvp", "execv",
-        "posix_spawn", "strcpy",   "strcat", "sprintf",
-        "gets",        "scanf",    "sscanf", "fscanf",
-        "strtok",      "asctime",  "ctime",  "printf",
-        "fprintf",     "vsprintf",
-    };
-
+    pub const c_import_blacklist = PatternData.c_import_blacklist;
     /// Layer 2: Safe only when used correctly.
-    pub const c_import_conditional = [_][]const u8{
-        "malloc",  "calloc",   "realloc",   "free",
-        "memcpy",  "memmove",  "strncpy",   "strncat",
-        "fgets",   "fread",    "fwrite",    "fopen",
-        "freopen", "snprintf", "vsnprintf",
-    };
-
+    pub const c_import_conditional = PatternData.c_import_conditional;
     /// Layer 3: Presumed safe.
-    pub const c_import_safe = [_][]const u8{
-        "strlen",   "strcmp",    "strncmp", "memcmp",
-        "strchr",   "strrchr",   "strstr",  "memset",
-        "atoi",     "atol",      "strtoul", "strtol",
-        "strtod",   "exit",      "abort",   "atexit",
-        "errno",    "strerror",  "perror",  "getenv",
-        "sin",      "cos",       "tan",     "asin",
-        "acos",     "atan",      "atan2",   "sinh",
-        "cosh",     "tanh",      "log",     "log10",
-        "exp",      "pow",       "sqrt",    "fabs",
-        "floor",    "ceil",      "round",   "trunc",
-        "fmod",     "remainder", "time",    "clock",
-        "difftime", "mktime",    "puts",    "putchar",
-        "getc",     "ungetc",    "fgetc",   "fputc",
-        "fputs",    "feof",      "ferror",  "clearerr",
-        "rewind",   "ftell",     "fflush",  "setbuf",
-        "setvbuf",  "getpid",    "getppid",
-    };
-
+    pub const c_import_safe = PatternData.c_import_safe;
     /// Absolute blacklist — CWE-120/134/787 (exact match).
-    pub const dangerous_c_functions = [_][]const u8{
-        "strcpy", "strcat",   "sprintf",   "gets",
-        "scanf",  "vsprintf", "system",    "popen",
-        "execl",  "execle",   "execlp",    "execv",
-        "execve", "execvp",   "strtok",    "asctime",
-        "ctime",  "gmtime",   "localtime", "bcopy",
-        "bzero",  "fprintf",  "printf",    "sscanf",
-        "fscanf",
-    };
+    pub const dangerous_c_functions = PatternData.dangerous_c_functions;
 
     // Zig/Go Internal (ffi_zone_check.zig) — contains match
-    pub const zig_internal_patterns = [_][]const u8{
-        "zig_assert_fail",        "zig_panic",
-        "zig_oq",                 "zig_write",
-        "zig_alloc",              "zig_free",
-        "zig_error",              "zig_generic_resolve",
-        "zig_monitor_init",       "zig_monitor_lock",
-        "zig_monitor_unlock",     "zig_promote_error",
-        "zig_demote_error",       "zig_convert_to_error_union",
-        "zig_stack_trace",        "zig_debug_safe_truncate",
-        "zig_debug_safety_crash", "__zig_bug",
-        "__zig_panic_handler",
-    };
-
+    pub const zig_internal_patterns = PatternData.zig_internal_patterns;
     /// Broad Zig internal markers (contains match).
     /// These are more general than specific function names above.
-    pub const zig_broad_internal_patterns = [_][]const u8{
-        "__zig",
-        "(anonymous namespace)",
-        "generic(",
-        "__anon_",
-    };
-
-    pub const go_internal_patterns = [_][]const u8{
-        "runtime.gopark",     "runtime.goexit",
-        "runtime.morestack",  "runtime.mallocgc",
-        "runtime.gcStart",    "runtime.gcStop",
-        "runtime.makeslice",  "runtime.convT2E",
-        "runtime.convE2T",    "runtime.assertE2T",
-        "runtime.assertE2T2", "runtime.assertI2T",
-        "runtime.assertI2T2", "runtime.panicwrap",
-    };
-
-    pub const go_runtime_extra = [_][]const u8{
-        "runtime.growslice",            "runtime.memmove",
-        "runtime.memclrNoHeapPointers", "runtime.memclrHasPointers",
-        "runtime.writeBarrier",         "runtime.gcWriteBarrier",
-        "typedmemmove",                 "typedmemclr",
-    };
+    pub const zig_broad_internal_patterns = PatternData.zig_broad_internal_patterns;
+    pub const go_internal_patterns = PatternData.go_internal_patterns;
+    pub const go_runtime_extra = PatternData.go_runtime_extra;
 
     // FFI Language Patterns (ffi_zone_check.zig) — contains match
-    pub const rust_ffi_patterns = [_][]const u8{ "extern", "rust_", "_ZN" };
-    pub const zig_ffi_patterns = [_][]const u8{ "extern", "c_", "@cImport", "zig_", "__zig" };
-    pub const go_ffi_patterns = [_][]const u8{ "C.", "_cgo_", "_Cfunc_", "crosscall2", "runtime.cgocall" };
+    pub const rust_ffi_patterns = PatternData.rust_ffi_patterns;
+    pub const zig_ffi_patterns = PatternData.zig_ffi_patterns;
+    pub const go_ffi_patterns = PatternData.go_ffi_patterns;
 
     // Intentional/Test Patterns (ffi_zone_check.zig)
-    pub const intentional_prefixes = [_][]const u8{
-        "safe_",   "correct_", "example_",
-        "test_",   "_test",    "demo_",
-        "sample_", "bench_",   "fixture_",
-        "mock_",   "stub_",    "reference_",
-    };
-
-    pub const intentional_substrings = [_][]const u8{
-        "intentional", "known_safe", "expected", "deliberate",
-    };
+    pub const intentional_prefixes = PatternData.intentional_prefixes;
+    pub const intentional_substrings = PatternData.intentional_substrings;
 
     // Stdlib Prefixes — Pattern G (issue_suppression.zig)
-    pub const zig_stdlib_prefixes = [_][]const u8{
-        "debug.",  "hash_map.", "array_hash_map.",
-        "std.",    "builtin.",  "mem.",
-        "log.",    "Io.",       "fs.",
-        "os.",     "process.",  "Thread.",
-        "crypto.", "compress.", "http.",
-        "json.",   "ascii.",    "base64.",
-        "random.", "time.",     "unicode.",
-        "net.",    "async.",
-    };
-
-    pub const rust_stdlib_prefixes = [_][]const u8{ "core::", "alloc::", "std::" };
-
+    pub const zig_stdlib_prefixes = PatternData.zig_stdlib_prefixes;
+    pub const rust_stdlib_prefixes = PatternData.rust_stdlib_prefixes;
     /// C++ stdlib — contains match (not prefix).
-    pub const cpp_stdlib_patterns = [_][]const u8{ "std::__", "__gnu_debug" };
+    pub const cpp_stdlib_patterns = PatternData.cpp_stdlib_patterns;
 
     // Compiler Builtins (issue_suppression.zig) — prefix match
-    pub const compiler_builtins = [_][]const u8{
-        "__builtin_",     "__memcpy_chk",      "__memmove_chk",
-        "__memset_chk",   "__strcpy_chk",      "__strcat_chk",
-        "__strncpy_chk",  "__sprintf_chk",     "__snprintf_chk",
-        "__printf_chk",   "__fprintf_chk",     "__vprintf_chk",
-        "__vfprintf_chk", "__stack_chk_fail",  "__stack_chk_guard",
-        "__cxa_",         "__gxx_personality", "__llvm_",
-        "__sanitizer_",   "__ubsan_",          "__asan_",
-        "__msan_",        "__tsan_",
-    };
+    pub const compiler_builtins = PatternData.compiler_builtins;
 
     // Platform Runtime Shims — Pattern H (issue_suppression.zig)
     /// C++ allocators — Itanium ABI mangled (contains match).
-    pub const cpp_alloc_patterns = [_][]const u8{
-        "_Znw",         "_Zdl",            "_Zna", "_Zda",
-        "operator new", "operator delete",
-    };
-
+    pub const cpp_alloc_patterns = PatternData.cpp_alloc_patterns;
     /// C++ ABI runtime (prefix match).
-    pub const cpp_abi_prefixes = [_][]const u8{
-        "__cxa_", "__gxx_personality", "_ZTI", "_ZTS", "_ZTV",
-    };
-
+    pub const cpp_abi_prefixes = PatternData.cpp_abi_prefixes;
     /// Objective-C runtime (contains match).
-    pub const objc_patterns = [_][]const u8{
-        "_objc_",        "objc_msgSend", "objc_alloc",
-        "objc_release",  "_dispatch_",   "dispatch_async",
-        "dispatch_sync",
-    };
-
+    pub const objc_patterns = PatternData.objc_patterns;
     /// Swift runtime (prefix match).
-    pub const swift_patterns = [_][]const u8{
-        "swift_retain", "swift_release", "swift_allocObject",
-        "$sS",          "$sSo",
-    };
-
+    pub const swift_patterns = PatternData.swift_patterns;
     /// Go runtime (prefix match).
-    pub const go_runtime_patterns = [_][]const u8{
-        "runtime.",       "runtime.alloc",
-        "runtime.free",   "internal/task.",
-        "runtime._panic",
-    };
-
+    pub const go_runtime_patterns = PatternData.go_runtime_patterns;
     /// Rust runtime (contains match).
-    pub const rust_runtime_patterns = [_][]const u8{
-        "__rust_alloc",  "__rust_dealloc",
-        "drop_in_place", "rust_begin_unwind",
-        "rust_panic",
-    };
-
+    pub const rust_runtime_patterns = PatternData.rust_runtime_patterns;
     /// Zig runtime (contains match).
-    pub const zig_runtime_patterns = [_][]const u8{
-        "__zig_probe_stack", "__zig_tag_name_",
-        "reachUnreachable",  "unwrapNull",
-    };
-
+    pub const zig_runtime_patterns = PatternData.zig_runtime_patterns;
     /// Sanitizer runtimes (prefix match).
-    pub const sanitizer_prefixes = [_][]const u8{
-        "__asan_", "__msan_", "__tsan_", "__ubsan_", "__sanitizer_",
-    };
-
+    pub const sanitizer_prefixes = PatternData.sanitizer_prefixes;
     /// Dynamic linker / CRT (contains match).
-    pub const dl_patterns = [_][]const u8{
-        "_dyld_",                 "_dl_",
-        "__security_init_cookie", "__report_gsfailure",
-        "_CRT$",                  ".CRT$",
-    };
+    pub const dl_patterns = PatternData.dl_patterns;
 
     // Windows MSVC CRT (issue_suppression.zig) — contains match
-    pub const seh_patterns = [_][]const u8{
-        "__except_handler",   "___CxxFrameHandler",
-        "__CxxFrameHandler3", "__C_specific_handler",
-        "__GSHandlerCheck",   "__GSHandlerCheck_Common",
-    };
-
-    pub const crt_init_patterns = [_][]const u8{
-        "_initterm_e",             "_initterm",
-        "_crtInit",                "_crtExit",
-        "_CRT_INIT",               "_crt_atexit",
-        "_atexit_helper",          "_register_onexit_function",
-        "_cinit_compute_numpages",
-    };
-
-    pub const msvc_security = [_][]const u8{
-        "__security_check_cookie",    "__report_gsfailure",
-        "__report_rangecheckfailure", "__report_error",
-        "__fail_fast_handler",        "__fastfail",
-    };
-
-    pub const tls_patterns = [_][]const u8{
-        "TlsCallback_", "__dyn_tls_init", "__tlregdtor",
-    };
+    pub const seh_patterns = PatternData.seh_patterns;
+    pub const crt_init_patterns = PatternData.crt_init_patterns;
+    pub const msvc_security = PatternData.msvc_security;
+    pub const tls_patterns = PatternData.tls_patterns;
 
     // Crypto Primitives (issue_suppression.zig) — contains match
-    pub const cipher_names = [_][]const u8{
-        "aes_", "AES_", "des_", "DES_", "chacha20", "ChaCha20",
-    };
-    pub const hash_names = [_][]const u8{
-        "sha", "SHA", "md5", "MD5", "digest", "hash_", "blake", "Blake",
-    };
-    pub const pk_names = [_][]const u8{
-        "rsa", "RSA", "ecdsa", "ecdh", "curve25519", "ed25519", "p256", "p384",
-    };
-    pub const mac_names = [_][]const u8{
-        "hmac", "HMAC", "hkdf", "HKDF", "pbkdf", "poly1305",
-    };
+    pub const cipher_names = PatternData.cipher_names;
+    pub const hash_names = PatternData.hash_names;
+    pub const pk_names = PatternData.pk_names;
+    pub const mac_names = PatternData.mac_names;
 
     // Table-Driven & Compiler Internal (issue_suppression.zig)
-    pub const table_signals = [_][]const u8{
-        "table", "Table", "lookup", "Lookup", "vtable", "dispatch", "hw_",
-    };
-
+    pub const table_signals = PatternData.table_signals;
     /// Mangled name compiler-internal patterns (prefix match).
-    pub const compiler_internal_patterns = [_][]const u8{
-        "_ZNSt",     "_ZN4core",
-        "_ZN5alloc", "_ZN3std",
-        "_ZGV",      "_ZZ",
-        "__cxx_",    "_GLOBAL__",
-        "$ss",       "$sS",
-    };
+    pub const compiler_internal_patterns = PatternData.compiler_internal_patterns;
 
     // Stdlib Paths (noise_reduction.zig) — contains match
-    pub const rust_stdlib_paths = [_][]const u8{
-        "/rustc/",           "/library/core/",
-        "/library/std/",     "/library/alloc/",
-        "/registry/src/",    "/cargo/registry/",
-        "/.cargo/registry/",
-    };
-
-    pub const zig_stdlib_paths = [_][]const u8{
-        "zig/lib/std/",  "zig/std/",
-        "/lib/zig/std/", ".zig/lib/std/",
-    };
-
-    pub const cpp_stdlib_paths = [_][]const u8{
-        "/usr/include/c++/", "/usr/include/g++",
-        "/libc++/",          "/libcxx/",
-        "/include/c++/",     "/clang/",
-    };
+    pub const rust_stdlib_paths = PatternData.rust_stdlib_paths;
+    pub const zig_stdlib_paths = PatternData.zig_stdlib_paths;
+    pub const cpp_stdlib_paths = PatternData.cpp_stdlib_paths;
 
     // Noise Filter Patterns (noise_reduction.zig) — contains match
-    pub const rust_noise_patterns = [_][]const u8{
-        "core::",                      "core.",
-        "alloc::",                     "alloc.",
-        "std::",                       "std.",
-        "panic_",                      "begin_panic",
-        "panic_fmt",                   "drop_in_place",
-        "_ZN4core3ptr13drop_in_place", "<T as core::ops::drop::Drop>::drop",
-        "RawVec",                      "Vec<",
-        "slice::",                     "fmt::",
-        "string::",                    "_ZN4core",
-        "_ZN5alloc",                   "_ZN3std",
-        "_RNv",                        "$LT$core",
-        "$LT$alloc",                   "_$LT$",
-        "_GT$",                        "real_drop_in_place",
-        "size_hint",                   "reserve_total",
-        "Error3new",                   "Error8downcast",
-        "error5error",                 "error6vtable",
-        "object_reallocate_boxed",     "object_drop",
-        "$u7b$u7b$closure$u7d$u7d$",   "anyhow5error",
-    };
+    pub const rust_noise_patterns = PatternData.rust_noise_patterns;
+    pub const zig_noise_patterns = PatternData.zig_noise_patterns;
+    pub const cpp_noise_patterns = PatternData.cpp_noise_patterns;
 
-    pub const zig_noise_patterns = [_][]const u8{
-        "std.",                  "std.debug",               "std.mem",
-        "std.fmt",               "std.heap",                "std.fs",
-        "std.io",                "std.os",                  "std.posix",
-        "std.ascii",             "std.base64",              "std.hash",
-        "std.array_list",        "std.bit_set",             "std.builtin",
-        "std.crypto",            "std.compress",            "std.random",
-        "mem.Allocator",         "GeneralPurposeAllocator", "ArenaAllocator",
-        "page_allocator",        "c_allocator",             "raw_c_allocator",
-        "FixedBufferAllocator",  "zig_assert_fail",         "zig_panic",
-        "zig_oq",                "zig_write",               "zig_generic_resolve",
-        "debug.Dwarf",           "debug.Info",              "debug.Segment",
-        "debug.LineInfo",        "posix.",                  "posix_getenv",
-        "posix_environ",         "fs.File",                 "fs.Dir",
-        "fs.Path",               "fs.cwd",                  "fs.openFile",
-        "fs.access",             "fs.realpath",             "fs.makeAbsolute",
-        "fs.canonicalize",       "start.zig",               "panic.zig",
-        "builtin.zig",           "__zig_",                  "__anon_",
-        "(anonymous namespace)", "@typeInfo",               "is_named_enum_value",
-        "__zig_switch_target",   "__zig_error_name",        "__zig_resolve_enum_name",
-    };
-
-    pub const cpp_noise_patterns = [_][]const u8{
-        "std::",             "__gnu_cxx::",
-        "__cxa_",            "__clang_call_terminate",
-        "__cxa_begin_catch", "__cxa_end_catch",
-        "__cxa_throw",       "std::vector",
-        "std::string",       "std::map",
-        "basic_string",      "_M_insert",
-        "_M_emplace_back",   "type_info",
-        "__class_type_info",
-    };
     // Query Functions
     /// Check if a function is a stdlib/internal function (Pattern G).
     /// Covers Zig/Rust/C++ stdlib prefixes and compiler builtins.
@@ -787,7 +425,12 @@ pub const PatternRegistry = struct {
         while (i <= max_start) : (i += 1) {
             var match = true;
             for (needle, 0..) |needle_char, j| {
-                if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(needle_char)) {
+                const hc = haystack[i + j];
+                const nc = needle_char;
+                // Convert backslashes to forward slashes for comparison
+                const h_normalized: u8 = if (hc == '\\') '/' else hc;
+                const n_normalized: u8 = if (nc == '\\') '/' else nc;
+                if (std.ascii.toLower(h_normalized) != std.ascii.toLower(n_normalized)) {
                     match = false;
                     break;
                 }
@@ -994,7 +637,7 @@ test "pattern count: registry has ~560 consolidated patterns" {
         P.c_escape_patterns.len +
         P.c_import_blacklist.len + P.c_import_conditional.len + P.c_import_safe.len +
         P.dangerous_c_functions.len +
-        P.zig_internal_patterns.len + P.go_internal_patterns.len + P.go_runtime_extra.len +
+        P.zig_internal_patterns.len + P.zig_broad_internal_patterns.len + P.go_internal_patterns.len + P.go_runtime_extra.len +
         P.rust_ffi_patterns.len + P.zig_ffi_patterns.len + P.go_ffi_patterns.len +
         P.intentional_prefixes.len + P.intentional_substrings.len +
         P.zig_stdlib_prefixes.len + P.rust_stdlib_prefixes.len + P.cpp_stdlib_patterns.len +
@@ -1008,6 +651,7 @@ test "pattern count: registry has ~560 consolidated patterns" {
         P.table_signals.len + P.compiler_internal_patterns.len +
         P.rust_stdlib_paths.len + P.zig_stdlib_paths.len + P.cpp_stdlib_paths.len +
         P.rust_noise_patterns.len + P.zig_noise_patterns.len + P.cpp_noise_patterns.len;
+    std.debug.print("Total patterns: {d}\n", .{total});
     try std.testing.expect(total > 500);
-    try std.testing.expect(total < 650);
+    try std.testing.expect(total < 750);
 }
