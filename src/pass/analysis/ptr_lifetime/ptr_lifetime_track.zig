@@ -18,6 +18,8 @@ const getCallInstArgCount = @import("../../../ir/llvm_safe.zig").getCallInstArgC
 const classifyAllocLanguageEnum = @import("ptr_lifetime_classify.zig").classifyAllocLanguageEnum;
 const isFreeFunction = @import("ptr_lifetime_classify.zig").isFreeFunction;
 
+const GlobalAllocTracker = @import("../../../types/pass_types.zig").GlobalAllocTracker;
+
 const ptr_types = @import("ptr_lifetime_types.zig");
 const PtrAllocSite = ptr_types.PtrAllocSite;
 const PtrInfo = ptr_types.PtrInfo;
@@ -217,7 +219,9 @@ fn handleHeapAlloc(ctx: *TrackContext, callee_name: []const u8) void {
         const fn_name_raw = c.LLVMGetValueName(ctx.func);
         const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
         const inst_id = @as(u32, @truncate(inst_ptr_val));
-        _ = ctx.global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id, is_conditional, ctx.func) catch return;
+        // Determine allocation size for confidence boost (O(1) lookup)
+        const alloc_size = GlobalAllocTracker.getAllocationSize(ctx.inst);
+        _ = ctx.global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id, is_conditional, ctx.func, alloc_size) catch return;
     }
 }
 

@@ -174,7 +174,7 @@ test "P0-C6: use_after_free is real memory safety bug for user function" {
     try std.testing.expect(issue_suppression.isRealMemorySafetyBug(&issue));
 }
 
-test "P0-C7: stdlib internal function returns false (let Pattern G handle it)" {
+test "P0-C7: stdlib internal function with critical issue returns true (P1-8 fix)" {
     var issue = Issue.init(
         .null_dereference,
         "null dereference in std.mem.copy",
@@ -182,7 +182,8 @@ test "P0-C7: stdlib internal function returns false (let Pattern G handle it)" {
         .high,
         0.90,
     );
-    try std.testing.expect(!issue_suppression.isRealMemorySafetyBug(&issue));
+    // null_dereference is a critical issue type that should be reported even in stdlib
+    try std.testing.expect(issue_suppression.isRealMemorySafetyBug(&issue));
 }
 
 test "P0-C8: Rust compiler internal double_free returns false (drop chain FP)" {

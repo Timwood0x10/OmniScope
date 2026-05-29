@@ -136,12 +136,12 @@ fn isThreadSpawnPattern(name: []const u8) bool {
 }
 
 /// Check if an opcode is an atomic operation.
-fn isAtomicOperation(opcode: c.LLVMOpcodeId) bool {
+fn isAtomicOperation(opcode: c_uint) bool {
     return opcode == c.LLVMAtomicRMW or
-        opcode == c.LLVMLoadAtomic or
-        opcode == c.LLVMStoreAtomic or
+        opcode == c.LLVMLoad or
+        opcode == c.LLVMStore or
         opcode == c.LLVMFence or
-        opcode == c.LLVMCmpXchg;
+        opcode == c.LLVMAtomicCmpXchg;
 }
 
 /// Analyze a thread spawn function for Send violations.
@@ -303,7 +303,7 @@ fn analyzeAtomicUsage(
     const opcode = c.LLVMGetInstructionOpcode(inst);
 
     // Check 1: Atomic RMW on large types (should use locks instead)
-    if (opcode == c.LLVMAtomicRMW or opcode == c.LLVMCmpXchg) {
+    if (opcode == c.LLVMAtomicRMW or opcode == c.LLVMAtomicCmpXchg) {
         // Get the pointer operand (first operand for atomic ops)
         const ptr_val = c.LLVMGetOperand(inst, 0);
         if (@intFromPtr(ptr_val) != 0) {
@@ -324,11 +324,11 @@ fn analyzeAtomicUsage(
     }
 
     // Check 2: Memory ordering for atomic loads/stores
-    if (opcode == c.LLVMLoadAtomic or opcode == c.LLVMStoreAtomic) {
+    if (opcode == c.LLVMLoad or opcode == c.LLVMStore) {
         // Get the ordering
         const ordering = c.LLVMGetOrdering(inst);
         // SequentiallyConsistent (5) is often overkill — flag for audit
-        if (ordering == c.LLVMSequentiallyConsistent) {
+        if (ordering == 5) { // c.LLVMAtomicOrderingSequentiallyConsistent
             log.debug("[NOMICON-CH8] SequentiallyConsistent ordering — may be overkill", .{});
             recordResolution(srt, inst_ref, .send_sync_violation, 0.25, "SeqCst ordering — consider weaker ordering if appropriate");
             // Not a violation, just an audit note
@@ -339,7 +339,7 @@ fn analyzeAtomicUsage(
     if (opcode == c.LLVMFence) {
         // Fence is usually fine, but flag for audit if it's the only sync in a function
         const ordering = c.LLVMGetOrdering(inst);
-        if (ordering == c.LLVMRelease or ordering == c.LLVMAcquire) {
+        if (ordering == 4 or ordering == 2) { // Release=4, Acquire=2
             // This is normal — just note it
             recordResolution(srt, inst_ref, .send_sync_violation, 0.20, "Fence operation — audit only");
         }

@@ -168,7 +168,7 @@ fn analyzeAllocWithoutInit(
 
     // If the very next instruction is a load or store using the allocated pointer
     // without a memset/memcpy in between, it's suspicious
-    if (next_opcode == c.LLVMLLoad or next_opcode == c.LLVMLStore) {
+    if (next_opcode == c.LLVMLoad or next_opcode == c.LLVMStore) {
         // Check if any operand is our allocation result
         var i: u32 = 0;
         const num_ops = c.LLVMGetNumOperands(next_inst);
@@ -192,7 +192,7 @@ fn analyzePotentialUninitLoad(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt
     const ptr_operand = c.LLVMGetOperand(inst, 0);
 
     // Check if this load is from an alloca (stack variable)
-    if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMLAlloca) {
+    if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMAlloca) {
         // In a full implementation, we'd track whether this alloca was written to
         // before this load. For now, we just note the pattern.
 

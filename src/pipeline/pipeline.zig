@@ -321,6 +321,28 @@ pub const Pipeline = struct {
                     if (is_known_dangerous_alloc) {
                         base_confidence += 0.07;
                     }
+                    // ════════════════════════════════════════════════════
+                    // Boost 3: Large allocation size (> 1 MB)
+                    // Large leaks are more impactful than small ones.
+                    // They can cause OOM, noticeable slowdowns, etc.
+                    // Thresholds:
+                    //   - > 1 MB: +0.10 (large allocation leak)
+                    //   - > 100 KB: +0.05 (medium-large allocation)
+                    //   - ≤ 100 KB: no additional boost (small allocations)
+                    //   - unknown size: no penalty or bonus (graceful fallback)
+                    // ════════════════════════════════════════════════════
+                    if (rec.alloc_size) |size| {
+                        if (size > 1024 * 1024) {
+                            base_confidence += 0.10;
+                            log.debug("[LEAK-LARGE] Large allocation ({d} bytes) increases confidence by 0.10", .{size});
+                        } else if (size > 1024 * 100) {
+                            base_confidence += 0.05;
+                            log.debug("[LEAK-MEDIUM] Medium-large allocation ({d} bytes) increases confidence by 0.05", .{size});
+                        }
+                        // Small allocations (< 100 KB): no additional boost
+                    } else {
+                        log.debug("[LEAK-SIZE] Unknown allocation size — skipping size-based boost", .{});
+                    }
                     if (rec.is_conditional) {
                         base_confidence *= 0.75;
                         if (base_confidence < 0.30) base_confidence = 0.30;

@@ -377,6 +377,20 @@ pub fn build(b: *std.Build) void {
     boundary_test_step.dependOn(&run_boundary_tests.step);
     test_step.dependOn(&run_boundary_tests.step);
 
+    // Issue Suppression tests step (refactored from issue_suppression.zig)
+    const issue_suppression_test_step = b.step("test-issue-suppression", "Run issue suppression pattern and safety guard tests");
+    const issue_suppression_test_mod = b.addModule("issue_suppression_test", .{
+        .root_source_file = b.path("tests/unit/issue_suppression_test.zig"),
+        .target = target,
+    });
+    issue_suppression_test_mod.addImport("OmniScope", lib_mod);
+    const issue_suppression_tests = b.addTest(.{
+        .root_module = issue_suppression_test_mod,
+    });
+    const run_issue_suppression_tests = b.addRunArtifact(issue_suppression_tests);
+    issue_suppression_test_step.dependOn(&run_issue_suppression_tests.step);
+    test_step.dependOn(&run_issue_suppression_tests.step);
+
     // P1 critical fix tests step (UAF Tier 2 + Three-tier safety classification)
     const p1_critical_fix_test_step = b.step("test-p1-critical-fix", "Run P1 critical fix tests (UAF Tier 2 + Three-tier safety)");
     const p1_critical_fix_mod = b.addModule("p1_critical_fix", .{

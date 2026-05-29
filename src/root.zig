@@ -30,6 +30,8 @@ pub const pass = struct {
     pub const analysis = struct {
         pub const noise = struct {
             pub const issue_suppression = @import("pass/analysis/noise/issue_suppression.zig");
+            pub const suppression_patterns = @import("pass/analysis/noise/suppression_patterns.zig");
+            pub const memory_safety_guard = @import("pass/analysis/noise/memory_safety_guard.zig");
             pub const cpp_fp_reduction = @import("pass/analysis/noise/cpp_fp_reduction.zig");
             pub const noise_reduction = @import("pass/analysis/noise/noise_reduction.zig");
         };
@@ -76,6 +78,8 @@ pub const dataflow = struct {
 // Export filter system — unified issue classification and pattern registry
 pub const filter = struct {
     pub const issue_classification = @import("filter/issue_classification.zig");
+    pub const pattern_registry = @import("filter/pattern_registry.zig");
+    pub const filter_context = @import("filter/filter_context.zig");
 };
 
 // Export pipeline system
@@ -338,5 +342,6 @@ test {
     _ = @import("pass/analysis/ptr_lifetime/ptr_lifetime_test.zig");
     _ = @import("pass/analysis/noise/noise_reduction_test.zig");
     _ = @import("pipeline/pipeline_deps_test.zig");
+    _ = @import("pipeline/large_alloc_test.zig");
     _ = @import("pass/analysis/rust_ffi/rust_ffi_auditor_test.zig");
 }

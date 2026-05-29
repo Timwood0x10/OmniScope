@@ -17,7 +17,10 @@ const semantic_patterns = @import("../../semantics/semantic_patterns.zig");
 const c = @import("../../ir/llvm_raw.zig").c;
 
 // Nomicon detectors
+const nomicon_ch04 = @import("../../semantics/nomicon/ch04_conversions.zig");
+const nomicon_ch05 = @import("../../semantics/nomicon/ch05_uninitialized.zig");
 const nomicon_ch06 = @import("../../semantics/nomicon/ch06_obrm.zig");
+const nomicon_ch08 = @import("../../semantics/nomicon/ch08_concurrency.zig");
 const nomicon_ch09 = @import("../../semantics/nomicon/ch09_vec_box.zig");
 const nomicon_ch10 = @import("../../semantics/nomicon/ch10_pin_box.zig");
 const nomicon_posix = @import("../../semantics/nomicon/posix_syscalls.zig");
@@ -100,9 +103,24 @@ pub const SemanticResolverPass = struct {
 
             log.debug("[SemanticResolver] Running Nomicon detectors...", .{});
 
+            // Ch4: Type Conversions & Transmute (bitcast size mismatch, inttoptr)
+            nomicon_ch04.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch04_conversions detector failed: {any}", .{err});
+            };
+
+            // Ch5: Uninitialized Memory (MaybeUninit::assume_init)
+            nomicon_ch05.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch05_uninitialized detector failed: {any}", .{err});
+            };
+
             // Ch6: OBRM (Drop / drop_in_place / tail dealloc)
             nomicon_ch06.detect(raw_mod, srt, diag) catch |err| {
                 log.warn("[SemanticResolver] ch06_obrm detector failed: {any}", .{err});
+            };
+
+            // Ch8: Concurrency Violations (Send/Sync trait abuse)
+            nomicon_ch08.detect(raw_mod, srt, diag) catch |err| {
+                log.warn("[SemanticResolver] ch08_concurrency detector failed: {any}", .{err});
             };
 
             // Ch9: Vec/Box heap ownership

@@ -32,6 +32,7 @@ const ffi_enhancement = @import("../pass/analysis/ffi/ffi_enhancement.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
+const suppression_patterns = @import("../pass/analysis/noise/suppression_patterns.zig");
 const issue_classification = @import("../filter/issue_classification.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
@@ -119,6 +120,10 @@ pub const GlobalAllocTracker = struct {
         /// Bug 4: Whether this allocation is inside a conditional branch.
         /// If true, reduces leak report confidence (may not execute on all paths).
         is_conditional: bool = false,
+        /// Allocation size in bytes (if determinable from LLVM IR).
+        /// null = size unknown (common for indirect calls or variable-sized allocations).
+        /// Used for confidence boost: large leaks (>1MB) are more impactful.
+        alloc_size: ?u64 = null,
     };
 
     allocator: Allocator,
@@ -143,7 +148,7 @@ pub const GlobalAllocTracker = struct {
         self.records_by_ptr.deinit();
     }
 
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool, func_val: ?c.LLVMValueRef) !void {
+    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool, func_val: ?c.LLVMValueRef, alloc_size: ?u64) !void {
         const name_owned = try self.allocator.dupe(u8, func_name);
         const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
         const idx = @as(u32, @intCast(self.records.items.len));
@@ -156,6 +161,7 @@ pub const GlobalAllocTracker = struct {
             .free_func = null,
             .is_global_or_static = is_global,
             .is_conditional = is_conditional,
+            .alloc_size = alloc_size,
         });
         try self.records_by_ptr.put(ptr_val, idx);
     }
@@ -184,6 +190,74 @@ pub const GlobalAllocTracker = struct {
             if (!rec.freed and !rec.is_global_or_static) count += 1;
         }
         return count;
+    }
+
+    /// Try to determine the allocation size from an LLVM instruction.
+    /// Returns null if size cannot be determined (common for indirect calls
+    /// or variable-sized allocations via runtime computation).
+    ///
+    /// This function is O(1) — it only inspects the immediate operands
+    /// of the allocation instruction, no recursive analysis.
+    ///
+    /// Supported patterns:
+    ///   - malloc(const_size) → returns constant
+    ///   - calloc(const_count, const_size) → returns count * size
+    ///   - _Znwm(const_size) [C++ operator new] → returns constant
+    ///   - alloca(const_size) → returns constant
+    ///
+    /// Unsupported (returns null):
+    ///   - Indirect calls through function pointers
+    ///   - Size computed from PHI nodes or load instructions
+    ///   - Variable-length arrays (VLAs)
+    pub fn getAllocationSize(alloc_inst: c.LLVMValueRef) ?u64 {
+        if (@intFromPtr(alloc_inst) == 0) return null;
+
+        const opcode = c.LLVMGetInstructionOpcode(alloc_inst);
+
+        // Case 1: Direct call/invoke with constant size operand
+        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+            const num_ops = c.LLVMGetNumOperands(alloc_inst);
+            if (num_ops < 2) return null;
+
+            // For malloc(size): last operand before callee is size
+            // For calloc(count, size): two size operands
+            // For operator new(size): similar to malloc
+            // Operand layout: [op0, op1, ..., callee_func]
+            // We check the size operand(s) for constants
+            const size_op_idx = @as(c_uint, @intCast(num_ops - 2));
+            const size_op = c.LLVMGetOperand(alloc_inst, size_op_idx);
+            if (@intFromPtr(size_op) == 0) return null;
+
+            // Check if it's a constant integer
+            if (c.LLVMIsConstant(size_op) != 0) {
+                // Try to get constant value — API varies by LLVM version
+                const const_val = c.LLVMConstIntGetZExtValue(size_op);
+                return @as(u64, @bitCast(const_val));
+            }
+
+            // Case 1b: calloc with two constant operands (count * size)
+            if (num_ops >= 3) {
+                const count_op = c.LLVMGetOperand(alloc_inst, @as(c_uint, @intCast(num_ops - 3)));
+                if (@intFromPtr(count_op) != 0 and c.LLVMIsConstant(count_op) != 0) {
+                    const count_val = c.LLVMConstIntGetZExtValue(count_op);
+                    const size_val = c.LLVMConstIntGetZExtValue(size_op);
+                    return @as(u64, @bitCast(count_val)) * @as(u64, @bitCast(size_val));
+                }
+            }
+        }
+
+        // Case 2: Alloca with known type size
+        // Note: LLVMGetTargetData/ABISizeOfType may not be available in all LLVM versions.
+        // For stack allocations (alloca), we typically don't track them in GlobalAllocTracker
+        // anyway, so returning null here is acceptable.
+        if (opcode == c.LLVMAlloca) {
+            // Alloca instructions are stack-allocated, not heap-allocated.
+            // They are not tracked as potential leaks, so we return null.
+            return null;
+        }
+
+        // Cannot determine size from available information
+        return null;
     }
 };
 
@@ -545,7 +619,7 @@ pub const PassContext = struct {
         if (issue_suppression.shouldSuppressWithProfile(issue, profile_ptr)) {
             // Record which pattern caused suppression for accurate stats
             // Patterns A-F deprecated — only Pattern G (stdlib_internal) remains
-            if (issue_suppression.isStdlibInternalFunction(issue)) {
+            if (suppression_patterns.isStdlibInternalFunction(issue)) {
                 self.suppression_stats.record(.stdlib_internal);
             } else {
                 self.suppression_stats.record(.drop_chain);
