@@ -860,9 +860,13 @@ pub const FFITypeMismatchPass = struct {
             (std.mem.startsWith(u8, callee, "_ZN") and ffi_language_classifier.isRustMangledName(callee));
         const go_caller = std.mem.indexOf(u8, caller, "_cgo_") != null;
         const zig_caller = std.mem.startsWith(u8, caller, "zig.") or std.mem.startsWith(u8, caller, "main.");
+        // C++ caller (non-Rust _ZN mangled name)
+        const cpp_caller = std.mem.startsWith(u8, caller, "_ZN") and !ffi_language_classifier.isRustMangledName(caller);
         if (rust_caller and rust_callee) return true;
         if (go_caller and std.mem.indexOf(u8, callee, "_cgo_") != null) return true;
         if (zig_caller and (std.mem.startsWith(u8, callee, "zig.") or std.mem.startsWith(u8, callee, "main."))) return true;
+        // C++ calling C functions is not an FFI boundary (C++ is a superset of C)
+        if (cpp_caller) return true;
         return false;
     }
 

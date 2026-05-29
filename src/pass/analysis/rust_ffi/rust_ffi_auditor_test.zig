@@ -212,7 +212,7 @@ test "classifyFfiBoundaryType - OS-specific APIs" {
 }
 
 test "classifyFfiBoundaryType - unknown/custom FFI" {
-    const result = classifyFfiBoundaryType("my_custom_ffi_func", null);
+    const result = classifyFfiBoundaryType("unknown_ffi_func", null);
     try std.testing.expectEqual(.unknown, result);
 }
 
@@ -262,9 +262,6 @@ test "isExternCCall - invalid calls" {
 
 test "Accuracy - core::ffi detection precision" {
     // True positives (should detect)
-    const tp_count = 20;
-    var tp_detected: u32 = 0;
-
     const true_positives = [_][]const u8{
         "CStr.from_bytes",
         "CString.new",
@@ -286,6 +283,9 @@ test "Accuracy - core::ffi detection precision" {
         "as_ptr_unchecked",
     };
 
+    const tp_count = true_positives.len;
+    var tp_detected: u32 = 0;
+
     for (true_positives) |name| {
         if (isCoreFfiFunction(name)) tp_detected += 1;
     }
@@ -294,14 +294,14 @@ test "Accuracy - core::ffi detection precision" {
     try std.testing.expectEqual(tp_count, tp_detected);
 
     // False positives (should NOT detect)
-    const fp_count = 10;
-    var fp_false_positive: u32 = 0;
-
     const false_positives = [_][]const u8{
         "malloc",          "free",     "printf",    "memcpy",
         "my_string",       "char_ptr", "int_value", "_Zmangled",
         "__rust_internal", "",         "main",
     };
+
+    const fp_count = false_positives.len;
+    var fp_false_positive: u32 = 0;
 
     for (false_positives) |name| {
         if (!isCoreFfiFunction(name)) fp_false_positive += 1;
@@ -354,7 +354,7 @@ test "Accuracy - FFI boundary classification coverage" {
         .{ .name = "CStr.from_bytes", .expected_kind = .core_ffi },
         .{ .name = "pthread_create", .expected_kind = .libc_crate },
         .{ .name = "CreateFileW", .expected_kind = .os_api },
-        .{ .name = "unknown_func", .expected_kind = .unknown },
+        .{ .name = "unknown_ffi_func", .expected_kind = .unknown },
     };
 
     var correct: u32 = 0;

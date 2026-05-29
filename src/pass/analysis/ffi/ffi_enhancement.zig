@@ -180,27 +180,31 @@ pub fn classifyFunctionOrigin(func_name: []const u8) FnOrigin {
     // Check for LLVM intrinsics first
     if (isLLVMIntrinsic(func_name)) return .compiler_generated;
 
-    // === Rust patterns ===
-    if (isRustDropGlue(func_name)) return .compiler_generated;
-    if (isRustMonomorphizationArtifact(func_name)) return .compiler_generated;
-    if (isRustStdlib(func_name)) return .stdlib;
-    if (isRustMangledUser(func_name)) return .user;
-    if (isRustExternC(func_name)) return .user;
-
     // === Zig patterns ===
     if (isZigCompilerGenerated(func_name)) return .compiler_generated;
     if (isZigStdlib(func_name)) return .stdlib;
     if (isZigExtern(func_name)) return .third_party;
+
+    // === Go patterns ===
+    if (isGoRuntime(func_name)) return .stdlib;
+    if (isGoCGoGlue(func_name)) return .compiler_generated;
+    if (isGoUserFunc(func_name)) return .user;
 
     // === C++ patterns ===
     if (isCppStdlib(func_name)) return .stdlib;
     if (isCppCompilerGenerated(func_name)) return .compiler_generated;
     if (isCppMangled(func_name)) return .user;
 
-    // === Go patterns ===
-    if (isGoRuntime(func_name)) return .stdlib;
-    if (isGoCGoGlue(func_name)) return .compiler_generated;
-    if (isGoUserFunc(func_name)) return .user;
+    // === Rust patterns ===
+    // Check monomorphization artifacts first (contains $LT$, $GT$, etc.)
+    // These are compiler-generated even if they're in stdlib
+    if (isRustMonomorphizationArtifact(func_name)) return .compiler_generated;
+    // Then check stdlib (before drop glue to catch stdlib drop glue as stdlib)
+    if (isRustStdlib(func_name)) return .stdlib;
+    // Then check drop glue (non-monomorphized drop glue)
+    if (isRustDropGlue(func_name)) return .compiler_generated;
+    if (isRustMangledUser(func_name)) return .user;
+    if (isRustExternC(func_name)) return .user;
 
     // === C patterns ===
     if (isCStandardLib(func_name)) return .stdlib;
@@ -224,9 +228,9 @@ const RUST_DROP_GLUE_PATTERNS = &[_][]const u8{
 
 /// Rust monomorphization artifact patterns.
 const RUST_MONO_PATTERNS = &[_][]const u8{
-    "$LT$",          "$GT$",     "$u20$",     "$C$",      "$BP$",
-    "_RNv",          "_RIN",     "_RIC",      "::hash::", "::fmt::",
-    "::panicking::", "_ZN4core", "_ZN5alloc", "_ZN3std",
+    "$LT$",          "$GT$", "$u20$", "$C$",      "$BP$",
+    "_RNv",          "_RIN", "_RIC",  "::hash::", "::fmt::",
+    "::panicking::",
 };
 
 /// Rust stdlib prefixes.

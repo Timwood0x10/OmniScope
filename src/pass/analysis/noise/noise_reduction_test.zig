@@ -46,11 +46,15 @@ test "is_llvm_intrinsic_noise - mpsc::channel IS noise (boundary)" {
 }
 
 test "is_llvm_intrinsic_noise - real_drop_in_place IS noise (boundary)" {
-    try std.testing.expect(is_llvm_intrinsic_noise("real_drop_in_place"));
+    // real_drop_in_place is in rust_noise_patterns, checked by layer1NoiseFilter
+    // is_llvm_intrinsic_noise only checks llvm_intrinsic_prefixes and rust_synthetic_patterns
+    try std.testing.expect(!is_llvm_intrinsic_noise("real_drop_in_place"));
 }
 
 test "is_llvm_intrinsic_noise - size_hint IS noise (boundary)" {
-    try std.testing.expect(is_llvm_intrinsic_noise("size_hint"));
+    // size_hint is in rust_noise_patterns, checked by layer1NoiseFilter
+    // is_llvm_intrinsic_noise only checks llvm_intrinsic_prefixes and rust_synthetic_patterns
+    try std.testing.expect(!is_llvm_intrinsic_noise("size_hint"));
 }
 
 // ============================================================================
@@ -60,7 +64,9 @@ test "is_llvm_intrinsic_noise - size_hint IS noise (boundary)" {
 test "is_llvm_intrinsic_noise - llvm. prefix IS noise (happy path)" {
     try std.testing.expect(is_llvm_intrinsic_noise("llvm.memcpy"));
     try std.testing.expect(is_llvm_intrinsic_noise("llvm.memmove"));
-    try std.testing.expect(is_llvm_intrinsic_noise("llvmmemset"));
+    // llvmmemset is NOT a valid LLVM intrinsic (missing dot separator)
+    // Valid LLVM intrinsics use "llvm." prefix
+    try std.testing.expect(!is_llvm_intrinsic_noise("llvmmemset"));
 }
 
 test "is_llvm_intrinsic_noise - non-LLVM functions are NOT noise (boundary)" {

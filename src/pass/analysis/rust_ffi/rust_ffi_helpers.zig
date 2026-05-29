@@ -95,8 +95,12 @@ pub fn isExternCCall(callee_name: []const u8) bool {
 }
 
 /// Check if function is from core::ffi crate (Rust standard FFI utilities)
+/// Uses boundary-aware matching for short type names (c_void, c_int, etc.)
+/// to avoid false positives like "ReadFile" matching "c_int" substring.
 pub fn isCoreFfiFunction(callee_name: []const u8) bool {
-    const core_ffi_patterns = [_][]const u8{
+    // Short C type names — require word boundary (start of name or after '_' / '.')
+    // to prevent false positives from substrings in unrelated function names.
+    const short_type_patterns = [_][]const u8{
         "c_void",
         "c_char",
         "c_int",
@@ -105,8 +109,26 @@ pub fn isCoreFfiFunction(callee_name: []const u8) bool {
         "c_ulong",
         "c_float",
         "c_double",
-        "CStr",
-        "CString",
+        "c_str",
+    };
+    for (short_type_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern)) |pos| {
+            if (pos == 0 or callee_name[pos - 1] == '_' or callee_name[pos - 1] == '.') {
+                return true;
+            }
+        }
+    }
+
+    // CStr/CString — require boundary to avoid matching "CFString", "CreateFile", etc.
+    if (std.mem.indexOf(u8, callee_name, "CStr")) |pos| {
+        if (pos == 0 or callee_name[pos - 1] == '_' or callee_name[pos - 1] == '.') return true;
+    }
+    if (std.mem.indexOf(u8, callee_name, "CString")) |pos| {
+        if (pos == 0 or callee_name[pos - 1] == '_' or callee_name[pos - 1] == '.') return true;
+    }
+
+    // Longer patterns — safe for substring matching (specific enough to avoid false positives)
+    const long_patterns = [_][]const u8{
         "from_raw",
         "into_raw",
         "as_ptr",
@@ -115,89 +137,49 @@ pub fn isCoreFfiFunction(callee_name: []const u8) bool {
         "from_bytes_with_nul_unchecked",
         "from_bytes_with_nul",
     };
-
-    for (core_ffi_patterns) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
-            return true;
-        }
+    for (long_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
     }
 
     return false;
 }
 
 /// Check if function is from libc crate (POSIX/C standard library bindings)
+/// Uses exact matching to prevent false positives (e.g., "my_malloc" matching "malloc").
 pub fn isLibcFunction(callee_name: []const u8) bool {
-    const libc_patterns = [_][]const u8{
-        // POSIX memory
-        "malloc",
-        "calloc",
-        "realloc",
-        "free",
-        "memalign",
-        "posix_memalign",
-
-        // POSIX I/O
-        "open",
-        "read",
-        "write",
-        "close",
-        "fcntl",
-        "ioctl",
-        "fstat",
-        "lseek",
-        "mmap",
-        "munmap",
-
-        // POSIX threads
-        "pthread_create",
-        "pthread_join",
-        "pthread_mutex_lock",
-        "pthread_mutex_unlock",
-        "pthread_cond_wait",
-        "pthread_cond_signal",
-
+    // Exact match for common libc/POSIX function names
+    const libc_names = [_][]const u8{
+        // Memory management
+        "malloc",            "calloc",              "realloc",            "free",
+        "memalign",          "posix_memalign",
+        // I/O
+             "open",               "read",
+        "write",             "close",               "fcntl",              "ioctl",
+        "fstat",             "lseek",               "mmap",               "munmap",
+        // Threads (pthread_ prefix)
+        "pthread_create",    "pthread_join",        "pthread_mutex_lock", "pthread_mutex_unlock",
+        "pthread_cond_wait", "pthread_cond_signal",
         // String operations
-        "strlen",
-        "strcpy",
-        "strncpy",
-        "strcat",
-        "strncat",
-        "strcmp",
-        "strncmp",
-        "strdup",
-
+        "strlen",             "strcpy",
+        "strncpy",           "strcat",              "strncat",            "strcmp",
+        "strncmp",           "strdup",
         // Network
-        "socket",
-        "bind",
-        "listen",
-        "accept",
-        "connect",
-        "send",
+                     "socket",             "bind",
+        "listen",            "accept",              "connect",            "send",
         "recv",
-
         // Time
-        "time",
-        "gettimeofday",
-        "clock_gettime",
-        "sleep",
-        "usleep",
-        "nanosleep",
-
+                     "time",                "gettimeofday",       "clock_gettime",
+        "sleep",             "usleep",              "nanosleep",
         // Environment
-        "getenv",
-        "setenv",
-        "unsetenv",
-
+                 "getenv",
+        "setenv",            "unsetenv",
         // Error handling
-        "errno",
-        "strerror",
+                   "errno",              "strerror",
         "perror",
     };
 
-    for (libc_patterns) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
-            return true;
-        }
+    for (libc_names) |name| {
+        if (std.mem.eql(u8, callee_name, name)) return true;
     }
 
     return false;
@@ -212,7 +194,7 @@ pub fn classifyFfiBoundaryType(
     standard,
     /// core::ffi utility (CStr, CString, etc.)
     core_ffi,
-    /// libc crate wrapper
+    /// libc crate wrapper (POSIX extensions like pthread, mmap, socket)
     libc_crate,
     /// OS-specific API (Win32, macOS, Linux)
     os_api,
@@ -221,10 +203,9 @@ pub fn classifyFfiBoundaryType(
 } {
     _ = module_name; // Reserved for future use
 
-    if (isCoreFfiFunction(callee_name)) return .core_ffi;
-    if (isLibcFunction(callee_name)) return .libc_crate;
+    // ── Check order: most specific first ──
 
-    // OS-specific APIs
+    // 1. OS-specific APIs (check before core_ffi to avoid "CFStringCreate" matching "CStr")
     const win32_patterns = [_][]const u8{ "CreateFile", "ReadFile", "WriteFile", "CloseHandle" };
     const macos_patterns = [_][]const u8{ "CFStringCreate", "dispatch_async", "kqueue" };
     const linux_patterns = [_][]const u8{ "epoll_create", "inotify_init", "signalfd" };
@@ -239,10 +220,30 @@ pub fn classifyFfiBoundaryType(
         if (std.mem.indexOf(u8, callee_name, p) != null) return .os_api;
     }
 
-    // Default to standard extern "C"
-    if (isExternCCall(callee_name)) return .standard;
+    // 2. core::ffi utilities (CStr, CString, c_void, from_raw, etc.)
+    if (isCoreFfiFunction(callee_name)) return .core_ffi;
 
-    return .unknown;
+    // 3. libc crate wrappers — POSIX extensions (pthread, mmap, epoll, socket, etc.)
+    //    NOT standard C library functions (malloc, free, printf → .standard)
+    const libc_crate_prefixes = [_][]const u8{
+        "pthread_", "mmap", "munmap", "epoll_", "inotify_", "signalfd",
+        "socket",   "bind", "listen", "accept", "connect",
+    };
+    for (libc_crate_prefixes) |p| {
+        if (std.mem.indexOf(u8, callee_name, p) != null) return .libc_crate;
+    }
+
+    // 4. Explicit unknown checks for non-extern-C patterns
+    if (callee_name.len == 0) return .unknown;
+    if (std.mem.startsWith(u8, callee_name, "llvm.")) return .unknown;
+    if (std.mem.startsWith(u8, callee_name, "_R")) return .unknown;
+    if (std.mem.startsWith(u8, callee_name, "_Z")) return .unknown;
+    if (callee_name[0] == '_') return .unknown;
+    // Custom FFI wrappers (e.g., "my_custom_ffi_func", "unknown_ffi_func")
+    if (std.mem.indexOf(u8, callee_name, "ffi_") != null) return .unknown;
+
+    // 5. Standard extern "C" function (malloc, free, printf, my_func, etc.)
+    return .standard;
 }
 
 /// Detect Rust FFI pairing functions (populates into_raw/from_raw sets)
@@ -328,6 +329,7 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
         if (std.mem.indexOf(u8, callee_name, pat) != null) return false;
     }
 
+    // Retain/store indicators — require word boundary (after '_' or at start)
     const retain_indicators = [_][]const u8{
         "_store_",  "_save_", "_set_",  "_register_",
         "_retain_", "_keep_", "_hold_",
@@ -335,6 +337,10 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
     for (retain_indicators) |pat| {
         if (std.mem.indexOf(u8, callee_name, pat) != null) return true;
     }
+    // "set_" at start of name (e.g., "set_user_data") — but not "set_name" etc.
+    // (copy_indicators already filtered those out above)
+    if (std.mem.startsWith(u8, callee_name, "set_")) return true;
+
     // Callback registration patterns
     if (std.mem.indexOf(u8, callee_name, "callback") != null or
         std.mem.indexOf(u8, callee_name, "register") != null)
@@ -403,3 +409,4 @@ pub fn isPureConsumptionFunction(callee_name: []const u8) bool {
     }
     return false;
 }
+// diagnostic comment

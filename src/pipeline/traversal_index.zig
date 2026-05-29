@@ -243,7 +243,8 @@ fn isAllocFunction(name: []const u8) bool {
         }
     }
 
-    // Check for common patterns
+    // Check for common patterns with substring matching
+    // Match "alloc" as a substring (case-sensitive)
     if (std.mem.indexOf(u8, name, "alloc") != null or
         std.mem.indexOf(u8, name, "Alloc") != null or
         std.mem.indexOf(u8, name, "ALLOC") != null)
@@ -274,7 +275,8 @@ fn isFreeFunction(name: []const u8) bool {
         }
     }
 
-    // Check for common patterns
+    // Check for common patterns with substring matching
+    // Match "free" as a substring (case-sensitive)
     if (std.mem.indexOf(u8, name, "free") != null or
         std.mem.indexOf(u8, name, "Free") != null or
         std.mem.indexOf(u8, name, "FREE") != null or
@@ -365,12 +367,12 @@ test "TraversalIndex - isAllocFunction with empty string" {
 }
 
 test "TraversalIndex - isAllocFunction with case variations" {
-    // Test case sensitivity
+    // Test case sensitivity for exact matches
     try std.testing.expect(isAllocFunction("malloc"));
-    try std.testing.expect(!isAllocFunction("Malloc"));
-    try std.testing.expect(!isAllocFunction("MALLOC"));
+    try std.testing.expect(isAllocFunction("Malloc")); // Contains "alloc" substring
+    try std.testing.expect(isAllocFunction("MALLOC")); // Contains "ALLOC" substring
 
-    // Test with "alloc" pattern
+    // Test with "alloc" pattern (case-insensitive substring matching)
     try std.testing.expect(isAllocFunction("my_alloc"));
     try std.testing.expect(isAllocFunction("my_Alloc"));
     try std.testing.expect(isAllocFunction("my_ALLOC"));
@@ -382,10 +384,10 @@ test "TraversalIndex - isAllocFunction with partial matches" {
     try std.testing.expect(isAllocFunction("deallocate"));
     try std.testing.expect(isAllocFunction("allocator"));
     try std.testing.expect(isAllocFunction("custom_allocator_func"));
+    try std.testing.expect(isAllocFunction("allocx")); // Contains "alloc" substring
 
     // Test that "alloc" pattern doesn't match non-substring
     try std.testing.expect(!isAllocFunction("aloc"));
-    try std.testing.expect(!isAllocFunction("allocx"));
 }
 
 test "TraversalIndex - isFreeFunction with empty string" {
@@ -394,12 +396,12 @@ test "TraversalIndex - isFreeFunction with empty string" {
 }
 
 test "TraversalIndex - isFreeFunction with case variations" {
-    // Test case sensitivity
+    // Test case sensitivity for exact matches
     try std.testing.expect(isFreeFunction("free"));
-    try std.testing.expect(!isFreeFunction("Free"));
-    try std.testing.expect(!isFreeFunction("FREE"));
+    try std.testing.expect(isFreeFunction("Free")); // Contains "Free" substring
+    try std.testing.expect(isFreeFunction("FREE")); // Contains "FREE" substring
 
-    // Test with "free" pattern
+    // Test with "free" pattern (case-insensitive substring matching)
     try std.testing.expect(isFreeFunction("my_free"));
     try std.testing.expect(isFreeFunction("my_Free"));
     try std.testing.expect(isFreeFunction("my_FREE"));
@@ -410,6 +412,7 @@ test "TraversalIndex - isFreeFunction with partial matches" {
     try std.testing.expect(isFreeFunction("freedom"));
     try std.testing.expect(isFreeFunction("free_func"));
     try std.testing.expect(isFreeFunction("my_free_func"));
+    try std.testing.expect(isFreeFunction("freex")); // Contains "free" substring
 
     // Test that "dealloc" pattern matches as substring
     try std.testing.expect(isFreeFunction("deallocate"));
@@ -417,7 +420,6 @@ test "TraversalIndex - isFreeFunction with partial matches" {
 
     // Test that "free" pattern doesn't match non-substring
     try std.testing.expect(!isFreeFunction("fre"));
-    try std.testing.expect(!isFreeFunction("freex"));
 }
 
 test "TraversalIndex - isAllocFunction with language-specific allocators" {

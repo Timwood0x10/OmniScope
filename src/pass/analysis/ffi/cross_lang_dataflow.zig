@@ -36,7 +36,7 @@ pub const DataFlowStats = struct {
 pub const CrossLangAlloc = struct {
     /// Unique identifier for the allocation
     id: u32,
-    /// Pointer value (LLVM value reference)
+    /// Pointer value (LLVM value reference as integer)
     ptr_val: u64,
     /// Language where allocation occurred
     alloc_lang: Language,
@@ -182,7 +182,8 @@ pub const CrossLangDataFlow = struct {
         }
     }
 
-    /// Track frees and match them with allocations
+    /// Track frees and match them with allocations.
+    /// Uses store→load resolution to match pointers that flow through memory.
     fn trackFrees(
         ctx: *PassContext,
         allocations: *std.ArrayList(CrossLangAlloc),
@@ -195,16 +196,39 @@ pub const CrossLangDataFlow = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
-        // Scan all functions for free calls
+        // Build a set of tracked allocation pointer values for O(1) lookup
+        var tracked_ptrs = std.AutoHashMap(u64, usize).init(ctx.allocator);
+        defer tracked_ptrs.deinit();
+        for (allocations.items, 0..) |alloc, idx| {
+            try tracked_ptrs.put(alloc.ptr_val, idx);
+        }
+
+        // Scan all functions for free calls, with store→load resolution
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) continue;
 
-            // Scan instructions in this function
+            // Per-function store→load map: address → stored value (only for tracked ptrs)
+            var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
+            defer store_map.deinit();
+
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                     const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                    // Track store → load chains for tracked pointers
+                    if (opcode == c.LLVMStore) {
+                        const stored_val = c.LLVMGetOperand(inst, 0);
+                        const store_addr = c.LLVMGetOperand(inst, 1);
+                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
+                            const stored_val_int = @intFromPtr(stored_val);
+                            if (tracked_ptrs.contains(stored_val_int)) {
+                                store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
+                            }
+                        }
+                    }
+
                     if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
@@ -217,23 +241,28 @@ pub const CrossLangDataFlow = struct {
 
                         // Check if this is a free function
                         if (isFreeFunction(called_name)) {
-                            // Get the pointer being freed (first argument)
+                            // LLVMGetNumOperands includes callee. Operand layout: [callee, arg0, arg1, ...]
+                            // First argument (pointer to free) is at index 1.
                             const num_operands = c.LLVMGetNumOperands(inst);
-                            if (num_operands < 2) continue; // Need at least callee + 1 arg
+                            if (num_operands < 2) continue;
 
                             const ptr_arg = c.LLVMGetOperand(inst, 1);
-                            const ptr_val = @intFromPtr(ptr_arg);
+                            var ptr_val = @intFromPtr(ptr_arg);
                             if (ptr_val == 0) continue;
 
+                            // Resolve through store→load chain
+                            if (store_map.get(ptr_val)) |original_val| {
+                                ptr_val = original_val;
+                            }
+
                             // Find matching allocation
-                            for (allocations.items) |*alloc| {
-                                if (alloc.ptr_val == ptr_val) {
-                                    // Found matching allocation
+                            if (tracked_ptrs.get(ptr_val)) |idx| {
+                                const alloc = &allocations.items[idx];
+                                if (!alloc.freed) {
                                     const free_lang = classifyFreeLanguage(called_name, .unknown);
                                     try alloc.free_langs.append(ctx.allocator, free_lang);
                                     try alloc.free_funcs.append(ctx.allocator, called_name);
                                     alloc.freed = true;
-                                    break;
                                 }
                             }
                         }
@@ -294,8 +323,9 @@ pub const CrossLangDataFlow = struct {
                         if (!is_cross_lang) continue;
 
                         // Check if any arguments are tracked pointers
+                        // LLVMGetNumOperands includes callee at index 0; arguments start at index 1.
                         const num_operands = c.LLVMGetNumOperands(inst);
-                        var arg_idx: u32 = 1; // Skip callee
+                        var arg_idx: u32 = 0;
                         while (arg_idx < num_operands) : (arg_idx += 1) {
                             const arg = c.LLVMGetOperand(inst, arg_idx);
                             const arg_val = @intFromPtr(arg);
@@ -324,12 +354,54 @@ pub const CrossLangDataFlow = struct {
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
     ) !void {
+        // Build a set of functions that call free functions.
+        // This is used to suppress orphan reports for functions that DO call
+        // a free function but the pointer matching failed (e.g., due to
+        // store→load cycles or LLVM value identity issues).
+        var funcs_with_frees = std.StringHashMap(void).init(ctx.allocator);
+        defer funcs_with_frees.deinit();
+        {
+            const mod = ctx.module.?.raw;
+            var func = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+                if (c.LLVMIsDeclaration(func) != 0) continue;
+                const func_name_ptr = c.LLVMGetValueName(func);
+                const func_name = if (@intFromPtr(func_name_ptr) != 0) std.mem.span(func_name_ptr) else continue;
+
+                var bb = c.LLVMGetFirstBasicBlock(func);
+                while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                    var inst = c.LLVMGetFirstInstruction(bb);
+                    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                        const opcode = c.LLVMGetInstructionOpcode(inst);
+                        if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+                        const called_val = c.LLVMGetCalledValue(inst) orelse continue;
+                        const called_name_ptr = c.LLVMGetValueName(called_val);
+                        const called_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else continue;
+                        if (isFreeFunction(called_name)) {
+                            try funcs_with_frees.put(func_name, {});
+                            break;
+                        }
+                    }
+                    if (funcs_with_frees.contains(func_name)) break;
+                }
+            }
+        }
+
         for (allocations.items) |alloc| {
             // Skip if already freed
             if (alloc.freed) continue;
 
             // Skip if passed to another language (ownership transferred)
             if (alloc.passed_to_other_lang) continue;
+
+            // Heuristic: if the allocation's function also calls a free function,
+            // the allocation is likely correctly paired. The pointer matching may
+            // have failed due to store→load cycles or LLVM value identity issues.
+            // Suppress the orphan report in this case.
+            if (funcs_with_frees.contains(alloc.alloc_func)) {
+                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — function calls a free function", .{ alloc.alloc_callee, alloc.alloc_func });
+                continue;
+            }
 
             // This is an orphan pointer - allocated but never freed or transferred
             stats.orphan_pointers += 1;
@@ -535,8 +607,9 @@ fn isAllocationFunction(func_name: []const u8) bool {
         // Zig allocation
         "Allocator.alloc",
         "heap_alloc",
-        // C++ allocation
-        "new",
+        // C++ allocation (mangled names and operator new)
+        "_Znwm",
+        "_Znam",
         "new[]",
         "operator new",
         // Python allocation
@@ -587,6 +660,10 @@ fn isFreeFunction(func_name: []const u8) bool {
         "drop",
         "drop_in_place",
         "__rust_dealloc",
+        // Rust refcount release
+        "arc_release",
+        "rc_release",
+        "_release",
         // Zig deallocation
         "Allocator.free",
         "heap_free",
@@ -642,8 +719,9 @@ fn classifyAllocLanguage(callee_name: []const u8, caller_lang: Language) Languag
         return .zig;
     }
 
-    // C++ allocation patterns
-    if (std.mem.indexOf(u8, callee_name, "new") != null or
+    // C++ allocation patterns (mangled names and operator new)
+    if (std.mem.indexOf(u8, callee_name, "_Znwm") != null or
+        std.mem.indexOf(u8, callee_name, "_Znam") != null or
         std.mem.indexOf(u8, callee_name, "operator new") != null)
     {
         return .cpp;

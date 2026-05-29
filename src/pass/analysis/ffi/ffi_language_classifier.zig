@@ -769,7 +769,7 @@ pub fn isRustMangledName(name: []const u8) bool {
 
     // Layer 3: Known Rust namespace prefixes in Itanium encoding
     const rust_namespaces = [_][]const u8{
-        "_ZN4core",      "_ZN3std",       "_ZN3alloc", "_ZN5macro",
+        "_ZN4core",      "_ZN3std",       "_ZN5alloc", "_ZN5macro",
         "_ZN9backtrace", "_ZN7panicking",
     };
     for (rust_namespaces) |ns| {
@@ -820,15 +820,21 @@ pub fn demangleMsvcName(allocator: std.mem.Allocator, mangled: []const u8) error
     var name = mangled[1..at_pos];
 
     // Handle special names: ??0 = ctor, ??1 = dtor, etc.
-    if (name.len >= 2 and name[0] == '?' and name[1] == '?') {
-        const special = name[2..];
-        if (special.len >= 1) switch (special[0]) {
-            '0' => return try allocator.dupe(u8, "<ctor>"),
-            '1' => return try allocator.dupe(u8, "<dtor>"),
-            '2' => return try allocator.dupe(u8, "<new>"),
-            'G' => return try allocator.dupe(u8, "<scalar_dtor>"),
-            else => {},
-        };
+    // After stripping the leading '?', special names start with '?' (e.g., "?0MyClass" from "??0MyClass@@...")
+    if (name.len >= 1 and name[0] == '?') {
+        const special = name[1..];
+        if (special.len >= 1) {
+            switch (special[0]) {
+                '0' => return try allocator.dupe(u8, "<ctor>"),
+                '1' => return try allocator.dupe(u8, "<dtor>"),
+                '2' => return try allocator.dupe(u8, "<new>"),
+                '_' => {
+                    // ??_G = scalar deleting destructor, etc.
+                    if (special.len >= 2 and special[1] == 'G') return try allocator.dupe(u8, "<scalar_dtor>");
+                },
+                else => {},
+            }
+        }
         return try allocator.dupe(u8, special);
     }
 

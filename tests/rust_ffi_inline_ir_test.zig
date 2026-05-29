@@ -71,7 +71,21 @@ fn analyzeIR(allocator: std.mem.Allocator, tmp_path: []const u8, ir: []const u8)
     pipeline.setModule(module);
     try pipeline.run();
 
-    return pipeline.getIssues().len;
+    const issues = pipeline.getIssues();
+    if (issues.len > 0) {
+        std.debug.print("\n=== ISSUES FOUND ({d}) ===\n", .{issues.len});
+        for (issues, 0..) |issue, i| {
+            std.debug.print("  [{d}] kind={s} severity={s} msg={s}\n", .{
+                i,
+                @tagName(issue.kind),
+                @tagName(issue.severity),
+                issue.message,
+            });
+        }
+        std.debug.print("=== END ISSUES ===\n\n", .{});
+    }
+
+    return issues.len;
 }
 
 test "Rust FFI bug: Rust alloc -> C free (cross-allocator mismatch)" {

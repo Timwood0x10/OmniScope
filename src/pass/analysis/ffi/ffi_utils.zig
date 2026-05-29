@@ -379,7 +379,7 @@ test "demangleRustName - simple 2-segment path" {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const mangled = "_ZN4std2io5printE";
+    const mangled = "_ZN3std2io5printE";
     const result = try demangleRustName(allocator, mangled);
     try testing.expect(result != null);
     try testing.expectEqualStrings("std::io::print", result.?);

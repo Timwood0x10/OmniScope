@@ -697,6 +697,35 @@ pub const FFIBoundaryPass = struct {
         return true;
     }
 
+    /// Check if a function calls both an allocator and its matching deallocator.
+    /// Returns true if the function has a correctly-paired alloc/free pattern,
+    /// meaning the allocator call is NOT a leak and the deallocator call is NOT invalid.
+    fn functionHasMatchingPair(func: c.LLVMValueRef, target_kind: RiskKind) bool {
+        if (@intFromPtr(func) == 0) return false;
+
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+                const called_val = c.LLVMGetCalledValue(inst) orelse continue;
+                const callee_name_ptr = c.LLVMGetValueName(called_val);
+                const callee_name = if (@intFromPtr(callee_name_ptr) != 0) std.mem.span(callee_name_ptr) else continue;
+
+                if (SemanticRegistry.lookup(callee_name)) |sem| {
+                    if (target_kind == .allocator and sem.kind == .deallocator) {
+                        return true;
+                    }
+                    if (target_kind == .deallocator and sem.kind == .allocator) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     /// Report a known-risky function call.
     fn reportRiskyCall(
         ctx: *PassContext,
@@ -766,6 +795,21 @@ pub const FFIBoundaryPass = struct {
             0.78
         else
             0.65;
+
+        // Pairing check: suppress memory_leak/invalid_free when the function
+        // calls both an allocator and its matching deallocator.
+        // This eliminates false positives for correctly-paired patterns like
+        // malloc→free, __rust_alloc→__rust_dealloc in the same function.
+        // Only suppresses for .allocator and .deallocator kinds — other kinds
+        // (format_string, unchecked_copy, etc.) are not affected.
+        if (sem.kind == .allocator or sem.kind == .deallocator) {
+            if (c.LLVMGetInstructionParent(inst)) |bb| {
+                if (functionHasMatchingPair(c.LLVMGetBasicBlockParent(bb), sem.kind)) {
+                    diag.debug("PAIR-SKIP: {s} in {s} — matching pair found in function", .{ called_name, caller_name });
+                    return;
+                }
+            }
+        }
 
         const location = Location.init(caller_name);
         const issue = Issue.init(issue_kind, sem.description, location, severity, base_confidence);
