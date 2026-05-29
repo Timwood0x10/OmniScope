@@ -5,9 +5,10 @@
 //! - Issue #8: Three-tier safety classification for C imports
 
 const std = @import("std");
+const omniscope = @import("OmniScope");
 
-const ffi_zone_check = @import("../src/pass/analysis/ffi/ffi_zone_check.zig");
-const cpp_fp_reduction = @import("../src/pass/analysis/noise/cpp_fp_reduction.zig");
+const ffi_zone_check = omniscope.pass.analysis.ffi.ffi_zone_check;
+const cpp_fp_reduction = omniscope.pass.analysis.noise.cpp_fp_reduction;
 
 // ══════════════════════════════════════════════════════════════════
 // Issue #7: UAF Tier 2 Detection Tests
@@ -51,7 +52,7 @@ test "UAF Tier 2: severity levels differ between tiers" {
     // Tier 2 (internal) should report as MEDIUM severity
     // This ensures we don't over-prioritize internal bugs
 
-    const Severity = @import("../src/diag/issue.zig").Severity;
+    const Severity = omniscope.diag.Severity;
 
     // Danger path → high severity
     const mg_danger = true;
@@ -223,10 +224,19 @@ test "isZigSafeCimport backward compatibility - only returns true for safe layer
 // ══════════════════════════════════════════════════════════════════
 
 test "isZigFFIWorthReporting: dangerous functions always reported" {
-    const FunctionSemantics = @import("../src/registry/semantic_registry.zig").FunctionSemantics;
+    const FunctionSemantics = omniscope.registry.FunctionSemantics;
 
-    var sem = FunctionSemantics{};
-    sem.kind = .normal;
+    const sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .allocator,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = false,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     // Layer 1 dangerous functions should always be reported
     try std.testing.expectEqual(
@@ -244,11 +254,20 @@ test "isZigFFIWorthReporting: dangerous functions always reported" {
 }
 
 test "isZigFFIWorthReporting: conditional functions need semantic triggers" {
-    const FunctionSemantics = @import("../src/registry/semantic_registry.zig").FunctionSemantics;
+    const FunctionSemantics = omniscope.registry.FunctionSemantics;
 
     // Normal semantics → don't report conditional functions
-    var normal_sem = FunctionSemantics{};
-    normal_sem.kind = .normal;
+    const normal_sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .allocator,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = false,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     try std.testing.expectEqual(
         false,
@@ -256,9 +275,17 @@ test "isZigFFIWorthReporting: conditional functions need semantic triggers" {
     );
 
     // With ownership transfer → report
-    var ownership_sem = FunctionSemantics{};
-    ownership_sem.kind = .normal;
-    ownership_sem.transfers_ownership = true;
+    const ownership_sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .allocator,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = true,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     try std.testing.expectEqual(
         true,
@@ -266,8 +293,17 @@ test "isZigFFIWorthReporting: conditional functions need semantic triggers" {
     );
 
     // With command exec kind → report
-    var cmd_sem = FunctionSemantics{};
-    cmd_sem.kind = .command_exec;
+    const cmd_sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .command_exec,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = false,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     try std.testing.expectEqual(
         true,
@@ -276,10 +312,19 @@ test "isZigFFIWorthReporting: conditional functions need semantic triggers" {
 }
 
 test "isZigFFIWorthReporting: safe functions not reported by default" {
-    const FunctionSemantics = @import("../src/registry/semantic_registry.zig").FunctionSemantics;
+    const FunctionSemantics = omniscope.registry.FunctionSemantics;
 
-    var sem = FunctionSemantics{};
-    sem.kind = .normal;
+    const sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .allocator,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = false,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     // Layer 3 safe functions should not be reported
     try std.testing.expectEqual(
@@ -297,11 +342,20 @@ test "isZigFFIWorthReporting: safe functions not reported by default" {
 }
 
 test "isZigFFIWorthReporting: unknown functions analyzed conservatively" {
-    const FunctionSemantics = @import("../src/registry/semantic_registry.zig").FunctionSemantics();
+    const FunctionSemantics = omniscope.registry.FunctionSemantics;
 
     // Unknown functions default to analysis (conservative)
-    var sem = FunctionSemantics{};
-    sem.kind = .normal;
+    const sem = FunctionSemantics{
+        .pattern = "",
+        .match_type = .contains,
+        .kind = .allocator,
+        .severity = .medium,
+        .consumes_ownership = false,
+        .transfers_ownership = false,
+        .requires_null_check = false,
+        .requires_taint_check = false,
+        .description = "",
+    };
 
     try std.testing.expectEqual(
         true,

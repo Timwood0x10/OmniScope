@@ -56,7 +56,7 @@ test "Resolution engine functionality" {
 
     // Test getting stats
     const stats = engine.getStats();
-    try std.testing.expect(stats.total_nodes == 1);
+    try std.testing.expect(stats.total_nodes == 2); // processFunctionCall + processAllocation
     try std.testing.expect(stats.resolutions_made == 0); // No patterns registered yet
 }
 

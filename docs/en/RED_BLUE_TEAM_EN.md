@@ -1,6 +1,6 @@
 # Red/Blue Team Testing Guide
 
-**Version**: v0.1.9
+**Version**: v0.2.0
 **Purpose**: Validate OmniScope's detection rate (red team) and false positive rate (blue team) against the `corpus/` test suite.
 
 ## Quick Start

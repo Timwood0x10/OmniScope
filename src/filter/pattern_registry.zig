@@ -27,6 +27,13 @@ pub const ZoneClassification = enum {
 };
 
 pub const PatternRegistry = struct {
+    // NOTE: Some patterns intentionally appear in multiple arrays.
+    // This is by design — each array serves a different query function:
+    //   - drop_in_place: rust_safe_patterns (safe context) + rust_runtime_patterns (runtime shim)
+    //   - __rust_alloc/__rust_dealloc: rust_safe_patterns + rust_runtime_patterns
+    //   - pthread_create: c_escape_patterns + cpp_escape_patterns
+    // Changes to one array must consider the other to avoid semantic drift.
+
     // LLVM Intrinsics & Rust Synthetic (noise_reduction.zig) — prefix/contains match
     pub const llvm_intrinsic_prefixes = [_][]const u8{
         "llvm.threadlocal.address",  "llvm.threadlocal.restore",
@@ -102,7 +109,11 @@ pub const PatternRegistry = struct {
         "_marshal",            "_syscall",
         "_invoke",             "_callback",
         "_native",             "_interop",
-        "$",
+        // Rust v0 mangling escape markers (more specific than bare "$")
+        "$LT$",                "$GT$",
+        "$u7b$",               "$u7d$",
+        "$u20$",               "$C$",
+        "$RF$",                "$BP$",
     };
 
     pub const zig_safe_patterns = [_][]const u8{
@@ -230,6 +241,15 @@ pub const PatternRegistry = struct {
         "__zig_panic_handler",
     };
 
+    /// Broad Zig internal markers (contains match).
+    /// These are more general than specific function names above.
+    pub const zig_broad_internal_patterns = [_][]const u8{
+        "__zig",
+        "(anonymous namespace)",
+        "generic(",
+        "__anon_",
+    };
+
     pub const go_internal_patterns = [_][]const u8{
         "runtime.gopark",     "runtime.goexit",
         "runtime.morestack",  "runtime.mallocgc",
@@ -283,14 +303,14 @@ pub const PatternRegistry = struct {
 
     // Compiler Builtins (issue_suppression.zig) — prefix match
     pub const compiler_builtins = [_][]const u8{
-        "__builtin_",        "__memcpy_chk",    "__memmove_chk",
-        "__memset_chk",      "__strcpy_chk",    "__strcat_chk",
-        "__strncpy_chk",     "__sprintf_chk",   "__snprintf_chk",
-        "__printf_chk",      "__fprintf_chk",   "__vprintf_chk",
-        "__vfprintf_chk",    "__stack_chk_fail", "__stack_chk_guard",
-        "__cxa_",            "__gxx_personality", "__llvm_",
-        "__sanitizer_",      "__ubsan_",        "__asan_",
-        "__msan_",           "__tsan_",
+        "__builtin_",     "__memcpy_chk",      "__memmove_chk",
+        "__memset_chk",   "__strcpy_chk",      "__strcat_chk",
+        "__strncpy_chk",  "__sprintf_chk",     "__snprintf_chk",
+        "__printf_chk",   "__fprintf_chk",     "__vprintf_chk",
+        "__vfprintf_chk", "__stack_chk_fail",  "__stack_chk_guard",
+        "__cxa_",         "__gxx_personality", "__llvm_",
+        "__sanitizer_",   "__ubsan_",          "__asan_",
+        "__msan_",        "__tsan_",
     };
 
     // Platform Runtime Shims — Pattern H (issue_suppression.zig)
@@ -445,26 +465,25 @@ pub const PatternRegistry = struct {
     };
 
     pub const zig_noise_patterns = [_][]const u8{
-        "std.",                  "std.debug",      "std.mem",
-        "std.fmt",              "std.heap",       "std.fs",
-        "std.io",               "std.os",         "std.posix",
-        "std.ascii",            "std.base64",     "std.hash",
-        "std.array_list",       "std.bit_set",    "std.builtin",
-        "std.crypto",           "std.compress",   "std.random",
-        "mem.Allocator",        "GeneralPurposeAllocator",
-        "ArenaAllocator",       "page_allocator", "c_allocator",
-        "raw_c_allocator",      "FixedBufferAllocator",
-        "zig_assert_fail",      "zig_panic",      "zig_oq",
-        "zig_write",            "zig_generic_resolve",
-        "debug.Dwarf",          "debug.Info",     "debug.Segment",
-        "debug.LineInfo",       "posix.",         "posix_getenv",
-        "posix_environ",        "fs.File",        "fs.Dir",
-        "fs.Path",              "fs.cwd",         "fs.openFile",
-        "fs.access",            "fs.realpath",    "fs.makeAbsolute",
-        "fs.canonicalize",      "start.zig",      "panic.zig",
-        "builtin.zig",          "__zig_",         "__anon_",
-        "(anonymous namespace)", "@typeInfo",      "is_named_enum_value",
-        "__zig_switch_target",  "__zig_error_name", "__zig_resolve_enum_name",
+        "std.",                  "std.debug",               "std.mem",
+        "std.fmt",               "std.heap",                "std.fs",
+        "std.io",                "std.os",                  "std.posix",
+        "std.ascii",             "std.base64",              "std.hash",
+        "std.array_list",        "std.bit_set",             "std.builtin",
+        "std.crypto",            "std.compress",            "std.random",
+        "mem.Allocator",         "GeneralPurposeAllocator", "ArenaAllocator",
+        "page_allocator",        "c_allocator",             "raw_c_allocator",
+        "FixedBufferAllocator",  "zig_assert_fail",         "zig_panic",
+        "zig_oq",                "zig_write",               "zig_generic_resolve",
+        "debug.Dwarf",           "debug.Info",              "debug.Segment",
+        "debug.LineInfo",        "posix.",                  "posix_getenv",
+        "posix_environ",         "fs.File",                 "fs.Dir",
+        "fs.Path",               "fs.cwd",                  "fs.openFile",
+        "fs.access",             "fs.realpath",             "fs.makeAbsolute",
+        "fs.canonicalize",       "start.zig",               "panic.zig",
+        "builtin.zig",           "__zig_",                  "__anon_",
+        "(anonymous namespace)", "@typeInfo",               "is_named_enum_value",
+        "__zig_switch_target",   "__zig_error_name",        "__zig_resolve_enum_name",
     };
 
     pub const cpp_noise_patterns = [_][]const u8{
@@ -483,16 +502,16 @@ pub const PatternRegistry = struct {
     pub fn isStdlibInternal(func_name: []const u8) bool {
         if (func_name.len == 0) return false;
         for (zig_stdlib_prefixes) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         for (rust_stdlib_prefixes) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         for (cpp_stdlib_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
         for (compiler_builtins) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         return false;
     }
@@ -509,16 +528,16 @@ pub const PatternRegistry = struct {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
         for (cpp_abi_prefixes) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         for (objc_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
         for (swift_patterns) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         for (go_runtime_patterns) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         for (rust_runtime_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
@@ -526,9 +545,9 @@ pub const PatternRegistry = struct {
         for (zig_runtime_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
-        if (startsWith(func_name, "llvm.")) return true;
+        if (std.mem.startsWith(u8, func_name, "llvm.")) return true;
         for (sanitizer_prefixes) |p| {
-            if (startsWith(func_name, p)) return true;
+            if (std.mem.startsWith(u8, func_name, p)) return true;
         }
         if (std.mem.indexOf(u8, func_name, "__stack_chk") != null) return true;
         for (dl_patterns) |p| {
@@ -626,9 +645,9 @@ pub const PatternRegistry = struct {
     /// Check if a function is an LLVM intrinsic or Rust synthetic noise.
     /// Any "llvm.*" is noise. Rust synthetic (channels, smart ptrs, iterators) too.
     pub fn isLLVMIntrinsic(func_name: []const u8) bool {
-        if (startsWith(func_name, "llvm.")) {
+        if (std.mem.startsWith(u8, func_name, "llvm.")) {
             for (llvm_intrinsic_prefixes) |prefix| {
-                if (startsWith(func_name, prefix)) return true;
+                if (std.mem.startsWith(u8, func_name, prefix)) return true;
             }
             return true; // Catch-all for unrecognized llvm.* intrinsics
         }
@@ -642,7 +661,7 @@ pub const PatternRegistry = struct {
     /// Patterns: _ZNSt (C++ std), _ZN4core (Rust), $ss/$sS (Swift), etc.
     pub fn isCompilerInternal(func_name: []const u8) bool {
         for (compiler_internal_patterns) |pattern| {
-            if (startsWith(func_name, pattern)) return true;
+            if (std.mem.startsWith(u8, func_name, pattern)) return true;
         }
         return false;
     }
@@ -652,7 +671,7 @@ pub const PatternRegistry = struct {
     /// like "intentional", "known_safe".
     pub fn isIntentionalPattern(func_name: []const u8) bool {
         for (intentional_prefixes) |prefix| {
-            if (startsWith(func_name, prefix)) return true;
+            if (std.mem.startsWith(u8, func_name, prefix)) return true;
         }
         for (intentional_substrings) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
@@ -674,10 +693,9 @@ pub const PatternRegistry = struct {
         for (zig_internal_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
-        if (std.mem.indexOf(u8, func_name, "__zig") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "(anonymous namespace)") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "generic(") != null or
-            std.mem.indexOf(u8, func_name, "__anon_") != null) return true;
+        for (zig_broad_internal_patterns) |p| {
+            if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
         for (go_internal_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
         }
@@ -759,11 +777,6 @@ pub const PatternRegistry = struct {
         return null;
     }
     // Internal Helpers
-    fn startsWith(haystack: []const u8, needle: []const u8) bool {
-        if (haystack.len < needle.len) return false;
-        return std.mem.eql(u8, haystack[0..needle.len], needle);
-    }
-
     fn indexOfPath(haystack: []const u8, needle: []const u8) bool {
         if (haystack.len == 0 or needle.len == 0) return false;
         if (needle.len > haystack.len) return false;

@@ -1,6 +1,6 @@
 # OmniScope API Reference
 
-> **版本**: v0.1.7 | **语言**: Zig 0.15.2
+> **版本**: v0.2.0 | **语言**: Zig 0.15.2
 > **目标读者**: 集成开发者、工具链工程师
 
 ---
@@ -562,6 +562,6 @@ defer result.deinit();
 
 ---
 
-*文档版本*: v0.1.7 | *最后更新*: 2026-05-07
+*文档版本*: v0.2.0 | *最后更新*: 2026-05-29
 *API稳定性*: Public API遵循Semantic Versioning
 *反馈渠道*: [GitHub Issues](https://github.com/your-org/OmniScope/issues)

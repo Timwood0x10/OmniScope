@@ -78,18 +78,6 @@ pub fn isPlatformRuntimeShimGated(
 // String Helper Functions
 // ============================================================================
 
-/// Check if haystack starts with needle.
-pub fn startsWith(haystack: []const u8, needle: []const u8) bool {
-    if (haystack.len < needle.len) return false;
-    return std.mem.eql(u8, haystack[0..needle.len], needle);
-}
-
-/// Check if haystack ends with needle.
-pub fn endsWith(haystack: []const u8, needle: []const u8) bool {
-    if (haystack.len < needle.len) return false;
-    return std.mem.eql(u8, haystack[haystack.len - needle.len ..], needle);
-}
-
 /// Helper: check if haystack contains ANY of the needles.
 pub fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
     for (needles) |needle| {

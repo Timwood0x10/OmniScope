@@ -208,9 +208,15 @@ pub fn detectGoMemoryPattern(func_name: []const u8) enum {
 } {
     if (std.mem.indexOf(u8, func_name, "KeepAlive") != null)
         return .keepalive_guarded;
+
+    // Check for C memory management patterns (both with and without dots)
     const has_malloc = std.mem.indexOf(u8, func_name, "C.malloc") != null or
-        std.mem.indexOf(u8, func_name, "C.calloc") != null;
-    const has_free = std.mem.indexOf(u8, func_name, "C.free") != null;
+        std.mem.indexOf(u8, func_name, "C.calloc") != null or
+        std.mem.indexOf(u8, func_name, "CMalloc") != null or
+        std.mem.indexOf(u8, func_name, "Ccalloc") != null;
+    const has_free = std.mem.indexOf(u8, func_name, "C.free") != null or
+        std.mem.indexOf(u8, func_name, "Cfree") != null;
+
     if (has_malloc and has_free) return .manual_c_memory;
     if (has_malloc or has_free) return .mixed;
     return .safe;

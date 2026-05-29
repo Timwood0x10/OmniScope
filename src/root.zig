@@ -3,6 +3,7 @@
 //! This is the public API entry point for the OmniScope library.
 
 pub const log = @import("common/log.zig");
+pub const aho_corasick = @import("common/aho_corasick.zig");
 
 // Export IR layer
 pub const ir = struct {
@@ -80,12 +81,15 @@ pub const filter = struct {
     pub const issue_classification = @import("filter/issue_classification.zig");
     pub const pattern_registry = @import("filter/pattern_registry.zig");
     pub const filter_context = @import("filter/filter_context.zig");
+    pub const rule_customization = @import("filter/rule_customization.zig");
 };
 
 // Export pipeline system
 pub const pipeline = struct {
     pub const Pipeline = @import("pipeline/pipeline.zig").Pipeline;
     pub const PipelineResult = @import("pipeline/pipeline.zig").PipelineResult;
+    pub const TraversalIndex = @import("pipeline/traversal_index.zig").TraversalIndex;
+    pub const CallRecord = @import("pipeline/traversal_index.zig").CallRecord;
 };
 
 // Export engine
@@ -344,4 +348,5 @@ test {
     _ = @import("pipeline/pipeline_deps_test.zig");
     _ = @import("pipeline/large_alloc_test.zig");
     _ = @import("pass/analysis/rust_ffi/rust_ffi_auditor_test.zig");
+    _ = @import("pipeline/traversal_index.zig");
 }

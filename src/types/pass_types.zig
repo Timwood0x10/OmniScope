@@ -34,6 +34,8 @@ const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
 const suppression_patterns = @import("../pass/analysis/noise/suppression_patterns.zig");
 const issue_classification = @import("../filter/issue_classification.zig");
+const filter_context_mod = @import("../filter/filter_context.zig");
+const FilterContext = filter_context_mod.FilterContext;
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
 const SemanticSurface = @import("../common/types.zig").SemanticSurface;
@@ -613,12 +615,10 @@ pub const PassContext = struct {
     }
 
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
-        // Pass the cached platform profile to suppression so platform-specific
-        // patterns (e.g. Windows MSVC CRT) are only consulted when relevant.
+        // ── Layer 2: Suppression ──────────────────────────────────────────
+        // Platform-specific patterns (e.g. Windows MSVC CRT) gated by profile.
         const profile_ptr = if (self.platform_profile) |*p| p else null;
         if (issue_suppression.shouldSuppressWithProfile(issue, profile_ptr)) {
-            // Record which pattern caused suppression for accurate stats
-            // Patterns A-F deprecated — only Pattern G (stdlib_internal) remains
             if (suppression_patterns.isStdlibInternalFunction(issue)) {
                 self.suppression_stats.record(.stdlib_internal);
             } else {
@@ -631,205 +631,55 @@ pub const PassContext = struct {
             return;
         }
 
-        const on_danger_path = if (issue.ffi_boundary) |_| true else false;
+        // ── Layer 0+3: Initialize FilterContext and classify origin ──────
+        var ctx = FilterContext.init(issue);
 
-        const func_name = issue.location.func;
-        const classification = self.classifyFunctionSurface(func_name, null);
-        var risk = noise_filter.getRiskLevel(classification.origin, diagToNoiseSeverity(issue.severity));
+        const classification = self.classifyFunctionSurface(ctx.func_name, null);
+        ctx.origin = classification.origin;
 
-        // ====================================================================
-        // P19-8/9/12: SemanticSurface inference + boundary_relevance gating
-        // ====================================================================
-        //
-        // Auto-classify where this issue originates (boundary vs internal).
-        // Then apply progressive downgrade for internal_core issues that
-        // lack structural evidence of boundary reachability.
-        //
-        // This is a GENERIC mechanism — no project/library name whitelists.
-        //
+        // ── Layer 3: Compute risk level ──────────────────────────────────
+        ctx.computeRisk();
 
-        // 19-8: Infer semantic surface from function classification
-        const surface = inferSemanticSurface(func_name, classification.origin);
-        var mutable = issue.*;
-        mutable.semantic_surface = surface;
+        // ── Layer 4: Infer semantic surface ──────────────────────────────
+        ctx.surface = inferSemanticSurface(ctx.func_name, ctx.origin);
 
-        // 19-12: Progressive downgrade for non-boundary issues
-        // Rule: internal_core/runtime_internal issues cannot be HIGH or CRITICAL
-        // unless they have explicit FFI boundary evidence (on_danger_path).
-        if (surface) |s| {
-            const has_boundary_evidence = on_danger_path or switch (issue.kind) {
-                .cross_language_free,
-                .cross_language_leak,
-                .ffi_unsafe_call,
-                .ffi_type_mismatch,
-                .borrow_escape,
-                => true,
-                else => false,
-            };
+        // Boundary evidence: FFI boundary issues or on-danger-path
+        ctx.has_boundary_evidence = ctx.has_ffi_boundary or switch (issue.kind) {
+            .cross_language_free,
+            .cross_language_leak,
+            .ffi_unsafe_call,
+            .ffi_type_mismatch,
+            .borrow_escape,
+            => true,
+            else => false,
+        };
 
-            // P19-10: write_to_immutable structural evidence gating
-            // Rule: write_to_immutable HIGH requires structural evidence that target
-            // is from immutable region/const global/readonly section.
-            // Name/type heuristic alone → cap at diagnostic.
-            if (issue.kind == .write_to_immutable and mutable.severity != .low) {
-                const has_structural_evidence = has_boundary_evidence or s == .boundary or s == .ffi_producer;
-                if (!has_structural_evidence) {
-                    const original_sev = mutable.severity;
-                    mutable.severity = .medium;
-                    mutable.explained_safe = true;
-                    log.debug("WRITE-IMMUTABLE-GATE: {s} {s}→{s} (heuristic_only, surface={s})", .{ func_name, @tagName(original_sev), @tagName(mutable.severity), s.name() });
-                }
-            }
+        // ── Layer 5: Surface downgrade + noise filter ────────────────────
+        ctx.applySurfaceDowngrade();
+        ctx.applyNoiseFilter();
 
-            // P19-11: invalid_free structural evidence gating
-            // Rule: invalid_free HIGH requires one of:
-            //   - alloc/free family mismatch
-            //   - non-owned pointer release
-            //   - stack/static/global free
-            //   - double release
-            // unknown_alloc provenance → cap at MEDIUM.
-            if (issue.kind == .invalid_free and mutable.severity == .high) {
-                const has_strong_evidence = has_boundary_evidence or s == .boundary or s == .ffi_producer;
-                if (!has_strong_evidence and (s == .internal_core or s == .runtime_internal or s == .unknown)) {
-                    mutable.severity = .medium;
-                    mutable.explained_safe = true;
-                    log.debug("INVALID-FREE-GATE: {s} HIGH→MEDIUM (weak provenance, surface={s})", .{ func_name, s.name() });
-                }
-            }
-
-            if (!has_boundary_evidence and !s.allowsHigh()) {
-                // 19-9: No boundary reachability + surface doesn't allow HIGH → downgrade
-                const original_severity = mutable.severity;
-                if (mutable.severity == .critical or mutable.severity == .high) {
-                    mutable.severity = .medium;
-                    log.debug("SURFACE-DOWNGRADE: {s} in [{s}] {s}→{s} (surface={s}, no boundary evidence)", .{ @tagName(mutable.kind), func_name, @tagName(original_severity), @tagName(mutable.severity), s.name() });
-                }
-                mutable.explained_safe = true;
-            }
-
-            // Even stricter: runtime_internal → cap at LOW
-            // But exempt core memory safety and security-critical bugs — never downgraded
-            if (s == .runtime_internal and mutable.severity != .low and !issue_classification.isNeverDowngraded(mutable.kind)) {
-                mutable.severity = .low;
-                mutable.explained_safe = true;
+        // ── Dedup ────────────────────────────────────────────────────────
+        const dedup_key = self.dedupKey(issue);
+        if (issue.severity != .critical) {
+            const gop = try self.reported_keys.getOrPut(dedup_key);
+            if (gop.found_existing) {
+                ctx.is_duplicate = true;
             }
         }
 
-        // FFI boundary issues should NOT be suppressed by noise filter
-        // FFI cross-ABI calls are inherently security-relevant regardless of function origin
-        // Core memory safety bugs should also bypass risk suppression — a double_free
-        // or use_after_free in an unknown-origin function is still a real vulnerability.
-        // Unified classification: never-suppressed issues bypass risk suppression.
-        // Falls back to danger-path check for advisory issues.
-        const is_ffi_issue = issue_classification.isNeverSuppressed(issue.kind) or on_danger_path;
-
-        if (!is_ffi_issue and issue.severity != .critical and risk == .suppressed) {
+        if (!ctx.shouldReport()) {
             if (issue.owned) {
                 var mutable_issue = issue.*;
                 mutable_issue.deinit(self.allocator);
             }
             return;
         }
-        if (is_ffi_issue and risk == .suppressed) {
-            risk = .low; // Upgrade suppressed → low for FFI issues
-        }
-        if (issue.severity == .critical and risk == .suppressed) {
-            risk = .critical;
-        }
 
-        const dedup_key = self.dedupKey(issue);
-        if (issue.severity != .critical) {
-            const gop = try self.reported_keys.getOrPut(dedup_key);
-            if (gop.found_existing) {
-                if (issue.owned) {
-                    var mutable_issue = issue.*;
-                    mutable_issue.deinit(self.allocator);
-                }
-                return;
-            }
-        }
-
+        // ── Emit ─────────────────────────────────────────────────────────
         var final_issue = issue.*;
-        const risk_severity: DiagSeverity = switch (risk) {
-            .critical => .critical,
-            .high => .high,
-            .medium => .medium,
-            .low => .low,
-            .suppressed => .low,
-        };
-
-        // P16-1: Core memory safety bugs should NEVER be downgraded by noise filter.
-        // These are real vulnerabilities regardless of function origin classification.
-        //
-        // P16-3: .memory_leak intentionally EXCLUDED from this whitelist.
-        // Rationale: Leaks are probabilistic (not deterministic like UAF/DF).
-        // Many leaks are FPs (global vars, long-lived objects, intentional caching).
-        // Including .memory_leak would inflate severity of uncertain findings,
-        // reducing precision without improving recall for real bugs.
-        // See P15_DIFF_REPORT.md TC9 analysis for details.
-        // Unified classification: core memory safety and security-critical bugs
-        // are NEVER downgraded by the noise filter.
-        const is_core_memory_safety_bug = issue_classification.isNeverDowngraded(issue.kind);
-
-        // P16-11/P16-12: Anti-collapse — prevent "severity cliff" where
-        // .critical drops directly to .low. Enforce gradual step-down (max 1 level).
-        //
-        // Motivation: When origin = "unknown" (common in test corpus),
-        // noise_filter returns risk = .low for ALL issue kinds. Without this:
-        //   - ffi_unsafe_call (.critical) → .low (loses critical info)
-        //   - borrow_escape (.high) → .low (over-suppression)
-        //
-        // With stepDown + max():
-        //   - (.critical, risk=.low) → max(.low, stepDown(.critical)=.high) = .high ✅
-        //   - (.high, risk=.low) → max(.low, stepDown(.high)=.medium) = .medium ✅
-        const stepped_severity: DiagSeverity = switch (issue.severity) {
-            .critical => .high,
-            .high => .medium,
-            .medium => .low,
-            .low => .low,
-        };
-
-        // P16-12: severityMax — return the more severe of two severities
-        const final_severity: DiagSeverity = blk: {
-            const rank_a: u3 = switch (risk_severity) {
-                .critical => 3,
-                .high => 2,
-                .medium => 1,
-                .low => 0,
-            };
-            const rank_b: u3 = switch (stepped_severity) {
-                .critical => 3,
-                .high => 2,
-                .medium => 1,
-                .low => 0,
-            };
-            break :blk if (rank_a >= rank_b) risk_severity else stepped_severity;
-        };
-
-        const should_downgrade = !is_core_memory_safety_bug and switch (issue.severity) {
-            .critical => risk_severity != .critical,
-            .high => risk_severity == .medium or risk_severity == .low,
-            .medium => risk_severity == .low,
-            .low => false,
-        };
-
-        // P16-13: Apply anti-collapse — use max(risk, stepDown(original))
-        // This ensures severity drops by at most ONE level per downgrade trigger.
-        if (should_downgrade) {
-            final_issue.severity = final_severity;
-        }
-
-        const is_ffi_kind = switch (issue.kind) {
-            .ffi_unsafe_call,
-            .ffi_type_mismatch,
-            .type_mismatch,
-            .cross_language_leak,
-            .cross_language_free,
-            .borrow_escape,
-            => true,
-            else => false,
-        };
-        final_issue.classification = if (is_ffi_kind or on_danger_path) .ffi_boundary else .local_only;
+        final_issue.severity = ctx.getFinalSeverity();
+        final_issue.semantic_surface = ctx.surface;
+        final_issue.classification = ctx.deriveClassification();
 
         if (!final_issue.owned) {
             const cloned_msg = try self.allocator.dupe(u8, final_issue.message);
@@ -1186,6 +1036,25 @@ pub const PassContext = struct {
             return @import("../common/arena.zig").arenaAllocator(a);
         }
         return self.allocator;
+    }
+
+    /// Reset the arena allocator, freeing all temporary allocations.
+    ///
+    /// This should be called at pass boundaries to reclaim temporary memory
+    /// without deallocating and reallocating blocks. The arena keeps its
+    /// first block for reuse, which is a key optimization.
+    ///
+    /// Example:
+    /// ```zig
+    /// // Run a pass that uses arena allocations
+    /// try somePass.run(ctx, diag);
+    /// // Reset arena before next pass
+    /// ctx.resetArena();
+    /// ```
+    pub fn resetArena(self: *PassContext) void {
+        if (self.arena) |*a| {
+            a.reset();
+        }
     }
 };
 

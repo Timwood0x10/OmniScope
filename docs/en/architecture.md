@@ -1,7 +1,7 @@
 # OmniScope Architecture
 
-> **Version**: v0.1.7
-> **Last updated**: 2026-05-07
+> **Version**: v0.2.0
+> **Last updated**: 2026-05-29
 
 ## System Architecture Overview
 

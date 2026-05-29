@@ -342,8 +342,16 @@ pub const TaintPropagationPass = struct {
         //   recv(sock, buf, len, flags) → [1] buf is tainted
         //   scanf(fmt, &a, &b)          → [1..N] output params after fmt
         //   main(argc, argv)            → [1] argv is tainted (user input)
-        //   getenv(name)                → return value is tainted (handled separately by sink marking)
+        //   getline(lineptr, n, stream) → [0] lineptr is tainted
+        //   fread(ptr, size, n, stream) → [0] ptr is tainted
+        //   readv(fd, iov, iovcnt)      → [1] iov is tainted
+        //   recvfrom(sock, buf, ...)    → [1] buf is tainted
+        //   recvmsg(sock, msg, flags)   → [1] msg is tainted
+        //   getenv(name)                → return value is tainted
+        //   getc/fgetc/getchar          → return value is tainted
+        //   readline/getpass            → return value is tainted
         if (called_func_name.len > 0 and isSource(called_func_name)) {
+            // Mark output arguments as tainted sources
             const output_args = getTaintedOutputArgs(called_func_name);
             for (output_args) |arg_idx| {
                 const num_ops = c.LLVMGetNumOperands(inst);
@@ -359,6 +367,18 @@ pub const TaintPropagationPass = struct {
                     .confidence = 1.0,
                 };
                 try taint_ctx.setValueTaint(arg_id, src_info);
+            }
+
+            // Handle return-value taint for functions like getenv, getc, fgetc, getchar, readline, getpass
+            if (hasReturnValueTaint(called_func_name)) {
+                const inst_id = try taint_ctx.getValueIdFromUsize(@intFromPtr(inst));
+                const src_info = TaintInfo{
+                    .id = next_id,
+                    .state = .source,
+                    .source_id = null,
+                    .confidence = 1.0,
+                };
+                try taint_ctx.setValueTaint(inst_id, src_info);
             }
         }
 
@@ -741,16 +761,53 @@ pub const TaintPropagationPass = struct {
 /// Returns the indices of output arguments that carry tainted data for each source function.
 /// Only these arguments should be marked as taint sources — input-only args
 /// (size, fd, stream, flags, format string) are NOT user-controlled data.
+///
+/// Functions with return-value taint (getenv, getc, fgetc, getchar, readline, getpass)
+/// are handled separately via handleReturnValueTaint() since the taint is on the
+/// call instruction's return value, not on an argument.
 fn getTaintedOutputArgs(func_name: []const u8) []const u32 {
+    // File/stdin reading functions
     if (std.mem.eql(u8, func_name, "fgets")) return &[_]u32{0}; // fgets(buf, size, stream) → buf
     if (std.mem.eql(u8, func_name, "gets")) return &[_]u32{0}; // gets(buf) → buf
     if (std.mem.eql(u8, func_name, "read")) return &[_]u32{1}; // read(fd, buf, count) → buf
     if (std.mem.eql(u8, func_name, "recv")) return &[_]u32{1}; // recv(sock, buf, len, flags) → buf
-    if (std.mem.eql(u8, func_name, "scanf")) return &[_]u32{1}; // scanf(fmt, &a, ...) → first output param (simplified: just arg 1)
+    if (std.mem.eql(u8, func_name, "scanf")) return &[_]u32{1}; // scanf(fmt, &a, ...) → first output param
     if (std.mem.eql(u8, func_name, "main")) return &[_]u32{1}; // main(argc, argv) → argv is user input
+    if (std.mem.eql(u8, func_name, "getline")) return &[_]u32{0}; // getline(lineptr, n, stream) → lineptr
+    if (std.mem.eql(u8, func_name, "fread")) return &[_]u32{0}; // fread(ptr, size, nmemb, stream) → ptr
+    if (std.mem.eql(u8, func_name, "readv")) return &[_]u32{1}; // readv(fd, iov, iovcnt) → iov
+    if (std.mem.eql(u8, func_name, "recvfrom")) return &[_]u32{1}; // recvfrom(sock, buf, len, flags, ...) → buf
+    if (std.mem.eql(u8, func_name, "recvmsg")) return &[_]u32{1}; // recvmsg(sock, msg, flags) → msg (iovec data)
+
+    // Formatted input functions (output args start after format string)
+    if (std.mem.eql(u8, func_name, "fscanf")) return &[_]u32{1}; // fscanf(stream, fmt, &a, ...) → first output param
+    if (std.mem.eql(u8, func_name, "sscanf")) return &[_]u32{1}; // sscanf(str, fmt, &a, ...) → first output param
+
     // getenv(name): no output args — taint is on the RETURN value, handled by sink marking in handleCall
+    // getc/fgetc/getchar/readline/getpass: return value taint handled by handleReturnValueTaint()
+
     // Default: for unknown source functions, mark arg 0 as output (conservative)
     return &[_]u32{0};
+}
+
+/// Check if a source function taints its return value rather than an argument.
+/// These functions return user-controlled data directly (e.g., getenv returns
+/// an environment variable string, getc returns a character from stdin).
+///
+/// Returns true if the function's return value should be marked as tainted.
+fn hasReturnValueTaint(func_name: []const u8) bool {
+    const return_taint_sources = [_][]const u8{
+        "getenv",
+        "getc",
+        "fgetc",
+        "getchar",
+        "readline",
+        "getpass",
+    };
+    for (return_taint_sources) |source| {
+        if (std.mem.eql(u8, func_name, source)) return true;
+    }
+    return false;
 }
 
 /// Helper function to check if a name matches source patterns
@@ -857,4 +914,44 @@ test "TaintPropagationPass - handles null module gracefully" {
     var diagnostics = DiagnosticWriter{ .allocator = allocator };
 
     _ = TaintPropagationPass.run(&context, &diagnostics);
+}
+
+test "getTaintedOutputArgs - returns correct indices for source functions" {
+    // File reading functions
+    try std.testing.expectEqualSlices(u32, &[_]u32{0}, getTaintedOutputArgs("fgets"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{0}, getTaintedOutputArgs("gets"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("read"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("recv"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{0}, getTaintedOutputArgs("getline"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{0}, getTaintedOutputArgs("fread"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("readv"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("recvfrom"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("recvmsg"));
+
+    // Formatted input functions
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("scanf"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("fscanf"));
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("sscanf"));
+
+    // Program arguments
+    try std.testing.expectEqualSlices(u32, &[_]u32{1}, getTaintedOutputArgs("main"));
+
+    // Default for unknown functions
+    try std.testing.expectEqualSlices(u32, &[_]u32{0}, getTaintedOutputArgs("unknown_func"));
+}
+
+test "hasReturnValueTaint - identifies return-value taint functions" {
+    // Functions that taint their return value
+    try std.testing.expect(hasReturnValueTaint("getenv"));
+    try std.testing.expect(hasReturnValueTaint("getc"));
+    try std.testing.expect(hasReturnValueTaint("fgetc"));
+    try std.testing.expect(hasReturnValueTaint("getchar"));
+    try std.testing.expect(hasReturnValueTaint("readline"));
+    try std.testing.expect(hasReturnValueTaint("getpass"));
+
+    // Functions that don't taint their return value
+    try std.testing.expect(!hasReturnValueTaint("fgets"));
+    try std.testing.expect(!hasReturnValueTaint("read"));
+    try std.testing.expect(!hasReturnValueTaint("malloc"));
+    try std.testing.expect(!hasReturnValueTaint("unknown_func"));
 }

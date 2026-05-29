@@ -1,6 +1,6 @@
 # OmniScope 快速入门指南 (Quick Start Guide)
 
-> **版本**: v0.1.7 | **语言**: Zig 0.15.2 | **LLVM**: 22.1.4
+> **版本**: v0.2.0 | **语言**: Zig 0.15.2 | **LLVM**: 22.1.4
 > **预计时间**: 10 分钟完成首次分析
 
 ---
@@ -386,5 +386,5 @@ jq '.issues[] | select(.severity == "critical" or .severity == "high")' results.
 
 ---
 
-*文档版本*: v0.1.7 | *最后更新*: 2026-05-07 | *作者*: OmniScope Team
+*文档版本*: v0.2.0 | *最后更新*: 2026-05-29 | *作者*: OmniScope Team
 *反馈*: 请提交 [GitHub Issues](https://github.com/your-org/OmniScope/issues)

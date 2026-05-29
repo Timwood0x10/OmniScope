@@ -197,7 +197,8 @@ pub const FilterContext = struct {
         }
 
         // Non-boundary surface: HIGH/CRITICAL -> MEDIUM
-        if (!self.has_boundary_evidence and !surface.allowsHigh()) {
+        // Never-downgraded issues (core memory safety, security critical) are exempt
+        if (!self.has_boundary_evidence and !surface.allowsHigh() and !self.never_downgraded) {
             if (effective == .critical or effective == .high) {
                 log.debug("SURFACE-DOWNGRADE: {s} in [{s}] {s}->{s} (surface={s}, no boundary evidence)", .{
                     @tagName(self.issue_kind),
@@ -524,6 +525,19 @@ test "applySurfaceDowngrade never downgrades core memory safety at runtime_inter
 
     // never_downgraded issues keep original severity
     try std.testing.expectEqual(Severity.high, ctx.severity_after_surface);
+}
+
+test "applySurfaceDowngrade never downgrades core memory safety at non-boundary surface" {
+    // C2 fix: non-boundary surface downgrade must also respect never_downgraded
+    const loc = types.Location.init("internal_func");
+    const issue = Issue.init(.use_after_free, "UAF", loc, .critical, 0.9);
+    var ctx = FilterContext.init(&issue);
+    ctx.surface = .internal_core;
+    ctx.has_boundary_evidence = false;
+    ctx.applySurfaceDowngrade();
+
+    // never_downgraded issues must not be capped to medium by surface downgrade
+    try std.testing.expectEqual(Severity.critical, ctx.severity_after_surface);
 }
 
 test "computeFinalSeverity applies anti-collapse step-down" {

@@ -36,8 +36,6 @@ pub const TransferResult = struct {
 
     pub fn format(
         self: TransferResult,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
         if (!self.detected) {
@@ -47,7 +45,7 @@ pub const TransferResult = struct {
                 @tagName(t)
             else
                 "unknown";
-            try writer.print("{}({s})", .{ trigger_name, self.reason });
+            try writer.print("{s}({s})", .{ trigger_name, self.reason });
         }
     }
 };
@@ -338,14 +336,14 @@ test "TransferResult format - detected" {
         .reason = "test reason",
     };
     var buf: [128]u8 = undefined;
-    const f = try std.fmt.bufPrint(&buf, "{}", .{r});
+    const f = try std.fmt.bufPrint(&buf, "{f}", .{r});
     try std.testing.expectEqualStrings("return_to_caller(test reason)", f);
 }
 
 test "TransferResult format - not detected" {
     const r = TransferResult{ .detected = false };
     var buf: [64]u8 = undefined;
-    const f = try std.fmt.bufPrint(&buf, "{}", .{r});
+    const f = try std.fmt.bufPrint(&buf, "{f}", .{r});
     try std.testing.expectEqualStrings("no_transfer", f);
 }
 
