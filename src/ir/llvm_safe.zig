@@ -244,11 +244,24 @@ pub fn getCallInstArgCount(inst: c.LLVMValueRef) u32 {
     return if (num_ops > 0) num_ops - 1 else 0;
 }
 
+/// Check if an instruction opcode represents a call or invoke instruction.
+/// This is the standardized way to check for both call and invoke opcodes
+/// across all analysis passes to avoid missing FFI calls in exception paths.
+///
+/// LLVM IR has two call instructions:
+///   - LLVMCall: Normal function call
+///   - LLVMInvoke: Call that may throw an exception (C++/Rust/Swift)
+///
+/// Both must be checked for complete FFI vulnerability detection.
+pub fn isCallOrInvoke(opcode: c_uint) bool {
+    return (opcode == c.LLVMCall) or (opcode == c.LLVMInvoke);
+}
+
 /// Check if an instruction is a CallInst and return its argument count.
 /// Returns null if not a CallInst.
 pub fn getCallInstArgCountSafe(inst: c.LLVMValueRef) ?u32 {
     const opcode = c.LLVMGetInstructionOpcode(inst);
-    if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return null;
+    if (!isCallOrInvoke(opcode)) return null;
     return getCallInstArgCount(inst);
 }
 

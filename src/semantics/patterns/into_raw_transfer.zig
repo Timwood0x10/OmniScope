@@ -78,7 +78,7 @@ pub fn detect(
 
 /// Check if a callee name indicates an into_raw ownership transfer.
 /// Must be a Rust-mangled name containing "into_raw".
-fn isIntoRawCall(name: []const u8) bool {
+pub fn isIntoRawCall(name: []const u8) bool {
     // Must contain "into_raw" somewhere
     var found = false;
     for (INTO_RAW_PATTERNS) |pattern| {

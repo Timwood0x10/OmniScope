@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -131,7 +132,7 @@ pub fn checkOwnershipChain(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
             }
         }
         // Call → passed to another function (likely free/close)
-        if (opcode == c.LLVMCall) {
+        if (llvm_safe.isCallOrInvoke(opcode)) {
             for (0..@min(n_ops, 4)) |i| {
                 const op = c.LLVMGetOperand(next_inst, @intCast(i));
                 if (@intFromPtr(op) == @intFromPtr(inst)) return true;

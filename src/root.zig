@@ -19,6 +19,12 @@ pub const pass = struct {
     pub const DiagnosticWriter = @import("pass/pass.zig").DiagnosticWriter;
     pub const PassKind = @import("pass/pass.zig").PassKind;
     pub const PassManager = @import("pass/manager.zig").PassManager;
+
+    // Issue gate functions for cross-language validation
+    pub const checkIssue = @import("pass/filter/issue_gate.zig").checkIssue;
+    pub const checkIssueEnhanced = @import("pass/filter/issue_gate.zig").checkIssueEnhanced;
+    pub const GateVerdict = @import("pass/filter/issue_gate.zig").GateVerdict;
+    pub const verdictReason = @import("pass/filter/issue_gate.zig").verdictReason;
 };
 
 // Export fact system
@@ -223,6 +229,7 @@ pub const semantics = struct {
     pub const PatternRegistry = @import("semantics/semantic_patterns.zig").PatternRegistry;
     pub const PatternMatcher = @import("semantics/semantic_patterns.zig").PatternMatcher;
     pub const PatternResolver = @import("semantics/semantic_patterns.zig").PatternResolver;
+    pub const isIntoRawCall = @import("semantics/patterns/into_raw_transfer.zig").isIntoRawCall;
     pub const ResolutionEngine = @import("semantics/resolution_engine.zig").ResolutionEngine;
     pub const MemoryGraph = @import("semantics/memory_graph.zig").MemoryGraph;
 };

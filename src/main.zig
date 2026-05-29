@@ -648,47 +648,48 @@ fn issueToGraphKind(kind: IssueKind) GraphKind {
 
 fn isDangerousFFIPattern(match: *const call_graph.FFIMatch) bool {
     const func_name = match.name;
-    
+
     // Command execution functions - highest risk
     const command_patterns = [_][]const u8{
-        "system", "popen", "exec", "execve", "execvp", "execv",
-        "execl", "execlp", "execle", "fexecve", "posix_spawn", "posix_spawnp",
+        "system", "popen",  "exec",   "execve",  "execvp",      "execv",
+        "execl",  "execlp", "execle", "fexecve", "posix_spawn", "posix_spawnp",
     };
-    
+
     // Buffer overflow functions - high risk
     const buffer_patterns = [_][]const u8{
         "strcpy", "strcat", "gets", "sprintf", "vsprintf",
     };
-    
+
     // Format string functions - high risk
     const format_patterns = [_][]const u8{
         "vprintf", "vfprintf", "vsprintf", "vsnprintf", "vsscanf", "vfscanf",
     };
-    
+
     // Control flow violation - high risk
     const control_patterns = [_][]const u8{
         "setjmp", "longjmp", "sigsetjmp", "siglongjmp",
     };
-    
+
     // Dynamic loading - medium risk
     const dynamic_patterns = [_][]const u8{
         "dlopen", "dlsym", "dlclose",
     };
-    
+
     // Check against all patterns
     const all_patterns = command_patterns ++ buffer_patterns ++ format_patterns ++ control_patterns ++ dynamic_patterns;
-    
+
     for (all_patterns) |pattern| {
         if (std.mem.eql(u8, func_name, pattern)) {
             return true;
         }
         // Check for common prefixes like "__libc_system"
-        if (std.mem.endsWith(u8, func_name, pattern) or 
-            std.mem.startsWith(u8, func_name, pattern)) {
+        if (std.mem.endsWith(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern))
+        {
             return true;
         }
     }
-    
+
     return false;
 }
 

@@ -49,6 +49,7 @@ const std = @import("std");
 const log = @import("../../../common/log.zig");
 
 const Issue = @import("../../../diag/issue.zig").Issue;
+const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 // Platform profile is consulted when available so platform-specific
 // suppression rules (e.g. Windows MSVC CRT) are gated to the matching
 // target, instead of being scanned unconditionally on every issue.
@@ -625,6 +626,42 @@ fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
     return false;
 }
 
+/// Check if a mangled function name belongs to a known compiler-internal
+/// or standard-library component that can be safely skipped for double-free
+/// analysis.
+///
+/// This is a PRECISE whitelist — only confirmed internal patterns are
+/// matched. User functions (even when mangled) are NEVER skipped.
+///
+/// Patterns:
+///   - _ZNSt*     → C++ std:: (standard library)
+///   - _ZN4core*  → Rust core:: (standard library)
+///   - _ZN5alloc* → Rust alloc:: (allocator)
+///   - _ZGV*      → Global initialization guard
+///   - _ZZ*       → Local static initializer
+///   - __cxx_*    → C++ ABI internals
+///   - _GLOBAL__* → Global constructors/destructors
+///   - $sS/$ss    → Swift runtime symbols
+fn isCompilerInternalFunction(func_name: []const u8) bool {
+    const internal_patterns = [_][]const u8{
+        "_ZNSt", // C++ standard library (std::*)
+        "_ZN4core", // Rust core module
+        "_ZN5alloc", // Rust alloc module
+        "_ZGV", // Global initialization guard (Itanium ABI)
+        "_ZZ", // Local static initializer (Itanium ABI)
+        "__cxx_", // C++ ABI internals
+        "_GLOBAL__", // Global constructors/destructors
+        "$ss", // Swift standard library
+        "$sS", // Swift standard library (uppercase)
+    };
+
+    for (internal_patterns) |pattern| {
+        if (std.mem.startsWith(u8, func_name, pattern)) return true;
+    }
+
+    return false;
+}
+
 /// Detect if a double_free issue is actually a pure Rust internal drop chain
 /// false positive, NOT a real memory safety bug.
 ///
@@ -634,7 +671,7 @@ fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
 /// detector that doesn't model Rust's ownership semantics, this looks like double_free.
 ///
 /// Conditions for "pure Rust internal" classification:
-///   1. Caller function name is mangled (_ZN... pattern) → Rust-internal, not FFI boundary
+///   1. Caller is a known compiler-internal/stdlib function (NOT just any mangled name)
 ///   2. Message mentions __rust_dealloc or drop_in_place (Rust global allocator)
 ///   3. No FFI cross-boundary evidence in message (no external function names)
 ///   4. Issue kind is double_free (not use_after_free or invalid_free — those are
@@ -643,10 +680,10 @@ fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
     const func = issue.location.func;
     const msg = issue.message;
 
-    // Condition 1: Caller must be mangled Rust name
-    // _ZN = Rust name mangling prefix (Itanium C++ ABI style)
-    const is_mangled_rust = std.mem.startsWith(u8, func, "_ZN");
-    if (!is_mangled_rust) return false;
+    // Condition 1: Caller must be a known compiler-internal function
+    // Use precise whitelist instead of broad "_ZN" prefix match to avoid
+    // skipping user-defined mangled functions (C++ class methods, Rust pub fn)
+    if (!isCompilerInternalFunction(func)) return false;
 
     // Condition 2: Must involve Rust global allocator
     const has_rust_dealloc = containsAny(msg, &[_][]const u8{
@@ -678,6 +715,7 @@ fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
 /// This is the unified guard placed at the top of shouldSuppress().
 /// It covers:
 ///   - Core memory safety violations (double_free, use_after_free, etc.)
+///   - Critical CWE-classified vulnerabilities (null_dereference, buffer_overflow, etc.)
 ///   - FFI boundary issues (cross-language leaks, unsafe calls)
 ///   - Ownership/borrow violations (borrow_escape, type_mismatch)
 ///   - Callback safety issues (callback_ownership_risk, etc.)
@@ -685,6 +723,10 @@ fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
 /// Rationale: These issue kinds represent GENUINE security vulnerabilities.
 /// Even when they occur in "safe_*" named functions, involve __rust_dealloc,
 /// or mention NonNull types — the detector found a real problem, not a FP.
+///
+/// NOTE: null_dereference (CWE-476), buffer_overflow (CWE-120), and integer_overflow
+/// (CWE-190) are included because these are critical vulnerabilities that must ALWAYS
+/// be reported, even in stdlib/FFI functions. Suppressing them would hide real security bugs.
 fn isRealMemorySafetyBug(issue: *const Issue) bool {
     // EXCEPTION 1: Stdlib internal functions — always let Pattern G handle them
     //
@@ -722,11 +764,11 @@ fn isRealMemorySafetyBug(issue: *const Issue) bool {
         // internal allocations that happen to share aliases within the same module.
         const func = issue.location.func;
         const msg = issue.message;
-        const is_mangled_caller = std.mem.startsWith(u8, func, "_ZN");
+        const is_internal_caller = isCompilerInternalFunction(func);
         const has_rnv_callee = std.mem.indexOf(u8, msg, "_RNv") != null;
         const has_rust_dealloc = std.mem.indexOf(u8, msg, "__rust_dealloc") != null;
 
-        if (is_mangled_caller and has_rnv_callee and has_rust_dealloc) {
+        if (is_internal_caller and has_rnv_callee and has_rust_dealloc) {
             log.debug("[PURE-RUST-FP-GUARD] double_free in {s} with _RNv+__rust_dealloc -> let Pattern A handle", .{func});
             return false;
         }
@@ -734,10 +776,15 @@ fn isRealMemorySafetyBug(issue: *const Issue) bool {
 
     return switch (issue.kind) {
         // Core memory safety — NEVER suppress these under any pattern
-        .double_free,
-        .use_after_free,
-        .invalid_free,
-        .memory_leak,
+        // These are CWE-classified critical vulnerabilities that must always
+        // be reported, even in stdlib/FFI/internal functions.
+        .double_free, // CWE-415: Double Free
+        .use_after_free, // CWE-416: Use After Free
+        .invalid_free, // CWE-590: Free of Invalid Pointer
+        .memory_leak, // CWE-401: Memory Leak
+        .null_dereference, // CWE-476: NULL Pointer Dereference
+        .buffer_overflow, // CWE-120: Buffer Overflow (classic)
+        .integer_overflow, // CWE-190: Integer Overflow/Wrap
         => true,
 
         // Cross-language / FFI boundary — inherently security-relevant
@@ -858,4 +905,124 @@ test "shouldSuppressWithProfile — real memory bug never suppressed regardless 
         0.95,
     );
     try std.testing.expect(!shouldSuppressWithProfile(&i, &profile));
+}
+
+// ============================================================================
+// FIX #3: Precise compiler-internal function detection (mangled name whitelist)
+// ============================================================================
+
+test "isCompilerInternalFunction - C++ std library patterns are internal" {
+    try std.testing.expect(isCompilerInternalFunction("_ZNSt6vectorIiEE"));
+    try std.testing.expect(isCompilerInternalFunction("_ZNSt9basic_stringIcE"));
+    try std.testing.expect(isCompilerInternalFunction("_ZNSt3mapIiiEE"));
+}
+
+test "isCompilerInternalFunction - Rust stdlib patterns are internal" {
+    try std.testing.expect(isCompilerInternalFunction("_ZN4core9fmt::Formatter9write_strE"));
+    try std.testing.expect(isCompilerInternalFunction("_ZN5alloc6sync::ReentrantMutexE"));
+    try std.testing.expect(isCompilerInternalFunction("_ZN3std2io5stdio6printlnE"));
+}
+
+test "isCompilerInternalFunction - compiler ABI internals are internal" {
+    try std.testing.expect(isCompilerInternalFunction("_ZGVN3foo3barE"));
+    try std.testing.expect(isCompilerInternalFunction("_ZZN3foo3barEvE12local_var"));
+    try std.testing.expect(isCompilerInternalFunction("__cxx_global_var_init"));
+    try std.testing.expect(isCompilerInternalFunction("_GLOBAL__sub_I_main"));
+}
+
+test "isCompilerInternalFunction - Swift runtime symbols are internal" {
+    try std.testing.expect(isCompilerInternalFunction("$sS4base8toStringSSyF"));
+    try std.testing.expect(isCompilerInternalFunction("$ss5printyySS_pF"));
+}
+
+test "isCompilerInternalFunction - user mangled functions are NOT internal (FIX #3)" {
+    // User C++ class methods should NOT be skipped
+    try std.testing.expect(!isCompilerInternalFunction("_ZN9my_app4mainE"));
+    try std.testing.expect(!isCompilerInternalFunction("_ZN3app7my_class12do_somethingE"));
+    try std.testing.expect(!isCompilerInternalFunction("_ZN6mylib4DataC1Ev"));
+
+    // User Rust pub fn should NOT be skipped
+    try std.testing.expect(!isCompilerInternalFunction("_ZN6mycrate4func17process_dataEv"));
+    try std.testing.expect(!isCompilerInternalFunction("_ZN5utils8helper_fnE"));
+
+    // Non-mangled functions are never internal
+    try std.testing.expect(!isCompilerInternalFunction("user_function"));
+    try std.testing.expect(!isCompilerInternalFunction("main"));
+    try std.testing.expect(!isCompilerInternalFunction("handle_request"));
+}
+
+// ============================================================================
+// FIX #4: null_dereference and other critical types never suppressed
+// ============================================================================
+
+test "isRealMemorySafetyBug - null_dereference is never suppressed (FIX #4)" {
+    // null_dereference in stdlib function → must return true (never suppressed)
+    var i = Issue.init(
+        .null_dereference,
+        "null pointer dereference in std.mem.copy",
+        .{ .file = null, .func = "std.mem.copy" },
+        .high,
+        0.9,
+    );
+    try std.testing.expect(isRealMemorySafetyBug(&i));
+
+    // null_dereference in os.mmap → must return true
+    i = Issue.init(
+        .null_dereference,
+        "null dereference in os.mmap",
+        .{ .file = null, .func = "os.mmap" },
+        .high,
+        0.85,
+    );
+    try std.testing.expect(isRealMemorySafetyBug(&i));
+
+    // null_dereference in user function → must return true
+    i = Issue.init(
+        .null_dereference,
+        "null dereference in process_data",
+        .{ .file = null, .func = "process_data" },
+        .high,
+        0.88,
+    );
+    try std.testing.expect(isRealMemorySafetyBug(&i));
+}
+
+test "isRealMemorySafetyBug - buffer_overflow is never suppressed (FIX #4)" {
+    var i = Issue.init(
+        .buffer_overflow,
+        "buffer overflow in snprintf",
+        .{ .file = null, .func = "snprintf" },
+        .critical,
+        0.95,
+    );
+    try std.testing.expect(isRealMemorySafetyBug(&i));
+}
+
+test "isRealMemorySafetyBug - integer_overflow is never suppressed (FIX #4)" {
+    var i = Issue.init(
+        .integer_overflow,
+        "integer overflow in calculate_size",
+        .{ .file = null, .func = "calculate_size" },
+        .high,
+        0.87,
+    );
+    try std.testing.expect(isRealMemorySafetyBug(&i));
+}
+
+test "isRealMemorySafetyBug - core memory safety types always return true" {
+    const critical_kinds = [_]IssueKind{
+        .double_free,      .use_after_free,  .invalid_free,     .memory_leak,
+        .null_dereference, .buffer_overflow, .integer_overflow,
+    };
+
+    for (critical_kinds) |kind| {
+        var i = Issue.init(
+            kind,
+            "test issue",
+            .{ .file = null, .func = "test_func" },
+            .high,
+            0.8,
+        );
+        try std.testing.expect(isRealMemorySafetyBug(&i));
+    }
 }

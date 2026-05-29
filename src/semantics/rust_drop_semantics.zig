@@ -205,6 +205,9 @@ pub fn isImplicitDropFree(
     /// If drop glue already ran, a subsequent __rust_dealloc in the same
     /// chain is expected (not a double-free).
     pointer_already_dropped: bool,
+    /// Caller function name (for context validation).
+    /// Used to distinguish compiler RAII from user unsafe code.
+    caller_func_name: ?[]const u8,
 ) bool {
     // Non-Rust modules don't have implicit drop
     if (!is_rust_module) return false;
@@ -217,13 +220,27 @@ pub fn isImplicitDropFree(
             return true;
         },
         .is_dealloc_in_drop_chain => {
-            // __rust_dealloc is safe when it follows a drop_in_place
-            // (it's the deallocation step of the drop glue chain)
+            // __rust_dealloc requires careful validation:
+            // Case 1: Follows a drop_in_place → definitely RAII tail
             if (pointer_already_dropped) return true;
-            // Even without a preceding drop_in_place, __rust_dealloc
-            // on a Rust-allocated value in a Rust module is typically
-            // the tail of compiler-generated drop glue. Trust it.
-            return true;
+
+            // Case 2: Check caller context if available
+            if (caller_func_name) |caller| {
+                // First check: Is this user allocator code? (highest priority)
+                // User allocators use __rust_dealloc but are NOT compiler RAII
+                if (isUserAllocatorCode(caller)) {
+                    return false;
+                }
+
+                // Second check: Is this compiler-generated internal function?
+                if (isCompilerGeneratedRustFunction(caller)) {
+                    return true;
+                }
+            }
+
+            // Default conservative: don't trust __rust_dealloc without strong evidence
+            // This prevents suppressing double-free/UAF in user unsafe code
+            return false;
         },
         .is_manual_free => {
             // Manual C free() on a Rust value is ALWAYS dangerous
@@ -233,6 +250,48 @@ pub fn isImplicitDropFree(
         },
         .unrelated => return false,
     }
+}
+
+/// Check if a function name looks like a compiler-generated internal Rust function.
+fn isCompilerGeneratedRustFunction(func_name: []const u8) bool {
+    // Compiler-generated functions use mangled names
+    const internal_prefixes = [_][]const u8{
+        "_ZN", // Itanium ABI / legacy Rust mangling
+        "_R", // Rust v0 mangling
+        "__rust_",
+        "__rdl_",
+        "__rg_",
+    };
+
+    for (internal_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) return true;
+    }
+
+    // Also check for known drop glue patterns
+    if (isDropGlue(func_name)) return true;
+
+    return false;
+}
+
+/// Check if function appears to be user-level allocator code
+/// that uses __rust_dealloc but is NOT compiler RAII.
+fn isUserAllocatorCode(func_name: []const u8) bool {
+    const user_patterns = [_][]const u8{
+        "global_alloc",
+        "GlobalAlloc",
+        "allocator",
+        "Allocator",
+        "alloc::alloc::",
+        "std::alloc::",
+        // Box::from_raw pattern — user explicitly managing memory
+        "from_raw",
+        "into_raw",
+    };
+
+    for (user_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
+    }
+    return false;
 }
 
 /// Determine if a value will have drop glue inserted at scope end.
@@ -352,21 +411,43 @@ test "classifyDropCall - correct classification" {
 }
 
 test "isImplicitDropFree - safe vs dangerous frees" {
-    // Rust module: drop glue is always safe
-    try std.testing.expect(isImplicitDropFree("drop_in_place", true, false));
-    try std.testing.expect(isImplicitDropFree("drop_in_place", true, true));
+    // Rust module: drop glue is always safe (regardless of caller)
+    try std.testing.expect(isImplicitDropFree("drop_in_place", true, false, null));
+    try std.testing.expect(isImplicitDropFree("drop_in_place", true, true, null));
 
-    // Rust module: __rust_dealloc is safe (part of drop chain)
-    try std.testing.expect(isImplicitDropFree("__rust_dealloc", true, false));
-    try std.testing.expect(isImplicitDropFree("__rust_dealloc", true, true));
+    // Rust module: __rust_dealloc in compiler-generated function → safe
+    try std.testing.expect(isImplicitDropFree("__rust_dealloc", true, false, "_ZN4core3ptr13drop_in_place"));
+    try std.testing.expect(isImplicitDropFree("__rust_dealloc", true, true, "_ZN4core3ptr13drop_in_place"));
+
+    // Rust module: __rust_dealloc with preceding drop_in_place → always safe
+    try std.testing.expect(isImplicitDropFree("__rust_dealloc", true, true, null));
+
+    // Rust module: __rust_dealloc in user code WITHOUT context → NOT safe (conservative)
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, null));
+
+    // Rust module: __rust_dealloc in user allocator impl → NOT safe
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "my_allocator"));
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "_ZN4alloc5alloc9global_alloc"));
 
     // Rust module: C free() is ALWAYS dangerous on Rust values
-    try std.testing.expect(!isImplicitDropFree("free", true, false));
-    try std.testing.expect(!isImplicitDropFree("free", true, true));
+    try std.testing.expect(!isImplicitDropFree("free", true, false, null));
+    try std.testing.expect(!isImplicitDropFree("free", true, true, null));
 
     // Non-Rust module: no implicit drop semantics
-    try std.testing.expect(!isImplicitDropFree("drop_in_place", false, false));
-    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", false, false));
+    try std.testing.expect(!isImplicitDropFree("drop_in_place", false, false, null));
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", false, false, null));
+}
+
+test "isImplicitDropFree - user unsafe code detection" {
+    // User unsafe function using Box::from_raw + __rust_dealloc → should NOT be suppressed
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "process_data"));
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "handle_request"));
+
+    // GlobalAlloc trait implementation → user code, not compiler RAII
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "global_alloc"));
+
+    // Custom allocator → user code
+    try std.testing.expect(!isImplicitDropFree("__rust_dealloc", true, false, "MyAllocator::dealloc"));
 }
 
 test "valueNeedsDrop - moved and transferred values don't need drop" {

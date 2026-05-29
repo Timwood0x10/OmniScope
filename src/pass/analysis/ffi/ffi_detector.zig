@@ -441,7 +441,7 @@ pub const FFIDetector = struct {
             while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);
@@ -479,7 +479,7 @@ pub const FFIDetector = struct {
             while (@intFromPtr(inst) != 0) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_func = c.LLVMGetCalledFunction(inst);
                     if (called_func != null) {
                         const func_name = c.LLVMGetValueName(called_func);

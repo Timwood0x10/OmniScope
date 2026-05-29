@@ -58,6 +58,15 @@ pub const SemanticKind = enum(u8) {
     // ── R-7: Library-level allocator release (covers mimalloc/zlib/openssl/sqlite etc.) ──
     library_release, // mi_free/inflateEnd/EVP_CIPHER_CTX_free/sqlite3_finalize etc.
     //   cross_language_free detection hitting this kind → not reported
+
+    // ── Nomicon Ch4: Unsafe type conversions (transmute, from_raw) ──
+    unsafe_transmute, // bitcast/ptrtoint/inttoptr with size mismatch or invalid cast
+
+    // ── Nomicon Ch5: Uninitialized memory usage (MaybeUninit::assume_init) ──
+    uninit_memory_use, // Read from MaybeUninit field without proper initialization
+
+    // ── Nomicon Ch8: Concurrency violations (Send/Sync trait abuse) ──
+    send_sync_violation, // Sending non-Send type across thread boundary
 };
 
 /// A semantic resolution - the result of applying a pattern to a node

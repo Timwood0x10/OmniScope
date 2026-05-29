@@ -246,7 +246,7 @@ pub const FFIAnalysisPass = struct {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                     const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (opcode != c.LLVMCall) continue;
+                    if (!llvm_safe.isCallOrInvoke(opcode)) continue;
 
                     const called = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called) == 0) continue;
@@ -305,7 +305,7 @@ pub const FFIAnalysisPass = struct {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                     const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (opcode != c.LLVMCall) continue;
+                    if (!llvm_safe.isCallOrInvoke(opcode)) continue;
                     const called = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called) == 0) continue;
 

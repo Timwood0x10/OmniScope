@@ -123,26 +123,56 @@ test "C.7: Vec<UnsafeCell<i32>> — Vec directly containing UnsafeCell" {
 // Test Group D: Non-interior-mutable types (should return false)
 // ============================================================
 
-test "D.1: String" { try std.testing.expectEqual(false, isInteriorMutDIName("String")); }
-test "D.2: Vec<i32>" { try std.testing.expectEqual(false, isInteriorMutDIName("Vec<i32>")); }
-test "D.3: Box<MyStruct>" { try std.testing.expectEqual(false, isInteriorMutDIName("Box<MyStruct>")); }
-test "D.4: &str" { try std.testing.expectEqual(false, isInteriorMutDIName("&str")); }
-test "D.5: HashMap<K, V>" { try std.testing.expectEqual(false, isInteriorMutDIName("HashMap<K, V>")); }
-test "D.6: Option<String>" { try std.testing.expectEqual(false, isInteriorMutDIName("Option<String>")); }
-test "D.7: Result<u64, Error>" { try std.testing.expectEqual(false, isInteriorMutDIName("Result<u64, Error>")); }
-test "D.8: [i32; 10]" { try std.testing.expectEqual(false, isInteriorMutDIName("[i32; 10]")); }
-test "D.9: MyCustomStruct" { try std.testing.expectEqual(false, isInteriorMutDIName("MyCustomStruct")); }
-test "D.10: ()" { try std.testing.expectEqual(false, isInteriorMutDIName("()")); }
+test "D.1: String" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("String"));
+}
+test "D.2: Vec<i32>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("Vec<i32>"));
+}
+test "D.3: Box<MyStruct>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("Box<MyStruct>"));
+}
+test "D.4: &str" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("&str"));
+}
+test "D.5: HashMap<K, V>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("HashMap<K, V>"));
+}
+test "D.6: Option<String>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("Option<String>"));
+}
+test "D.7: Result<u64, Error>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("Result<u64, Error>"));
+}
+test "D.8: [i32; 10]" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("[i32; 10]"));
+}
+test "D.9: MyCustomStruct" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("MyCustomStruct"));
+}
+test "D.10: ()" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("()"));
+}
 
 // ============================================================
 // Test Group E: Edge cases and boundary conditions
 // ============================================================
 
-test "E.1: empty string" { try std.testing.expectEqual(false, isInteriorMutDIName("")); }
-test "E.2: UnsafeCell without <>" { try std.testing.expectEqual(false, isInteriorMutDIName("UnsafeCell")); }
-test "E.3: lowercase unsafecell" { try std.testing.expectEqual(false, isInteriorMutDIName("unsafecell<i32>")); }
-test "E.4: UNSAFECELL uppercase" { try std.testing.expectEqual(false, isInteriorMutDIName("UNSAFECELL<i32>")); }
-test "E.5: space before < [⚠️]" { try std.testing.expectEqual(false, isInteriorMutDIName("UnsafeCell <i32>")); }
+test "E.1: empty string" {
+    try std.testing.expectEqual(false, isInteriorMutDIName(""));
+}
+test "E.2: UnsafeCell without <>" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("UnsafeCell"));
+}
+test "E.3: lowercase unsafecell" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("unsafecell<i32>"));
+}
+test "E.4: UNSAFECELL uppercase" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("UNSAFECELL<i32>"));
+}
+test "E.5: space before < [⚠️]" {
+    try std.testing.expectEqual(false, isInteriorMutDIName("UnsafeCell <i32>"));
+}
 test "E.6: very long nested type" {
     try std.testing.expectEqual(true, isInteriorMutDIName("Arc<RwLock<HashMap<String, Box<RefCell<UnsafeCell<Vec<u8>>>>>>>"));
 }

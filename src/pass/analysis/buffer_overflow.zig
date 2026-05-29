@@ -10,6 +10,7 @@
 const std = @import("std");
 
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -102,7 +103,7 @@ pub const BufferOverflowPass = struct {
 
                     // Check __memcpy_chk / __memmove_chk for size > destination buffer.
                     // Pattern: __memcpy_chk(dest, src, size, limit) where size > limit = overflow.
-                    if (opcode == c.LLVMCall) {
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         if (checkMemcpyChkOverflow(ctx, func, inst, diag)) |vuln| {
                             overflow_count += 1;
                             try reportIssue(ctx, vuln, diag);

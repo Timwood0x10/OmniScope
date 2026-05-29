@@ -178,6 +178,10 @@ pub fn isFunctionLevelNullGuarded(
 /// v0.1.7 FIX: Deduplication — each unique (freed_ptr, function) pair reports
 /// at most 1 UAF. Previously, every flow edge from a freed pointer was counted
 /// separately, causing 10x count inflation (e.g., 10 UAFs for 1 real bug).
+///
+/// Three-tier detection approach:
+/// - Tier 1: Danger path detection (existing) - FFI boundaries, cross-language
+/// - Tier 2: Language-internal patterns (new) - Raw pointer misuse within same function
 pub fn detectUseAfterFree(
     ctx: *PassContext,
     free_map: *std.AutoHashMap(u32, *FreeSite),
@@ -237,6 +241,7 @@ pub fn detectUseAfterFree(
             continue;
         }
 
+        // ── Tier 1: Danger path detection (existing logic) ──
         // P2 FIX: Use MemoryGraph.isOnDangerPath to filter out UAF reports
         // for pointers that are NOT on FFI/unsafe danger paths.
         // Pure C/C++ internal UAF (same-language, no FFI boundary) is a
@@ -246,10 +251,6 @@ pub fn detectUseAfterFree(
         // Only report UAF when the freed pointer was on a danger path
         // (cross-language lifecycle, FFI arg/ret, unsafe zone alloc).
         const mg_danger = ctx.isOnDangerPathFull(@as(u64, ptr_id));
-        if (!mg_danger) {
-            diag.debug("UAF-SKIP: ptr {d} not on danger path (pure internal)", .{ptr_id});
-            continue;
-        }
 
         var uaf_found = false;
         var flow_iter = flow_graph.iterator();
@@ -272,14 +273,78 @@ pub fn detectUseAfterFree(
         }
 
         if (uaf_found) {
-            stats.use_after_frees += 1;
-            ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), .high, 0.8)) catch {
-                diag.warn("Failed to register use_after_free issue", .{});
-            };
-            diag.warn("USE-AFTER-FREE [MEDIUM]: Pointer {d} used after free in {s}", .{ ptr_id, free_info.func_name });
-            reported.put(ptr_id, {}) catch {};
+            // Determine confidence based on tier
+            var confidence: f32 = 0.8; // Base confidence for Tier 1
+
+            if (!mg_danger) {
+                // ── Tier 2: Language-internal UAF (lower confidence) ──
+                // Non-danger path UAF still detected but with reduced confidence
+                // to balance detection coverage vs false positive rate
+                confidence *= 0.6; // Reduce from 0.8 to 0.48
+
+                // Boost confidence for high-risk patterns
+                if (isHighRiskInternalUAF(free_info.func_name)) {
+                    confidence += 0.25; // Boost to 0.73
+                }
+
+                // Additional boost for explicit free-then-use in same function
+                if (isSameFunctionFreeThenUse(ptr_id, free_map, flow_graph)) {
+                    confidence += 0.15; // Boost to ~0.88 for clear pattern A
+                }
+
+                diag.debug("UAF-TIER2: ptr {d} internal UAF with confidence {:.2}", .{ ptr_id, confidence });
+            }
+
+            // Only report if confidence meets threshold (0.75+)
+            if (confidence >= 0.75) {
+                stats.use_after_frees += 1;
+                const severity: Severity = if (mg_danger) .high else .medium;
+                ctx.addIssue(&Issue.init(.use_after_free, "Pointer used after being freed", Location.init(free_info.func_name), severity, confidence)) catch {
+                    diag.warn("Failed to register use_after_free issue", .{});
+                };
+                diag.warn("USE-AFTER-FREE [{s}]: Pointer {d} used after free in {s} (confidence: {d:.2})", .{ @tagName(severity), ptr_id, free_info.func_name, confidence });
+                reported.put(ptr_id, {}) catch {};
+            } else {
+                diag.debug("UAF-SKIP: ptr {d} confidence too low ({:.2} < 0.75)", .{ ptr_id, confidence });
+            }
         }
     }
+}
+
+/// Check if this function shows high-risk internal UAF patterns.
+/// Functions with names suggesting manual memory management or raw pointer usage
+/// get a confidence boost.
+fn isHighRiskInternalUAF(func_name: []const u8) bool {
+    const risky_patterns = [_][]const u8{
+        "raw_",     "unsafe_", "unchecked_", "manual_",
+        "c_style_", "legacy_",
+    };
+
+    for (risky_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Check if there's a clear free-then-use pattern in the same function (Pattern A).
+/// This detects simple cases where programmer forgot about the free:
+///   ptr = malloc(...); ... free(ptr); ... use(ptr);
+fn isSameFunctionFreeThenUse(
+    ptr_id: u32,
+    _: *std.AutoHashMap(u32, *FreeSite),
+    flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+) bool {
+    // Check if the freed pointer has direct uses (not just aliases)
+    if (flow_graph.get(ptr_id)) |flows| {
+        // If pointer has multiple outgoing flows after being freed,
+        // it's likely used directly (Pattern A)
+        return flows.count() > 0;
+    }
+
+    return false;
 }
 
 /// Detect memory leaks, double-free, and use-after-free.

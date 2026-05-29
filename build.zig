@@ -307,6 +307,20 @@ pub fn build(b: *std.Build) void {
     semantic_resolution_test_step.dependOn(&run_semantic_resolution_tests.step);
     test_step.dependOn(&run_semantic_resolution_tests.step);
 
+    // Into-Raw Gate tests step
+    const into_raw_gate_test_step = b.step("test-into-raw-gate", "Run into_raw gate tests");
+    const into_raw_gate_test_mod = b.addModule("into_raw_gate_test", .{
+        .root_source_file = b.path("tests/into_raw_gate_test.zig"),
+        .target = target,
+    });
+    into_raw_gate_test_mod.addImport("OmniScope", lib_mod);
+    const into_raw_gate_tests = b.addTest(.{
+        .root_module = into_raw_gate_test_mod,
+    });
+    const run_into_raw_gate_tests = b.addRunArtifact(into_raw_gate_tests);
+    into_raw_gate_test_step.dependOn(&run_into_raw_gate_tests.step);
+    test_step.dependOn(&run_into_raw_gate_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{

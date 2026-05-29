@@ -11,6 +11,7 @@
 const std = @import("std");
 const log = std.log.scoped(.free_validation);
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -271,7 +272,7 @@ pub const FreeValidationPass = struct {
         // compiler-generated implicit destructors — NOT bugs.
         // E.g., drop_in_place<T> and __rust_dealloc within a drop chain
         // are safe because they represent automatic scope-end cleanup.
-        if (rust_drop_semantics.isImplicitDropFree(free_func, true, false)) return true;
+        if (rust_drop_semantics.isImplicitDropFree(free_func, true, false, null)) return true;
         // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
         if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
         // into_raw + matching Rust dealloc: correct ownership reclamation
@@ -322,7 +323,7 @@ pub const FreeValidationPass = struct {
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
-        if (opcode != c.LLVMCall) return false;
+        if (!llvm_safe.isCallOrInvoke(opcode)) return false;
 
         const called = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called) == 0) return false;

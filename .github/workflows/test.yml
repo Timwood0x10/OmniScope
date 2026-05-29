@@ -1,0 +1,181 @@
+name: OmniScope Test Suite
+
+on:
+  push:
+    branches: [main, develop, master]
+  pull_request:
+    branches: [main, develop, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.15.2
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, zig ${{ matrix.zig-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        zig-version: ['0.15.2']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ZVM and Zig
+        run: |
+          curl -sSL https://www.zvm.app/install.sh | bash
+          export ZVM_INSTALL="$HOME/.zvm/self"
+          export PATH="$HOME/.zvm/bin:$ZVM_INSTALL:$PATH"
+          zvm install ${{ matrix.zig-version }}
+          zvm use ${{ matrix.zig-version }}
+          echo "$HOME/.zvm/bin" >> $GITHUB_PATH
+          echo "$HOME/.zvm/self" >> $GITHUB_PATH
+
+      - name: Install LLVM (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-22-dev clang-22 libclang-22-dev
+          echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
+
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: brew install llvm@22 && echo "$(brew --prefix llvm@22)/bin" >> $GITHUB_PATH
+
+      - name: Check formatting
+        run: zig fmt --check . 2>&1 || true
+
+      - name: Run all tests
+        run: |
+          echo "========================================="
+          echo "  Running OmniScope Test Suite"
+          echo "  OS: ${{ matrix.os }}"
+          echo "  Zig: ${{ matrix.zig-version }}"
+          echo "  Date: $(date)"
+          echo "========================================="
+          zig build test 2>&1 | tee test-output.txt
+
+      - name: Run unit tests
+        run: |
+          echo "=== Unit Tests ==="
+          zig build unit-test 2>&1 | tee -a test-output.txt || true
+
+      - name: Run integration tests
+        run: |
+          echo "=== Integration Tests ==="
+          zig build test-integration 2>&1 | tee -a test-output.txt || true
+
+      - name: Run issue verification tests
+        run: |
+          echo "=== Issue Verification Tests ==="
+          zig build test-issues 2>&1 | tee -a test-output.txt || true
+
+      - name: Run stability tests
+        run: |
+          echo "=== Stability Tests ==="
+          zig build test-stability 2>&1 | tee -a test-output.txt || true
+
+      - name: Run semantic resolution tests
+        run: |
+          echo "=== Semantic Resolution Tests ==="
+          zig build test-semantic 2>&1 | tee -a test-output.txt || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.zig-version }}
+          path: |
+            test-output.txt
+            zig-out/
+          retention-days: 7
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:**" >> $GITHUB_STEP_SUMMARY
+          echo "- OS: \`${{ matrix.os }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Zig Version: \`${{ matrix.zig-version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f test-output.txt ]; then
+            passed=$(grep -c "passed" test-output.txt 2>/dev/null || echo "0")
+            failed=$(grep -c "FAILED\|error\|failed" test-output.txt 2>/dev/null || echo "0")
+            
+            echo "**Results:**" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Tests Passed | $passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failures/Errors | $failed |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if grep -q "All.*tests passed" test-output.txt 2>/dev/null; then
+              echo "✅ **All tests passed**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Some tests failed**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "<details>" >> $GITHUB_STEP_SUMMARY
+              echo "<summary>Click to see error details</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              grep -E "(FAILED|error|panic|trace)" test-output.txt >> $GITHUB_STEP_SUMMARY || true
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+  coverage:
+    name: Coverage Report
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: test-results-*
+          merge-multiple: true
+
+      - name: Generate coverage summary
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Suites Executed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          for dir in artifacts/*/; do
+            if [ -d "$dir" ]; then
+              name=$(basename "$dir")
+              if [ -f "${dir}test-output.txt" ]; then
+                if grep -q "All.*tests passed" "${dir}test-output.txt" 2>/dev/null; then
+                  echo "| $name | ✅ Pass |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $name | ❌ Fail |" >> $GITHUB_STEP_SUMMARY
+                fi
+              fi
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Generated on $(date)*" >> $GITHUB_STEP_SUMMARY

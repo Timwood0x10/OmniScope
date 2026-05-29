@@ -17,6 +17,7 @@ const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
 // R8-H6 FIX: Added .c suffix to import LLVM C bindings
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
@@ -155,7 +156,7 @@ pub const LockPass = struct {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Lock operations are typically function calls
-        if (opcode != c.LLVMCall) return false;
+        if (!llvm_safe.isCallOrInvoke(opcode)) return false;
 
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);

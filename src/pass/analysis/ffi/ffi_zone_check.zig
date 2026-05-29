@@ -5,6 +5,7 @@
 //! and boundary kind classification.
 
 const std = @import("std");
+const log = std.log.scoped(.ffi_zone);
 const c = @import("../../../ir/llvm_raw.zig").c;
 
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
@@ -77,52 +78,187 @@ pub const FFIPatterns = struct {
         "__zig_bug",
         "__zig_panic_handler",
     };
+};
 
-    /// Known-safe @cImport bindings that should not generate warnings.
-    pub const zig_cimport_safe = &[_][]const u8{
-        // Standard C library memory functions (safe wrappers)
-        "memcpy",    "memmove",   "memset",   "memcmp",
-        "strlen",    "strcpy",    "strncpy",  "strcat",
-        "strncat",   "strcmp",    "strncmp",  "strchr",
-        "strrchr",   "malloc",    "calloc",   "realloc",
-        "free",
-        // Standard I/O
-             "fopen",     "fclose",   "fread",
-        "fwrite",    "fprintf",   "printf",   "fgets",
-        "puts",      "putchar",   "getc",     "ungetc",
-        "sprintf",   "snprintf",  "vsprintf", "vsnprintf",
-        "sscanf",    "fscanf",    "scanf",
-        // String conversion
-           "atoi",
-        "atol",      "atof",      "strtol",   "strtoul",
-        "strtod",    "itoa",      "ltoa",     "gcvt",
-        // Math functions
-        "sin",       "cos",       "tan",      "asin",
-        "acos",      "atan",      "atan2",    "sinh",
-        "cosh",      "tanh",      "log",      "log10",
-        "exp",       "pow",       "sqrt",     "fabs",
-        "floor",     "ceil",      "round",    "trunc",
-        "fmod",      "remainder", "rand",     "srand",
-        // Time functions
-        "time",      "clock",     "difftime", "mktime",
-        "localtime", "gmtime",    "strftime", "asctime",
-        "ctime",
-        // File operations
-            "open",      "close",    "read",
-        "write",     "lseek",     "stat",     "fstat",
-        "access",    "chmod",     "unlink",   "rename",
-        "remove",    "tmpfile",   "fgetc",    "fputc",
-        "fputs",     "feof",      "ferror",   "clearerr",
-        "rewind",    "ftell",     "fflush",   "freopen",
-        "setbuf",    "setvbuf",
-        // Error handling
-          "errno",    "strerror",
-        "perror",
-        // Process control
-           "exit",      "abort",    "atexit",
-        "system",    "getenv",    "putenv",   "getpid",
-        "getppid",
-    };
+/// Dangerous C functions that should ALWAYS trigger warnings.
+/// These functions have known security vulnerabilities (CWE-120, CWE-134, CWE-787)
+/// even when used correctly in @cImport context.
+const dangerous_c_functions = [_][]const u8{
+    // Buffer overflow risks (no bounds checking) — CWE-120, CWE-787
+    "strcpy", "strcat",   "sprintf",   "gets",
+    "scanf",  "vsprintf",
+
+    // Command injection risks — CWE-78, CWE-77
+    "system",    "popen",
+    "execl",  "execle",   "execlp",    "execv",
+    "execve", "execvp",
+
+    // Race conditions / undefined behavior
+      "strtok",    "asctime",
+    "ctime",  "gmtime",   "localtime",
+
+    // Deprecated / removed functions (POSIX.1-2008 removed)
+    "bcopy",
+    "bzero",
+
+    // Format string vulnerabilities — CWE-134
+     "fprintf",  "printf",    "sscanf",
+    "fscanf",
+};
+
+/// Check if a C function is in the dangerous blacklist.
+pub fn isDangerousCFunction(name: []const u8) bool {
+    for (dangerous_c_functions) |danger| {
+        if (std.mem.eql(u8, name, danger)) return true;
+    }
+    return false;
+}
+
+/// Safety level classification for C functions imported via @cImport.
+/// Three-tier filtering mechanism for accurate risk assessment.
+pub const CSafetyLevel = enum {
+    dangerous, // Always warn - absolute blacklist (system, strcpy, gets, etc.)
+    conditional, // Warn if args look suspicious (malloc, memcpy, etc.)
+    safe, // No warning needed (strlen, strcmp, etc.)
+};
+
+/// Layer 1: Absolute blacklist (never safe, always warn).
+/// These functions have inherent vulnerabilities that cannot be mitigated
+/// by correct usage alone.
+pub const c_import_blacklist = &[_][]const u8{
+    // Command injection - allows arbitrary code execution
+    "system", "popen",   "execve",  "execl",       "execlp",
+    "execle", "execvp",  "execv",   "posix_spawn",
+
+    // Buffer overflow - no bounds checking (CWE-120)
+    "strcpy",
+    "strcat", "sprintf", "gets",    "scanf",       "sscanf",
+    "fscanf",
+
+    // Undefined behavior prone
+    "strtok",  "asctime", "ctime",
+
+    // Format string vulnerability (CWE-134)
+          "vsprintf",
+};
+
+/// Layer 2: Conditional safe (safe ONLY when used correctly).
+/// These require additional validation of arguments and usage patterns.
+pub const c_import_conditional = &[_][]const u8{
+    // Memory management (CWE-252, CWE-415, CWE-416)
+    "malloc",  "calloc",   "realloc",   "free",
+
+    // Memory operations (safe if size is correct)
+    "memcpy",  "memmove",
+
+    // String operations with size limits (may not null-terminate)
+     "strncpy",   "strncat",
+
+    // I/O operations (safe if buffer size matches)
+    "fgets",   "fread",    "fwrite",
+
+    // File operations (safe if mode/permissions are correct)
+       "fopen",
+    "freopen",
+
+    // Format functions (safer alternatives but still risky)
+    "snprintf", "vsnprintf",
+};
+
+/// Layer 3: Presumed safe (commonly used, low risk).
+/// These are generally safe but still logged for audit purposes.
+pub const c_import_safe = &[_][]const u8{
+    // String queries (read-only, no side effects)
+    "strlen",  "strcmp",   "strncmp",  "memcmp",
+    "strchr",  "strrchr",  "strstr",
+
+    // Memory operations (safe when used correctly)
+      "memset",
+
+    // String conversion (well-defined behavior)
+    "atoi",    "atol",     "strtoul",  "strtol",
+    "strtod",
+
+    // Format output (lower risk than sprintf)
+     "printf",   "fprintf",
+
+    // Process control (normal termination)
+     "exit",
+    "abort",   "atexit",
+
+    // Error handling
+      "errno",    "strerror",
+    "perror",
+
+    // Environment access (read-only)
+     "getenv",
+
+    // Math functions (pure functions, no side effects)
+      "sin",      "cos",
+    "tan",     "asin",     "acos",     "atan",
+    "atan2",   "sinh",     "cosh",     "tanh",
+    "log",     "log10",    "exp",      "pow",
+    "sqrt",    "fabs",     "floor",    "ceil",
+    "round",   "trunc",    "fmod",     "remainder",
+
+    // Time functions (mostly read-only)
+    "time",    "clock",    "difftime", "mktime",
+
+    // Character I/O (single character, no buffer issues)
+    "puts",    "putchar",  "getc",     "ungetc",
+    "fgetc",   "fputc",    "fputs",
+
+    // Stream operations (state queries)
+       "feof",
+    "ferror",  "clearerr", "rewind",   "ftell",
+    "fflush",
+
+    // Buffer management
+     "setbuf",   "setvbuf",
+
+    // Process ID (read-only)
+     "getpid",
+    "getppid",
+};
+
+/// Known-safe @cImport bindings that should not generate warnings.
+/// DEPRECATED: Use classifyCSafetyLevel() instead for three-tier filtering.
+/// This list is kept for backward compatibility but should not be extended.
+pub const zig_cimport_safe = &[_][]const u8{
+    // Standard C library memory functions (safe wrappers) - MOVED TO LAYER 2/3
+    "memcpy",    "memmove",  "memset",  "memcmp",
+    "strlen",    "strcmp",   "strncmp", "strchr",
+    "strrchr",
+    // Standard I/O (safe operations)
+      "fgets",    "puts",    "putchar",
+    "getc",      "ungetc",   "fgetc",   "fputc",
+    "fputs",     "feof",     "ferror",  "clearerr",
+    "rewind",    "ftell",    "fflush",  "setbuf",
+    "setvbuf",
+    // String conversion (safe)
+      "atoi",     "atol",    "atof",
+    "strtol",    "strtoul",  "strtod",
+    // Math functions (pure functions)
+     "sin",
+    "cos",       "tan",      "asin",    "acos",
+    "atan",      "atan2",    "sinh",    "cosh",
+    "tanh",      "log",      "log10",   "exp",
+    "pow",       "sqrt",     "fabs",    "floor",
+    "ceil",      "round",    "trunc",   "fmod",
+    "remainder", "rand",     "srand",
+    // Time functions (mostly safe)
+      "time",
+    "clock",     "difftime", "mktime",
+    // Error handling (safe)
+     "errno",
+    "strerror",  "perror",
+    // Process control (safe termination)
+      "exit",    "abort",
+    "atexit",
+    // Environment (read-only access only)
+       "getenv",
+    // Process ID (read-only)
+      "getpid",  "getppid",
 };
 
 /// Check if a Zig function is an internal/runtime function (SAFE — skip analysis).
@@ -179,16 +315,56 @@ pub fn isGoInternalFunction(func_name: []const u8) bool {
 }
 
 /// Check if a called C function from @cImport is a known-safe binding.
-/// These are standard libc functions that Zig wraps safely.
+/// DEPRECATED: Use classifyCSafetyLevel() for three-tier filtering.
+/// This function is kept for backward compatibility.
+///
+/// Returns true only for Layer 3 (presumed safe) functions.
+/// Layer 1 (dangerous) and Layer 2 (conditional) return false to ensure
+/// they are properly analyzed by the security checks.
 pub fn isZigSafeCimport(func_name: []const u8) bool {
-    for (FFIPatterns.zig_cimport_safe) |pattern| {
-        if (std.mem.eql(u8, func_name, pattern) or
-            std.mem.indexOf(u8, func_name, pattern) != null)
-        {
-            return true;
+    // Use new three-tier classification
+    const level = classifyCSafetyLevel(func_name);
+    return level == .safe;
+}
+
+/// Classify the safety level of a C function imported via @cImport.
+/// Uses three-tier filtering mechanism:
+///
+/// - Layer 1 (Blacklist): Functions that are never safe - always warn
+///   Examples: system(), strcpy(), gets() - inherent vulnerabilities
+///
+/// - Layer 2 (Conditional): Functions safe ONLY when used correctly
+///   Examples: malloc(), memcpy() - need argument validation
+///
+/// - Layer 3 (Safe): Generally safe with low risk
+///   Examples: strlen(), strcmp() - read-only, no side effects
+///
+/// Returns null for unknown functions (conservative: not automatically safe).
+pub fn classifyCSafetyLevel(func_name: []const u8) ?CSafetyLevel {
+    // Layer 1: Blacklist check - absolute danger, always warn
+    for (c_import_blacklist) |danger| {
+        if (std.mem.eql(u8, func_name, danger)) {
+            return .dangerous;
         }
     }
-    return false;
+
+    // Layer 2: Conditional check - needs argument validation
+    for (c_import_conditional) |cond| {
+        if (std.mem.eql(u8, func_name, cond)) {
+            return .conditional;
+        }
+    }
+
+    // Layer 3: Presumed safe - generally okay
+    for (c_import_safe) |safe| {
+        if (std.mem.eql(u8, func_name, safe)) {
+            return .safe;
+        }
+    }
+
+    // Unknown function → conservative: not automatically safe
+    // Caller should decide based on context and additional analysis
+    return null;
 }
 
 /// Identify the language of a function based on its characteristics.
@@ -249,6 +425,7 @@ pub fn isPythonCApiFunction(func_name: []const u8) bool {
 
 /// Comprehensive check: Should we analyze this FFI boundary in Zig context?
 /// Returns true if this is a REAL FFI risk worth reporting.
+/// Uses three-tier safety classification for accurate filtering.
 pub fn isZigFFIWorthReporting(
     caller_func_name: []const u8,
     callee_func_name: []const u8,
@@ -259,13 +436,47 @@ pub fn isZigFFIWorthReporting(
         return false;
     }
 
-    // Rule 2: Skip if callee is known-safe @cImport binding AND not dangerous
-    if (isZigSafeCimport(callee_func_name)) {
-        // Still report if it's semantically dangerous (system, exec, etc.)
-        if (sem.kind == .command_exec or sem.kind == .unchecked_copy) {
-            return true; // Override: dangerous calls always reported
+    // Rule 2: Use three-tier safety classification for callee
+    const safety_level = classifyCSafetyLevel(callee_func_name);
+
+    if (safety_level) |level| {
+        switch (level) {
+            // Layer 1: Always report dangerous functions
+            .dangerous => {
+                return true; // system(), strcpy(), gets() - always warn
+            },
+
+            // Layer 2: Conditional - report based on semantics and usage patterns
+            .conditional => {
+                // Report if semantically dangerous or has ownership issues
+                if (sem.kind == .command_exec or
+                    sem.kind == .unchecked_copy or
+                    sem.transfers_ownership or
+                    sem.consumes_ownership)
+                {
+                    return true;
+                }
+                // For conditional functions, still report format string issues
+                if (sem.kind == .format_string) {
+                    return true;
+                }
+                // Default: don't report for well-used conditional functions
+                // (caller can add additional heuristics if needed)
+                return false;
+            },
+
+            // Layer 3: Safe functions - skip unless special case
+            .safe => {
+                // Still report if it's semantically unusual (defensive)
+                if (sem.kind == .command_exec or sem.kind == .unchecked_copy) {
+                    return true; // Override: unexpected dangerous pattern
+                }
+                return false; // Safe libc bindings are OK
+            },
         }
-        return false; // Safe libc bindings are OK
+    } else {
+        // Unknown function → conservative: analyze it
+        // This ensures new/unknown C imports get proper scrutiny
     }
 
     // Rule 3: Always report cross-language ownership issues
@@ -278,7 +489,7 @@ pub fn isZigFFIWorthReporting(
         return true;
     }
 
-    // Default: report for analysis
+    // Default: report for analysis (conservative for unknown functions)
     return true;
 }
 
@@ -331,4 +542,74 @@ pub fn isLikelyIntentionalPattern(func_name: []const u8) bool {
     }
 
     return false;
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "DangerousCFunction: buffer overflow functions are detected" {
+    try std.testing.expect(isDangerousCFunction("strcpy"));
+    try std.testing.expect(isDangerousCFunction("strcat"));
+    try std.testing.expect(isDangerousCFunction("sprintf"));
+    try std.testing.expect(isDangerousCFunction("gets"));
+    try std.testing.expect(isDangerousCFunction("scanf"));
+    try std.testing.expect(isDangerousCFunction("vsprintf"));
+}
+
+test "DangerousCFunction: command injection functions are detected" {
+    try std.testing.expect(isDangerousCFunction("system"));
+    try std.testing.expect(isDangerousCFunction("popen"));
+    try std.testing.expect(isDangerousCFunction("execl"));
+    try std.testing.expect(isDangerousCFunction("execve"));
+    try std.testing.expect(isDangerousCFunction("execvp"));
+}
+
+test "DangerousCFunction: deprecated/race condition functions" {
+    try std.testing.expect(isDangerousCFunction("strtok"));
+    try std.testing.expect(isDangerousCFunction("asctime"));
+    try std.testing.expect(isDangerousCFunction("ctime"));
+    try std.testing.expect(isDangerousCFunction("gmtime"));
+    try std.testing.expect(isDangerousCFunction("localtime"));
+    try std.testing.expect(isDangerousCFunction("bcopy"));
+    try std.testing.expect(isDangerousCFunction("bzero"));
+}
+
+test "DangerousCFunction: format string vulnerability functions" {
+    try std.testing.expect(isDangerousCFunction("fprintf"));
+    try std.testing.expect(isDangerousCFunction("printf"));
+    try std.testing.expect(isDangerousCFunction("sscanf"));
+    try std.testing.expect(isDangerousCFunction("fscanf"));
+}
+
+test "DangerousCFunction: safe functions are NOT flagged" {
+    try std.testing.expect(!isDangerousCFunction("memcpy"));
+    try std.testing.expect(!isDangerousCFunction("snprintf"));
+    try std.testing.expect(!isDangerousCFunction("strlen"));
+    try std.testing.expect(!isDangerousCFunction("malloc"));
+    try std.testing.expect(!isDangerousCFunction("free"));
+    try std.testing.expect(!isDangerousCFunction("fgets"));
+    try std.testing.expect(!isDangerousCFunction("strncpy"));
+    try std.testing.expect(!isDangerousCFunction("strncat"));
+}
+
+test "isZigSafeCimport: dangerous functions return false" {
+    try std.testing.expect(!isZigSafeCimport("strcpy"));
+    try std.testing.expect(!isZigSafeCimport("sprintf"));
+    try std.testing.expect(!isZigSafeCimport("gets"));
+    try std.testing.expect(!isZigSafeCimport("system"));
+    try std.testing.expect(!isZigSafeCimport("printf"));
+    try std.testing.expect(!isZigSafeCimport("scanf"));
+}
+
+test "isZigSafeCimport: safe functions return true" {
+    try std.testing.expect(isZigSafeCimport("memcpy"));
+    try std.testing.expect(isZigSafeCimport("snprintf"));
+    try std.testing.expect(isZigSafeCimport("strlen"));
+    try std.testing.expect(isZigSafeCimport("malloc"));
+    try std.testing.expect(isZigSafeCimport("free"));
+    try std.testing.expect(isZigSafeCimport("fgets"));
+    try std.testing.expect(isZigSafeCimport("strncpy"));
+    try std.testing.expect(isZigSafeCimport("sin"));
+    try std.testing.expect(isZigSafeCimport("sqrt"));
 }
