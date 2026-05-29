@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -134,7 +135,8 @@ pub const CrossLangDataFlow = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -202,7 +204,8 @@ pub const CrossLangDataFlow = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -263,7 +266,8 @@ pub const CrossLangDataFlow = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -455,7 +459,8 @@ pub const CrossLangDataFlow = struct {
                                 var use_lang = func_lang;
 
                                 // Check if this call crosses FFI boundary
-                                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                                const opcode = c.LLVMGetInstructionOpcode(inst);
+                                if (llvm_safe.isCallOrInvoke(opcode)) {
                                     const called_val = c.LLVMGetCalledValue(inst);
                                     if (@intFromPtr(called_val) != 0) {
                                         const called_name_ptr = c.LLVMGetValueName(called_val);

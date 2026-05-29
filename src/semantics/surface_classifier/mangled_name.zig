@@ -160,7 +160,7 @@ fn classifyRustItanium(name: []const u8) ?SurfaceHint {
 /// namespace component after the _ZN/_R prefix.
 ///
 /// For _ZN4core3fmt5Debug3fmtE, hasPrefixSegment(name, "core") returns true.
-fn hasPrefixSegment(name: []const u8, segment: []const u8) bool {
+pub fn hasPrefixSegment(name: []const u8, segment: []const u8) bool {
     // Find the start of segments (skip _ZN, _R<variant><hash>_ etc.)
     const seg_start = findFirstSegment(name) orelse return false;
 
@@ -197,7 +197,7 @@ fn findFirstSegment(name: []const u8) ?usize {
 
 /// Detect known core-internal paths that are definitely compiler artifacts,
 /// not user code implementing core traits.
-fn isCoreInternal(name: []const u8) bool {
+pub fn isCoreInternal(name: []const u8) bool {
     // core::ptr::{drop_in_place, unique, non_null} — compiler glue
     if (std.mem.indexOf(u8, name, "3ptr") != null) return true;
     // core::ops::{function, FnOnce, FnMut, Fn} — closure shims
@@ -225,7 +225,7 @@ fn isCoreInternal(name: []const u8) bool {
 /// that appear in monomorphized trait method names:
 ///   $LT$ = <, $GT$ = >, $u20$ = space, $RF$ = &, $BP$ = *
 ///   $LP$ = (, $RP$ = ), $C$ = :, $u7b$ = {, $u7d$ = }
-fn isTraitMethodShim(name: []const u8) bool {
+pub fn isTraitMethodShim(name: []const u8) bool {
     // The most reliable signal: $LT$..$GT$ pattern (generic args)
     if (std.mem.indexOf(u8, name, "$LT$") != null) return true;
     // Legacy angle-bracket encoding (less common but exists)

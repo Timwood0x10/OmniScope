@@ -63,7 +63,7 @@ fn baseSeverity(kind: IssueKind) f32 {
         .borrow_escape => 0.50,
         .write_to_immutable => 0.50,
         .command_injection => 0.60,
-        .memory_leak => 0.45,
+        .memory_leak => 0.58,
         .double_free => 0.65,
         .null_pointer_dereference => 0.50,
         else => 0.40,

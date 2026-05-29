@@ -36,6 +36,7 @@ const CandidateBuilder = resource_candidate.CandidateBuilder;
 const resource_verifier = @import("../pass/analysis/resource/issue_verifier.zig");
 const IssueVerifier = resource_verifier.IssueVerifier;
 const c = @import("../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../ir/llvm_safe.zig");
 
 /// Analysis pipeline
 pub const Pipeline = struct {
@@ -201,7 +202,8 @@ pub const Pipeline = struct {
                     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                         var inst = c.LLVMGetFirstInstruction(bb);
                         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                            if (@intFromPtr(c.LLVMIsACallInst(inst)) == 0) continue;
+                            const opcode = c.LLVMGetInstructionOpcode(inst);
+                            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
                             const called_val = c.LLVMGetCalledValue(inst);
                             if (@intFromPtr(called_val) == 0) continue;
                             const called_name_ptr = c.LLVMGetValueName(called_val);
@@ -306,11 +308,24 @@ pub const Pipeline = struct {
                     // If allocation is inside a conditional branch (if/else, loop body),
                     // it may not execute on all code paths → reduce confidence by ~25%.
                     // This fixes FFT-LEAK-3 / FFT-LEAK-2 / BUG-4c conditional path FPs.
-                    var base_confidence: f32 = if (is_on_ffi_path) 0.78 else 0.50;
-                    if (rec.is_conditional) {
-                        base_confidence *= 0.75; // e.g., 0.78 → 0.585, 0.50 → 0.375
-                        if (base_confidence < 0.30) base_confidence = 0.30; // Floor at 30%
+                    var base_confidence: f32 = if (is_on_ffi_path) 0.78 else 0.58;
+                    if (rec.is_global_or_static) {
+                        base_confidence += 0.08;
                     }
+                    const is_known_dangerous_alloc = std.mem.indexOf(u8, rec.alloc_callee, "alloc") != null or
+                        std.mem.indexOf(u8, rec.alloc_callee, "malloc") != null or
+                        std.mem.indexOf(u8, rec.alloc_callee, "calloc") != null or
+                        std.mem.indexOf(u8, rec.alloc_callee, "realloc") != null or
+                        std.mem.indexOf(u8, rec.alloc_callee, "strdup") != null or
+                        std.mem.indexOf(u8, rec.alloc_callee, "mem_dup") != null;
+                    if (is_known_dangerous_alloc) {
+                        base_confidence += 0.07;
+                    }
+                    if (rec.is_conditional) {
+                        base_confidence *= 0.75;
+                        if (base_confidence < 0.30) base_confidence = 0.30;
+                    }
+                    base_confidence = @min(base_confidence, 0.95);
                     const confidence = base_confidence;
                     if (is_on_ffi_path) confirmed_high += 1;
 

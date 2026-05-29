@@ -101,6 +101,36 @@ pub fn isIntoRawCall(name: []const u8) bool {
     return false;
 }
 
+/// Check if a callee name indicates a from_raw ownership transfer.
+/// Must be a Rust-mangled name containing "from_raw".
+pub fn isRustFromRawCall(name: []const u8) bool {
+    // Must contain "from_raw" somewhere
+    if (std.mem.indexOf(u8, name, "from_raw") == null) return false;
+
+    // Verify it's a Rust mangled name (starts with _R or contains Rust patterns)
+    if (std.mem.startsWith(u8, name, "_R")) return true; // Rust v0 mangling
+    if (std.mem.startsWith(u8, name, "_ZN")) { // Rust legacy mangling
+        if (std.mem.indexOf(u8, name, "from_raw") != null) return true;
+    }
+
+    return false;
+}
+
+/// Check if a callee name indicates an as_ptr borrow escape.
+/// Must be a Rust-mangled name containing "as_ptr".
+pub fn isRustAsPtrCall(name: []const u8) bool {
+    // Must contain "as_ptr" somewhere
+    if (std.mem.indexOf(u8, name, "as_ptr") == null) return false;
+
+    // Verify it's a Rust mangled name (starts with _R or contains Rust patterns)
+    if (std.mem.startsWith(u8, name, "_R")) return true; // Rust v0 mangling
+    if (std.mem.startsWith(u8, name, "_ZN")) { // Rust legacy mangling
+        if (std.mem.indexOf(u8, name, "as_ptr") != null) return true;
+    }
+
+    return false;
+}
+
 /// Get callee name from a call instruction.
 fn getCalleeName(inst: c.LLVMValueRef) ?[]const u8 {
     const called_val = c.LLVMGetCalledValue(inst);

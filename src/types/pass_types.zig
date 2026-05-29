@@ -32,6 +32,7 @@ const ffi_enhancement = @import("../pass/analysis/ffi/ffi_enhancement.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const ir_evidence = @import("./ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
+const issue_classification = @import("../filter/issue_classification.zig");
 const Issue = @import("../diag/issue.zig").Issue;
 const DiagSeverity = @import("../diag/issue.zig").Severity;
 const SemanticSurface = @import("../common/types.zig").SemanticSurface;
@@ -633,7 +634,8 @@ pub const PassContext = struct {
             }
 
             // Even stricter: runtime_internal → cap at LOW
-            if (s == .runtime_internal and mutable.severity != .low) {
+            // But exempt core memory safety and security-critical bugs — never downgraded
+            if (s == .runtime_internal and mutable.severity != .low and !issue_classification.isNeverDowngraded(mutable.kind)) {
                 mutable.severity = .low;
                 mutable.explained_safe = true;
             }
@@ -643,25 +645,9 @@ pub const PassContext = struct {
         // FFI cross-ABI calls are inherently security-relevant regardless of function origin
         // Core memory safety bugs should also bypass risk suppression — a double_free
         // or use_after_free in an unknown-origin function is still a real vulnerability.
-        const is_ffi_issue = switch (issue.kind) {
-            // FFI boundary issues
-            .ffi_unsafe_call,
-            .ffi_type_mismatch,
-            .type_mismatch,
-            .cross_language_leak,
-            .cross_language_free,
-            .borrow_escape,
-            => true,
-
-            // Core memory safety — never risk-suppressed
-            .double_free,
-            .use_after_free,
-            .invalid_free,
-            .memory_leak,
-            => true,
-
-            else => on_danger_path,
-        };
+        // Unified classification: never-suppressed issues bypass risk suppression.
+        // Falls back to danger-path check for advisory issues.
+        const is_ffi_issue = issue_classification.isNeverSuppressed(issue.kind) or on_danger_path;
 
         if (!is_ffi_issue and issue.severity != .critical and risk == .suppressed) {
             if (issue.owned) {
@@ -707,18 +693,9 @@ pub const PassContext = struct {
         // Including .memory_leak would inflate severity of uncertain findings,
         // reducing precision without improving recall for real bugs.
         // See P15_DIFF_REPORT.md TC9 analysis for details.
-        const is_core_memory_safety_bug = switch (issue.kind) {
-            .use_after_free,
-            .double_free,
-            .invalid_free,
-            .null_dereference,
-            .buffer_overflow,
-            .cross_language_free,
-            .cross_language_leak,
-            // NOTE: .memory_leak removed — handled by normal downgrade path
-            => true,
-            else => false,
-        };
+        // Unified classification: core memory safety and security-critical bugs
+        // are NEVER downgraded by the noise filter.
+        const is_core_memory_safety_bug = issue_classification.isNeverDowngraded(issue.kind);
 
         // P16-11/P16-12: Anti-collapse — prevent "severity cliff" where
         // .critical drops directly to .low. Enforce gradual step-down (max 1 level).

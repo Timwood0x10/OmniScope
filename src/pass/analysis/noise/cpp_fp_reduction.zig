@@ -361,7 +361,7 @@ pub fn detectUseAfterFree(
 /// Check if this function shows high-risk internal UAF patterns.
 /// Functions with names suggesting manual memory management or raw pointer usage
 /// get a confidence boost.
-fn isHighRiskInternalUAF(func_name: []const u8) bool {
+pub fn isHighRiskInternalUAF(func_name: []const u8) bool {
     const risky_patterns = [_][]const u8{
         "raw_",     "unsafe_", "unchecked_", "manual_",
         "c_style_", "legacy_",

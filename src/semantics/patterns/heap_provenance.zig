@@ -296,7 +296,7 @@ pub fn traceProvenance(
 
     return switch (opcode) {
         c.LLVMAlloca => classifyAllocaDI(value) orelse .stack,
-        c.LLVMCall => classifyAllocationCall(value) orelse .unknown,
+        c.LLVMCall, c.LLVMInvoke => classifyAllocationCall(value) orelse .unknown,
 
         // Propagation: doesn't change provenance
         c.LLVMGetElementPtr => traceProvenance(srt, c.LLVMGetOperand(value, 0), depth + 1),

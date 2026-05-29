@@ -181,7 +181,8 @@ pub const FFITypeMismatchPass = struct {
         while (llvmNotNull(bb)) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (llvmNotNull(inst)) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (llvmNotNull(c.LLVMIsACallInst(inst))) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (isCallOrInvoke(opcode)) {
                     try analyzeCallSite(ctx, func_name, inst, diag, stats);
                 }
             }

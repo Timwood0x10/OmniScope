@@ -8,6 +8,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -212,7 +213,8 @@ pub const CallGraphPass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) == 0) continue;
 
@@ -426,7 +428,8 @@ pub const CallGraphPass = struct {
 
             if (edge.call_inst != 0) {
                 const call_inst: c.LLVMValueRef = @ptrFromInt(edge.call_inst);
-                if (@intFromPtr(c.LLVMIsACallInst(call_inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(call_inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const num_ops = c.LLVMGetNumOperands(call_inst);
                     // Start from 1 to skip the called function itself (operand 0)
                     var i: u32 = 1;

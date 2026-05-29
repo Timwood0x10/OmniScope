@@ -92,7 +92,7 @@ pub fn detect(
 
                 // Check for loads from alloca (stack variables) that might be uninitialized
                 if (opcode == c.LLVMLoad) {
-                    if (analyzePotentialUninitLoad(inst, srt)) {
+                    if (analyzePotentialUninitLoad(module, inst, srt)) {
                         uninit_count += 1;
                     }
                 }
@@ -188,7 +188,7 @@ fn analyzeAllocWithoutInit(
 }
 
 /// Analyze a load instruction for potential uninitialized memory access.
-fn analyzePotentialUninitLoad(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
+fn analyzePotentialUninitLoad(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {
     const ptr_operand = c.LLVMGetOperand(inst, 0);
 
     // Check if this load is from an alloca (stack variable)
@@ -198,8 +198,8 @@ fn analyzePotentialUninitLoad(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
 
         // Only flag if the alloca is for a large type (struct/array)
         // Small scalar types are usually initialized by Rust's default rules
-        const alloc_type = c.LLVMTypeOf(ptr_operand);
-        const type_size = getTypeSize(alloc_type);
+        const alloc_type = c.LLVMGetAllocatedType(ptr_operand);
+        const type_size = getTypeSize(module, alloc_type);
 
         if (type_size > 16) { // Larger than 2 pointers — likely a struct/array
             log.debug("[NOMICON-CH5] Load from large alloca ({} bytes) — potential uninit", .{
@@ -215,10 +215,10 @@ fn analyzePotentialUninitLoad(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
     return false;
 }
 
-/// Get the size of a type in bytes.
-fn getTypeSize(ty: c.LLVMTypeRef) u64 {
-    _ = ty;
-    return 0; // Placeholder — would use LLVM TargetData in production
+/// Get the size of a type in bytes using LLVM data layout.
+fn getTypeSize(module: c.LLVMModuleRef, type_ref: c.LLVMTypeRef) u64 {
+    const layout = c.LLVMGetModuleDataLayout(module);
+    return c.LLVMStoreSizeOfType(layout, type_ref);
 }
 
 /// Record a semantic resolution to the SRT.
@@ -229,11 +229,9 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    _ = srt;
-    _ = value_ref;
-    _ = kind;
-    _ = confidence;
-    _ = evidence;
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch5", evidence) catch {
+        log.debug("[NOMICON-CH5] Failed to record resolution for ref {d}", .{value_ref});
+    };
 }
 
 // ============================================================================

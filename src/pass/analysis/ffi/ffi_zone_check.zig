@@ -127,19 +127,20 @@ pub const CSafetyLevel = enum {
 /// by correct usage alone.
 pub const c_import_blacklist = &[_][]const u8{
     // Command injection - allows arbitrary code execution
-    "system", "popen",   "execve",  "execl",       "execlp",
-    "execle", "execvp",  "execv",   "posix_spawn",
+    "system",  "popen",    "execve",  "execl",       "execlp",
+    "execle",  "execvp",   "execv",   "posix_spawn",
 
     // Buffer overflow - no bounds checking (CWE-120)
     "strcpy",
-    "strcat", "sprintf", "gets",    "scanf",       "sscanf",
+    "strcat",  "sprintf",  "gets",    "scanf",       "sscanf",
     "fscanf",
 
     // Undefined behavior prone
-    "strtok",  "asctime", "ctime",
+     "strtok",   "asctime", "ctime",
 
     // Format string vulnerability (CWE-134)
-          "vsprintf",
+          "printf",
+    "fprintf", "vsprintf",
 };
 
 /// Layer 2: Conditional safe (safe ONLY when used correctly).
@@ -169,56 +170,52 @@ pub const c_import_conditional = &[_][]const u8{
 /// These are generally safe but still logged for audit purposes.
 pub const c_import_safe = &[_][]const u8{
     // String queries (read-only, no side effects)
-    "strlen",  "strcmp",   "strncmp",  "memcmp",
-    "strchr",  "strrchr",  "strstr",
+    "strlen",   "strcmp",    "strncmp", "memcmp",
+    "strchr",   "strrchr",   "strstr",
 
     // Memory operations (safe when used correctly)
-      "memset",
+     "memset",
 
     // String conversion (well-defined behavior)
-    "atoi",    "atol",     "strtoul",  "strtol",
+    "atoi",     "atol",      "strtoul", "strtol",
     "strtod",
 
-    // Format output (lower risk than sprintf)
-     "printf",   "fprintf",
-
     // Process control (normal termination)
-     "exit",
-    "abort",   "atexit",
+      "exit",      "abort",   "atexit",
 
     // Error handling
-      "errno",    "strerror",
-    "perror",
+    "errno",    "strerror",  "perror",
 
     // Environment access (read-only)
      "getenv",
 
     // Math functions (pure functions, no side effects)
-      "sin",      "cos",
-    "tan",     "asin",     "acos",     "atan",
-    "atan2",   "sinh",     "cosh",     "tanh",
-    "log",     "log10",    "exp",      "pow",
-    "sqrt",    "fabs",     "floor",    "ceil",
-    "round",   "trunc",    "fmod",     "remainder",
+    "sin",      "cos",       "tan",     "asin",
+    "acos",     "atan",      "atan2",   "sinh",
+    "cosh",     "tanh",      "log",     "log10",
+    "exp",      "pow",       "sqrt",    "fabs",
+    "floor",    "ceil",      "round",   "trunc",
+    "fmod",     "remainder",
 
     // Time functions (mostly read-only)
-    "time",    "clock",    "difftime", "mktime",
+    "time",    "clock",
+    "difftime", "mktime",
 
     // Character I/O (single character, no buffer issues)
-    "puts",    "putchar",  "getc",     "ungetc",
-    "fgetc",   "fputc",    "fputs",
+       "puts",    "putchar",
+    "getc",     "ungetc",    "fgetc",   "fputc",
+    "fputs",
 
     // Stream operations (state queries)
-       "feof",
-    "ferror",  "clearerr", "rewind",   "ftell",
-    "fflush",
+       "feof",      "ferror",  "clearerr",
+    "rewind",   "ftell",     "fflush",
 
     // Buffer management
-     "setbuf",   "setvbuf",
+     "setbuf",
+    "setvbuf",
 
     // Process ID (read-only)
-     "getpid",
-    "getppid",
+     "getpid",    "getppid",
 };
 
 /// Known-safe @cImport bindings that should not generate warnings.
@@ -603,13 +600,16 @@ test "isZigSafeCimport: dangerous functions return false" {
 }
 
 test "isZigSafeCimport: safe functions return true" {
-    try std.testing.expect(isZigSafeCimport("memcpy"));
-    try std.testing.expect(isZigSafeCimport("snprintf"));
+    // Layer 2 (conditional) functions should return false
+    try std.testing.expect(!isZigSafeCimport("memcpy"));
+    try std.testing.expect(!isZigSafeCimport("snprintf"));
+    try std.testing.expect(!isZigSafeCimport("malloc"));
+    try std.testing.expect(!isZigSafeCimport("free"));
+    try std.testing.expect(!isZigSafeCimport("fgets"));
+    try std.testing.expect(!isZigSafeCimport("strncpy"));
+
+    // Layer 3 (safe) functions should return true
     try std.testing.expect(isZigSafeCimport("strlen"));
-    try std.testing.expect(isZigSafeCimport("malloc"));
-    try std.testing.expect(isZigSafeCimport("free"));
-    try std.testing.expect(isZigSafeCimport("fgets"));
-    try std.testing.expect(isZigSafeCimport("strncpy"));
     try std.testing.expect(isZigSafeCimport("sin"));
     try std.testing.expect(isZigSafeCimport("sqrt"));
 }

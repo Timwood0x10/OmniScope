@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const SemanticRegistry = @import("../../../registry/semantic_registry.zig").SemanticRegistry;
@@ -150,7 +151,7 @@ pub fn isFreeInstruction(inst: c.LLVMValueRef, opcode: c_uint) bool {
 
 /// Classify the type of free.
 pub fn classifyFree(inst: c.LLVMValueRef, opcode: c_uint) FreeType {
-    if (opcode != c.LLVMCall) return .unknown;
+    if (!llvm_safe.isCallOrInvoke(opcode)) return .unknown;
 
     const called_val = c.LLVMGetCalledValue(inst);
     if (@intFromPtr(called_val) == 0) return .unknown;

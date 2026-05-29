@@ -52,14 +52,14 @@ pub fn detect(
 
                 // Check for bitcast (transmute in LLVM IR)
                 if (opcode == c.LLVMBitCast) {
-                    if (analyzeBitcast(inst, srt)) {
+                    if (analyzeBitcast(module, inst, srt)) {
                         transmute_count += 1;
                     }
                 }
 
                 // Check for ptrtoint/inttoptr (also transmute-like)
                 if (opcode == c.LLVMPtrToInt or opcode == c.LLVMIntToPtr) {
-                    if (analyzePtrIntConversion(inst, srt)) {
+                    if (analyzePtrIntConversion(module, inst, srt)) {
                         transmute_count += 1;
                     }
                 }
@@ -78,12 +78,12 @@ pub fn detect(
 }
 
 /// Analyze a bitcast instruction for potential issues.
-fn analyzeBitcast(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
+fn analyzeBitcast(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {
     const src_type = c.LLVMTypeOf(c.LLVMGetOperand(inst, 0));
     const dst_type = c.LLVMTypeOf(inst);
 
-    const src_size = getTypeSize(src_type);
-    const dst_size = getTypeSize(dst_type);
+    const src_size = getTypeSize(module, src_type);
+    const dst_size = getTypeSize(module, dst_type);
 
     // Size mismatch is almost always a bug or dangerous pattern
     if (src_size > 0 and dst_size > 0 and src_size != dst_size) {
@@ -104,15 +104,15 @@ fn analyzeBitcast(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
 }
 
 /// Analyze ptrtoint/inttoptr conversions for potential issues.
-fn analyzePtrIntConversion(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
+fn analyzePtrIntConversion(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {
     const opcode = c.LLVMGetInstructionOpcode(inst);
     const src_type = c.LLVMTypeOf(c.LLVMGetOperand(inst, 0));
     const dst_type = c.LLVMTypeOf(inst);
 
     // inttoptr is particularly dangerous — creates pointer from integer
     if (opcode == c.LLVMIntToPtr) {
-        const ptr_size = getTypeSize(dst_type);
-        const int_size = getTypeSize(src_type);
+        const ptr_size = getTypeSize(module, dst_type);
+        const int_size = getTypeSize(module, src_type);
 
         // If integer is smaller than pointer size, this is likely UB
         if (int_size > 0 and ptr_size > 0 and int_size < ptr_size) {
@@ -141,12 +141,10 @@ fn analyzePtrIntConversion(inst: c.LLVMValueRef, srt: *SemanticTree) bool {
     return false;
 }
 
-/// Get the size of a type in bytes using ABI layout.
-fn getTypeSize(ty: c.LLVMTypeRef) u64 {
-    // For now, return 0 if we can't determine the size
-    // In production code, we'd use LLVM's TargetData
-    _ = ty;
-    return 0;
+/// Get the size of a type in bytes using LLVM data layout.
+fn getTypeSize(module: c.LLVMModuleRef, type_ref: c.LLVMTypeRef) u64 {
+    const layout = c.LLVMGetModuleDataLayout(module);
+    return c.LLVMStoreSizeOfType(layout, type_ref);
 }
 
 /// Record a semantic resolution to the SRT.
@@ -157,12 +155,9 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    // Simplified recording — full implementation would use SRT API
-    _ = srt;
-    _ = value_ref;
-    _ = kind;
-    _ = confidence;
-    _ = evidence;
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch4", evidence) catch {
+        log.debug("[NOMICON-CH4] Failed to record resolution for ref {d}", .{value_ref});
+    };
 }
 
 // ============================================================================

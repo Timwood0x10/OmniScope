@@ -50,6 +50,7 @@ const log = @import("../../../common/log.zig");
 
 const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
+const issue_classification = @import("../../../filter/issue_classification.zig");
 // Platform profile is consulted when available so platform-specific
 // suppression rules (e.g. Windows MSVC CRT) are gated to the matching
 // target, instead of being scanned unconditionally on every issue.
@@ -152,37 +153,7 @@ pub fn shouldSuppressWithProfile(
     //   - Pattern F (Defensive coding) → IssueVerifier structural pattern inference
     //
     // Kept as comments for reference until all call sites fully migrated.
-    // TODO: Remove these comment blocks in P17 after regression validation.
-
-    // if (isRustDropChainLeak(issue)) {
-    //     log.debug("[SUPPRESS-DROP] {s}: Rust Drop chain", .{issue.location.func});
-    //     return true;
-    // }
-    //
-    // if (isStaticProvenanceEscape(issue)) {
-    //     log.debug("[SUPPRESS-STATIC] {s}: Static/code provenance", .{issue.location.func});
-    //     return true;
-    // }
-    //
-    // if (isPanicCleanupDoubleFree(issue)) {
-    //     log.debug("[SUPPRESS-PANIC] {s}: Panic cleanup double-free", .{issue.location.func});
-    //     return true;
-    // }
-    //
-    // if (isOsApiStandardUsage(issue)) {
-    //     log.debug("[SUPPRESS-OSAPI] {s}: OS API standard usage", .{issue.location.func});
-    //     return true;
-    // }
-    //
-    // if (isSafeExampleFunction(issue)) {
-    //     log.debug("[SUPPRESS-SAFE] {s}: Safe/reference implementation", .{issue.location.func});
-    //     return true;
-    // }
-    //
-    // if (isDefensiveCodingPattern(issue)) {
-    //     log.debug("[SUPPRESS-DEFENSIVE] {s}: Defensive coding idiom", .{issue.location.func});
-    //     return true;
-    // }
+    // TODO: Remove this comment block in P17 after regression validation.
 
     // Pattern G: Stdlib internal function (language runtime / standard library)
     //
@@ -343,8 +314,43 @@ pub fn isStdlibInternalFunction(issue: *const Issue) bool {
         if (std.mem.indexOf(u8, func, prefix) != null) return true;
     }
 
-    // Generic compiler builtin patterns (any language)
-    if (startsWith(func, "__")) return true;
+    // Known compiler builtin patterns (any language)
+    // Instead of matching ALL __-prefixed functions, use a specific list
+    const compiler_builtins = [_][]const u8{
+        // GCC/Clang builtins
+        "__builtin_",
+        // Fortified libc functions (__*_chk variants)
+        "__memcpy_chk",
+        "__memmove_chk",
+        "__memset_chk",
+        "__strcpy_chk",
+        "__strcat_chk",
+        "__strncpy_chk",
+        "__sprintf_chk",
+        "__snprintf_chk",
+        "__printf_chk",
+        "__fprintf_chk",
+        "__vprintf_chk",
+        "__vfprintf_chk",
+        // Stack protection canaries
+        "__stack_chk_fail",
+        "__stack_chk_guard",
+        // C++ ABI runtime functions
+        "__cxa_",
+        // G++ personality functions
+        "__gxx_personality",
+        // LLVM intrinsics
+        "__llvm_",
+        // Sanitizer functions
+        "__sanitizer_",
+        "__ubsan_",
+        "__asan_",
+        "__msan_",
+        "__tsan_",
+    };
+    for (compiler_builtins) |builtin| {
+        if (startsWith(func, builtin)) return true;
+    }
 
     return false;
 }
@@ -642,7 +648,7 @@ fn containsAny(haystack: []const u8, needles: []const []const u8) bool {
 ///   - __cxx_*    → C++ ABI internals
 ///   - _GLOBAL__* → Global constructors/destructors
 ///   - $sS/$ss    → Swift runtime symbols
-fn isCompilerInternalFunction(func_name: []const u8) bool {
+pub fn isCompilerInternalFunction(func_name: []const u8) bool {
     const internal_patterns = [_][]const u8{
         "_ZNSt", // C++ standard library (std::*)
         "_ZN4core", // Rust core module
@@ -727,7 +733,7 @@ fn isPureRustInternalDoubleFree(issue: *const Issue) bool {
 /// NOTE: null_dereference (CWE-476), buffer_overflow (CWE-120), and integer_overflow
 /// (CWE-190) are included because these are critical vulnerabilities that must ALWAYS
 /// be reported, even in stdlib/FFI functions. Suppressing them would hide real security bugs.
-fn isRealMemorySafetyBug(issue: *const Issue) bool {
+pub fn isRealMemorySafetyBug(issue: *const Issue) bool {
     // EXCEPTION 1: Stdlib internal functions — always let Pattern G handle them
     //
     // Even if the issue kind looks serious (callback_ownership_risk, etc.),
@@ -774,39 +780,10 @@ fn isRealMemorySafetyBug(issue: *const Issue) bool {
         }
     }
 
-    return switch (issue.kind) {
-        // Core memory safety — NEVER suppress these under any pattern
-        // These are CWE-classified critical vulnerabilities that must always
-        // be reported, even in stdlib/FFI/internal functions.
-        .double_free, // CWE-415: Double Free
-        .use_after_free, // CWE-416: Use After Free
-        .invalid_free, // CWE-590: Free of Invalid Pointer
-        .memory_leak, // CWE-401: Memory Leak
-        .null_dereference, // CWE-476: NULL Pointer Dereference
-        .buffer_overflow, // CWE-120: Buffer Overflow (classic)
-        .integer_overflow, // CWE-190: Integer Overflow/Wrap
-        => true,
-
-        // Cross-language / FFI boundary — inherently security-relevant
-        .cross_language_leak,
-        .cross_language_free,
-        .ffi_unsafe_call,
-        .ffi_type_mismatch,
-        => true,
-
-        // Ownership & borrow violations — real type-system bugs
-        .borrow_escape,
-        .type_mismatch,
-        => true,
-
-        // Callback safety — real API contract violations
-        .callback_ownership_risk,
-        .callback_signature_mismatch,
-        => true,
-
-        // Everything else — allow normal suppression pipeline
-        else => false,
-    };
+    // Delegate to unified classification — single source of truth.
+    // This replaces the previous 30-line switch that was inconsistent with
+    // is_core_memory_safety_bug and is_ffi_issue in pass_types.zig.
+    return issue_classification.isNeverSuppressed(issue.kind);
 }
 
 // ============================================================================
@@ -1025,4 +1002,110 @@ test "isRealMemorySafetyBug - core memory safety types always return true" {
         );
         try std.testing.expect(isRealMemorySafetyBug(&i));
     }
+}
+
+// ============================================================================
+// FIX #P2: Precise double-underscore prefix whitelist
+// ============================================================================
+
+test "isStdlibInternalFunction - compiler builtins are suppressed (safe)" {
+    // LLVM intrinsics — should be suppressed
+    var issue_llvm = Issue.init(
+        .callback_ownership_risk,
+        "risk in __llvm_gcda_start_file",
+        .{ .file = null, .func = "__llvm_gcda_start_file" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(isStdlibInternalFunction(&issue_llvm));
+
+    // Sanitizer runtime — should be suppressed
+    var issue_asan = Issue.init(
+        .callback_ownership_risk,
+        "risk in __asan_report_load1",
+        .{ .file = null, .func = "__asan_report_load1" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(isStdlibInternalFunction(&issue_asan));
+
+    // C++ ABI runtime — should be suppressed
+    var issue_cxa = Issue.init(
+        .callback_ownership_risk,
+        "risk in __cxa_throw",
+        .{ .file = null, .func = "__cxa_throw" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(isStdlibInternalFunction(&issue_cxa));
+
+    // GCC builtin — should be suppressed
+    var issue_builtin = Issue.init(
+        .callback_ownership_risk,
+        "risk in __builtin_memcpy",
+        .{ .file = null, .func = "__builtin_memcpy" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(isStdlibInternalFunction(&issue_builtin));
+}
+
+test "isStdlibInternalFunction - user dunder functions are NOT suppressed (FIX #P2)" {
+    // Python/Cython lifecycle functions — should NOT be suppressed
+    var issue_cinit = Issue.init(
+        .callback_ownership_risk,
+        "risk in __cinit__",
+        .{ .file = null, .func = "__cinit__" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_cinit));
+
+    var issue_dealloc = Issue.init(
+        .callback_ownership_risk,
+        "risk in __dealloc__",
+        .{ .file = null, .func = "__dealloc__" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_dealloc));
+
+    // Python module init — should NOT be suppressed
+    var issue_init_mod = Issue.init(
+        .callback_ownership_risk,
+        "risk in __init_module",
+        .{ .file = null, .func = "__init_module" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_init_mod));
+
+    // User-defined lifecycle — should NOT be suppressed
+    var issue_init = Issue.init(
+        .callback_ownership_risk,
+        "risk in __init",
+        .{ .file = null, .func = "__init" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_init));
+
+    var issue_finalize = Issue.init(
+        .callback_ownership_risk,
+        "risk in __finalize",
+        .{ .file = null, .func = "__finalize" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_finalize));
+
+    // Custom user function with __ prefix — should NOT be suppressed
+    var issue_custom = Issue.init(
+        .callback_ownership_risk,
+        "risk in __custom_helper",
+        .{ .file = null, .func = "__custom_helper" },
+        .high,
+        0.7,
+    );
+    try std.testing.expect(!isStdlibInternalFunction(&issue_custom));
 }

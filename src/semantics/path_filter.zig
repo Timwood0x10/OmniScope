@@ -420,9 +420,16 @@ fn isCgoGeneratedFile(filename: []const u8) bool {
 
 /// Check if filename matches common stdlib patterns.
 fn isStdlibFilenamePattern(filename: []const u8) bool {
-    // Common stdlib file naming conventions
-    if (std.mem.startsWith(u8, filename, "__")) return true; // Compiler internal
-    if (std.mem.startsWith(u8, filename, "_")) return true; // May be library internal
+    // PRECISE compiler-generated file patterns (not user files with _ prefix)
+    // Avoid matching Python __init__.py, Cython bindings, or private modules
+    const compiler_generated_prefixes = [_][]const u8{
+        "__builtin_", // GCC/Clang builtins
+        "__sanitizer_", // Sanitizer runtime
+        "__llvm_", // LLVM internal
+    };
+    for (compiler_generated_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, filename, prefix)) return true;
+    }
 
     // Specific stdlib file patterns
     const stdlib_files = [_][]const u8{

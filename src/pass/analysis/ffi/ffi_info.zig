@@ -88,10 +88,29 @@ pub const FFIBoundaryDetector = struct {
             return false;
         }
 
-        if (std.mem.startsWith(u8, func_name, "_Z") or
-            std.mem.startsWith(u8, func_name, "__"))
-        {
+        // C++ mangled names (Itanium ABI: _Z prefix)
+        if (std.mem.startsWith(u8, func_name, "_Z")) {
             return true;
+        }
+
+        // Compiler/runtime internal functions (PRECISE whitelist only)
+        // Avoid matching user-defined dunder functions (__init, __finalize, etc.)
+        const compiler_internal_prefixes = [_][]const u8{
+            "__llvm_", // LLVM intrinsics
+            "__asan_", // AddressSanitizer
+            "__msan_", // MemorySanitizer
+            "__tsan_", // ThreadSanitizer
+            "__ubsan_", // UndefinedBehaviorSanitizer
+            "__sanitizer_", // Generic sanitizer
+            "__cxa_", // C++ ABI runtime
+            "__gxx_personality", // G++ personality
+            "__builtin_", // GCC/Clang builtins
+            "__zig_", // Zig runtime
+            "__rust_", // Rust runtime
+            "__objc_", // Objective-C runtime
+        };
+        for (compiler_internal_prefixes) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) return true;
         }
 
         return false;

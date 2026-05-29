@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -171,7 +172,8 @@ pub const CallbackLifecycleChecker = struct {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 // Check call instructions
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) == 0) continue;
 

@@ -8,6 +8,7 @@ const std = @import("std");
 const log = @import("../../common/log.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 
 const resolution_engine = @import("../../semantics/resolution_engine.zig");
 const ResolutionEngine = resolution_engine.ResolutionEngine;
@@ -65,7 +66,8 @@ pub const SemanticResolverPass = struct {
                     var inst = c.LLVMGetFirstInstruction(bb);
                     while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                         // Process call instructions
-                        if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                        const opcode = c.LLVMGetInstructionOpcode(inst);
+                        if (llvm_safe.isCallOrInvoke(opcode)) {
                             const called_val = c.LLVMGetCalledValue(inst);
                             if (@intFromPtr(called_val) != 0) {
                                 const called_name_ptr = c.LLVMGetValueName(called_val);

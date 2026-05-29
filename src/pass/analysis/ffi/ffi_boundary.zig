@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const builtin = @import("builtin");
 
 /// Compile-time debug flag: true only in Debug builds.
@@ -256,7 +257,8 @@ pub const FFIBoundaryPass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     if (try checkCallForFFI(ctx, inst, func, diag, &result, zone)) {
                         result.count += 1;
                     }

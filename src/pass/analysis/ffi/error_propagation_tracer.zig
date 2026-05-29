@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -169,7 +170,8 @@ pub const ErrorPropagationTracer = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -264,7 +266,8 @@ pub const ErrorPropagationTracer = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -368,7 +371,8 @@ pub const ErrorPropagationTracer = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
                         const called_val = c.LLVMGetCalledValue(inst);
                         if (@intFromPtr(called_val) == 0) continue;
 
@@ -672,7 +676,8 @@ fn checkForLeakOnErrorPath(
             var has_free = false;
             var next_inst = c.LLVMGetNextInstruction(alloc_inst);
             while (@intFromPtr(next_inst) != 0) : (next_inst = c.LLVMGetNextInstruction(next_inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(next_inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(next_inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(next_inst);
                     if (@intFromPtr(called_val) != 0) {
                         const called_name_ptr = c.LLVMGetValueName(called_val);

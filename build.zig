@@ -321,6 +321,76 @@ pub fn build(b: *std.Build) void {
     into_raw_gate_test_step.dependOn(&run_into_raw_gate_tests.step);
     test_step.dependOn(&run_into_raw_gate_tests.step);
 
+    // P0 Regression tests step
+    const p0_regression_test_step = b.step("test-p0-regression", "Run P0 critical regression tests");
+    const p0_regression_mod = b.addModule("p0_regression", .{
+        .root_source_file = b.path("tests/unit/p0_regression.zig"),
+        .target = target,
+    });
+    p0_regression_mod.addImport("OmniScope", lib_mod);
+    const p0_regression_tests = b.addTest(.{
+        .root_module = p0_regression_mod,
+    });
+    const run_p0_regression_tests = b.addRunArtifact(p0_regression_tests);
+    p0_regression_test_step.dependOn(&run_p0_regression_tests.step);
+    test_step.dependOn(&run_p0_regression_tests.step);
+
+    // P1 Regression tests step
+    const p1_regression_test_step = b.step("test-p1-regression", "Run P1 high priority regression tests");
+    const p1_regression_mod = b.addModule("p1_regression", .{
+        .root_source_file = b.path("tests/unit/p1_regression.zig"),
+        .target = target,
+    });
+    p1_regression_mod.addImport("OmniScope", lib_mod);
+    const p1_regression_tests = b.addTest(.{
+        .root_module = p1_regression_mod,
+    });
+    const run_p1_regression_tests = b.addRunArtifact(p1_regression_tests);
+    p1_regression_test_step.dependOn(&run_p1_regression_tests.step);
+    test_step.dependOn(&run_p1_regression_tests.step);
+
+    // P2 Enhancement tests step
+    const p2_enhancement_test_step = b.step("test-p2-enhancement", "Run P2 enhancement tests");
+    const p2_enhancement_mod = b.addModule("p2_enhancement", .{
+        .root_source_file = b.path("tests/unit/p2_enhancement.zig"),
+        .target = target,
+    });
+    p2_enhancement_mod.addImport("OmniScope", lib_mod);
+    const p2_enhancement_tests = b.addTest(.{
+        .root_module = p2_enhancement_mod,
+    });
+    const run_p2_enhancement_tests = b.addRunArtifact(p2_enhancement_tests);
+    p2_enhancement_test_step.dependOn(&run_p2_enhancement_tests.step);
+    test_step.dependOn(&run_p2_enhancement_tests.step);
+
+    // Boundary conditions tests step
+    const boundary_test_step = b.step("test-boundary", "Run boundary conditions and edge case tests");
+    const boundary_mod = b.addModule("boundary_conditions", .{
+        .root_source_file = b.path("tests/unit/boundary_conditions.zig"),
+        .target = target,
+    });
+    boundary_mod.addImport("OmniScope", lib_mod);
+    const boundary_tests = b.addTest(.{
+        .root_module = boundary_mod,
+    });
+    const run_boundary_tests = b.addRunArtifact(boundary_tests);
+    boundary_test_step.dependOn(&run_boundary_tests.step);
+    test_step.dependOn(&run_boundary_tests.step);
+
+    // P1 critical fix tests step (UAF Tier 2 + Three-tier safety classification)
+    const p1_critical_fix_test_step = b.step("test-p1-critical-fix", "Run P1 critical fix tests (UAF Tier 2 + Three-tier safety)");
+    const p1_critical_fix_mod = b.addModule("p1_critical_fix", .{
+        .root_source_file = b.path("tests/p1_critical_fix_test.zig"),
+        .target = target,
+    });
+    p1_critical_fix_mod.addImport("OmniScope", lib_mod);
+    const p1_critical_fix_tests = b.addTest(.{
+        .root_module = p1_critical_fix_mod,
+    });
+    const run_p1_critical_fix_tests = b.addRunArtifact(p1_critical_fix_tests);
+    p1_critical_fix_test_step.dependOn(&run_p1_critical_fix_tests.step);
+    test_step.dependOn(&run_p1_critical_fix_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{

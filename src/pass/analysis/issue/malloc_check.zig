@@ -172,7 +172,7 @@ pub const MallocCheckPass = struct {
         // Caller is responsible for null checking, not this function.
         // Example: XXH32_createState() { return XXH_malloc(sizeof(...)); }
         // Reporting this as HIGH creates massive FPs on C API factory functions.
-        if (opcode == c.LLVMCall or opcode == c.LLVMICmp or opcode == c.LLVMRet) {
+        if (llvm_safe.isCallOrInvoke(opcode) or opcode == c.LLVMICmp or opcode == c.LLVMRet) {
             return false;
         }
 

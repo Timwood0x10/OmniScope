@@ -144,20 +144,33 @@ pub fn isInteriorMutableThroughChain(value: c.LLVMValueRef) bool {
 }
 
 /// Get DI type metadata from a value.
+///
+/// INTENTIONAL STUB: Returns null for now.
+/// Full implementation requires LLVM Debug Info API integration (DIType, DINode, etc.).
+/// Once integrated, this function will extract DI type metadata from the value's
+/// debug info attachments (llvm.dbg.declare, llvm.dbg.addr intrinsics).
+///
+/// Current fallback: isInteriorMutableByHeuristic() handles cases where DI types unavailable.
 fn getDIType(value: c.LLVMValueRef) c.LLVMMetadataRef {
-    // This is a simplified version — real implementation would use
-    // LLVM's debug info API to walk the type hierarchy
     _ = value;
     return null;
 }
 
 /// Get the type name from a DI type metadata.
+///
+/// INTENTIONAL STUB: Returns null for now.
+/// Full implementation will use DIDerivedType.getName() or DICompositeType.getName()
+/// to extract the Rust/C++ type name from the metadata node.
 fn getDITypeName(di_type: c.LLVMMetadataRef) ?[]const u8 {
     _ = di_type;
     return null;
 }
 
 /// Get the base type from a DI type metadata (for walking chains).
+///
+/// INTENTIONAL STUB: Returns null for now.
+/// Full implementation will use DIDerivedType.getBaseType() to walk the
+/// inheritance chain (e.g., Cell<T> -> UnsafeCell<T>).
 fn getDIBaseType(di_type: c.LLVMMetadataRef) c.LLVMMetadataRef {
     _ = di_type;
     return null;
@@ -210,11 +223,9 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    _ = srt;
-    _ = value_ref;
-    _ = kind;
-    _ = confidence;
-    _ = evidence;
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch10", evidence) catch {
+        log.debug("[NOMICON-CH10] Failed to record resolution for ref {d}", .{value_ref});
+    };
 }
 
 // ============================================================================

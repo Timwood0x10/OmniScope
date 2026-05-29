@@ -304,11 +304,6 @@ const rust_stdlib_patterns = [_][]const u8{
     "fmt::",
     "string::",
 
-    // Iterator glue
-    "Iterator",
-    "IntoIterator",
-    "next",
-
     // Mangled name patterns (Rust-specific)
     "_ZN4core", // core::
     "_ZN5alloc", // alloc::

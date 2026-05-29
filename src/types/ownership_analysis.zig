@@ -325,7 +325,7 @@ pub fn buildFlowGraph(
                 try addFlowEdge(allocator, operand_id, inst_id, flow_graph, reverse_flow);
             }
         },
-        c.LLVMCall => {
+        c.LLVMCall, c.LLVMInvoke => {
             const num_ops = c.LLVMGetNumOperands(inst);
             var i: u32 = 0;
             while (i < num_ops) : (i += 1) {

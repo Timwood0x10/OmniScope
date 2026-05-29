@@ -118,10 +118,10 @@ pub fn detectDoubleFree(
         if (free_cnt > 1) {
             const first_func = info.first_func;
 
-            const is_mangled = (std.mem.indexOf(u8, first_func, "_ZN") != null or
-                std.mem.indexOf(u8, first_func, "$") != null or
-                std.mem.indexOf(u8, first_func, "_R") != null);
-            if (is_mangled) continue;
+            // P0-2 FIX: Only skip known drop glue, not all mangled functions
+            // This allows detection of real double-free bugs in C++ mangled names
+            if (std.mem.indexOf(u8, first_func, "drop_in_place") != null or
+                std.mem.indexOf(u8, first_func, "__rust_dealloc") != null) continue;
 
             // SRT filter: skip semantically resolved release functions
             if (ctx.semantic_resolution) |engine| {

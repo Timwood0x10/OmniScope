@@ -25,6 +25,26 @@ pub const pass = struct {
     pub const checkIssueEnhanced = @import("pass/filter/issue_gate.zig").checkIssueEnhanced;
     pub const GateVerdict = @import("pass/filter/issue_gate.zig").GateVerdict;
     pub const verdictReason = @import("pass/filter/issue_gate.zig").verdictReason;
+
+    // Analysis sub-modules for testing
+    pub const analysis = struct {
+        pub const noise = struct {
+            pub const issue_suppression = @import("pass/analysis/noise/issue_suppression.zig");
+            pub const cpp_fp_reduction = @import("pass/analysis/noise/cpp_fp_reduction.zig");
+            pub const noise_reduction = @import("pass/analysis/noise/noise_reduction.zig");
+        };
+        pub const ffi = struct {
+            pub const ffi_zone_check = @import("pass/analysis/ffi/ffi_zone_check.zig");
+            pub const ffi_boundary = @import("pass/analysis/ffi/ffi_boundary.zig");
+        };
+    };
+
+    // Filter sub-modules
+    pub const filter = struct {
+        pub const issue_gate = @import("pass/filter/issue_gate.zig");
+        pub const fp_precision_guard = @import("pass/filter/fp_precision_guard.zig");
+        pub const fp_whitelist = @import("pass/filter/fp_whitelist.zig");
+    };
 };
 
 // Export fact system
@@ -51,6 +71,11 @@ pub const dataflow = struct {
     pub const DataEdge = @import("dataflow/edge.zig").DataEdge;
     pub const ValueType = @import("dataflow/node.zig").ValueType;
     pub const EdgeType = @import("dataflow/edge.zig").EdgeType;
+};
+
+// Export filter system — unified issue classification and pattern registry
+pub const filter = struct {
+    pub const issue_classification = @import("filter/issue_classification.zig");
 };
 
 // Export pipeline system
@@ -235,6 +260,17 @@ pub const semantics = struct {
     pub const isIntoRawCall = @import("semantics/patterns/into_raw_transfer.zig").isIntoRawCall;
     pub const ResolutionEngine = @import("semantics/resolution_engine.zig").ResolutionEngine;
     pub const MemoryGraph = @import("semantics/memory_graph.zig").MemoryGraph;
+
+    // Sub-modules for testing
+    pub const platform_profile = @import("semantics/platform_profile.zig");
+    pub const surface_classifier = struct {
+        pub const mangled_name = @import("semantics/surface_classifier/mangled_name.zig");
+        pub const surface_classifier = @import("semantics/surface_classifier.zig");
+    };
+    pub const patterns = struct {
+        pub const into_raw_transfer = @import("semantics/patterns/into_raw_transfer.zig");
+        pub const interior_mut = @import("semantics/patterns/interior_mut.zig");
+    };
 };
 
 // Export registry system

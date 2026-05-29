@@ -168,7 +168,7 @@ pub const FreeValidationPass = struct {
 
         switch (opcode) {
             // Allocation calls - mark as from_malloc
-            c.LLVMCall => {
+            c.LLVMCall, c.LLVMInvoke => {
                 const called = c.LLVMGetCalledValue(inst);
                 if (@intFromPtr(called) != 0) {
                     const func_name_ptr = c.LLVMGetValueName(called);

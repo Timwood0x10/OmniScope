@@ -199,6 +199,11 @@ fn isRustLegacyMangling(name: []const u8) bool {
 /// Run language detection and write result to SRT.
 /// This is called before other detectors — they can check the language
 /// to decide whether to run.
+///
+/// NOTE: Language detection is performed on-demand via detectLanguage().
+/// This detector intentionally does not populate SRT entries — it provides
+/// a query-only service for other detectors to check the module's primary
+/// source language before running language-specific analysis.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
@@ -207,6 +212,4 @@ pub fn detect(
     _ = diag;
     _ = srt;
     _ = module;
-    // Language detection is done on-demand via detectLanguage().
-    // No SRT entries needed — this is a query-only detector.
 }

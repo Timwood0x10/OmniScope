@@ -270,7 +270,22 @@ pub fn isAllocationFunction(name: []const u8) bool {
     if (std.mem.indexOf(u8, name, "posix_memalign") != null) return true;
 
     // Custom allocator prefixes (common in FFI libraries)
-    if (std.mem.startsWith(u8, name, "__")) return true; // __zig_dealloc, etc.
+    // Use PRECISE whitelist instead of broad "__" prefix to avoid
+    // matching user-defined lifecycle functions (__init, __finalize, etc.)
+    const custom_allocator_prefixes = [_][]const u8{
+        // Zig runtime allocators
+        "__zig_alloc",  "__zig_dealloc",
+        // Rust global allocator
+        "__rust_alloc", "__rust_dealloc",
+        // C++ operator new/delete (mangled)
+        "_Znwm",        "_Znam",
+        "_ZdlPv",       "_ZdaPv",
+        // Objective-C allocators
+        "objc_alloc",
+    };
+    for (custom_allocator_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, name, prefix)) return true;
+    }
 
     return false;
 }
