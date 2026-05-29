@@ -15,6 +15,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const call_graph = @import("../call_graph.zig");
 const PassContext = @import("../../../pass/pass.zig").PassContext;
 const PassKind = @import("../../../pass/pass.zig").PassKind;
@@ -778,7 +779,7 @@ fn functionContainsSourceOrSinkCall(func: c.LLVMValueRef) bool {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
             const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMCall) continue;
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
 
             const called_value = c.LLVMGetCalledValue(inst);
             if (@intFromPtr(called_value) == 0) continue;

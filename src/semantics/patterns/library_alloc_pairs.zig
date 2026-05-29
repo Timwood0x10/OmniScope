@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -149,7 +150,7 @@ pub fn detect(
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+                if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
 
                 const callee_name = getCalleeName(inst) orelse continue;
                 const entry = lookupTable(callee_name) orelse continue;

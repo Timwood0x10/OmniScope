@@ -19,6 +19,7 @@ const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../../ir/llvm_safe.zig").getCallInstArgCount;
+const isCallOrInvoke = @import("../../../ir/llvm_safe.zig").isCallOrInvoke;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -580,7 +581,7 @@ pub const FFITypeMismatchPass = struct {
             next_inst = c.LLVMGetNextInstruction(next_inst);
             scanned += 1;
         }) {
-            if (c.LLVMGetInstructionOpcode(next_inst) == c.LLVMCall) {
+            if (isCallOrInvoke(c.LLVMGetInstructionOpcode(next_inst))) {
                 const callee = c.LLVMGetCalledValue(next_inst);
                 const callee_name = c.LLVMGetValueName(callee);
                 if (@intFromPtr(callee_name) != 0) {

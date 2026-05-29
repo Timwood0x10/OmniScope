@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../ir/llvm_safe.zig");
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 const lifetime = @import("../lifetime/root.zig");
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
@@ -215,7 +216,7 @@ pub fn detectResourceLeaks(
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+                if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
 
                 const num_operands = c.LLVMGetNumOperands(inst);
                 if (num_operands == 0) continue;

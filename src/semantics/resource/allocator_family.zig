@@ -11,6 +11,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const log = std.log.scoped(.family_inference);
 
 const FamilyId = @import("family.zig").FamilyId;
@@ -122,7 +123,7 @@ fn scanFunction(engine: *FamilyInferenceEngine, func: c.LLVMValueRef) !void {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
             const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMCall) continue;
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
 
             const called = c.LLVMGetCalledValue(inst);
             if (@intFromPtr(called) == 0) continue;

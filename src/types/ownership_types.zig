@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../ir/llvm_safe.zig");
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 const alloc_classifier = @import("../pass/analysis/ptr_lifetime/allocation_classifier.zig");
 
@@ -378,7 +379,7 @@ pub fn isRustFFIRelevantFunction(func: c.LLVMValueRef) bool {
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            if (c.LLVMGetInstructionOpcode(inst) == c.LLVMCall) {
+            if (llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) {
                 const num_ops = c.LLVMGetNumOperands(inst);
                 if (num_ops == 0) continue;
                 const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));

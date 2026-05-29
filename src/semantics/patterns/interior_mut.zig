@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -202,7 +203,7 @@ fn getAllocaDINode(alloca: c.LLVMValueRef) ?c.LLVMValueRef {
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
             const callee = getCalleeName(inst) orelse continue;
             if (!std.mem.eql(u8, callee, "llvm.dbg.declare") and
                 !std.mem.eql(u8, callee, "llvm.dbg.addr")) continue;
@@ -275,7 +276,7 @@ fn findAllocaDITypeName(alloca: c.LLVMValueRef) ?[]const u8 {
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
             const callee = getCalleeName(inst) orelse continue;
             if (!std.mem.eql(u8, callee, "llvm.dbg.declare") and
                 !std.mem.eql(u8, callee, "llvm.dbg.addr")) continue;

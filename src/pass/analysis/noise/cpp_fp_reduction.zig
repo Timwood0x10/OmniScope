@@ -89,6 +89,53 @@ const detectResourceLeaks = cpp_types.detectResourceLeaks;
 pub const detectDoubleFree = cpp_detect.detectDoubleFree;
 pub const detectMemoryLeaks = cpp_detect.detectMemoryLeaks;
 
+/// Precise compiler-internal function detection for UAF suppression.
+///
+/// IMPORTANT: This is a PRECISE whitelist — only confirmed internal
+/// patterns are matched. User functions (even when mangled) must NOT
+/// be matched to avoid skipping real UAF bugs in user code.
+///
+/// See: issue_suppression.zig isCompilerInternalFunction() for the
+/// canonical implementation and detailed rationale.
+fn isCompilerInternalFunctionForUAF(func_name: []const u8) bool {
+    const internal_patterns = [_][]const u8{
+        // C++ standard library internals
+        "_ZNSt", // std::
+        "_ZN9__gnu_cxx", // __gnu_cxx::
+
+        // Rust core/alloc internals (standard library only)
+        "_ZN4core", // core::
+        "_ZN5alloc", // alloc::
+
+        // Rust v0 mangling for standard library
+        "_RN4core", // _RNvC<crate>4core...
+        "_RN5alloc", // _RNvC<crate>5alloc...
+
+        // Global initialization guards (Itanium ABI)
+        "_ZGV",
+        "_ZZ",
+
+        // Compiler builtins and intrinsics (always safe)
+        "__rust_",
+        "__rdl_",
+        "__rg_",
+        "__cxx_",
+
+        // Global constructors/destructors
+        "_GLOBAL__",
+
+        // Swift runtime
+        "$ss",
+        "$sS",
+    };
+
+    for (internal_patterns) |pattern| {
+        if (std.mem.startsWith(u8, func_name, pattern)) return true;
+    }
+
+    return false;
+}
+
 pub fn detectNullDereferences(
     ctx: *PassContext,
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
@@ -597,4 +644,43 @@ pub fn detectCrossLangAllocMismatch(
             diag.err("Reason: Rust _Znwm allocation freed by C free() - heap mismatch", .{});
         }
     }
+}
+
+// ============================================================================
+// Tests: Precise compiler-internal function detection
+// ============================================================================
+
+test "isCompilerInternalFunctionForUAF - compiler internal functions are detected" {
+    // C++ standard library
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_ZNSt6vectorIiEE9push_backERKi"));
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_ZNSt9basic_stringIcE"));
+
+    // Rust core/alloc internals
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_ZN4core3ptr13drop_in_place17hE"));
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_ZN5alloc6sync::ReentrantMutexE"));
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_RN4core3fmt::Formatter"));
+
+    // Compiler intrinsics
+    try std.testing.expect(isCompilerInternalFunctionForUAF("__rust_alloc"));
+    try std.testing.expect(isCompilerInternalFunctionForUAF("__rdl_dealloc"));
+
+    // Itanium ABI internals
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_ZGVN3foo3barE"));
+    try std.testing.expect(isCompilerInternalFunctionForUAF("_GLOBAL__sub_I_main"));
+}
+
+test "isCompilerInternalFunctionForUAF - user mangled functions are NOT detected" {
+    // User C++ class methods should NOT be matched
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("_ZN9my_app4mainE"));
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("_ZN3app7my_class12do_somethingE"));
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("_ZN6mylib4DataC1Ev"));
+
+    // User Rust pub fn should NOT be matched
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("_ZN6mycrate4func17process_dataEv"));
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("_RNv6mycrate4func")); // Rust v0 user code
+
+    // Non-mangled user functions
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("my_function"));
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("main"));
+    try std.testing.expect(!isCompilerInternalFunctionForUAF("handle_request"));
 }

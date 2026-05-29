@@ -22,6 +22,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -128,7 +129,7 @@ pub const MemorySafetyPass = struct {
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) == 0) continue;
 

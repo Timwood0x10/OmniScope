@@ -28,13 +28,43 @@ const DROP_PATTERNS = [_][]const u8{
 const RUST_DEALLOC = "__rust_dealloc";
 
 /// Patterns that indicate compiler-generated internal functions
-/// (not user-visible functions)
+/// (not user-visible functions).
+///
+/// IMPORTANT: This is a PRECISE whitelist — only confirmed internal
+/// patterns are matched. User functions (even when mangled) must NOT
+/// be matched to avoid skipping real bugs in user code.
+///
+/// See: issue_suppression.zig isCompilerInternalFunction() for the
+/// canonical implementation and rationale.
 const COMPILER_INTERNAL_PREFIXES = [_][]const u8{
-    "_ZN", // Itanium C++ ABI / Rust legacy mangling
-    "_R", // Rust v0 mangling
+    // C++ standard library internals
+    "_ZNSt", // std::
+    "_ZN9__gnu_cxx", // __gnu_cxx::
+
+    // Rust core/alloc internals (standard library only)
+    "_ZN4core", // core::
+    "_ZN5alloc", // alloc::
+
+    // Rust v0 mangling for standard library
+    "_RN4core", // _RNvC<crate>4core...
+    "_RN5alloc", // _RNvC<crate>5alloc...
+
+    // Global initialization guards (Itanium ABI)
+    "_ZGV",
+    "_ZZ",
+
+    // Compiler builtins and intrinsics
     "__rust_",
     "__rdl_",
     "__rg_",
+    "__cxx_",
+
+    // Global constructors/destructors
+    "_GLOBAL__",
+
+    // Swift runtime
+    "$ss",
+    "$sS",
 };
 
 /// Detect OBRM patterns and write to SRT.
@@ -192,18 +222,45 @@ test "isDropContextFunction - recognizes drop patterns" {
     try std.testing.expect(!isDropContextFunction("malloc"));
 }
 
-test "isCompilerGeneratedFunction - recognizes mangled names" {
-    // Rust v0 mangling
-    try std.testing.expect(isCompilerGeneratedFunction("_RIN4core3ptr"));
-    // Itanium C++ ABI / Rust legacy
-    try std.testing.expect(isCompilerGeneratedFunction("_ZN4core3ptr13drop_in_place"));
-    // Rust intrinsics
+test "isCompilerGeneratedFunction - recognizes compiler internal functions" {
+    // C++ standard library
+    try std.testing.expect(isCompilerGeneratedFunction("_ZNSt6vectorIiEE9push_backERKi"));
+    try std.testing.expect(isCompilerGeneratedFunction("_ZN9__gnu_cxx17__normal_iterator"));
+
+    // Rust core/alloc internals (standard library)
+    try std.testing.expect(isCompilerGeneratedFunction("_ZN4core3ptr13drop_in_place17hE"));
+    try std.testing.expect(isCompilerGeneratedFunction("_ZN5alloc6sync::ReentrantMutexE"));
+    try std.testing.expect(isCompilerGeneratedFunction("_RN4core3fmt::Formatter"));
+
+    // Rust intrinsics and builtins
     try std.testing.expect(isCompilerGeneratedFunction("__rust_alloc"));
     try std.testing.expect(isCompilerGeneratedFunction("__rdl_dealloc"));
+
+    // Itanium ABI internals
+    try std.testing.expect(isCompilerGeneratedFunction("_ZGVN3foo3barE"));
+    try std.testing.expect(isCompilerGeneratedFunction("_ZZN3foo3barEvE12local_var"));
+    try std.testing.expect(isCompilerGeneratedFunction("__cxx_global_var_init"));
+    try std.testing.expect(isCompilerGeneratedFunction("_GLOBAL__sub_I_main"));
+
+    // Swift runtime
+    try std.testing.expect(isCompilerGeneratedFunction("$sS4base8toStringSSyF"));
+}
+
+test "isCompilerGeneratedFunction - user mangled functions are NOT internal" {
+    // User C++ class methods should NOT be matched
+    try std.testing.expect(!isCompilerGeneratedFunction("_ZN9my_app4mainE"));
+    try std.testing.expect(!isCompilerGeneratedFunction("_ZN3app7my_class12do_somethingE"));
+    try std.testing.expect(!isCompilerGeneratedFunction("_ZN6mylib4DataC1Ev"));
+    try std.testing.expect(!isCompilerGeneratedFunction("_ZN5utils8helper_fnE"));
+
+    // User Rust pub fn should NOT be matched
+    try std.testing.expect(!isCompilerGeneratedFunction("_ZN6mycrate4func17process_dataEv"));
+    try std.testing.expect(!isCompilerGeneratedFunction("_RNv6mycrate4func")); // Rust v0 user code
 
     // User-visible functions (demangled or simple names)
     try std.testing.expect(!isCompilerGeneratedFunction("my_function"));
     try std.testing.expect(!isCompilerGeneratedFunction("main"));
+    try std.testing.expect(!isCompilerGeneratedFunction("handle_request"));
 }
 
 test "isUserAllocatorImpl - recognizes user allocator code" {

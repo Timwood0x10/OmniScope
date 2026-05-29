@@ -60,9 +60,16 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
     try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
     try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
+    try pipeline.registerPass(OmniScope.cross_lang.CrossLangDataFlowPass);
     try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
     try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+
+    // GC safety analysis for Python/Java FFI
+    try pipeline.registerPass(OmniScope.cross_lang.GcSafetyPass);
+
+    // Error propagation analysis across FFI boundaries
+    try pipeline.registerPass(OmniScope.cross_lang.ErrorPropagationTracer);
 
     // Additional analysis passes
     // NOTE: ABIMismatchPass, ThreadCrossingPass are not yet fully implemented

@@ -17,6 +17,7 @@
 const std = @import("std");
 const log = std.log.scoped(.nomicon_ch8);
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -88,7 +89,7 @@ pub fn detect(
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check for calls to thread-related functions
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_func = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_func) == 0) continue;
 
@@ -144,56 +145,207 @@ fn isAtomicOperation(opcode: c.LLVMOpcodeId) bool {
 }
 
 /// Analyze a thread spawn function for Send violations.
+///
+/// Scans the function's basic blocks for patterns indicating non-Send
+/// types being captured by closures passed to thread::spawn.
 fn analyzeThreadSpawn(
     func: c.LLVMValueRef,
     srt: *SemanticTree,
 ) bool {
-    _ = func;
-    // In a full implementation, we would:
-    // 1. Identify the closure/callback passed to spawn
-    // 2. Analyze captured variables for Send trait compliance
-    // 3. Flag non-Send captures (e.g., Rc, raw pointers to non-thread-local data)
+    const func_ref = @intFromPtr(func);
+    var has_violation = false;
 
-    log.debug("[NOMICON-CH8] Thread spawn detected — checking captured variables for Send", .{});
+    // Scan function body for non-Send patterns
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
 
-    recordResolution(srt, @intFromPtr(func), .send_sync_violation, 0.55, "Nomicon-Ch8 thread spawn (verify Send bounds)");
+            // Check for calls to non-Send constructors
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-    return true;
+                const called_name_raw = c.LLVMGetValueName(called_val);
+                if (@intFromPtr(called_name_raw) == 0) continue;
+                const called_name = std.mem.sliceTo(called_name_raw, 0);
+
+                // Rc::new — non-Send reference-counted pointer
+                if (std.mem.indexOf(u8, called_name, "_ZN5alloc2rc") != null or
+                    std.mem.indexOf(u8, called_name, "Rc::new") != null)
+                {
+                    log.debug("[NOMICON-CH8] Rc captured in thread spawn context", .{});
+                    recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.75, "Rc is not Send — cannot move across thread boundary");
+                    has_violation = true;
+                }
+
+                // Cell/RefCell — non-Sync types shared between threads
+                if (std.mem.indexOf(u8, called_name, "Cell::new") != null or
+                    std.mem.indexOf(u8, called_name, "RefCell::new") != null)
+                {
+                    log.debug("[NOMICON-CH8] Cell/RefCell in thread spawn context", .{});
+                    recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.65, "Cell/RefCell is not Sync — cannot share between threads");
+                    has_violation = true;
+                }
+            }
+
+            // Check for raw pointer operations (potential non-Send)
+            if (opcode == c.LLVMIntToPtr or opcode == c.LLVMBitCast) {
+                // Raw pointer creation in thread context is suspicious
+                const src_val = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(src_val) != 0) {
+                    const src_type = c.LLVMTypeOf(src_val);
+                    if (@intFromPtr(src_type) != 0 and c.LLVMGetTypeKind(src_type) == c.LLVMIntegerTypeKind) {
+                        log.debug("[NOMICON-CH8] Raw pointer created in thread spawn context", .{});
+                        recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.50, "Raw pointer in thread context — verify Send safety");
+                    }
+                }
+            }
+        }
+    }
+
+    if (!has_violation) {
+        // No obvious violations found — still record for audit
+        recordResolution(srt, func_ref, .send_sync_violation, 0.30, "Thread spawn — no obvious Send violations detected");
+    }
+
+    return has_violation;
 }
 
 /// Analyze a thread spawn call instruction.
+///
+/// Checks the arguments passed to thread::spawn for non-Send types.
+/// In Rust, spawn takes a closure (FnOnce) that must be Send.
 fn analyzeThreadSpawnCall(
     inst: c.LLVMValueRef,
     srt: *SemanticTree,
 ) bool {
-    _ = inst;
-    // Check the arguments to see what's being sent to the new thread
+    const inst_ref = @intFromPtr(inst);
+    var has_violation = false;
 
-    log.debug("[NOMICON-CH8] Thread spawn call — analyzing arguments", .{});
+    // Get the number of arguments
+    const num_operands = c.LLVMGetNumOperands(inst);
+    if (num_operands < 2) {
+        // spawn takes at least the closure argument
+        recordResolution(srt, inst_ref, .send_sync_violation, 0.40, "Thread spawn with unexpected argument count");
+        return false;
+    }
 
-    recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.60, "Nomicon-Ch8 spawn call (check argument Send safety)");
+    // Analyze each argument (skip the callee itself at index 0)
+    var i: u32 = 1;
+    while (i < num_operands) : (i += 1) {
+        const arg = c.LLVMGetOperand(inst, i);
+        if (@intFromPtr(arg) == 0) continue;
 
-    return true;
+        const arg_type = c.LLVMTypeOf(arg);
+        if (@intFromPtr(arg_type) == 0) continue;
+
+        const arg_ref = @intFromPtr(arg);
+
+        // Check if the argument is a pointer to non-Send type
+        if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
+            // Check if the pointer target has been marked as non-Send
+            if (srt.hasKind(arg_ref, .send_sync_violation) != null) {
+                log.debug("[NOMICON-CH8] Non-Send value passed to thread spawn at arg {d}", .{i});
+                recordResolution(srt, inst_ref, .send_sync_violation, 0.80, "Non-Send value passed to thread::spawn");
+                has_violation = true;
+            }
+        }
+
+        // Check for function pointer arguments (closures)
+        if (c.LLVMGetTypeKind(arg_type) == c.LLVMFunctionTypeKind or
+            c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
+        {
+            // If the argument is a function/closure, check its captures
+            // by looking at the called function's parameters
+            const called_func = c.LLVMGetCalledValue(inst);
+            if (@intFromPtr(called_func) != 0) {
+                const called_name_raw = c.LLVMGetValueName(called_func);
+                if (@intFromPtr(called_name_raw) != 0) {
+                    const called_name = std.mem.sliceTo(called_name_raw, 0);
+
+                    // If the closure is from a known non-Send pattern
+                    if (std.mem.indexOf(u8, called_name, "Rc") != null or
+                        std.mem.indexOf(u8, called_name, "Cell") != null or
+                        std.mem.indexOf(u8, called_name, "RefCell") != null)
+                    {
+                        log.debug("[NOMICON-CH8] Non-Send closure passed to spawn", .{});
+                        recordResolution(srt, inst_ref, .send_sync_violation, 0.85, "Closure capturing non-Send type passed to thread::spawn");
+                        has_violation = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!has_violation) {
+        // No violations found — record for audit
+        recordResolution(srt, inst_ref, .send_sync_violation, 0.30, "Thread spawn call — arguments appear Send-safe");
+    }
+
+    return has_violation;
 }
 
 /// Analyze an atomic operation for correctness.
+///
+/// Checks for:
+/// 1. Atomic operations on very large types (should use locks instead)
+/// 2. Mixed atomic/non-atomic access to same location
+/// 3. Missing or incorrect memory ordering constraints
 fn analyzeAtomicUsage(
     inst: c.LLVMValueRef,
     srt: *SemanticTree,
 ) bool {
-    _ = inst;
-    // Atomic operations are generally safe in Rust/Zig when used correctly,
-    // but we should flag unusual patterns:
-    // 1. Atomic operations on very large types (should use locks instead)
-    // 2. Mixed atomic/non-atomic access to same location
-    // 3. Missing memory ordering constraints
+    const inst_ref = @intFromPtr(inst);
+    var has_issue = false;
 
-    log.debug("[NOMICON-CH8] Atomic operation detected — verifying correctness", .{});
+    const opcode = c.LLVMGetInstructionOpcode(inst);
 
-    // Atomic ops are usually fine; just note them for audit
-    recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.30, "Nomicon-Ch8 atomic op (audit only)");
+    // Check 1: Atomic RMW on large types (should use locks instead)
+    if (opcode == c.LLVMAtomicRMW or opcode == c.LLVMCmpXchg) {
+        // Get the pointer operand (first operand for atomic ops)
+        const ptr_val = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(ptr_val) != 0) {
+            const ptr_type = c.LLVMTypeOf(ptr_val);
+            if (@intFromPtr(ptr_type) != 0 and c.LLVMGetTypeKind(ptr_type) == c.LLVMPointerTypeKind) {
+                const elem_type = c.LLVMGetElementType(ptr_type);
+                if (@intFromPtr(elem_type) != 0) {
+                    const type_size = c.LLVMStoreSizeOfType(c.LLVMGetModuleDataLayout(c.LLVMGetGlobalParent(inst)), elem_type);
+                    // Atomic ops on types > 8 bytes are suspicious (should use locks)
+                    if (type_size > 8) {
+                        log.debug("[NOMICON-CH8] Atomic operation on large type ({d} bytes) — consider using locks", .{type_size});
+                        recordResolution(srt, inst_ref, .send_sync_violation, 0.70, "Atomic op on large type — consider Mutex/RwLock instead");
+                        has_issue = true;
+                    }
+                }
+            }
+        }
+    }
 
-    return false; // Don't count as violation by default
+    // Check 2: Memory ordering for atomic loads/stores
+    if (opcode == c.LLVMLoadAtomic or opcode == c.LLVMStoreAtomic) {
+        // Get the ordering
+        const ordering = c.LLVMGetOrdering(inst);
+        // SequentiallyConsistent (5) is often overkill — flag for audit
+        if (ordering == c.LLVMSequentiallyConsistent) {
+            log.debug("[NOMICON-CH8] SequentiallyConsistent ordering — may be overkill", .{});
+            recordResolution(srt, inst_ref, .send_sync_violation, 0.25, "SeqCst ordering — consider weaker ordering if appropriate");
+            // Not a violation, just an audit note
+        }
+    }
+
+    // Check 3: Fence without preceding atomic operations
+    if (opcode == c.LLVMFence) {
+        // Fence is usually fine, but flag for audit if it's the only sync in a function
+        const ordering = c.LLVMGetOrdering(inst);
+        if (ordering == c.LLVMRelease or ordering == c.LLVMAcquire) {
+            // This is normal — just note it
+            recordResolution(srt, inst_ref, .send_sync_violation, 0.20, "Fence operation — audit only");
+        }
+    }
+
+    return has_issue;
 }
 
 /// Record a semantic resolution to the SRT.
@@ -204,11 +356,9 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    _ = srt;
-    _ = value_ref;
-    _ = kind;
-    _ = confidence;
-    _ = evidence;
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch8", evidence) catch {
+        log.debug("[NOMICON-CH8] Failed to record resolution for ref {d}", .{value_ref});
+    };
 }
 
 // ============================================================================

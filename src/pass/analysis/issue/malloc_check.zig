@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -113,7 +114,7 @@ pub const MallocCheckPass = struct {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Check for allocation call
-        if (opcode == c.LLVMCall) {
+        if (llvm_safe.isCallOrInvoke(opcode)) {
             const called = c.LLVMGetCalledValue(inst);
             if (@intFromPtr(called) != 0) {
                 const name_ptr = c.LLVMGetValueName(called);

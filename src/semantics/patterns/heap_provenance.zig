@@ -14,6 +14,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -95,7 +96,7 @@ pub fn detect(
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Layer 1: Allocation call exact match
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     if (classifyAllocationCall(inst)) |prov| {
                         if (prov == .heap) {
                             try srt.recordResolution(
@@ -184,7 +185,7 @@ fn findAllocaDITypeName(alloca: c.LLVMValueRef) ?[]const u8 {
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMCall) continue;
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
             const callee = getCalleeName(inst) orelse continue;
             if (!std.mem.eql(u8, callee, "llvm.dbg.declare") and
                 !std.mem.eql(u8, callee, "llvm.dbg.addr")) continue;

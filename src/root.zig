@@ -153,11 +153,14 @@ pub const cross_lang = struct {
     pub const FreeValidationPass = @import("pass/analysis/issue/free_validation.zig").FreeValidationPass;
     pub const BufferOverflowPass = @import("pass/analysis/buffer_overflow.zig").BufferOverflowPass;
     pub const FFITypeMismatchPass = @import("pass/analysis/ffi/ffi_type_mismatch.zig").FFITypeMismatchPass;
+    pub const CrossLangDataFlowPass = @import("pass/analysis/ffi/cross_lang_dataflow.zig").CrossLangDataFlow;
     pub const RustFfiAuditor = @import("pass/analysis/rust_ffi/rust_ffi_auditor.zig").RustFfiAuditor;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisPass;
     pub const FFIAnalysisResult = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisResult;
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisVulnerability;
     pub const FFIAnalysisError = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisError;
+    pub const GcSafetyPass = @import("pass/analysis/ffi/gc_safety_analyzer.zig").GcSafetyAnalyzer;
+    pub const ErrorPropagationTracer = @import("pass/analysis/ffi/error_propagation_tracer.zig").ErrorPropagationTracer;
 
     // Semantic resolution pass
     pub const SemanticResolverPass = @import("pass/analysis/semantic_resolver_pass.zig").SemanticResolverPass;

@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../ir/llvm_safe.zig");
 
 const types = @import("./ownership_types.zig");
 pub const AllocSite = types.AllocSite;
@@ -194,7 +195,7 @@ pub fn analyzeInstructionForOwnership(
     try buildFlowGraph(allocator, inst, opcode, flow_graph, reverse_flow, id_map);
 
     // Hook dispatch for call instructions (invokes rustOwnershipHook per LLVMCall)
-    if (opcode == c.LLVMCall) {
+    if (llvm_safe.isCallOrInvoke(opcode)) {
         const num_ops = c.LLVMGetNumOperands(inst);
         if (num_ops > 0) {
             const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));

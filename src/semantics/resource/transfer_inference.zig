@@ -19,6 +19,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 
 const ContractTransition = @import("contract.zig").ContractTransition;
 
@@ -66,7 +67,7 @@ pub fn detectTransferInFunction(func: c.LLVMValueRef) ?TransferResult {
             const opcode = c.LLVMGetInstructionOpcode(inst_iter);
 
             // Check for call instructions (malloc, calloc, etc.)
-            if (opcode == c.LLVMCall) {
+            if (llvm_safe.isCallOrInvoke(opcode)) {
                 const called_func = c.LLVMGetCalledValue(inst_iter);
                 if (@intFromPtr(called_func) == 0) continue;
 
@@ -137,7 +138,7 @@ pub fn analyzeAllocTransfer(
         }
 
         // Pattern 3: Passed as argument to another call (callback escape?)
-        if (user_opcode == c.LLVMCall) {
+        if (llvm_safe.isCallOrInvoke(user_opcode)) {
             const called_val = c.LLVMGetCalledValue(user);
             if (@intFromPtr(called_val) != 0) {
                 // Check if it's a function pointer (indirect call) vs direct call

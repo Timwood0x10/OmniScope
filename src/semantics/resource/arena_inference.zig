@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const log = std.log.scoped(.arena_inference);
 
 /// Classification of how an allocation's lifetime is managed.
@@ -112,7 +113,7 @@ pub const ArenaInferenceEngine = struct {
                 }
             }
 
-            if (opcode == c.LLVMCall) {
+            if (llvm_safe.isCallOrInvoke(opcode)) {
                 const called = c.LLVMGetCalledValue(user);
                 if (@intFromPtr(called) != 0) {
                     const called_name = c.LLVMGetValueName(called);

@@ -253,21 +253,51 @@ pub fn isImplicitDropFree(
 }
 
 /// Check if a function name looks like a compiler-generated internal Rust function.
+///
+/// IMPORTANT: This uses a PRECISE whitelist — only confirmed internal
+/// patterns are matched. User functions (even when mangled) must NOT be
+/// matched to avoid suppressing real memory safety bugs.
+///
+/// See: issue_suppression.zig isCompilerInternalFunction() for the
+/// canonical implementation and detailed rationale.
 fn isCompilerGeneratedRustFunction(func_name: []const u8) bool {
-    // Compiler-generated functions use mangled names
+    // Precise whitelist of compiler-internal patterns only
     const internal_prefixes = [_][]const u8{
-        "_ZN", // Itanium ABI / legacy Rust mangling
-        "_R", // Rust v0 mangling
+        // C++ standard library internals
+        "_ZNSt", // std::
+        "_ZN9__gnu_cxx", // __gnu_cxx::
+
+        // Rust core/alloc internals (standard library only)
+        "_ZN4core", // core::
+        "_ZN5alloc", // alloc::
+
+        // Rust v0 mangling for standard library
+        "_RN4core", // _RNvC<crate>4core...
+        "_RN5alloc", // _RNvC<crate>5alloc...
+
+        // Global initialization guards (Itanium ABI)
+        "_ZGV",
+        "_ZZ",
+
+        // Compiler builtins and intrinsics (always safe)
         "__rust_",
         "__rdl_",
         "__rg_",
+        "__cxx_",
+
+        // Global constructors/destructors
+        "_GLOBAL__",
+
+        // Swift runtime
+        "$ss",
+        "$sS",
     };
 
     for (internal_prefixes) |prefix| {
         if (std.mem.startsWith(u8, func_name, prefix)) return true;
     }
 
-    // Also check for known drop glue patterns
+    // Also check for known drop glue patterns (always safe)
     if (isDropGlue(func_name)) return true;
 
     return false;
@@ -477,4 +507,43 @@ test "isExplicitDropImpl - recognizes user Drop implementations" {
     try std.testing.expect(!isExplicitDropImpl("_ZN4core3ops4drop4Drop4drop17hE"));
     try std.testing.expect(!isExplicitDropImpl("free"));
     try std.testing.expect(!isExplicitDropImpl("drop_in_place"));
+}
+
+// ============================================================================
+// FIX: Precise compiler-internal function detection (mangled name whitelist)
+// ============================================================================
+
+test "isCompilerGeneratedRustFunction - compiler internal functions are detected" {
+    // C++ standard library
+    try std.testing.expect(isCompilerGeneratedRustFunction("_ZNSt6vectorIiEE9push_backERKi"));
+    try std.testing.expect(isCompilerGeneratedRustFunction("_ZNSt9basic_stringIcE"));
+
+    // Rust core/alloc internals
+    try std.testing.expect(isCompilerGeneratedRustFunction("_ZN4core3ptr13drop_in_place17hE"));
+    try std.testing.expect(isCompilerGeneratedRustFunction("_ZN5alloc6sync::ReentrantMutexE"));
+    try std.testing.expect(isCompilerGeneratedRustFunction("_RN4core3fmt::Formatter"));
+
+    // Compiler intrinsics
+    try std.testing.expect(isCompilerGeneratedRustFunction("__rust_alloc"));
+    try std.testing.expect(isCompilerGeneratedRustFunction("__rdl_dealloc"));
+
+    // Itanium ABI internals
+    try std.testing.expect(isCompilerGeneratedRustFunction("_ZGVN3foo3barE"));
+    try std.testing.expect(isCompilerGeneratedRustFunction("_GLOBAL__sub_I_main"));
+}
+
+test "isCompilerGeneratedRustFunction - user mangled functions are NOT detected" {
+    // User C++ class methods should NOT be matched
+    try std.testing.expect(!isCompilerGeneratedRustFunction("_ZN9my_app4mainE"));
+    try std.testing.expect(!isCompilerGeneratedRustFunction("_ZN3app7my_class12do_somethingE"));
+    try std.testing.expect(!isCompilerGeneratedRustFunction("_ZN6mylib4DataC1Ev"));
+
+    // User Rust pub fn should NOT be matched
+    try std.testing.expect(!isCompilerGeneratedRustFunction("_ZN6mycrate4func17process_dataEv"));
+    try std.testing.expect(!isCompilerGeneratedRustFunction("_RNv6mycrate4func")); // Rust v0 user code
+
+    // Non-mangled user functions
+    try std.testing.expect(!isCompilerGeneratedRustFunction("my_function"));
+    try std.testing.expect(!isCompilerGeneratedRustFunction("main"));
+    try std.testing.expect(!isCompilerGeneratedRustFunction("handle_request"));
 }

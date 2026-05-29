@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../../pass/pass.zig").PassContext;
 const PassKind = @import("../../../pass/pass.zig").PassKind;
@@ -219,7 +220,7 @@ fn isMallocUnchecked(malloc_result: c.LLVMValueRef, ctx: *AnalysisContext, bound
 
         // Only check next few instructions to avoid infinite loops
         // Stop at branch or other control flow
-        if (opcode == c.LLVMBr or opcode == c.LLVMRet or opcode == c.LLVMCall) {
+        if (opcode == c.LLVMBr or opcode == c.LLVMRet or llvm_safe.isCallOrInvoke(opcode)) {
             break;
         }
 
@@ -622,7 +623,7 @@ pub const FFIBodyCheckPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check if this is a call instruction
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     // Get the called function - callee is at num_operands - 1
                     const num_operands = @as(c_uint, @bitCast(c.LLVMGetNumOperands(inst)));
                     if (num_operands >= 1) {

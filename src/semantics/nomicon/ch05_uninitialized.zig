@@ -17,6 +17,7 @@
 const std = @import("std");
 const log = std.log.scoped(.nomicon_ch5);
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -66,7 +67,7 @@ pub fn detect(
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check for call instructions to dangerous functions
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_func = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_func) == 0) continue;
 

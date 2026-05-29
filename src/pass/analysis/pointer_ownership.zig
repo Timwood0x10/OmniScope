@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
@@ -281,7 +282,7 @@ pub const PointerOwnershipPass = struct {
                         var inst = c.LLVMGetFirstInstruction(bb);
                         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                             const opcode = c.LLVMGetInstructionOpcode(inst);
-                            if (opcode == c.LLVMCall and isFreeInstruction(inst, opcode)) {
+                            if (llvm_safe.isCallOrInvoke(opcode) and isFreeInstruction(inst, opcode)) {
                                 const ptr_arg = c.LLVMGetOperand(inst, 0);
                                 if (@intFromPtr(ptr_arg) == 0) continue;
                                 const ptr_id: u32 = id_map.getOrPutId(@intFromPtr(ptr_arg)) catch continue;

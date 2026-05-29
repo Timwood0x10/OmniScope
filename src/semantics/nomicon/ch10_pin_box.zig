@@ -14,6 +14,7 @@
 const std = @import("std");
 const log = std.log.scoped(.nomicon_ch10);
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -183,7 +184,7 @@ fn isInteriorMutableByHeuristic(dest: c.LLVMValueRef, func_name: []const u8) boo
     if (isOnceInitContext(func_name)) return true;
 
     // Check if dest comes from a function call that returns interior mutable type
-    if (c.LLVMGetInstructionOpcode(dest) == c.LLVMCall) {
+    if (llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(dest))) {
         const called = c.LLVMGetCalledValue(dest);
         if (@intFromPtr(called) != 0) {
             const called_name_raw = c.LLVMGetValueName(called);

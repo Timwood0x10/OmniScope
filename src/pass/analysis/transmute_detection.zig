@@ -21,6 +21,7 @@
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../ir/llvm_safe.zig");
 
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
@@ -164,7 +165,7 @@ pub fn detectTransmutes(
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
             const opcode = c.LLVMGetInstructionOpcode(inst);
 
-            if (opcode == c.LLVMCall) {
+            if (llvm_safe.isCallOrInvoke(opcode)) {
                 const called_val = c.LLVMGetCalledValue(inst);
                 if (@intFromPtr(called_val) != 0) {
                     const callee_name_ptr = c.LLVMGetValueName(called_val);
