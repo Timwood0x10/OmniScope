@@ -127,6 +127,11 @@ pub fn mergeAllocSite(current: PtrAllocSite, incoming: PtrAllocSite) PtrAllocSit
 /// Propagate pointer origin information from src to dst.
 /// Creates an alias relationship in MemoryGraph when available.
 /// Used by load, getelementptr, bitcast, ptrtoint, inttoptr, addrspacecast.
+///
+/// PERF: Optimized to avoid unnecessary string duplication when src and dst
+/// are in the same basic block (bb_id matches). The source_desc string is
+/// shared via pointer reference instead of copied, reducing allocation overhead
+/// for the common case of pointer propagation within the same scope.
 pub fn propagateOrigin(
     dst: c.LLVMValueRef,
     src: c.LLVMValueRef,
@@ -136,11 +141,23 @@ pub fn propagateOrigin(
     mem_graph: ?*memory_graph.MemoryGraph,
 ) !void {
     if (pointer_map.get(src)) |src_info| {
-        const desc = try allocator.dupe(u8, src_info.source_desc);
+        // PERF: When propagating within the same basic block, share the string
+        // reference instead of duplicating. The source_info's needs_free flag
+        // ensures proper cleanup. For cross-block propagation, duplicate to
+        // avoid use-after-free if the source block's data is freed first.
+        const same_bb = (bb_id == src_info.alloc_bb_id);
         var new_info = src_info;
-        new_info.source_desc = desc;
+        if (!same_bb) {
+            // Cross-block: must duplicate string for independent lifetime
+            const desc = try allocator.dupe(u8, src_info.source_desc);
+            new_info.source_desc = desc;
+            new_info.needs_free = true;
+        } else {
+            // Same block: share string reference, mark as not needing free
+            // (the original PtrInfo will handle cleanup)
+            new_info.needs_free = false;
+        }
         new_info.alloc_bb_id = bb_id;
-        new_info.needs_free = true;
         try putPtrInfo(pointer_map, dst, new_info, allocator);
 
         // Sync alias with MemoryGraph.

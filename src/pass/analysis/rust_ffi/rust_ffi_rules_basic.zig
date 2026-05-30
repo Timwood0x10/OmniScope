@@ -406,8 +406,14 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
             const callee_name = std.mem.span(name_ptr);
 
             // Is this an FFI boundary call? (non-Rust-mangled, non-llvm intrinsic)
+            // Exclude Rust-internal allocator functions (__rust_alloc, __rust_dealloc, etc.)
+            // which are not real FFI boundaries even though they lack the _R mangling prefix.
+            const is_rust_alloc = std.mem.startsWith(u8, callee_name, "__rust_alloc") or
+                std.mem.startsWith(u8, callee_name, "__rust_dealloc") or
+                std.mem.startsWith(u8, callee_name, "__rust_realloc");
             const is_ffi_boundary = !isRustMangledName(callee_name) and
-                !std.mem.startsWith(u8, callee_name, "llvm.");
+                !std.mem.startsWith(u8, callee_name, "llvm.") and
+                !is_rust_alloc;
 
             // Is this a free-like call?
             const is_free_call = isFreeLikeFunction(callee_name);
@@ -469,13 +475,13 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
                 continue;
             }
 
-            // R-3: Skip if the free is __rust_dealloc in a Rust function.
-            // __rust_dealloc is Rust's global allocator — calling it from
-            // Rust code is always RAII scope-end cleanup, not a real
-            // ownership violation. Real cross-lang free uses C free().
-            if (std.mem.indexOf(u8, free_entry.free_name, "__rust_dealloc") != null and
-                isRustMangledName(func_name))
-            {
+            // R-3: Skip if the free is __rust_dealloc.
+            // __rust_dealloc is Rust's global allocator — calling it means
+            // Rust still owns the pointer. Even if the pointer was passed to
+            // another language (e.g., C callback), __rust_dealloc is the
+            // correct way to free __rust_alloc memory. Real cross-lang free
+            // uses C free() or a language-specific deallocator.
+            if (std.mem.indexOf(u8, free_entry.free_name, "__rust_dealloc") != null) {
                 continue;
             }
 

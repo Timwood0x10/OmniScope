@@ -103,11 +103,11 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
 
     const callee_name = std.mem.span(name_ptr);
 
-    for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
-        if (std.mem.indexOf(u8, callee_name, alloc_fn) != null) {
-            handleHeapAlloc(ctx, callee_name);
-            return;
-        }
+    // PERF: Use isHeapAllocFunction which has fast exact-match path
+    // before falling back to substring matching for C++ mangled names.
+    if (ptr_types.isHeapAllocFunction(callee_name)) {
+        handleHeapAlloc(ctx, callee_name);
+        return;
     }
 
     if (getAllocatorKB()) |kb| {
@@ -147,7 +147,8 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
 
         if (ctx.mgEffective()) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang) catch {};
+            const alloc_lang = classifyAllocLanguageEnum(callee_name, ctx.lang) orelse ctx.lang;
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, alloc_lang) catch {};
             mg.recordFuncAlloc(ctx.funcPtr());
         }
     }

@@ -77,6 +77,11 @@ pub fn isRustAllocCall(callee_name: []const u8) bool {
         "__rust_alloc_zeroed",
         "alloc::alloc::alloc",
         "alloc::alloc::alloc_zeroed",
+        "rust_box_new",
+        "rust_vec_with_capacity",
+        "rust_vec_leak",
+        "rust_string_new",
+        "_RZN4alloc5alloc", // v0 mangled alloc::alloc::allocate
     };
     for (rust_alloc_patterns) |pattern| {
         if (std.mem.startsWith(u8, callee_name, pattern)) return true;
@@ -393,7 +398,39 @@ pub fn ptrOriginatesFromRustAlloc(
         }
     }
 
+    // Follow load instructions: find what was stored to the loaded-from address
+    if (opcode == c.LLVMLoad) {
+        const addr = c.LLVMGetOperand(val, 0);
+        if (ptrOriginatesFromRustAlloc(func, addr, visited)) return true;
+        // Also scan for stores to this address in the same function
+        if (findStoreToAddr(func, addr, visited)) |stored_val| {
+            if (ptrOriginatesFromRustAlloc(func, stored_val, visited)) return true;
+        }
+    }
+
     return false;
+}
+
+/// Find a store instruction that writes to `addr` within `func`.
+/// Returns the stored value if found, null otherwise.
+fn findStoreToAddr(func: c.LLVMValueRef, addr: c.LLVMValueRef, visited: *std.AutoHashMap(usize, void)) ?c.LLVMValueRef {
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) {
+            if (c.LLVMGetInstructionOpcode(inst) == c.LLVMStore) {
+                // Store operands: [value, address]
+                const store_addr = c.LLVMGetOperand(inst, 1);
+                if (@intFromPtr(store_addr) == @intFromPtr(addr)) {
+                    return c.LLVMGetOperand(inst, 0);
+                }
+            }
+            inst = c.LLVMGetNextInstruction(inst);
+        }
+        bb = c.LLVMGetNextBasicBlock(bb);
+    }
+    _ = visited;
+    return null;
 }
 
 /// Pure-consumption functions that read pointers but don't store them.

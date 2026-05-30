@@ -50,40 +50,36 @@ pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
     return false;
 }
 
-pub fn isFreeFunction(fn_name: []const u8) bool {
-    // Exact matches for well-known free/dealloc functions
-    const exact_fns = [_][]const u8{
+/// PERF: Pre-computed exact-match set for common free/dealloc functions.
+/// Avoids repeated string comparison overhead on the hot path.
+const EXACT_FREE_SET = blk: {
+    const entries = [_][]const u8{
         // C standard library
-        "free",                  "cfree",           "realloc",
-        "g_free",                "kfree",           "vfree",
-        "c_free",                "c_malloc",
-
+        "free", "cfree", "realloc", "g_free", "kfree", "vfree",
+        "c_free", "c_malloc",
         // Rust global allocator
-               "__rust_dealloc",
-        "__rdl_dealloc",         "__rg_dealloc",
-
-        // Go/cgo runtime (official cgo naming convention)
-           "_cgo_free",
-
+        "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+        // Go/cgo runtime
+        "_cgo_free",
         // Common deallocators
-        "dealloc",               "deallocate",
-
+        "dealloc", "deallocate",
         // Objective-C runtime
-             "objc_release",
-        "objc_autorelease",      "CFRelease",       "CGImageRelease",
+        "objc_release", "objc_autorelease", "CFRelease", "CGImageRelease",
         "NSDeallocateObject",
-
         // Python C API
-           "PyMem_Free",      "PyObject_Free",
-
+        "PyMem_Free", "PyObject_Free",
         // JNI
-        "DeleteLocalRef",        "DeleteGlobalRef",
-
+        "DeleteLocalRef", "DeleteGlobalRef",
         // Node.js N-API
-        "napi_unref",
-        "napi_delete_reference",
+        "napi_unref", "napi_delete_reference",
     };
-    for (exact_fns) |exact| {
+    break :blk entries;
+};
+
+pub fn isFreeFunction(fn_name: []const u8) bool {
+    // PERF: Fast path — exact match for common free/dealloc functions.
+    // Uses comptime-defined array for O(N) scan with cheap eql comparisons.
+    for (EXACT_FREE_SET) |exact| {
         if (std.mem.eql(u8, fn_name, exact)) return true;
     }
     // Suffix patterns: function must END with these to avoid false positives
@@ -329,7 +325,27 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
     return null;
 }
 
+/// PERF: Pre-computed exact-match set for common resource close functions.
+/// Avoids repeated std.mem.indexOf calls on the hot path.
+const EXACT_RESOURCE_CLOSE = struct {
+    const exact = [_]struct { name: []const u8, rt: ResourceType }{
+        .{ .name = "dlclose", .rt = .dlopen_handle },
+        .{ .name = "munmap", .rt = .mmap_region },
+        .{ .name = "fclose", .rt = .file_handle },
+        .{ .name = "DeleteGlobalRef", .rt = .jni_ref },
+        .{ .name = "DeleteLocalRef", .rt = .jni_ref },
+        .{ .name = "Py_DECREF", .rt = .python_obj },
+        .{ .name = "Py_XDECREF", .rt = .python_obj },
+    };
+};
+
 pub fn isResourceCloseFunction(fn_name: []const u8) ?ResourceType {
+    // PERF: Fast path — exact match for common resource close functions.
+    // std.mem.eql is cheaper than std.mem.indexOf (no substring scan).
+    for (EXACT_RESOURCE_CLOSE.exact) |entry| {
+        if (std.mem.eql(u8, fn_name, entry.name)) return entry.rt;
+    }
+    // Slower path — substring match for prefixed/mangled names.
     if (std.mem.indexOf(u8, fn_name, "dlclose") != null) return .dlopen_handle;
     if (std.mem.indexOf(u8, fn_name, "munmap") != null) return .mmap_region;
     if (std.mem.indexOf(u8, fn_name, "fclose") != null) return .file_handle;
@@ -409,11 +425,30 @@ pub fn isSocketClose(fn_name: []const u8) bool {
     return false;
 }
 
+/// PERF: Pre-computed exact-match set for common resource alloc functions.
+/// Avoids repeated std.mem.indexOf calls on the hot path.
+const EXACT_RESOURCE_ALLOC = struct {
+    /// Exact match entries (O(1) eql check before falling back to indexOf).
+    const exact = [_]struct { name: []const u8, rt: ResourceType }{
+        .{ .name = "dlopen", .rt = .dlopen_handle },
+        .{ .name = "mmap64", .rt = .mmap_region },
+        .{ .name = "mmap2", .rt = .mmap_region },
+        .{ .name = "mmap", .rt = .mmap_region },
+        .{ .name = "shm_open", .rt = .mmap_region },
+        .{ .name = "fopen", .rt = .file_handle },
+        .{ .name = "socket", .rt = .socket_fd },
+    };
+};
+
 pub fn is_resource_alloc_function(fn_name: []const u8) ?ResourceType {
+    // PERF: Fast path — exact match for common resource allocators.
+    // std.mem.eql is cheaper than std.mem.indexOf (no substring scan).
+    for (EXACT_RESOURCE_ALLOC.exact) |entry| {
+        if (std.mem.eql(u8, fn_name, entry.name)) return entry.rt;
+    }
+    // Slower path — substring match for prefixed/mangled names.
     if (std.mem.indexOf(u8, fn_name, "dlopen") != null) return .dlopen_handle;
-    if (std.mem.indexOf(u8, fn_name, "mmap64") != null or
-        std.mem.indexOf(u8, fn_name, "mmap2") != null or
-        std.mem.indexOf(u8, fn_name, "mmap") != null) return .mmap_region;
+    if (std.mem.indexOf(u8, fn_name, "mmap") != null) return .mmap_region;
     if (std.mem.indexOf(u8, fn_name, "shm_open") != null) return .mmap_region;
     if (std.mem.indexOf(u8, fn_name, "fopen") != null) return .file_handle;
     if (std.mem.indexOf(u8, fn_name, "socket") != null) return .socket_fd;

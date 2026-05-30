@@ -656,6 +656,20 @@ pub const FFIBoundaryPass = struct {
         else
             confidence;
 
+        // Suppress FFI boundary issue for correctly-paired allocator/deallocator.
+        // If the callee is an allocator and the function also calls a matching
+        // deallocator (or vice versa), the FFI boundary call is safe.
+        if (semantics) |sem| {
+            if (sem.kind == .allocator or sem.kind == .deallocator) {
+                if (c.LLVMGetInstructionParent(inst)) |bb| {
+                    if (functionHasMatchingPair(c.LLVMGetBasicBlockParent(bb), sem.kind)) {
+                        diag.debug("BOUNDARY-PAIR-SKIP: {s} in {s} — matching pair found", .{ called_name, caller_name });
+                        return false;
+                    }
+                }
+            }
+        }
+
         try boundary_check.reportFFIIssue(
             ctx,
             boundary_issue_kind,

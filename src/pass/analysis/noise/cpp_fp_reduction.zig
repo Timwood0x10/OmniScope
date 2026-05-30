@@ -475,102 +475,178 @@ pub fn detectViolations(
         );
     }
 
+    // PERF: Pre-compute which nodes can reach a free site via reverse BFS.
+    // This replaces O(A × F) per-pair DFS with O(E) reverse BFS + O(1) per alloc.
+    // Same pattern used in detectMemoryLeaks (cpp_fp_detect.zig).
+    var can_reach_free = std.AutoHashMap(u32, void).init(ctx.allocator);
+    defer can_reach_free.deinit();
+    // Also track which free sites are reachable (for reporting)
+    var reachable_free_sites = std.AutoHashMap(u32, *FreeSite).init(ctx.allocator);
+    defer reachable_free_sites.deinit();
+    {
+        // Build reverse edge map: target → list of sources
+        var reverse_map = std.AutoHashMap(u32, std.ArrayList(u32)).init(ctx.allocator);
+        defer {
+            var ri = reverse_map.iterator();
+            while (ri.next()) |entry| {
+                entry.value_ptr.deinit(ctx.allocator);
+            }
+            reverse_map.deinit();
+        }
+        var fg_iter = flow_graph.iterator();
+        while (fg_iter.next()) |fg_entry| {
+            const src = fg_entry.key_ptr.*;
+            var target_iter = fg_entry.value_ptr.iterator();
+            while (target_iter.next()) |target_entry| {
+                const target = target_entry.key_ptr.*;
+                const gop = reverse_map.getOrPut(target) catch continue;
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = std.ArrayList(u32).initCapacity(ctx.allocator, 4) catch continue;
+                }
+                gop.value_ptr.append(ctx.allocator, src) catch {};
+            }
+        }
+
+        // Seed: all free site ptr_value_ids can reach free
+        var seed_iter = free_map.iterator();
+        while (seed_iter.next()) |entry| {
+            const free_site = entry.value_ptr.*;
+            can_reach_free.put(free_site.ptr_value_id, {}) catch {};
+            can_reach_free.put(free_site.inst_id, {}) catch {};
+            // Track which free sites are seeds (for later reporting)
+            reachable_free_sites.put(free_site.ptr_value_id, free_site) catch {};
+        }
+
+        // Reverse BFS from free sites using reverse_map
+        var frontier = std.ArrayList(u32).initCapacity(ctx.allocator, can_reach_free.count()) catch return;
+        defer frontier.deinit(ctx.allocator);
+        {
+            var frontier_iter = can_reach_free.iterator();
+            while (frontier_iter.next()) |entry| {
+                frontier.append(ctx.allocator, entry.key_ptr.*) catch {};
+            }
+        }
+        while (frontier.items.len > 0) {
+            const current = frontier.orderedRemove(0);
+            if (reverse_map.get(current)) |sources| {
+                for (sources.items) |src| {
+                    if (!can_reach_free.contains(src)) {
+                        can_reach_free.put(src, {}) catch {};
+                        frontier.append(ctx.allocator, src) catch {};
+                    }
+                }
+            }
+        }
+    }
+
+    // Now check each alloc against pre-computed reachable set
     alloc_iter = alloc_map.iterator();
     while (alloc_iter.next()) |entry| {
         const alloc = entry.value_ptr.*;
         const alloc_lang_hint = convertLanguageToHint(alloc.lang);
 
+        // Check if this alloc can reach any free site
+        const has_free_path = can_reach_free.contains(alloc.ptr_value_id) or
+            can_reach_free.contains(alloc.inst_id);
+        if (!has_free_path) continue;
+
+        // Find which free sites are reachable and check language mismatch
         free_iter = free_map.iterator();
         while (free_iter.next()) |free_entry| {
             const free_site = free_entry.value_ptr.*;
             const free_lang_hint = convertLanguageToHint(free_site.lang);
 
-            if (alloc.lang != free_site.lang and
-                alloc.lang != .unknown and
-                free_site.lang != .unknown)
+            // Skip if same language or unknown
+            if (alloc.lang == free_site.lang or
+                alloc.lang == .unknown or
+                free_site.lang == .unknown)
             {
-                var visited = std.AutoHashMap(u32, void).init(ctx.allocator);
-                defer visited.deinit();
+                continue;
+            }
 
-                const flows_to_free = canReach(
-                    flow_graph,
-                    alloc.ptr_value_id,
-                    free_site.ptr_value_id,
-                    &visited,
+            // Check if this specific free site is reachable from alloc
+            // (We know alloc can reach SOME free site, but we need to check cross-language ones)
+            var visited = std.AutoHashMap(u32, void).init(ctx.allocator);
+            defer visited.deinit();
+
+            const flows_to_free = canReach(
+                flow_graph,
+                alloc.ptr_value_id,
+                free_site.ptr_value_id,
+                &visited,
+            );
+
+            if (flows_to_free) {
+                const alloc_loc = Location.init(alloc.func_name);
+                const free_loc = Location.init(free_site.func_name);
+
+                const boundary_id = boundary_analyzer.registerBoundary(
+                    free_site.func_name,
+                    alloc_lang_hint,
+                    free_lang_hint,
+                    .out,
+                    if (alloc.debug_file) |file|
+                        .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
+                    else
+                        null,
                 );
 
-                if (flows_to_free) {
-                    const alloc_loc = Location.init(alloc.func_name);
-                    const free_loc = Location.init(free_site.func_name);
+                const resource_fact = lifetime.ResourceFact{
+                    .id = @as(u64, alloc.inst_id),
+                    .origin_fn = alloc.func_name,
+                    .owner = .caller,
+                    .state = .live,
+                    .action = .alloc,
+                    .location = null,
+                    .lang_hint = alloc_lang_hint,
+                };
 
-                    const boundary_id = boundary_analyzer.registerBoundary(
-                        free_site.func_name,
-                        alloc_lang_hint,
-                        free_lang_hint,
-                        .out,
-                        if (alloc.debug_file) |file|
-                            .{ .file = file, .func = alloc.func_name, .line = alloc.debug_line orelse 0, .column = alloc.debug_column orelse 0 }
-                        else
-                            null,
-                    );
-
-                    const resource_fact = lifetime.ResourceFact{
-                        .id = @as(u64, alloc.inst_id),
-                        .origin_fn = alloc.func_name,
-                        .owner = .caller,
-                        .state = .live,
-                        .action = .alloc,
-                        .location = null,
-                        .lang_hint = alloc_lang_hint,
-                    };
-
-                    if (boundary_id == 0) {
-                        diag.warn("Failed to register FFI boundary for analysis", .{});
-                    } else if (boundary_analyzer.checkOwnershipViolation(
-                        resource_fact,
-                        .free,
-                        free_lang_hint,
-                        boundary_analyzer.boundaries.items[boundary_id - 1],
-                    )) |violation| {
-                        diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
-                        diag.warn("  Type: {s}", .{@tagName(violation.kind)});
-                        diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.func,
-                            @tagName(alloc.lang),
-                            alloc.inst_id,
-                        });
-                        diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.func,
-                            @tagName(free_site.lang),
-                            free_site.inst_id,
-                        });
-                        const desc = try lifetime.formatViolationMessage(ctx.allocator, violation.kind, violation.origin_lang, violation.action_lang);
-                        defer ctx.allocator.free(desc);
-                        diag.warn("  Description: {s}", .{desc});
-                    } else {
-                        diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
-                        diag.warn("  Alloc: {s} ({s}) at inst {}", .{
-                            alloc_loc.func,
-                            @tagName(alloc.lang),
-                            alloc.inst_id,
-                        });
-                        diag.warn("  Free: {s} ({s}) at inst {}", .{
-                            free_loc.func,
-                            @tagName(free_site.lang),
-                            free_site.inst_id,
-                        });
-                        diag.warn("  Flow: Pointer flows from allocation to free via data flow", .{});
-                    }
-
-                    try ctx.fact_store.insert(
-                        .ownership_violation,
+                if (boundary_id == 0) {
+                    diag.warn("Failed to register FFI boundary for analysis", .{});
+                } else if (boundary_analyzer.checkOwnershipViolation(
+                    resource_fact,
+                    .free,
+                    free_lang_hint,
+                    boundary_analyzer.boundaries.items[boundary_id - 1],
+                )) |violation| {
+                    diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
+                    diag.warn("  Type: {s}", .{@tagName(violation.kind)});
+                    diag.warn("  Alloc: {s} ({s}) at inst {}", .{
+                        alloc_loc.func,
+                        @tagName(alloc.lang),
                         alloc.inst_id,
-                        @intFromEnum(OwnershipViolationType.cross_lang_free_mismatch),
+                    });
+                    diag.warn("  Free: {s} ({s}) at inst {}", .{
+                        free_loc.func,
+                        @tagName(free_site.lang),
                         free_site.inst_id,
-                    );
-
-                    stats.violations += 1;
+                    });
+                    const desc = try lifetime.formatViolationMessage(ctx.allocator, violation.kind, violation.origin_lang, violation.action_lang);
+                    defer ctx.allocator.free(desc);
+                    diag.warn("  Description: {s}", .{desc});
+                } else {
+                    diag.warn("CROSS-LANGUAGE OWNERSHIP VIOLATION DETECTED", .{});
+                    diag.warn("  Alloc: {s} ({s}) at inst {}", .{
+                        alloc_loc.func,
+                        @tagName(alloc.lang),
+                        alloc.inst_id,
+                    });
+                    diag.warn("  Free: {s} ({s}) at inst {}", .{
+                        free_loc.func,
+                        @tagName(free_site.lang),
+                        free_site.inst_id,
+                    });
+                    diag.warn("  Flow: Pointer flows from allocation to free via data flow", .{});
                 }
+
+                try ctx.fact_store.insert(
+                    .ownership_violation,
+                    alloc.inst_id,
+                    @intFromEnum(OwnershipViolationType.cross_lang_free_mismatch),
+                    free_site.inst_id,
+                );
+
+                stats.violations += 1;
             }
         }
     }
@@ -605,6 +681,67 @@ pub fn detectCrossLangAllocMismatch(
     const module_lang = ctx.module_language.language;
     const rust_alloc_via_cpp = (module_lang == .rust);
 
+    // PERF: Pre-compute which nodes can reach a C free site via reverse BFS.
+    // Only seed with C free() sites (lang == .c, free_type == .free).
+    var can_reach_c_free = std.AutoHashMap(u32, void).init(ctx.allocator);
+    defer can_reach_c_free.deinit();
+    {
+        // Build reverse edge map: target → list of sources
+        var reverse_map = std.AutoHashMap(u32, std.ArrayList(u32)).init(ctx.allocator);
+        defer {
+            var ri = reverse_map.iterator();
+            while (ri.next()) |entry| {
+                entry.value_ptr.deinit(ctx.allocator);
+            }
+            reverse_map.deinit();
+        }
+        var fg_iter = flow_graph.iterator();
+        while (fg_iter.next()) |fg_entry| {
+            const src = fg_entry.key_ptr.*;
+            var target_iter = fg_entry.value_ptr.iterator();
+            while (target_iter.next()) |target_entry| {
+                const target = target_entry.key_ptr.*;
+                const gop = reverse_map.getOrPut(target) catch continue;
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = std.ArrayList(u32).initCapacity(ctx.allocator, 4) catch continue;
+                }
+                gop.value_ptr.append(ctx.allocator, src) catch {};
+            }
+        }
+
+        // Seed: only C free() sites
+        var free_iter = free_map.iterator();
+        while (free_iter.next()) |entry| {
+            const free_site = entry.value_ptr.*;
+            if (free_site.lang != .c) continue;
+            if (free_site.free_type != .free) continue;
+            can_reach_c_free.put(free_site.ptr_value_id, {}) catch {};
+            can_reach_c_free.put(free_site.inst_id, {}) catch {};
+        }
+
+        // Reverse BFS from C free sites using reverse_map
+        var frontier = std.ArrayList(u32).initCapacity(ctx.allocator, can_reach_c_free.count()) catch return;
+        defer frontier.deinit(ctx.allocator);
+        {
+            var seed_iter = can_reach_c_free.iterator();
+            while (seed_iter.next()) |entry| {
+                frontier.append(ctx.allocator, entry.key_ptr.*) catch {};
+            }
+        }
+        while (frontier.items.len > 0) {
+            const current = frontier.orderedRemove(0);
+            if (reverse_map.get(current)) |sources| {
+                for (sources.items) |src| {
+                    if (!can_reach_c_free.contains(src)) {
+                        can_reach_c_free.put(src, {}) catch {};
+                        frontier.append(ctx.allocator, src) catch {};
+                    }
+                }
+            }
+        }
+    }
+
+    // Now check each Rust alloc against pre-computed reachable set
     var alloc_iter = alloc_map.iterator();
     while (alloc_iter.next()) |entry| {
         const alloc = entry.value_ptr.*;
@@ -615,6 +752,12 @@ pub fn detectCrossLangAllocMismatch(
             (alloc.lang == .cpp and rust_alloc_via_cpp);
         if (!is_rust_alloc) continue;
 
+        // Check if this Rust alloc can reach any C free site
+        const has_c_free_path = can_reach_c_free.contains(alloc.ptr_value_id) or
+            can_reach_c_free.contains(alloc.inst_id);
+        if (!has_c_free_path) continue;
+
+        // Find which C free sites are reachable (need to find the specific one for reporting)
         var free_iter = free_map.iterator();
         while (free_iter.next()) |free_entry| {
             const free_site = free_entry.value_ptr.*;

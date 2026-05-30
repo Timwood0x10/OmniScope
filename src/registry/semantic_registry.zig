@@ -85,54 +85,84 @@ pub const SemanticRegistry = struct {
     /// Dynamic loading functions
     const dynamic_loading = dynamic_loading_reg.dynamic_loading_functions;
 
+    // ========================================================================
+    // Optimized Lookup: HashMap for exact matches, linear scan for patterns
+    // ========================================================================
+
+    /// Runtime-initialized HashMap for exact-match patterns (O(1) lookup).
+    /// Populated once on first call to lookup() from all layer arrays.
+    /// Thread-safe via spinlock (same pattern as AllocatorKB).
+    var exact_map: ?std.StringHashMap(FunctionSemantics) = null;
+    var exact_map_lock = std.atomic.Value(bool).init(false);
+
+    /// Non-exact entries (contains/suffix) collected once on first call.
+    /// Stored as a flat slice for efficient linear scanning.
+    var non_exact: ?[]const FunctionSemantics = null;
+
+    /// Ensure the lookup tables are initialized. Called once per process.
+    fn ensureLookupTables() void {
+        // Double-checked locking: fast path (most calls).
+        if (exact_map != null) return;
+
+        while (exact_map_lock.swap(true, .acquire)) {}
+        defer exact_map_lock.store(false, .release);
+
+        // Re-check after acquiring lock.
+        if (exact_map != null) return;
+
+        var map = std.StringHashMap(FunctionSemantics).init(std.heap.page_allocator);
+        var list = std.ArrayList(FunctionSemantics).initCapacity(std.heap.page_allocator, 0) catch return;
+
+        // Iterate all 15 layer arrays and partition into exact vs non-exact.
+        // inline for ensures compile-time unrolling — zero runtime loop overhead.
+        const all_layers = [_][]const FunctionSemantics{
+            &layer1,          &layer2,       &layer3,
+            &layer4,          &layer5,       &layer6,
+            &jni,             &python_c_api, &file_io,
+            &network_io,      &signal_handler, &thread_mgmt,
+            &process_mgmt,    &dynamic_loading, &static_buffer,
+        };
+        for (all_layers) |layer| {
+            for (layer) |sem| {
+                if (sem.match_type == .exact) {
+                    // O(1) amortized insert. Duplicate patterns are fine —
+                    // first-wins semantics preserved by checking containsKey first.
+                    if (!map.contains(sem.pattern)) {
+                        map.put(sem.pattern, sem) catch continue;
+                    }
+                } else {
+                    list.append(std.heap.page_allocator, sem) catch continue;
+                }
+            }
+        }
+
+        // Publish non_exact slice first (atomic store not needed — single writer).
+        non_exact = list.toOwnedSlice(std.heap.page_allocator) catch &.{};
+        // Publish map last — signals tables are ready.
+        exact_map = map;
+    }
+
     /// Lookup function semantics by name.
-    /// Searches all layers in order.
+    ///
+    /// Performance: O(1) for exact-match patterns (HashMap lookup),
+    /// O(k) for contains/suffix patterns (k ≈ 138, down from 312 total).
     pub fn lookup(func_name: []const u8) ?FunctionSemantics {
-        for (layer1) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+        ensureLookupTables();
+
+        // Fast path: O(1) HashMap lookup for exact-match patterns.
+        // Covers ~174 entries (malloc, free, Py_DECREF, JNI_*, etc.).
+        if (exact_map.?.get(func_name)) |sem| {
+            return sem;
         }
-        for (layer2) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+
+        // Slow path: linear scan for contains/suffix patterns (~138 entries).
+        // These cannot be hashed — pattern is a substring/suffix of func_name.
+        if (non_exact) |entries| {
+            for (entries) |sem| {
+                if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+            }
         }
-        for (layer3) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer4) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer5) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer6) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (jni) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (python_c_api) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (file_io) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (network_io) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (signal_handler) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (thread_mgmt) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (process_mgmt) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (dynamic_loading) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (static_buffer) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
+
         return null;
     }
 

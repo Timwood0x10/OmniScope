@@ -583,18 +583,24 @@ pub const PtrLifetimePass = struct {
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 total_insts += 1;
                 if (total_insts > 50000) return;
+                // PERF: Compute opcode once, pass to both track and check.
+                // Eliminates 2 redundant LLVM API calls per instruction.
+                const opcode = c.LLVMGetInstructionOpcode(inst);
                 {
                     const t0 = std.time.nanoTimestamp();
-                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
+                    try trackInstruction(ctx.allocator, inst, opcode, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
                     t_track.* += std.time.nanoTimestamp() - t0;
                 }
                 {
                     const t0 = std.time.nanoTimestamp();
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                        _ = c.LLVMGetCalledValue(inst);
+                    // PERF: Only call checkViolations for opcodes that can trigger violations.
+                    // ~80% of instructions (add/sub/mul/cmp/gep/bitcast/phi/etc.) are skipped,
+                    // saving function call overhead + redundant LLVM API calls.
+                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke or
+                        opcode == c.LLVMRet or opcode == c.LLVMStore)
+                    {
+                        try checkViolations(ctx, inst, opcode, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
                     }
-                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
                     t_check.* += std.time.nanoTimestamp() - t0;
                 }
             }
@@ -605,6 +611,7 @@ pub const PtrLifetimePass = struct {
     fn trackInstruction(
         allocator: std.mem.Allocator,
         inst: c.LLVMValueRef,
+        opcode: c_uint,
         func: c.LLVMValueRef,
         bb_id: usize,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
@@ -616,7 +623,7 @@ pub const PtrLifetimePass = struct {
         is_ffi_func: bool,
         lifetime_map: *LifetimeMap,
     ) !void {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
+        // PERF: opcode is now pre-computed by caller, no redundant LLVM API call.
 
         var ctx = TrackContext{
             .allocator = allocator,
