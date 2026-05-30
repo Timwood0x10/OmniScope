@@ -480,7 +480,7 @@ pub const CallbackEscapePass = struct {
                 if (!is_this_call_protected and call.is_pointer_arg and mayRetainInCLanguageAware(call.callee_name, is_cgo_boundary)) {
                     // R8.0: Cross-verify with unified MemoryGraph before reporting.
                     // Only report if the pointer is confirmed to flow into a call edge.
-                    const mg = &ctx.memory_graph;
+                    const mg = try ctx.getMemoryGraph();
                     var confirmed_by_graph = false;
                     var detected_ptr_val: u64 = 0;
                     // Issue2/3 FIX: Use standardized helper for consistent arg iteration
@@ -514,7 +514,7 @@ pub const CallbackEscapePass = struct {
                 if (mayRetainInCLanguageAware(func_name, is_cgo_boundary)) {
                     // R8.0 consume: Cross-verify with MemoryGraph — only report
                     // if the CBytes call's pointer arg is tracked as passed to an FFI call.
-                    const mg = &ctx.memory_graph;
+                    const mg = try ctx.getMemoryGraph();
                     var cgo_ptr_val: u64 = 0;
                     // Issue2/3 FIX: Use standardized helper for consistent arg iteration
                     const cgo_num_args = safe.getCallInstArgCount(call.inst);
@@ -703,7 +703,7 @@ pub const CallbackEscapePass = struct {
             return;
         }
 
-        const mg = &ctx.memory_graph;
+        const mg = try ctx.getMemoryGraph();
         if (pair_result.malloc_count > pair_result.free_count) {
             var has_call_ret_transfer = false;
             for (alloc_sites.items) |site| {

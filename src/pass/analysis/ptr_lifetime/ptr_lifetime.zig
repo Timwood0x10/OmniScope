@@ -98,6 +98,9 @@ const report = @import("ptr_lifetime_report.zig");
 
 // Core helper functions (extracted to reduce main file size)
 const core = @import("ptr_lifetime_helpers.zig");
+
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../../pipeline/parallel.zig");
 const extractDebugFilePath = core.extractDebugFilePath;
 const inferContentKind = core.inferContentKind;
 const putPtrInfo = core.putPtrInfo;
@@ -108,10 +111,6 @@ const propagateCrossFunctionFreedStatus = core.propagateCrossFunctionFreedStatus
 // PERF v2: Instruction cache and classifier for fast filtering
 const inst_cache_mod = @import("../../../ir/inst_cache.zig");
 const InstCache = inst_cache_mod.InstCache;
-const FilterStats = inst_cache_mod.FilterStats;
-
-// T3.1: Parallel execution support for per-function analysis
-const parallel = @import("../../../pipeline/parallel.zig");
 
 // Instruction tracking handlers (extracted from trackInstruction switch)
 const track = @import("ptr_lifetime_track.zig");
@@ -196,7 +195,7 @@ pub const PtrLifetimePass = struct {
         var stats = LifetimeStats{};
 
         // R8.0: Use shared MemoryGraph from PassContext (unified pointer state).
-        const mem_graph: ?*memory_graph.MemoryGraph = &ctx.memory_graph;
+        const mem_graph: *memory_graph.MemoryGraph = try ctx.getMemoryGraph();
 
         // Phase R5.1: Initialize Hook system for Rust ownership tracking.
         try hooks.initHookStates(ctx.allocator);
@@ -312,7 +311,7 @@ pub const PtrLifetimePass = struct {
         // R8.3-f: Post-analysis cross-function freed status propagation.
         {
             const t0 = std.time.nanoTimestamp();
-            const propagated = try propagateCrossFunctionFreedStatus(ctx.allocator, mem_graph.?, &ctx.global_alloc_tracker, toZoneLanguage(ctx.module_language.language));
+            const propagated = try propagateCrossFunctionFreedStatus(ctx.allocator, mem_graph, &ctx.global_alloc_tracker, toZoneLanguage(ctx.module_language.language));
             t_postprocess = std.time.nanoTimestamp() - t0;
             if (propagated > 0) {
                 diag.info("[R8.3-f] Cross-function alias propagation: {} allocations marked freed via alias chain", .{propagated});
@@ -323,13 +322,7 @@ pub const PtrLifetimePass = struct {
         const total_ms: f64 = @as(f64, @floatFromInt(t_end - t_total)) / 1_000_000.0;
         const post_ms: f64 = @as(f64, @floatFromInt(t_postprocess)) / 1_000_000.0;
         if (total_ms > 10) {
-            diag.info("[PERF-DETAIL] PtrLifetime v2: {d:.0}ms total (track={d:.0}ms, check={d:.0}ms, postprocess={d:.0}ms) for {d} funcs", .{
-                total_ms,
-                @as(f64, @floatFromInt(w_t_track)) / 1_000_000.0,
-                @as(f64, @floatFromInt(w_t_check)) / 1_000_000.0,
-                post_ms,
-                funcs_analyzed,
-            });
+            diag.info("[PERF-DETAIL] PtrLifetime: {d:.0}ms total (postprocess={d:.0}ms) for {d} funcs", .{ total_ms, post_ms, funcs_analyzed });
         }
     }
 
@@ -527,32 +520,25 @@ pub const PtrLifetimePass = struct {
         t_check: *i128,
         is_ffi_func: bool,
     ) !void {
-        const t_fn_start = std.time.nanoTimestamp();
-
         const func_name_ptr = c.LLVMGetValueName(func);
         const func_name = if (@intFromPtr(func_name_ptr) != 0)
             std.mem.span(func_name_ptr)
         else
             "unknown";
 
+        // Local InstCache for this function's analysis
+        var inst_cache = @import("../../../ir/inst_cache.zig").InstCache.init(ctx.allocator);
+        defer inst_cache.deinit();
+
         stats.total_functions_analyzed += 1;
 
         var pointer_map = std.AutoHashMap(c.LLVMValueRef, PtrInfo).init(ctx.allocator);
-        try pointer_map.ensureTotalCapacity(256);
 
         var free_sites = std.AutoHashMap(u64, FreeSiteList).init(ctx.allocator);
-        try free_sites.ensureTotalCapacity(32);
 
         // T1.2: Initialize LifetimeMap for LLVM intrinsic tracking
         var lifetime_map = LifetimeMap.init(ctx.allocator);
         defer lifetime_map.deinit();
-
-        // PERF v2: Instruction cache for O(1) opcode/callee lookups
-        var inst_cache = InstCache.init(ctx.allocator);
-        defer inst_cache.deinit();
-
-        // PERF v2: Filter statistics for measuring optimization effectiveness
-        var filter_stats = FilterStats{};
 
         defer {
             var iter = pointer_map.iterator();
@@ -605,50 +591,28 @@ pub const PtrLifetimePass = struct {
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 total_insts += 1;
                 if (total_insts > 50000) return;
-
-                // PERF v2: Use InstCache + InstClassifier for fast filtering.
-                // Skips ~30-40% of irrelevant instructions (arithmetic, bitwise, comparison)
-                // before any expensive analysis runs.
-                const cache_info = inst_cache.getClassifiedInfo(inst);
-                if (!cache_info.is_relevant) {
-                    filter_stats.record(false);
-                    continue;
-                }
-                filter_stats.record(true);
-
-                const opcode = cache_info.opcode;
                 {
                     const t0 = std.time.nanoTimestamp();
-                    try trackInstruction(ctx.allocator, inst, opcode, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map, &inst_cache);
+                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map, &inst_cache);
                     t_track.* += std.time.nanoTimestamp() - t0;
                 }
                 {
                     const t0 = std.time.nanoTimestamp();
-                    // PERF: Only call checkViolations for opcodes that can trigger violations.
-                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke or
-                        opcode == c.LLVMRet or opcode == c.LLVMStore)
-                    {
-                        try checkViolations(ctx, inst, opcode, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                        _ = c.LLVMGetCalledValue(inst);
                     }
+                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
                     t_check.* += std.time.nanoTimestamp() - t0;
                 }
             }
             bb_id += 1;
-        }
-
-        // PERF v2: Log per-function timing and filter statistics
-        const fn_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_fn_start)) / 1_000_000.0;
-        if (fn_ms > 5.0) {
-            diag.debug("[PTR-LIFETIME-PERF] {s}: {d:.1}ms ({} insts, cache hit={d:.0}%, skipped={d:.0}%)", .{
-                func_name, fn_ms, total_insts, inst_cache.hitRate(), filter_stats.skipPercentage(),
-            });
         }
     }
 
     fn trackInstruction(
         allocator: std.mem.Allocator,
         inst: c.LLVMValueRef,
-        opcode: c_uint,
         func: c.LLVMValueRef,
         bb_id: usize,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
@@ -661,6 +625,8 @@ pub const PtrLifetimePass = struct {
         lifetime_map: *LifetimeMap,
         inst_cache: *InstCache,
     ) !void {
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+
         var ctx = TrackContext{
             .allocator = allocator,
             .inst = inst,

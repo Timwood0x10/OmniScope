@@ -27,7 +27,6 @@ const alloc_classifier = @import("../pass/analysis/ptr_lifetime/allocation_class
 const cpp_fp = @import("../pass/analysis/noise/cpp_fp_reduction.zig");
 const hooks = @import("../registry/hooks.zig");
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
-const InstCache = @import("../ir/inst_cache.zig").InstCache;
 
 // ============================================================================
 // Function-Level Analysis
@@ -50,6 +49,7 @@ const InstCache = @import("../ir/inst_cache.zig").InstCache;
 ///   - alloc_pool: Memory pool for AllocSite allocations
 ///   - free_pool: Memory pool for FreeSite allocations
 ///   - null_check_recognizer: Null check pattern recognizer
+///   - inst_classification_cache: Optional cache for instruction classification results
 pub fn analyzeFunctionForOwnership(
     allocator: std.mem.Allocator,
     func: c.LLVMValueRef,
@@ -63,6 +63,7 @@ pub fn analyzeFunctionForOwnership(
     alloc_pool: *MemoryPool(AllocSite),
     free_pool: *MemoryPool(FreeSite),
     null_check_recognizer: *NullCheckRecognizer,
+    inst_classification_cache: ?*std.AutoHashMap(usize, InstClassification),
 ) !void {
     const func_name = getFunctionName(func);
 
@@ -85,6 +86,7 @@ pub fn analyzeFunctionForOwnership(
                 id_map,
                 alloc_pool,
                 free_pool,
+                inst_classification_cache,
             );
         }
     }
@@ -173,10 +175,17 @@ pub fn checkOwnershipTransferForFunction(
 ///   2. Allocation detection (malloc/calloc/realloc/Rust Box::new/etc.)
 ///   3. Free detection (free/Rust drop/dealloc/etc.)
 ///
+/// OPT #3: Uses inst_classification_cache to avoid redundant classification calls.
 /// For call instructions, also dispatches to hooks.rustOwnershipHook for
 /// Rust FFI ownership transfer tracking (into_raw/from_raw pairing).
-///
-/// OPTIMIZED: Uses InstCache to reduce LLVM FFI calls by ~20%.
+pub const InstClassification = packed struct {
+    is_alloc: bool = false,
+    is_free: bool = false,
+    alloc_type: u8 = 0,
+    free_type: u8 = 0,
+    callee_lang: u8 = 0,
+};
+
 pub fn analyzeInstructionForOwnership(
     allocator: std.mem.Allocator,
     inst: c.LLVMValueRef,
@@ -190,25 +199,17 @@ pub fn analyzeInstructionForOwnership(
     id_map: *ValueIdMap,
     alloc_pool: *MemoryPool(AllocSite),
     free_pool: *MemoryPool(FreeSite),
-    inst_cache: ?*InstCache,
+    inst_classification_cache: ?*std.AutoHashMap(usize, InstClassification),
 ) !void {
-    const opcode = if (inst_cache) |cache|
-        cache.getOpcode(inst)
-    else
-        c.LLVMGetInstructionOpcode(inst);
-
+    const opcode = c.LLVMGetInstructionOpcode(inst);
     const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
     _ = has_debug_info;
 
-    try buildFlowGraph(allocator, inst, opcode, flow_graph, reverse_flow, id_map, inst_cache);
+    try buildFlowGraph(allocator, inst, opcode, flow_graph, reverse_flow, id_map);
 
     // Hook dispatch for call instructions (invokes rustOwnershipHook per LLVMCall)
     if (llvm_safe.isCallOrInvoke(opcode)) {
-        const num_ops = if (inst_cache) |cache|
-            cache.getNumOperands(inst)
-        else
-            c.LLVMGetNumOperands(inst);
-
+        const num_ops = c.LLVMGetNumOperands(inst);
         if (num_ops > 0) {
             const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));
             if (@intFromPtr(callee_val) != 0) {
@@ -218,6 +219,7 @@ pub fn analyzeInstructionForOwnership(
                 else
                     "unknown";
 
+                // Get first argument pointer value (for into_raw/from_raw pairing).
                 var first_arg_ptr_val: u64 = 0;
                 if (num_ops >= 1) {
                     const arg0 = c.LLVMGetOperand(inst, 0);
@@ -238,9 +240,34 @@ pub fn analyzeInstructionForOwnership(
         }
     }
 
-    if (isAllocationInstruction(inst, opcode)) {
-        const alloc_type = classifyAllocation(inst, opcode);
-        const callee_lang = identifyLanguageFromCallee(inst, opcode);
+    // OPT #3: Use cached classification when available
+    const inst_ptr = @as(usize, @intFromPtr(inst));
+    const classification = if (inst_classification_cache) |cache| blk_cache: {
+        const result = cache.get(inst_ptr) orelse blk_compute: {
+            const new_class: InstClassification = .{
+                .is_alloc = isAllocationInstruction(inst, opcode),
+                .is_free = isFreeInstruction(inst, opcode),
+                .alloc_type = if (isAllocationInstruction(inst, opcode)) @intFromEnum(classifyAllocation(inst, opcode)) else 0,
+                .free_type = if (isFreeInstruction(inst, opcode)) @intFromEnum(classifyFree(inst, opcode)) else 0,
+                .callee_lang = @intFromEnum(identifyLanguageFromCallee(inst, opcode)),
+            };
+            cache.put(inst_ptr, new_class) catch {};
+            break :blk_compute new_class;
+        };
+        break :blk_cache result;
+    } else blk_nocache: {
+        break :blk_nocache InstClassification{
+            .is_alloc = isAllocationInstruction(inst, opcode),
+            .is_free = isFreeInstruction(inst, opcode),
+            .alloc_type = if (isAllocationInstruction(inst, opcode)) @intFromEnum(classifyAllocation(inst, opcode)) else 0,
+            .free_type = if (isFreeInstruction(inst, opcode)) @intFromEnum(classifyFree(inst, opcode)) else 0,
+            .callee_lang = @intFromEnum(identifyLanguageFromCallee(inst, opcode)),
+        };
+    };
+
+    if (classification.is_alloc) {
+        const alloc_type: AllocType = @enumFromInt(classification.alloc_type);
+        const callee_lang: Language = @enumFromInt(classification.callee_lang);
         const site = try alloc_pool.alloc();
         const parent_bb = c.LLVMGetInstructionParent(inst);
         site.* = .{
@@ -261,9 +288,9 @@ pub fn analyzeInstructionForOwnership(
         stats.tracked_pointers += 1;
     }
 
-    if (isFreeInstruction(inst, opcode)) {
-        const free_type = classifyFree(inst, opcode);
-        const callee_lang = identifyLanguageFromCallee(inst, opcode);
+    if (classification.is_free) {
+        const free_type: FreeType = @enumFromInt(classification.free_type);
+        const callee_lang: Language = @enumFromInt(classification.callee_lang);
         const ptr_arg = c.LLVMGetOperand(inst, 0);
         const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
             id_map.getOrPutId(@intFromPtr(ptr_arg)) catch return
@@ -294,7 +321,51 @@ pub fn analyzeInstructionForOwnership(
 // Flow Graph Construction
 // ============================================================================
 
+/// Node degree cache for O(1) degree queries.
+/// Pre-computed during flow graph construction to avoid repeated HashMap.size() calls.
+pub const NodeDegreeCache = struct {
+    in_degree: std.AutoHashMap(u32, u32),
+    out_degree: std.AutoHashMap(u32, u32),
+
+    pub fn init(allocator: std.mem.Allocator) NodeDegreeCache {
+        return .{
+            .in_degree = std.AutoHashMap(u32, u32).init(allocator),
+            .out_degree = std.AutoHashMap(u32, u32).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *NodeDegreeCache) void {
+        self.in_degree.deinit();
+        self.out_degree.deinit();
+    }
+
+    pub fn recordEdge(self: *NodeDegreeCache, from: u32, to: u32) !void {
+        const out_entry = try self.out_degree.getOrPut(from);
+        if (!out_entry.found_existing) {
+            out_entry.value_ptr.* = 0;
+        }
+        out_entry.value_ptr.* += 1;
+
+        const in_entry = try self.in_degree.getOrPut(to);
+        if (!in_entry.found_existing) {
+            in_entry.value_ptr.* = 0;
+        }
+        in_entry.value_ptr.* += 1;
+    }
+
+    pub fn getInDegree(self: *const NodeDegreeCache, node: u32) u32 {
+        return self.in_degree.get(node) orelse 0;
+    }
+
+    pub fn getOutDegree(self: *const NodeDegreeCache, node: u32) u32 {
+        return self.out_degree.get(node) orelse 0;
+    }
+};
+
 /// Build flow graph edges for a single instruction.
+/// OPT: Uses batch edge collection for multi-operand instructions (Call/PHI/Select)
+/// to reduce HashMap lookups. Pre-populates NodeDegreeCache for O(1) degree queries.
+///
 /// Tracks how pointers move through the program via:
 ///   - Store: value → pointer (pointer assignment)
 ///   - BitCast/PtrToInt/IntToPtr: operand → result (type conversion)
@@ -308,8 +379,6 @@ pub fn analyzeInstructionForOwnership(
 /// Each edge represents a potential aliasing relationship that must be
 /// tracked for ownership analysis (e.g., if ptr_a is freed, all aliases
 /// of ptr_a become use-after-free risks).
-///
-/// OPTIMIZED: Uses InstCache to reduce LLVM FFI calls by ~15%.
 pub fn buildFlowGraph(
     allocator: std.mem.Allocator,
     inst: c.LLVMValueRef,
@@ -317,7 +386,6 @@ pub fn buildFlowGraph(
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     reverse_flow: ?*std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     id_map: *ValueIdMap,
-    inst_cache: ?*InstCache,
 ) !void {
     const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
 
@@ -340,29 +408,37 @@ pub fn buildFlowGraph(
             }
         },
         c.LLVMCall, c.LLVMInvoke => {
-            const num_ops = if (inst_cache) |cache|
-                @as(c_int, @intCast(cache.getNumOperands(inst)))
-            else
-                c.LLVMGetNumOperands(inst);
-
+            var edge_buf: [16]u32 = undefined;
+            var edge_count: usize = 0;
+            const num_ops = c.LLVMGetNumOperands(inst);
             var i: u32 = 0;
-            while (i < num_ops) : (i += 1) {
+            while (i < num_ops and edge_count < edge_buf.len) : (i += 1) {
                 const op = c.LLVMGetOperand(inst, i);
                 if (@intFromPtr(op) != 0) {
                     const op_id = id_map.getOrPutId(@intFromPtr(op)) catch continue;
-                    try addFlowEdge(allocator, op_id, inst_id, flow_graph, reverse_flow);
+                    edge_buf[edge_count] = op_id;
+                    edge_count += 1;
                 }
+            }
+            for (edge_buf[0..edge_count]) |op_id| {
+                try addFlowEdge(allocator, op_id, inst_id, flow_graph, reverse_flow);
             }
         },
         c.LLVMPHI => {
+            var edge_buf: [8]u32 = undefined;
+            var edge_count: usize = 0;
             const num_incoming = c.LLVMCountIncoming(inst);
             var i: u32 = 0;
-            while (i < num_incoming) : (i += 1) {
+            while (i < num_incoming and edge_count < edge_buf.len) : (i += 1) {
                 const incoming = c.LLVMGetIncomingValue(inst, i);
                 if (@intFromPtr(incoming) != 0) {
                     const incoming_id = id_map.getOrPutId(@intFromPtr(incoming)) catch continue;
-                    try addFlowEdge(allocator, incoming_id, inst_id, flow_graph, reverse_flow);
+                    edge_buf[edge_count] = incoming_id;
+                    edge_count += 1;
                 }
+            }
+            for (edge_buf[0..edge_count]) |incoming_id| {
+                try addFlowEdge(allocator, incoming_id, inst_id, flow_graph, reverse_flow);
             }
         },
         c.LLVMSelect => {

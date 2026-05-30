@@ -431,10 +431,7 @@ test "GateCheck - fails when noise reduction insufficient" {
         .total_issues = 200,
     };
 
-    const result = guard.runGateCheck(baseline, candidate, 297, null) catch |err| {
-        std.log.err("runGateCheck failed: {}", .{err});
-        return err;
-    };
+    const result = try guard.runGateCheck(baseline, candidate, 297, null);
     defer guard.allocator.free(result.violations);
 
     try std.testing.expect(!result.passed);

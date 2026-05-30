@@ -147,7 +147,7 @@ pub fn detectDoubleFree(
             }
 
             // P2 FIX: Validate with MemoryGraph.isDoubleFreedOnSamePath
-            const mg_double_freed = ctx.memory_graph.isDoubleFreedOnSamePath(@as(u64, alloc_id));
+            const mg_double_freed = (try ctx.getMemoryGraph()).isDoubleFreedOnSamePath(@as(u64, alloc_id));
             if (!mg_double_freed) {
                 diag.debug("DOUBLE-FREE-SKIP: alloc {d} not confirmed by MemoryGraph (multi-path cleanup)", .{alloc_id});
                 continue;

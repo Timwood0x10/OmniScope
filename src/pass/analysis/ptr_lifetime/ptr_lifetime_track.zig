@@ -8,6 +8,7 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const log = @import("../../../common/log.zig");
+const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
 
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const zone_cls = @import("../../../semantics/zone_classifier.zig");
@@ -39,9 +40,6 @@ const isResourceCloseFunction = ptr_utils.isResourceCloseFunction;
 const isSameOrAlias = ptr_utils.isSameOrAlias;
 const isFuncParam = ptr_utils.isFuncParam;
 const getAllocatorKB = ptr_types.getAllocatorKB;
-
-// PERF v2: Import InstCache for cached callee_name lookups
-const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
 
 // ============================================================================
 // Track Context — shared parameters for all handlers
@@ -100,15 +98,19 @@ pub fn handleAlloca(ctx: *TrackContext) !void {
 // ============================================================================
 
 pub fn handleCallInvoke(ctx: *TrackContext) !void {
-    // PERF v2: Use InstCache for cached callee_name lookup.
-    // Avoids 3 LLVM API calls (GetCalledValue + GetValueName + span) per call instruction.
-    const callee_name = ctx.inst_cache.getCalleeName(ctx.inst) orelse return;
+    const called = c.LLVMGetCalledValue(ctx.inst);
+    if (@intFromPtr(called) == 0) return;
 
-    // PERF: Use isHeapAllocFunction which has fast exact-match path
-    // before falling back to substring matching for C++ mangled names.
-    if (ptr_types.isHeapAllocFunction(callee_name)) {
-        handleHeapAlloc(ctx, callee_name);
-        return;
+    const name_ptr = c.LLVMGetValueName(called);
+    if (@intFromPtr(name_ptr) == 0) return;
+
+    const callee_name = std.mem.span(name_ptr);
+
+    for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
+        if (std.mem.indexOf(u8, callee_name, alloc_fn) != null) {
+            handleHeapAlloc(ctx, callee_name);
+            return;
+        }
     }
 
     if (getAllocatorKB()) |kb| {
@@ -148,8 +150,7 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
 
         if (ctx.mgEffective()) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            const alloc_lang = classifyAllocLanguageEnum(callee_name, ctx.lang) orelse ctx.lang;
-            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, alloc_lang) catch {};
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang) catch {};
             mg.recordFuncAlloc(ctx.funcPtr());
         }
     }
@@ -228,7 +229,8 @@ fn handleHeapAlloc(ctx: *TrackContext, callee_name: []const u8) void {
 }
 
 fn handleDlsym(ctx: *TrackContext) void {
-    const num_ops = c.LLVMGetNumOperands(ctx.inst);
+    // PERF: Use InstCache for operand count lookup
+    const num_ops = ctx.inst_cache.getNumOperands(ctx.inst);
     var op_idx: u32 = 0;
     while (op_idx < @min(num_ops, 2)) : (op_idx += 1) {
         const handle_arg = c.LLVMGetOperand(ctx.inst, op_idx);
@@ -388,23 +390,18 @@ fn handleResourceClose(ctx: *TrackContext, closed_type: ptr_types.ResourceType) 
     const handle_arg = c.LLVMGetOperand(ctx.inst, 0);
     if (ctx.pointer_map.getPtr(handle_arg)) |handle_info| {
         handle_info.freed = true;
-        // PERF v2: Optimized scan — only iterate entries matching resource_type.
-        // Original code scanned all entries; this version still scans but with
-        // clearer early-continue for non-matching types (branch prediction friendly).
-        // For very large maps, consider adding a reverse index (resource_type → []key).
         var it = ctx.pointer_map.iterator();
         while (it.next()) |entry| {
-            // Fast path: skip wrong type immediately
-            if (entry.value_ptr.resource_type != closed_type) continue;
-            // Skip entries without derived handle
-            const derived = entry.value_ptr.derived_from_handle orelse continue;
-            if (isSameOrAlias(derived, handle_arg)) {
-                entry.value_ptr.freed = true;
+            if (entry.value_ptr.resource_type == closed_type and
+                entry.value_ptr.derived_from_handle != null)
+            {
+                const derived = entry.value_ptr.derived_from_handle.?;
+                if (isSameOrAlias(derived, handle_arg)) {
+                    entry.value_ptr.freed = true;
+                }
             }
         }
     } else {
-        // PERF v2: When handle_arg not in map, mark all matching resources as freed.
-        // This is necessary for cases where the handle was tracked under a different key.
         var it = ctx.pointer_map.iterator();
         while (it.next()) |entry| {
             if (entry.value_ptr.resource_type == closed_type and
@@ -583,7 +580,8 @@ pub fn handlePhi(ctx: *TrackContext) !void {
 
 pub fn handleRet(ctx: *TrackContext) void {
     if (ctx.mgEffective()) |mg| {
-        const num_ops = c.LLVMGetNumOperands(ctx.inst);
+        // PERF: Use InstCache for operand count lookup
+        const num_ops = ctx.inst_cache.getNumOperands(ctx.inst);
         if (num_ops > 0) {
             const ret_val = c.LLVMGetOperand(ctx.inst, 0);
             if (@intFromPtr(ret_val) != 0) {
@@ -617,8 +615,13 @@ pub fn handleRet(ctx: *TrackContext) void {
 pub fn handleLifetimeIntrinsic(ctx: *TrackContext) void {
     const lifetime_map = ctx.lifetime_map orelse return;
 
-    // PERF v2: Use InstCache for cached intrinsic name lookup
-    const intrinsic_name = ctx.inst_cache.getCalleeName(ctx.inst) orelse return;
+    const called = c.LLVMGetCalledValue(ctx.inst);
+    if (@intFromPtr(called) == 0) return;
+
+    const name_ptr = c.LLVMGetValueName(called);
+    if (@intFromPtr(name_ptr) == 0) return;
+
+    const intrinsic_name = std.mem.span(name_ptr);
 
     // Get the alloca operand (second operand, index 1)
     const alloca_operand = c.LLVMGetOperand(ctx.inst, 1);

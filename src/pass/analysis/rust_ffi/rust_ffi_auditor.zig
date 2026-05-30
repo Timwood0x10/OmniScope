@@ -16,6 +16,8 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const inst_cache_mod = @import("../../../ir/inst_cache.zig");
+const InstCache = inst_cache_mod.InstCache;
 const CommonTypes = @import("../../../common/types.zig");
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 const ffi_language_classifier = @import("../ffi/ffi_language_classifier.zig");
@@ -122,6 +124,10 @@ pub const RustFfiAuditor = struct {
         const func_name = getFunctionName(func);
         const is_rust = ctx.isRustModule();
 
+        // PERF: Initialize InstCache for this function's instructions (avoids 6× FFI overhead)
+        var inst_cache = InstCache.init(self.allocator);
+        defer inst_cache.deinit();
+
         // ── Rust-specific rules (language-gated) ──
         if (is_rust) {
             // Rule 1: into_raw/from_raw pairing check
@@ -144,13 +150,13 @@ pub const RustFfiAuditor = struct {
             }
 
             // Rule 2: as_ptr borrow escape detection
-            try basic_rules.detectAsPtrEscape(self, func, ctx, diag);
+            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, &inst_cache);
 
             // Rule 3: Cross-lang alloc mismatch (Rust _Znwm → C free)
-            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag);
+            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, &inst_cache);
 
             // Rule 6: Ownership transfer protocol (into_raw/from_raw pairing)
-            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag);
+            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, &inst_cache);
 
             // Rule 7: as_ptr dangling detection — borrowed ptr used after parent drop
             try lifetime_rules.detectAsPtrDangling(self, func, ctx, diag);
@@ -159,10 +165,10 @@ pub const RustFfiAuditor = struct {
         // ── Universal FFI boundary rules (run on ALL languages) ──
 
         // Rule 4: Unsafe block FFI call scan
-        try basic_rules.detectUnsafeFfiCalls(self, func);
+        try basic_rules.detectUnsafeFfiCalls(self, func, &inst_cache);
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
-        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag);
+        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, &inst_cache);
 
         // Rule 8: Callback ownership risk — function pointer parameter stored to global
         try lifetime_rules.detectCallbackOwnershipRisk(self, func, ctx, diag);

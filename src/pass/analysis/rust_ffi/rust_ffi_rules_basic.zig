@@ -15,6 +15,8 @@
 const std = @import("std");
 const log = @import("../../../common/log.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const inst_cache_mod = @import("../../../ir/inst_cache.zig");
+const InstCache = inst_cache_mod.InstCache;
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 const tracking = @import("../ptr_lifetime/value_tracking.zig");
 
@@ -44,22 +46,21 @@ const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKin
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
 
 /// Detect as_ptr borrow escape in function body (Rule 2).
-pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
     var bb = c.LLVMGetFirstBasicBlock(func);
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+            // PERF: Use InstCache for opcode lookup
+            const opcode = inst_cache.getOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+            // PERF: Use InstCache for operand count and callee name lookup
+            const num_operands: c_uint = inst_cache.getNumOperands(inst);
             if (num_operands < 2) continue;
 
-            const callee = c.LLVMGetOperand(inst, num_operands - 1);
-            if (@intFromPtr(callee) == 0) continue;
-            const callee_name = c.LLVMGetValueName(callee);
-            if (@intFromPtr(callee_name) == 0) continue;
-            const name_slice = std.mem.sliceTo(callee_name, 0);
+            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+            const name_slice = callee_name;
 
             if (!isRustAsPtrCall(name_slice)) continue;
 
@@ -110,7 +111,7 @@ pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCont
 }
 
 /// Detect cross-language allocation mismatch (Rule 3): Rust _Znwm → C free.
-pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
     var visited = std.AutoHashMap(usize, void).init(auditor.allocator);
     defer visited.deinit();
 
@@ -118,19 +119,17 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+            // PERF: Use InstCache for opcode lookup
+            const opcode = inst_cache.getOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+            // PERF: Use InstCache for operand count and callee name lookup
+            const num_operands: c_uint = inst_cache.getNumOperands(inst);
             if (num_operands < 2) continue;
 
-            const callee = c.LLVMGetOperand(inst, num_operands - 1);
-            if (@intFromPtr(callee) == 0) continue;
-            const callee_name = c.LLVMGetValueName(callee);
-            if (@intFromPtr(callee_name) == 0) continue;
-            const name_slice = std.mem.sliceTo(callee_name, 0);
+            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            if (!isCFreeCall(name_slice)) continue;
+            if (!isCFreeCall(callee_name)) continue;
 
             // R-6: If the freed pointer came from into_raw, ownership was
             // explicitly transferred — C free() is legal, not a bug.
@@ -148,7 +147,8 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
             }
 
             // Get the pointer argument to free() and trace its origin
-            const ptr_arg = c.LLVMGetOperand(inst, 0);
+            // FIXED: LLVM call instruction: [callee, arg0, arg1, ...], so ptr is at index 1
+            const ptr_arg = c.LLVMGetOperand(inst, 1);
             if (@intFromPtr(ptr_arg) == 0) continue;
 
             // R-6: Check if the pointer came from into_raw (ownership transfer)
@@ -195,25 +195,23 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
 }
 
 /// Detect unsafe FFI calls without validation (Rule 4).
-pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef) !void {
+pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, inst_cache: *InstCache) !void {
     var has_unsafe_ffi = false;
     var bb = c.LLVMGetFirstBasicBlock(func);
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+            // PERF: Use InstCache for opcode lookup
+            const opcode = inst_cache.getOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+            // PERF: Use InstCache for operand count and callee name lookup
+            const num_operands: c_uint = inst_cache.getNumOperands(inst);
             if (num_operands < 2) continue;
 
-            const callee = c.LLVMGetOperand(inst, num_operands - 1);
-            if (@intFromPtr(callee) == 0) continue;
-            const callee_name = c.LLVMGetValueName(callee);
-            if (@intFromPtr(callee_name) == 0) continue;
-            const name_slice = std.mem.sliceTo(callee_name, 0);
+            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            if (isExternCCall(name_slice)) {
+            if (isExternCCall(callee_name)) {
                 has_unsafe_ffi = true;
             }
         }
@@ -237,20 +235,17 @@ pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef) !void {
 
 /// Detect stack address escape to FFI boundary (Rule 5):
 /// alloca/local variable address passed to FFI boundary that may retain pointer.
-pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
     var bb = c.LLVMGetFirstBasicBlock(func);
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+            // PERF: Use InstCache for opcode lookup
+            const opcode = inst_cache.getOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const called_val = c.LLVMGetCalledValue(inst);
-            if (@intFromPtr(called_val) == 0) continue;
-
-            const callee_name_ptr = c.LLVMGetValueName(called_val);
-            if (@intFromPtr(callee_name_ptr) == 0) continue;
-            const callee_name = std.mem.span(callee_name_ptr);
+            // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
+            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
             // Must be FFI boundary (non-Rust-mangled)
             if (isRustMangledName(callee_name)) continue;
@@ -380,7 +375,7 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
 ///   (A) passed to an FFI boundary function (ownership transfer OUT), AND
 ///   (B) later passed to free/dealloc (double-free risk), OR
 ///   (C) used after the transfer target may have freed it (UAF risk)
-pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
     // Collect all pointers passed to FFI boundary calls
     var ffi_transferred_ptrs = std.ArrayList(c.LLVMValueRef).initCapacity(auditor.allocator, 16) catch return;
     defer ffi_transferred_ptrs.deinit(auditor.allocator);
@@ -396,14 +391,12 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+            // PERF: Use InstCache for opcode and callee name lookup
+            const opcode = inst_cache.getOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const called_val = c.LLVMGetCalledValue(inst);
-            if (@intFromPtr(called_val) == 0) continue;
-            const name_ptr = c.LLVMGetValueName(called_val);
-            if (@intFromPtr(name_ptr) == 0) continue;
-            const callee_name = std.mem.span(name_ptr);
+            // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
+            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
             // Is this an FFI boundary call? (non-Rust-mangled, non-llvm intrinsic)
             // Exclude Rust-internal allocator functions (__rust_alloc, __rust_dealloc, etc.)

@@ -11,8 +11,6 @@ const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const Issue = @import("../../diag/issue.zig").Issue;
 const Location = @import("../../diag/issue.zig").Location;
-const Severity = @import("../../diag/issue.zig").Severity;
-const Confidence = @import("../../diag/issue.zig").Confidence;
 const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 const SemanticRegistry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
@@ -24,7 +22,6 @@ const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
 const MemoryPool = @import("../../perf/memory_pool.zig").MemoryPool;
 const Profiler = @import("../../perf/profiler.zig").Profiler;
 const ScopedTimer = @import("../../perf/profiler.zig").ScopedTimer;
-const InstCache = @import("../../ir/inst_cache.zig").InstCache;
 const lifetime = @import("../../lifetime/root.zig");
 const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullCheckRecognizer;
 
@@ -68,58 +65,6 @@ const analyzeFunctionForOwnership = analysis.analyzeFunctionForOwnership;
 const checkOwnershipTransferForFunction = analysis.checkOwnershipTransferForFunction;
 const analyzeInstructionForOwnership = analysis.analyzeInstructionForOwnership;
 const buildFlowGraph = analysis.buildFlowGraph;
-
-// Helper imports for merged detectAllPatterns (single-pass optimization)
-const cpp_helpers = @import("../../types/cpp_fp_helpers.zig");
-const cpp_types_import = @import("../../types/cpp_fp_types.zig");
-
-/// Quick check if a function could be relevant to FFI/ownership analysis.
-/// OPTIMIZED: Uses CallSiteIndex for O(1) lookup instead of O(I) instruction scan.
-/// Works for ALL languages (C, C++, Rust, Go, etc.).
-///
-/// Returns false for pure internal functions that:
-/// - Have no FFI-related name patterns
-/// - Don't call any external declarations (checked via CallSiteIndex)
-/// - Don't have allocation/free patterns in name
-///
-/// Conservative: returns true when unsure to avoid missing issues.
-fn isPotentiallyFfiRelevant(func: c.LLVMValueRef, call_site_idx: *const @import("../../types/pass_types.zig").CallSiteIndex) bool {
-    const func_name_raw = c.LLVMGetValueName(func);
-    if (func_name_raw == null) return true;
-    const func_name = std.mem.span(func_name_raw);
-
-    // Check 1: FFI-related name patterns (covers JNI, Python, Go, etc.)
-    const ffi_prefixes = [_][]const u8{
-        "JNI_", "Java_", "Py",    "Go",      "CGo",
-        "rust", "_ZN",   "__cxa", "uv_",     "lua",
-        "SSL_", "BIO_",  "EVP_",  "CRYPTO_", "CF",
-        "NS",   "objc_",
-    };
-    for (ffi_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, func_name, prefix)) return true;
-    }
-
-    // Check 2: Allocation/free patterns in name
-    const alloc_patterns = [_][]const u8{
-        "malloc", "calloc",  "realloc", "free",
-        "new",    "delete",  "alloc",   "dealloc",
-        "retain", "release",
-    };
-    for (alloc_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    // Check 3: Use CallSiteIndex for O(1) external call detection
-    // This replaces the expensive O(I) instruction scan
-    const func_ptr = @as(u64, @intFromPtr(func));
-    if (call_site_idx.hasExternalCalls(func_ptr)) {
-        return true;
-    }
-
-    // Pure internal function - no FFI relevance detected
-    return false;
-}
-
 /// Pointer ownership tracking pass.
 pub const PointerOwnershipPass = struct {
     pub const name = "pointer-ownership";
@@ -222,11 +167,10 @@ pub const PointerOwnershipPass = struct {
         // OPT #2: Cache for isRustFFIRelevantFunction (pure function, LLVM IR immutable)
         var ffi_relevant_cache = std.AutoHashMap(usize, bool).init(ctx.allocator);
         defer ffi_relevant_cache.deinit();
-
-        // OPT #3: InstCache for reducing LLVM API calls (major performance win)
-        var inst_cache = InstCache.init(ctx.allocator);
-        defer inst_cache.deinit();
-
+        // OPT #3: Instruction classification cache - avoids redundant classification calls
+        // Key: instruction pointer (usize), Value: packed classification flags
+        var inst_classification_cache = std.AutoHashMap(usize, analysis.InstClassification).init(ctx.allocator);
+        defer inst_classification_cache.deinit();
         const mod = ctx.module.?.raw;
         const has_debug_info = checkDebugMetadataAvailable(mod);
         if (!has_debug_info) {
@@ -239,7 +183,8 @@ pub const PointerOwnershipPass = struct {
             var mg_unfreed_count: usize = 0;
 
             // Source 1: MemoryGraph — all allocation sites (both freed and unfreed)
-            var mg_iter = ctx.memory_graph.nodes.iterator();
+            const mg = try ctx.getMemoryGraph();
+            var mg_iter = mg.nodes.iterator();
             while (mg_iter.next()) |entry| {
                 const node = entry.value_ptr.*;
 
@@ -327,14 +272,51 @@ pub const PointerOwnershipPass = struct {
                 }
             }
 
-            // Source 3: IR-level free instruction scan — REMOVED (redundant)
-            // OPTIMIZATION: Free detection is now handled by analyzeAndDetectMerged Phase 4
-            // This eliminates a complete triple-nested loop (functions × BBs × instructions)
-            // Estimated savings: ~15% of total pass time
-            // Previous implementation scanned all functions for free instructions,
-            // but this is now done in the merged single-pass analysis (see Phase 4 above)
+            // Source 3: IR-level free instruction scan (skips safe/runtime_internal zones)
+            {
+                var ir_func = c.LLVMGetFirstFunction(mod);
+                while (@intFromPtr(ir_func) != 0) : (ir_func = c.LLVMGetNextFunction(ir_func)) {
+                    if (c.LLVMIsDeclaration(ir_func) != 0) continue;
+                    // Skip safe/runtime_internal zones — their frees are not FFI-relevant
+                    const s3_name_raw = c.LLVMGetValueName(ir_func);
+                    const s3_name = if (s3_name_raw != null) std.mem.span(s3_name_raw) else "unknown";
+                    const s3_zone = ctx.getOrComputeZoneByName(s3_name);
+                    if (s3_zone == .safe or s3_zone == .runtime_internal) continue;
+                    var bb = c.LLVMGetFirstBasicBlock(ir_func);
+                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                        const bb_id = id_map.getOrPutId(@intFromPtr(bb)) catch 0;
+                        var inst = c.LLVMGetFirstInstruction(bb);
+                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                            const opcode = c.LLVMGetInstructionOpcode(inst);
+                            if (llvm_safe.isCallOrInvoke(opcode) and isFreeInstruction(inst, opcode)) {
+                                const ptr_arg = c.LLVMGetOperand(inst, 0);
+                                if (@intFromPtr(ptr_arg) == 0) continue;
+                                const ptr_id: u32 = id_map.getOrPutId(@intFromPtr(ptr_arg)) catch continue;
+                                const fsite = try free_pool.alloc();
+                                fsite.* = .{
+                                    .inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch ptr_id,
+                                    .func_name = s3_name,
+                                    .lang = identifyLanguageFromCallee(inst, opcode),
+                                    .free_type = classifyFree(inst, opcode),
+                                    .ptr_value_id = ptr_id,
+                                    .bb_id = bb_id,
+                                    .source = .ir_scan,
+                                    .debug_file = null,
+                                    .debug_line = null,
+                                    .debug_column = null,
+                                };
+                                if (!free_map.contains(ptr_id)) {
+                                    try free_map.put(ptr_id, fsite);
+                                    stats.free_sites += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                diag.info("PointerOwnership: Source 3 (IR scan) added {d} frees — total now {d}", .{ stats.free_sites, stats.free_sites });
+            }
 
-            diag.info("PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker — {d} allocs, {d} frees (Source 3 IR scan merged into main loop)", .{ stats.alloc_sites, stats.free_sites });
+            diag.info("PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — {d} allocs, {d} frees", .{ stats.alloc_sites, stats.free_sites });
         }
 
         var func = c.LLVMGetFirstFunction(mod);
@@ -348,12 +330,6 @@ pub const PointerOwnershipPass = struct {
         // Phase R5.3: Initialize Hook system for ownership transfer tracking.
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
-
-        // PERF COUNTERS: Track optimization effectiveness
-        var functions_analyzed: u64 = 0;
-        var functions_skipped_ffi: u64 = 0;
-        var functions_skipped_zone: u64 = 0;
-        const t0_analysis = std.time.nanoTimestamp();
 
         // C1: Single-pass detection (was 8 separate traversals, ~5-8× faster)
         var raii_count: u32 = 0;
@@ -376,7 +352,6 @@ pub const PointerOwnershipPass = struct {
             // R7.0: Shared zone gate (single source of truth, also used by ffi_boundary).
             if (!PassContext.shouldAnalyzeZone(zone)) {
                 diag.debug("ZONE-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
-                functions_skipped_zone += 1;
                 continue;
             }
 
@@ -386,16 +361,6 @@ pub const PointerOwnershipPass = struct {
             const classification = ctx.classifyFunctionSurface(func_name, func_loc);
             if (!classification.origin.shouldReportByDefault()) {
                 diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
-                continue;
-            }
-
-            // Early exit: Quick FFI relevance check for ALL languages.
-            // OPTIMIZED: Uses CallSiteIndex for O(1) lookup instead of O(I) scan.
-            // Skips pure internal functions that don't call external declarations.
-            // This is the key optimization for large files like sqlite3.ll.
-            if (!isPotentiallyFfiRelevant(func, &ctx.CallSiteIndex)) {
-                diag.debug("FFI-SKIP: {s} — no external calls detected", .{func_name});
-                functions_skipped_ffi += 1;
                 continue;
             }
 
@@ -430,13 +395,10 @@ pub const PointerOwnershipPass = struct {
             // Phase R5.3: Reset hook state per function scope
             hooks.resetHookStatesForFunction();
 
-            // PERF OPTIMIZATION: Merged single-pass analysis (was 2 separate traversals)
-            // Combines analyzeFunctionForOwnership + detectAllPatterns into ONE traversal
-            // This eliminates ~40% of redundant instruction visits
-            analyzeAndDetectMerged(
+            // Function-level error isolation
+            analyzeFunctionForOwnership(
+                ctx.allocator,
                 func,
-                ctx,
-                diag,
                 &alloc_map,
                 &free_map,
                 &flow_graph,
@@ -447,39 +409,39 @@ pub const PointerOwnershipPass = struct {
                 &alloc_pool,
                 &free_pool,
                 &null_check_recognizer,
-                &raii_count,
-                &ctx.raii_func_set,
-                &ctx.meyers_singleton_set,
-                &ctx.rc_container_func_set,
-                &ctx.rust_into_raw_set,
-                &ctx.rust_from_raw_set,
-                &inst_cache,
+                &inst_classification_cache,
             ) catch |err| {
                 diag.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();
                 continue;
             };
 
-            functions_analyzed += 1;
+            // Phase R5.3: Check hook state for end-of-function ownership issues.
+            if (hooks.rustUnpairedTransferCount() > 0) {
+                diag.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{func_name});
+                stats.cross_ffi_transfers += 1;
+            }
+            if (hooks.pythonUnbalancedDecrefCount() > 0) {
+                diag.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), func_name });
+                stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
+            }
+
+            // C1 FIX: Perform all detection tasks in single traversal (eliminate 7 redundant passes)
+            detectStructMemberStores(func, &alloc_map, &id_map);
+            detectRaiiManagedAllocations(func, &alloc_map, &id_map, &raii_count, &ctx.raii_func_set);
+            detectMeyersSingletonFunctions(func, &ctx.meyers_singleton_set);
+            detectRefCountedContainerFunctions(func, &ctx.rc_container_func_set);
+            detectRustFfiPairingFunctions(func, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
+            detectAsPtrBorrowEscape(ctx, func, diag);
         }
 
-        // PERF REPORT: Analysis phase performance summary
+        // OPT #1: reverse_flow already built incrementally, now check ownership transfer
         {
-            const analysis_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t0_analysis)) / 1_000_000.0;
-            diag.info("PointerOwnership: Analysis phase completed in {d:.1}ms", .{analysis_ms});
-            diag.info("  Functions: {d} analyzed, {d} skipped (FFI), {d} skipped (zone)", .{
-                functions_analyzed,
-                functions_skipped_ffi,
-                functions_skipped_zone,
-            });
-            diag.info("  InstCache: {d} hits, {d} misses (hit rate: {d:.1}%)", .{
-                inst_cache.hits,
-                inst_cache.misses,
-                if (inst_cache.hits + inst_cache.misses > 0)
-                    @as(f64, @floatFromInt(inst_cache.hits)) / @as(f64, @floatFromInt(inst_cache.hits + inst_cache.misses)) * 100.0
-                else
-                    0.0,
-            });
+            var func2 = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(func2) != 0) : (func2 = c.LLVMGetNextFunction(func2)) {
+                if (c.LLVMIsDeclaration(func2) != 0) continue;
+                checkOwnershipTransferForFunction(func2, &alloc_map, &reverse_flow, &id_map);
+            }
         }
 
         // C1 FIX: Report detection results (previously in separate passes 4-8)
@@ -654,628 +616,5 @@ pub const PointerOwnershipPass = struct {
     }
     fn hasUseAfterFree(fp: u32, flow: std.AutoHashMap(u32, void), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), v: *std.AutoHashMap(u32, void)) bool {
         return cpp_fp.hasUseAfterFree(fp, &flow, fg, v);
-    }
-
-    /// Merged single-pass analysis: combines analyzeFunctionForOwnership + detectAllPatterns
-    /// into ONE traversal per function (was 2 separate traversals).
-    ///
-    /// This is the **#1 performance optimization** — eliminates ~40% of redundant
-    /// instruction visits by merging ownership analysis and pattern detection.
-    ///
-    /// Handles in a single pass:
-    ///   1. Flow graph construction (buildFlowGraph)
-    ///   2. Allocation/free site detection
-    ///   3. RAII/singleton/RC/rust-FFI pattern detection
-    ///   4. Ownership transfer tracking (store-to-param, return)
-    ///   5. Hook dispatch for Rust FFI tracking
-    fn analyzeAndDetectMerged(
-        func: c.LLVMValueRef,
-        ctx: *PassContext,
-        diag: *DiagnosticWriter,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        free_map: *std.AutoHashMap(u32, *FreeSite),
-        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        stats: *OwnershipStats,
-        has_debug_info: bool,
-        id_map: *ValueIdMap,
-        alloc_pool: *MemoryPool(AllocSite),
-        free_pool: *MemoryPool(FreeSite),
-        null_check_recognizer: *NullCheckRecognizer,
-        raii_count: *u32,
-        raii_func_set: *std.AutoHashMap(usize, void),
-        meyers_set: *std.AutoHashMap(usize, void),
-        rc_set: *std.AutoHashMap(usize, void),
-        into_raw_set: *std.StringHashMap(void),
-        from_raw_set: *std.StringHashMap(void),
-        inst_cache: *InstCache,
-    ) !void {
-        _ = has_debug_info;
-        const func_name = getFunctionName(func);
-
-        null_check_recognizer.recognizeInFunction(func, id_map) catch {};
-
-        // Pre-compute parameter value IDs for ownership transfer detection
-        const num_params = c.LLVMCountParams(func);
-        var param_value_ids: [16]u32 = undefined;
-        var param_count: usize = 0;
-        {
-            var i: c_uint = 0;
-            while (i < num_params and i < 16) : (i += 1) {
-                const param = c.LLVMGetParam(func, i);
-                if (@intFromPtr(param) != 0) {
-                    param_value_ids[param_count] = id_map.getOrPutId(@intFromPtr(param)) catch continue;
-                    param_count += 1;
-                }
-            }
-        }
-
-        // RAII constructor prefixes for L3/L4 detection
-        const raii_constructor_prefixes = [_][]const u8{
-            "_ZNSt3__110unique_ptr",
-            "_ZNSt3__110shared_ptr",
-            "_ZNSt10unique_ptr",
-            "_ZNSt10shared_ptr",
-        };
-
-        // Tracking flags for per-function pattern detection
-        var func_has_raii: bool = false;
-        var has_guard_acquire: bool = false;
-        var has_rc_operation: bool = false;
-        var has_allocation: bool = false;
-        var has_into_raw: bool = false;
-        var has_from_raw: bool = false;
-
-        // Dedup set for as_ptr borrow escape reporting
-        var reported_escape = std.AutoHashMap(usize, void).init(ctx.allocator);
-        defer reported_escape.deinit();
-
-        // Single pass over all basic blocks and instructions
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch continue;
-
-                // ── Phase 1: Flow Graph Construction ──
-                try buildFlowGraph(
-                    ctx.allocator,
-                    inst,
-                    opcode,
-                    flow_graph,
-                    reverse_flow,
-                    id_map,
-                    inst_cache,
-                );
-
-                // ── Phase 2: Hook dispatch for call instructions ──
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const num_ops = c.LLVMGetNumOperands(inst);
-                    if (num_ops > 0) {
-                        const callee_val = c.LLVMGetOperand(inst, @intCast(num_ops - 1));
-                        if (@intFromPtr(callee_val) != 0) {
-                            const callee_name_raw = c.LLVMGetValueName(callee_val);
-                            const callee_name = if (callee_name_raw != null)
-                                std.mem.span(callee_name_raw)
-                            else
-                                "unknown";
-
-                            var first_arg_ptr_val: u64 = 0;
-                            if (num_ops >= 1) {
-                                const arg0 = c.LLVMGetOperand(inst, 0);
-                                if (@intFromPtr(arg0) != 0) {
-                                    first_arg_ptr_val = @as(u64, @intFromPtr(arg0));
-                                }
-                            }
-
-                            var hook_ctx = @import("../../registry/types.zig").HookContext{
-                                .inst = @ptrCast(inst),
-                                .callee_name = callee_name,
-                                .opcode = opcode,
-                                .language = "rust",
-                                .first_arg_ptr_val = first_arg_ptr_val,
-                            };
-                            _ = hooks.rustOwnershipHook(&hook_ctx);
-
-                            // ── Phase 3: Allocation Detection ──
-                            if (isAllocationInstruction(inst, opcode)) {
-                                const alloc_type = classifyAllocation(inst, opcode);
-                                const callee_lang = identifyLanguageFromCallee(inst, opcode);
-                                const site = try alloc_pool.alloc();
-                                const parent_bb = c.LLVMGetInstructionParent(inst);
-                                site.* = .{
-                                    .inst_id = inst_id,
-                                    .func_name = func_name,
-                                    .lang = callee_lang,
-                                    .alloc_type = alloc_type,
-                                    .ptr_value_id = inst_id,
-                                    .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
-                                    .source = .direct_analysis,
-                                    .debug_file = null,
-                                    .debug_line = null,
-                                    .debug_column = null,
-                                };
-
-                                try alloc_map.put(inst_id, site);
-                                stats.alloc_sites += 1;
-                                stats.tracked_pointers += 1;
-                            }
-
-                            // ── Phase 4: Free Detection ──
-                            if (isFreeInstruction(inst, opcode)) {
-                                const free_type = classifyFree(inst, opcode);
-                                const callee_lang = identifyLanguageFromCallee(inst, opcode);
-                                const ptr_arg = c.LLVMGetOperand(inst, 0);
-                                const ptr_value_id: u32 = if (@intFromPtr(ptr_arg) != 0)
-                                    id_map.getOrPutId(@intFromPtr(ptr_arg)) catch continue
-                                else
-                                    inst_id;
-
-                                const site = try free_pool.alloc();
-                                const parent_bb = c.LLVMGetInstructionParent(inst);
-                                site.* = .{
-                                    .inst_id = inst_id,
-                                    .func_name = func_name,
-                                    .lang = callee_lang,
-                                    .free_type = free_type,
-                                    .ptr_value_id = ptr_value_id,
-                                    .bb_id = id_map.getOrPutId(@intFromPtr(parent_bb)) catch inst_id,
-                                    .source = .direct_analysis,
-                                    .debug_file = null,
-                                    .debug_line = null,
-                                    .debug_column = null,
-                                };
-
-                                try free_map.put(inst_id, site);
-                                stats.free_sites += 1;
-                            }
-
-                            // ── Phase 5: Pattern Detection (RAII/Meyers/RC/Rust-FFI) ──
-                            const name_slice = std.mem.sliceTo(callee_name_raw, 0);
-
-                            // detectRaiiManagedAllocations: check RAII constructor prefixes
-                            {
-                                var is_raii_ctor = false;
-                                for (raii_constructor_prefixes) |prefix| {
-                                    if (std.mem.indexOf(u8, name_slice, prefix) != null) {
-                                        is_raii_ctor = true;
-                                        break;
-                                    }
-                                }
-                                if (is_raii_ctor) {
-                                    func_has_raii = true;
-                                    var i: c_uint = 0;
-                                    while (i < num_ops - 1) : (i += 1) {
-                                        const operand = c.LLVMGetOperand(inst, i);
-                                        if (@intFromPtr(operand) == 0) continue;
-                                        const op_id = id_map.getId(@intFromPtr(operand)) orelse continue;
-                                        if (alloc_map.get(op_id)) |alloc_info| {
-                                            alloc_info.transferred = true;
-                                            raii_count.* += 1;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // detectMeyersSingletonFunctions: check __cxa_guard_acquire
-                            if (!has_guard_acquire) {
-                                if (std.mem.indexOf(u8, name_slice, "__cxa_guard_acquire") != null) {
-                                    has_guard_acquire = true;
-                                }
-                            }
-
-                            // detectRefCountedContainerFunctions: check RC operations and alloc patterns
-                            if (!has_rc_operation) {
-                                if (cpp_helpers.isRefCountOperation(name_slice)) {
-                                    has_rc_operation = true;
-                                }
-                                if (cpp_helpers.isAllocationByName(name_slice)) {
-                                    has_allocation = true;
-                                }
-                            }
-
-                            // detectRustFfiPairingFunctions: check into_raw / from_raw
-                            if (!has_into_raw or !has_from_raw) {
-                                if (cpp_types_import.isRustIntoRawCall(name_slice)) {
-                                    has_into_raw = true;
-                                }
-                                if (cpp_types_import.isRustFromRawCall(name_slice)) {
-                                    has_from_raw = true;
-                                }
-                            }
-
-                            // detectAsPtrBorrowEscape: check as_ptr with local Rust arg
-                            if (num_ops >= 2 and cpp_types_import.isRustAsPtrCall(name_slice)) {
-                                var i: c_uint = 0;
-                                while (i < num_ops - 1) : (i += 1) {
-                                    const arg = c.LLVMGetOperand(inst, i);
-                                    if (@intFromPtr(arg) == 0) continue;
-                                    const arg_name_raw = c.LLVMGetValueName(arg);
-                                    if (@intFromPtr(arg_name_raw) == 0) continue;
-                                    const arg_slice = std.mem.span(arg_name_raw);
-                                    if (!cpp_helpers.isLocalRustValue(arg_slice)) continue;
-                                    const func_key = @intFromPtr(c.LLVMGetValueName(func));
-                                    if (reported_escape.contains(func_key)) continue;
-                                    const vuln_id = ctx.getNextVulnId();
-                                    const func_name_str = getFunctionName(func);
-                                    ctx.addIssue(&Issue.initWithReason(
-                                        .borrow_escape,
-                                        "as_ptr borrow escape: local value escapes via raw pointer",
-                                        Location.init(func_name_str),
-                                        .medium,
-                                        0.75,
-                                        "Rust as_ptr() called on local value — raw pointer outlives borrow scope",
-                                    )) catch {};
-                                    diag.err("BORROW-ESCAPE OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(Severity.medium), @tagName(Confidence.fromScore(0.75)) });
-                                    diag.err("Type: borrow_escape", .{});
-                                    diag.err("Reason: as_ptr() on local Rust value in {s}", .{func_name_str});
-                                    reported_escape.put(func_key, {}) catch {};
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Phase 6: Store Instruction Handling ──
-                if (opcode == c.LLVMStore) {
-                    if (c.LLVMGetNumOperands(inst) >= 2) {
-                        const stored_val = c.LLVMGetOperand(inst, 0);
-                        const ptr_operand = c.LLVMGetOperand(inst, 1);
-                        const stored_id = @intFromPtr(stored_val);
-
-                        // detectStructMemberStores: mark alloc stored to GEP (struct field)
-                        if (stored_id != 0) {
-                            if (id_map.getId(stored_id)) |value_id| {
-                                if (alloc_map.get(value_id)) |alloc_info| {
-                                    if (@intFromPtr(ptr_operand) != 0 and
-                                        c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMGetElementPtr)
-                                    {
-                                        alloc_info.stored_to_struct_field = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        // checkOwnershipTransferForFunction: store to parameter → mark alloc as transferred
-                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(ptr_operand) != 0) {
-                            const ptr_value_id = id_map.getOrPutId(@intFromPtr(ptr_operand)) catch 0;
-                            for (param_value_ids[0..param_count]) |param_id| {
-                                if (ptr_value_id == param_id) {
-                                    const val_value_id = id_map.getOrPutId(@intFromPtr(stored_val)) catch break;
-                                    markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, val_value_id) catch {};
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Phase 7: Return Instruction Handling ──
-                if (opcode == c.LLVMRet) {
-                    const num_operands_ret: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-                    if (num_operands_ret > 0) {
-                        const ret_val = c.LLVMGetOperand(inst, 0);
-                        if (@intFromPtr(ret_val) != 0) {
-                            const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
-                            markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, ret_value_id) catch {};
-                        }
-                    }
-                }
-            }
-        }
-
-        // Finalize per-function pattern results (same as original detectAllPatterns)
-        if (func_has_raii) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_ptr = @intFromPtr(func_name_raw);
-                raii_func_set.put(func_ptr, {}) catch {};
-            }
-        }
-        if (has_guard_acquire) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_ptr = @intFromPtr(func_name_raw);
-                meyers_set.put(func_ptr, {}) catch {
-                    std.log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
-                };
-            }
-        }
-        if (has_rc_operation) {
-            cpp_helpers.markAsRcFunction(func, rc_set);
-        } else if (has_allocation) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                if (cpp_helpers.isKnownRcContainerFunction(func_name_slice)) {
-                    cpp_helpers.markAsRcFunction(func, rc_set);
-                }
-            }
-        }
-        if (has_into_raw) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                into_raw_set.put(func_name_slice, {}) catch {};
-            }
-        }
-        if (has_from_raw) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                from_raw_set.put(func_name_slice, {}) catch {};
-            }
-        }
-
-        // Phase R5.3: Check hook state for end-of-function ownership issues.
-        if (hooks.rustUnpairedTransferCount() > 0) {
-            diag.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{func_name});
-            stats.cross_ffi_transfers += 1;
-        }
-        if (hooks.pythonUnbalancedDecrefCount() > 0) {
-            diag.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), func_name });
-            stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
-        }
-    }
-
-    /// Merged single-pass detection: combines 7 separate BB/inst traversals
-    /// (6 detect functions + checkOwnershipTransferForFunction) into one pass.
-    ///
-    /// Replaces:
-    ///   detectStructMemberStores, detectRaiiManagedAllocations,
-    ///   detectMeyersSingletonFunctions, detectRefCountedContainerFunctions,
-    ///   detectRustFfiPairingFunctions, detectAsPtrBorrowEscape,
-    ///   checkOwnershipTransferForFunction
-    ///
-    /// Reduces BB/inst traversal from 7× to 1× per function.
-    fn detectAllPatterns(
-        func: c.LLVMValueRef,
-        ctx: *PassContext,
-        diag: *DiagnosticWriter,
-        alloc_map: *std.AutoHashMap(u32, *AllocSite),
-        id_map: *ValueIdMap,
-        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-        raii_count: *u32,
-        raii_func_set: *std.AutoHashMap(usize, void),
-        meyers_set: *std.AutoHashMap(usize, void),
-        rc_set: *std.AutoHashMap(usize, void),
-        into_raw_set: *std.StringHashMap(void),
-        from_raw_set: *std.StringHashMap(void),
-        inst_cache: *InstCache,
-    ) !void {
-        _ = inst_cache;
-        // Pre-compute parameter value IDs for ownership transfer detection
-        const num_params = c.LLVMCountParams(func);
-        var param_value_ids: [16]u32 = undefined;
-        var param_count: usize = 0;
-        {
-            var i: c_uint = 0;
-            while (i < num_params and i < 16) : (i += 1) {
-                const param = c.LLVMGetParam(func, i);
-                if (@intFromPtr(param) != 0) {
-                    param_value_ids[param_count] = id_map.getOrPutId(@intFromPtr(param)) catch continue;
-                    param_count += 1;
-                }
-            }
-        }
-
-        // RAII constructor prefixes for L3/L4 detection
-        const raii_constructor_prefixes = [_][]const u8{
-            "_ZNSt3__110unique_ptr",
-            "_ZNSt3__110shared_ptr",
-            "_ZNSt10unique_ptr",
-            "_ZNSt10shared_ptr",
-        };
-
-        // Tracking flags for per-function pattern detection
-        var func_has_raii: bool = false;
-        var has_guard_acquire: bool = false;
-        var has_rc_operation: bool = false;
-        var has_allocation: bool = false;
-        var has_into_raw: bool = false;
-        var has_from_raw: bool = false;
-
-        // Dedup set for as_ptr borrow escape reporting
-        var reported_escape = std.AutoHashMap(usize, void).init(ctx.allocator);
-        defer reported_escape.deinit();
-
-        // Single pass over all basic blocks and instructions
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // ── Store instruction handling ──
-                // (detectStructMemberStores + checkOwnershipTransferForFunction store path)
-                if (opcode == c.LLVMStore) {
-                    if (c.LLVMGetNumOperands(inst) >= 2) {
-                        const stored_val = c.LLVMGetOperand(inst, 0);
-                        const ptr_operand = c.LLVMGetOperand(inst, 1);
-                        const stored_id = @intFromPtr(stored_val);
-
-                        // detectStructMemberStores: mark alloc stored to GEP (struct field)
-                        if (stored_id != 0) {
-                            if (id_map.getId(stored_id)) |value_id| {
-                                if (alloc_map.get(value_id)) |alloc_info| {
-                                    if (@intFromPtr(ptr_operand) != 0 and
-                                        c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMGetElementPtr)
-                                    {
-                                        alloc_info.stored_to_struct_field = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        // checkOwnershipTransferForFunction: store to parameter → mark alloc as transferred
-                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(ptr_operand) != 0) {
-                            const ptr_value_id = id_map.getOrPutId(@intFromPtr(ptr_operand)) catch 0;
-                            for (param_value_ids[0..param_count]) |param_id| {
-                                if (ptr_value_id == param_id) {
-                                    const val_value_id = id_map.getOrPutId(@intFromPtr(stored_val)) catch break;
-                                    markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, val_value_id) catch {};
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                // ── Return instruction handling ──
-                // (checkOwnershipTransferForFunction return path)
-                if (opcode == c.LLVMRet) {
-                    const num_operands_ret: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-                    if (num_operands_ret > 0) {
-                        const ret_val = c.LLVMGetOperand(inst, 0);
-                        if (@intFromPtr(ret_val) != 0) {
-                            const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
-                            markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, ret_value_id) catch {};
-                        }
-                    }
-                    continue;
-                }
-
-                // ── Call/Invoke instruction handling ──
-                // (detectRaiiManagedAllocations, detectMeyersSingletonFunctions,
-                //  detectRefCountedContainerFunctions, detectRustFfiPairingFunctions,
-                //  detectAsPtrBorrowEscape)
-                if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
-
-                const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-                if (num_operands == 0) continue;
-                const callee = c.LLVMGetOperand(inst, num_operands - 1);
-                if (@intFromPtr(callee) == 0) continue;
-                const callee_name_raw = c.LLVMGetValueName(callee);
-                if (@intFromPtr(callee_name_raw) == 0) continue;
-                const name_slice = std.mem.sliceTo(callee_name_raw, 0);
-
-                // detectRaiiManagedAllocations: check RAII constructor prefixes
-                {
-                    var is_raii_ctor = false;
-                    for (raii_constructor_prefixes) |prefix| {
-                        if (std.mem.indexOf(u8, name_slice, prefix) != null) {
-                            is_raii_ctor = true;
-                            break;
-                        }
-                    }
-                    if (is_raii_ctor) {
-                        func_has_raii = true;
-                        var i: c_uint = 0;
-                        while (i < num_operands - 1) : (i += 1) {
-                            const operand = c.LLVMGetOperand(inst, i);
-                            if (@intFromPtr(operand) == 0) continue;
-                            const op_id = id_map.getId(@intFromPtr(operand)) orelse continue;
-                            if (alloc_map.get(op_id)) |alloc_info| {
-                                alloc_info.transferred = true;
-                                raii_count.* += 1;
-                            }
-                        }
-                    }
-                }
-
-                // detectMeyersSingletonFunctions: check __cxa_guard_acquire
-                if (!has_guard_acquire) {
-                    if (std.mem.indexOf(u8, name_slice, "__cxa_guard_acquire") != null) {
-                        has_guard_acquire = true;
-                    }
-                }
-
-                // detectRefCountedContainerFunctions: check RC operations and alloc patterns
-                if (!has_rc_operation) {
-                    if (cpp_helpers.isRefCountOperation(name_slice)) {
-                        has_rc_operation = true;
-                    }
-                    if (cpp_helpers.isAllocationByName(name_slice)) {
-                        has_allocation = true;
-                    }
-                }
-
-                // detectRustFfiPairingFunctions: check into_raw / from_raw
-                if (!has_into_raw or !has_from_raw) {
-                    if (cpp_types_import.isRustIntoRawCall(name_slice)) {
-                        has_into_raw = true;
-                    }
-                    if (cpp_types_import.isRustFromRawCall(name_slice)) {
-                        has_from_raw = true;
-                    }
-                }
-
-                // detectAsPtrBorrowEscape: check as_ptr with local Rust arg
-                if (num_operands >= 2 and cpp_types_import.isRustAsPtrCall(name_slice)) {
-                    var i: c_uint = 0;
-                    while (i < num_operands - 1) : (i += 1) {
-                        const arg = c.LLVMGetOperand(inst, i);
-                        if (@intFromPtr(arg) == 0) continue;
-                        const arg_name_raw = c.LLVMGetValueName(arg);
-                        if (@intFromPtr(arg_name_raw) == 0) continue;
-                        const arg_slice = std.mem.span(arg_name_raw);
-                        if (!cpp_helpers.isLocalRustValue(arg_slice)) continue;
-                        const func_key = @intFromPtr(c.LLVMGetValueName(func));
-                        if (reported_escape.contains(func_key)) continue;
-                        const vuln_id = ctx.getNextVulnId();
-                        const func_name_str = getFunctionName(func);
-                        ctx.addIssue(&Issue.initWithReason(
-                            .borrow_escape,
-                            "as_ptr borrow escape: local value escapes via raw pointer",
-                            Location.init(func_name_str),
-                            .medium,
-                            0.75,
-                            "Rust as_ptr() called on local value — raw pointer outlives borrow scope",
-                        )) catch {};
-                        diag.err("BORROW-ESCAPE OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(Severity.medium), @tagName(Confidence.fromScore(0.75)) });
-                        diag.err("Type: borrow_escape", .{});
-                        diag.err("Reason: as_ptr() on local Rust value in {s}", .{func_name_str});
-                        reported_escape.put(func_key, {}) catch {};
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Finalize per-function pattern results
-        if (func_has_raii) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_ptr = @intFromPtr(func_name_raw);
-                raii_func_set.put(func_ptr, {}) catch {};
-            }
-        }
-        if (has_guard_acquire) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_ptr = @intFromPtr(func_name_raw);
-                meyers_set.put(func_ptr, {}) catch {
-                    std.log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
-                };
-            }
-        }
-        if (has_rc_operation) {
-            cpp_helpers.markAsRcFunction(func, rc_set);
-        } else if (has_allocation) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                if (cpp_helpers.isKnownRcContainerFunction(func_name_slice)) {
-                    cpp_helpers.markAsRcFunction(func, rc_set);
-                }
-            }
-        }
-        if (has_into_raw) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                into_raw_set.put(func_name_slice, {}) catch {};
-            }
-        }
-        if (has_from_raw) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_raw) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-                from_raw_set.put(func_name_slice, {}) catch {};
-            }
-        }
     }
 };

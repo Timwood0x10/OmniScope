@@ -2,46 +2,13 @@
 //!
 //! This module provides profiling utilities to measure and analyze
 //! performance bottlenecks in the analyzer, including per-pass timing,
-//! memory sampling (RSS, heap allocations), bottleneck auto-detection,
-//! structured reports, and JSON export for CI/CD integration.
-//!
-//! Features:
-//!   - Level 1: Pass-Level Timer (wall clock + memory sampling)
-//!   - Level 2: Function-Level ScopedTimer for fine-grained measurement
-//!   - Level 3: Bottleneck Auto-Detection (statistical analysis)
-//!   - Level 4: JSON Export (CI/CD friendly)
+//! memory sampling (RSS, heap allocations), and formatted output.
 
 const std = @import("std");
 const time = std.time;
 const log = @import("../common/log.zig");
 
 const LOG_PREFIX = "[profiler]";
-
-/// Bottleneck severity levels
-pub const BottleneckSeverity = enum {
-    critical, // > 3x average — severe optimization needed
-    warning, // > 2x average — consider optimization
-    normal, // within acceptable range
-};
-
-/// Bottleneck detection result
-pub const BottleneckInfo = struct {
-    pass_name: []const u8,
-    elapsed_ms: f64,
-    avg_ms: f64,
-    ratio: f64, // elapsed / average
-    severity: BottleneckSeverity,
-};
-
-/// Performance report configuration
-pub const PerfReportConfig = struct {
-    show_pipeline_banner: bool = true,
-    show_per_pass_timing: bool = true,
-    show_sorted_summary: bool = true,
-    show_bottleneck_detection: bool = true,
-    top_n_bottlenecks: usize = 5,
-    sort_by_time_desc: bool = true,
-};
 
 /// Timer for measuring elapsed time
 pub const Timer = struct {
@@ -312,7 +279,7 @@ pub const PassTimer = struct {
 };
 
 /// Container for collecting per-pass statistics during a pipeline run
-/// Supports formatted text, sorted reports, bottleneck detection, and JSON export
+/// Supports formatted text and JSON output
 pub const PassStatsCollector = struct {
     stats: std.ArrayList(PassStats),
     allocator: std.mem.Allocator,
@@ -338,255 +305,60 @@ pub const PassStatsCollector = struct {
 
     /// Record statistics for a completed pass
     pub fn record(self: *PassStatsCollector, pass_stats: PassStats) !void {
+        // Duplicate the pass name to ensure ownership
         const name_copy = try self.allocator.dupe(u8, pass_stats.pass_name);
         var owned_stats = pass_stats;
         owned_stats.pass_name = name_copy;
         try self.stats.append(self.allocator, owned_stats);
     }
 
-    /// Get total wall time in milliseconds
-    pub fn totalTimeMs(self: *const PassStatsCollector) f64 {
-        var total: f64 = 0;
-        for (self.stats.items) |s| {
-            total += s.wallTimeMs();
-        }
-        return total;
-    }
-
-    /// Get number of recorded passes
-    pub fn count(self: *const PassStatsCollector) usize {
-        return self.stats.items.len;
-    }
-
-    /// Print enhanced pipeline execution report with banner, timing, sorting, and bottleneck detection
+    /// Print formatted text table of all recorded passes
+    /// Only outputs when perf_stats flag is enabled
     pub fn printReport(self: *const PassStatsCollector, enabled: bool) void {
         if (!enabled or self.stats.items.len == 0) return;
 
-        const config = PerfReportConfig{};
-        self.printEnhancedReport(config);
-    }
+        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        std.log.info("{s} Per-Pass Performance Statistics", .{LOG_PREFIX});
+        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        std.log.info("", .{});
 
-    /// Print enhanced report with full configuration control
-    pub fn printEnhancedReport(self: *const PassStatsCollector, config: PerfReportConfig) void {
-        if (self.stats.items.len == 0) return;
+        // Table header
+        std.log.info("{s} {s} {s} {s} {s}", .{
+            "Pass",
+            "Time (ms)",
+            "RSS Δ (KB)",
+            "Alloc Δ",
+            "Alloc/s",
+        });
+        std.log.info("{s}", .{"---------------------------------------------"});
 
-        const total_ms = self.totalTimeMs();
-        const pass_count = self.stats.items.len;
-
-        // ═══ Pipeline Execution Banner ═══
-        if (config.show_pipeline_banner) {
-            log.info("", .{});
-            log.info("{s} ═╡ PIPELINE EXECUTION ╞═══════════════════════════", .{LOG_PREFIX});
-            log.info("{s} │ Total passes: {d}", .{ LOG_PREFIX, pass_count });
-            log.info("{s} ├─────────────────────────────────────────────────┤", .{LOG_PREFIX});
-        }
-
-        // ═══ Per-Pass Timing (Execution Order) ═══
-        if (config.show_per_pass_timing) {
-            for (self.stats.items, 0..) |s, idx| {
-                const ms = s.wallTimeMs();
-                const status_icon = if (ms < 10) "✓" else if (ms < 100) "✓" else if (ms < 1000) "◉" else "🔥";
-                log.info("{s} │ [{d:0>2}/{d:0>2}] {s:<36} {s} {d:.1}ms", .{
-                    LOG_PREFIX,
-                    idx + 1,
-                    pass_count,
-                    s.pass_name,
-                    status_icon,
-                    ms,
-                });
-            }
-            log.info("{s} ├─────────────────────────────────────────────────┤", .{LOG_PREFIX});
-        }
-
-        // ═══ Sorted Performance Summary ═══
-        if (config.show_sorted_summary) {
-            log.info("{s} │ 📊 PERFORMANCE SUMMARY (sorted by time)", .{LOG_PREFIX});
-            log.info("{s} │ ┌──────────────────────────┬──────────┬───────┬────────┐", .{LOG_PREFIX});
-            log.info("{s} │ {s}  {s}   {s}  {s}  {s}", .{ LOG_PREFIX, "Pass Name", "Time(ms)", "%", "Status", "" });
-
-            // Create sorted indices
-            var indices = std.ArrayList(usize).initCapacity(self.allocator, pass_count) catch return;
-            defer indices.deinit(self.allocator);
-            for (0..pass_count) |i| {
-                indices.append(self.allocator, i) catch return;
-            }
-
-            // Sort by time descending
-            if (config.sort_by_time_desc) {
-                // Simple bubble sort for now (small N)
-                for (0..indices.items.len - 1) |i| {
-                    for (i + 1..indices.items.len) |j| {
-                        if (self.stats.items[indices.items[j]].wallTimeMs() > self.stats.items[indices.items[i]].wallTimeMs()) {
-                            const tmp = indices.items[i];
-                            indices.items[i] = indices.items[j];
-                            indices.items[j] = tmp;
-                        }
-                    }
-                }
-            }
-
-            for (indices.items) |sorted_idx| {
-                const s = self.stats.items[sorted_idx];
-                const ms = s.wallTimeMs();
-                const pct = if (total_ms > 0) ms / total_ms * 100.0 else 0;
-                const marker = if (pct > 30) "[HOT]" else if (pct > 15) "[WARN]" else "[ OK ]";
-                log.info("{s} │ {s} {s}  | {d}ms  | {d}% | {s}   |", .{
-                    LOG_PREFIX,
-                    marker,
-                    s.pass_name,
-                    ms,
-                    @as(u32, @intFromFloat(pct)),
-                    if (pct > 30) "HOT" else if (pct > 15) "WARN" else " OK ",
-                });
-            }
-
-            log.info("{s} │ └──────────────────────────┴──────────┴───────┴────────┘", .{LOG_PREFIX});
-            log.info("{s} │ TOTAL: {d:.2}s ({d:.0}ms) — {d} passes", .{ LOG_PREFIX, total_ms / 1000.0, total_ms, pass_count });
-        }
-
-        // ═══ Bottleneck Detection ═══
-        if (config.show_bottleneck_detection) {
-            self.detectAndPrintBottlenecks(config.top_n_bottlenecks);
-        }
-
-        if (config.show_pipeline_banner) {
-            log.info("{s} ╚═════════════════════════════════════════════════╝", .{LOG_PREFIX});
-            log.info("", .{});
-        }
-    }
-
-    /// Detect bottlenecks and print analysis
-    pub fn detectAndPrintBottlenecks(self: *const PassStatsCollector, top_n: usize) void {
-        if (self.stats.items.len == 0) return;
-
-        const total_ms = self.totalTimeMs();
-        const avg_ms = if (self.stats.items.len > 0) total_ms / @as(f64, @floatFromInt(self.stats.items.len)) else 0;
-        const warning_threshold = avg_ms * 2.0; // 2x average = warning
-        const critical_threshold = avg_ms * 3.0; // 3x average = critical
-
-        log.info("{s}", .{""});
-        log.info("{s} ⚠️  BOTTLENECK DETECTION:", .{LOG_PREFIX});
-        log.info("{s}   Average pass time: {d:.1}ms", .{ LOG_PREFIX, avg_ms });
-        log.info("{s}   Warning threshold (>2x avg): {d:.1}ms", .{ LOG_PREFIX, warning_threshold });
-        log.info("{s}   Critical threshold (>3x avg): {d:.1}ms", .{ LOG_PREFIX, critical_threshold });
-
-        var bottleneck_count: u32 = 0;
-        var warnings: u32 = 0;
-
-        // Collect and sort by time to find top bottlenecks
-        var bottlenecks = std.ArrayList(BottleneckInfo).initCapacity(self.allocator, self.stats.items.len) catch return;
-        defer bottlenecks.deinit(self.allocator);
-
+        var total_ms: f64 = 0;
         for (self.stats.items) |s| {
             const ms = s.wallTimeMs();
-            const ratio = if (avg_ms > 0) ms / avg_ms else 0;
-            const sev: BottleneckSeverity = if (ms > critical_threshold)
-                .critical
-            else if (ms > warning_threshold)
-                .warning
+            const rss_delta = s.rssDeltaKb();
+            const alloc_delta = s.allocDelta();
+            total_ms += ms;
+
+            // Calculate allocations per second (avoid division by zero)
+            const alloc_per_s: f64 = if (ms > 0)
+                @as(f64, @floatFromInt(@abs(alloc_delta))) / (ms / 1000.0)
             else
-                .normal;
+                0;
 
-            if (sev != .normal) {
-                bottlenecks.append(self.allocator, .{
-                    .pass_name = s.pass_name,
-                    .elapsed_ms = ms,
-                    .avg_ms = avg_ms,
-                    .ratio = ratio,
-                    .severity = sev,
-                }) catch return;
-            }
-        }
-
-        // Sort by ratio descending
-        for (0..bottlenecks.items.len - 1) |i| {
-            for (i + 1..bottlenecks.items.len) |j| {
-                if (bottlenecks.items[j].ratio > bottlenecks.items[i].ratio) {
-                    const tmp = bottlenecks.items[i];
-                    bottlenecks.items[i] = bottlenecks.items[j];
-                    bottlenecks.items[j] = tmp;
-                }
-            }
-        }
-
-        // Print top N bottlenecks
-        const display_count = @min(top_n, bottlenecks.items.len);
-        for (0..display_count) |i| {
-            const b = bottlenecks.items[i];
-            bottleneck_count += 1;
-            if (b.severity == .critical) {
-                log.info("{s}   🔥 #{d:0>2} {s}: {d:.1}ms ({d:.1}x avg) — CRITICAL, OPTIMIZATION REQUIRED", .{
-                    LOG_PREFIX,
-                    i + 1,
-                    b.pass_name,
-                    b.elapsed_ms,
-                    b.ratio,
-                });
-            } else {
-                warnings += 1;
-                log.info("{s}   ⚠️  #{d:0>2} {s}: {d:.1}ms ({d:.1}x avg) — consider optimization", .{
-                    LOG_PREFIX,
-                    i + 1,
-                    b.pass_name,
-                    b.elapsed_ms,
-                    b.ratio,
-                });
-            }
-        }
-
-        if (bottleneck_count == 0) {
-            log.info("{s}   ✅ No significant bottlenecks detected! All passes within normal range.", .{LOG_PREFIX});
-        } else {
-            log.info("{s}", .{""});
-            log.info("{s}   Found {} potential bottleneck(s): {} critical, {} warnings", .{
-                LOG_PREFIX,
-                bottleneck_count,
-                bottleneck_count - warnings,
-                warnings,
+            std.log.info("{s} {d:.2} {d} {d} {d}", .{
+                s.pass_name,
+                ms,
+                rss_delta,
+                alloc_delta,
+                @as(u64, @intFromFloat(alloc_per_s)),
             });
         }
+
+        std.log.info("{s} {s} {d:.2}", .{ "TOTAL", "", total_ms });
+        std.log.info("", .{});
     }
 
-    /// Detect bottlenecks and return results programmatically
-    /// Caller owns the returned slice (must free with allocator.free)
-    pub fn detectBottlenecks(self: *const PassStatsCollector) ![]BottleneckInfo {
-        if (self.stats.items.len == 0) return &[_]BottleneckInfo{};
-
-        const total_ms = self.totalTimeMs();
-        const avg_ms = if (self.stats.items.len > 0) total_ms / @as(f64, @floatFromInt(self.stats.items.len)) else 0;
-        const warning_threshold = avg_ms * 2.0;
-
-        var results = std.ArrayList(BottleneckInfo).initCapacity(self.allocator, 0) catch return error.OutOfMemory;
-        errdefer {
-            for (results.items) |*r| {
-                if (r.pass_name.len > 0) self.allocator.free(r.pass_name);
-            }
-            results.deinit(self.allocator);
-        }
-
-        for (self.stats.items) |s| {
-            const ms = s.wallTimeMs();
-            if (ms > warning_threshold) {
-                const ratio = if (avg_ms > 0) ms / avg_ms else 0;
-                const severity: BottleneckSeverity = if (ms > avg_ms * 3.0)
-                    .critical
-                else
-                    .warning;
-                const name_copy = try self.allocator.dupe(u8, s.pass_name);
-                try results.append(self.allocator, .{
-                    .pass_name = name_copy,
-                    .elapsed_ms = ms,
-                    .avg_ms = avg_ms,
-                    .ratio = ratio,
-                    .severity = severity,
-                });
-            }
-        }
-
-        return results.toOwnedSlice(self.allocator);
-    }
-
-    /// Generate JSON output of all recorded passes (enhanced with bottleneck info)
+    /// Generate JSON output of all recorded passes
     /// Returns allocated string that caller must free
     pub fn toJson(self: *const PassStatsCollector, enabled: bool) ?[]u8 {
         if (!enabled or self.stats.items.len == 0) return null;
@@ -595,24 +367,15 @@ pub const PassStatsCollector = struct {
         defer buf.deinit(self.allocator);
         const w = buf.writer(self.allocator);
 
-        const total_ms = self.totalTimeMs();
-        const avg_ms = if (self.stats.items.len > 0) total_ms / @as(f64, @floatFromInt(self.stats.items.len)) else 0;
-
         w.writeAll("{\n") catch return null;
-        w.print("  \"version\": \"1.0\",\n", .{}) catch return null;
-        w.print("  \"total_ms\": {d:.2},\n", .{total_ms}) catch return null;
-        w.print("  \"avg_pass_ms\": {d:.2},\n", .{avg_ms}) catch return null;
         w.print("  \"pass_count\": {d},\n", .{self.stats.items.len}) catch return null;
         w.writeAll("  \"passes\": [\n") catch return null;
 
         for (self.stats.items, 0..) |s, idx| {
-            const ms = s.wallTimeMs();
-            const pct = if (total_ms > 0) ms / total_ms * 100.0 else 0;
             w.writeAll("    {\n") catch return null;
             w.print("      \"name\": \"{s}\",\n", .{s.pass_name}) catch return null;
             w.print("      \"wall_time_ns\": {d},\n", .{s.wall_time_ns}) catch return null;
-            w.print("      \"wall_time_ms\": {d:.3},\n", .{ms}) catch return null;
-            w.print("      \"percentage\": {d:.1},\n", .{pct}) catch return null;
+            w.print("      \"wall_time_ms\": {d:.3},\n", .{s.wallTimeMs()}) catch return null;
             w.print("      \"rss_before_kb\": {d},\n", .{s.rss_before_kb}) catch return null;
             w.print("      \"rss_after_kb\": {d},\n", .{s.rss_after_kb}) catch return null;
             w.print("      \"rss_delta_kb\": {d},\n", .{s.rssDeltaKb()}) catch return null;
@@ -626,67 +389,10 @@ pub const PassStatsCollector = struct {
             }
         }
 
-        w.writeAll("  ],\n") catch return null;
-
-        // Add bottleneck summary
-        w.writeAll("  \"bottlenecks\": [\n") catch return null;
-        var has_bottlenecks = false;
-        for (self.stats.items) |s| {
-            const ms = s.wallTimeMs();
-            const ratio = if (avg_ms > 0) ms / avg_ms else 0;
-            if (ratio > 2.0) {
-                has_bottlenecks = true;
-                const sev = if (ratio > 3.0) "critical" else "warning";
-                w.writeAll("    {\n") catch return null;
-                w.print("      \"name\": \"{s}\",\n", .{s.pass_name}) catch return null;
-                w.print("      \"ms\": {d:.2},\n", .{ms}) catch return null;
-                w.print("      \"ratio\": {d:.2},\n", .{ratio}) catch return null;
-                w.print("      \"severity\": \"{s}\"\n", .{sev}) catch return null;
-                w.writeAll("    },\n") catch return null;
-            }
-        }
-        if (!has_bottlenecks) {
-            w.writeAll("  ]\n") catch return null;
-        } else {
-            w.writeAll("  ]\n") catch return null;
-        }
-
+        w.writeAll("  ]\n") catch return null;
         w.writeAll("}") catch return null;
 
         return buf.toOwnedSlice(self.allocator) catch null;
-    }
-
-    /// Export performance data to JSON file
-    /// Useful for CI/CD pipelines and performance tracking
-    pub fn exportJsonToFile(self: *const PassStatsCollector, path: []const u8) !void {
-        if (self.stats.items.len == 0) return;
-
-        const json_str = self.toJson(true) orelse return;
-        defer self.allocator.free(json_str);
-
-        const file = std.fs.cwd().createFile(path, .{}) catch |err| {
-            log.warn("{s} Failed to create perf JSON file '{s}': {}", .{ LOG_PREFIX, path, err });
-            return err;
-        };
-        defer file.close();
-
-        file.writeAll(json_str) catch |err| {
-            log.warn("{s} Failed to write perf JSON to '{s}': {}", .{ LOG_PREFIX, path, err });
-            return err;
-        };
-
-        log.info("{s} 📄 Performance report exported to: {s}", .{ LOG_PREFIX, path });
-    }
-
-    /// Check environment variable and auto-export if set
-    /// Supports: EXPORT_PERF_JSON=<path> environment variable
-    pub fn autoExportIfRequested(self: *const PassStatsCollector) void {
-        const env_path = std.process.getEnvVarOwned(self.allocator, "EXPORT_PERF_JSON") catch return;
-        defer self.allocator.free(env_path);
-
-        if (env_path.len > 0) {
-            self.exportJsonToFile(env_path) catch {};
-        }
     }
 };
 

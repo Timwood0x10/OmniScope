@@ -7,19 +7,6 @@
 //! This cache is designed to be used within a single function analysis
 //! pass. The cache is keyed by the instruction pointer (usize) and
 //! stores commonly needed instruction metadata.
-//!
-//! Usage:
-//!   var cache = InstCache.init(allocator);
-//!   defer cache.deinit();
-//!
-//!   // Instead of: const opcode = c.LLVMGetInstructionOpcode(inst);
-//!   const opcode = cache.getOpcode(inst);
-//!
-//!   // Instead of: const num_ops = c.LLVMGetNumOperands(inst);
-//!   const num_ops = cache.getNumOperands(inst);
-//!
-//!   // Instead of: const name = c.LLVMGetValueName(callee);
-//!   const name = cache.getCalleeName(inst);
 
 const std = @import("std");
 const c = @import("llvm_raw.zig").c;
@@ -41,7 +28,7 @@ pub const InstCache = struct {
 
         // Classification fields (for fast filtering)
         class: InstClass = .other,
-        is_relevant: bool = true, // Pre-computed from class.isRelevantForAnalysis()
+        is_relevant: bool = true,
     };
 
     /// Map from instruction pointer to cached entry.
@@ -70,17 +57,15 @@ pub const InstCache = struct {
     /// This is the most frequently called LLVM API function.
     pub fn getOpcode(self: *InstCache, inst: c.LLVMValueRef) c_uint {
         const ptr = @intFromPtr(inst);
-        // Check cache first - this is the hot path
         if (self.map.get(ptr)) |entry| {
             self.hits += 1;
             return entry.opcode;
         }
-        // Cache miss - call LLVM API and store result
         self.misses += 1;
         const opcode = c.LLVMGetInstructionOpcode(inst);
         self.map.put(ptr, .{
             .opcode = opcode,
-            .num_operands = 0, // Lazy initialization
+            .num_operands = 0,
             .callee_name = null,
             .type_kind = 0,
         }) catch {};
@@ -91,17 +76,14 @@ pub const InstCache = struct {
     /// Uses lazy initialization - only calls LLVM API if not cached.
     pub fn getNumOperands(self: *InstCache, inst: c.LLVMValueRef) c_uint {
         const ptr = @intFromPtr(inst);
-        // Check if we have a cached entry with valid operand count
         if (self.map.get(ptr)) |entry| {
             if (entry.num_operands > 0) {
                 self.hits += 1;
                 return entry.num_operands;
             }
         }
-        // Cache miss or lazy initialization needed
         self.misses += 1;
         const num = c.LLVMGetNumOperands(inst);
-        // Update existing entry or create new one
         if (self.map.getPtr(ptr)) |p| {
             p.num_operands = @intCast(num);
         } else {
@@ -119,21 +101,18 @@ pub const InstCache = struct {
     /// Returns null if the instruction is not a call/invoke.
     pub fn getCalleeName(self: *InstCache, inst: c.LLVMValueRef) ?[]const u8 {
         const ptr = @intFromPtr(inst);
-        // Check cache first
         if (self.map.get(ptr)) |entry| {
             if (entry.callee_name) |name| {
                 self.hits += 1;
                 return name;
             }
         }
-        // Cache miss - get callee name from LLVM
         self.misses += 1;
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return null;
         const name_ptr = c.LLVMGetValueName(called_val);
         if (@intFromPtr(name_ptr) == 0) return null;
         const name = std.mem.span(name_ptr);
-        // Update cache
         if (self.map.getPtr(ptr)) |p| {
             p.callee_name = name;
         } else {
@@ -151,19 +130,16 @@ pub const InstCache = struct {
     /// Useful for type-based analysis without repeated LLVM calls.
     pub fn getTypeKind(self: *InstCache, inst: c.LLVMValueRef) c_uint {
         const ptr = @intFromPtr(inst);
-        // Check cache first
         if (self.map.get(ptr)) |entry| {
             if (entry.type_kind != 0) {
                 self.hits += 1;
                 return entry.type_kind;
             }
         }
-        // Cache miss - get type from LLVM
         self.misses += 1;
         const type_ref = c.LLVMTypeOf(inst);
         if (@intFromPtr(type_ref) == 0) return 0;
         const type_kind = c.LLVMGetTypeKind(type_ref);
-        // Update cache
         if (self.map.getPtr(ptr)) |p| {
             p.type_kind = type_kind;
         } else {
@@ -181,7 +157,6 @@ pub const InstCache = struct {
     /// Useful when analyzing multiple functions to avoid reallocation.
     pub fn clear(self: *InstCache) void {
         self.map.clearRetainingCapacity();
-        // Reset statistics but keep the map
         self.hits = 0;
         self.misses = 0;
     }
@@ -196,7 +171,6 @@ pub const InstCache = struct {
         const ptr = @intFromPtr(inst);
 
         if (self.map.get(ptr)) |entry| {
-            // Already classified — return cached result
             self.hits += 1;
             return entry;
         }
@@ -225,15 +199,6 @@ pub const InstCache = struct {
         if (total == 0) return 0.0;
         return @as(f32, @floatFromInt(self.hits)) / @as(f32, @floatFromInt(total)) * 100.0;
     }
-
-    /// Get cache performance statistics as a formatted string.
-    pub fn getStatsString(self: *InstCache) [256]u8 {
-        var buffer: [256]u8 = undefined;
-        const hit_rate = self.hitRate();
-
-        _ = std.fmt.bufPrint(&buffer, "Cache: {d} hits / {d} misses (hit rate: {d:.1}%)", .{ self.hits, self.misses, hit_rate }) catch return buffer;
-        return buffer;
-    }
 };
 
 /// Safe helper functions for cache access with automatic fallback.
@@ -261,7 +226,6 @@ pub fn getCalleeNameSafe(cache: ?*InstCache, inst: c.LLVMValueRef) ?[]const u8 {
     if (cache) |cache_ptr| {
         return cache_ptr.getCalleeName(inst);
     }
-    // Fallback: direct LLVM API call
     const called_val = c.LLVMGetCalledValue(inst);
     if (@intFromPtr(called_val) == 0) return null;
     const name_ptr = c.LLVMGetValueName(called_val);

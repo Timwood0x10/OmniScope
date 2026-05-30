@@ -2,6 +2,13 @@
 //!
 //! This module implements the fact store using SoA for cache-friendliness
 //! and append-only design for parallel access.
+//!
+//! ## Dirty Tracking (v0.2.0)
+//!
+//! The store tracks whether new facts have been inserted since the last
+//! checkpoint. This enables incremental update optimization: passes can
+//! call `isDirty()` before doing expensive downstream processing, and
+//! skip work when no new facts were produced by upstream passes.
 
 const std = @import("std");
 const Fact = @import("fact.zig").Fact;
@@ -17,6 +24,11 @@ pub const FactStore = struct {
     subj: std.ArrayList(u32),
     obj: std.ArrayList(u32),
     ctx: std.ArrayList(u32),
+
+    /// Dirty bit: true if any fact has been inserted since last markClean().
+    /// Enables passes to skip expensive downstream processing when no new data.
+    /// Protected by mutex (same as insert operations).
+    dirty: bool = false,
 
     /// Create a new fact store
     ///
@@ -45,6 +57,9 @@ pub const FactStore = struct {
 
     /// Insert a fact into the store (append-only)
     ///
+    /// Automatically sets the dirty bit to true, indicating new data is available.
+    /// Downstream passes can check isDirty() to decide whether to re-process.
+    ///
     /// Parameters:
     ///   - kind: The fact kind
     ///   - subject: Subject ID
@@ -72,6 +87,9 @@ pub const FactStore = struct {
         try self.subj.append(self.allocator, subject);
         try self.obj.append(self.allocator, object);
         try self.ctx.append(self.allocator, context);
+
+        // Mark dirty on successful insert
+        self.dirty = true;
     }
 
     /// Get the number of facts in the store
@@ -84,6 +102,38 @@ pub const FactStore = struct {
     /// Get the number of facts in the store (caller must hold mutex)
     pub fn countLocked(self: *FactStore) usize {
         return self.kinds.items.len;
+    }
+
+    /// Check if new facts have been inserted since last markClean().
+    ///
+    /// Passes can call this before doing expensive downstream processing
+    /// to skip work when no upstream pass produced new data.
+    ///
+    /// Returns:
+    ///   - true if insert() has been called since last markClean()
+    ///   - false if store is clean (no new data)
+    pub fn isDirty(self: *FactStore) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.dirty;
+    }
+
+    /// Mark the fact store as clean (reset dirty bit).
+    ///
+    /// Called by a downstream pass after it has processed all current facts.
+    /// The next insert() will set dirty = true again.
+    ///
+    /// Typical usage pattern:
+    ///   ```zig
+    ///   if (ctx.fact_store.isDirty()) {
+    ///       // ... expensive processing ...
+    ///       ctx.fact_store.markClean();
+    ///   }
+    ///   ```
+    pub fn markClean(self: *FactStore) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.dirty = false;
     }
 
     /// Return a snapshot (copy) of all facts as an allocated slice.

@@ -150,7 +150,9 @@ pub const Pipeline = struct {
             .issue_verifier = &issue_verifier,
         };
         // Inject resource family registry into memory graph for P2/P3 classification
-        ctx.memory_graph.setFamilyRegistry(&family_registry);
+        // Lazy-init MemoryGraph here since pipeline needs to configure it before any pass runs.
+        ctx.memory_graph = try @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator);
+        ctx.memory_graph.?.setFamilyRegistry(&family_registry);
 
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().
@@ -210,15 +212,14 @@ pub const Pipeline = struct {
                             if (@intFromPtr(called_name_ptr) == 0) continue;
                             const called_name = std.mem.span(called_name_ptr);
                             const inst_ptr = @as(u64, @intFromPtr(inst));
-                            // P0-3: Check if callee is an external declaration (FFI boundary indicator)
-                            const is_external = (c.LLVMIsDeclaration(called_val) != 0);
-                            if (is_external) {
-                                has_ffi_calls = true;
-                            }
                             // DC-C4 FIX: Log OOM instead of silently swallowing error
-                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr, is_external) catch |err| {
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
                                 log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
                             };
+                            // P0-3: Check if callee is an external declaration (FFI boundary indicator)
+                            if (c.LLVMIsDeclaration(called_val) != 0) {
+                                has_ffi_calls = true;
+                            }
                         }
                     }
                 }

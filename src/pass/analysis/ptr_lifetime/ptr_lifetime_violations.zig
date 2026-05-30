@@ -851,7 +851,6 @@ pub fn checkCallViolation(
 pub fn checkViolations(
     ctx: *PassContext,
     inst: c.LLVMValueRef,
-    opcode: c_uint,
     func: c.LLVMValueRef,
     func_name: []const u8,
     bb_id: usize,
@@ -865,8 +864,7 @@ pub fn checkViolations(
 ) !void {
     if (@intFromPtr(inst) == 0) return;
 
-    // PERF: opcode is now pre-computed by caller, no redundant LLVM API call.
-    // Also, caller already filters to only Call/Invoke/Ret/Store opcodes.
+    const opcode = c.LLVMGetInstructionOpcode(inst);
 
     if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
         try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);

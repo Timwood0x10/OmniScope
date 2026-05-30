@@ -243,9 +243,12 @@ pub fn classifyAllocLanguageEnum(fn_name: []const u8, module_lang: ?Language) ?L
         return .python;
     // C# / .NET — P/Invoke unmanaged memory allocators
     if (containsAny(fn_name, &[_][]const u8{
-        "Marshal_AllocHGlobal", "CoTaskMemAlloc", "LocalAlloc", "HeapAlloc",
+        "Marshal_AllocHGlobal", "CoTaskMemAlloc", "GCHandle_Alloc", "LocalAlloc", "HeapAlloc",
     }))
         return .csharp;
+    // Zig synthetic allocator
+    if (containsAny(fn_name, &[_][]const u8{ "zig_allocator_alloc", "zig_allocator_free" }))
+        return .zig;
     return null;
 }
 
@@ -288,9 +291,12 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         return "java";
     // C# / .NET — P/Invoke unmanaged memory free + COM interop
     if (containsAny(fn_name, &[_][]const u8{
-        "Marshal_FreeHGlobal", "CoTaskMemFree", "LocalFree", "HeapFree",
+        "Marshal_FreeHGlobal", "CoTaskMemFree", "GCHandle_Free", "LocalFree", "HeapFree",
     }))
         return "csharp";
+    // Zig synthetic deallocator
+    if (containsAny(fn_name, &[_][]const u8{"zig_allocator_free"}))
+        return "zig";
     // Zig standard library / runtime deallocators
     // Note: C's "free()" called from Zig code (via @cImport) is NOT
     // classified here — it remains "c" because that's the correct

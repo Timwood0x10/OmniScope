@@ -166,6 +166,10 @@ pub const AllocNode = struct {
     /// callback, thread, container, consumed_by_function.
     /// null = no escapes recorded yet (or not initialized).
     escapes: ?*EscapeList,
+    /// PERF v5: Alias closure version number for incremental updates.
+    /// When == global_closure_version, this node's alias subgraph was already
+    /// traversed in the current pass — skip redundant DFS.
+    closure_version: u64 = 0,
 };
 
 /// Result of isOnDangerPath — why a pointer matters (or doesn't).

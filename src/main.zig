@@ -96,14 +96,6 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
     const elapsed = std.time.milliTimestamp() - analysis_start;
     const time_ms: u64 = @intCast(@max(0, elapsed));
 
-    // Export performance JSON if --perf-json was specified
-    if (config.perf_stats and config.perf_json_path != null) {
-        const json_path = config.perf_json_path.?;
-        pipeline.pass_manager.exportPerfJson(json_path) catch |err| {
-            log.warn("Failed to export performance JSON: {}\n", .{err});
-        };
-    }
-
     const issues = pipeline.getIssues();
     const func_count = loader.getFunctionCount();
 
