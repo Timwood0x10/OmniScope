@@ -107,7 +107,13 @@ pub const IssueCandidate = struct {
     }
 
     pub fn deinit(self: *IssueCandidate) void {
+        for (self.evidence.items) |item| {
+            self.allocator.free(item);
+        }
         self.evidence.deinit(self.allocator);
+        if (self.reason) |r| {
+            self.allocator.free(r);
+        }
     }
 
     /// Add an evidence item to this candidate.
@@ -351,12 +357,10 @@ pub const CandidateBuilder = struct {
     }
 
     /// Take ownership of all candidates (for transfer to verifier).
+    /// Transfers ownership of the internal ArrayList - caller must deinit returned list.
     pub fn takeCandidates(self: *CandidateBuilder) std.ArrayList(IssueCandidate) {
-        var result = std.ArrayList(IssueCandidate){};
-        for (self.candidates.items) |c| {
-            result.append(c) catch {};
-        }
-        self.candidates.clearRetainingCapacity();
+        const result = self.candidates;
+        self.candidates = .{ .items = &[_]IssueCandidate{}, .capacity = 0 };
         return result;
     }
 };

@@ -328,7 +328,18 @@ pub fn reportMallocLeak(
 ) !void {
     const candidate = try generateMallocLeakCandidate(ctx, func_name, malloc_count, free_count, diag);
     const location = Location.init(func_name);
-    var issue = Issue.init(.memory_leak, candidate.reason orelse "Memory leak detected", location, .low, 0.5);
+
+    const reason_msg = if (candidate.reason) |r|
+        try ctx.allocator.dupe(u8, r)
+    else
+        "Memory leak detected";
+    errdefer {
+        if (candidate.reason != null) {
+            ctx.allocator.free(reason_msg);
+        }
+    }
+
+    var issue = Issue.initWithTrace(.memory_leak, reason_msg, location, .low, 0.5, &[_]TraceEntry{});
     errdefer issue.deinit(ctx.allocator);
     try ctx.addIssue(&issue);
 }

@@ -528,10 +528,19 @@ pub const CallbackEscapePass = struct {
                     }
                     if (cgo_ptr_val != 0) {
                         if (!ctx.isRelevantAlloc(cgo_ptr_val)) continue;
-                        // Generate candidate instead of direct reporting
                         var candidate = try cb_report.generateCBytesEscapeCandidate(ctx, func_name, call, diag);
                         defer candidate.deinit();
-                        // Verify candidate through IssueVerifier
+
+                        const reason_msg = if (candidate.reason) |r|
+                            try ctx.allocator.dupe(u8, r)
+                        else
+                            "CBytes escape detected";
+                        errdefer {
+                            if (candidate.reason != null) {
+                                ctx.allocator.free(reason_msg);
+                            }
+                        }
+
                         if (ctx.issue_verifier) |verifier| {
                             const result = try verifier.verify(&candidate);
                             if (result.shouldReport()) {
@@ -542,10 +551,9 @@ pub const CallbackEscapePass = struct {
                                     .low => .low,
                                     else => .medium,
                                 };
-                                // Convert candidate to Issue and add to context
                                 const issue = Issue.initWithTrace(
                                     .memory_leak,
-                                    candidate.reason orelse "CBytes escape detected",
+                                    reason_msg,
                                     Location.init(func_name),
                                     sev,
                                     result.adjusted_score,
@@ -554,13 +562,12 @@ pub const CallbackEscapePass = struct {
                                 try ctx.addIssue(&issue);
                             }
                         } else {
-                            // Legacy mode: direct reporting
                             const issue = Issue.initWithTrace(
                                 .memory_leak,
-                                candidate.reason orelse "CBytes escape detected",
+                                reason_msg,
                                 Location.init(func_name),
                                 .medium,
-                                0.65, // med_cbytes_escape confidence
+                                0.65,
                                 &[_]TraceEntry{},
                             );
                             try ctx.addIssue(&issue);
@@ -571,10 +578,19 @@ pub const CallbackEscapePass = struct {
             }
 
             if (isUnsafePtrConversion(call.callee_name)) {
-                // Generate candidate instead of direct reporting
                 var candidate = try cb_report.generateUnsafePtrRiskCandidate(ctx, func_name, call, diag);
                 defer candidate.deinit();
-                // Verify candidate through IssueVerifier
+
+                const reason_msg = if (candidate.reason) |r|
+                    try ctx.allocator.dupe(u8, r)
+                else
+                    "Unsafe pointer risk detected";
+                errdefer {
+                    if (candidate.reason != null) {
+                        ctx.allocator.free(reason_msg);
+                    }
+                }
+
                 if (ctx.issue_verifier) |verifier| {
                     const result = try verifier.verify(&candidate);
                     if (result.shouldReport()) {
@@ -585,10 +601,9 @@ pub const CallbackEscapePass = struct {
                             .low => .low,
                             else => .medium,
                         };
-                        // Convert candidate to Issue and add to context
                         const issue = Issue.initWithTrace(
                             .borrow_escape,
-                            candidate.reason orelse "Unsafe pointer risk detected",
+                            reason_msg,
                             Location.init(func_name),
                             sev2,
                             result.adjusted_score,
@@ -597,13 +612,12 @@ pub const CallbackEscapePass = struct {
                         try ctx.addIssue(&issue);
                     }
                 } else {
-                    // Legacy mode: direct reporting
                     const issue = Issue.initWithTrace(
                         .borrow_escape,
-                        candidate.reason orelse "Unsafe pointer risk detected",
+                        reason_msg,
                         Location.init(func_name),
                         .high,
-                        0.72, // med_unsafe_ptr confidence
+                        0.72,
                         &[_]TraceEntry{},
                     );
                     try ctx.addIssue(&issue);
@@ -700,10 +714,19 @@ pub const CallbackEscapePass = struct {
                 }
             }
             if (!has_call_ret_transfer) {
-                // Generate candidate instead of direct reporting
                 var candidate = try cb_report.generateMallocLeakCandidate(ctx, func_name, pair_result.malloc_count, pair_result.free_count, diag);
                 defer candidate.deinit();
-                // Verify candidate through IssueVerifier
+
+                const reason_msg = if (candidate.reason) |r|
+                    try ctx.allocator.dupe(u8, r)
+                else
+                    "Memory leak detected";
+                errdefer {
+                    if (candidate.reason != null) {
+                        ctx.allocator.free(reason_msg);
+                    }
+                }
+
                 if (ctx.issue_verifier) |verifier| {
                     const result = try verifier.verify(&candidate);
                     if (result.shouldReport()) {
@@ -714,10 +737,9 @@ pub const CallbackEscapePass = struct {
                             .low => .low,
                             else => .medium,
                         };
-                        // Convert candidate to Issue and add to context
                         const issue = Issue.initWithTrace(
                             .memory_leak,
-                            candidate.reason orelse "Memory leak detected",
+                            reason_msg,
                             Location.init(func_name),
                             sev3,
                             result.adjusted_score,
@@ -726,10 +748,9 @@ pub const CallbackEscapePass = struct {
                         try ctx.addIssue(&issue);
                     }
                 } else {
-                    // Legacy mode: direct reporting
                     const issue = Issue.initWithTrace(
                         .memory_leak,
-                        candidate.reason orelse "Memory leak detected",
+                        reason_msg,
                         Location.init(func_name),
                         .medium,
                         Confidence.med_malloc_leak,
