@@ -82,12 +82,10 @@ pub const DangerSurfacePass = struct {
             diag.warn("[P1-1] DangerSurfacePass: MemoryGraph is empty despite ptr-lifetime dep — ptr-lifetime may have skipped this module", .{});
         }
 
-        // PERF v2: Unified single-pass algorithm replacing the old Phase 1 + Phase 2.
-        // Old Phase 1 iterated call_arg_by_callee per FFI boundary — O(FFI_count × avg_args_per_callee)
-        // which was 72K × ~1.4K = 101M iterations (40s). Old Phase 2 iterated nodes — O(N) = 17K.
-        // New unified pass iterates only nodes — O(N × avg_args_per_ptr) — same as old Phase 2
-        // but now covers FFI arg/ret detection too, since getCallArgsForPtr + ffi_set.contains
-        // is equivalent to iterating call_arg_by_callee per FFI boundary.
+        // PERF v3: Unified single-pass algorithm with optimized caching.
+        // Key optimization: cache getCallArgsForPtr/getCallRetsForPtr results to avoid
+        // duplicate lookups (was calling each twice per node).
+        // Also added inst→func mapping cache to avoid repeated LLVM API calls.
         var ffi_set = std.StringHashMap(void).init(ctx.allocator);
         defer ffi_set.deinit();
         for (ffis) |surface| {
@@ -95,6 +93,11 @@ pub const DangerSurfacePass = struct {
                 ffi_set.put(surface.callee_name, {}) catch {};
             }
         }
+
+        // PERF: Cache for instruction → function pointer mapping.
+        // Avoids repeated c.LLVMGetInstructionParent + c.LLVMGetBasicBlockParent calls.
+        var func_cache = std.AutoHashMap(u64, u64).init(ctx.allocator);
+        defer func_cache.deinit();
 
         var node_iter = mg.nodes.iterator();
         while (node_iter.next()) |entry| {
@@ -114,10 +117,14 @@ pub const DangerSurfacePass = struct {
                 cross_lang_frees += 1;
             }
 
+            // PERF: Cache arg/ret indices to avoid duplicate getCallArgsForPtr/getCallRetsForPtr calls
+            var cached_arg_indices: ?[]const u32 = null;
+            var cached_ret_indices: ?[]const u32 = null;
+
             // (3) FFI arg — check if ptr flows into any FFI boundary call
             if (!on_danger) {
-                const arg_indices = mg.getCallArgsForPtr(ptr_val);
-                for (arg_indices) |aidx| {
+                cached_arg_indices = mg.getCallArgsForPtr(ptr_val);
+                for (cached_arg_indices.?) |aidx| {
                     if (ffi_set.contains(mg.call_args.items[aidx].callee_name)) {
                         on_danger = true;
                         break;
@@ -127,8 +134,8 @@ pub const DangerSurfacePass = struct {
 
             // (4) FFI ret — check if ptr returns from FFI boundary
             if (!on_danger) {
-                const ret_indices = mg.getCallRetsForPtr(ptr_val);
-                for (ret_indices) |ridx| {
+                cached_ret_indices = mg.getCallRetsForPtr(ptr_val);
+                for (cached_ret_indices.?) |ridx| {
                     if (ffi_set.contains(mg.call_rets.items[ridx].callee_name)) {
                         on_danger = true;
                         break;
@@ -146,21 +153,24 @@ pub const DangerSurfacePass = struct {
             if (!on_danger) continue;
 
             try ctx.markRelevantAlloc(ptr_val);
-            try markFunctionFromInst(ctx, node.alloc_inst);
+            try markFunctionFromInstCached(ctx, node.alloc_inst, &func_cache);
             try ctx.markFfiRelevant(ptr_val);
 
             // Mark caller functions for all call_args/call_rets involving this ptr
-            const arg_indices2 = mg.getCallArgsForPtr(ptr_val);
-            for (arg_indices2) |aidx| {
-                ctx.markFunctionFromInst(mg.call_args.items[aidx].caller_inst) catch |err| {
-                    diag.debug("[P0-1] markFunctionFromInst (call_arg) failed: {}", .{err});
-                };
+            // PERF: Use cached indices instead of re-querying
+            if (cached_arg_indices) |arg_indices| {
+                for (arg_indices) |aidx| {
+                    markFunctionFromInstCached(ctx, mg.call_args.items[aidx].caller_inst, &func_cache) catch |err| {
+                        diag.debug("[P0-1] markFunctionFromInst (call_arg) failed: {}", .{err});
+                    };
+                }
             }
-            const ret_indices2 = mg.getCallRetsForPtr(ptr_val);
-            for (ret_indices2) |ridx| {
-                ctx.markFunctionFromInst(mg.call_rets.items[ridx].caller_inst) catch |err| {
-                    diag.debug("[P0-1] markFunctionFromInst (call_ret) failed: {}", .{err});
-                };
+            if (cached_ret_indices) |ret_indices| {
+                for (ret_indices) |ridx| {
+                    markFunctionFromInstCached(ctx, mg.call_rets.items[ridx].caller_inst, &func_cache) catch |err| {
+                        diag.debug("[P0-1] markFunctionFromInst (call_ret) failed: {}", .{err});
+                    };
+                }
             }
 
             total_alias_traces += 1;
@@ -169,11 +179,12 @@ pub const DangerSurfacePass = struct {
             };
         }
 
-        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | {d:.0}ms (cross_lang_free={d} alias_traces={d})", .{
+        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000.0;
+        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | {d:.1}ms (cross_lang_free={d} alias_traces={d})", .{
             ffi_count,
             ctx.danger_surface_relevant.count(),
             ctx.relevant_functions.count(),
-            @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000.0)),
+            elapsed_ms,
             cross_lang_frees,
             total_alias_traces,
         });
@@ -207,6 +218,36 @@ fn traceAliasClosure(
             diag.debug("[P1-1] Recursive alias error for 0x{x} -> 0x{x}: {}", .{ ptr_val, alias_ptr, err });
         };
     }
+}
+
+fn markFunctionFromInstCached(ctx: *PassContext, inst_ptr: u64, func_cache: *std.AutoHashMap(u64, u64)) !void {
+    if (inst_ptr == 0) return;
+
+    // Check cache first
+    if (func_cache.get(inst_ptr)) |func_ptr| {
+        if (func_ptr != 0) {
+            try ctx.markRelevantFunction(func_ptr);
+        }
+        return;
+    }
+
+    // Cache miss — call LLVM API
+    const inst: c.LLVMValueRef = @ptrFromInt(inst_ptr);
+    const bb = c.LLVMGetInstructionParent(inst);
+    if (@intFromPtr(bb) == 0) {
+        try func_cache.put(inst_ptr, 0);
+        return;
+    }
+    const func = c.LLVMGetBasicBlockParent(bb);
+    const func_ptr = @as(u64, @intFromPtr(func));
+    if (func_ptr == 0) {
+        try func_cache.put(inst_ptr, 0);
+        return;
+    }
+
+    // Cache the result for future lookups
+    try func_cache.put(inst_ptr, func_ptr);
+    try ctx.markRelevantFunction(func_ptr);
 }
 
 fn markFunctionFromInst(ctx: *PassContext, inst_ptr: u64) !void {

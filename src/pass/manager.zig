@@ -14,6 +14,7 @@ const PassKind = @import("pass.zig").PassKind;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
 const profiler = @import("../perf/profiler.zig");
+const log = @import("../common/log.zig");
 
 /// Dependency resolution error
 pub const DependencyError = error{
@@ -203,27 +204,41 @@ pub const PassManager = struct {
             _ = try self.resolveDependencies();
         }
 
+        const total_passes = self.resolved_order.?.len;
+
         // Initialize stats collector if profiling is enabled
         if (self.perf_stats) {
             self.pass_stats_collector = profiler.PassStatsCollector.init(self.allocator);
+            log.info("", .{});
+            log.info("[profiler] ═╡ PIPELINE EXECUTION ╞═══════════════════════════", .{});
+            log.info("[profiler] │ Total passes: {d}", .{total_passes});
+            log.info("[profiler] ├─────────────────────────────────────────────────┤", .{});
         }
 
         // Execute in resolved order with graceful degradation (v0.1.6)
         var pass_failures: usize = 0;
-        for (self.resolved_order.?) |idx| {
-            const pass_name = self.passes.items[idx].name;
+        for (self.resolved_order.?, 0..) |idx, pass_idx| {
+            const entry = &self.passes.items[idx];
+            const pass_name = entry.name;
 
             // Per-pass timing and memory sampling (only when enabled)
             var pass_timer: ?profiler.PassTimer = null;
             if (self.perf_stats) {
                 pass_timer = profiler.PassTimer.startPass() catch null;
+                log.info("[profiler] │ [{d:0>2}/{d:0>2}] Running: {s}...", .{
+                    pass_idx + 1,
+                    total_passes,
+                    pass_name,
+                });
             }
 
             const t0 = std.time.nanoTimestamp();
-            self.passes.items[idx].run_fn(ctx, diag) catch |err| {
+            entry.run_fn(ctx, diag) catch |err| {
                 diag.warn("PassManager: pass '{s}' failed with error: {any}, degrading gracefully", .{ pass_name, err });
                 pass_failures += 1;
-                // Continue running remaining passes
+                if (self.perf_stats) {
+                    log.info("[profiler] │      ⚠ Failed: {}", .{err});
+                }
             };
 
             // Record per-pass statistics
@@ -232,6 +247,7 @@ pub const PassManager = struct {
                     if (timer.stopPass(pass_name)) |stats| {
                         if (self.pass_stats_collector) |*collector| {
                             collector.record(stats) catch {};
+                            log.info("[profiler] │      ✓ Completed in {d:.1}ms", .{stats.wallTimeMs()});
                         }
                     } else |_| {}
                 }
@@ -242,17 +258,25 @@ pub const PassManager = struct {
                 diag.info("PassManager: early exit after '{s}' — no FFI boundaries, remaining passes skipped", .{pass_name});
                 break;
             }
+
+            // Legacy: always show slow passes (>10ms) even without --perf-stats
             const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
             const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
-            if (elapsed_ms > 10) {
+            if (!self.perf_stats and elapsed_ms > 10) {
                 diag.info("[PERF] Pass '{s}: {d} ms", .{ pass_name, @as(u32, @intFromFloat(elapsed_ms)) });
             }
         }
 
-        // Print performance report if profiling was enabled
+        // Print enhanced performance report if profiling was enabled
         if (self.perf_stats) {
             if (self.pass_stats_collector) |*collector| {
+                log.info("[profiler] ├─────────────────────────────────────────────────┤", .{});
+
+                // Use enhanced report with full pipeline banner, sorting, and bottleneck detection
                 collector.printReport(true);
+
+                // Auto-export JSON if EXPORT_PERF_JSON environment variable is set
+                collector.autoExportIfRequested();
             }
         }
 
@@ -279,6 +303,14 @@ pub const PassManager = struct {
     /// Get the number of registered passes
     pub fn count(self: *const PassManager) usize {
         return self.passes.items.len;
+    }
+
+    /// Export performance data to JSON file
+    /// Useful for CI/CD integration and performance tracking
+    pub fn exportPerfJson(self: *PassManager, path: []const u8) !void {
+        if (self.pass_stats_collector) |*collector| {
+            try collector.exportJsonToFile(path);
+        }
     }
 };
 

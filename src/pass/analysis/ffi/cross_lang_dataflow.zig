@@ -10,6 +10,7 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -67,6 +68,11 @@ pub const CrossLangDataFlow = struct {
         if (ctx.module == null) return;
 
         var stats = DataFlowStats{};
+
+        // OPT: Shared InstCache for all IR scans (avoids repeated LLVM API calls)
+        var inst_cache = InstCache.init(ctx.allocator);
+        defer inst_cache.deinit();
+
         var allocations = std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
         defer {
             // Clean up allocations
@@ -86,8 +92,8 @@ pub const CrossLangDataFlow = struct {
         }
 
         // Track allocations and frees across FFI boundaries
-        try trackAllocations(ctx, &allocations, &stats, diag);
-        try trackFrees(ctx, &allocations, &stats, diag);
+        try trackAllocations(ctx, &allocations, &stats, diag, &inst_cache);
+        try trackFrees(ctx, &allocations, &stats, diag, &inst_cache);
         try trackPointerPassing(ctx, &allocations, cross_edges, &stats, diag);
 
         // Detect issues
@@ -109,6 +115,7 @@ pub const CrossLangDataFlow = struct {
         allocations: *std.ArrayList(CrossLangAlloc),
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
+        inst_cache: *InstCache,
     ) !void {
         _ = diag;
         const mod = ctx.module.?.raw;
@@ -135,16 +142,12 @@ pub const CrossLangDataFlow = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    // OPT: Use InstCache for opcode lookup
+                    const opcode = inst_cache.getOpcode(inst);
                     if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
-
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                        // OPT: Use InstCache for callee name lookup
+                        const called_name = inst_cache.getCalleeName(inst) orelse continue;
+                        if (called_name.len == 0) continue;
 
                         // Check if this is an allocation function
                         if (isAllocationFunction(called_name)) {
@@ -189,6 +192,7 @@ pub const CrossLangDataFlow = struct {
         allocations: *std.ArrayList(CrossLangAlloc),
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
+        inst_cache: *InstCache,
     ) !void {
         _ = stats;
         _ = diag;
@@ -215,7 +219,8 @@ pub const CrossLangDataFlow = struct {
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
+                    // OPT: Use InstCache for opcode lookup
+                    const opcode = inst_cache.getOpcode(inst);
 
                     // Track store → load chains for tracked pointers
                     if (opcode == c.LLVMStore) {

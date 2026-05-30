@@ -318,19 +318,19 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",            "calloc",        "realloc",         "aligned_alloc",
-    "valloc",            "pvalloc",       "memalign",        "operator new",
-    "operator new[]",    "allocImpl",     "mmap",
+    "malloc",               "calloc",        "realloc",         "aligned_alloc",
+    "valloc",               "pvalloc",       "memalign",        "operator new",
+    "operator new[]",       "allocImpl",     "mmap",
     // C++ operator new — Itanium ABI mangled names
     // Scalar: _Znw*, _Znwm (operator new / operator new(unsigned long))
     // Array:  _Zna*, _Znam (operator new[] / operator new[](unsigned long))
     // Covers standard + aligned (C++17) + nothrow + placement variants
     // Substring matching ensures all suffixes are caught (_ZnamSt9align_val_t, etc.)
                "_Znwm",
-    "_Znam",             "_Znw",          "_Zna",
+    "_Znam",                "_Znw",          "_Zna",
     // C++17 aligned new/delete (double underscore prefix on some platforms)
                "__Znwm",
-    "__Znam",            "__Znw",         "__Zna",
+    "__Znam",               "__Znw",         "__Zna",
     // Bug 3 fix: also catch MSVC-mangled operator new (when cross-compiled to ELF)
               "?operator new@@",
     "?operator new[]@@",
@@ -340,15 +340,16 @@ pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
     // recorded as a new allocation, and without matching from_raw, reported
     // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
     // which pairs into_raw/from_raw as transfer-out/transfer-in.
-    "dlopen",        "fopen",           "socket",
-    "JNI_OnLoad",        "Py_Initialize", "Py_BuildValue",   "PyTuple_New",
-    "PyList_New",        "PyDict_New",    "NewStringUTF",    "NewByteArray",
-    "NewGlobalRef",      "c_malloc",
+       "dlopen",        "fopen",           "socket",
+    "JNI_OnLoad",           "Py_Initialize", "Py_BuildValue",   "PyTuple_New",
+    "PyList_New",           "PyDict_New",    "NewStringUTF",    "NewByteArray",
+    "NewGlobalRef",         "c_malloc",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
          "__rust_alloc",    "__rust_realloc",
-    "__rdl_alloc",       "__rg_alloc",    "exchange_malloc",
+    "__rdl_alloc",          "__rg_alloc",    "exchange_malloc",
     // C# / .NET P/Invoke allocators — COM interop and unmanaged memory
-    "CoTaskMemAlloc",    "Marshal_AllocHGlobal", "LocalAlloc", "HeapAlloc",
+    "CoTaskMemAlloc",
+    "Marshal_AllocHGlobal", "LocalAlloc",    "HeapAlloc",
 };
 
 // ============================================================================
@@ -603,13 +604,12 @@ pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
 const EXACT_ALLOC_SET = blk: {
     // Comptime hash set of exact alloc function names for O(1) lookup.
     const entries = [_][]const u8{
-        "malloc", "calloc", "realloc", "aligned_alloc", "valloc", "pvalloc",
-        "memalign", "allocImpl", "mmap", "dlopen", "fopen", "socket",
-        "JNI_OnLoad", "Py_Initialize", "Py_BuildValue", "PyTuple_New",
-        "PyList_New", "PyDict_New", "NewStringUTF", "NewByteArray",
-        "NewGlobalRef", "c_malloc", "__rust_alloc", "__rust_realloc",
-        "__rdl_alloc", "__rg_alloc", "exchange_malloc", "CoTaskMemAlloc",
-        "Marshal_AllocHGlobal", "LocalAlloc", "HeapAlloc",
+        "malloc",       "calloc",        "realloc",         "aligned_alloc",  "valloc",               "pvalloc",
+        "memalign",     "allocImpl",     "mmap",            "dlopen",         "fopen",                "socket",
+        "JNI_OnLoad",   "Py_Initialize", "Py_BuildValue",   "PyTuple_New",    "PyList_New",           "PyDict_New",
+        "NewStringUTF", "NewByteArray",  "NewGlobalRef",    "c_malloc",       "__rust_alloc",         "__rust_realloc",
+        "__rdl_alloc",  "__rg_alloc",    "exchange_malloc", "CoTaskMemAlloc", "Marshal_AllocHGlobal", "LocalAlloc",
+        "HeapAlloc",
     };
     break :blk entries;
 };
@@ -617,8 +617,8 @@ const EXACT_ALLOC_SET = blk: {
 /// Substring patterns for C++ mangled operator new (Itanium ABI + MSVC).
 /// Only these need std.mem.indexOf — all others use EXACT_ALLOC_SET.
 const SUBSTR_ALLOC_PATTERNS = &[_][]const u8{
-    "operator new", "operator new[]", "_Znwm", "_Znam", "_Znw", "_Zna",
-    "__Znwm", "__Znam", "__Znw", "__Zna", "?operator new@@", "?operator new[]@@",
+    "operator new", "operator new[]", "_Znwm", "_Znam", "_Znw",            "_Zna",
+    "__Znwm",       "__Znam",         "__Znw", "__Zna", "?operator new@@", "?operator new[]@@",
 };
 
 pub fn isHeapAllocFunction(func_name: []const u8) bool {

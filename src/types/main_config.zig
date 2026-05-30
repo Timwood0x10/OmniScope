@@ -51,6 +51,7 @@ pub const Config = struct {
     ffi_only: bool = false,
     include_stdlib: bool = false,
     perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
+    perf_json_path: ?[]const u8 = null, // Export performance data to JSON file (implies --perf-stats)
     debug_resource_contract: bool = false, // Enable resource contract debugging (implies --debug)
 
     pub fn init(allocator: Allocator) !Config {
@@ -67,6 +68,11 @@ pub const Config = struct {
         }
         self.input_files.deinit(allocator);
         if (self.output_file) |path| {
+            if (path.len > 0) {
+                allocator.free(path);
+            }
+        }
+        if (self.perf_json_path) |path| {
             if (path.len > 0) {
                 allocator.free(path);
             }
@@ -130,6 +136,15 @@ pub fn parseArgs(allocator: Allocator) !Config {
             config.include_stdlib = true;
         } else if (std.mem.eql(u8, arg, "--perf-stats")) {
             config.perf_stats = true;
+        } else if (std.mem.eql(u8, arg, "--perf-json")) {
+            const json_path = args.next() orelse {
+                return error.InvalidOption;
+            };
+            if (json_path.len == 0) {
+                return error.InvalidOption;
+            }
+            config.perf_json_path = try allocator.dupe(u8, json_path);
+            config.perf_stats = true; // --perf-json implies --perf-stats
         } else if (std.mem.eql(u8, arg, "--debug-resource-contract")) {
             config.debug_resource_contract = true;
             config.debug = true; // implicitly enable debug
@@ -161,6 +176,7 @@ pub fn showHelp() void {
         \\  --ffi-only          Only report FFI boundary issues
         \\  --include-stdlib    Include stdlib issues
         \\  --perf-stats                      Enable per-pass performance profiling (time, RSS, allocations)
+        \\  --perf-json <path>                 Export performance data to JSON file (implies --perf-stats)
         \\  --debug-resource-contract         Enable resource contract debugging (implies --debug)
         \\  --version           Show version information
         \\  --json              Output in JSON format

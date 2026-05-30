@@ -210,14 +210,15 @@ pub const Pipeline = struct {
                             if (@intFromPtr(called_name_ptr) == 0) continue;
                             const called_name = std.mem.span(called_name_ptr);
                             const inst_ptr = @as(u64, @intFromPtr(inst));
-                            // DC-C4 FIX: Log OOM instead of silently swallowing error
-                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
-                                log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
-                            };
                             // P0-3: Check if callee is an external declaration (FFI boundary indicator)
-                            if (c.LLVMIsDeclaration(called_val) != 0) {
+                            const is_external = (c.LLVMIsDeclaration(called_val) != 0);
+                            if (is_external) {
                                 has_ffi_calls = true;
                             }
+                            // DC-C4 FIX: Log OOM instead of silently swallowing error
+                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr, is_external) catch |err| {
+                                log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
+                            };
                         }
                     }
                 }

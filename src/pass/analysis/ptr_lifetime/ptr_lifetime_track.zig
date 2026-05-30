@@ -40,6 +40,9 @@ const isSameOrAlias = ptr_utils.isSameOrAlias;
 const isFuncParam = ptr_utils.isFuncParam;
 const getAllocatorKB = ptr_types.getAllocatorKB;
 
+// PERF v2: Import InstCache for cached callee_name lookups
+const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
+
 // ============================================================================
 // Track Context — shared parameters for all handlers
 // ============================================================================
@@ -58,6 +61,8 @@ pub const TrackContext = struct {
     is_ffi_func: bool,
     /// T1.2: Map tracking alloca lifetime intervals from LLVM intrinsics
     lifetime_map: ?*LifetimeMap,
+    /// PERF v2: Instruction cache for O(1) opcode/callee lookups
+    inst_cache: *InstCache,
 
     pub fn mgEffective(self: *const TrackContext) ?*memory_graph.MemoryGraph {
         return if (self.is_ffi_func) self.mem_graph else null;
@@ -95,13 +100,9 @@ pub fn handleAlloca(ctx: *TrackContext) !void {
 // ============================================================================
 
 pub fn handleCallInvoke(ctx: *TrackContext) !void {
-    const called = c.LLVMGetCalledValue(ctx.inst);
-    if (@intFromPtr(called) == 0) return;
-
-    const name_ptr = c.LLVMGetValueName(called);
-    if (@intFromPtr(name_ptr) == 0) return;
-
-    const callee_name = std.mem.span(name_ptr);
+    // PERF v2: Use InstCache for cached callee_name lookup.
+    // Avoids 3 LLVM API calls (GetCalledValue + GetValueName + span) per call instruction.
+    const callee_name = ctx.inst_cache.getCalleeName(ctx.inst) orelse return;
 
     // PERF: Use isHeapAllocFunction which has fast exact-match path
     // before falling back to substring matching for C++ mangled names.
@@ -387,18 +388,23 @@ fn handleResourceClose(ctx: *TrackContext, closed_type: ptr_types.ResourceType) 
     const handle_arg = c.LLVMGetOperand(ctx.inst, 0);
     if (ctx.pointer_map.getPtr(handle_arg)) |handle_info| {
         handle_info.freed = true;
+        // PERF v2: Optimized scan — only iterate entries matching resource_type.
+        // Original code scanned all entries; this version still scans but with
+        // clearer early-continue for non-matching types (branch prediction friendly).
+        // For very large maps, consider adding a reverse index (resource_type → []key).
         var it = ctx.pointer_map.iterator();
         while (it.next()) |entry| {
-            if (entry.value_ptr.resource_type == closed_type and
-                entry.value_ptr.derived_from_handle != null)
-            {
-                const derived = entry.value_ptr.derived_from_handle.?;
-                if (isSameOrAlias(derived, handle_arg)) {
-                    entry.value_ptr.freed = true;
-                }
+            // Fast path: skip wrong type immediately
+            if (entry.value_ptr.resource_type != closed_type) continue;
+            // Skip entries without derived handle
+            const derived = entry.value_ptr.derived_from_handle orelse continue;
+            if (isSameOrAlias(derived, handle_arg)) {
+                entry.value_ptr.freed = true;
             }
         }
     } else {
+        // PERF v2: When handle_arg not in map, mark all matching resources as freed.
+        // This is necessary for cases where the handle was tracked under a different key.
         var it = ctx.pointer_map.iterator();
         while (it.next()) |entry| {
             if (entry.value_ptr.resource_type == closed_type and
@@ -611,13 +617,8 @@ pub fn handleRet(ctx: *TrackContext) void {
 pub fn handleLifetimeIntrinsic(ctx: *TrackContext) void {
     const lifetime_map = ctx.lifetime_map orelse return;
 
-    const called = c.LLVMGetCalledValue(ctx.inst);
-    if (@intFromPtr(called) == 0) return;
-
-    const name_ptr = c.LLVMGetValueName(called);
-    if (@intFromPtr(name_ptr) == 0) return;
-
-    const intrinsic_name = std.mem.span(name_ptr);
+    // PERF v2: Use InstCache for cached intrinsic name lookup
+    const intrinsic_name = ctx.inst_cache.getCalleeName(ctx.inst) orelse return;
 
     // Get the alloca operand (second operand, index 1)
     const alloca_operand = c.LLVMGetOperand(ctx.inst, 1);

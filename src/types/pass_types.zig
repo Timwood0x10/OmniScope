@@ -73,9 +73,15 @@ pub const CrossLangEdge = struct {
 pub const CallSiteIndex = struct {
     map: std.StringHashMap(std.ArrayList(CallSite)),
     allocator: Allocator,
+    /// Pre-computed set of functions that have external calls (for O(1) lookup)
+    external_callers: std.AutoHashMap(u64, void),
 
     pub fn init(allocator: Allocator) CallSiteIndex {
-        return .{ .map = std.StringHashMap(std.ArrayList(CallSite)).init(allocator), .allocator = allocator };
+        return .{
+            .map = std.StringHashMap(std.ArrayList(CallSite)).init(allocator),
+            .allocator = allocator,
+            .external_callers = std.AutoHashMap(u64, void).init(allocator),
+        };
     }
 
     pub fn deinit(self: *CallSiteIndex) void {
@@ -84,14 +90,20 @@ pub const CallSiteIndex = struct {
             entry.value_ptr.deinit(self.allocator);
         }
         self.map.deinit();
+        self.external_callers.deinit();
     }
 
-    pub fn addCall(self: *CallSiteIndex, allocator: Allocator, callee_name: []const u8, caller_func: u64, inst: u64) !void {
+    pub fn addCall(self: *CallSiteIndex, allocator: Allocator, callee_name: []const u8, caller_func: u64, inst: u64, is_external: bool) !void {
         const gop = try self.map.getOrPut(callee_name);
         if (!gop.found_existing) {
             gop.value_ptr.* = try std.ArrayList(CallSite).initCapacity(allocator, 4);
         }
         try gop.value_ptr.append(self.allocator, .{ .caller_func = caller_func, .inst = inst });
+
+        // OPT: Track functions with external calls for O(1) lookup
+        if (is_external) {
+            try self.external_callers.put(caller_func, {});
+        }
     }
 
     pub fn getCallSites(self: *const CallSiteIndex, callee_name: []const u8) ?[]const CallSite {
@@ -99,6 +111,12 @@ pub const CallSiteIndex = struct {
             return sites.items;
         }
         return null;
+    }
+
+    /// O(1) check if a function has any external calls.
+    /// Uses pre-computed external_callers set (built during CallSiteIndex construction).
+    pub fn hasExternalCalls(self: *const CallSiteIndex, caller_func: u64) bool {
+        return self.external_callers.contains(caller_func);
     }
 };
 

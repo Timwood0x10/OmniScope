@@ -55,23 +55,24 @@ pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
 const EXACT_FREE_SET = blk: {
     const entries = [_][]const u8{
         // C standard library
-        "free", "cfree", "realloc", "g_free", "kfree", "vfree",
-        "c_free", "c_malloc",
+        "free",                  "cfree",      "realloc",        "g_free",           "kfree",           "vfree",
+        "c_free",                "c_malloc",
         // Rust global allocator
-        "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
+          "__rust_dealloc", "__rdl_dealloc",    "__rg_dealloc",
         // Go/cgo runtime
-        "_cgo_free",
+           "_cgo_free",
         // Common deallocators
-        "dealloc", "deallocate",
+        "dealloc",               "deallocate",
         // Objective-C runtime
-        "objc_release", "objc_autorelease", "CFRelease", "CGImageRelease",
+        "objc_release",   "objc_autorelease", "CFRelease",       "CGImageRelease",
         "NSDeallocateObject",
         // Python C API
-        "PyMem_Free", "PyObject_Free",
+           "PyMem_Free", "PyObject_Free",
         // JNI
-        "DeleteLocalRef", "DeleteGlobalRef",
+         "DeleteLocalRef",   "DeleteGlobalRef",
         // Node.js N-API
-        "napi_unref", "napi_delete_reference",
+        "napi_unref",
+        "napi_delete_reference",
     };
     break :blk entries;
 };

@@ -116,11 +116,11 @@ pub const SemanticRegistry = struct {
         // Iterate all 15 layer arrays and partition into exact vs non-exact.
         // inline for ensures compile-time unrolling — zero runtime loop overhead.
         const all_layers = [_][]const FunctionSemantics{
-            &layer1,          &layer2,       &layer3,
-            &layer4,          &layer5,       &layer6,
-            &jni,             &python_c_api, &file_io,
-            &network_io,      &signal_handler, &thread_mgmt,
-            &process_mgmt,    &dynamic_loading, &static_buffer,
+            &layer1,       &layer2,          &layer3,
+            &layer4,       &layer5,          &layer6,
+            &jni,          &python_c_api,    &file_io,
+            &network_io,   &signal_handler,  &thread_mgmt,
+            &process_mgmt, &dynamic_loading, &static_buffer,
         };
         for (all_layers) |layer| {
             for (layer) |sem| {
