@@ -10,6 +10,7 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const log = @import("../../../common/log.zig");
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -19,6 +20,7 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const IssueSeverity = @import("../../../diag/issue.zig").Severity;
 const Location = @import("../../../diag/issue.zig").Location;
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
+const ffi_contract_db = @import("../../../resource/ffi_contract_db.zig");
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -66,10 +68,15 @@ pub const CrossLangDataFlow = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
+        var contract_db = ffi_contract_db.FFIContractDB.init(ctx.allocator) catch |err| {
+            log.warn("CrossLangDataFlow: Failed to init FFIContractDB: {}", .{err});
+            return;
+        };
+        defer contract_db.deinit();
+
         var stats = DataFlowStats{};
         var allocations = try std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 64);
         defer {
-            // Clean up allocations
             for (allocations.items) |*alloc| {
                 alloc.free_langs.deinit(ctx.allocator);
                 alloc.free_funcs.deinit(ctx.allocator);
@@ -78,17 +85,14 @@ pub const CrossLangDataFlow = struct {
             allocations.deinit(ctx.allocator);
         }
 
-        // Get cross-language edges from the context
         const cross_edges = ctx.getCrossLangEdges();
         if (cross_edges.len == 0) {
             diag.info("CrossLangDataFlow: No cross-language edges found, skipping analysis", .{});
             return;
         }
 
-        // OPTIMIZATION: Unified traversal - collect all data in single pass
-        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag);
+        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db);
 
-        // Detect issues using collected data
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag);
 
         diag.info("CrossLangDataFlow: {} allocations tracked, {} cross-lang, {} orphans, {} double-frees", .{
@@ -107,6 +111,7 @@ pub const CrossLangDataFlow = struct {
         cross_edges: []const CrossLangEdge,
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
+        db: *const ffi_contract_db.FFIContractDB,
     ) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -293,6 +298,8 @@ pub const CrossLangDataFlow = struct {
         }
 
         // 5. Detect orphan pointers (post-processing)
+        // FFI Contract DB integration: suppress FP for GC-managed and
+        // callee-owned resources; detect alloc/release mismatches.
         for (allocations.items) |alloc| {
             if (alloc.freed) continue;
             if (alloc.passed_to_other_lang) continue;
@@ -302,9 +309,51 @@ pub const CrossLangDataFlow = struct {
                 continue;
             }
 
+            // CONTRACT-DB: Check if this allocation should be reported as leak
+            if (!db.shouldReportLeak(alloc.alloc_callee)) {
+                const ownership = db.getOwnership(alloc.alloc_callee);
+                log.debug("CONTRACT-SUPPRESS: {s} is {s}-managed in {s}, not a leak", .{
+                    alloc.alloc_callee,
+                    if (ownership) |o| @tagName(o) else "unknown",
+                    alloc.alloc_func,
+                });
+                continue;
+            }
+
+            // CONTRACT-DB: If we have free func info, check for pairing mismatch
+            if (alloc.free_funcs.items.len > 0) {
+                for (alloc.free_funcs.items) |free_func| {
+                    const pair_result = db.isValidRelease(alloc.alloc_callee, free_func);
+                    if (pair_result == .mismatch) {
+                        const mismatch_msg = try std.fmt.allocPrint(ctx.allocator, "FFI contract mismatch: {s} allocated by {s} but released by {s} (wrong release function)", .{ alloc.alloc_func, alloc.alloc_callee, free_func });
+                        defer ctx.allocator.free(mismatch_msg);
+
+                        const location = Location.init(alloc.alloc_func);
+                        const issue = Issue.init(
+                            .cross_language_leak,
+                            mismatch_msg,
+                            location,
+                            .high,
+                            0.92,
+                        );
+                        try ctx.addIssue(&issue);
+                        diag.err("CrossLangDataFlow: Contract mismatch — {s} + {s} in {s}", .{
+                            alloc.alloc_callee,
+                            free_func,
+                            alloc.alloc_func,
+                        });
+                    }
+                }
+            }
+
             stats.orphan_pointers += 1;
 
-            const confidence = calculateOrphanConfidence(alloc);
+            // Boost confidence for error-prone libraries (OpenSSL, SQLite)
+            var confidence = calculateOrphanConfidence(alloc);
+            if (db.isErrorProneLib(alloc.alloc_callee)) {
+                confidence = @min(confidence + 0.08, 1.0);
+            }
+
             const message = try std.fmt.allocPrint(ctx.allocator, "Orphan pointer detected: allocated in {s} ({s}) via {s} but never freed or transferred across FFI boundary", .{ alloc.alloc_func, @tagName(alloc.alloc_lang), alloc.alloc_callee });
             defer ctx.allocator.free(message);
 

@@ -327,6 +327,25 @@ pub const output = struct {
     pub const SarifOutput = @import("output/sarif.zig").SarifOutput;
 };
 
+// Export multi-language adapter framework
+pub const lang = struct {
+    pub const TargetLanguage = @import("lang/types.zig").Language;
+    pub const MemoryModel = @import("lang/types.zig").MemoryModel;
+    pub const FFISemantics = @import("lang/types.zig").FFISemantics;
+    pub const FFICallInfo = @import("lang/types.zig").FFICallInfo;
+    pub const AdapterAnalysis = @import("lang/types.zig").AdapterAnalysis;
+
+    pub const LanguageAdapter = @import("lang/language_adapter.zig").LanguageAdapter;
+    pub const AdapterVTable = @import("lang/language_adapter.zig").AdapterVTable;
+    pub const Defaults = @import("lang/language_adapter.zig").Defaults;
+
+    pub const PythonAdapter = @import("lang/python_adapter.zig");
+    pub const GoAdapter = @import("lang/go_adapter.zig");
+    pub const CppAdapter = @import("lang/cpp_adapter.zig");
+
+    pub const AdapterRegistry = @import("lang/adapter_registry.zig").AdapterRegistry;
+};
+
 // Simple test to verify test system works
 test "root.zig - module import test" {
     _ = .{
@@ -349,4 +368,12 @@ test {
     _ = @import("pipeline/large_alloc_test.zig");
     _ = @import("pass/analysis/rust_ffi/rust_ffi_auditor_test.zig");
     _ = @import("pipeline/traversal_index.zig");
+
+    // Multi-language adapter framework tests
+    _ = @import("lang/types.zig");
+    _ = @import("lang/language_adapter.zig");
+    _ = @import("lang/python_adapter.zig");
+    _ = @import("lang/go_adapter.zig");
+    _ = @import("lang/cpp_adapter.zig");
+    _ = @import("lang/adapter_registry.zig");
 }

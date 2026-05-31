@@ -37,6 +37,32 @@ pub const MainError = error{
     InvalidOption,
 };
 
+/// Local severity enum for CLI argument parsing.
+/// Avoids importing from common/types.zig to prevent module conflicts.
+pub const Severity = enum {
+    low,
+    medium,
+    high,
+    critical,
+
+    pub fn parse(name: []const u8) ?Severity {
+        if (std.mem.eql(u8, name, "low")) return .low;
+        if (std.mem.eql(u8, name, "medium")) return .medium;
+        if (std.mem.eql(u8, name, "high")) return .high;
+        if (std.mem.eql(u8, name, "critical")) return .critical;
+        return null;
+    }
+
+    pub fn toCommonSeverity(self: Severity) u8 {
+        return switch (self) {
+            .low => 0,
+            .medium => 1,
+            .high => 2,
+            .critical => 3,
+        };
+    }
+};
+
 pub const Config = struct {
     show_help: bool = false,
     show_version: bool = false,
@@ -53,6 +79,13 @@ pub const Config = struct {
     perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
     perf_json_path: ?[]const u8 = null, // Export performance data to JSON file (implies --perf-stats)
     debug_resource_contract: bool = false, // Enable resource contract debugging (implies --debug)
+
+    /// Only report issues on FFI boundaries (ignore internal code noise)
+    boundary_only: bool = false,
+    /// Minimum severity to report (low, medium, high, critical)
+    min_severity: Severity = .low,
+    /// Suppress known-safe patterns (allocator shims, rust internals, GC managed)
+    suppress_noise: bool = true,
 
     pub fn init(allocator: Allocator) !Config {
         return .{
@@ -189,4 +222,29 @@ pub fn showHelp() void {
         \\
     ;
     std.log.info("{s}", .{help_text});
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "Severity - parse valid values" {
+    try std.testing.expectEqual(Severity.low, Severity.parse("low").?);
+    try std.testing.expectEqual(Severity.medium, Severity.parse("medium").?);
+    try std.testing.expectEqual(Severity.high, Severity.parse("high").?);
+    try std.testing.expectEqual(Severity.critical, Severity.parse("critical").?);
+}
+
+test "Severity - parse invalid values" {
+    try std.testing.expect(Severity.parse("invalid") == null);
+    try std.testing.expect(Severity.parse("") == null);
+    try std.testing.expect(Severity.parse("LOW") == null); // case-sensitive
+    try std.testing.expect(Severity.parse("Low") == null); // case-sensitive
+}
+
+test "Severity - toCommonSeverity conversion" {
+    try std.testing.expectEqual(@as(u8, 0), Severity.low.toCommonSeverity());
+    try std.testing.expectEqual(@as(u8, 1), Severity.medium.toCommonSeverity());
+    try std.testing.expectEqual(@as(u8, 2), Severity.high.toCommonSeverity());
+    try std.testing.expectEqual(@as(u8, 3), Severity.critical.toCommonSeverity());
 }

@@ -1,0 +1,210 @@
+//! Shared type definitions for language adapters.
+//!
+//! This module provides the canonical type system for the multi-language
+//! adapter framework. All language-specific adapters use these types to
+//! communicate with the core analysis engine in a language-agnostic way.
+//!
+//! Design principle: Types here map 1:1 to FFIBoundary.Language where possible,
+//! but extend it with memory model and FFI semantics classifications that
+//! are specific to cross-language analysis.
+
+const std = @import("std");
+
+/// Re-export the canonical Language enum from diag/issue.zig.
+/// All new code should use TargetLanguage as the adapter-framework alias.
+pub const Language = @import("../diag/issue.zig").FFIBoundary.Language;
+
+/// Memory management model for a target language.
+///
+/// Classifies how each language manages object lifetimes, which determines
+/// whether leaks are possible and how ownership transfers work across FFI.
+pub const MemoryModel = enum {
+    /// Manual malloc/free (C style). Leaks are common.
+    manual,
+    /// RAII / destructors (C++, Rust). Compiler inserts cleanup at scope end.
+    raii,
+    /// Reference counting (Python, Objective-C). Leak if refcount never reaches 0.
+    refcount,
+    /// Garbage collected (Java, Go runtime). Collector handles cleanup.
+    gc,
+    /// Hybrid (C# SafeHandle + GC, Go cgo). Depends on usage pattern.
+    hybrid,
+
+    /// Human-readable name for logging and diagnostics.
+    pub fn displayName(self: MemoryModel) []const u8 {
+        return switch (self) {
+            .manual => "Manual",
+            .raii => "RAII",
+            .refcount => "RefCount",
+            .gc => "GC",
+            .hybrid => "Hybrid",
+        };
+    }
+
+    /// Check if this memory model allows resource leaks in normal operation.
+    pub fn allowsLeak(self: MemoryModel) bool {
+        return switch (self) {
+            .manual => true,
+            .raii => false,
+            .refcount => true,
+            .gc => false,
+            .hybrid => true,
+        };
+    }
+
+    /// Get the default memory model for a given target language.
+    pub fn forLanguage(lang: Language) MemoryModel {
+        return switch (lang) {
+            .c => .manual,
+            .cpp => .raii,
+            .rust => .raii,
+            .zig => .raii,
+            .python => .refcount,
+            .go => .hybrid,
+            .csharp => .hybrid,
+            .java => .gc,
+            .unknown => .manual,
+        };
+    }
+};
+
+/// FFI call semantics classification.
+pub const FFISemantics = enum {
+    returns_owned,
+    returns_borrowed,
+    consumes_arg,
+    inout,
+    unknown,
+
+    pub fn displayName(self: FFISemantics) []const u8 {
+        return switch (self) {
+            .returns_owned => "ReturnsOwned",
+            .returns_borrowed => "ReturnsBorrowed",
+            .consumes_arg => "ConsumesArg",
+            .inout => "InOut",
+            .unknown => "Unknown",
+        };
+    }
+};
+
+/// Information about a single FFI call site classified by an adapter.
+pub const FFICallInfo = struct {
+    inst_addr: u64,
+    callee_name: []const u8,
+    semantics: FFISemantics,
+    confidence: f32,
+    callee_language: Language,
+
+    pub fn init(
+        inst_addr: u64,
+        callee_name: []const u8,
+        semantics: FFISemantics,
+        confidence: f32,
+        callee_language: Language,
+    ) FFICallInfo {
+        return .{
+            .inst_addr = inst_addr,
+            .callee_name = callee_name,
+            .semantics = semantics,
+            .confidence = confidence,
+            .callee_language = callee_language,
+        };
+    }
+};
+
+/// Result of running a language adapter on a single function.
+pub const AdapterAnalysis = struct {
+    language: Language,
+    memory_model: MemoryModel,
+    confidence: f32,
+    ffi_calls: std.ArrayList(FFICallInfo),
+    allocator: std.mem.Allocator,
+
+    pub fn init(alloc: std.mem.Allocator, lang: Language) !AdapterAnalysis {
+        var result = AdapterAnalysis{
+            .language = lang,
+            .memory_model = MemoryModel.forLanguage(lang),
+            .confidence = 0.0,
+            .ffi_calls = undefined,
+            .allocator = alloc,
+        };
+        result.ffi_calls = try std.ArrayList(FFICallInfo).initCapacity(alloc, 16);
+        return result;
+    }
+
+    pub fn deinit(self: *AdapterAnalysis) void {
+        self.ffi_calls.deinit(self.allocator);
+    }
+
+    pub fn addCall(self: *AdapterAnalysis, info: FFICallInfo) !void {
+        try self.ffi_calls.append(self.allocator, info);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════
+
+test "MemoryModel - displayName" {
+    try std.testing.expectEqualStrings("Manual", MemoryModel.manual.displayName());
+    try std.testing.expectEqualStrings("RAII", MemoryModel.raii.displayName());
+    try std.testing.expectEqualStrings("RefCount", MemoryModel.refcount.displayName());
+    try std.testing.expectEqualStrings("GC", MemoryModel.gc.displayName());
+    try std.testing.expectEqualStrings("Hybrid", MemoryModel.hybrid.displayName());
+}
+
+test "MemoryModel - allowsLeak" {
+    try std.testing.expect(MemoryModel.manual.allowsLeak());
+    try std.testing.expect(MemoryModel.refcount.allowsLeak());
+    try std.testing.expect(MemoryModel.hybrid.allowsLeak());
+    try std.testing.expect(!MemoryModel.raii.allowsLeak());
+    try std.testing.expect(!MemoryModel.gc.allowsLeak());
+}
+
+test "MemoryModel - forLanguage mapping" {
+    try std.testing.expectEqual(.manual, MemoryModel.forLanguage(.c));
+    try std.testing.expectEqual(.raii, MemoryModel.forLanguage(.cpp));
+    try std.testing.expectEqual(.raii, MemoryModel.forLanguage(.rust));
+    try std.testing.expectEqual(.raii, MemoryModel.forLanguage(.zig));
+    try std.testing.expectEqual(.refcount, MemoryModel.forLanguage(.python));
+    try std.testing.expectEqual(.hybrid, MemoryModel.forLanguage(.go));
+    try std.testing.expectEqual(.hybrid, MemoryModel.forLanguage(.csharp));
+    try std.testing.expectEqual(.gc, MemoryModel.forLanguage(.java));
+}
+
+test "FFISemantics - displayName" {
+    try std.testing.expectEqualStrings("ReturnsOwned", FFISemantics.returns_owned.displayName());
+    try std.testing.expectEqualStrings("ReturnsBorrowed", FFISemantics.returns_borrowed.displayName());
+    try std.testing.expectEqualStrings("ConsumesArg", FFISemantics.consumes_arg.displayName());
+    try std.testing.expectEqualStrings("InOut", FFISemantics.inout.displayName());
+    try std.testing.expectEqualStrings("Unknown", FFISemantics.unknown.displayName());
+}
+
+test "FFICallInfo - init and fields" {
+    const info = FFICallInfo.init(
+        0x1000,
+        "PyBytes_FromString",
+        .returns_owned,
+        0.95,
+        .python,
+    );
+    try std.testing.expectEqual(@as(u64, 0x1000), info.inst_addr);
+    try std.testing.expectEqualStrings("PyBytes_FromString", info.callee_name);
+    try std.testing.expectEqual(FFISemantics.returns_owned, info.semantics);
+    try std.testing.expect(info.confidence > 0.9);
+    try std.testing.expectEqual(Language.python, info.callee_language);
+}
+
+test "AdapterAnalysis - init and lifecycle" {
+    var analysis = try AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    try std.testing.expectEqual(Language.python, analysis.language);
+    try std.testing.expectEqual(MemoryModel.refcount, analysis.memory_model);
+    try std.testing.expectEqual(@as(f32, 0.0), analysis.confidence);
+    try std.testing.expectEqual(@as(usize, 0), analysis.ffi_calls.items.len);
+
+    const info = FFICallInfo.init(1, "PyBytes_FromString", .returns_owned, 0.9, .python);
+    try analysis.addCall(info);
+    try std.testing.expectEqual(@as(usize, 1), analysis.ffi_calls.items.len);
+}
