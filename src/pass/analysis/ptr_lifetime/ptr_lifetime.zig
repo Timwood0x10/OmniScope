@@ -108,10 +108,6 @@ const mergeAllocSite = core.mergeAllocSite;
 const propagateOrigin = core.propagateOrigin;
 const propagateCrossFunctionFreedStatus = core.propagateCrossFunctionFreedStatus;
 
-// PERF v2: Instruction cache and classifier for fast filtering
-const inst_cache_mod = @import("../../../ir/inst_cache.zig");
-const InstCache = inst_cache_mod.InstCache;
-
 // Instruction tracking handlers (extracted from trackInstruction switch)
 const track = @import("ptr_lifetime_track.zig");
 const TrackContext = track.TrackContext;
@@ -195,7 +191,7 @@ pub const PtrLifetimePass = struct {
         var stats = LifetimeStats{};
 
         // R8.0: Use shared MemoryGraph from PassContext (unified pointer state).
-        const mem_graph: *memory_graph.MemoryGraph = try ctx.getMemoryGraph();
+        const mem_graph: ?*memory_graph.MemoryGraph = &ctx.memory_graph;
 
         // Phase R5.1: Initialize Hook system for Rust ownership tracking.
         try hooks.initHookStates(ctx.allocator);
@@ -311,7 +307,7 @@ pub const PtrLifetimePass = struct {
         // R8.3-f: Post-analysis cross-function freed status propagation.
         {
             const t0 = std.time.nanoTimestamp();
-            const propagated = try propagateCrossFunctionFreedStatus(ctx.allocator, mem_graph, &ctx.global_alloc_tracker, toZoneLanguage(ctx.module_language.language));
+            const propagated = try propagateCrossFunctionFreedStatus(ctx.allocator, mem_graph.?, &ctx.global_alloc_tracker, toZoneLanguage(ctx.module_language.language));
             t_postprocess = std.time.nanoTimestamp() - t0;
             if (propagated > 0) {
                 diag.info("[R8.3-f] Cross-function alias propagation: {} allocations marked freed via alias chain", .{propagated});
@@ -526,10 +522,6 @@ pub const PtrLifetimePass = struct {
         else
             "unknown";
 
-        // Local InstCache for this function's analysis
-        var inst_cache = @import("../../../ir/inst_cache.zig").InstCache.init(ctx.allocator);
-        defer inst_cache.deinit();
-
         stats.total_functions_analyzed += 1;
 
         var pointer_map = std.AutoHashMap(c.LLVMValueRef, PtrInfo).init(ctx.allocator);
@@ -593,7 +585,7 @@ pub const PtrLifetimePass = struct {
                 if (total_insts > 50000) return;
                 {
                     const t0 = std.time.nanoTimestamp();
-                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map, &inst_cache);
+                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
                     t_track.* += std.time.nanoTimestamp() - t0;
                 }
                 {
@@ -623,7 +615,6 @@ pub const PtrLifetimePass = struct {
         zone: ZoneKind,
         is_ffi_func: bool,
         lifetime_map: *LifetimeMap,
-        inst_cache: *InstCache,
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -640,7 +631,6 @@ pub const PtrLifetimePass = struct {
             .zone = zone,
             .is_ffi_func = is_ffi_func,
             .lifetime_map = lifetime_map,
-            .inst_cache = inst_cache,
         };
 
         switch (opcode) {

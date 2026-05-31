@@ -116,6 +116,9 @@ test "LifetimeAnalysisResult - initialization" {
 test "classify_ptr_origin - pattern matching" {
     const result = classify_ptr_origin(null, c.LLVMAlloca, null, std.testing.allocator) catch null;
     try std.testing.expect(result != null);
+    if (result) |r| {
+        if (r.needs_free) std.testing.allocator.free(r.source_desc);
+    }
 }
 
 test "isFreeFunction - detection" {

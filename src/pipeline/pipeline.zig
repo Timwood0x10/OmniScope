@@ -150,9 +150,7 @@ pub const Pipeline = struct {
             .issue_verifier = &issue_verifier,
         };
         // Inject resource family registry into memory graph for P2/P3 classification
-        // Lazy-init MemoryGraph here since pipeline needs to configure it before any pass runs.
-        ctx.memory_graph = try @import("../semantics/memory_graph.zig").MemoryGraph.init(self.allocator);
-        ctx.memory_graph.?.setFamilyRegistry(&family_registry);
+        ctx.memory_graph.setFamilyRegistry(&family_registry);
 
         // CRITICAL: Deinit semantics CallGraph to prevent GPA memory leak warnings.
         // Must be deferred because semantics_call_graph is populated later in CallGraphPass.run().

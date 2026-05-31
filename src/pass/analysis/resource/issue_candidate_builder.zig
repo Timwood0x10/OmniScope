@@ -117,8 +117,19 @@ pub const IssueCandidate = struct {
     }
 
     /// Add an evidence item to this candidate.
+    /// Always duplicates the input string so callers can pass literals or owned strings safely.
     pub fn addEvidence(self: *IssueCandidate, item: []const u8) !void {
-        try self.evidence.append(self.allocator, item);
+        const owned = try self.allocator.dupe(u8, item);
+        errdefer self.allocator.free(owned);
+        try self.evidence.append(self.allocator, owned);
+    }
+
+    /// Format and add an evidence item. Combines allocPrint + addEvidence in one step
+    /// to avoid leaking the intermediate allocPrint result when addEvidence dupes internally.
+    pub fn addEvidenceFmt(self: *IssueCandidate, comptime fmt: []const u8, args: anytype) !void {
+        const formatted = try std.fmt.allocPrint(self.allocator, fmt, args);
+        errdefer self.allocator.free(formatted);
+        try self.evidence.append(self.allocator, formatted);
     }
 };
 
@@ -169,11 +180,7 @@ pub const CandidateBuilder = struct {
         c.release_family = release_fam;
         c.inst_addr = inst_addr;
         try c.addEvidence("Family mismatch detected");
-        try c.addEvidence(try std.fmt.allocPrint(
-            self.allocator,
-            "alloc_family={s} release_family={s}",
-            .{ alloc_fam, release_fam },
-        ));
+        try c.addEvidenceFmt("alloc_family={s} release_family={s}", .{ alloc_fam, release_fam });
         c.reason = try std.fmt.allocPrint(
             self.allocator,
             "{s} freed by {s}-family deallocator in {s}",
@@ -202,11 +209,7 @@ pub const CandidateBuilder = struct {
         c.inst_addr = use_inst_addr;
         c.current_state = "released";
         try c.addEvidence("Resource accessed after release");
-        try c.addEvidence(try std.fmt.allocPrint(
-            self.allocator,
-            "released by {s}",
-            .{release_callee},
-        ));
+        try c.addEvidenceFmt("released by {s}", .{release_callee});
         c.reason = try std.fmt.allocPrint(
             self.allocator,
             "Use after release by {s} in {s}",
@@ -241,11 +244,7 @@ pub const CandidateBuilder = struct {
         c.current_state = "owned";
         try c.addEvidence("Resource allocated but not freed");
         if (alloc_fam) |f| {
-            try c.addEvidence(try std.fmt.allocPrint(
-                self.allocator,
-                "family={s}",
-                .{f},
-            ));
+            try c.addEvidenceFmt("family={s}", .{f});
         }
         if (has_valid_escape) {
             try c.addEvidence("Has valid escape (may be intentional transfer)");
@@ -290,11 +289,7 @@ pub const CandidateBuilder = struct {
         c.alloc_ptr = ptr_val;
         c.inst_addr = inst_addr;
         c.escape_kind = escape_kind_name;
-        try c.addEvidence(try std.fmt.allocPrint(
-            self.allocator,
-            "Pointer escapes via {s}",
-            .{escape_kind_name},
-        ));
+        try c.addEvidenceFmt("Pointer escapes via {s}", .{escape_kind_name});
         c.reason = try std.fmt.allocPrint(
             self.allocator,
             "{s} escape via {s}() in {s}",
@@ -324,11 +319,7 @@ pub const CandidateBuilder = struct {
         c.alloc_ptr = ptr_val;
         c.inst_addr = inst_addr;
         try c.addEvidence("Unknown function semantics");
-        try c.addEvidence(try std.fmt.allocPrint(
-            self.allocator,
-            "Callee '{s}' not in registry",
-            .{unknown_callee},
-        ));
+        try c.addEvidenceFmt("Callee '{s}' not in registry", .{unknown_callee});
         c.reason = try std.fmt.allocPrint(
             self.allocator,
             "Unknown: '{s}' in {s} — consider adding to semantic model",

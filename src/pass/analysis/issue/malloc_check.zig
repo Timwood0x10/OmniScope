@@ -242,9 +242,9 @@ pub const MallocCheckPass = struct {
         cand.inst_addr = @as(u64, @intFromPtr(use_inst));
         cand.is_on_ffi_path = true;
         cand.addEvidence("malloc() result used without null check") catch {};
-        cand.addEvidence(std.fmt.allocPrint(ctx.allocator, "Function: {s}", .{caller_name}) catch unreachable) catch {};
+        cand.addEvidenceFmt("Function: {s}", .{caller_name}) catch {};
 
-        const issue = Issue.initWithTrace(
+        var issue = Issue.initWithTrace(
             .malloc_unchecked,
             cand.reason orelse message,
             location,
@@ -252,8 +252,10 @@ pub const MallocCheckPass = struct {
             cand.raw_score,
             trace,
         );
+        errdefer issue.deinit(ctx.allocator);
 
         try ctx.addIssue(&issue);
+        defer cand.deinit();
 
         diag.warn("Unchecked {s} result in function: {s}", .{ alloc_func_name, caller_name });
     }

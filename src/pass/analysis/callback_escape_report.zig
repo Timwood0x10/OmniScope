@@ -117,7 +117,7 @@ pub fn reportMissingKeepAlive(
     ka_cand.func_name = func_name;
     ka_cand.addEvidence("Missing runtime.KeepAlive for Go pointer passed to C") catch {};
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -125,7 +125,7 @@ pub fn reportMissingKeepAlive(
         ka_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[NO-KEEPALIVE] {s} -> {s}() in {s}", .{ "Go ptr", call.callee_name, func_name });
 }
@@ -202,7 +202,7 @@ pub fn reportGenericCallbackEscape(
     co_cand.is_on_ffi_path = true;
     co_cand.addEvidence("Go pointer stored in C callback context without KeepAlive") catch {};
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
@@ -210,7 +210,7 @@ pub fn reportGenericCallbackEscape(
         co_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-ESCAPE] {s} -> {s} in {s}{s}", .{ "fn_ptr", escape.receiver_name, func_name, ffi_note });
 }
@@ -240,7 +240,7 @@ pub fn reportSignatureMismatch(
     uaf_cand.is_on_ffi_path = true;
     uaf_cand.addEvidence("Potential use-after-free in CGo callback") catch {};
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .callback_signature_mismatch,
         message,
         location,
@@ -248,7 +248,7 @@ pub fn reportSignatureMismatch(
         uaf_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-SIG] {s} -> {s} in {s}", .{ "sig_mismatch", escape.receiver_name, func_name });
 }
@@ -298,16 +298,8 @@ pub fn generateMallocLeakCandidate(
     candidate.func_name = func_name;
     candidate.inst_addr = 0; // Will be set by caller if available
 
-    try candidate.addEvidence(try std.fmt.allocPrint(
-        ctx.allocator,
-        "{d} malloc/calloc calls found",
-        .{malloc_count},
-    ));
-    try candidate.addEvidence(try std.fmt.allocPrint(
-        ctx.allocator,
-        "{d} free() calls found - {d} allocations never freed",
-        .{ free_count, malloc_count - free_count },
-    ));
+    try candidate.addEvidenceFmt("{d} malloc/calloc calls found", .{malloc_count});
+    try candidate.addEvidenceFmt("{d} free() calls found - {d} allocations never freed", .{ free_count, malloc_count - free_count });
 
     candidate.reason = try std.fmt.allocPrint(
         ctx.allocator,
@@ -328,18 +320,7 @@ pub fn reportMallocLeak(
 ) !void {
     const candidate = try generateMallocLeakCandidate(ctx, func_name, malloc_count, free_count, diag);
     const location = Location.init(func_name);
-
-    const reason_msg = if (candidate.reason) |r|
-        try ctx.allocator.dupe(u8, r)
-    else
-        "Memory leak detected";
-    errdefer {
-        if (candidate.reason != null) {
-            ctx.allocator.free(reason_msg);
-        }
-    }
-
-    var issue = Issue.initWithTrace(.memory_leak, reason_msg, location, .low, 0.5, &[_]TraceEntry{});
+    var issue = Issue.init(.memory_leak, candidate.reason orelse "Memory leak detected", location, .low, 0.5);
     errdefer issue.deinit(ctx.allocator);
     try ctx.addIssue(&issue);
 }
@@ -368,7 +349,7 @@ pub fn reportFreeOrphan(
     up_cand.is_on_ffi_path = true;
     up_cand.addEvidence("Unsafe pointer usage detected") catch {};
 
-    const issue = Issue.initWithTrace(
+    var issue = Issue.initWithTrace(
         .double_free,
         message,
         location,
@@ -376,7 +357,7 @@ pub fn reportFreeOrphan(
         up_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[FREE-ORPHAN] {d} frees vs {d} allocs in {s}", .{ free_count, malloc_count, func_name });
 }

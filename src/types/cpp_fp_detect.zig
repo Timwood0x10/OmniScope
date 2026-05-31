@@ -147,7 +147,7 @@ pub fn detectDoubleFree(
             }
 
             // P2 FIX: Validate with MemoryGraph.isDoubleFreedOnSamePath
-            const mg_double_freed = (try ctx.getMemoryGraph()).isDoubleFreedOnSamePath(@as(u64, alloc_id));
+            const mg_double_freed = ctx.memory_graph.isDoubleFreedOnSamePath(@as(u64, alloc_id));
             if (!mg_double_freed) {
                 diag.debug("DOUBLE-FREE-SKIP: alloc {d} not confirmed by MemoryGraph (multi-path cleanup)", .{alloc_id});
                 continue;
@@ -175,6 +175,7 @@ pub fn detectDoubleFree(
             stats.double_frees += 1;
             // P20: Structured candidate evidence
             var df_cand = IssueCandidate.init(ctx.allocator, .double_release, 0.92);
+            defer df_cand.deinit();  // FIXED: Prevent evidence ArrayList leak
             df_cand.func_name = first_func;
             df_cand.addEvidence("Same-BB double-free detected") catch {};
 
@@ -188,6 +189,7 @@ pub fn detectDoubleFree(
                 diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
                 continue;
             };
+            defer ctx.allocator.free(msg);
 
             ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {
                 diag.warn("Failed to register double_free issue with message", .{});
@@ -341,6 +343,7 @@ pub fn detectMemoryLeaks(
                         stats.memory_leaks += 1;
                         // P20: Structured candidate evidence
                         var cpp_cand = IssueCandidate.init(ctx.allocator, .leak, 0.5);
+                        defer cpp_cand.deinit();
                         cpp_cand.func_name = alloc_info.func_name;
                         cpp_cand.addEvidence("C++ internal leak: no free path") catch {};
                         ctx.addIssue(&Issue.init(
@@ -378,6 +381,7 @@ pub fn detectMemoryLeaks(
                 stats.memory_leaks += 1;
                 // P20: Structured candidate evidence
                 var gen_cand = IssueCandidate.init(ctx.allocator, .leak, 0.7);
+                defer gen_cand.deinit();
                 gen_cand.func_name = alloc_info.func_name;
                 gen_cand.alloc_ptr = @as(u64, alloc_info.inst_id);
                 gen_cand.inst_addr = @as(u64, alloc_info.inst_id);

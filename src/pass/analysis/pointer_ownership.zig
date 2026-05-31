@@ -167,10 +167,6 @@ pub const PointerOwnershipPass = struct {
         // OPT #2: Cache for isRustFFIRelevantFunction (pure function, LLVM IR immutable)
         var ffi_relevant_cache = std.AutoHashMap(usize, bool).init(ctx.allocator);
         defer ffi_relevant_cache.deinit();
-        // OPT #3: Instruction classification cache - avoids redundant classification calls
-        // Key: instruction pointer (usize), Value: packed classification flags
-        var inst_classification_cache = std.AutoHashMap(usize, analysis.InstClassification).init(ctx.allocator);
-        defer inst_classification_cache.deinit();
         const mod = ctx.module.?.raw;
         const has_debug_info = checkDebugMetadataAvailable(mod);
         if (!has_debug_info) {
@@ -183,8 +179,7 @@ pub const PointerOwnershipPass = struct {
             var mg_unfreed_count: usize = 0;
 
             // Source 1: MemoryGraph — all allocation sites (both freed and unfreed)
-            const mg = try ctx.getMemoryGraph();
-            var mg_iter = mg.nodes.iterator();
+            var mg_iter = ctx.memory_graph.nodes.iterator();
             while (mg_iter.next()) |entry| {
                 const node = entry.value_ptr.*;
 
@@ -284,7 +279,6 @@ pub const PointerOwnershipPass = struct {
                     if (s3_zone == .safe or s3_zone == .runtime_internal) continue;
                     var bb = c.LLVMGetFirstBasicBlock(ir_func);
                     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                        const bb_id = id_map.getOrPutId(@intFromPtr(bb)) catch 0;
                         var inst = c.LLVMGetFirstInstruction(bb);
                         while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                             const opcode = c.LLVMGetInstructionOpcode(inst);
@@ -292,14 +286,16 @@ pub const PointerOwnershipPass = struct {
                                 const ptr_arg = c.LLVMGetOperand(inst, 0);
                                 if (@intFromPtr(ptr_arg) == 0) continue;
                                 const ptr_id: u32 = id_map.getOrPutId(@intFromPtr(ptr_arg)) catch continue;
+                                const fn_name_raw = c.LLVMGetValueName(ir_func);
+                                const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
                                 const fsite = try free_pool.alloc();
                                 fsite.* = .{
                                     .inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch ptr_id,
-                                    .func_name = s3_name,
+                                    .func_name = fn_name,
                                     .lang = identifyLanguageFromCallee(inst, opcode),
                                     .free_type = classifyFree(inst, opcode),
                                     .ptr_value_id = ptr_id,
-                                    .bb_id = bb_id,
+                                    .bb_id = id_map.getOrPutId(@intFromPtr(bb)) catch 0,
                                     .source = .ir_scan,
                                     .debug_file = null,
                                     .debug_line = null,
@@ -409,7 +405,6 @@ pub const PointerOwnershipPass = struct {
                 &alloc_pool,
                 &free_pool,
                 &null_check_recognizer,
-                &inst_classification_cache,
             ) catch |err| {
                 diag.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, func_name });
                 ctx.recordDegradedFunction();

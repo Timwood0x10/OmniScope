@@ -204,7 +204,6 @@ pub const MemoryGraph = struct {
             .alloc_lang = alloc_lang,
             .free_sites = std.ArrayList(FreeRecord).empty,
             .escapes = null,
-            .closure_version = 0,
         };
         errdefer node.aliases.deinit();
         try node.aliases.put(ret_value_ptr, {});
@@ -270,7 +269,6 @@ pub const MemoryGraph = struct {
             .free_lang = null,
             .free_sites = std.ArrayList(FreeRecord).empty,
             .escapes = null,
-            .closure_version = 0,
         };
 
         try graph.node_store.append(graph.allocator, lazy_node);

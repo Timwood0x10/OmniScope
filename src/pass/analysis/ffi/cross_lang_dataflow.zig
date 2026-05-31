@@ -10,7 +10,6 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
-const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -262,7 +261,7 @@ pub const CrossLangDataFlow = struct {
                                 if (!alloc.freed) {
                                     const free_lang = classifyFreeLanguage(called_name, .unknown);
                                     try alloc.free_langs.append(ctx.allocator, free_lang);
-                                    try alloc.free_funcs.append(ctx.allocator, called_name);
+                                    try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
                                     alloc.freed = true;
                                 }
                             }
@@ -326,7 +325,7 @@ pub const CrossLangDataFlow = struct {
                         // Check if any arguments are tracked pointers
                         // LLVMGetNumOperands includes callee at index 0; arguments start at index 1.
                         const num_operands = c.LLVMGetNumOperands(inst);
-                        var arg_idx: u32 = 1; // FIXED: Skip callee operand at index 0
+                        var arg_idx: u32 = 0;
                         while (arg_idx < num_operands) : (arg_idx += 1) {
                             const arg = c.LLVMGetOperand(inst, arg_idx);
                             const arg_val = @intFromPtr(arg);

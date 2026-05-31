@@ -263,25 +263,7 @@ pub const GlobalAllocTracker = struct {
     }
 };
 
-/// R7.2: Channel mode for analysis pass gating.
-/// Defined at module level so it can be re-exported by pass.zig
-pub const ChannelMode = enum {
-    full,
-    limited,
-    skip,
-};
-
 /// Main pass context - holds all analysis state and provides unified API
-///
-/// ## Lazy Initialization (v0.2.0)
-///
-/// Heavy resources are lazily initialized to reduce cold-start overhead:
-///   - `memory_graph`: Initialized on first access via getMemoryGraph()
-///     Saves ~2-5% startup cost when early_exit triggers before any
-///     pass consumes the MemoryGraph (e.g., pure C modules without FFI).
-///
-/// All other fields remain eagerly initialized as they are lightweight
-/// (HashMap.init is cheap — no allocation until first insert).
 pub const PassContext = struct {
     allocator: Allocator,
     module: ?ModuleRef,
@@ -307,10 +289,7 @@ pub const PassContext = struct {
     cross_lang_edges: std.ArrayList(CrossLangEdge),
     early_exit: bool,
     global_alloc_tracker: GlobalAllocTracker,
-    /// Lazy-initialized: null until first access via getMemoryGraph().
-    /// Avoids allocating internal HashMaps/ArrayLists when the pipeline
-    /// exits early (e.g., no FFI boundaries detected).
-    memory_graph: ?memory_graph_mod.MemoryGraph,
+    memory_graph: memory_graph_mod.MemoryGraph,
     danger_surface_relevant: std.AutoHashMap(u64, void),
     ffi_auto_relevant: std.AutoHashMap(u64, void),
     relevant_functions: std.AutoHashMap(u64, void),
@@ -378,7 +357,7 @@ pub const PassContext = struct {
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
             .early_exit = false,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
-            .memory_graph = null,
+            .memory_graph = try memory_graph_mod.MemoryGraph.init(allocator),
             .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
             .ffi_auto_relevant = std.AutoHashMap(u64, void).init(allocator),
             .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
@@ -439,9 +418,7 @@ pub const PassContext = struct {
         }
         self.cross_lang_edges.deinit(self.allocator);
         self.global_alloc_tracker.deinit();
-        if (self.memory_graph) |*mg| {
-            mg.deinit();
-        }
+        self.memory_graph.deinit();
         self.danger_surface_relevant.deinit();
         self.ffi_auto_relevant.deinit();
         self.relevant_functions.deinit();
@@ -623,30 +600,6 @@ pub const PassContext = struct {
 
     pub fn getDataFlowGraph(self: *const PassContext) *DataFlowGraph {
         return self.data_flow_graph;
-    }
-
-    /// Lazy initializer for MemoryGraph.
-    ///
-    /// The MemoryGraph is a heavy resource (internal HashMaps, ArrayLists)
-    /// that is only needed by ptr-lifetime, danger-surface, and pointer-ownership
-    /// passes. By deferring its initialization to first access, we avoid
-    /// the allocation overhead when early_exit triggers before these passes run.
-    ///
-    /// Returns:
-    ///   - Pointer to the initialized MemoryGraph (always non-null after call)
-    ///
-    /// Errors:
-    ///   - OutOfMemory if this is the first call and allocation fails
-    pub fn getMemoryGraph(self: *PassContext) !*memory_graph_mod.MemoryGraph {
-        if (self.memory_graph == null) {
-            self.memory_graph = try memory_graph_mod.MemoryGraph.init(self.allocator);
-        }
-        return &self.memory_graph.?;
-    }
-
-    /// Check if MemoryGraph has been initialized (for diagnostic purposes).
-    pub fn isMemoryGraphReady(self: *const PassContext) bool {
-        return self.memory_graph != null;
     }
 
     pub fn addNode(self: *PassContext, node: anytype) !void {
@@ -884,6 +837,13 @@ pub const PassContext = struct {
         };
     }
 
+    /// R7.2: Channel mode for analysis pass gating.
+    pub const ChannelMode = enum {
+        full,
+        limited,
+        skip,
+    };
+
     pub fn getOrComputeZoneByName(self: *PassContext, func_name: []const u8) zone_classifier.ZoneKind {
         return self.cachedZoneLookup(func_name) orelse blk: {
             const z = zone_classifier.classifyFunction(func_name, null);
@@ -940,13 +900,6 @@ pub const PassContext = struct {
         const raw_ffis = self.getCrossLangEdges();
         if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
 
-        // Lazy-init MemoryGraph if needed (internal error handling)
-        const mg = self.getMemoryGraph() catch |err| {
-            log.warn("[pass-types] isOnDangerPathFull: MemoryGraph lazy-init failed: {}", .{err});
-            return self.isRelevantAlloc(ptr_val);
-        };
-        _ = mg;
-
         if (self.ffi_set_cache == null) {
             var ffi_set = std.StringHashMap(void).init(self.allocator);
             for (raw_ffis) |ffe| {
@@ -976,7 +929,7 @@ pub const PassContext = struct {
         }
         self.danger_path_visited_cache.?.clearRetainingCapacity();
 
-        const result = self.memory_graph.?.isOnDangerPath(ptr_val, self.danger_surfaces_cache.?, &self.danger_path_visited_cache.?, &self.ffi_set_cache.?);
+        const result = self.memory_graph.isOnDangerPath(ptr_val, self.danger_surfaces_cache.?, &self.danger_path_visited_cache.?, &self.ffi_set_cache.?);
         return result != .none;
     }
 

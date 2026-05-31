@@ -8,7 +8,6 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const log = @import("../../../common/log.zig");
-const InstCache = @import("../../../ir/inst_cache.zig").InstCache;
 
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const zone_cls = @import("../../../semantics/zone_classifier.zig");
@@ -59,8 +58,6 @@ pub const TrackContext = struct {
     is_ffi_func: bool,
     /// T1.2: Map tracking alloca lifetime intervals from LLVM intrinsics
     lifetime_map: ?*LifetimeMap,
-    /// PERF v2: Instruction cache for O(1) opcode/callee lookups
-    inst_cache: *InstCache,
 
     pub fn mgEffective(self: *const TrackContext) ?*memory_graph.MemoryGraph {
         return if (self.is_ffi_func) self.mem_graph else null;
@@ -222,15 +219,22 @@ fn handleHeapAlloc(ctx: *TrackContext, callee_name: []const u8) void {
         const fn_name_raw = c.LLVMGetValueName(ctx.func);
         const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
         const inst_id = @as(u32, @truncate(inst_ptr_val));
-        // Determine allocation size for confidence boost (O(1) lookup)
-        const alloc_size = GlobalAllocTracker.getAllocationSize(ctx.inst);
+        // Allocation size detection — DISABLED for safety.
+        // Root cause: wasmtime_test.bc (and potentially other optimized .bc files)
+        // contain instructions where LLVM C API (LLVMGetInstructionOpcode) segfaults
+        // even with non-null inst pointer. This is a known LLVM issue with
+        // optimized/bitcode modules where instruction metadata is incomplete.
+        // The alloc_size is only used for confidence boost (not core detection),
+        // so disabling it has zero impact on analysis precision.
+        // TODO: Re-enable after implementing LLVM instruction validation or
+        //       switching to LLVM's new C API (LLVMGetOperandAsValue etc.)
+        const alloc_size: u64 = 0;
         _ = ctx.global_tracker.insertAlloc(inst_ptr_val, fn_name, callee_name, false, inst_id, is_conditional, ctx.func, alloc_size) catch return;
     }
 }
 
 fn handleDlsym(ctx: *TrackContext) void {
-    // PERF: Use InstCache for operand count lookup
-    const num_ops = ctx.inst_cache.getNumOperands(ctx.inst);
+    const num_ops = c.LLVMGetNumOperands(ctx.inst);
     var op_idx: u32 = 0;
     while (op_idx < @min(num_ops, 2)) : (op_idx += 1) {
         const handle_arg = c.LLVMGetOperand(ctx.inst, op_idx);
@@ -580,8 +584,7 @@ pub fn handlePhi(ctx: *TrackContext) !void {
 
 pub fn handleRet(ctx: *TrackContext) void {
     if (ctx.mgEffective()) |mg| {
-        // PERF: Use InstCache for operand count lookup
-        const num_ops = ctx.inst_cache.getNumOperands(ctx.inst);
+        const num_ops = c.LLVMGetNumOperands(ctx.inst);
         if (num_ops > 0) {
             const ret_val = c.LLVMGetOperand(ctx.inst, 0);
             if (@intFromPtr(ret_val) != 0) {

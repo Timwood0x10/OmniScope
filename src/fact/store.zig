@@ -17,6 +17,12 @@ const FactKind = @import("fact.zig").FactKind;
 /// Fact store with SoA layout
 ///
 /// Principle: Structure of Arrays for cache-friendliness and append-only for parallelism
+///
+/// ## Performance Optimization (v0.3.0)
+///
+/// Added secondary index (kind_index) for O(1) queryByKind lookups.
+/// Without this index, queryByKind requires O(n) linear scan which becomes
+/// a bottleneck when fact count exceeds ~1000 (common in real-world modules).
 pub const FactStore = struct {
     allocator: std.mem.Allocator,
     mutex: std.Thread.Mutex,
@@ -24,6 +30,11 @@ pub const FactStore = struct {
     subj: std.ArrayList(u32),
     obj: std.ArrayList(u32),
     ctx: std.ArrayList(u32),
+
+    /// Secondary index: FactKind → list of fact indices.
+    /// Enables O(1) queryByKind instead of O(n) linear scan.
+    /// Updated incrementally on each insert().
+    kind_index: std.AutoHashMap(FactKind, std.ArrayList(usize)),
 
     /// Dirty bit: true if any fact has been inserted since last markClean().
     /// Enables passes to skip expensive downstream processing when no new data.
@@ -44,11 +55,19 @@ pub const FactStore = struct {
             .subj = try std.ArrayList(u32).initCapacity(allocator, 1024),
             .obj = try std.ArrayList(u32).initCapacity(allocator, 1024),
             .ctx = try std.ArrayList(u32).initCapacity(allocator, 1024),
+            .kind_index = std.AutoHashMap(FactKind, std.ArrayList(usize)).init(allocator),
         };
     }
 
     /// Deinitialize the fact store
     pub fn deinit(self: *FactStore) void {
+        // Free kind_index lists
+        var iter = self.kind_index.iterator();
+        while (iter.next()) |entry| {
+            entry.value_ptr.deinit(self.allocator);
+        }
+        self.kind_index.deinit();
+
         self.kinds.deinit(self.allocator);
         self.subj.deinit(self.allocator);
         self.obj.deinit(self.allocator);
@@ -59,6 +78,8 @@ pub const FactStore = struct {
     ///
     /// Automatically sets the dirty bit to true, indicating new data is available.
     /// Downstream passes can check isDirty() to decide whether to re-process.
+    ///
+    /// Also updates the kind_index secondary index for O(1) queryByKind lookups.
     ///
     /// Parameters:
     ///   - kind: The fact kind
@@ -81,12 +102,23 @@ pub const FactStore = struct {
             self.subj.shrinkRetainingCapacity(orig_len);
             self.obj.shrinkRetainingCapacity(orig_len);
             self.ctx.shrinkRetainingCapacity(orig_len);
+            // Also undo index update on error (remove last entry)
+            if (self.kind_index.getPtr(kind)) |list| {
+                _ = list.pop();
+            }
         }
 
         try self.kinds.append(self.allocator, kind);
         try self.subj.append(self.allocator, subject);
         try self.obj.append(self.allocator, object);
         try self.ctx.append(self.allocator, context);
+
+        // Update secondary index for O(1) queryByKind
+        const gop = try self.kind_index.getOrPut(kind);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = try std.ArrayList(usize).initCapacity(self.allocator, 16);
+        }
+        try gop.value_ptr.append(self.allocator, orig_len);
 
         // Mark dirty on successful insert
         self.dirty = true;
@@ -166,17 +198,23 @@ pub const FactStore = struct {
 
     /// Query facts by kind
     ///
-    /// Returns a slice of indices matching the given kind
+    /// Returns a slice of indices matching the given kind.
+    /// Uses secondary index for O(1) lookup (instead of O(n) linear scan).
+    ///
+    /// Performance: O(1) hash lookup + O(k) copy where k = number of matches.
     pub fn queryByKind(self: *FactStore, kind: FactKind, allocator: std.mem.Allocator) ![]usize {
         self.mutex.lock();
         defer self.mutex.unlock();
-        var indices = try std.ArrayList(usize).initCapacity(allocator, 128);
-        for (self.kinds.items, 0..) |k, i| {
-            if (k == kind) {
-                try indices.append(allocator, i);
-            }
+
+        // Use secondary index for O(1) lookup
+        if (self.kind_index.get(kind)) |indices| {
+            if (indices.items.len == 0) return &.{};
+            // Return a copy of the indices (caller must free)
+            return try allocator.dupe(usize, indices.items);
         }
-        return indices.toOwnedSlice(allocator);
+
+        // Fallback: empty result (kind not found in index)
+        return &.{};
     }
 };
 
