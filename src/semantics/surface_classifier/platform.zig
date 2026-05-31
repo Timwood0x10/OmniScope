@@ -58,13 +58,6 @@ pub fn generatePlatformHint(func_name: []const u8, profile: *const PlatformProfi
         // Map runtime category to surface suggestion
         const surface = runtimeToSurface(runtime_class.category);
 
-        log.debug("PLATFORM-HINT: '{s}' -> {s} ({s}) [conf={d:.0}%]", .{
-            func_name,
-            @tagName(surface),
-            runtime_class.reason,
-            @as(u8, @intFromFloat(runtime_class.confidence * 100)),
-        });
-
         return .{
             .suggested_surface = surface,
             .confidence = if (runtime_class.confidence >= 0.9) .high else if (runtime_class.confidence >= 0.7) .medium else .low,
@@ -111,12 +104,6 @@ pub fn mergePlatformHint(
 ) FunctionSurface {
     // P8: Boundary functions are NEVER downgraded by platform rules
     if (is_boundary or current_surface == .boundary) {
-        if (platform_hint) |hint| {
-            log.debug("PLATFORM-MERGE: boundary override: keeping {s} despite platform hint {s}", .{
-                @tagName(current_surface),
-                @tagName(hint.suggested_surface),
-            });
-        }
         return .boundary;
     }
 
@@ -135,10 +122,6 @@ pub fn mergePlatformHint(
             // but NOT boundary or unknown (handled above)
             switch (current_surface) {
                 .user_code, .dependency => {
-                    log.debug("PLATFORM-MERGE: high-conf hint overrides {s} -> {s}", .{
-                        @tagName(current_surface),
-                        @tagName(hint.suggested_surface),
-                    });
                     return hint.suggested_surface;
                 },
                 else => {
@@ -150,10 +133,6 @@ pub fn mergePlatformHint(
         .medium => {
             // Medium-confidence hint only influences if current is user_code
             if (current_surface == .user_code) {
-                log.debug("PLATFORM-MERGE: medium-conf hint softens {s} -> {s}", .{
-                    @tagName(current_surface),
-                    @tagName(hint.suggested_surface),
-                });
                 return hint.suggested_surface;
             }
             return current_surface;

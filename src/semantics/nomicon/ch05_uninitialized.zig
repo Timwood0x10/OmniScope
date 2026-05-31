@@ -99,15 +99,6 @@ pub fn detect(
             }
         }
     }
-
-    if (uninit_count > 0) {
-        log.debug("[NOMICON-CH5] Analyzed {} functions, found {} potential uninit uses", .{
-            func_count,
-            uninit_count,
-        });
-    } else {
-        log.debug("[NOMICON-CH5] Analyzed {} functions, no uninit issues found", .{func_count});
-    }
 }
 
 /// Check if a function name matches the assume_init pattern.
@@ -143,8 +134,6 @@ fn analyzeAssumeInitUsage(
 
     // For now, we conservatively flag all assume_init calls as suspicious
     // The confidence can be increased with proper dataflow analysis
-    log.debug("[NOMICON-CH5] assume_init call detected — requires dataflow analysis to verify init", .{});
-
     recordResolution(srt, @intFromPtr(inst), .uninit_memory_use, 0.60, "Nomicon-Ch5 assume_init (needs dataflow verification)");
 
     return true;
@@ -175,8 +164,6 @@ fn analyzeAllocWithoutInit(
         while (i < num_ops) : (i += 1) {
             const op = c.LLVMGetOperand(next_inst, i);
             if (op == inst) {
-                log.debug("[NOMICON-CH5] Alloc immediately used without init", .{});
-
                 recordResolution(srt, @intFromPtr(next_inst), .uninit_memory_use, 0.70, "Nomicon-Ch5 alloc used without initialization");
 
                 return true;
@@ -202,10 +189,6 @@ fn analyzePotentialUninitLoad(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt
         const type_size = getTypeSize(module, alloc_type);
 
         if (type_size > 16) { // Larger than 2 pointers — likely a struct/array
-            log.debug("[NOMICON-CH5] Load from large alloca ({} bytes) — potential uninit", .{
-                type_size,
-            });
-
             recordResolution(srt, @intFromPtr(inst), .uninit_memory_use, 0.45, "Nomicon-Ch5 potential uninit load from large alloca");
 
             return true;
@@ -229,9 +212,7 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch5", evidence) catch {
-        log.debug("[NOMICON-CH5] Failed to record resolution for ref {d}", .{value_ref});
-    };
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch5", evidence) catch {};
 }
 
 // ============================================================================

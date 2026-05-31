@@ -58,7 +58,6 @@ fn functionReturnsHeapProvenance(func: c.LLVMValueRef, srt: *SemanticTree) bool 
             if (@intFromPtr(ret_val) == 0) continue;
             const ret_ref = @intFromPtr(ret_val);
             if (srt.hasKind(ret_ref, .heap_provenance) != null) {
-                log.debug("[ch09] Function returns heap_provenance: ret_val ref={d}", .{ret_ref});
                 return true;
             }
         }
@@ -253,7 +252,6 @@ pub fn detect(
                 const ref = @intFromPtr(inst);
 
                 if (srt.hasKind(ref, .heap_provenance) == null) {
-                    log.debug("[ch09] Found heap alloc: {s} at {d}", .{ callee_name, ref });
                     try srt.recordResolution(ref, .heap_provenance, 0.95, "Ch9 Vec/Box", callee_name);
                 }
             }
@@ -266,8 +264,6 @@ pub fn detect(
     const max_iterations: u32 = 20;
     while (iterations < max_iterations) : (iterations += 1) {
         const new_marks = propagateHeapProvenance(module, srt);
-        const total = countHeapMarks(srt);
-        log.debug("[ch09] Propagation iteration {d}: {d} new marks, {d} total", .{ iterations + 1, new_marks, total });
         if (new_marks == 0) break;
     }
 }

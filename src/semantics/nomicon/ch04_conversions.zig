@@ -67,15 +67,7 @@ pub fn detect(
         }
     }
 
-    if (transmute_count > 0) {
-        log.debug("[NOMICON-CH4] Analyzed {} functions, found {} suspicious transmutes", .{
-            func_count,
-            transmute_count,
-        });
-    } else {
-        log.debug("[NOMICON-CH4] Analyzed {} functions, no suspicious transmutes found", .{func_count});
     }
-}
 
 /// Analyze a bitcast instruction for potential issues.
 fn analyzeBitcast(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {
@@ -87,13 +79,6 @@ fn analyzeBitcast(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticT
 
     // Size mismatch is almost always a bug or dangerous pattern
     if (src_size > 0 and dst_size > 0 and src_size != dst_size) {
-        log.debug("[NOMICON-CH4] Size-mismatch bitcast: {} -> {} bytes", .{
-            src_size,
-            dst_size,
-        });
-
-        // Record as suspicious but not necessarily a bug
-        // Some size mismatches are intentional and safe (e.g., truncation)
         const confidence: f32 = if (dst_size < src_size) 0.65 else 0.75;
         recordResolution(srt, @intFromPtr(inst), .unsafe_transmute, confidence, "Nomicon-Ch4 size-mismatch bitcast");
 
@@ -116,11 +101,6 @@ fn analyzePtrIntConversion(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *
 
         // If integer is smaller than pointer size, this is likely UB
         if (int_size > 0 and ptr_size > 0 and int_size < ptr_size) {
-            log.debug("[NOMICON-CH4] Dangerous inttoptr: {}-bit int -> {}-bit pointer", .{
-                int_size * 8,
-                ptr_size * 8,
-            });
-
             recordResolution(srt, @intFromPtr(inst), .unsafe_transmute, 0.80, "Nomicon-Ch4 inttoptr size truncation");
 
             return true;
@@ -131,8 +111,6 @@ fn analyzePtrIntConversion(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *
     // This pattern often indicates an attempt to bypass type system
     if (opcode == c.LLVMPtrToInt) {
         // Just log the conversion for now; the real danger is when it's converted back
-        log.debug("[NOMICON-CH4] ptrtoint detected (potential round-trip)", .{});
-
         recordResolution(srt, @intFromPtr(inst), .unsafe_transmute, 0.50, "Nomicon-Ch4 ptrtoint conversion");
 
         return true;
@@ -155,9 +133,7 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch4", evidence) catch {
-        log.debug("[NOMICON-CH4] Failed to record resolution for ref {d}", .{value_ref});
-    };
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch4", evidence) catch {};
 }
 
 // ============================================================================

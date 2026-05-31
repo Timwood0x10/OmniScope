@@ -15,6 +15,7 @@ const TraceEntry = @import("../diag/issue.zig").TraceEntry;
 const Location = @import("../diag/issue.zig").Location;
 const ModuleRef = @import("../ir/view.zig").ModuleRef;
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
+const InstCache = @import("../ir/inst_cache.zig").InstCache;
 
 const PassContext = @import("../pass/pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
@@ -46,6 +47,7 @@ pub const Pipeline = struct {
     data_flow_graph: DataFlowGraph,
     pass_manager: PassManager,
     module: ?ModuleRef,
+    inst_cache: InstCache,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
@@ -64,6 +66,7 @@ pub const Pipeline = struct {
             .data_flow_graph = data_flow_graph,
             .pass_manager = try PassManager.init(allocator),
             .module = null,
+            .inst_cache = InstCache.init(allocator),
         };
     }
 
@@ -75,6 +78,7 @@ pub const Pipeline = struct {
         self.allocator.destroy(self.fact_store);
         self.allocator.destroy(self.query_engine);
         self.pass_manager.deinit();
+        self.inst_cache.deinit();
     }
 
     /// Run the full analysis pipeline

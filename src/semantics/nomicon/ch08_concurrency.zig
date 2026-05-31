@@ -115,15 +115,7 @@ pub fn detect(
         }
     }
 
-    if (violation_count > 0) {
-        log.debug("[NOMICON-CH8] Analyzed {} functions, found {} potential concurrency issues", .{
-            func_count,
-            violation_count,
-        });
-    } else {
-        log.debug("[NOMICON-CH8] Analyzed {} functions, no concurrency issues found", .{func_count});
     }
-}
 
 /// Check if a function name matches thread spawn pattern.
 fn isThreadSpawnPattern(name: []const u8) bool {
@@ -175,7 +167,6 @@ fn analyzeThreadSpawn(
                 if (std.mem.indexOf(u8, called_name, "_ZN5alloc2rc") != null or
                     std.mem.indexOf(u8, called_name, "Rc::new") != null)
                 {
-                    log.debug("[NOMICON-CH8] Rc captured in thread spawn context", .{});
                     recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.75, "Rc is not Send — cannot move across thread boundary");
                     has_violation = true;
                 }
@@ -184,7 +175,6 @@ fn analyzeThreadSpawn(
                 if (std.mem.indexOf(u8, called_name, "Cell::new") != null or
                     std.mem.indexOf(u8, called_name, "RefCell::new") != null)
                 {
-                    log.debug("[NOMICON-CH8] Cell/RefCell in thread spawn context", .{});
                     recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.65, "Cell/RefCell is not Sync — cannot share between threads");
                     has_violation = true;
                 }
@@ -197,7 +187,6 @@ fn analyzeThreadSpawn(
                 if (@intFromPtr(src_val) != 0) {
                     const src_type = c.LLVMTypeOf(src_val);
                     if (@intFromPtr(src_type) != 0 and c.LLVMGetTypeKind(src_type) == c.LLVMIntegerTypeKind) {
-                        log.debug("[NOMICON-CH8] Raw pointer created in thread spawn context", .{});
                         recordResolution(srt, @intFromPtr(inst), .send_sync_violation, 0.50, "Raw pointer in thread context — verify Send safety");
                     }
                 }
@@ -247,7 +236,6 @@ fn analyzeThreadSpawnCall(
         if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
             // Check if the pointer target has been marked as non-Send
             if (srt.hasKind(arg_ref, .send_sync_violation) != null) {
-                log.debug("[NOMICON-CH8] Non-Send value passed to thread spawn at arg {d}", .{i});
                 recordResolution(srt, inst_ref, .send_sync_violation, 0.80, "Non-Send value passed to thread::spawn");
                 has_violation = true;
             }
@@ -270,7 +258,6 @@ fn analyzeThreadSpawnCall(
                         std.mem.indexOf(u8, called_name, "Cell") != null or
                         std.mem.indexOf(u8, called_name, "RefCell") != null)
                     {
-                        log.debug("[NOMICON-CH8] Non-Send closure passed to spawn", .{});
                         recordResolution(srt, inst_ref, .send_sync_violation, 0.85, "Closure capturing non-Send type passed to thread::spawn");
                         has_violation = true;
                     }
@@ -314,7 +301,6 @@ fn analyzeAtomicUsage(
                     const type_size = c.LLVMStoreSizeOfType(c.LLVMGetModuleDataLayout(c.LLVMGetGlobalParent(inst)), elem_type);
                     // Atomic ops on types > 8 bytes are suspicious (should use locks)
                     if (type_size > 8) {
-                        log.debug("[NOMICON-CH8] Atomic operation on large type ({d} bytes) — consider using locks", .{type_size});
                         recordResolution(srt, inst_ref, .send_sync_violation, 0.70, "Atomic op on large type — consider Mutex/RwLock instead");
                         has_issue = true;
                     }
@@ -329,7 +315,6 @@ fn analyzeAtomicUsage(
         const ordering = c.LLVMGetOrdering(inst);
         // SequentiallyConsistent (5) is often overkill — flag for audit
         if (ordering == 5) { // c.LLVMAtomicOrderingSequentiallyConsistent
-            log.debug("[NOMICON-CH8] SequentiallyConsistent ordering — may be overkill", .{});
             recordResolution(srt, inst_ref, .send_sync_violation, 0.25, "SeqCst ordering — consider weaker ordering if appropriate");
             // Not a violation, just an audit note
         }
@@ -356,9 +341,7 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch8", evidence) catch {
-        log.debug("[NOMICON-CH8] Failed to record resolution for ref {d}", .{value_ref});
-    };
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch8", evidence) catch {};
 }
 
 // ============================================================================

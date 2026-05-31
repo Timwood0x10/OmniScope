@@ -114,7 +114,6 @@ pub fn detect(
                 } else {
                     // User unsafe code using __rust_dealloc — do NOT mark as RAII
                     // Let normal detection flow handle potential double-free/UAF
-                    log.debug("[RAII-SKIP] __rust_dealloc in user code {s} — not marking as RAII to allow bug detection", .{func_name});
                 }
             }
         }

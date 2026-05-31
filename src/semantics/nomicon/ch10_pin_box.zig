@@ -84,7 +84,6 @@ pub fn detect(
 
         // Check if function is in a once-init context
         if (isOnceInitContext(func_name)) {
-            log.debug("[NOMICON-CH10] Once-init context detected: {s}", .{func_name});
             interior_mutable_count += 1;
         }
 
@@ -116,15 +115,7 @@ pub fn detect(
         }
     }
 
-    if (interior_mutable_count > 0) {
-        log.debug("[NOMICON-CH10] Analyzed {} functions, found {} interior mutable patterns", .{
-            func_count,
-            interior_mutable_count,
-        });
-    } else {
-        log.debug("[NOMICON-CH10] Analyzed {} functions, no interior mutable patterns", .{func_count});
     }
-}
 
 /// Walk DI type chain to find UnsafeCell<T>.
 /// Returns true if the type chain contains any interior mutable type.
@@ -342,9 +333,7 @@ fn recordResolution(
     confidence: f32,
     evidence: []const u8,
 ) void {
-    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch10", evidence) catch {
-        log.debug("[NOMICON-CH10] Failed to record resolution for ref {d}", .{value_ref});
-    };
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch10", evidence) catch {};
 }
 
 // ============================================================================

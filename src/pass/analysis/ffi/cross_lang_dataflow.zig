@@ -85,15 +85,11 @@ pub const CrossLangDataFlow = struct {
             return;
         }
 
-        // Track allocations and frees across FFI boundaries
-        try trackAllocations(ctx, &allocations, &stats, diag);
-        try trackFrees(ctx, &allocations, &stats, diag);
-        try trackPointerPassing(ctx, &allocations, cross_edges, &stats, diag);
+        // OPTIMIZATION: Unified traversal - collect all data in single pass
+        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag);
 
-        // Detect issues
-        try detectOrphanPointers(ctx, &allocations, &stats, diag);
+        // Detect issues using collected data
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag);
-        try detectUseAfterFreeAcrossBoundary(ctx, &allocations, cross_edges, diag);
 
         diag.info("CrossLangDataFlow: {} allocations tracked, {} cross-lang, {} orphans, {} double-frees", .{
             stats.alloc_count,
@@ -101,6 +97,241 @@ pub const CrossLangDataFlow = struct {
             stats.orphan_pointers,
             stats.double_free_paths,
         });
+    }
+
+    /// Unified module analysis - single traversal collecting all data
+    /// Replaces: trackAllocations + trackFrees + trackPointerPassing + detectOrphanPointers + detectUseAfterFreeAcrossBoundary
+    fn analyzeModuleUnified(
+        ctx: *PassContext,
+        allocations: *std.ArrayList(CrossLangAlloc),
+        cross_edges: []const CrossLangEdge,
+        stats: *DataFlowStats,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const mod = ctx.module.?.raw;
+        var func = c.LLVMGetFirstFunction(mod);
+        if (@intFromPtr(func) == 0) return;
+
+        var next_id: u32 = 1;
+
+        // Build HashMap indices for O(1) lookups
+        var alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
+        defer alloc_by_ptr.deinit();
+
+        var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
+        defer edge_map.deinit();
+        for (cross_edges) |edge| {
+            if (edge.is_ffi_boundary) {
+                try edge_map.put(edge.callee_name, edge);
+            }
+        }
+
+        var funcs_with_frees = std.StringHashMap(void).init(ctx.allocator);
+        defer funcs_with_frees.deinit();
+
+        var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
+        defer freed_alloc_by_ptr.deinit();
+
+        // Single traversal - collect all data
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (c.LLVMIsDeclaration(func) != 0) continue;
+
+            const func_name_ptr = c.LLVMGetValueName(func);
+            const func_name = if (@intFromPtr(func_name_ptr) != 0)
+                std.mem.span(func_name_ptr)
+            else
+                "unknown";
+
+            const func_lang = ctx.getModuleLanguage().language;
+
+            // Per-function store→load map for free tracking
+            var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
+            defer store_map.deinit();
+
+            var bb = c.LLVMGetFirstBasicBlock(func);
+            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                var inst = c.LLVMGetFirstInstruction(bb);
+                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                    const opcode = c.LLVMGetInstructionOpcode(inst);
+
+                    // Track store→load chains for free matching
+                    if (opcode == c.LLVMStore) {
+                        const stored_val = c.LLVMGetOperand(inst, 0);
+                        const store_addr = c.LLVMGetOperand(inst, 1);
+                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
+                            const stored_val_int = @intFromPtr(stored_val);
+                            if (alloc_by_ptr.contains(stored_val_int)) {
+                                store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
+                            }
+                        }
+                    }
+
+                    // Process call/invoke instructions
+                    if (llvm_safe.isCallOrInvoke(opcode)) {
+                        const called_val = c.LLVMGetCalledValue(inst);
+                        if (@intFromPtr(called_val) == 0) continue;
+
+                        const called_name_ptr = c.LLVMGetValueName(called_val);
+                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                            std.mem.span(called_name_ptr)
+                        else
+                            "";
+
+                        // 1. Track allocations
+                        if (isAllocationFunction(called_name)) {
+                            const result_val = @intFromPtr(inst);
+                            if (result_val != 0) {
+                                const alloc_lang = classifyAllocLanguage(called_name, func_lang);
+                                const alloc = CrossLangAlloc{
+                                    .id = next_id,
+                                    .ptr_val = result_val,
+                                    .alloc_lang = alloc_lang,
+                                    .alloc_func = func_name,
+                                    .alloc_callee = called_name,
+                                    .free_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
+                                    .free_funcs = try std.ArrayList([]const u8).initCapacity(ctx.allocator, 2),
+                                    .passed_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
+                                };
+                                try allocations.append(ctx.allocator, alloc);
+                                try alloc_by_ptr.put(result_val, allocations.items.len - 1);
+                                stats.alloc_count += 1;
+                                next_id += 1;
+                            }
+                        }
+
+                        // 2. Track frees
+                        if (isFreeFunction(called_name)) {
+                            try funcs_with_frees.put(func_name, {});
+
+                            const num_operands = c.LLVMGetNumOperands(inst);
+                            if (num_operands >= 2) {
+                                const ptr_arg = c.LLVMGetOperand(inst, 1);
+                                var ptr_val = @intFromPtr(ptr_arg);
+                                if (ptr_val != 0) {
+                                    // Resolve through store→load chain
+                                    if (store_map.get(ptr_val)) |original_val| {
+                                        ptr_val = original_val;
+                                    }
+
+                                    if (alloc_by_ptr.get(ptr_val)) |idx| {
+                                        const alloc = &allocations.items[idx];
+                                        if (!alloc.freed) {
+                                            const free_lang = classifyFreeLanguage(called_name, .unknown);
+                                            try alloc.free_langs.append(ctx.allocator, free_lang);
+                                            try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
+                                            alloc.freed = true;
+                                            try freed_alloc_by_ptr.put(ptr_val, idx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Track pointer passing across FFI
+                        if (edge_map.get(called_name)) |edge| {
+                            const num_operands = c.LLVMGetNumOperands(inst);
+                            var arg_idx: u32 = 0;
+                            while (arg_idx < num_operands) : (arg_idx += 1) {
+                                const arg = c.LLVMGetOperand(inst, arg_idx);
+                                const arg_val = @intFromPtr(arg);
+                                if (arg_val == 0) continue;
+
+                                if (alloc_by_ptr.get(arg_val)) |idx| {
+                                    const alloc = &allocations.items[idx];
+                                    alloc.passed_to_other_lang = true;
+                                    try alloc.passed_langs.append(ctx.allocator, edge.callee_lang);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 4. Detect use-after-free across FFI (inline)
+                        const num_operands = c.LLVMGetNumOperands(inst);
+                        var arg_idx: u32 = 0;
+                        while (arg_idx < num_operands) : (arg_idx += 1) {
+                            const arg = c.LLVMGetOperand(inst, arg_idx);
+                            const arg_val = @intFromPtr(arg);
+                            if (arg_val == 0) continue;
+
+                            if (freed_alloc_by_ptr.get(arg_val)) |idx| {
+                                const alloc = &allocations.items[idx];
+                                var use_lang = func_lang;
+
+                                if (edge_map.get(called_name)) |edge| {
+                                    use_lang = edge.callee_lang;
+                                }
+
+                                for (alloc.free_langs.items) |free_lang| {
+                                    if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
+                                        const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
+                                        defer ctx.allocator.free(message);
+
+                                        const location = Location.init(func_name);
+                                        const issue = Issue.init(
+                                            .use_after_free,
+                                            message,
+                                            location,
+                                            .critical,
+                                            0.95,
+                                        );
+                                        try ctx.addIssue(&issue);
+
+                                        diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
+                                            alloc.id,
+                                            @tagName(free_lang),
+                                            @tagName(use_lang),
+                                            func_name,
+                                        });
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Detect orphan pointers (post-processing)
+        for (allocations.items) |alloc| {
+            if (alloc.freed) continue;
+            if (alloc.passed_to_other_lang) continue;
+
+            if (funcs_with_frees.contains(alloc.alloc_func)) {
+                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — function calls a free function", .{ alloc.alloc_callee, alloc.alloc_func });
+                continue;
+            }
+
+            stats.orphan_pointers += 1;
+
+            const confidence = calculateOrphanConfidence(alloc);
+            const message = try std.fmt.allocPrint(ctx.allocator, "Orphan pointer detected: allocated in {s} ({s}) via {s} but never freed or transferred across FFI boundary", .{ alloc.alloc_func, @tagName(alloc.alloc_lang), alloc.alloc_callee });
+            defer ctx.allocator.free(message);
+
+            const location = Location.init(alloc.alloc_func);
+            const issue = Issue.init(
+                .cross_language_leak,
+                message,
+                location,
+                .high,
+                confidence,
+            );
+            try ctx.addIssue(&issue);
+
+            diag.warn("CrossLangDataFlow: Orphan pointer {} in {s} ({s}) (confidence: {d:.2})", .{
+                alloc.id,
+                alloc.alloc_func,
+                @tagName(alloc.alloc_lang),
+                confidence,
+            });
+        }
+
+        // Update cross-lang stats
+        for (allocations.items) |alloc| {
+            if (alloc.passed_to_other_lang or alloc.free_langs.items.len > 0) {
+                stats.cross_lang_allocs += 1;
+            }
+        }
     }
 
     /// Track allocations that may cross FFI boundaries
