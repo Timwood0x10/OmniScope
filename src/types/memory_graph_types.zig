@@ -271,6 +271,11 @@ pub const AllocNode = struct {
 
     /// Inferred container type (Box, Vec, unique_ptr, etc.)
     container_type: ?ContainerType = null,
+
+    /// Is this a borrowed reference (not owning)?
+    /// When true, this pointer should NOT be reported as a leak even if not freed.
+    /// Common in FFI scenarios: Python's PyList_GetItem, Rust's &mut borrow, etc.
+    is_borrowed: bool = false,
 };
 
 /// Result of isOnDangerPath — why a pointer matters (or doesn't).

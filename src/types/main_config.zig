@@ -91,6 +91,59 @@ pub const MainError = error{
     InvalidOption,
 };
 
+/// Surface filter configuration for fine-grained boundary control.
+///
+/// Allows users to specify exactly which semantic surfaces to include
+/// in the output report. This provides more granular control than the
+/// simple --boundary-only flag.
+pub const SurfaceFilterConfig = struct {
+    /// Show issues directly on FFI/language boundaries
+    show_boundary: bool = true,
+    /// Show issues in functions that produce data for FFI boundaries
+    show_ffi_producer: bool = true,
+    /// Show issues reachable from FFI boundaries via data flow
+    show_reachable_from_boundary: bool = false,
+    /// Show issues in third-party/dependency core code
+    show_internal_core: bool = false,
+    /// Show issues in language runtime internals (usually noise)
+    show_runtime_internal: bool = false,
+
+    /// Check if any non-default filter is enabled
+    pub fn isEnabled(self: SurfaceFilterConfig) bool {
+        return !self.show_boundary or
+            !self.show_ffi_producer or
+            self.show_reachable_from_boundary or
+            self.show_internal_core or
+            self.show_runtime_internal;
+    }
+
+    /// Parse surface filter from comma-separated string.
+    /// Example: "boundary,ffi_producer,reachable"
+    pub fn parseFromString(self: *SurfaceFilterConfig, str: []const u8) void {
+        // Reset all to false first
+        self.show_boundary = false;
+        self.show_ffi_producer = false;
+        self.show_reachable_from_boundary = false;
+        self.show_internal_core = false;
+        self.show_runtime_internal = false;
+
+        var iter = std.mem.tokenizeAny(u8, str, ", ");
+        while (iter.next()) |token| {
+            if (std.mem.eql(u8, token, "boundary")) {
+                self.show_boundary = true;
+            } else if (std.mem.eql(u8, token, "ffi_producer") or std.mem.eql(u8, token, "ffi")) {
+                self.show_ffi_producer = true;
+            } else if (std.mem.eql(u8, token, "reachable") or std.mem.eql(u8, token, "reachable_from_boundary")) {
+                self.show_reachable_from_boundary = true;
+            } else if (std.mem.eql(u8, token, "internal") or std.mem.eql(u8, token, "internal_core")) {
+                self.show_internal_core = true;
+            } else if (std.mem.eql(u8, token, "runtime") or std.mem.eql(u8, token, "runtime_internal")) {
+                self.show_runtime_internal = true;
+            }
+        }
+    }
+};
+
 /// NOTE: This module defines its own Severity enum (see above) due to Zig module system
 /// constraints. It is type-compatible with CommonTypes.Severity but cannot import from it.
 /// See the detailed design decision documentation in the Severity enum definition above.
@@ -118,6 +171,8 @@ pub const Config = struct {
     min_severity: Severity = .low,
     /// Suppress known-safe patterns (allocator shims, rust internals, GC managed)
     suppress_noise: bool = true,
+    /// Surface filter configuration for fine-grained control
+    surface_filter: SurfaceFilterConfig = .{},
 
     pub fn init(allocator: Allocator) !Config {
         return .{
@@ -227,6 +282,11 @@ pub fn parseArgs(allocator: Allocator) !Config {
             config.min_severity = Severity.parse(sev_str) orelse {
                 return error.InvalidOption;
             };
+        } else if (std.mem.eql(u8, arg, "--show-surface")) {
+            const surfaces_str = args.next() orelse {
+                return error.InvalidOption;
+            };
+            config.surface_filter.parseFromString(surfaces_str);
         } else if (std.mem.eql(u8, arg, "--config")) {
             const config_path_arg = args.next() orelse return error.InvalidOption;
             if (config_path_arg.len == 0) return error.InvalidOption;
@@ -263,8 +323,10 @@ pub fn showHelp() void {
         \\  --perf-stats                      Enable per-pass performance profiling (time, RSS, allocations)
         \\  --perf-json <path>                 Export performance data to JSON file (implies --perf-stats)
         \\  --debug-resource-contract         Enable resource contract debugging (implies --debug)
-        \\  --boundary-only                  Only report issues on FFI boundaries
+        \\  --boundary-only                  Only report issues on FFI boundaries (precision: ~95%)
         \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
+        \\  --show-surface <surfaces>        Comma-separated surfaces to show
+        \\                                    (boundary,ffi,reachable,internal,runtime)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format

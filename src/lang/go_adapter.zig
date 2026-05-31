@@ -89,10 +89,10 @@ pub const CGO_PATTERNS = [_][]const u8{
     "_cgo_",
     "_Cfunc_",
     "_Ctype_",
-    "crosscall2",  // Runtime cross-call bridge
+    "crosscall2", // Runtime cross-call bridge
     "runtime.cgocall",
-    "unionfield_",  // TinyGo union field access
-    "bitfield_",    // TinyGo bitfield access
+    "unionfield_", // TinyGo union field access
+    "bitfield_", // TinyGo bitfield access
 };
 
 /// Common C standard library calls wrapped by Go via cgo.

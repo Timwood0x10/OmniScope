@@ -73,6 +73,8 @@ pub const FFISemantics = enum {
     returns_owned,
     returns_borrowed,
     consumes_arg,
+    python_refcount_inc,
+    python_refcount_dec,
     inout,
     unknown,
 
@@ -81,6 +83,8 @@ pub const FFISemantics = enum {
             .returns_owned => "ReturnsOwned",
             .returns_borrowed => "ReturnsBorrowed",
             .consumes_arg => "ConsumesArg",
+            .python_refcount_inc => "PythonRefcountInc",
+            .python_refcount_dec => "PythonRefcountDec",
             .inout => "InOut",
             .unknown => "Unknown",
         };
@@ -120,6 +124,18 @@ pub const AdapterAnalysis = struct {
     ffi_calls: std.ArrayList(FFICallInfo),
     allocator: std.mem.Allocator,
 
+    // Reference count tracking (for Python/refcount languages)
+    refcount_increments: u32 = 0,
+    refcount_decrements: u32 = 0,
+    refcount_balance: i32 = 0,
+
+    // Leak detection
+    has_potential_leak: bool = false,
+    leak_severity: Severity = .low,
+
+    // Analysis metadata
+    is_analyzed: bool = false,
+
     pub fn init(alloc: std.mem.Allocator, lang: Language) !AdapterAnalysis {
         var result = AdapterAnalysis{
             .language = lang,
@@ -139,6 +155,22 @@ pub const AdapterAnalysis = struct {
     pub fn addCall(self: *AdapterAnalysis, info: FFICallInfo) !void {
         try self.ffi_calls.append(self.allocator, info);
     }
+
+    /// Check if this analysis has any meaningful findings.
+    pub fn hasFindings(self: AdapterAnalysis) bool {
+        return self.ffi_calls.items.len > 0 or self.has_potential_leak;
+    }
+};
+
+/// Severity levels for issue classification (re-exported from common/types).
+///
+/// This is a type-compatible mirror of common/types.Severity to avoid
+/// circular module dependencies in the adapter framework.
+pub const Severity = enum(u8) {
+    low = 0,
+    medium = 1,
+    high = 2,
+    critical = 3,
 };
 
 // ═══════════════════════════════════════════════════════════════

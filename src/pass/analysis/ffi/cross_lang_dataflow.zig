@@ -23,6 +23,8 @@ const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const ffi_contract_db = @import("../../../resource/ffi_contract_db.zig");
 const allocator_shim = @import("../../../detectors/allocator_shim.zig");
 const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
+const escape_analysis = @import("../../../analysis/escape_analysis.zig");
+const raii_detector = @import("../../../analysis/raii_detector.zig");
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -76,6 +78,15 @@ pub const CrossLangDataFlow = struct {
         };
         defer contract_db.deinit();
 
+        var esc_analysis = escape_analysis.EscapeAnalysis.init(ctx.allocator);
+        defer esc_analysis.deinit();
+
+        var raii = raii_detector.RAIIDetector.init(ctx.allocator) catch |err| {
+            log.warn("CrossLangDataFlow: Failed to init RAIIDetector: {}", .{err});
+            return;
+        };
+        defer raii.deinit();
+
         var stats = DataFlowStats{};
         var allocations = try std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 64);
         defer {
@@ -93,7 +104,7 @@ pub const CrossLangDataFlow = struct {
             return;
         }
 
-        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db);
+        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db, &esc_analysis, &raii);
 
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag);
 
@@ -117,6 +128,8 @@ pub const CrossLangDataFlow = struct {
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
         db: *ffi_contract_db.FFIContractDB,
+        esc_analysis: *escape_analysis.EscapeAnalysis,
+        raii: *raii_detector.RAIIDetector,
     ) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -341,6 +354,18 @@ pub const CrossLangDataFlow = struct {
                     if (ownership) |o| @tagName(o) else "unknown",
                     alloc.alloc_func,
                 });
+                continue;
+            }
+
+            // ── ESCAPE ANALYSIS CHECK ──
+            if (esc_analysis.shouldSuppressLeakReport(alloc.ptr_val)) {
+                log.debug("ESCAPE-SUPPRESS: Non-escaping alloc 0x{x} (safe)", .{alloc.ptr_val});
+                continue;
+            }
+
+            // ── RAII CHECK ──
+            if (raii.shouldSuppressLeakDueToRAII(&alloc)) {
+                log.debug("RAII-SUPPRESS: RAII-managed alloc 0x{x} (auto-cleanup)", .{alloc.ptr_val});
                 continue;
             }
 

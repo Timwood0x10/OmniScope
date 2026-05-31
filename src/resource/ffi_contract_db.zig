@@ -312,23 +312,13 @@ pub const FFIContractDB = struct {
     /// Print usage statistics for the contract database.
     /// Call this at the end of analysis to see how the DB was used.
     pub fn printStats(self: *FFIContractDB) void {
-        std.debug.print("\n--- FFI Contract DB Statistics ---\n", .{});
-        std.debug.print("Libraries loaded: {}\n", .{self.libraries.len});
-
-        var total_rules: usize = 0;
-        for (self.libraries) |lib| {
-            total_rules += lib.pairs.len;
-        }
-        std.debug.print("Total rules: {}\n", .{total_rules});
-
-        std.debug.print("Queries made:\n", .{});
-        std.debug.print("  shouldReportLeak: {} calls\n", .{self.stats.shouldReportLeak_calls});
-        std.debug.print("  isValidRelease: {} calls\n", .{self.stats.isValidRelease_calls});
-        std.debug.print("  getExpectedReleases: {} calls\n", .{self.stats.getExpectedReleases_calls});
-        std.debug.print("  getOwnership: {} calls\n", .{self.stats.getOwnership_calls});
-        std.debug.print("  isErrorProneLib: {} calls\n", .{self.stats.isErrorProneLib_calls});
-        std.debug.print("  mismatches detected: {}\n", .{self.stats.mismatch_count});
-        std.debug.print("---------------------------------\n", .{});
+        log.info("FFIContractDB Stats: libraries={}, rules={}, queries={}", .{
+            self.libraries.len,
+            self.totalRules(),
+            self.stats.shouldReportLeak_calls + self.stats.isValidRelease_calls +
+                self.stats.getExpectedReleases_calls + self.stats.getOwnership_calls +
+                self.stats.isErrorProneLib_calls,
+        });
     }
 
     // ── Helpers ──
@@ -483,19 +473,54 @@ fn builtinLibraries() []const LibraryContract {
         // ── GLib ─────────────────────────────────────────────────────
         .{
             .name = "glib",
-            .description = "GLib memory management (GNOME/GTK)",
+            .description = "GLib memory management (GNOME/GTK) - enhanced",
+            .error_prone = true,
             .pairs = &[_]AllocPairRule{
+                // Enhanced memory allocation rules
                 .{
-                    .name = "memory",
-                    .alloc_funcs = &[_][]const u8{ "g_malloc", "g_malloc0", "g_try_malloc", "g_new", "g_new0" },
-                    .release_funcs = &[_][]const u8{"g_free"},
+                    .name = "glib_memory",
+                    .alloc_funcs = &[_][]const u8{
+                        "g_malloc",
+                        "g_malloc0",
+                        "g_realloc",
+                        "g_strdup",
+                        "g_strdup_printf",
+                        "g_strndup",
+                        "g_try_malloc",
+                        "g_try_malloc0",
+                        "g_new",
+                        "g_new0",
+                        "g_slice_alloc",
+                        "g_slice_copy",
+                    },
+                    .release_funcs = &[_][]const u8{
+                        "g_free",
+                        "g_slice_free1",
+                        "g_slice_free_chain",
+                    },
                     .ownership = .caller,
+                    .confidence = 0.93,
                 },
+                // String operations
                 .{
-                    .name = "string",
+                    .name = "glib_string",
                     .alloc_funcs = &[_][]const u8{ "g_strdup", "g_strndup", "g_build_path", "g_build_filename" },
                     .release_funcs = &[_][]const u8{"g_free"},
                     .ownership = .caller,
+                },
+                // GLib object system (reference counted)
+                .{
+                    .name = "glib_object",
+                    .alloc_funcs = &[_][]const u8{
+                        "g_object_new",
+                        "g_object_ref",
+                        "g_object_ref_sink",
+                    },
+                    .release_funcs = &[_][]const u8{
+                        "g_object_unref",
+                    },
+                    .ownership = .caller,
+                    .confidence = 0.91,
                 },
             },
         },
@@ -564,19 +589,109 @@ fn builtinLibraries() []const LibraryContract {
         // ── Python C API ─────────────────────────────────────────────
         .{
             .name = "python_capi",
-            .description = "Python C API reference counting",
+            .description = "Python C API reference counting (comprehensive)",
+            .error_prone = true,
             .pairs = &[_]AllocPairRule{
+                // Object creation functions (return owned references - must Py_DECREF)
                 .{
-                    .name = "object",
+                    .name = "py_object_new",
+                    .alloc_funcs = &[_][]const u8{
+                        "PyList_New",
+                        "PyDict_New",
+                        "PyTuple_New",
+                        "PySet_New",
+                        "PyFrozenSet_New",
+                        "PyBytes_FromString",
+                        "PyBytes_FromStringAndSize",
+                        "PyUnicode_FromString",
+                        "PyUnicode_Decode",
+                        "PyLong_FromLong",
+                        "PyFloat_FromDouble",
+                        "Py_BuildValue",
+                    },
+                    .release_funcs = &[_][]const u8{"Py_DECREF"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // Borrowed reference functions (do NOT call Py_DECREF!)
+                .{
+                    .name = "py_borrowed_ref",
+                    .alloc_funcs = &[_][]const u8{
+                        "PyList_GetItem",
+                        "PyDict_GetItem",
+                        "PyDict_GetItemString",
+                        "PyTuple_GetItem",
+                        "PySequence_GetItem",
+                        "PyImport_ImportModule",
+                        "PyImport_AddModule",
+                        "PyObject_GetAttr",
+                        "PyObject_GetAttrString",
+                    },
+                    .release_funcs = &[_][]const u8{},
+                    .ownership = .borrowed,
+                    .confidence = 0.95,
+                },
+                // GIL operations (scoped resource)
+                .{
+                    .name = "py_gil",
+                    .alloc_funcs = &[_][]const u8{"PyGILState_Ensure"},
+                    .release_funcs = &[_][]const u8{"PyGILState_Release"},
+                    .ownership = .caller,
+                    .confidence = 0.98,
+                },
+                // Legacy Python C API object creation
+                .{
+                    .name = "py_object_legacy",
                     .alloc_funcs = &[_][]const u8{ "PyBytes_FromString", "PyBytes_FromStringAndSize", "PyTuple_New", "PyList_New", "PyDict_New" },
                     .release_funcs = &[_][]const u8{ "Py_DECREF", "Py_XDECREF" },
                     .ownership = .caller,
                 },
+                // Legacy borrowed references
                 .{
-                    .name = "borrowed_reference",
+                    .name = "py_borrowed_legacy",
                     .alloc_funcs = &[_][]const u8{ "PyList_GetItem", "PyDict_GetItem", "PyTuple_GetItem", "PyBytes_AsString" },
                     .release_funcs = &[_][]const u8{},
                     .ownership = .borrowed,
+                },
+            },
+        },
+
+        // ── JNI (Java Native Interface) ──────────────────────────────
+        .{
+            .name = "jni",
+            .description = "JNI local/global reference management",
+            .error_prone = true,
+            .pairs = &[_]AllocPairRule{
+                // JNI local/global references (must be explicitly deleted)
+                .{
+                    .name = "jni_local_ref",
+                    .alloc_funcs = &[_][]const u8{
+                        "NewLocalRef",
+                        "NewGlobalRef",
+                        "FindClass",
+                        "GetMethodID",
+                        "GetObjectField",
+                        "CallObjectMethod",
+                        "CallStaticObjectMethod",
+                        "GetStringUTFChars",
+                        "GetArrayElements",
+                    },
+                    .release_funcs = &[_][]const u8{
+                        "DeleteLocalRef",
+                        "DeleteGlobalRef",
+                        "ReleaseStringUTFChars",
+                        "ReleaseArrayElements",
+                    },
+                    .ownership = .caller,
+                    .confidence = 0.88,
+                },
+                // JNI strings (auto-managed by JVM in most cases)
+                .{
+                    .name = "jni_string",
+                    .alloc_funcs = &[_][]const u8{"NewStringUTF"},
+                    .release_funcs = &[_][]const u8{},
+                    .ownership = .gc,
+                    .confidence = 0.90,
                 },
             },
         },

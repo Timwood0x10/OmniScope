@@ -491,12 +491,12 @@ pub fn isCppOperatorDelete(func_name: []const u8) bool {
 /// not be treated as user-level FFI boundaries.
 pub fn isStlInternal(func_name: []const u8) bool {
     const stl_prefixes = [_][]const u8{
-        "_ZNSt",       // std:: in Itanium (libstdc++)
-        "_ZN3__",      // __gnu_debug, __gnu_parallel (libstdc++)
+        "_ZNSt", // std:: in Itanium (libstdc++)
+        "_ZN3__", // __gnu_debug, __gnu_parallel (libstdc++)
         "__gnu_debug",
         "__gnu_parallel",
-        "_ZNSs",       // std::string methods
-        "_ZNSb",       // std::basic_string methods
+        "_ZNSs", // std::string methods
+        "_ZNSb", // std::basic_string methods
     };
     for (stl_prefixes) |prefix| {
         if (std.mem.startsWith(u8, func_name, prefix)) return true;

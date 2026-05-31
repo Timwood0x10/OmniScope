@@ -24,6 +24,9 @@ const types = @import("types.zig");
 const FFISemantics = types.FFISemantics;
 const Language = types.Language;
 
+// LLVM C API for IR traversal
+const c = @import("../ir/llvm_raw.zig").c;
+
 // ═══════════════════════════════════════════════════════════════
 // Pattern Tables — static lifetime, single source of truth
 // ═══════════════════════════════════════════════════════════════
@@ -76,7 +79,7 @@ pub const OWNING_FUNCTIONS = [_][]const u8{
     "PyCapsule_New",
     "PyCapsule_Import",
     "PyModule_Create2",
-    "PyModule_GetDict",  // Returns borrowed! Actually this is borrowed — see note below
+    "PyModule_GetDict", // Returns borrowed! Actually this is borrowed — see note below
     // BuildValue (returns owned tuple/dict/etc.)
     "Py_BuildValue",
     "Py_VaBuildValue",
@@ -106,7 +109,7 @@ pub const BORROWING_FUNCTIONS = [_][]const u8{
     "PyDict_Values",
     "PyDict_Items",
     // Type / attribute access
-    "PyObject_GetAttrString",  // Actually returns NEW reference — exception!
+    "PyObject_GetAttrString", // Actually returns NEW reference — exception!
     "PyObject_Type",
     "PyObject_GetAttr",
     // Import (AddModule returns borrowed)
@@ -207,12 +210,25 @@ pub const instance = adapter_mod.LanguageAdapter{
 ///
 /// This is the fast path used by the registry for name-based classification.
 /// Checks owning patterns first (most security-critical), then borrowing,
-/// then consuming. Unknown functions default to .unknown (conservative).
+/// then consuming, then refcount operations. Unknown functions default to .unknown (conservative).
 pub fn classifyCall(
     self_ptr: *const adapter_mod.LanguageAdapter,
     callee_name: []const u8,
 ) FFISemantics {
     _ = self_ptr;
+
+    // Check refcount operations first (most common in Python C API)
+    if (std.mem.eql(u8, callee_name, "Py_INCREF") or
+        std.mem.eql(u8, callee_name, "Py_XINCREF"))
+    {
+        return .python_refcount_inc;
+    }
+
+    if (std.mem.eql(u8, callee_name, "Py_DECREF") or
+        std.mem.eql(u8, callee_name, "Py_XDECREF"))
+    {
+        return .python_refcount_dec;
+    }
 
     for (OWNING_FUNCTIONS) |f| {
         if (std.mem.eql(u8, callee_name, f)) return .returns_owned;
@@ -260,31 +276,112 @@ pub fn getBorrowingPatterns(self_ptr: *const adapter_mod.LanguageAdapter) []cons
 /// Full LLVM IR analysis of a Python function's FFI calls.
 ///
 /// Iterates over all call instructions in `func`, classifies each one
-/// using the Python C API pattern tables, and builds an AdapterAnalysis.
+/// using the Python C API pattern tables, and builds an AdapterAnalysis
+/// with reference count tracking and leak detection.
 ///
-/// Note: In the current baseline implementation, `func` is treated as opaque
-/// because full LLVM IR walking requires c.LLVMValueRef which creates a
-/// dependency on the LLVM C API. Future enhancement will accept concrete type.
+/// ## Algorithm
+/// 1. Check if function has a body (not just a declaration)
+/// 2. Iterate through all basic blocks
+/// 3. For each CALL instruction, extract callee name
+/// 4. Classify the call using Python C API pattern tables
+/// 5. Track reference count operations (INCREF/DECREF)
+/// 6. Detect potential leaks from unbalanced refcount operations
 pub fn analyzeFunction(
     self_ptr: *const adapter_mod.LanguageAdapter,
     func_opaque: *anyopaque,
     ctx: adapter_mod.ContextPtr,
     allocator: std.mem.Allocator,
 ) !types.AdapterAnalysis {
-    _ = func_opaque;
     _ = ctx;
 
     var result = try types.AdapterAnalysis.init(allocator, self_ptr.language);
     errdefer result.deinit();
 
-    result.confidence = 0.85; // High confidence for Python pattern matching
+    // Cast opaque function pointer to LLVM value
+    const llvm_func: c.LLVMValueRef = @ptrCast(@alignCast(func_opaque));
 
-    // Full IR analysis would iterate instructions here:
-    //   var inst = c.LLVMGetFirstInstruction(@ptrCast(func))
-    //   while (...) : (...) { classify each call instruction }
-    //
-    // For now, return empty result — callers use classifyCall() for
-    // per-function-name classification.
+    // Check if function has body (not just declaration)
+    // Declarations have no basic blocks to iterate
+    if (c.LLVMIsDeclaration(llvm_func) != 0) {
+        result.confidence = 0.1;
+        return result;
+    }
+
+    // ── Iterate through all basic blocks ──
+    var bb_iter = c.LLVMGetFirstBasicBlock(llvm_func);
+
+    while (bb_iter != null) : (bb_iter = c.LLVMGetNextBasicBlock(bb_iter)) {
+        const bb = bb_iter.?;
+
+        // ── Iterate through all instructions in this basic block ──
+        var inst_iter = c.LLVMGetFirstInstruction(bb);
+
+        while (inst_iter != null) : (inst_iter = c.LLVMGetNextInstruction(inst_iter)) {
+            const inst = inst_iter.?;
+
+            // Only process CALL instructions (not invoke, br, ret, etc.)
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (opcode != c.LLVMCall) continue;
+
+            // Get the called function value
+            const called_value = c.LLVMGetCalledValue(inst);
+            if (called_value == null) continue;
+
+            // Extract callee name
+            const callee_name_ptr = c.LLVMGetValueName(called_value);
+            if (callee_name_ptr == null) continue;
+            const callee_name = std.mem.span(callee_name_ptr);
+
+            // ── Classify this Python C API call ──
+            const classification = classifyCall(self_ptr, callee_name);
+
+            // Skip unknown classifications (not Python C API)
+            if (classification == .unknown) continue;
+
+            // Create FFICallInfo record for this call site
+            const inst_addr: u64 = @intFromPtr(inst);
+            const call_info = types.FFICallInfo.init(
+                inst_addr,
+                callee_name,
+                classification,
+                0.92, // High confidence from IR-level detection
+                .python,
+            );
+
+            try result.addCall(call_info);
+
+            // ── Track reference count operations specifically ──
+            // These are critical for leak detection in Python C extensions
+            if (classification == .returns_owned or
+                classification == .python_refcount_inc)
+            {
+                result.refcount_increments += 1;
+            } else if (classification == .python_refcount_dec or
+                classification == .consumes_arg)
+            {
+                result.refcount_decrements += 1;
+            }
+        }
+    }
+
+    // ── Analyze reference count balance ──
+    // Positive balance = more INCs than DECs → potential leak
+    // Negative balance = more DECs than INCs → potential use-after-free
+    result.refcount_balance = @as(i32, @intCast(result.refcount_increments)) -
+        @as(i32, @intCast(result.refcount_decrements));
+
+    // Determine if this function has potential leak based on refcount imbalance
+    if (result.refcount_balance > 0) {
+        result.has_potential_leak = true;
+        // Severity scales with the magnitude of imbalance
+        result.leak_severity = if (result.refcount_balance > 3) .high else .medium;
+    }
+
+    // Mark analysis as complete
+    result.is_analyzed = true;
+
+    // Set confidence based on whether we found anything
+    result.confidence = if (result.ffi_calls.items.len > 0) 0.92 else 0.15;
 
     return result;
 }
@@ -424,4 +521,35 @@ test "PythonAdapter - instance metadata" {
     try std.testing.expectEqualStrings("python", instance.name);
     try std.testing.expectEqual(Language.python, instance.language);
     try std.testing.expectEqual(types.MemoryModel.refcount, instance.memory_model);
+}
+
+test "PythonAdapter - classifyCall detects refcount operations" {
+    // Py_INCREF should be classified as refcount increment
+    try std.testing.expectEqual(FFISemantics.python_refcount_inc, instance.classifyCall("Py_INCREF"));
+    try std.testing.expectEqual(FFISemantics.python_refcount_inc, instance.classifyCall("Py_XINCREF"));
+
+    // Py_DECREF/Py_XDECREF are in CONSUMING_FUNCTIONS (contains match)
+    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_DECREF"));
+    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_XDECREF"));
+}
+
+test "PythonAdapter - AdapterAnalysis new fields initialized correctly" {
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Verify new fields have correct default values
+    try std.testing.expectEqual(@as(u32, 0), analysis.refcount_increments);
+    try std.testing.expectEqual(@as(u32, 0), analysis.refcount_decrements);
+    try std.testing.expectEqual(@as(i32, 0), analysis.refcount_balance);
+    try std.testing.expectEqual(false, analysis.has_potential_leak);
+    try std.testing.expectEqual(types.Severity.low, analysis.leak_severity);
+    try std.testing.expectEqual(false, analysis.is_analyzed);
+
+    // Verify hasFindings returns false for empty analysis
+    try std.testing.expect(!analysis.hasFindings());
+}
+
+test "PythonAdapter - FFISemantics displayName includes new variants" {
+    try std.testing.expectEqualStrings("PythonRefcountInc", FFISemantics.python_refcount_inc.displayName());
+    try std.testing.expectEqualStrings("PythonRefcountDec", FFISemantics.python_refcount_dec.displayName());
 }

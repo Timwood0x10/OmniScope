@@ -67,8 +67,8 @@ pub const RustInternalWhitelist = struct {
     const UNWIND_FUNCTIONS = [_][]const u8{
         // catch_unwind cleanup routines
         "catch_unwind",
-        "try_clone",                  // Error cloning during unwind
-        "drop_in_place",              // Drop during panic unwind
+        "try_clone", // Error cloning during unwind
+        "drop_in_place", // Drop during panic unwind
 
         // Backtrace (called during panic)
         "begin_short_backtrace",
@@ -123,9 +123,9 @@ pub const RustInternalWhitelist = struct {
     const FFI_ERROR_WRAPPERS = [_][]const u8{
         // These wrappers convert C errors to Rust panics automatically
         "ErrorPropagationTracer", // Our own tracer! (internal use only)
-        "check_errno",            // errno -> Result conversion
-        "last_os_error",          // Get last OS error
-        "from_error_code",        // Convert error code
+        "check_errno", // errno -> Result conversion
+        "last_os_error", // Get last OS error
+        "from_error_code", // Convert error code
     };
 
     /// Main entry point: Check if function should be suppressed

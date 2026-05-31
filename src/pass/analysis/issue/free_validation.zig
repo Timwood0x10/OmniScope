@@ -32,6 +32,8 @@ const classify = @import("../ptr_lifetime/ptr_lifetime_classify.zig");
 const mg_types = @import("../../../types/memory_graph_types.zig");
 const AllocNode = mg_types.AllocNode;
 const FamilyId = mg_types.FamilyId;
+const contract_db = @import("../../../resource/ffi_contract_db.zig");
+const FFIContractDB = contract_db.FFIContractDB;
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -316,13 +318,22 @@ pub const FreeValidationPass = struct {
         return false;
     }
 
-    /// Unified MemoryGraph-based ownership validation for free calls.
-    /// Eliminates duplicated logic across .from_param, .from_ffi_call, and .from_malloc branches.
+    /// Enhanced MemoryGraph-based ownership validation for free calls.
+    /// Eliminates false positives by querying MemoryGraph and FFIContractDB
+    /// to verify alloc/free matching before reporting issues.
+    ///
+    /// Detection layers (in order):
+    ///   1. FFIContractDB: Is this alloc/free pair valid per library contracts?
+    ///   2. Double-free: Has this pointer already been freed?
+    ///   3. Borrowed ref: Is this a borrowed pointer that shouldn't be freed?
+    ///   4. Same-family: Are alloc and free from the same allocator family?
+    ///   5. Rust ownership: Is this a valid Rust ownership transfer pattern?
+    ///   6. Cross-allocator mismatch: REAL bug - wrong allocator for free
     ///
     /// Returns:
-    ///   - `true`  → cross-allocator bug detected (caller should report and return true)
-    ///   - `false` → safe release (same-family or Rust ownership transfer)
-    ///   - `null`  → cannot determine from MemoryGraph (caller should fallback to legacy logic)
+    ///   - `true`  → bug detected (caller should report and return true)
+    ///   - `false` → safe release (valid free, no issue)
+    ///   - `null`  → cannot determine (caller should fallback to legacy logic)
     fn validateFreeWithMemoryGraph(
         ctx: *PassContext,
         ptr_arg: c.LLVMValueRef,
@@ -331,26 +342,76 @@ pub const FreeValidationPass = struct {
         diag: *DiagnosticWriter,
     ) !?bool {
         const ptr_val: u64 = @intFromPtr(ptr_arg);
-        const node = ctx.memory_graph.getAllocInfo(ptr_val) orelse return null;
 
+        // Use findCanonicalAlloc to handle aliases (ownership transfers, FFI boundaries)
+        const node = ctx.memory_graph.findCanonicalAlloc(ptr_val) orelse return null;
+
+        log.debug("FREE_VALIDATION: Checking free of ptr 0x{x} ({s}), alloc_node id={d}, family={s}", .{
+            ptr_val,
+            callee_name,
+            node.id,
+            if (node.alloc_family) |f| @tagName(f) else "null",
+        });
+
+        // Layer 1: FFIContractDB validation - check if this is a valid library-specific pair
+        // This catches cases like SSL_new + SSL_free (valid) vs SSL_new + BIO_free (bug!)
+        {
+            const pair_validity = try validateWithContractDB(&ctx.contract_db, node, callee_name, ctx, caller_func, ptr_arg, diag);
+            if (pair_validity) |result| {
+                return result;
+            }
+            // result == null → no contract info, continue to next layer
+        }
+
+        // Layer 2: Double-free detection using MemoryGraph's path-sensitive analysis
+        if (node.freed) {
+            log.warn("FREE_VALIDATION: DOUBLE-FREE detected! ptr 0x{x} already freed at 0x{x}", .{
+                ptr_val,
+                node.freed_by orelse 0,
+            });
+
+            // Check if on same execution path (real double-free vs multi-path cleanup)
+            if (ctx.memory_graph.isDoubleFreedOnSamePath(ptr_val)) {
+                try reportDoubleFreeIssue(ctx, caller_func, callee_name, ptr_arg, node, diag);
+                return true; // Real double-free bug!
+            } else {
+                log.debug("FREE_VALIDATION: Multi-path cleanup detected (not a real double-free)", .{});
+                return false; // Different branches, not a bug
+            }
+        }
+
+        // Layer 3: Borrowed/refcount check - skip if this is a borrowed reference
+        if (isBorrowedOrRefcount(node)) {
+            log.debug("FREE_VALIDATION: Skipping borrowed/refcount ptr (likely DECREF, not real free)", .{});
+            return false;
+        }
+
+        // Layer 4: Same-family check (existing logic)
         const alloc_family = node.alloc_family orelse .invalid;
         const free_family = classifyReleaseFamilyByName(ctx, callee_name);
 
-        // Same family = safe (e.g., __rust_alloc + __rust_dealloc)
         if (alloc_family == free_family and alloc_family != .invalid) {
             log.debug("MG-SAME-FAMILY: {s} matches alloc family {s}, safe", .{
                 callee_name, @tagName(alloc_family),
             });
+
+            // Mark as freed in MemoryGraph for future double-free detection
+            markAsFreed(ctx, ptr_val, callee_name);
+
             return false;
         }
 
-        // Rust ownership transfer patterns (e.g., Box::from_raw → drop)
+        // Layer 5: Rust ownership transfer patterns (existing logic)
         if (isRustOwnershipTransfer(node, callee_name)) {
             log.debug("MG-RUST-OWNERSHIP: {s} on Rust-allocated ptr, safe", .{callee_name});
+
+            // Mark as freed in MemoryGraph
+            markAsFreed(ctx, ptr_val, callee_name);
+
             return false;
         }
 
-        // Cross-allocator mismatch = REAL bug (e.g., malloc + __rust_dealloc)
+        // Layer 6: Cross-allocator mismatch = REAL bug (existing logic)
         if (isCrossAllocatorMismatch(node, callee_name)) {
             try reportCrossAllocatorFree(ctx, caller_func, callee_name, ptr_arg, node, diag);
             return true;
@@ -841,6 +902,259 @@ pub const FreeValidationPass = struct {
         // Delegate to reportInvalidFree — the severity upgrade to CRITICAL
         // is already handled by the FFI danger-path detection inside it.
         try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, .from_param, null, diag);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // NEW: Enhanced MemoryGraph + FFIContractDB validation helpers
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Validate alloc/free pair using FFI Contract Database.
+    ///
+    /// Checks whether the release function is correct for the allocation
+    /// according to library-specific lifecycle rules (e.g., SSL_new → SSL_free).
+    ///
+    /// Returns:
+    ///   - `true`  → mismatch bug detected (wrong release function)
+    ///   - `false` → valid pair (correct release function)
+    ///   - `null`  → no contract info available (continue to next layer)
+    fn validateWithContractDB(
+        db: *FFIContractDB,
+        node: *const AllocNode,
+        callee_name: []const u8,
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        ptr_arg: c.LLVMValueRef,
+        diag: *DiagnosticWriter,
+    ) !?bool {
+        // Try to infer the alloc function name from the node's source information
+        const alloc_func_name = inferAllocFuncName(node) orelse return null;
+
+        log.debug("CONTRACT-DB: Checking pair {s} -> {s}", .{ alloc_func_name, callee_name });
+
+        const result = db.isValidRelease(alloc_func_name, callee_name);
+
+        switch (result) {
+            .valid_pair => {
+                log.debug("CONTRACT-DB: Valid pair confirmed: {s} -> {s}", .{
+                    alloc_func_name, callee_name,
+                });
+
+                // Mark as freed in MemoryGraph for double-free detection
+                markAsFreed(ctx, @intFromPtr(ptr_arg), callee_name);
+
+                return false; // Valid pair, no issue
+            },
+            .mismatch => {
+                log.warn("CONTRACT-DB: MISMATCH! alloc={s} but free={s}", .{
+                    alloc_func_name, callee_name,
+                });
+
+                try reportMismatchIssue(ctx, caller_func, callee_name, ptr_arg, node, alloc_func_name, db, diag);
+                return true; // Real bug!
+            },
+            .unknown_alloc, .unknown_release => {
+                log.debug("CONTRACT-DB: No contract info for {s}, continuing...", .{
+                    alloc_func_name,
+                });
+                return null; // No info, continue to next layer
+            },
+        }
+    }
+
+    /// Infer the allocation function name from an AllocNode.
+    /// Uses heuristics based on alloc_family and alloc_inst address.
+    ///
+    /// Returns null if we cannot determine the alloc function name.
+    fn inferAllocFuncName(node: *const AllocNode) ?[]const u8 {
+        // If we have family info, we can make educated guesses
+        if (node.alloc_family) |family| {
+            return switch (family) {
+                .c_heap => "malloc",
+                .c_mmap => "mmap",
+                .c_aligned => "aligned_alloc",
+                .cpp_new_scalar => "operator new",
+                .cpp_new_array => "operator new[]",
+                .rust_global => "__rust_alloc",
+                .rust_box => "__rust_alloc",
+                else => null,
+            };
+        }
+
+        // No family info available
+        return null;
+    }
+
+    /// Check if this is a borrowed reference or refcounted object.
+    /// Borrowed pointers should NOT be freed by the caller - they're managed
+    /// by the owner (e.g., PyList_GetItem returns a borrowed ref).
+    fn isBorrowedOrRefcount(node: *const AllocNode) bool {
+        // Check ownership model
+        if (node.ownership_model == .refcount) {
+            return true;
+        }
+
+        // Check if GC-managed (GC objects shouldn't be manually freed)
+        if (node.is_gc_managed) {
+            return true;
+        }
+
+        // Check container type for smart containers that manage their own memory
+        if (node.container_type) |ct| {
+            return switch (ct) {
+                .rust_box, .rust_vec, .rust_string => true, // Rust containers use Drop
+                .cpp_unique_ptr, .cpp_shared_ptr => true, // C++ smart pointers use destructors
+                .python_list => true, // Python lists are GC'd
+                .go_slice => true, // Go slices are GC'd
+                .csharp_handle => true, // C# SafeHandle uses Dispose
+                .unknown => false,
+            };
+        }
+
+        return false;
+    }
+
+    /// Mark a pointer as freed in MemoryGraph for future double-free detection.
+    /// This updates the AllocNode state so subsequent frees can be detected.
+    fn markAsFreed(ctx: *PassContext, ptr_val: u64, free_callee: []const u8) void {
+        _ = ctx.memory_graph.trackFree(
+            ptr_val, // free_inst_addr (use ptr_val as placeholder)
+            ptr_val, // ptr_val being freed
+            if (std.mem.indexOf(u8, free_callee, "__rust") != null) .rust else .c,
+            0, // bb_id unknown in this context
+        ) catch |err| {
+            log.warn("FREE_VALIDATION: Failed to track free in MemoryGraph: {}", .{err});
+        };
+    }
+
+    /// Report a double-free issue with high confidence.
+    /// Double-free is almost always a real bug with severe consequences
+    /// (heap corruption, security vulnerabilities).
+    fn reportDoubleFreeIssue(
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        callee_name: []const u8,
+        ptr_arg: c.LLVMValueRef,
+        node: *const AllocNode,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
+        const location = Location.init(caller_name);
+
+        // Build detailed trace showing both free sites
+        const trace = try ctx.allocator.alloc(TraceEntry, 4);
+        trace[0] = TraceEntry.init("Double-free detected");
+        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Memory at 0x{x} was first freed at instruction 0x{x}", .{ @intFromPtr(ptr_arg), node.freed_by orelse 0 }));
+        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Second free attempt via {s}()", .{callee_name}));
+        trace[3] = try createFreeTraceEntry(ctx.allocator, callee_name);
+
+        const message = try std.fmt.allocPrint(ctx.allocator, "Double free detected: memory allocated at 0x{x} was already freed at 0x{x}. " ++
+            "Second free via {s}() causes undefined behavior (heap corruption, security vulnerability).", .{
+            node.alloc_inst,
+            node.freed_by orelse 0,
+            callee_name,
+        });
+
+        var issue = Issue.initWithTrace(
+            .double_free,
+            message,
+            location,
+            .critical, // Double-free is always CRITICAL
+            0.98, // Very high confidence from MemoryGraph proof
+            trace,
+        );
+        errdefer issue.deinit(ctx.allocator);
+
+        try ctx.addIssue(&issue);
+
+        diag.warn("[OMI-CRITICAL] Double free detected in {s}: {s}() on already-freed memory", .{
+            caller_name, callee_name,
+        });
+    }
+
+    /// Report an alloc/free mismatch issue from FFI Contract Database.
+    /// This indicates wrong release function used for a library resource.
+    ///
+    /// Example: SSL_new() followed by BIO_free() instead of SSL_free()
+    /// This can cause memory leaks OR corruption depending on the library.
+    fn reportMismatchIssue(
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        wrong_free_func: []const u8,
+        ptr_arg: c.LLVMValueRef,
+        node: *const AllocNode,
+        alloc_func_name: []const u8,
+        db: *FFIContractDB,
+        diag: *DiagnosticWriter,
+    ) !void {
+        _ = ptr_arg; // Used for future enhancements (e.g., showing pointer value in message)
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
+        const location = Location.init(caller_name);
+
+        // Get expected release functions from DB for better error message
+        const expected_releases = db.getExpectedReleases(alloc_func_name);
+        const expected_str = if (expected_releases) |releases| blk: {
+            if (releases.len == 0) break :blk "see documentation";
+            // Simple case: just return the first one (most common)
+            break :blk releases[0];
+        } else "see documentation";
+
+        // Build trace showing the mismatch
+        const trace = try ctx.allocator.alloc(TraceEntry, 3);
+        trace[0] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Resource allocated via {s}() at instruction 0x{x}", .{ alloc_func_name, node.alloc_inst }));
+        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Incorrectly released via {s}() (wrong function for this resource type)", .{wrong_free_func}));
+        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Expected release function(s): {s}", .{expected_str}));
+
+        const message = try std.fmt.allocPrint(ctx.allocator, "Allocation/release mismatch: {s}() at 0x{x} incorrectly freed with {s}(). " ++
+            "Expected: {s}. This may cause memory corruption or leaks.", .{
+            alloc_func_name,
+            node.alloc_inst,
+            wrong_free_func,
+            expected_str,
+        });
+
+        // Determine severity based on library error-proness
+        const severity: Severity = if (db.isErrorProneLib(alloc_func_name))
+            .critical // Error-prone libraries get higher severity
+        else
+            .high;
+
+        const base_confidence: f32 = db.getConfidence(alloc_func_name);
+
+        var issue = Issue.initWithTrace(
+            .contract_mismatch,
+            message,
+            location,
+            severity,
+            base_confidence,
+            trace,
+        );
+        errdefer issue.deinit(ctx.allocator);
+
+        try ctx.addIssue(&issue);
+
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Allocation/release mismatch in {s}: {s} should use {s}, not {s}", .{
+            omi_prefix,
+            caller_name,
+            alloc_func_name,
+            expected_str,
+            wrong_free_func,
+        });
+
+        // Clean up expected_str if it was heap-allocated
+        if (expected_releases != null) {
+            // expected_str was owned by ArrayList, already freed by defer
+        }
     }
 };
 

@@ -209,6 +209,7 @@ pub const MemoryGraph = struct {
         node.gc_scope = null;
         node.has_deferred_cleanup = false;
         node.container_type = null;
+        node.is_borrowed = false;
 
         // Return to pool if not at capacity (limit pool size to 128 nodes)
         if (graph.node_pool.items.len < 128) {
@@ -371,6 +372,55 @@ pub const MemoryGraph = struct {
     pub fn trackAliasStrong(graph: *MemoryGraph, from_val: u64, to_val: u64) !void {
         // Delegate to the full version with is_weak=false (strong alias)
         return trackAlias(graph, from_val, to_val, false);
+    }
+
+    /// Mark an allocation as a borrowed reference (should NOT report as leak).
+    ///
+    /// Called by Language Adapter when it detects a function returns a borrowed
+    /// reference (e.g., Python's PyList_GetItem, Rust's &mut borrow).
+    ///
+    /// This prevents false positive leak reports for pointers that:
+    ///   - Are owned by another runtime (GC, refcount, etc.)
+    ///   - Should NOT be freed by the caller
+    ///   - Have their lifecycle managed by the callee
+    ///
+    /// Arguments:
+    ///   inst_addr - The instruction address of the call that returned the borrowed ref
+    ///
+    /// Behavior:
+    ///   - If node exists: marks is_borrowed=true and sets ownership_model=.refcount
+    ///   - If node doesn't exist: creates a lazy node with is_borrowed=true
+    pub fn markBorrowedReference(graph: *MemoryGraph, inst_addr: u64) !void {
+        // Try to find existing node by instruction address or pointer value
+        var node = graph.nodes.get(inst_addr);
+
+        if (node == null) {
+            // No direct match - try to find via alloc_inst field
+            var iter = graph.nodes.iterator();
+            while (iter.next()) |entry| {
+                if (entry.value_ptr.*.alloc_inst == inst_addr) {
+                    node = entry.value_ptr;
+                    break;
+                }
+            }
+        }
+
+        if (node) |n| {
+            // Mark existing node as borrowed
+            n.is_borrowed = true;
+            n.ownership_model = .refcount;
+
+            log.debug("MEMORY: Node {} (inst 0x{x}) marked as borrowed reference", .{
+                n.id, inst_addr,
+            });
+        } else {
+            // Create lazy node if not exists (will be filled in by later passes)
+            const lazy_node = try graph.createLazyNode(inst_addr);
+            lazy_node.is_borrowed = true;
+            lazy_node.ownership_model = .refcount;
+
+            log.debug("MEMORY: Created lazy borrowed node for inst 0x{x}", .{inst_addr});
+        }
     }
 
     /// Records a free operation and checks for double-free.

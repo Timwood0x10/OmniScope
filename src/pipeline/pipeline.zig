@@ -156,6 +156,7 @@ pub const Pipeline = struct {
             .resource_summary = &summary_store,
             .candidate_builder = &candidate_builder,
             .issue_verifier = &issue_verifier,
+            .contract_db = try @import("../resource/ffi_contract_db.zig").FFIContractDB.init(self.allocator),
         };
         // Inject resource family registry into memory graph for P2/P3 classification
         ctx.memory_graph.setFamilyRegistry(&family_registry);
@@ -314,14 +315,16 @@ pub const Pipeline = struct {
                         },
                         .returns_borrowed => {
                             // Mark as borrowed - don't report as leak even if not freed
-                            log.debug("ADAPTER: {s} returns BORROWED at inst 0x{x} (confidence={d:.2})", .{
+                            log.debug("ADAPTER: {s} returns BORROWED at inst 0x{x} - marking as weak ref (confidence={d:.2})", .{
                                 call.callee_name, call.inst_addr, call.confidence,
                             });
-                            // TODO: Record as weak alias in MemoryGraph to prevent false positives.
-                            // This requires adding a public addWeakAlias() method to MemoryGraph.
-                            // For now, we rely on the log output for debugging and manual verification.
-                            // Future implementation:
-                            //   ctx.memory_graph.markBorrowed(call.inst_addr);
+
+                            // Record in MemoryGraph to suppress false positive leak reports
+                            ctx.memory_graph.markBorrowedReference(call.inst_addr) catch |err| {
+                                log.warn("ADAPTER: Failed to mark borrowed ref at 0x{x}: {}", .{
+                                    call.inst_addr, err,
+                                });
+                            };
                         },
                         .consumes_arg => {
                             // Mark that argument ownership is transferred

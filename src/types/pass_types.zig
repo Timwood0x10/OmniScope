@@ -48,9 +48,11 @@ pub const SummaryStore = resource_summary_mod.SummaryStore;
 
 const resource_candidate_mod = @import("../pass/analysis/resource/issue_candidate_builder.zig");
 pub const CandidateBuilder = resource_candidate_mod.CandidateBuilder;
-
 const resource_verifier_mod = @import("../pass/analysis/resource/issue_verifier.zig");
 pub const IssueVerifier = resource_verifier_mod.IssueVerifier;
+
+const contract_db_mod = @import("../resource/ffi_contract_db.zig");
+pub const FFIContractDB = contract_db_mod.FFIContractDB;
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -326,6 +328,11 @@ pub const PassContext = struct {
     /// null = legacy mode (direct reporting). Set during pipeline init.
     issue_verifier: ?*IssueVerifier,
 
+    /// FFI Contract Database for library-specific alloc/free validation.
+    /// Provides lifecycle rules for common C libraries (OpenSSL, SQLite, etc.).
+    /// Used by free_validation pass to detect mismatched alloc/free pairs.
+    contract_db: FFIContractDB,
+
     pub fn init(
         allocator: Allocator,
         module: ?ModuleRef,
@@ -378,6 +385,7 @@ pub const PassContext = struct {
             .resource_summary = null,
             .candidate_builder = null,
             .issue_verifier = null,
+            .contract_db = try FFIContractDB.init(allocator),
         };
     }
 
