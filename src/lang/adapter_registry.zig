@@ -329,4 +329,113 @@ test "AdapterRegistry - cross-validation of Python patterns" {
     }
 }
 
+test "Adapter integration - full workflow" {
+    // 1. Initialize registry
+    var registry = try AdapterRegistry.init(testing.allocator);
+    defer registry.deinit();
+
+    // 2. Check adapters registered (at least C, Python, Go, C++)
+    try testing.expect(registry.adapterCount() >= 4);
+
+    // 3. Test adapter retrieval for all languages
+    try testing.expect(registry.getAdapter(.python) != null);
+    try testing.expect(registry.getAdapter(.go) != null);
+    try testing.expect(registry.getAdapter(.c) != null);
+    try testing.expect(registry.getAdapter(.cpp) != null);
+
+    // 4. Test Python adapter classifyCall accuracy
+    if (registry.getAdapter(.python)) |py_adapter| {
+        // Owner functions (return new references)
+        try testing.expectEqual(FFISemantics.returns_owned, py_adapter.classifyCall("PyList_New"));
+        try testing.expectEqual(FFISemantics.returns_owned, py_adapter.classifyCall("PyDict_New"));
+        try testing.expectEqual(FFISemantics.returns_owned, py_adapter.classifyCall("PyBytes_FromString"));
+
+        // Borrower functions (return borrowed references)
+        try testing.expectEqual(FFISemantics.returns_borrowed, py_adapter.classifyCall("PyList_GetItem"));
+        try testing.expectEqual(FFISemantics.returns_borrowed, py_adapter.classifyCall("PyDict_GetItem"));
+        try testing.expectEqual(FFISemantics.returns_borrowed, py_adapter.classifyCall("PyTuple_GetItem"));
+
+        // Reference count operations
+        try testing.expectEqual(FFISemantics.python_refcount_inc, py_adapter.classifyCall("Py_INCREF"));
+        try testing.expectEqual(FFISemantics.python_refcount_inc, py_adapter.classifyCall("Py_XINCREF"));
+        try testing.expectEqual(FFISemantics.consumes_arg, py_adapter.classifyCall("Py_DECREF"));
+        try testing.expectEqual(FFISemantics.consumes_arg, py_adapter.classifyCall("Py_XDECREF"));
+
+        // Consuming functions (steal references)
+        try testing.expectEqual(FFISemantics.consumes_arg, py_adapter.classifyCall("PyList_SetItem"));
+        try testing.expectEqual(FFISemantics.consumes_arg, py_adapter.classifyCall("PyDict_SetItem"));
+
+        // Unknown functions
+        try testing.expectEqual(FFISemantics.unknown, py_adapter.classifyCall("malloc"));
+        try testing.expectEqual(FFISemantics.unknown, py_adapter.classifyCall("printf"));
+
+        // 5. Test analyzeFunction with null (declaration)
+        var analysis = try py_adapter.analyzeFunction(null, null, testing.allocator);
+        defer analysis.deinit();
+
+        try testing.expectEqual(false, analysis.is_analyzed); // Declaration, can't analyze fully
+        try testing.expect(analysis.confidence < 0.5); // Low confidence for declarations
+    } else {
+        try testing.expect(false); // Should not reach here
+    }
+
+    // 6. Test Go adapter classifyCall
+    if (registry.getAdapter(.go)) |go_adapter| {
+        // C allocators via cgo
+        try testing.expectEqual(FFISemantics.returns_owned, go_adapter.classifyCall("C.malloc"));
+        try testing.expectEqual(FFISemantics.returns_owned, go_adapter.classifyCall("C.calloc"));
+        try testing.expectEqual(FFISemantics.consumes_arg, go_adapter.classifyCall("C.free"));
+
+        // cgo wrappers
+        try testing.expectEqual(FFISemantics.returns_owned, go_adapter.classifyCall("_Cgo_malloc"));
+        try testing.expectEqual(FFISemantics.consumes_arg, go_adapter.classifyCall("_Cgo_free"));
+    }
+
+    // 7. Test C++ adapter classifyCall
+    if (registry.getAdapter(.cpp)) |cpp_adapter| {
+        // C allocators (inherited by C++ adapter)
+        try testing.expectEqual(FFISemantics.returns_owned, cpp_adapter.classifyCall("malloc"));
+        try testing.expectEqual(FFISemantics.consumes_arg, cpp_adapter.classifyCall("free"));
+
+        // Smart pointer operations
+        try testing.expectEqual(FFISemantics.returns_owned, cpp_adapter.classifyCall("unique_ptr::release"));
+        try testing.expectEqual(FFISemantics.consumes_arg, cpp_adapter.classifyCall("unique_ptr::reset"));
+        try testing.expectEqual(FFISemantics.returns_borrowed, cpp_adapter.classifyCall("shared_ptr::get"));
+    }
+
+    // 8. Test C adapter classifyCall
+    if (registry.getAdapter(.c)) |c_adapter| {
+        try testing.expectEqual(FFISemantics.returns_owned, c_adapter.classifyCall("malloc"));
+        try testing.expectEqual(FFISemantics.returns_owned, c_adapter.classifyCall("calloc"));
+        try testing.expectEqual(FFISemantics.returns_owned, c_adapter.classifyCall("strdup"));
+        try testing.expectEqual(FFISemantics.consumes_arg, c_adapter.classifyCall("free"));
+        try testing.expectEqual(FFISemantics.returns_borrowed, c_adapter.classifyCall("getenv"));
+        try testing.expectEqual(FFISemantics.returns_borrowed, c_adapter.classifyCall("strerror"));
+    }
+
+    // 9. Test classifyCallAny unified interface
+    try testing.expectEqual(FFISemantics.returns_owned, registry.classifyCallAny("PyList_New")); // Python
+    try testing.expectEqual(FFISemantics.returns_owned, registry.classifyCallAny("malloc")); // C/C++
+    try testing.expectEqual(FFISemantics.returns_owned, registry.classifyCallAny("C.malloc")); // Go
+    try testing.expectEqual(FFISemantics.unknown, registry.classifyCallAny("totally_unknown_func"));
+
+    // 10. Test shouldSuppressAny aggregation
+    try testing.expect(registry.shouldSuppressAny("_PyGC_Collect")); // Python internal
+    try testing.expect(registry.shouldSuppressAny("runtime.mallocgc")); // Go runtime
+    try testing.expect(registry.shouldSuppressAny("__cxa_throw")); // C++ ABI
+    try testing.expect(!registry.shouldSuppressAny("my_user_function")); // User code
+
+    // 11. Test detectAdapter always returns valid adapter
+    const detected = registry.detectAdapter(undefined);
+    try testing.expect(detected.language != .unknown);
+    try testing.expect(detected.name.len > 0);
+
+    // 12. Test analyzeFunction through registry
+    var reg_analysis = try registry.analyzeFunction(undefined, undefined, undefined);
+    defer reg_analysis.deinit();
+
+    try testing.expect(reg_analysis.confidence >= 0.0);
+    try testing.expect(reg_analysis.language != .unknown);
+}
+
 const testing = std.testing;

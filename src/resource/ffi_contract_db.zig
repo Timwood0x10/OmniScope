@@ -994,3 +994,59 @@ test "libraryCount and totalRules - database statistics" {
     // Log for debugging
     std.debug.print("\nFFI Contract DB: {} libraries, {} rules\n", .{ lib_count, rule_count });
 }
+
+test "FFIContractDB - performance benchmark" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    const test_funcs = [_][]const u8{
+        "SSL_new",      "SSL_free",       "BIO_new",        "BIO_free",
+        "sqlite3_open", "sqlite3_close",  "malloc",         "free",
+        "PyList_New",   "PyList_GetItem", "Py_INCREF",      "Py_DECREF",
+        "JSObjectMake", "g_malloc",       "g_free",         "uv_tcp_init",
+        "uv_close",     "deflateInit_",   "deflateEnd",     "mi_malloc",
+        "mi_free",      "NewLocalRef",    "DeleteLocalRef",
+    };
+
+    var timer = try std.time.Timer.start();
+
+    // Benchmark: 10,000 queries
+    const iterations = 10_000;
+    var i: usize = 0;
+    while (i < iterations) : (i += 1) {
+        for (test_funcs) |func| {
+            _ = db.shouldReportLeak(func);
+            _ = db.isValidRelease(func, "free");
+            _ = db.getOwnership(func);
+            _ = db.isErrorProneLib(func);
+            _ = db.getConfidence(func);
+        }
+    }
+
+    const elapsed_ns = timer.lap();
+    const total_queries = iterations * test_funcs.len * 5;
+    const per_query_ns = @divTrunc(elapsed_ns, total_queries);
+
+    std.debug.print("\n=== FFIContractDB Performance Benchmark ===\n", .{});
+    std.debug.print("  Total queries: {}\n", .{total_queries});
+    std.debug.print("  Elapsed time: {} ns ({.3} ms)\n", .{
+        elapsed_ns,
+        @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0,
+    });
+    std.debug.print("  Per-query average: {} ns ({.3} µs)\n", .{
+        per_query_ns,
+        @as(f64, @floatFromInt(per_query_ns)) / 1_000.0,
+    });
+    std.debug.print("  Libraries: {}, Rules: {}\n", .{
+        db.libraryCount(),
+        db.totalRules(),
+    });
+
+    // Requirement: < 1000 ns per query (1 microsecond)
+    try std.testing.expect(per_query_ns < 1000);
+
+    // Additional sanity check: should be reasonably fast (< 500 ns for in-memory DB)
+    if (per_query_ns > 500) {
+        std.debug.print("  WARNING: Query time is slower than expected\n", .{});
+    }
+}

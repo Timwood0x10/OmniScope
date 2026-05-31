@@ -396,10 +396,9 @@ pub const MemoryGraph = struct {
 
         if (node == null) {
             // No direct match - try to find via alloc_inst field
-            var iter = graph.nodes.iterator();
-            while (iter.next()) |entry| {
-                if (entry.value_ptr.*.alloc_inst == inst_addr) {
-                    node = entry.value_ptr;
+            for (graph.node_store.items) |n| {
+                if (n.alloc_inst == inst_addr) {
+                    node = n;
                     break;
                 }
             }
@@ -723,6 +722,112 @@ pub const MemoryGraph = struct {
         graph.bb_edges.clearRetainingCapacity();
 
         graph.next_id = 1;
+    }
+
+    // =====================================================================
+    // Phase 2: RAII / Ownership-Aware Analysis
+    // =====================================================================
+
+    /// Track Rust Drop trait implementation for an allocation.
+    ///
+    /// When detected, marks the node as having RAII cleanup, which
+    /// suppresses false-positive leak reports for Rust allocations.
+    ///
+    /// This is called by the Rust Drop Semantics pass when it identifies
+    /// a drop_in_place → __rust_dealloc chain for an allocation.
+    ///
+    /// Arguments:
+    ///   alloc_inst - The instruction address of the original allocation
+    ///   drop_inst  - The instruction address of the drop_in_place call
+    ///
+    /// Behavior:
+    ///   - Finds the AllocNode for alloc_inst (by alloc_inst field or pointer value)
+    ///   - Marks has_raii_cleanup = true
+    ///   - Sets ownership_model = .raii
+    ///   - Appends drop_inst to raii_cleanup_sites
+    pub fn trackRustDrop(
+        graph: *MemoryGraph,
+        alloc_inst: u64,
+        drop_inst: u64,
+    ) !void {
+        // Try to find node by alloc_inst field first (most reliable for Rust)
+        var node: ?*AllocNode = null;
+
+        for (graph.node_store.items) |*n| {
+            if (n.alloc_inst == alloc_inst) {
+                node = n;
+                break;
+            }
+        }
+
+        // Fallback: try direct pointer lookup
+        if (node == null) {
+            node = graph.nodes.get(alloc_inst);
+        }
+
+        if (node) |n| {
+            n.has_raii_cleanup = true;
+            n.ownership_model = .raii;
+
+            try n.raii_cleanup_sites.append(graph.allocator, drop_inst);
+
+            log.debug("MEMORY: Node {} (inst 0x{x}) has Rust Drop at inst 0x{x}", .{
+                n.id,
+                alloc_inst,
+                drop_inst,
+            });
+        } else {
+            log.warn("MEMORY: Cannot find node for inst 0x{x} to track Drop", .{alloc_inst});
+        }
+    }
+
+    /// Check if an allocation has RAII cleanup (suppresses leak reports).
+    ///
+    /// Returns true if the allocation is managed by RAII (Rust Drop, C++ destructor),
+    /// meaning the compiler-generated cleanup code will handle deallocation.
+    ///
+    /// This is used by leak detection passes to suppress false positives:
+    ///   - Rust: __rust_alloc + drop_in_place → NOT a leak
+    ///   - C++: operator new + ~T destructor → NOT a leak
+    ///
+    /// Arguments:
+    ///   alloc_inst - The instruction address to check
+    ///
+    /// Returns:
+    ///   true if RAII cleanup was detected for this allocation
+    pub fn hasRAIICleanup(graph: *MemoryGraph, alloc_inst: u64) bool {
+        // Try to find node by alloc_inst field first
+        var iter = graph.nodes.iterator();
+        while (iter.next()) |entry| {
+            if (entry.value_ptr.*.alloc_inst == alloc_inst) {
+                return entry.value_ptr.*.has_raii_cleanup;
+            }
+        }
+
+        // Fallback: direct pointer lookup
+        if (graph.nodes.get(alloc_inst)) |node| {
+            return node.has_raii_cleanup;
+        }
+
+        return false;
+    }
+
+    /// Find node index by alloc_inst field.
+    /// O(N) scan — use only when pointer-based lookup fails.
+    ///
+    /// This is needed because Rust allocations often have different
+    /// pointer values for the alloc instruction vs the returned value.
+    /// The alloc_inst field stores the actual allocation call address.
+    ///
+    /// Returns:
+    ///   Index into nodes array, or null if not found
+    pub fn findNodeByInst(graph: *MemoryGraph, alloc_inst: u64) ?usize {
+        for (graph.node_store.items, 0..) |node, idx| {
+            if (node.alloc_inst == alloc_inst) {
+                return idx;
+            }
+        }
+        return null;
     }
 
     // =====================================================================

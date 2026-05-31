@@ -288,11 +288,18 @@ fn isRuntimeInternalFunction(func_name: []const u8) bool {
 }
 
 fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config) !void {
+    // Create mutable copy for classifySurfaces (which needs to set semantic_surface)
+    var mutable_issues = try allocator.alloc(Issue, issues.len);
+    defer allocator.free(mutable_issues);
+    for (issues, 0..) |issue, i| {
+        mutable_issues[i] = issue;
+    }
+
     // CRITICAL: Classify semantic surfaces BEFORE filtering!
     // This ensures boundary-only mode has complete surface information.
-    classifySurfaces(issues);
+    classifySurfaces(mutable_issues);
 
-    const filtered_issues = try filterIssues(allocator, issues, config);
+    const filtered_issues = try filterIssues(allocator, mutable_issues, config);
     defer allocator.free(filtered_issues);
 
     if (config.output_format == .json) {

@@ -43,6 +43,9 @@ const llvm_safe = @import("../ir/llvm_safe.zig");
 const lang = @import("../lang/adapter_registry.zig");
 const lang_types = @import("../lang/types.zig");
 
+// v0.2.0: Container type inference for ownership-aware analysis
+const container_inference = @import("../semantics/container_inference.zig");
+
 /// Analysis pipeline
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
@@ -342,6 +345,28 @@ pub const Pipeline = struct {
             functions_analyzed,
             detected_adapter.name,
             total_ffi_calls_classified,
+        });
+
+        // ════════════════════════════════════════════════════
+        // v0.2.0: Container Type Inference (Phase 2 - Ownership Aware)
+        // After adapter analysis, infer container types for all allocations
+        // to enable RAII/refcount/GC-aware leak suppression.
+        //
+        // NOTE: Full inference will be activated in a future commit when
+        // alloc_callee field is populated by pointer_ownership pass.
+        // Currently this serves as the integration point and placeholder.
+        // ════════════════════════════════════════════════════
+        var containers_classified: u32 = 0;
+
+        // Count nodes that need container classification
+        for (ctx.memory_graph.node_store.items) |node| {
+            if (node.container_type == null) {
+                containers_classified += 1;
+            }
+        }
+
+        log.info("PIPELINE: Container inference initialized ({} nodes to classify)", .{
+            containers_classified,
         });
 
         // P0-3: If no FFI calls detected at IR level, skip heavy FFI analysis passes.

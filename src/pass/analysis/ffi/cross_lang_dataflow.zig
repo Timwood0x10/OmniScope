@@ -78,6 +78,11 @@ pub const CrossLangDataFlow = struct {
         };
         defer contract_db.deinit();
 
+        log.info("CONTRACTS: Loaded {} rules for {} libraries", .{
+            contract_db.totalRules(),
+            contract_db.libraryCount(),
+        });
+
         var esc_analysis = escape_analysis.EscapeAnalysis.init(ctx.allocator);
         defer esc_analysis.deinit();
 
@@ -106,7 +111,7 @@ pub const CrossLangDataFlow = struct {
 
         try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db, &esc_analysis, &raii);
 
-        try detectDoubleFreePaths(ctx, &allocations, &stats, diag);
+        try detectDoubleFreePaths(ctx, &allocations, &stats, diag, &contract_db);
 
         // Print FFI Contract DB statistics
         contract_db.printStats();
@@ -202,6 +207,10 @@ pub const CrossLangDataFlow = struct {
 
                         // 1. Track allocations
                         if (isAllocationFunction(called_name)) {
+                            // CONTRACT-DB: Pre-check allocation with contract DB
+                            const alloc_confidence = db.getConfidence(called_name);
+                            const alloc_ownership = db.getOwnership(called_name);
+
                             const result_val = @intFromPtr(inst);
                             if (result_val != 0) {
                                 const alloc_lang = classifyAllocLanguage(called_name, func_lang);
@@ -219,6 +228,16 @@ pub const CrossLangDataFlow = struct {
                                 try alloc_by_ptr.put(result_val, allocations.items.len - 1);
                                 stats.alloc_count += 1;
                                 next_id += 1;
+
+                                // Log high-confidence contract matches
+                                if (alloc_confidence > 0.9) {
+                                    log.debug("CONTRACT-ALLOC: {s} in {s} (confidence={d:.2}, ownership={s})", .{
+                                        called_name,
+                                        func_name,
+                                        alloc_confidence,
+                                        if (alloc_ownership) |o| @tagName(o) else "unknown",
+                                    });
+                                }
                             }
                         }
 
@@ -836,10 +855,15 @@ pub const CrossLangDataFlow = struct {
         allocations: *std.ArrayList(CrossLangAlloc),
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
+        db: *ffi_contract_db.FFIContractDB,
     ) !void {
         for (allocations.items) |alloc| {
             // Skip if not freed
             if (!alloc.freed) continue;
+
+            // CONTRACT-DB: Check if allocation is from error-prone library
+            const is_error_prone = db.isErrorProneLib(alloc.alloc_callee);
+            const alloc_rule_confidence = db.getConfidence(alloc.alloc_callee);
 
             // Check if freed multiple times
             if (alloc.free_langs.items.len <= 1) continue;
@@ -861,26 +885,59 @@ pub const CrossLangDataFlow = struct {
             // This is a double-free path across languages
             stats.double_free_paths += 1;
 
+            // CONTRACT-DB: Validate each free function against the contract
+            var has_contract_violation = false;
+            for (alloc.free_funcs.items) |free_func| {
+                const pair_validity = db.isValidRelease(alloc.alloc_callee, free_func);
+                if (pair_validity == .mismatch) {
+                    has_contract_violation = true;
+                    log.warn("CONTRACT-DOUBLE-FREE-MISMATCH: {s} freed by invalid {s}", .{
+                        alloc.alloc_callee,
+                        free_func,
+                    });
+                }
+            }
+
+            // Calculate confidence with contract DB boost
+            var confidence: f32 = 0.9;
+            if (is_error_prone) {
+                confidence = @min(confidence + 0.05, 1.0);
+            }
+            if (has_contract_violation) {
+                confidence = @min(confidence + 0.05, 1.0);
+            }
+            if (alloc_rule_confidence > confidence) {
+                confidence = alloc_rule_confidence;
+            }
+
             // Create issue message
-            const message = try std.fmt.allocPrint(ctx.allocator, "Double-free path detected: pointer allocated in {s} ({s}) freed in multiple languages ({s})", .{ alloc.alloc_func, @tagName(alloc.alloc_lang), formatLanguages(alloc.free_langs.items) });
+            const message = try std.fmt.allocPrint(ctx.allocator, "Double-free path detected: pointer allocated in {s} ({s}) via {s} freed in multiple languages ({s}){}", .{
+                alloc.alloc_func,
+                @tagName(alloc.alloc_lang),
+                alloc.alloc_callee,
+                formatLanguages(alloc.free_langs.items),
+                if (has_contract_violation) " [CONTRACT VIOLATION]" else "",
+            });
             defer ctx.allocator.free(message);
 
-            // Report issue
             const location = Location.init(alloc.alloc_func);
+            const severity: IssueSeverity = if (has_contract_violation and is_error_prone) .critical else .high;
             const issue = Issue.init(
                 .double_free,
                 message,
                 location,
-                .high,
-                0.9,
+                severity,
+                confidence,
             );
             try ctx.addIssue(&issue);
 
-            diag.warn("CrossLangDataFlow: Double-free path {} in {s} ({s}) freed in {s}", .{
+            diag.warn("CrossLangDataFlow: Double-free path {} in {s} ({s}) freed in {s} (confidence: {d:.2}{s})", .{
                 alloc.id,
                 alloc.alloc_func,
                 @tagName(alloc.alloc_lang),
                 formatLanguages(alloc.free_langs.items),
+                confidence,
+                if (has_contract_violation) ", CONTRACT MISMATCH" else "",
             });
         }
     }

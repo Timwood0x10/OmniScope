@@ -449,6 +449,18 @@ pub const FreeValidationPass = struct {
         const origin_info = pointer_origins.get(ptr_arg);
         const origin = if (origin_info) |info| info.origin else .unknown;
 
+        // ── NEW: FFI Contract Database Validation (source_desc-based) ──
+        // This layer validates alloc/free pairs using library-specific contracts
+        // BEFORE falling through to MemoryGraph or legacy validation.
+        // It catches cases like SSL_new + free() (should be SSL_free).
+        if (origin_info) |info| {
+            if (try validateWithContractDBFromSource(ctx, info.source_desc, callee_name, caller_func, inst, diag)) |result| {
+                return result; // true = bug reported, false = valid pair
+            }
+            // result == null → no contract info, continue to normal validation
+        }
+        // ── END Contract Validation ──
+
         // Only report for clearly invalid origins (not unknown - may be cross-function alloc)
         // unknown origin is skipped because allocation may have happened in another function
         //
@@ -984,6 +996,156 @@ pub const FreeValidationPass = struct {
         return null;
     }
 
+    /// Validate alloc/free pair using FFI Contract Database based on source_desc.
+    /// This is the source_desc-based complement to validateWithContractDB (which uses AllocNode).
+    ///
+    /// It extracts the allocation function name from the textual source_desc string
+    /// and queries the contract database for validity.
+    ///
+    /// Returns:
+    ///   - `true`  → mismatch bug detected (wrong release function)
+    ///   - `false` → valid pair (correct release function)
+    ///   - `null`  → no contract info available (continue to next layer)
+    fn validateWithContractDBFromSource(
+        ctx: *PassContext,
+        source_desc: []const u8,
+        callee_name: []const u8,
+        caller_func: c.LLVMValueRef,
+        free_inst: c.LLVMValueRef,
+        diag: *DiagnosticWriter,
+    ) !?bool {
+        // Extract allocator function name from source description
+        const alloc_func = extractAllocFuncName(source_desc) orelse return null;
+
+        log.debug("CONTRACT-DB-SOURCE: Checking pair {s} -> {s} at inst 0x{x} (from source_desc: '{s}')", .{
+            alloc_func, callee_name, @intFromPtr(free_inst), source_desc,
+        });
+
+        // Query FFI Contract DB
+        const result = ctx.contract_db.isValidRelease(alloc_func, callee_name);
+
+        switch (result) {
+            .valid_pair => {
+                log.debug("CONTRACT-DB-SOURCE: ✓ Valid pair: {s} -> {s}", .{
+                    alloc_func, callee_name,
+                });
+                return false; // Valid pair, no issue
+            },
+            .mismatch => {
+                log.warn("CONTRACT-DB-SOURCE: ✗ MISMATCH! alloc={s} but free={s}", .{
+                    alloc_func, callee_name,
+                });
+
+                // Get expected release functions for error message
+                const expected = ctx.contract_db.getExpectedReleases(alloc_func);
+
+                if (expected) |expected_frees| {
+                    // Report CRITICAL issue with detailed message
+                    try reportCrossAllocatorMismatch(
+                        ctx,
+                        caller_func,
+                        alloc_func,
+                        callee_name,
+                        expected_frees,
+                        diag,
+                    );
+                } else {
+                    // Fallback to generic mismatch report
+                    log.warn("CONTRACT-DB-SOURCE: No expected releases for {s}, using generic report", .{alloc_func});
+                    // Use a compile-time constant slice for the fallback
+                    const fallback_expected = &[_][]const u8{"see library documentation"};
+                    try reportCrossAllocatorMismatch(
+                        ctx,
+                        caller_func,
+                        alloc_func,
+                        callee_name,
+                        fallback_expected,
+                        diag,
+                    );
+                }
+
+                return true; // Issue found and reported
+            },
+            .unknown_alloc, .unknown_release => {
+                log.debug("CONTRACT-DB-SOURCE: No contract info for {s}, using heuristics", .{
+                    alloc_func,
+                });
+
+                // Additional check: Should we even report leaks for this alloc?
+                if (!ctx.contract_db.shouldReportLeak(alloc_func)) {
+                    log.debug("CONTRACT-DB-SOURCE: Suppressing leak check for GC-managed: {s}", .{
+                        alloc_func,
+                    });
+                    return false; // Don't report as potential leak
+                }
+
+                return null; // No info, continue to next layer
+            },
+        }
+    }
+
+    /// Extract the allocator function name from origin info description.
+    /// This complements inferAllocFuncName() by parsing textual source_desc strings.
+    ///
+    /// source_desc format examples:
+    ///   "from malloc()"
+    ///   "from FFI call SSL_new()"
+    ///   "from parameter 0 in main"
+    ///   "allocated by __rust_alloc at instruction 0x1234"
+    ///
+    /// Returns the function name if found, null otherwise.
+    fn extractAllocFuncName(source_desc: []const u8) ?[]const u8 {
+        // Pattern 1: Find "by XXXX()" or "via XXXX()" (e.g., "allocated by malloc()")
+        if (std.mem.indexOf(u8, source_desc, "by ")) |start| {
+            const after_by = source_desc[start + 3 ..];
+            if (std.mem.indexOf(u8, after_by, "()")) |end| {
+                return after_by[0..end];
+            }
+        }
+
+        // Pattern 2: Find "via XXXX()" (e.g., "allocated via SSL_new()")
+        if (std.mem.indexOf(u8, source_desc, "via ")) |start| {
+            const after_via = source_desc[start + 4 ..];
+            if (std.mem.indexOf(u8, after_via, "()")) |end| {
+                return after_via[0..end];
+            }
+        }
+
+        // Pattern 3: Find "from XXXX()" (e.g., "from malloc()", "from FFI call SSL_new()")
+        if (std.mem.indexOf(u8, source_desc, "from ")) |start| {
+            const after_from = source_desc[start + 5 ..];
+            // Skip common prefixes like "FFI call ", "parameter "
+            const trimmed = if (std.mem.indexOf(u8, after_from, "call ")) |call_start|
+                after_from[call_start + 5 ..]
+            else
+                after_from;
+
+            if (std.mem.indexOf(u8, trimmed, "()")) |end| {
+                // Ensure it's a reasonable function name (not too long)
+                if (end > 0 and end < 64) {
+                    return trimmed[0..end];
+                }
+            }
+        }
+
+        // Pattern 4: Direct function name at start (e.g., "malloc(...)")
+        if (std.mem.indexOf(u8, source_desc, "(")) |end| {
+            if (end > 0 and end < 64) { // Reasonable function name length
+                // Make sure it's not a sentence start like "Pointer" or "Memory"
+                const candidate = source_desc[0..end];
+                const first_char = candidate[0];
+                if ((first_char >= 'a' and first_char <= 'z') or
+                    first_char == '_' or
+                    (first_char >= 'A' and first_char <= 'Z' and end > 2))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// Check if this is a borrowed reference or refcounted object.
     /// Borrowed pointers should NOT be freed by the caller - they're managed
     /// by the owner (e.g., PyList_GetItem returns a borrowed ref).
@@ -1002,9 +1164,9 @@ pub const FreeValidationPass = struct {
         if (node.container_type) |ct| {
             return switch (ct) {
                 .rust_box, .rust_vec, .rust_string => true, // Rust containers use Drop
-                .cpp_unique_ptr, .cpp_shared_ptr => true, // C++ smart pointers use destructors
-                .python_list => true, // Python lists are GC'd
-                .go_slice => true, // Go slices are GC'd
+                .cpp_unique_ptr, .cpp_shared_ptr, .std_vector, .std_string => true, // C++ smart pointers use destructors
+                .python_list, .python_dict => true, // Python objects are GC'd or refcounted
+                .go_slice, .go_map => true, // Go types are GC'd
                 .csharp_handle => true, // C# SafeHandle uses Dispose
                 .unknown => false,
             };
@@ -1155,6 +1317,103 @@ pub const FreeValidationPass = struct {
         if (expected_releases != null) {
             // expected_str was owned by ArrayList, already freed by defer
         }
+    }
+
+    /// Report a cross-allocator mismatch bug using source_desc information.
+    /// This is the enhanced version that works with pointer_origins directly,
+    /// providing detailed error messages with code examples.
+    ///
+    /// Example output:
+    ///   "Cross-allocator mismatch: memory was allocated by 'SSL_new' but freed with 'free'.
+    ///    Expected release function(s): SSL_free or SSL_free_all.
+    ///    This can cause memory corruption, heap overflow, or double-free vulnerabilities."
+    fn reportCrossAllocatorMismatch(
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        alloc_func_name: []const u8,
+        wrong_free_func: []const u8,
+        expected_frees: []const []const u8,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
+        const location = Location.init(caller_name);
+
+        // Build expected functions list string (simple approach without ArrayList)
+        var expected_buf: [512]u8 = undefined;
+        var expected_fbs = std.io.fixedBufferStream(&expected_buf);
+        const expected_writer = expected_fbs.writer();
+        for (expected_frees, 0..) |free_name, i| {
+            if (i > 0) expected_writer.writeAll(" or ") catch {};
+            expected_writer.writeAll(free_name) catch {};
+        }
+        const expected_str = expected_fbs.getWritten();
+
+        // Build detailed message with code examples
+        const message = try std.fmt.allocPrint(ctx.allocator,
+            \\Cross-allocator mismatch: memory was allocated by '{s}' but freed with '{s}'.
+            \\Expected release function(s): {s}.
+            \\This can cause memory corruption, heap overflow, or double-free vulnerabilities.
+            \\
+            \\Example of correct usage:
+            \\  ptr = {s}(...);   // Allocation
+            \\  // ... use ptr ...
+            \\  {s}(ptr);         // Correct release (NOT {s})
+        , .{
+            alloc_func_name,
+            wrong_free_func,
+            expected_str,
+            alloc_func_name,
+            expected_frees[0], // First expected as example
+            wrong_free_func,
+        });
+
+        // Build trace showing the mismatch with code examples
+        const trace = try ctx.allocator.alloc(TraceEntry, 4);
+        trace[0] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Memory allocated via {s}() - library-specific allocator", .{alloc_func_name}));
+        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Incorrectly released via {s}() - wrong deallocator for this resource type", .{wrong_free_func}));
+        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Expected: {s}", .{expected_str}));
+        trace[3] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator,
+            \\Correct pattern:
+            \\  ptr = {s}(...);
+            \\  {s}(ptr);  // NOT {s}(ptr)
+        , .{ alloc_func_name, expected_frees[0], wrong_free_func }));
+
+        // Determine severity: critical for known error-prone libraries
+        var db_check = FFIContractDB.init(ctx.allocator) catch return;
+        defer db_check.deinit();
+        const severity: Severity = if (db_check.isErrorProneLib(alloc_func_name))
+            .critical
+        else
+            .high;
+
+        const base_confidence: f32 = 0.95; // Very high confidence from contract DB proof
+
+        var issue = Issue.initWithTrace(
+            .contract_mismatch,
+            message,
+            location,
+            severity,
+            base_confidence,
+            trace,
+        );
+        errdefer issue.deinit(ctx.allocator);
+
+        try ctx.addIssue(&issue);
+
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Cross-allocator mismatch in {s}: {s} allocated by '{s}' but freed with '{s}'. Use {s} instead.", .{
+            omi_prefix,
+            caller_name,
+            alloc_func_name,
+            alloc_func_name,
+            wrong_free_func,
+            expected_str,
+        });
     }
 };
 

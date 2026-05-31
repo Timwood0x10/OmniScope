@@ -195,12 +195,20 @@ pub const ContainerType = enum(u8) {
     cpp_unique_ptr = 4,
     /// C++ std::shared_ptr<T>
     cpp_shared_ptr = 5,
+    /// C++ std::vector<T>
+    std_vector = 6,
+    /// C++ std::string
+    std_string = 7,
     /// Python list/tuple
-    python_list = 6,
+    python_list = 8,
+    /// Python dict
+    python_dict = 9,
     /// Go slice/array
-    go_slice = 7,
+    go_slice = 10,
+    /// Go map
+    go_map = 11,
     /// C# SafeHandle
-    csharp_handle = 8,
+    csharp_handle = 12,
 };
 
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).

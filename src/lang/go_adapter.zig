@@ -27,6 +27,9 @@ const adapter_mod = @import("language_adapter.zig");
 const types = @import("types.zig");
 const FFISemantics = types.FFISemantics;
 const Language = types.Language;
+const c = @cImport({
+    @cInclude("llvm-c/Core.h");
+});
 
 // ═══════════════════════════════════════════════════════════════
 // Pattern Tables
@@ -237,13 +240,72 @@ pub fn analyzeFunction(
     ctx: adapter_mod.ContextPtr,
     allocator: std.mem.Allocator,
 ) !types.AdapterAnalysis {
-    _ = func_opaque;
     _ = ctx;
 
     var result = try types.AdapterAnalysis.init(allocator, self_ptr.language);
     errdefer result.deinit();
 
-    result.confidence = 0.80;
+    const llvm_func: c.LLVMValueRef = @ptrCast(@alignCast(func_opaque));
+
+    if (c.LLVMIsDeclaration(llvm_func) != 0) {
+        result.confidence = 0.1;
+        return result;
+    }
+
+    var bb_iter = c.LLVMGetFirstBasicBlock(llvm_func);
+
+    while (bb_iter != null) : (bb_iter = c.LLVMGetNextBasicBlock(bb_iter)) {
+        const bb = bb_iter.?;
+
+        var inst_iter = c.LLVMGetFirstInstruction(bb);
+
+        while (inst_iter != null) : (inst_iter = c.LLVMGetNextInstruction(inst_iter)) {
+            const inst = inst_iter.?;
+
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (opcode != c.LLVMCall) continue;
+
+            const called_value = c.LLVMGetCalledValue(inst);
+            if (called_value == null) continue;
+
+            const callee_name_ptr = c.LLVMGetValueName(called_value);
+            if (callee_name_ptr == null) continue;
+            const callee_name = std.mem.span(callee_name_ptr);
+
+            const classification = classifyCall(self_ptr, callee_name);
+
+            if (classification == .unknown) continue;
+
+            const inst_addr: u64 = @intFromPtr(inst);
+            const call_info = types.FFICallInfo.init(
+                inst_addr,
+                callee_name,
+                classification,
+                0.88,
+                .go,
+            );
+
+            try result.addCall(call_info);
+
+            if (classification == .returns_owned) {
+                result.refcount_increments += 1;
+            } else if (classification == .consumes_arg) {
+                result.refcount_decrements += 1;
+            }
+        }
+    }
+
+    result.refcount_balance = @as(i32, @intCast(result.refcount_increments)) -
+        @as(i32, @intCast(result.refcount_decrements));
+
+    if (result.refcount_balance > 0) {
+        result.has_potential_leak = true;
+        result.leak_severity = if (result.refcount_balance > 2) .high else .medium;
+    }
+
+    result.is_analyzed = true;
+    result.confidence = if (result.ffi_calls.items.len > 0) 0.88 else 0.15;
+
     return result;
 }
 
