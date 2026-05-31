@@ -92,6 +92,15 @@ pub const MemoryGraph = struct {
     /// execution path → real double-free. If not reachable → multi-path cleanup.
     bb_edges: std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
 
+    /// Reachability cache: maps (from_bb << 32 | to_bb) → reachability result.
+    /// Avoids repeated graph traversals for the same BB pairs.
+    /// Key encoding: high 32 bits = from_bb, low 32 bits = to_bb.
+    reachability_cache: std.AutoHashMap(u64, bool),
+
+    /// Object pool for AllocNode reuse to reduce allocation overhead.
+    /// Freed nodes are returned to this pool instead of being destroyed.
+    node_pool: std.ArrayList(*AllocNode),
+
     /// Optional resource family registry for family-based classification.
     /// When set, trackAlloc/trackFree will automatically classify alloc/release
     /// families via registry lookup. null = legacy language-only mode (no family data).
@@ -106,8 +115,8 @@ pub const MemoryGraph = struct {
             .next_id = 1,
             .func_counters = std.AutoHashMap(u64, FuncCounter).init(allocator),
             .content_sources = std.AutoHashMap(u64, SourceKind).init(allocator),
-            .call_args = std.ArrayList(CallArgEdge).empty,
-            .call_rets = std.ArrayList(CallRetEdge).empty,
+            .call_args = try std.ArrayList(CallArgEdge).initCapacity(allocator, 64),
+            .call_rets = try std.ArrayList(CallRetEdge).initCapacity(allocator, 64),
             .call_arg_by_ptr = std.AutoHashMap(u64, std.ArrayList(u32)).init(allocator),
             .call_arg_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
             .call_ret_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
@@ -115,6 +124,8 @@ pub const MemoryGraph = struct {
             .alias_to_canonical = std.AutoHashMap(u64, u64).init(allocator),
             .weak_aliases = std.AutoHashMap(u64, void).init(allocator),
             .bb_edges = std.AutoHashMap(u32, std.AutoHashMap(u32, void)).init(allocator),
+            .reachability_cache = std.AutoHashMap(u64, bool).init(allocator),
+            .node_pool = try std.ArrayList(*AllocNode).initCapacity(allocator, 32),
             .family_registry = null,
         };
     }
@@ -162,7 +173,40 @@ pub const MemoryGraph = struct {
         }
         graph.bb_edges.deinit();
 
+        graph.reachability_cache.deinit();
+        graph.node_pool.deinit(graph.allocator);
+
         graph.* = undefined;
+    }
+
+    /// Allocate a node from the pool or create a new one.
+    /// Reuses freed nodes to reduce allocation overhead.
+    fn allocNode(graph: *MemoryGraph) !*AllocNode {
+        if (graph.node_pool.items.len > 0) {
+            return graph.node_pool.pop() orelse return error.OutOfMemory;
+        }
+        return try graph.allocator.create(AllocNode);
+    }
+
+    /// Return a node to the pool for reuse.
+    /// Clears the node's state before returning it to the pool.
+    fn freeNode(graph: *MemoryGraph, node: *AllocNode) !void {
+        // Clear node state for reuse
+        node.aliases.clearRetainingCapacity();
+        node.free_sites.clearRetainingCapacity();
+        node.freed = false;
+        node.freed_by = null;
+        node.escapes = null;
+
+        // Return to pool if not at capacity (limit pool size to 128 nodes)
+        if (graph.node_pool.items.len < 128) {
+            try graph.node_pool.append(graph.allocator, node);
+        } else {
+            // Pool is full, actually free the node
+            node.aliases.deinit();
+            node.free_sites.deinit(graph.allocator);
+            graph.allocator.destroy(node);
+        }
     }
 
     // =====================================================================
@@ -189,8 +233,9 @@ pub const MemoryGraph = struct {
             id,
         });
 
-        const node = try graph.allocator.create(AllocNode);
-        errdefer graph.allocator.destroy(node);
+        // Allocate node from pool or create new
+        const node = try graph.allocNode();
+        errdefer graph.freeNode(node) catch {};
 
         node.* = AllocNode{
             .id = id,
@@ -202,7 +247,7 @@ pub const MemoryGraph = struct {
             .source_kind = kind,
             .zone = alloc_zone,
             .alloc_lang = alloc_lang,
-            .free_sites = std.ArrayList(FreeRecord).empty,
+            .free_sites = try std.ArrayList(FreeRecord).initCapacity(graph.allocator, 4),
             .escapes = null,
         };
         errdefer node.aliases.deinit();
@@ -253,8 +298,9 @@ pub const MemoryGraph = struct {
         const lazy_id = graph.next_id;
         graph.next_id += 1;
 
-        const lazy_node = try graph.allocator.create(AllocNode);
-        errdefer graph.allocator.destroy(lazy_node);
+        // Allocate node from pool or create new
+        const lazy_node = try graph.allocNode();
+        errdefer graph.freeNode(lazy_node) catch {};
 
         lazy_node.* = AllocNode{
             .id = lazy_id,
@@ -267,7 +313,7 @@ pub const MemoryGraph = struct {
             .zone = .unknown,
             .alloc_lang = .unknown,
             .free_lang = null,
-            .free_sites = std.ArrayList(FreeRecord).empty,
+            .free_sites = try std.ArrayList(FreeRecord).initCapacity(graph.allocator, 4),
             .escapes = null,
         };
 
@@ -767,8 +813,29 @@ pub const MemoryGraph = struct {
     }
 
     /// Check if one BB can reach another via the control-flow graph.
-    /// Uses BFS with visited set to handle cycles (loops).
+    /// Uses cached results to avoid repeated traversals.
+    /// Internal implementation uses DFS with visited set to handle cycles.
     pub fn isBBReachable(graph: *MemoryGraph, from_bb: u32, to_bb: u32, visited: *std.AutoHashMap(u32, void)) bool {
+        if (from_bb == to_bb) return true;
+
+        // Check cache first: encode (from_bb, to_bb) as single u64 key
+        const cache_key = (@as(u64, from_bb) << 32) | to_bb;
+        if (graph.reachability_cache.get(cache_key)) |cached_result| {
+            return cached_result;
+        }
+
+        // Compute reachability using DFS
+        const result = isBBReachableImpl(graph, from_bb, to_bb, visited);
+
+        // Cache the result for future queries
+        graph.reachability_cache.put(cache_key, result) catch {};
+
+        return result;
+    }
+
+    /// Internal DFS implementation for reachability checking.
+    /// Separated to allow caching in the public API.
+    fn isBBReachableImpl(graph: *MemoryGraph, from_bb: u32, to_bb: u32, visited: *std.AutoHashMap(u32, void)) bool {
         if (from_bb == to_bb) return true;
         if (visited.contains(from_bb)) return false;
         visited.put(from_bb, {}) catch return false;
@@ -776,7 +843,7 @@ pub const MemoryGraph = struct {
         const successors = graph.bb_edges.get(from_bb) orelse return false;
         var succ_iter = successors.iterator();
         while (succ_iter.next()) |entry| {
-            if (graph.isBBReachable(entry.key_ptr.*, to_bb, visited)) return true;
+            if (isBBReachableImpl(graph, entry.key_ptr.*, to_bb, visited)) return true;
         }
         return false;
     }

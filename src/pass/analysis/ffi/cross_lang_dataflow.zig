@@ -67,7 +67,7 @@ pub const CrossLangDataFlow = struct {
         if (ctx.module == null) return;
 
         var stats = DataFlowStats{};
-        var allocations = std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
+        var allocations = try std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 64);
         defer {
             // Clean up allocations
             for (allocations.items) |*alloc| {
@@ -286,11 +286,26 @@ pub const CrossLangDataFlow = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
+        // Build HashMap index for O(1) allocation lookup by pointer value
+        var alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
+        defer alloc_by_ptr.deinit();
+        for (allocations.items, 0..) |alloc, idx| {
+            try alloc_by_ptr.put(alloc.ptr_val, idx);
+        }
+
+        // Build HashMap index for O(1) FFI edge lookup by callee name
+        var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
+        defer edge_map.deinit();
+        for (cross_edges) |edge| {
+            if (edge.is_ffi_boundary) {
+                try edge_map.put(edge.callee_name, edge);
+            }
+        }
+
         // Scan all functions for calls that pass pointers across FFI boundaries
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) continue;
 
-            // Scan instructions in this function
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
@@ -306,24 +321,11 @@ pub const CrossLangDataFlow = struct {
                         else
                             "";
 
-                        // Check if this call crosses FFI boundary
-                        var is_cross_lang = false;
-                        var callee_lang: Language = .unknown;
-
-                        for (cross_edges) |edge| {
-                            if (std.mem.eql(u8, edge.callee_name, called_name)) {
-                                if (edge.is_ffi_boundary) {
-                                    is_cross_lang = true;
-                                    callee_lang = edge.callee_lang;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!is_cross_lang) continue;
+                        // O(1) lookup: check if this call crosses FFI boundary
+                        const edge = edge_map.get(called_name) orelse continue;
+                        const callee_lang = edge.callee_lang;
 
                         // Check if any arguments are tracked pointers
-                        // LLVMGetNumOperands includes callee at index 0; arguments start at index 1.
                         const num_operands = c.LLVMGetNumOperands(inst);
                         var arg_idx: u32 = 0;
                         while (arg_idx < num_operands) : (arg_idx += 1) {
@@ -331,14 +333,12 @@ pub const CrossLangDataFlow = struct {
                             const arg_val = @intFromPtr(arg);
                             if (arg_val == 0) continue;
 
-                            // Check if this argument is a tracked allocation
-                            for (allocations.items) |*alloc| {
-                                if (alloc.ptr_val == arg_val) {
-                                    // Pointer is being passed to another language
-                                    alloc.passed_to_other_lang = true;
-                                    try alloc.passed_langs.append(ctx.allocator, callee_lang);
-                                    break;
-                                }
+                            // O(1) lookup: check if this argument is a tracked allocation
+                            if (alloc_by_ptr.get(arg_val)) |idx| {
+                                const alloc = &allocations.items[idx];
+                                alloc.passed_to_other_lang = true;
+                                try alloc.passed_langs.append(ctx.allocator, callee_lang);
+                                break;
                             }
                         }
                     }
@@ -500,6 +500,24 @@ pub const CrossLangDataFlow = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
+        // Build HashMap index for O(1) allocation lookup by pointer value (only freed ones)
+        var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
+        defer freed_alloc_by_ptr.deinit();
+        for (allocations.items, 0..) |alloc, idx| {
+            if (alloc.freed) {
+                try freed_alloc_by_ptr.put(alloc.ptr_val, idx);
+            }
+        }
+
+        // Build HashMap index for O(1) FFI edge lookup by callee name
+        var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
+        defer edge_map.deinit();
+        for (cross_edges) |edge| {
+            if (edge.is_ffi_boundary) {
+                try edge_map.put(edge.callee_name, edge);
+            }
+        }
+
         // Scan all functions for uses of freed pointers
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             if (c.LLVMIsDeclaration(func) != 0) continue;
@@ -510,12 +528,10 @@ pub const CrossLangDataFlow = struct {
             else
                 "unknown";
 
-            // Scan instructions in this function
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
                 var inst = c.LLVMGetFirstInstruction(bb);
                 while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    // Check if this instruction uses a freed pointer
                     const num_operands = c.LLVMGetNumOperands(inst);
                     var arg_idx: u32 = 0;
                     while (arg_idx < num_operands) : (arg_idx += 1) {
@@ -523,60 +539,53 @@ pub const CrossLangDataFlow = struct {
                         const arg_val = @intFromPtr(arg);
                         if (arg_val == 0) continue;
 
-                        // Check if this argument is a freed allocation
-                        for (allocations.items) |alloc| {
-                            if (alloc.ptr_val == arg_val and alloc.freed) {
-                                // Check if the use is in a different language than the free
-                                const func_lang = ctx.getModuleLanguage().language;
-                                var use_lang = func_lang;
+                        // O(1) lookup: check if this argument is a freed allocation
+                        if (freed_alloc_by_ptr.get(arg_val)) |idx| {
+                            const alloc = &allocations.items[idx];
+                            const func_lang = ctx.getModuleLanguage().language;
+                            var use_lang = func_lang;
 
-                                // Check if this call crosses FFI boundary
-                                const opcode = c.LLVMGetInstructionOpcode(inst);
-                                if (llvm_safe.isCallOrInvoke(opcode)) {
-                                    const called_val = c.LLVMGetCalledValue(inst);
-                                    if (@intFromPtr(called_val) != 0) {
-                                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                                            std.mem.span(called_name_ptr)
-                                        else
-                                            "";
+                            // Check if this call crosses FFI boundary
+                            const opcode = c.LLVMGetInstructionOpcode(inst);
+                            if (llvm_safe.isCallOrInvoke(opcode)) {
+                                const called_val = c.LLVMGetCalledValue(inst);
+                                if (@intFromPtr(called_val) != 0) {
+                                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                                        std.mem.span(called_name_ptr)
+                                    else
+                                        "";
 
-                                        for (cross_edges) |edge| {
-                                            if (std.mem.eql(u8, edge.callee_name, called_name)) {
-                                                if (edge.is_ffi_boundary) {
-                                                    use_lang = edge.callee_lang;
-                                                    break;
-                                                }
-                                            }
-                                        }
+                                    // O(1) lookup: check if this crosses FFI boundary
+                                    if (edge_map.get(called_name)) |edge| {
+                                        use_lang = edge.callee_lang;
                                     }
                                 }
+                            }
 
-                                // Check if any free was in a different language
-                                for (alloc.free_langs.items) |free_lang| {
-                                    if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
-                                        // Use-after-free across FFI boundary detected!
-                                        const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
-                                        defer ctx.allocator.free(message);
+                            // Check if any free was in a different language
+                            for (alloc.free_langs.items) |free_lang| {
+                                if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
+                                    const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
+                                    defer ctx.allocator.free(message);
 
-                                        const location = Location.init(func_name);
-                                        const issue = Issue.init(
-                                            .use_after_free,
-                                            message,
-                                            location,
-                                            .critical,
-                                            0.95,
-                                        );
-                                        try ctx.addIssue(&issue);
+                                    const location = Location.init(func_name);
+                                    const issue = Issue.init(
+                                        .use_after_free,
+                                        message,
+                                        location,
+                                        .critical,
+                                        0.95,
+                                    );
+                                    try ctx.addIssue(&issue);
 
-                                        diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
-                                            alloc.id,
-                                            @tagName(free_lang),
-                                            @tagName(use_lang),
-                                            func_name,
-                                        });
-                                        break;
-                                    }
+                                    diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
+                                        alloc.id,
+                                        @tagName(free_lang),
+                                        @tagName(use_lang),
+                                        func_name,
+                                    });
+                                    break;
                                 }
                             }
                         }
