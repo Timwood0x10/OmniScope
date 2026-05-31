@@ -3,17 +3,42 @@
 //! This module aggregates diagnostics from various sources
 //! (static analysis, runtime verification, merge engine)
 //! and produces unified reports.
+//!
+//! ## Type Distinction (Important!)
+//!
+//! This module defines **OutputSeverity** for diagnostic log levels:
+//!   - `info` (informational)
+//!   - `warning` (potential issue)
+//!   - `err` (error condition)
+//!
+//! This is **DIFFERENT** from `CommonTypes.Severity` (issue severity):
+//!   - `.low`, `.medium`, `.high`, `.critical`
+//!
+//! **Migration Note (2026-05-31):**
+//! - Removed deprecated `pub const Severity = OutputSeverity` alias to avoid confusion.
+//! - All issue-related code MUST use `CommonTypes.Severity`.
+//! - Only diagnostic/logging code should use `OutputSeverity`.
 
 const std = @import("std");
-const CommonTypes = @import("../common/types.zig");
 
 /// Output severity level for diagnostics (logging/display purpose).
-/// This is DIFFERENT from CommonTypes.Severity (issue severity):
-/// - OutputSeverity: info/warning/err (log level semantics)
-/// - CommonTypes.Severity: low/medium/high/critical (issue criticality)
 ///
-/// aggregator.zig uses OutputSeverity for diagnostic categorization.
-/// Issue-related code should use CommonTypes.Severity instead.
+/// ## Semantic Difference from CommonTypes.Severity
+///
+/// | OutputSeverity (this file)    | CommonTypes.Severity (issues) |
+/// |-------------------------------|-------------------------------|
+/// | Log level semantics           | Issue criticality             |
+/// | info/warning/err             | low/medium/high/critical      |
+/// | For console output formatting | For issue prioritization      |
+///
+/// Use this for:
+/// - Console output formatting
+/// - Log message categorization
+/// - UI display levels
+///
+/// Do NOT use for:
+/// - Issue severity (use CommonTypes.Severity instead)
+/// - Threshold filtering (use Severity.meetsThreshold)
 pub const OutputSeverity = enum(u8) {
     /// Information only
     info = 0,
@@ -23,9 +48,9 @@ pub const OutputSeverity = enum(u8) {
     err = 2,
 };
 
-/// Re-export for backward compatibility (deprecated).
-/// New code should use OutputSeverity for diagnostics, or CommonTypes.Severity for issues.
-pub const Severity = OutputSeverity;
+// NOTE: Deprecated alias `pub const Severity = OutputSeverity` removed on 2026-05-31.
+// Reason: Caused confusion with CommonTypes.Severity (issue severity levels).
+// If you need issue severity, import from common/types.zig instead.
 
 /// Simplified event representation (temporary until runtime/merge.zig is implemented)
 pub const MergedEvent = struct {
@@ -220,7 +245,7 @@ pub const DiagnosticAggregator = struct {
     /// returned slice and all messages within.
     pub fn getBySeverity(
         self: *const DiagnosticAggregator,
-        severity: Severity,
+        severity: OutputSeverity,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
         var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
@@ -298,12 +323,12 @@ pub const DiagnosticAggregator = struct {
         anomalies: []Anomaly,
     ) !void {
         for (anomalies) |anomaly| {
-            const severity: Severity = if (anomaly.confidence >= 0.8)
-                Severity.err
+            const severity: OutputSeverity = if (anomaly.confidence >= 0.8)
+                OutputSeverity.err
             else if (anomaly.confidence >= 0.5)
-                Severity.warning
+                OutputSeverity.warning
             else
-                Severity.info;
+                OutputSeverity.info;
 
             const diag = Diagnostic{
                 .kind = .anomaly,
@@ -372,8 +397,8 @@ pub const DiagnosticKind = enum(u8) {
 pub const Diagnostic = struct {
     /// Diagnostic kind
     kind: DiagnosticKind,
-    /// Severity level
-    severity: Severity,
+    /// Severity level (OutputSeverity: info/warning/err)
+    severity: OutputSeverity,
     /// Location ID
     loc: u32,
     /// Diagnostic message

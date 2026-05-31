@@ -1,16 +1,27 @@
 //! Unified Type Definitions for OmniScope
 //!
-//! This module provides the canonical type definitions used across all analysis passes.
-//! All modules should import types from here to ensure consistency and eliminate duplication.
+//! This module provides the **canonical (single source of truth)** type definitions
+//! used across all analysis passes. All modules should import types from here to
+//! ensure consistency and eliminate duplication.
 //!
-//! Centralizes:
+//! ## Single Source of Truth (SSOT)
+//!
+//! This is the **ONLY** place where fundamental types are defined. Other modules must:
+//! - Import from here (preferred)
+//! - Re-export from here (for backward compatibility)
+//! - NEVER define their own versions of these types
+//!
+//! Centralized types:
+//! - **Severity** (issue severity levels) ← SSOT for this enum
 //! - Location (source code position)
-//! - Severity (issue severity levels)
 //! - IssueKind (issue category enumeration)
+//! - Confidence (detection confidence level)
 //! - ZoneTag (memory zone classification for FFI detection)
 //! - Tag (semantic function tags)
+//! - SemanticSurface (issue provenance classification)
 //!
 //! Design principle: Single source of truth for core types.
+//! Migration completed: 2026-05-31 (unified from 3 duplicate definitions)
 
 const std = @import("std");
 
@@ -100,10 +111,36 @@ pub const Location = struct {
 // Severity
 // ============================================================================
 
-/// Issue severity level.
+/// Issue severity level (ordered by importance).
+///
+/// This is the **single source of truth** for severity levels across the entire project.
+/// All modules must import from here, NEVER define their own Severity enum.
 ///
 /// Ordered from lowest to highest severity. Used for prioritization,
-/// filtering, and display formatting in diagnostics output.
+/// filtering, threshold comparison, and display formatting in diagnostics output.
+///
+/// ## Migration Note (2026-05-31)
+/// Previously duplicated in:
+/// - `src/types/main_config.zig` (deleted, now imports from here)
+/// - `src/diag/aggregator.zig` (had different OutputSeverity, cleaned up)
+///
+/// ## Usage Examples
+/// ```zig
+/// const types = @import("common/types");
+///
+/// // Parse from CLI argument
+/// if (types.Severity.parse("high")) |sev| {
+///     // Use parsed severity
+/// }
+///
+/// // Threshold filtering
+/// if (issue.severity.meetsThreshold(.high)) {
+///     // Report this issue
+/// }
+///
+/// // Display
+/// std.log.info("Severity: {s}", .{sev.displayName()});
+/// ```
 pub const Severity = enum(u8) {
     /// Low severity: informational or minor issues.
     low = 0,
@@ -114,7 +151,29 @@ pub const Severity = enum(u8) {
     /// Critical severity: severe vulnerabilities that must be fixed immediately.
     critical = 3,
 
-    /// Convert severity to string representation.
+    /// Parse severity from string (case-sensitive for CLI consistency).
+    ///
+    /// Returns the matching severity variant, or null if invalid.
+    ///
+    /// ## Migration from main_config.Severity.parse()
+    /// This method replaces the duplicate definition in `src/types/main_config.zig`.
+    /// Behavior is identical: case-sensitive exact match.
+    ///
+    /// ## Example
+    /// ```zig
+    /// const sev = Severity.parse("high") orelse return error.InvalidSeverity;
+    /// ```
+    pub fn parse(name: []const u8) ?Severity {
+        if (std.mem.eql(u8, name, "low")) return .low;
+        if (std.mem.eql(u8, name, "medium")) return .medium;
+        if (std.mem.eql(u8, name, "high")) return .high;
+        if (std.mem.eql(u8, name, "critical")) return .critical;
+        return null;
+    }
+
+    /// Convert severity to lowercase string representation.
+    ///
+    /// Used in JSON/SARIF output and machine-readable formats.
     pub fn toString(self: Severity) []const u8 {
         return switch (self) {
             .low => "low",
@@ -122,6 +181,50 @@ pub const Severity = enum(u8) {
             .high => "high",
             .critical => "critical",
         };
+    }
+
+    /// Convert severity to uppercase display name.
+    ///
+    /// Used in console output, reports, and human-readable messages.
+    /// Example: `.high` → `"HIGH"`
+    pub fn displayName(self: Severity) []const u8 {
+        return switch (self) {
+            .low => "LOW",
+            .medium => "MEDIUM",
+            .high => "HIGH",
+            .critical => "CRITICAL",
+        };
+    }
+
+    /// Convert severity to numeric value (u8) for serialization/comparison.
+    ///
+    /// ## Migration from main_config.Severity.toCommonSeverity()
+    /// This method replaces `toCommonSeverity()` which was specific to main_config.
+    /// Now uses standard Zig `@intFromEnum()` internally.
+    ///
+    /// ## Example
+    /// ```zig
+    /// const numeric_value: u8 = severity.toInt();
+    /// // Result: 0=low, 1=medium, 2=high, 3=critical
+    /// ```
+    pub fn toInt(self: Severity) u8 {
+        return @intFromEnum(self);
+    }
+
+    /// Check if this severity meets or exceeds a minimum threshold.
+    ///
+    /// Used for filtering issues by minimum severity level.
+    /// Returns true if self >= minimum (numeric comparison).
+    ///
+    /// ## Example
+    /// ```zig
+    /// // Only report high/critical issues
+    /// if (issue.severity.meetsThreshold(.high)) {
+    ///     try report(issue);
+    /// }
+    /// ```
+    pub fn meetsThreshold(self: Severity, minimum: Severity) bool {
+        return @intFromEnum(self) >= @intFromEnum(minimum);
     }
 
     /// Get ANSI color code for terminal output.
@@ -559,6 +662,51 @@ test "Severity - enum values and ordering" {
 test "Severity - toString" {
     try std.testing.expectEqualStrings("low", Severity.low.toString());
     try std.testing.expectEqualStrings("critical", Severity.critical.toString());
+}
+
+test "Severity - parse valid values" {
+    // Migrated from src/types/main_config.zig tests
+    try std.testing.expectEqual(Severity.low, Severity.parse("low").?);
+    try std.testing.expectEqual(Severity.medium, Severity.parse("medium").?);
+    try std.testing.expectEqual(Severity.high, Severity.parse("high").?);
+    try std.testing.expectEqual(Severity.critical, Severity.parse("critical").?);
+}
+
+test "Severity - parse invalid values" {
+    // Case-sensitive: uppercase should fail (backward compatible with main_config)
+    try std.testing.expect(Severity.parse("invalid") == null);
+    try std.testing.expect(Severity.parse("") == null);
+    try std.testing.expect(Severity.parse("LOW") == null);
+    try std.testing.expect(Severity.parse("Low") == null);
+    try std.testing.expect(Severity.parse("HIGH") == null);
+}
+
+test "Severity - displayName" {
+    try std.testing.expectEqualStrings("LOW", Severity.low.displayName());
+    try std.testing.expectEqualStrings("MEDIUM", Severity.medium.displayName());
+    try std.testing.expectEqualStrings("HIGH", Severity.high.displayName());
+    try std.testing.expectEqualStrings("CRITICAL", Severity.critical.displayName());
+}
+
+test "Severity - toInt" {
+    // Migrated from main_config.Severity.toCommonSeverity()
+    try std.testing.expectEqual(@as(u8, 0), Severity.low.toInt());
+    try std.testing.expectEqual(@as(u8, 1), Severity.medium.toInt());
+    try std.testing.expectEqual(@as(u8, 2), Severity.high.toInt());
+    try std.testing.expectEqual(@as(u8, 3), Severity.critical.toInt());
+}
+
+test "Severity - meetsThreshold" {
+    // Low meets low threshold
+    try std.testing.expect(Severity.low.meetsThreshold(.low));
+    // High meets low threshold
+    try std.testing.expect(Severity.high.meetsThreshold(.low));
+    // Critical meets high threshold
+    try std.testing.expect(Severity.critical.meetsThreshold(.high));
+    // Low does NOT meet high threshold
+    try std.testing.expect(!Severity.low.meetsThreshold(.high));
+    // Medium does NOT meet critical threshold
+    try std.testing.expect(!Severity.medium.meetsThreshold(.critical));
 }
 
 test "IssueKind - count matches expected" {

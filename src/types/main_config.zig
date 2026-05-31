@@ -1,6 +1,60 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+/// CLI Severity enum for argument parsing.
+///
+/// ## Design Decision (2026-05-31)
+///
+/// This is a **type-compatible mirror** of `CommonTypes.Severity` (defined in src/common/types.zig).
+/// We cannot import from common/types.zig here because it would cause a module conflict:
+/// - `main.zig` (root module) imports this file
+/// - `root.zig` (OmniScope module) also imports common/types.zig via diag/issue.zig
+/// - Zig does not allow the same file to belong to multiple modules
+///
+/// ### Type Compatibility Guarantee
+/// This enum is **binary compatible** with CommonTypes.Severity:
+/// - Same enum tag names (low, medium, high, critical)
+/// - Same backing type (u8) with explicit values (0, 1, 2, 3)
+/// - Same memory layout and size
+///
+/// The Config.min_severity field uses this type for CLI parsing.
+/// When merging with file_config, it's converted to string via @tagName().
+/// No runtime conversion to CommonTypes.Severity is needed in current code paths.
+///
+/// ### Future Migration Path
+/// If Zig introduces module aliasing or if the architecture changes to eliminate
+/// the dual-module structure (main.zig vs root.zig), this should be replaced with:
+/// ```zig
+/// const CommonTypes = @import("../common/types.zig");
+/// pub const Severity = CommonTypes.Severity;
+/// ```
+pub const Severity = enum(u8) {
+    low = 0,
+    medium = 1,
+    high = 2,
+    critical = 3,
+
+    /// Parse severity from string (case-sensitive).
+    ///
+    /// Behavior identical to CommonTypes.Severity.parse().
+    /// Maintained here to avoid circular module dependency.
+    pub fn parse(name: []const u8) ?Severity {
+        if (std.mem.eql(u8, name, "low")) return .low;
+        if (std.mem.eql(u8, name, "medium")) return .medium;
+        if (std.mem.eql(u8, name, "high")) return .high;
+        if (std.mem.eql(u8, name, "critical")) return .critical;
+        return null;
+    }
+
+    /// Convert to numeric value (u8).
+    ///
+    /// Behavior identical to CommonTypes.Severity.toInt().
+    /// Used for serialization when needed.
+    pub fn toInt(self: Severity) u8 {
+        return @intFromEnum(self);
+    }
+};
+
 // ============================================================================
 // Terminal ANSI Colors — auto-disabled when stdout is not a TTY
 // ============================================================================
@@ -37,32 +91,9 @@ pub const MainError = error{
     InvalidOption,
 };
 
-/// Local severity enum for CLI argument parsing.
-/// Avoids importing from common/types.zig to prevent module conflicts.
-pub const Severity = enum {
-    low,
-    medium,
-    high,
-    critical,
-
-    pub fn parse(name: []const u8) ?Severity {
-        if (std.mem.eql(u8, name, "low")) return .low;
-        if (std.mem.eql(u8, name, "medium")) return .medium;
-        if (std.mem.eql(u8, name, "high")) return .high;
-        if (std.mem.eql(u8, name, "critical")) return .critical;
-        return null;
-    }
-
-    pub fn toCommonSeverity(self: Severity) u8 {
-        return switch (self) {
-            .low => 0,
-            .medium => 1,
-            .high => 2,
-            .critical => 3,
-        };
-    }
-};
-
+/// NOTE: This module defines its own Severity enum (see above) due to Zig module system
+/// constraints. It is type-compatible with CommonTypes.Severity but cannot import from it.
+/// See the detailed design decision documentation in the Severity enum definition above.
 pub const Config = struct {
     show_help: bool = false,
     show_version: bool = false,
@@ -79,6 +110,7 @@ pub const Config = struct {
     perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
     perf_json_path: ?[]const u8 = null, // Export performance data to JSON file (implies --perf-stats)
     debug_resource_contract: bool = false, // Enable resource contract debugging (implies --debug)
+    config_path: ?[]const u8 = null, // Path to config file (--config option)
 
     /// Only report issues on FFI boundaries (ignore internal code noise)
     boundary_only: bool = false,
@@ -106,6 +138,11 @@ pub const Config = struct {
             }
         }
         if (self.perf_json_path) |path| {
+            if (path.len > 0) {
+                allocator.free(path);
+            }
+        }
+        if (self.config_path) |path| {
             if (path.len > 0) {
                 allocator.free(path);
             }
@@ -181,6 +218,21 @@ pub fn parseArgs(allocator: Allocator) !Config {
         } else if (std.mem.eql(u8, arg, "--debug-resource-contract")) {
             config.debug_resource_contract = true;
             config.debug = true; // implicitly enable debug
+        } else if (std.mem.eql(u8, arg, "--boundary-only")) {
+            config.boundary_only = true;
+        } else if (std.mem.eql(u8, arg, "--min-severity")) {
+            const sev_str = args.next() orelse {
+                return error.InvalidOption;
+            };
+            config.min_severity = Severity.parse(sev_str) orelse {
+                return error.InvalidOption;
+            };
+        } else if (std.mem.eql(u8, arg, "--config")) {
+            const config_path_arg = args.next() orelse return error.InvalidOption;
+            if (config_path_arg.len == 0) return error.InvalidOption;
+            config.config_path = try allocator.dupe(u8, config_path_arg);
+        } else if (std.mem.eql(u8, arg, "--init-config")) {
+            config.config_path = try allocator.dupe(u8, "__init__");
         } else if (arg.len > 0 and arg[0] == '-') {
             return error.InvalidOption;
         } else {
@@ -197,7 +249,7 @@ pub fn showHelp() void {
     const help_text =
         \\OmniScope - Universal LLVM Analysis Framework
         \\
-        \\Usage: omniscope [options] <input.ll/bc> [input2.ll/bc] [...]
+        \\Usage: omniscope [options] <input.ll/bc> [input2.ll/bc> [...]
         \\
         \\Options:
         \\  -h, --help          Show this help message
@@ -211,10 +263,26 @@ pub fn showHelp() void {
         \\  --perf-stats                      Enable per-pass performance profiling (time, RSS, allocations)
         \\  --perf-json <path>                 Export performance data to JSON file (implies --perf-stats)
         \\  --debug-resource-contract         Enable resource contract debugging (implies --debug)
+        \\  --boundary-only                  Only report issues on FFI boundaries
+        \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format
         \\  -o, --output <file> Write output to file
+        \\
+        \\Configuration:
+        \\  --config FILE           Load configuration from FILE (JSON format)
+        \\  --init-config           Generate default omniscope.json template
+        \\
+        \\  Config file locations (auto-discovered):
+        \\    ./omniscope.json                    (project root)
+        \\    ~/.config/omniscope/config.json     (user global)
+        \\
+        \\  Example config file:
+        \\    {
+        \\      "analysis": { "boundary_only": true, "min_severity": "high" },
+        \\      "filters": { "allocator_shims": { "enabled": true } }
+        \\    }
         \\
         \\Multi-File Mode (auto-detected when 2+ files given):
         \\  omniscope rust.bc c.bc
@@ -242,9 +310,9 @@ test "Severity - parse invalid values" {
     try std.testing.expect(Severity.parse("Low") == null); // case-sensitive
 }
 
-test "Severity - toCommonSeverity conversion" {
-    try std.testing.expectEqual(@as(u8, 0), Severity.low.toCommonSeverity());
-    try std.testing.expectEqual(@as(u8, 1), Severity.medium.toCommonSeverity());
-    try std.testing.expectEqual(@as(u8, 2), Severity.high.toCommonSeverity());
-    try std.testing.expectEqual(@as(u8, 3), Severity.critical.toCommonSeverity());
+test "Severity - toInt conversion" {
+    try std.testing.expectEqual(@as(u8, 0), Severity.low.toInt());
+    try std.testing.expectEqual(@as(u8, 1), Severity.medium.toInt());
+    try std.testing.expectEqual(@as(u8, 2), Severity.high.toInt());
+    try std.testing.expectEqual(@as(u8, 3), Severity.critical.toInt());
 }

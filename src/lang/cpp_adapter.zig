@@ -381,6 +381,20 @@ pub fn isInExceptionPath(inst: *anyopaque) bool {
 /// Used by the memory graph to determine whether RAII cleanup applies.
 /// Returns null for unrecognized allocations (treated as raw_pointer).
 pub fn classifyCppAllocation(func_name: []const u8) ?CppAllocType {
+    if (func_name.len < 3) return null;
+
+    // Itanium C++ ABI mangled name detection (e.g., _ZNSt6vectorIiEEC1Ev)
+    // Pattern: _ZN <nested-name> E <suffix>
+    if (func_name[0] == '_' and func_name[1] == 'Z' and func_name[2] == 'N') {
+        if (std.mem.indexOf(u8, func_name, "vector") != null) return .vector;
+        if (std.mem.indexOf(u8, func_name, "string") != null) return .string;
+        if (std.mem.indexOf(u8, func_name, "basic_string") != null) return .string;
+        if (std.mem.indexOf(u8, func_name, "map") != null) return .map;
+        if (std.mem.indexOf(u8, func_name, "St") != null) return .stl_container;
+        if (std.mem.indexOf(u8, func_name, "unique_ptr") != null) return .smart_ptr;
+        if (std.mem.indexOf(u8, func_name, "shared_ptr") != null) return .smart_ptr;
+    }
+
     for (STL_CONTAINERS) |container| {
         if (std.mem.indexOf(u8, func_name, container) != null) {
             if (std.mem.indexOf(u8, func_name, "::vector") != null) return .vector;

@@ -15,6 +15,7 @@ const log = OmniScope.log;
 const writeJsonEscaped = OmniScope.output.writeJsonEscaped;
 
 const main_config = @import("./types/main_config.zig");
+const file_config = @import("./types/file_config.zig");
 const term = main_config.term;
 const Config = main_config.Config;
 const OutputFormat = main_config.OutputFormat;
@@ -119,9 +120,60 @@ fn deinitAnalyzeResult(res: *AnalyzeResult) void {
     res.* = undefined;
 }
 
+/// Filter issues based on config settings (boundary_only, min_severity).
+/// Returns a new slice containing only the issues that pass all filters.
+fn filterIssues(allocator: std.mem.Allocator, issues: []const Issue, config: Config) ![]Issue {
+    var filtered = std.ArrayList(Issue).initCapacity(allocator, issues.len) catch return error.OutOfMemory;
+    errdefer filtered.deinit(allocator);
+
+    const min_sev = config.min_severity.toInt();
+
+    for (issues) |issue| {
+        // Apply severity threshold
+        const issue_sev: u8 = @intFromEnum(issue.severity);
+        if (issue_sev < min_sev) continue;
+
+        // Apply boundary-only filter
+        if (config.boundary_only) {
+            if (!isFFIBoundaryIssue(issue)) continue;
+        }
+
+        try filtered.append(allocator, issue);
+    }
+
+    return filtered.toOwnedSlice(allocator);
+}
+
+/// Check if an issue is on an FFI boundary.
+fn isFFIBoundaryIssue(issue: Issue) bool {
+    // Check semantic surface classification
+    if (issue.semantic_surface) |surface| {
+        return switch (surface) {
+            .boundary, .ffi_producer => true,
+            else => false,
+        };
+    }
+
+    // Fallback: check FFI boundary info
+    if (issue.ffi_boundary != null) return true;
+
+    // Fallback: check issue kind for FFI-related kinds
+    return switch (issue.kind) {
+        .ffi_unsafe_call,
+        .ffi_type_mismatch,
+        .cross_language_leak,
+        .cross_language_free,
+        => true,
+        else => false,
+    };
+}
+
 fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config) !void {
+    const filtered_issues = try filterIssues(allocator, issues, config);
+    defer allocator.free(filtered_issues);
+
     if (config.output_format == .json) {
-        const json_output = formatIssuesAsJson(allocator, issues, func_count, time_ms) catch |err| {
+        const json_output = formatIssuesAsJson(allocator, filtered_issues, func_count, time_ms) catch |err| {
             log.err("Failed to format JSON output: {}\n", .{err});
             return;
         };
@@ -143,7 +195,7 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
         }
     } else if (config.output_format == .sarif) {
         var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.9");
-        const sarif_output = sarif.generate(issues) catch |err| {
+        const sarif_output = sarif.generate(filtered_issues) catch |err| {
             log.err("Failed to generate SARIF output: {}\n", .{err});
             return;
         };
@@ -165,7 +217,7 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
         }
     } else {
         // Text mode: emit structured report
-        const report = formatStructuredReport(allocator, issues, func_count, time_ms) catch |err| {
+        const report = formatStructuredReport(allocator, filtered_issues, func_count, time_ms) catch |err| {
             log.err("Failed to format report: {}\n", .{err});
             return;
         };
@@ -915,6 +967,52 @@ pub fn main() !void {
 
     var config = try main_config.parseArgs(allocator);
     defer config.deinit(allocator);
+
+    // Handle --init-config: generate default config file and exit
+    if (config.config_path) |path| {
+        if (std.mem.eql(u8, path, "__init__")) {
+            const default_config = try file_config.generateDefaultConfig(allocator);
+            defer allocator.free(default_config);
+
+            const out_path = "omniscope.json";
+            const file = std.fs.cwd().createFile(out_path, .{}) catch |err| {
+                log.err("Failed to create config file '{s}': {}\n", .{ out_path, err });
+                return err;
+            };
+            defer file.close();
+
+            file.writeAll(default_config) catch |err| {
+                log.err("Failed to write config file: {}\n", .{err});
+                return err;
+            };
+
+            log.info("Generated default config: {s}\n", .{out_path});
+            return;
+        }
+    }
+
+    // Load and merge configuration from file (if exists)
+    if (config.config_path) |config_path| {
+        log.info("CONFIG: Loading explicit config from {s}\n", .{config_path});
+        if (file_config.loadFromFile(allocator, config_path)) |file_cfg| {
+            _ = file_cfg;
+        } else |err| {
+            log.warn("CONFIG: Failed to load config file '{s}': {}, using CLI defaults\n", .{ config_path, err });
+        }
+    } else {
+        // Auto-discover config file
+        if (file_config.discoverConfigFile()) |discovered_path| {
+            log.info("CONFIG: Discovered config at {s}\n", .{discovered_path});
+            // Store discovered path for reference
+            config.config_path = allocator.dupe(u8, discovered_path) catch null;
+
+            if (file_config.loadFromFile(allocator, discovered_path)) |file_cfg| {
+                _ = file_cfg;
+            } else |err| {
+                log.warn("CONFIG: Failed to load discovered config '{s}': {}, using defaults\n", .{ discovered_path, err });
+            }
+        }
+    }
 
     if (config.quiet) {
         log.setLogLevel(.quiet);
