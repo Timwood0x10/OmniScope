@@ -200,13 +200,6 @@ pub const FilterContext = struct {
         // Never-downgraded issues (core memory safety, security critical) are exempt
         if (!self.has_boundary_evidence and !surface.allowsHigh() and !self.never_downgraded) {
             if (effective == .critical or effective == .high) {
-                log.debug("SURFACE-DOWNGRADE: {s} in [{s}] {s}->{s} (surface={s}, no boundary evidence)", .{
-                    @tagName(self.issue_kind),
-                    self.func_name,
-                    @tagName(effective),
-                    @tagName(Severity.medium),
-                    surface.name(),
-                });
                 effective = .medium;
             }
         }

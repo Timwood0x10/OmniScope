@@ -11,6 +11,8 @@
 //! Matching: prefix (startsWith), contains (indexOf), exact (eql).
 
 const std = @import("std");
+const log = @import("../common/log.zig");
+
 const PatternData = @import("pattern_registry_data.zig").PatternData;
 
 /// Three-tier C function safety classification for @cImport bindings.
@@ -651,7 +653,7 @@ test "pattern count: registry has ~560 consolidated patterns" {
         P.table_signals.len + P.compiler_internal_patterns.len +
         P.rust_stdlib_paths.len + P.zig_stdlib_paths.len + P.cpp_stdlib_paths.len +
         P.rust_noise_patterns.len + P.zig_noise_patterns.len + P.cpp_noise_patterns.len;
-    std.debug.print("Total patterns: {d}\n", .{total});
+    log.debug("Total patterns: {d}", .{total});
     try std.testing.expect(total > 500);
     try std.testing.expect(total < 750);
 }

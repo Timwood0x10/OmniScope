@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
+const log = @import("../common/log.zig");
 
 /// Semantic kind — what the SRT needs to answer:
 /// "Can this value be explained away by language semantics?"
@@ -297,11 +298,11 @@ pub const SemanticTree = struct {
 
             // Check SRT for this value
             if (self.hasKind(ref, .heap_provenance) != null) {
-                std.debug.print("[TRACE] Found heap_provenance at depth {d}, ref={d}\n", .{ depth, ref });
+                log.debug("[TRACE] Found heap_provenance at depth {d}, ref={d}", .{ depth, ref });
                 return true;
             }
             if (self.hasKind(ref, .global_provenance) != null) {
-                std.debug.print("[TRACE] Found global_provenance at depth {d}, ref={d}\n", .{ depth, ref });
+                log.debug("[TRACE] Found global_provenance at depth {d}, ref={d}", .{ depth, ref });
                 return true;
             }
 
@@ -311,13 +312,13 @@ pub const SemanticTree = struct {
                 const is_arg = @intFromPtr(c.LLVMIsAArgument(current)) != 0;
                 const is_const = @intFromPtr(c.LLVMIsAConstant(current)) != 0;
                 const value_kind = c.LLVMGetValueKind(current);
-                std.debug.print("[TRACE] Not an instruction at depth {d}: is_global={}, is_arg={}, is_const={}, value_kind={d}\n", .{ depth, is_global, is_arg, is_const, value_kind });
+                log.debug("[TRACE] Not an instruction at depth {d}: is_global={}, is_arg={}, is_const={}, value_kind={d}", .{ depth, is_global, is_arg, is_const, value_kind });
 
                 // If it's a global variable, it might have heap_provenance
                 if (is_global) {
                     const global_ref = @intFromPtr(current);
                     if (self.hasKind(global_ref, .heap_provenance) != null) {
-                        std.debug.print("[TRACE] Found heap_provenance on global variable\n", .{});
+                        log.debug("[TRACE] Found heap_provenance on global variable", .{});
                         return true;
                     }
                 }
@@ -325,19 +326,19 @@ pub const SemanticTree = struct {
                 // If it's a function argument, it should already be marked
                 // by forward propagation in ch09
                 if (is_arg) {
-                    std.debug.print("[TRACE] Function argument — check SRT for pre-marked provenance\n", .{});
+                    log.debug("[TRACE] Function argument — check SRT for pre-marked provenance", .{});
                 }
                 break;
             }
 
             const opcode = c.LLVMGetInstructionOpcode(current);
             const opcode_name = getOpcodeName(opcode);
-            std.debug.print("[TRACE] Depth {d}: opcode={s} ref={d}\n", .{ depth, opcode_name, ref });
+            log.debug("[TRACE] Depth {d}: opcode={s} ref={d}", .{ depth, opcode_name, ref });
 
             if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMLoad) {
                 const base = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(base) == 0) break;
-                std.debug.print("[TRACE]   -> following operand 0 to ref={d}\n", .{@intFromPtr(base)});
+                log.debug("[TRACE]   -> following operand 0 to ref={d}", .{@intFromPtr(base)});
                 current = base;
                 continue;
             }
@@ -345,16 +346,16 @@ pub const SemanticTree = struct {
             if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                 // Check if this call instruction itself has heap_provenance
                 if (self.hasKind(ref, .heap_provenance) != null) {
-                    std.debug.print("[TRACE] Found heap_provenance on call instruction\n", .{});
+                    log.debug("[TRACE] Found heap_provenance on call instruction", .{});
                     return true;
                 }
-                std.debug.print("[TRACE] Call instruction without heap_provenance, stopping\n", .{});
+                log.debug("[TRACE] Call instruction without heap_provenance, stopping", .{});
                 break;
             }
 
             if (opcode == c.LLVMPHI) {
                 const num_incoming = c.LLVMCountIncoming(current);
-                std.debug.print("[TRACE] PHI node with {d} incoming values\n", .{num_incoming});
+                log.debug("[TRACE] PHI node with {d} incoming values", .{num_incoming});
                 var i: u32 = 0;
                 while (i < num_incoming) : (i += 1) {
                     const incoming = c.LLVMGetIncomingValue(current, i);
@@ -368,16 +369,16 @@ pub const SemanticTree = struct {
             if (opcode == c.LLVMBitCast or opcode == c.LLVMIntToPtr) {
                 const operand = c.LLVMGetOperand(current, 0);
                 if (@intFromPtr(operand) == 0) break;
-                std.debug.print("[TRACE]   -> following bitcast/inttoptr operand to ref={d}\n", .{@intFromPtr(operand)});
+                log.debug("[TRACE]   -> following bitcast/inttoptr operand to ref={d}", .{@intFromPtr(operand)});
                 current = operand;
                 continue;
             }
 
-            std.debug.print("[TRACE] Unhandled opcode {s}, stopping\n", .{opcode_name});
+            log.debug("[TRACE] Unhandled opcode {s}, stopping", .{opcode_name});
             break;
         }
 
-        std.debug.print("[TRACE] No heap_provenance found after {d} steps\n", .{depth});
+        log.debug("[TRACE] No heap_provenance found after {d} steps", .{depth});
         return false;
     }
 

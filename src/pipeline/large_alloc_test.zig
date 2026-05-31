@@ -11,6 +11,7 @@
 //! the confidence calculation path with simulated AllocRecord data.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 
 const GlobalAllocTracker = @import("../types/pass_types.zig").GlobalAllocTracker;
 
@@ -39,7 +40,7 @@ test "large allocation leak gets +0.10 boost" {
         null, // func_val
         2 * 1024 * 1024, // 2 MB allocation
     ) catch |err| {
-        std.debug.print("insertAlloc failed: {}\n", .{err});
+        log.debug("insertAlloc failed: {}", .{err});
         return err;
     };
 
@@ -91,7 +92,7 @@ test "medium allocation leak gets +0.05 boost" {
         null, // func_val
         200 * 1024, // 200 KB allocation
     ) catch |err| {
-        std.debug.print("insertAlloc failed: {}\n", .{err});
+        log.debug("insertAlloc failed: {}", .{err});
         return err;
     };
 
@@ -143,7 +144,7 @@ test "small allocation leak gets no size boost" {
         null, // func_val
         1024, // 1 KB allocation
     ) catch |err| {
-        std.debug.print("insertAlloc failed: {}\n", .{err});
+        log.debug("insertAlloc failed: {}", .{err});
         return err;
     };
 
@@ -195,7 +196,7 @@ test "unknown size allocation skips boost gracefully" {
         null, // func_val
         null, // Unknown size (null)
     ) catch |err| {
-        std.debug.print("insertAlloc failed: {}\n", .{err});
+        log.debug("insertAlloc failed: {}", .{err});
         return err;
     };
 

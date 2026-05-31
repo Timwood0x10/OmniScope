@@ -13,10 +13,10 @@
 //! Nomicon §9.1-9.3: Vec implementation — internal RawVec<T>{ ptr, cap }
 //! Box/Arc/Rc follow the same heap-ownership pattern.
 //!
-//! Covers: F1 (74 borrow_escape FP) — LLVM SROA makes heap ptrs look like stack
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
+const log = @import("../../common/log.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -58,7 +58,7 @@ fn functionReturnsHeapProvenance(func: c.LLVMValueRef, srt: *SemanticTree) bool 
             if (@intFromPtr(ret_val) == 0) continue;
             const ret_ref = @intFromPtr(ret_val);
             if (srt.hasKind(ret_ref, .heap_provenance) != null) {
-                std.debug.print("[ch09] Function returns heap_provenance: ret_val ref={d}\n", .{ret_ref});
+                log.debug("[ch09] Function returns heap_provenance: ret_val ref={d}", .{ret_ref});
                 return true;
             }
         }
@@ -253,7 +253,7 @@ pub fn detect(
                 const ref = @intFromPtr(inst);
 
                 if (srt.hasKind(ref, .heap_provenance) == null) {
-                    std.debug.print("[ch09] Found heap alloc: {s} at {d}\n", .{ callee_name, ref });
+                    log.debug("[ch09] Found heap alloc: {s} at {d}", .{ callee_name, ref });
                     try srt.recordResolution(ref, .heap_provenance, 0.95, "Ch9 Vec/Box", callee_name);
                 }
             }
@@ -267,7 +267,7 @@ pub fn detect(
     while (iterations < max_iterations) : (iterations += 1) {
         const new_marks = propagateHeapProvenance(module, srt);
         const total = countHeapMarks(srt);
-        std.debug.print("[ch09] Propagation iteration {d}: {d} new marks, {d} total\n", .{ iterations + 1, new_marks, total });
+        log.debug("[ch09] Propagation iteration {d}: {d} new marks, {d} total", .{ iterations + 1, new_marks, total });
         if (new_marks == 0) break;
     }
 }

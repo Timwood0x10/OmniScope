@@ -1080,7 +1080,6 @@ pub const DiagnosticWriter = struct {
         if (log.current_log_level == .quiet) return;
         if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
         if (std.mem.eql(u8, severity, "INFO") and log.current_log_level == .normal) return;
-        if (log.current_log_level == .normal) return;
 
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {

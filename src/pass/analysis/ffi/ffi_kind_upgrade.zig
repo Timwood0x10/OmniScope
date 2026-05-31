@@ -34,11 +34,8 @@ pub fn upgradeKindFromCallName(current_kind: IssueKind, caller_name: []const u8)
         else => false,
     };
     if (!is_generic) {
-        log.debug("SKIP: kind {s} is not generic (caller: '{s}')", .{ @tagName(current_kind), caller_name });
         return null;
     }
-
-    log.debug("CHECK: attempting upgrade for caller='{s}' (len={d})", .{ caller_name, caller_name.len });
 
     // Double free patterns (support both snake_case and camelCase)
     if (std.mem.indexOf(u8, caller_name, "double_free") != null) return .double_free;
