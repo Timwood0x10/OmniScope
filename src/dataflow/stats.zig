@@ -88,6 +88,7 @@ pub fn computeIssueStats(issues: []const Issue) IssueStats {
             .static_buffer_misuse => s.static_buffer_misuse += 1,
             .data_race => s.data_race += 1,
             .thread_safety_violation => s.thread_safety_violation += 1,
+            .contract_mismatch => s.ffi_unsafe += 1,
             .unknown => s.unknown += 1,
         }
         const fn_name = issue.location.func;

@@ -21,6 +21,8 @@ const IssueSeverity = @import("../../../diag/issue.zig").Severity;
 const Location = @import("../../../diag/issue.zig").Location;
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const ffi_contract_db = @import("../../../resource/ffi_contract_db.zig");
+const allocator_shim = @import("../../../detectors/allocator_shim.zig");
+const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -95,6 +97,9 @@ pub const CrossLangDataFlow = struct {
 
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag);
 
+        // Print FFI Contract DB statistics
+        contract_db.printStats();
+
         diag.info("CrossLangDataFlow: {} allocations tracked, {} cross-lang, {} orphans, {} double-frees", .{
             stats.alloc_count,
             stats.cross_lang_allocs,
@@ -111,7 +116,7 @@ pub const CrossLangDataFlow = struct {
         cross_edges: []const CrossLangEdge,
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
-        db: *const ffi_contract_db.FFIContractDB,
+        db: *ffi_contract_db.FFIContractDB,
     ) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -304,6 +309,25 @@ pub const CrossLangDataFlow = struct {
             if (alloc.freed) continue;
             if (alloc.passed_to_other_lang) continue;
 
+            // ── ALLOCATOR SHIM SUPPRESSION ──
+            // Suppress false positives from allocator vtable functions
+            // (mimalloc, jemalloc, system allocators, Rust GlobalAlloc)
+            if (allocator_shim.AllocatorShimDetector.isAllocatorShim(alloc.alloc_callee) == .confirmed_shim) {
+                log.debug("ALLOCATOR-SHIM-SUPPRESS: {s} is allocator vtable, not a leak", .{
+                    alloc.alloc_callee,
+                });
+                continue;
+            }
+
+            // ── RUST INTERNAL WHITELIST SUPPRESSION ──
+            // Skip Rust panic/unwind/formatting internals that never return normally
+            if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(alloc.alloc_func)) {
+                log.debug("RUST-INTERNAL-SKIP: {s} is Rust internal, skipping", .{
+                    alloc.alloc_func,
+                });
+                continue;
+            }
+
             if (funcs_with_frees.contains(alloc.alloc_func)) {
                 diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — function calls a free function", .{ alloc.alloc_callee, alloc.alloc_func });
                 continue;
@@ -325,22 +349,53 @@ pub const CrossLangDataFlow = struct {
                 for (alloc.free_funcs.items) |free_func| {
                     const pair_result = db.isValidRelease(alloc.alloc_callee, free_func);
                     if (pair_result == .mismatch) {
-                        const mismatch_msg = try std.fmt.allocPrint(ctx.allocator, "FFI contract mismatch: {s} allocated by {s} but released by {s} (wrong release function)", .{ alloc.alloc_func, alloc.alloc_callee, free_func });
+                        const expected_releases = db.getExpectedReleases(alloc.alloc_callee);
+
+                        // Build expected releases string for display
+                        var expected_buf: [256]u8 = undefined;
+                        var expected_fbs = std.io.fixedBufferStream(&expected_buf);
+                        const expected_writer = expected_fbs.writer();
+                        if (expected_releases) |releases| {
+                            for (releases, 0..) |r, i| {
+                                if (i > 0) expected_writer.writeAll(", ") catch {};
+                                expected_writer.writeAll(r) catch {};
+                            }
+                        } else {
+                            expected_writer.writeAll("unknown") catch {};
+                        }
+
+                        const mismatch_msg = try std.fmt.allocPrint(ctx.allocator, "FFI contract mismatch: {s} allocated by {s} but released by {s}. Expected release function(s): {s}", .{ alloc.alloc_func, alloc.alloc_callee, free_func, expected_fbs.getWritten() });
                         defer ctx.allocator.free(mismatch_msg);
 
                         const location = Location.init(alloc.alloc_func);
+
+                        // Use dedicated contract_mismatch issue kind with high confidence
+                        var confidence: f32 = 0.90;
+
+                        // Boost confidence for error-prone libraries (OpenSSL, SQLite)
+                        if (db.isErrorProneLib(alloc.alloc_callee)) {
+                            confidence = @min(confidence + 0.08, 1.0);
+                            log.debug("CONTRACT-BOOST: {s} is error-prone, boosting confidence to {d:.2}", .{
+                                alloc.alloc_callee,
+                                confidence,
+                            });
+                        }
+
                         const issue = Issue.init(
-                            .cross_language_leak,
+                            .contract_mismatch,
                             mismatch_msg,
                             location,
                             .high,
-                            0.92,
+                            confidence,
                         );
                         try ctx.addIssue(&issue);
-                        diag.err("CrossLangDataFlow: Contract mismatch — {s} + {s} in {s}", .{
+
+                        diag.err("CrossLangDataFlow: CONTRACT-MISMATCH — {s} allocated in {s} but freed by {s} (expected: {s}, confidence: {d:.2})", .{
                             alloc.alloc_callee,
-                            free_func,
                             alloc.alloc_func,
+                            free_func,
+                            expected_fbs.getWritten(),
+                            confidence,
                         });
                     }
                 }
@@ -348,10 +403,31 @@ pub const CrossLangDataFlow = struct {
 
             stats.orphan_pointers += 1;
 
+            // CONTRACT-DB: Check if this is a GC-managed object (suppress leak report)
+            if (db.getOwnership(alloc.alloc_callee) == .gc) {
+                log.debug("CONTRACT-SUPPRESS-GC: {s} is GC-managed in {s}, suppressing leak report", .{
+                    alloc.alloc_callee,
+                    alloc.alloc_func,
+                });
+
+                // Optionally emit a diagnostic-level message instead of an issue
+                diag.info("CrossLangDataFlow: Suppressing leak for GC-managed object: {s} in {s}", .{
+                    alloc.alloc_callee,
+                    alloc.alloc_func,
+                });
+
+                // Skip to next allocation - don't generate issue for GC objects
+                continue;
+            }
+
             // Boost confidence for error-prone libraries (OpenSSL, SQLite)
             var confidence = calculateOrphanConfidence(alloc);
             if (db.isErrorProneLib(alloc.alloc_callee)) {
                 confidence = @min(confidence + 0.08, 1.0);
+                log.debug("CONTRACT-BOOST: {s} is error-prone, boosting orphan confidence to {d:.2}", .{
+                    alloc.alloc_callee,
+                    confidence,
+                });
             }
 
             const message = try std.fmt.allocPrint(ctx.allocator, "Orphan pointer detected: allocated in {s} ({s}) via {s} but never freed or transferred across FFI boundary", .{ alloc.alloc_func, @tagName(alloc.alloc_lang), alloc.alloc_callee });
@@ -673,6 +749,22 @@ pub const CrossLangDataFlow = struct {
 
             // Skip if passed to another language (ownership transferred)
             if (alloc.passed_to_other_lang) continue;
+
+            // ── ALLOCATOR SHIM SUPPRESSION ──
+            if (allocator_shim.AllocatorShimDetector.isAllocatorShim(alloc.alloc_callee) == .confirmed_shim) {
+                log.debug("ALLOCATOR-SHIM-SUPPRESS: {s} is allocator vtable, not a leak", .{
+                    alloc.alloc_callee,
+                });
+                continue;
+            }
+
+            // ── RUST INTERNAL WHITELIST SUPPRESSION ──
+            if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(alloc.alloc_func)) {
+                log.debug("RUST-INTERNAL-SKIP: {s} is Rust internal, skipping", .{
+                    alloc.alloc_func,
+                });
+                continue;
+            }
 
             // Heuristic: if the allocation's function also calls a free function,
             // the allocation is likely correctly paired. The pointer matching may

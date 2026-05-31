@@ -129,6 +129,80 @@ pub const FreeRecord = struct {
     release_family: ?FamilyId = null,
 };
 
+// ═══════════════════════════════════════════════════
+// v0.2.0: 多语言所有权模型支持
+// ═══════════════════════════════════════════════════
+
+/// Memory management model for the allocating language
+pub const OwnershipModel = enum(u8) {
+    /// Manual malloc/free (C style)
+    manual = 0,
+    /// RAII / destructors (C++, Rust)
+    raii = 1,
+    /// Reference counting (Python, Objective-C)
+    refcount = 2,
+    /// Garbage collected (Java, Go runtime, JSC)
+    gc = 3,
+    /// Hybrid (C# with SafeHandle + GC)
+    hybrid = 4,
+
+    pub fn allowsLeak(self: OwnershipModel) bool {
+        return switch (self) {
+            .manual => true,
+            .raii => false,
+            .refcount => true,
+            .gc => false,
+            .hybrid => true,
+        };
+    }
+};
+
+/// Reference count operations tracking
+pub const RefCountOps = struct {
+    increments: u32 = 0,
+    decrements: u32 = 0,
+
+    pub fn netCount(self: RefCountOps) i32 {
+        return @as(i32, self.increments) - @as(i32, self.decrements);
+    }
+
+    pub fn isBalanced(self: RefCountOps) bool {
+        return self.netCount() == 0;
+    }
+};
+
+/// GC scope classification
+pub const GCScope = enum(u8) {
+    /// Local variable (GC'd when out of scope)
+    local = 0,
+    /// Global/root (never GC'd while referenced)
+    global = 1,
+    /// Weak reference (may be GC'd anytime)
+    weak = 2,
+};
+
+/// Container type inference for smart containers
+pub const ContainerType = enum(u8) {
+    /// Unknown or raw pointer
+    unknown = 0,
+    /// Rust Box<T>
+    rust_box = 1,
+    /// Rust Vec<T>
+    rust_vec = 2,
+    /// Rust String
+    rust_string = 3,
+    /// C++ std::unique_ptr<T>
+    cpp_unique_ptr = 4,
+    /// C++ std::shared_ptr<T>
+    cpp_shared_ptr = 5,
+    /// Python list/tuple
+    python_list = 6,
+    /// Go slice/array
+    go_slice = 7,
+    /// C# SafeHandle
+    csharp_handle = 8,
+};
+
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).
 pub const AllocNode = struct {
     /// Unique identifier for this allocation.
@@ -166,6 +240,37 @@ pub const AllocNode = struct {
     /// callback, thread, container, consumed_by_function.
     /// null = no escapes recorded yet (or not initialized).
     escapes: ?*EscapeList,
+
+    // ══════════════════════════════════════════
+    // v0.2.0: Multi-language lifecycle tracking
+    // ══════════════════════════════════════════
+
+    /// Ownership model of this allocation's language
+    ownership_model: OwnershipModel = .manual,
+
+    /// RAII cleanup sites (drop_in_place, destructor calls)
+    raii_cleanup_sites: std.ArrayList(u64),
+
+    /// Whether RAII cleanup has been found for this allocation
+    has_raii_cleanup: bool = false,
+
+    /// Reference count operations (for Python/Obj-C)
+    refcount_ops: RefCountOps = .{},
+
+    /// Whether this object is managed by a garbage collector
+    is_gc_managed: bool = false,
+
+    /// Scope of GC root (if applicable)
+    gc_scope: ?GCScope = null,
+
+    /// Whether deferred cleanup exists (Go defer, etc.)
+    has_deferred_cleanup: bool = false,
+
+    /// Deferred cleanup instruction addresses
+    defer_sites: std.ArrayList(u64),
+
+    /// Inferred container type (Box, Vec, unique_ptr, etc.)
+    container_type: ?ContainerType = null,
 };
 
 /// Result of isOnDangerPath — why a pointer matters (or doesn't).

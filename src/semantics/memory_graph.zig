@@ -143,6 +143,8 @@ pub const MemoryGraph = struct {
         for (graph.node_store.items) |node| {
             node.aliases.deinit();
             node.free_sites.deinit(graph.allocator);
+            node.raii_cleanup_sites.deinit(graph.allocator);
+            node.defer_sites.deinit(graph.allocator);
             graph.allocator.destroy(node);
         }
         graph.node_store.deinit(graph.allocator);
@@ -194,9 +196,19 @@ pub const MemoryGraph = struct {
         // Clear node state for reuse
         node.aliases.clearRetainingCapacity();
         node.free_sites.clearRetainingCapacity();
+        node.raii_cleanup_sites.clearRetainingCapacity();
+        node.defer_sites.clearRetainingCapacity();
         node.freed = false;
         node.freed_by = null;
         node.escapes = null;
+        // v0.2.0: Reset lifecycle tracking fields
+        node.ownership_model = .manual;
+        node.has_raii_cleanup = false;
+        node.refcount_ops = .{};
+        node.is_gc_managed = false;
+        node.gc_scope = null;
+        node.has_deferred_cleanup = false;
+        node.container_type = null;
 
         // Return to pool if not at capacity (limit pool size to 128 nodes)
         if (graph.node_pool.items.len < 128) {
@@ -205,6 +217,8 @@ pub const MemoryGraph = struct {
             // Pool is full, actually free the node
             node.aliases.deinit();
             node.free_sites.deinit(graph.allocator);
+            node.raii_cleanup_sites.deinit(graph.allocator);
+            node.defer_sites.deinit(graph.allocator);
             graph.allocator.destroy(node);
         }
     }
@@ -249,8 +263,20 @@ pub const MemoryGraph = struct {
             .alloc_lang = alloc_lang,
             .free_sites = try std.ArrayList(FreeRecord).initCapacity(graph.allocator, 4),
             .escapes = null,
+            // v0.2.0: Multi-language lifecycle tracking
+            .ownership_model = .manual,
+            .raii_cleanup_sites = try std.ArrayList(u64).initCapacity(graph.allocator, 4),
+            .has_raii_cleanup = false,
+            .refcount_ops = .{},
+            .is_gc_managed = false,
+            .gc_scope = null,
+            .has_deferred_cleanup = false,
+            .defer_sites = try std.ArrayList(u64).initCapacity(graph.allocator, 4),
+            .container_type = null,
         };
         errdefer node.aliases.deinit();
+        errdefer node.raii_cleanup_sites.deinit(graph.allocator);
+        errdefer node.defer_sites.deinit(graph.allocator);
         try node.aliases.put(ret_value_ptr, {});
         try graph.nodes.put(ret_value_ptr, node);
         errdefer {
@@ -315,6 +341,16 @@ pub const MemoryGraph = struct {
             .free_lang = null,
             .free_sites = try std.ArrayList(FreeRecord).initCapacity(graph.allocator, 4),
             .escapes = null,
+            // v0.2.0: Multi-language lifecycle tracking
+            .ownership_model = .manual,
+            .raii_cleanup_sites = try std.ArrayList(u64).initCapacity(graph.allocator, 4),
+            .has_raii_cleanup = false,
+            .refcount_ops = .{},
+            .is_gc_managed = false,
+            .gc_scope = null,
+            .has_deferred_cleanup = false,
+            .defer_sites = try std.ArrayList(u64).initCapacity(graph.allocator, 4),
+            .container_type = null,
         };
 
         try graph.node_store.append(graph.allocator, lazy_node);

@@ -56,6 +56,7 @@ pub fn categorize(kind: IssueKind) IssueCategory {
         // FFI boundary — cross-language safety violations
         .cross_language_leak, // CWE-401 (cross-boundary)
         .cross_language_free, // CWE-763
+        .contract_mismatch, // CWE-763 (wrong release function)
         .ffi_unsafe_call, // CWE-668
         .ffi_type_mismatch, // CWE-704
         .borrow_escape, // CWE-704 (Rust borrow escape)

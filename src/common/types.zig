@@ -276,6 +276,9 @@ pub const IssueKind = enum {
     integer_overflow,
     /// Double free across language boundary (CWE-415).
     double_free,
+    /// FFI contract mismatch - wrong release function used for allocation (CWE-763).
+    /// Example: SSL_new allocated but BIO_free called instead of SSL_free.
+    contract_mismatch,
     /// Format string vulnerability (CWE-134).
     format_string,
     /// Malloc result used without null check (CWE-252).
@@ -318,6 +321,7 @@ pub const IssueKind = enum {
             .buffer_overflow => "buffer_overflow",
             .integer_overflow => "integer_overflow",
             .double_free => "double_free",
+            .contract_mismatch => "contract_mismatch",
             .format_string => "format_string",
             .malloc_unchecked => "malloc_unchecked",
             .null_dereference => "null_dereference",
@@ -351,6 +355,7 @@ pub const IssueKind = enum {
             .buffer_overflow => 120,
             .integer_overflow => 190, // Integer Overflow or Wrap-around
             .double_free => 415,
+            .contract_mismatch => 763,
             .format_string => 134,
             .malloc_unchecked => 252,
             .null_dereference => 476,
@@ -383,6 +388,7 @@ pub const IssueKind = enum {
             .buffer_overflow => "Buffer overflow vulnerability",
             .integer_overflow => "Integer overflow or underflow",
             .double_free => "Double free across language boundary",
+            .contract_mismatch => "FFI contract mismatch - wrong release function used for allocation (e.g., SSL_new + BIO_free)",
             .format_string => "Format string vulnerability",
             .malloc_unchecked => "Malloc result used without null check",
             .null_dereference => "Null pointer dereference - nullable allocation used without guard",
@@ -710,15 +716,15 @@ test "Severity - meetsThreshold" {
 }
 
 test "IssueKind - count matches expected" {
-    // Verify we have exactly 19 issue kinds (18 known + 1 unknown)
+    // Verify we have exactly 20 issue kinds (19 known + 1 unknown)
     const kinds = [_]IssueKind{
-        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
-        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
-        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
-        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
-        .invalid_free,        .static_buffer_misuse, .unknown,
+        .ffi_unsafe_call,             .unchecked_return,    .type_mismatch,        .ffi_type_mismatch,
+        .cross_language_leak,         .cross_language_free, .memory_leak,          .use_after_free,
+        .command_injection,           .buffer_overflow,     .double_free,          .contract_mismatch,
+        .format_string,               .malloc_unchecked,    .null_dereference,     .borrow_escape,
+        .callback_signature_mismatch, .invalid_free,        .static_buffer_misuse, .unknown,
     };
-    try std.testing.expectEqual(@as(usize, 19), kinds.len);
+    try std.testing.expectEqual(@as(usize, 20), kinds.len);
 }
 
 test "IssueKind - CWE mapping consistency" {

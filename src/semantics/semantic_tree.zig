@@ -22,7 +22,7 @@ const log = @import("../common/log.zig");
 /// - raii_drop_release: compiler-inserted Drop/dealloc (R-3)
 /// - into_raw_transfer: Box/CString/Vec::into_raw ownership transfer (R-6)
 /// - library_release: mimalloc/zlib/openssl/sqlite library dealloc (R-7)
-pub const SemanticKind = enum(u8) {
+pub const SemanticKind = enum(u16) {
     // ── Existing (kept) ──
     unknown,
     allocation,
@@ -68,6 +68,122 @@ pub const SemanticKind = enum(u8) {
 
     // ── Nomicon Ch8: Concurrency violations (Send/Sync trait abuse) ──
     send_sync_violation, // Sending non-Send type across thread boundary
+
+    // ══════════════════════════════════════════
+    // v0.2.0: Multi-language FFI semantics
+    // ══════════════════════════════════════════
+
+    // ─── Python (5 variants) ──────────────────────
+
+    /// Py_INCREF / Py_IncRef call site
+    python_refcount_inc = 100,
+
+    /// Py_DECREF / Py_DecRef / Py_XDECREF call site
+    python_refcount_dec = 101,
+
+    /// Borrowed reference returned (PyList_GetItem, etc.)
+    python_borrowed_ref = 102,
+
+    /// Owned reference returned (PyList_New, etc.)
+    python_owned_ref = 103,
+
+    /// GIL acquisition/release (PyGILState_Ensure, etc.)
+    python_gil_protected = 104,
+
+    // ─── Go (4 variants) ────────────────────────────
+
+    /// Deferred cleanup via 'defer' keyword
+    go_defer_cleanup = 200,
+
+    /// runtime.SetFinalizer call site
+    go_finalizer = 201,
+
+    /// CGo wrapper function (_Cgo_*)
+    go_cgo_wrapper = 202,
+
+    /// Runtime allocation (runtime.mallocgc, newobject)
+    go_runtime_alloc = 203,
+
+    // ─── C# (3 variants) ────────────────────────────
+
+    /// SafeHandle / IDisposable pattern
+    csharp_safe_handle = 300,
+
+    /// P/Invoke interop call
+    csharp_pinvoke = 301,
+
+    /// Marshal class operation
+    csharp_marshal_op = 302,
+
+    // ─── Generic FFI (4 variants) ───────────────────
+
+    /// Opaque handle from external library
+    ffi_opaque_handle = 600,
+
+    /// Resource acquisition pattern (RAII-like in C)
+    ffi_resource_acquire = 601,
+
+    /// Resource release pattern
+    ffi_resource_release = 602,
+
+    /// Callback/function pointer crossing language boundary
+    ffi_callback_boundary = 603,
+
+    _,
+};
+
+/// Target language for multi-language FFI semantics
+pub const TargetLanguage = enum {
+    python,
+    go,
+    csharp,
+
+    pub fn displayName(self: TargetLanguage) []const u8 {
+        return switch (self) {
+            .python => "Python",
+            .go => "Go",
+            .csharp => "C#",
+        };
+    }
+};
+
+/// Helper methods for SemanticKind
+pub const SemanticKindHelpers = struct {
+    /// Check if this semantic belongs to a specific language
+    pub fn language(kind: SemanticKind) ?TargetLanguage {
+        return switch (kind) {
+            // Python range
+            .python_refcount_inc, .python_refcount_dec, .python_borrowed_ref, .python_owned_ref, .python_gil_protected => .python,
+
+            // Go range
+            .go_defer_cleanup, .go_finalizer, .go_cgo_wrapper, .go_runtime_alloc => .go,
+
+            // C# range
+            .csharp_safe_handle, .csharp_pinvoke, .csharp_marshal_op => .csharp,
+
+            // Generic FFI - language-agnostic
+            .ffi_opaque_handle, .ffi_resource_acquire, .ffi_resource_release, .ffi_callback_boundary => null,
+
+            else => null, // Legacy/unclassified
+        };
+    }
+
+    /// Check if this represents an owning operation (caller must free)
+    pub fn isOwningOperation(kind: SemanticKind) bool {
+        return switch (kind) {
+            .python_owned_ref => true,
+            .python_borrowed_ref => false,
+            else => false, // Conservative default
+        };
+    }
+
+    /// Human-readable category name
+    pub fn categoryName(kind: SemanticKind) []const u8 {
+        if (language(kind)) |lang| {
+            return lang.displayName();
+        }
+        return "unknown";
+    }
 };
 
 /// A semantic resolution - the result of applying a pattern to a node
@@ -534,4 +650,85 @@ test "hasKind and recordResolution" {
 
     const not_found = tree.hasKind(0x2000, .interior_mutability);
     try std.testing.expect(not_found == null);
+}
+
+// ══════════════════════════════════════════
+// v0.2.0: Multi-language FFI semantics tests
+// ══════════════════════════════════════════
+
+test "SemanticKind - language detection for Python" {
+    try std.testing.expectEqual(TargetLanguage.python, SemanticKindHelpers.language(.python_refcount_inc).?);
+    try std.testing.expectEqual(TargetLanguage.python, SemanticKindHelpers.language(.python_refcount_dec).?);
+    try std.testing.expectEqual(TargetLanguage.python, SemanticKindHelpers.language(.python_borrowed_ref).?);
+    try std.testing.expectEqual(TargetLanguage.python, SemanticKindHelpers.language(.python_owned_ref).?);
+    try std.testing.expectEqual(TargetLanguage.python, SemanticKindHelpers.language(.python_gil_protected).?);
+}
+
+test "SemanticKind - language detection for Go" {
+    try std.testing.expectEqual(TargetLanguage.go, SemanticKindHelpers.language(.go_defer_cleanup).?);
+    try std.testing.expectEqual(TargetLanguage.go, SemanticKindHelpers.language(.go_finalizer).?);
+    try std.testing.expectEqual(TargetLanguage.go, SemanticKindHelpers.language(.go_cgo_wrapper).?);
+    try std.testing.expectEqual(TargetLanguage.go, SemanticKindHelpers.language(.go_runtime_alloc).?);
+}
+
+test "SemanticKind - language detection for C#" {
+    try std.testing.expectEqual(TargetLanguage.csharp, SemanticKindHelpers.language(.csharp_safe_handle).?);
+    try std.testing.expectEqual(TargetLanguage.csharp, SemanticKindHelpers.language(.csharp_pinvoke).?);
+    try std.testing.expectEqual(TargetLanguage.csharp, SemanticKindHelpers.language(.csharp_marshal_op).?);
+}
+
+test "SemanticKind - Generic FFI returns null (language-agnostic)" {
+    try std.testing.expect(SemanticKindHelpers.language(.ffi_opaque_handle) == null);
+    try std.testing.expect(SemanticKindHelpers.language(.ffi_resource_acquire) == null);
+    try std.testing.expect(SemanticKindHelpers.language(.ffi_resource_release) == null);
+    try std.testing.expect(SemanticKindHelpers.language(.ffi_callback_boundary) == null);
+}
+
+test "SemanticKind - legacy kinds return null" {
+    try std.testing.expect(SemanticKindHelpers.language(.allocation) == null);
+    try std.testing.expect(SemanticKindHelpers.language(.release) == null);
+    try std.testing.expect(SemanticKindHelpers.language(.heap_provenance) == null);
+}
+
+test "SemanticKind - owning vs borrowing operations" {
+    // Owning operations
+    try std.testing.expect(SemanticKindHelpers.isOwningOperation(.python_owned_ref));
+
+    // Borrowing/non-owning operations
+    try std.testing.expect(!SemanticKindHelpers.isOwningOperation(.python_borrowed_ref));
+
+    // Conservative default: most things are not owning
+    try std.testing.expect(!SemanticKindHelpers.isOwningOperation(.allocation));
+    try std.testing.expect(!SemanticKindHelpers.isOwningOperation(.python_refcount_inc));
+}
+
+test "SemanticKind - category names" {
+    try std.testing.expectEqualStrings("Python", SemanticKindHelpers.categoryName(.python_refcount_inc));
+    try std.testing.expectEqualStrings("Go", SemanticKindHelpers.categoryName(.go_defer_cleanup));
+    try std.testing.expectEqualStrings("C#", SemanticKindHelpers.categoryName(.csharp_safe_handle));
+    try std.testing.expectEqualStrings("unknown", SemanticKindHelpers.categoryName(.allocation));
+}
+
+test "TargetLanguage - display names" {
+    try std.testing.expectEqualStrings("Python", TargetLanguage.python.displayName());
+    try std.testing.expectEqualStrings("Go", TargetLanguage.go.displayName());
+    try std.testing.expectEqualStrings("C#", TargetLanguage.csharp.displayName());
+}
+
+test "SemanticKind - enum value ranges are correct" {
+    // Python range: 100-104
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.python_refcount_inc), 100);
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.python_gil_protected), 104);
+
+    // Go range: 200-203
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.go_defer_cleanup), 200);
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.go_runtime_alloc), 203);
+
+    // C# range: 300-302
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.csharp_safe_handle), 300);
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.csharp_marshal_op), 302);
+
+    // Generic FFI range: 600-603
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.ffi_opaque_handle), 600);
+    try std.testing.expectEqual(@intFromEnum(SemanticKind.ffi_callback_boundary), 603);
 }

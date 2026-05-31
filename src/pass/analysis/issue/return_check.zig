@@ -15,6 +15,7 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
+const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 
 /// Return value check pass
 pub const ReturnCheckPass = struct {
@@ -123,6 +124,11 @@ pub const ReturnCheckPass = struct {
             called_name;
 
         if (!isDangerousFunction(clean_name)) {
+            return false;
+        }
+
+        // ── Skip Rust internal panic/unwind functions (eliminate ~13 FP) ──
+        if (rust_whitelist.RustInternalWhitelist.canIgnoreReturnValue(clean_name)) {
             return false;
         }
 

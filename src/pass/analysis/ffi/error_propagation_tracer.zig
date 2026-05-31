@@ -22,6 +22,9 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const Location = @import("../../../diag/issue.zig").Location;
 const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
+const log = @import("../../../common/log.zig");
+const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
+const allocator_shim = @import("../../../detectors/allocator_shim.zig");
 
 /// Statistics for error propagation analysis
 pub const ErrorPropagationStats = struct {
@@ -165,6 +168,12 @@ pub const ErrorPropagationTracer = struct {
             else
                 "unknown";
 
+            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals entirely ──
+            if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
+                log.debug("RUST-INTERNAL-SKIP: {s} — skipping FFI analysis", .{func_name});
+                continue;
+            }
+
             // Scan instructions in this function
             var bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
@@ -220,6 +229,22 @@ pub const ErrorPropagationTracer = struct {
             // Only check functions that are known to return error codes
             if (!call_info.returns_error) continue;
 
+            // ── RUST INTERNAL WHITELIST: Ignore return values of panic/unwind functions ──
+            if (rust_whitelist.RustInternalWhitelist.canIgnoreReturnValue(call_info.callee_name)) {
+                log.debug("RUST-INTERNAL-IGNORE-RET: {s} — can safely ignore return value", .{
+                    call_info.callee_name,
+                });
+                continue;
+            }
+
+            // ── ALLOCATOR SHIM: Don't report allocator vtable as unchecked return ──
+            if (allocator_shim.AllocatorShimDetector.isAllocatorShim(call_info.callee_name) == .confirmed_shim) {
+                log.debug("ALLOCATOR-SHIM-SUPPRESS: {s} is allocator, not error-returning", .{
+                    call_info.callee_name,
+                });
+                continue;
+            }
+
             // Check if the return value is used (stored, compared, or passed to another function)
             const is_checked = isReturnValueChecked(call_info.inst);
 
@@ -260,6 +285,12 @@ pub const ErrorPropagationTracer = struct {
                 std.mem.span(func_name_ptr)
             else
                 "unknown";
+
+            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals ──
+            if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
+                log.debug("RUST-INTERNAL-SKIP: {s} — skipping exception analysis", .{func_name});
+                continue;
+            }
 
             // Scan instructions in this function
             var bb = c.LLVMGetFirstBasicBlock(func);
@@ -357,6 +388,12 @@ pub const ErrorPropagationTracer = struct {
                 std.mem.span(func_name_ptr)
             else
                 "unknown";
+
+            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals ──
+            if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
+                log.debug("RUST-INTERNAL-SKIP: {s} — skipping error path analysis", .{func_name});
+                continue;
+            }
 
             // Track allocations in this function
             var allocations = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;

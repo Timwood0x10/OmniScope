@@ -118,6 +118,18 @@ pub const LibraryContract = struct {
 pub const FFIContractDB = struct {
     allocator: std.mem.Allocator,
     libraries: []const LibraryContract,
+    stats: Stats,
+
+    /// Statistics for contract database usage tracking
+    pub const Stats = struct {
+        shouldReportLeak_calls: u32 = 0,
+        isValidRelease_calls: u32 = 0,
+        getExpectedReleases_calls: u32 = 0,
+        getOwnership_calls: u32 = 0,
+        isErrorProneLib_calls: u32 = 0,
+        mismatch_count: u32 = 0,
+        cache_hits: u32 = 0,
+    };
 
     /// Initialize the contract database with built-in rules.
     /// No file I/O needed — all data is embedded at compile time.
@@ -125,6 +137,7 @@ pub const FFIContractDB = struct {
         return .{
             .allocator = undefined,
             .libraries = builtinLibraries(),
+            .stats = .{},
         };
     }
 
@@ -147,7 +160,8 @@ pub const FFIContractDB = struct {
     ///   - Unknown functions (conservative default)
     ///
     /// This is the primary FP-suppression hook for CrossLangDataFlow.
-    pub fn shouldReportLeak(self: *const FFIContractDB, alloc_func: []const u8) bool {
+    pub fn shouldReportLeak(self: *FFIContractDB, alloc_func: []const u8) bool {
+        self.stats.shouldReportLeak_calls += 1;
         // Check all library contracts
         for (self.libraries) |lib| {
             // Check allocate/release pairs
@@ -189,10 +203,11 @@ pub const FFIContractDB = struct {
     ///   .unknown_alloc — alloc_func not in database
     ///   .unknown_release — no rule found (can't validate)
     pub fn isValidRelease(
-        self: *const FFIContractDB,
+        self: *FFIContractDB,
         alloc_func: []const u8,
         release_func: []const u8,
     ) PairMatchResult {
+        self.stats.isValidRelease_calls += 1;
         const rule = self.findRuleForAlloc(alloc_func) orelse return .unknown_alloc;
 
         // Check if release_func is in the valid releases list
@@ -210,6 +225,7 @@ pub const FFIContractDB = struct {
                 rule.name,
             });
         }
+        self.stats.mismatch_count += 1;
         return .mismatch;
     }
 
@@ -217,9 +233,10 @@ pub const FFIContractDB = struct {
     ///
     /// Returns null if the allocation function is unknown.
     pub fn getExpectedReleases(
-        self: *const FFIContractDB,
+        self: *FFIContractDB,
         alloc_func: []const u8,
     ) ?[]const []const u8 {
+        self.stats.getExpectedReleases_calls += 1;
         const rule = self.findRuleForAlloc(alloc_func) orelse return null;
         return rule.release_funcs;
     }
@@ -228,17 +245,42 @@ pub const FFIContractDB = struct {
     ///
     /// Returns null if the function is unknown.
     pub fn getOwnership(
-        self: *const FFIContractDB,
+        self: *FFIContractDB,
         func_name: []const u8,
     ) ?OwnershipModel {
+        self.stats.getOwnership_calls += 1;
         const rule = self.findRuleForAlloc(func_name) orelse return null;
         return rule.ownership;
+    }
+
+    /// Get confidence score for a rule by allocation function name.
+    ///
+    /// Returns the confidence (0.0–1.0) for the matching rule.
+    /// Returns 0.5 (medium confidence) if function is unknown.
+    pub fn getConfidence(self: *FFIContractDB, alloc_func: []const u8) f32 {
+        const rule = self.findRuleForAlloc(alloc_func) orelse return 0.5;
+        return rule.confidence;
+    }
+
+    /// Get total number of libraries in the database.
+    pub fn libraryCount(self: *const FFIContractDB) usize {
+        return self.libraries.len;
+    }
+
+    /// Get total number of rules across all libraries.
+    pub fn totalRules(self: *const FFIContractDB) usize {
+        var count: usize = 0;
+        for (self.libraries) |lib| {
+            count += lib.pairs.len;
+        }
+        return count;
     }
 
     /// Is this function from a historically error-prone library?
     ///
     /// Used to boost confidence/score for issues involving these libraries.
-    pub fn isErrorProneLib(self: *const FFIContractDB, func_name: []const u8) bool {
+    pub fn isErrorProneLib(self: *FFIContractDB, func_name: []const u8) bool {
+        self.stats.isErrorProneLib_calls += 1;
         return libIsErrorProne(self, func_name);
     }
 
@@ -252,7 +294,7 @@ pub const FFIContractDB = struct {
     /// Look up a specific rule by allocation function name.
     /// Internal use; prefer public query APIs.
     pub fn findRuleForAlloc(
-        self: *const FFIContractDB,
+        self: *FFIContractDB,
         alloc_func: []const u8,
     ) ?*const AllocPairRule {
         for (self.libraries) |lib| {
@@ -265,6 +307,28 @@ pub const FFIContractDB = struct {
             }
         }
         return null;
+    }
+
+    /// Print usage statistics for the contract database.
+    /// Call this at the end of analysis to see how the DB was used.
+    pub fn printStats(self: *FFIContractDB) void {
+        std.debug.print("\n--- FFI Contract DB Statistics ---\n", .{});
+        std.debug.print("Libraries loaded: {}\n", .{self.libraries.len});
+
+        var total_rules: usize = 0;
+        for (self.libraries) |lib| {
+            total_rules += lib.pairs.len;
+        }
+        std.debug.print("Total rules: {}\n", .{total_rules});
+
+        std.debug.print("Queries made:\n", .{});
+        std.debug.print("  shouldReportLeak: {} calls\n", .{self.stats.shouldReportLeak_calls});
+        std.debug.print("  isValidRelease: {} calls\n", .{self.stats.isValidRelease_calls});
+        std.debug.print("  getExpectedReleases: {} calls\n", .{self.stats.getExpectedReleases_calls});
+        std.debug.print("  getOwnership: {} calls\n", .{self.stats.getOwnership_calls});
+        std.debug.print("  isErrorProneLib: {} calls\n", .{self.stats.isErrorProneLib_calls});
+        std.debug.print("  mismatches detected: {}\n", .{self.stats.mismatch_count});
+        std.debug.print("---------------------------------\n", .{});
     }
 
     // ── Helpers ──
@@ -446,7 +510,7 @@ fn builtinLibraries() []const LibraryContract {
                     .type_patterns = &[_][]const u8{ "JSObject", "JSString", "JSContextRef", "JSValueRef", "JSPropertyNameArrayRef", "JSObjectMake", "JSStringCreateWithUTF8CString" },
                     .model = .gc,
                     .retain_funcs = &[_][]const u8{ "JSValueProtect", "JSValueRetain", "JSObjectSetPrivate" },
-                    .release_funcs = &[_][]const u8{ "JSValueUnprotect" },
+                    .release_funcs = &[_][]const u8{"JSValueUnprotect"},
                 },
             },
         },
@@ -782,4 +846,36 @@ test "zlib rules - deflate/inflate streams" {
     try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("deflateInit_", "deflateEnd"));
     try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("inflateInit_", "inflateEnd"));
     try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("deflateInit_", "free"));
+}
+
+test "getConfidence - returns correct confidence scores" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // High confidence rules
+    try std.testing.expect(db.getConfidence("sqlite3_prepare_v2") > 0.95);
+    try std.testing.expect(db.getConfidence("SSL_CTX_new") > 0.90);
+    try std.testing.expect(db.getConfidence("SSL_new") > 0.90);
+
+    // Default confidence (rule exists but no explicit value)
+    try std.testing.expect(db.getConfidence("BIO_new") > 0);
+
+    // Unknown function returns 0.5
+    try std.testing.expectApproxEqAbs(0.5, db.getConfidence("unknown_func"), 0.01);
+}
+
+test "libraryCount and totalRules - database statistics" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // Should have multiple libraries
+    const lib_count = db.libraryCount();
+    try std.testing.expect(lib_count >= 9);
+
+    // Should have many rules (more than 20 as required)
+    const rule_count = db.totalRules();
+    try std.testing.expect(rule_count > 20);
+
+    // Log for debugging
+    std.debug.print("\nFFI Contract DB: {} libraries, {} rules\n", .{ lib_count, rule_count });
 }
