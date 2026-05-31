@@ -560,6 +560,21 @@ pub const MemoryGraph = struct {
         return graph.nodes.get(ptr_val);
     }
 
+    /// Finds the canonical AllocNode for any pointer value (direct or alias).
+    /// O(1) lookup via alias_to_canonical index, then fallback to nodes map.
+    /// Returns null if the pointer is not tracked in the graph.
+    ///
+    /// Use this instead of getAllocInfo() when the pointer may be an alias
+    /// (e.g., after ownership transfer or FFI boundary crossing). This is
+    /// critical for fixing wasmtime false positives where __rust_dealloc
+    /// receives an aliased pointer and is misclassified as invalid_free.
+    pub fn findCanonicalAlloc(graph: *MemoryGraph, ptr_val: u64) ?*AllocNode {
+        if (graph.alias_to_canonical.get(ptr_val)) |canonical_ptr| {
+            return graph.nodes.get(canonical_ptr);
+        }
+        return graph.nodes.get(ptr_val);
+    }
+
     pub fn getSourceKind(graph: *MemoryGraph, ptr_val: u64) SourceKind {
         const node = graph.nodes.get(ptr_val) orelse return .unknown;
         return node.source_kind;

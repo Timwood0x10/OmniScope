@@ -66,8 +66,7 @@ pub fn detect(
             }
         }
     }
-
-    }
+}
 
 /// Analyze a bitcast instruction for potential issues.
 fn analyzeBitcast(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {

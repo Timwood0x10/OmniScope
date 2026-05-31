@@ -114,8 +114,7 @@ pub fn detect(
             }
         }
     }
-
-    }
+}
 
 /// Walk DI type chain to find UnsafeCell<T>.
 /// Returns true if the type chain contains any interior mutable type.

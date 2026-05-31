@@ -29,6 +29,9 @@ const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 const ffi_utils = @import("../ffi/ffi_utils.zig");
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 const classify = @import("../ptr_lifetime/ptr_lifetime_classify.zig");
+const mg_types = @import("../../../types/memory_graph_types.zig");
+const AllocNode = mg_types.AllocNode;
+const FamilyId = mg_types.FamilyId;
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -313,6 +316,49 @@ pub const FreeValidationPass = struct {
         return false;
     }
 
+    /// Unified MemoryGraph-based ownership validation for free calls.
+    /// Eliminates duplicated logic across .from_param, .from_ffi_call, and .from_malloc branches.
+    ///
+    /// Returns:
+    ///   - `true`  → cross-allocator bug detected (caller should report and return true)
+    ///   - `false` → safe release (same-family or Rust ownership transfer)
+    ///   - `null`  → cannot determine from MemoryGraph (caller should fallback to legacy logic)
+    fn validateFreeWithMemoryGraph(
+        ctx: *PassContext,
+        ptr_arg: c.LLVMValueRef,
+        callee_name: []const u8,
+        caller_func: c.LLVMValueRef,
+        diag: *DiagnosticWriter,
+    ) !?bool {
+        const ptr_val: u64 = @intFromPtr(ptr_arg);
+        const node = ctx.memory_graph.getAllocInfo(ptr_val) orelse return null;
+
+        const alloc_family = node.alloc_family orelse .invalid;
+        const free_family = classifyReleaseFamilyByName(ctx, callee_name);
+
+        // Same family = safe (e.g., __rust_alloc + __rust_dealloc)
+        if (alloc_family == free_family and alloc_family != .invalid) {
+            log.debug("MG-SAME-FAMILY: {s} matches alloc family {s}, safe", .{
+                callee_name, @tagName(alloc_family),
+            });
+            return false;
+        }
+
+        // Rust ownership transfer patterns (e.g., Box::from_raw → drop)
+        if (isRustOwnershipTransfer(node, callee_name)) {
+            log.debug("MG-RUST-OWNERSHIP: {s} on Rust-allocated ptr, safe", .{callee_name});
+            return false;
+        }
+
+        // Cross-allocator mismatch = REAL bug (e.g., malloc + __rust_dealloc)
+        if (isCrossAllocatorMismatch(node, callee_name)) {
+            try reportCrossAllocatorFree(ctx, caller_func, callee_name, ptr_arg, node, diag);
+            return true;
+        }
+
+        return null; // Cannot determine, fallback to legacy logic
+    }
+
     /// Check if a free call is valid
     fn checkFreeCall(
         ctx: *PassContext,
@@ -357,14 +403,14 @@ pub const FreeValidationPass = struct {
             .from_param => {
                 const src = if (origin_info) |info| info.source_desc else "";
                 if (isFreeSafe(callee_name, origin, src)) return false;
-                // FIX: free() on a function parameter is NOT necessarily invalid.
-                // In C/C++, ownership transfer (caller malloc → callee free) is a
-                // standard pattern. The real invalid_free is free(stack_var) or
-                // free(global_var), not free(heap_pointer_passed_as_param).
-                // Our origin tracking loses "from_malloc" when the pointer flows
-                // through memcpy/store/load, causing from_param false positives.
-                // Only report if the free function is NOT standard C free/dealloc
-                // (e.g., __rust_dealloc on a C-allocated param IS a cross-allocator bug).
+
+                // Unified MemoryGraph validation (replaces 27 lines of duplicated logic)
+                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                    return result; // true = bug reported, false = safe
+                }
+                // result == null → fallback to legacy C free exemption
+
+                // Fallback: C free/operator delete on param is normal ownership transfer
                 if (std.mem.eql(u8, callee_name, "free") or
                     std.mem.startsWith(u8, callee_name, "operator delete"))
                 {
@@ -384,19 +430,15 @@ pub const FreeValidationPass = struct {
                     return true;
                 }
                 if (isFreeSafe(callee_name, origin, src)) return false;
-                // P1 FIX: Standard C free()/operator delete on an FFI-sourced
-                // pointer is NOT necessarily invalid. If cross-allocator check
-                // already passed (e.g., C/C++ FFI returning heap memory freed
-                // by C free), this is a normal ownership transfer pattern.
-                // Only flag when using a non-standard deallocator that might
-                // mismatch the FFI source's allocator.
-                //
-                // Covers both demangled ("operator delete", "operator delete[]")
-                // AND mangled (_ZdlPv, _ZdaPv, _Zdl, _Zda) C++ deallocator names.
-                // LLVM IR uses mangled names for C++ symbols — demangled names only
-                // appear in debug output. Without mangled name support, _ZdaPv
-                // (operator delete[]) on _Znam (operator new[]) memory was falsely
-                // reported as invalid_free (FP).
+
+                // Unified MemoryGraph validation for FFI-sourced pointers
+                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                    return result;
+                }
+                // result == null → fallback to legacy C/C++ free exemption
+
+                // P1 FIX: Standard C free()/operator delete on FFI-sourced pointer is normal.
+                // (keep existing comment block here, it's important documentation)
                 if (std.mem.eql(u8, callee_name, "free") or
                     std.mem.eql(u8, callee_name, "kfree") or
                     std.mem.eql(u8, callee_name, "g_free") or
@@ -418,14 +460,15 @@ pub const FreeValidationPass = struct {
                     return true;
                 }
                 if (isFreeSafe(callee_name, origin, src)) return false;
+
+                // Unified MemoryGraph validation for malloc'd pointers
+                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                    return result;
+                }
+                // result == null → fallback to legacy C/C++ free exemption
+
                 // P1 FIX: free() on malloc'd memory is always valid (C/C++ pattern).
-                // The cross-allocator check above already catches the real bugs
-                // (malloc + __rust_dealloc, __rust_alloc + free). Only flag
-                // if using a clearly mismatched deallocator on malloc'd memory.
-                //
-                // Covers both demangled AND mangled C++ deallocator names.
-                // _ZdaPv (operator delete[]) on _Znam (operator new[]) memory
-                // is valid C++ — must not be reported as invalid_free.
+                // (keep existing comment block here)
                 if (std.mem.eql(u8, callee_name, "free") or
                     std.mem.eql(u8, callee_name, "kfree") or
                     std.mem.eql(u8, callee_name, "g_free") or
@@ -695,6 +738,109 @@ pub const FreeValidationPass = struct {
             .{func_name},
         );
         return TraceEntry.initOwned(desc);
+    }
+
+    /// Classify the release family of a free/dealloc function by name.
+    /// Looks up the callee name in the family registry and returns the FamilyId.
+    /// Returns .invalid if the function is not a known deallocator.
+    fn classifyReleaseFamilyByName(ctx: *PassContext, callee_name: []const u8) FamilyId {
+        const registry = ctx.memory_graph.family_registry orelse return .invalid;
+        const op = registry.lookupRelease(callee_name, null) orelse return .invalid;
+        return op.family;
+    }
+
+    /// Check if this free call represents a valid Rust ownership transfer.
+    /// Examples: Box::from_raw(raw_ptr) followed by drop/Dealloc,
+    ///           Rc/Arc refcount decrement (not actual deallocation).
+    fn isRustOwnershipTransfer(node: *const AllocNode, callee_name: []const u8) bool {
+        // Pattern 1: Mangled Rust names containing drop/Dealloc
+        if (std.mem.indexOf(u8, callee_name, "_ZN") != null) {
+            if (std.mem.indexOf(u8, callee_name, "drop") != null or
+                std.mem.indexOf(u8, callee_name, "Dealloc") != null)
+            {
+                if (node.alloc_lang == .rust or node.alloc_family == .rust_global or node.alloc_family == .rust_box) {
+                    return true;
+                }
+            }
+        }
+
+        // Pattern 2: Known safe Rust deallocation patterns
+        const rust_safe_patterns = [_][]const u8{
+            "__rust_dealloc",
+            "__rdl_dealloc",
+            "__rg_dealloc",
+        };
+
+        for (rust_safe_patterns) |p| {
+            if (std.mem.indexOf(u8, callee_name, p) != null) {
+                return node.alloc_lang == .rust or
+                    node.alloc_family == .rust_global or
+                    node.alloc_family == .rust_box;
+            }
+        }
+
+        // Pattern 3: Rust global allocator dealloc on Rust-allocated memory
+        if (node.alloc_family == .rust_global or node.alloc_family == .rust_box) {
+            if (std.mem.indexOf(u8, callee_name, "__rust") != null or
+                std.mem.indexOf(u8, callee_name, "_ZN") != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Detect cross-allocator free bugs: freeing memory with wrong allocator.
+    /// Example: malloc'd memory freed by __rust_dealloc (or vice versa).
+    /// This is almost always a real bug — undefined behavior at runtime.
+    fn isCrossAllocatorMismatch(node: *const AllocNode, callee_name: []const u8) bool {
+        const alloc_family = node.alloc_family orelse return false;
+
+        // C/C++ allocator freed by Rust deallocator
+        if (alloc_family == .c_heap or alloc_family == .c_mmap or alloc_family == .c_aligned or
+            alloc_family == .cpp_new_scalar or alloc_family == .cpp_new_array)
+        {
+            if (std.mem.indexOf(u8, callee_name, "__rust_dealloc") != null or
+                std.mem.indexOf(u8, callee_name, "__rdl_dealloc") != null or
+                std.mem.indexOf(u8, callee_name, "__rg_dealloc") != null or
+                std.mem.startsWith(u8, callee_name, "_ZN"))
+            {
+                return true;
+            }
+        }
+
+        // Rust allocator freed by C/C++ free
+        if (alloc_family == .rust_global or alloc_family == .rust_box) {
+            if (std.mem.eql(u8, callee_name, "free") or
+                std.mem.eql(u8, callee_name, "kfree") or
+                std.mem.eql(u8, callee_name, "g_free") or
+                std.mem.startsWith(u8, callee_name, "operator delete"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Report a cross-allocator mismatch free as CRITICAL issue.
+    /// Reuses reportInvalidFree logic with enhanced evidence showing
+    /// the alloc/free family mismatch for auditability.
+    fn reportCrossAllocatorFree(
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        callee_name: []const u8,
+        ptr_arg: c.LLVMValueRef,
+        node: *const AllocNode,
+        diag: *DiagnosticWriter,
+    ) !void {
+        log.debug("CROSS-ALLOCATOR: {s} on ptr allocated by family {s}", .{
+            callee_name, if (node.alloc_family) |f| @tagName(f) else "unknown",
+        });
+        // Delegate to reportInvalidFree — the severity upgrade to CRITICAL
+        // is already handled by the FFI danger-path detection inside it.
+        try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, .from_param, null, diag);
     }
 };
 

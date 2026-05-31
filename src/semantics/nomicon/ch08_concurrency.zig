@@ -114,8 +114,7 @@ pub fn detect(
             }
         }
     }
-
-    }
+}
 
 /// Check if a function name matches thread spawn pattern.
 fn isThreadSpawnPattern(name: []const u8) bool {
