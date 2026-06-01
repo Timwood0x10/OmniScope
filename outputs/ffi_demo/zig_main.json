@@ -1,0 +1,920 @@
+{
+  "version": "0.1.9",
+  "function_count": 1130,
+  "issue_count": 76,
+  "analysis_time_ms": 7781,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "type_mismatch",
+      "severity": "medium",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.typeConfusionDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.typeConfusionDemo (zig) -> c_apply_config (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-002",
+      "kind": "memory_leak",
+      "severity": "medium",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.memoryLeakDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.memoryLeakDemo (zig) -> c_alloc_buffer (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-003",
+      "kind": "use_after_free",
+      "severity": "high",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.useAfterFreeDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.useAfterFreeDemo (zig) -> c_get_dangling_ptr (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-004",
+      "kind": "cross_language_free",
+      "severity": "high",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.crossLanguageFreeDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.crossLanguageFreeDemo (zig) -> c_alloc_buffer (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-005",
+      "kind": "double_free",
+      "severity": "high",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.doubleFreeDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.doubleFreeDemo (zig) -> c_alloc_buffer (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-006",
+      "kind": "borrow_escape",
+      "severity": "medium",
+      "confidence": 0.70,
+      "location": {
+        "function": "main.doubleFreeDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI return value escape: c_alloc_buffer result in main.doubleFreeDemo (global=false, ret=false, ffi_reentry=false, uses=5)"
+    },
+    {
+      "id": "OMI-007",
+      "kind": "invalid_free",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "main.doubleFreeDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Free memory - consumes ownership, cross-language mismatch risk"
+    },
+    {
+      "id": "OMI-008",
+      "kind": "buffer_overflow",
+      "severity": "medium",
+      "confidence": 0.78,
+      "location": {
+        "function": "main.bufferOverflowDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: main.bufferOverflowDemo (zig) -> c_alloc_buffer (c)\nBoundary Kind: zig_to_c"
+    },
+    {
+      "id": "OMI-009",
+      "kind": "borrow_escape",
+      "severity": "medium",
+      "confidence": 0.70,
+      "location": {
+        "function": "main.bufferOverflowDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI return value escape: c_alloc_buffer result in main.bufferOverflowDemo (global=false, ret=false, ffi_reentry=false, uses=5)"
+    },
+    {
+      "id": "OMI-010",
+      "kind": "invalid_free",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "main.bufferOverflowDemo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Free memory - consumes ownership, cross-language mismatch risk"
+    },
+    {
+      "id": "OMI-011",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.pdqContext__anon_14456",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.lessThan() in sort.pdq.pdqContext__anon_14456"
+    },
+    {
+      "id": "OMI-012",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.insertionContext__anon_14774",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.lessThan() in sort.insertionContext__anon_14774"
+    },
+    {
+      "id": "OMI-013",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.heapContext__anon_14775",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.heapContext__anon_14775"
+    },
+    {
+      "id": "OMI-014",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.breakPatterns__anon_14776",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.pdq.breakPatterns__anon_14776"
+    },
+    {
+      "id": "OMI-015",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.reverseRange__anon_14779",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.pdq.reverseRange__anon_14779"
+    },
+    {
+      "id": "OMI-016",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.partialInsertionSort__anon_14781",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.lessThan() in sort.pdq.partialInsertionSort__anon_14781"
+    },
+    {
+      "id": "OMI-017",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.partitionEqual__anon_14787",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.pdq.partitionEqual__anon_14787"
+    },
+    {
+      "id": "OMI-018",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.partition__anon_14789",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.pdq.partition__anon_14789"
+    },
+    {
+      "id": "OMI-019",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.siftDown__anon_15129",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.lessThan() in sort.siftDown__anon_15129"
+    },
+    {
+      "id": "OMI-020",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "sort.pdq.sort3__anon_15131",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: multi_array_list.MultiArrayList(array_hash_map.ArrayHashMapUnmanaged(u64,debug.Dwarf.CompileUnit.SrcLocCache.LineEntry,array_hash_map.AutoContext(u64),false).Data).sortInternal__anon_12142__struct_13688.swap() in sort.pdq.sort3__anon_15131"
+    },
+    {
+      "id": "OMI-021",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.mmap",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.mmap"
+    },
+    {
+      "id": "OMI-022",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.abort",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: abort() throws but no handler in posix.abort"
+    },
+    {
+      "id": "OMI-023",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.read",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.read"
+    },
+    {
+      "id": "OMI-024",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.openatZ",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.openatZ"
+    },
+    {
+      "id": "OMI-025",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.fcntl",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.fcntl"
+    },
+    {
+      "id": "OMI-026",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.fstat",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.fstat"
+    },
+    {
+      "id": "OMI-027",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.write",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.write"
+    },
+    {
+      "id": "OMI-028",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.lseek_CUR",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.lseek_CUR"
+    },
+    {
+      "id": "OMI-029",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.readv",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.readv"
+    },
+    {
+      "id": "OMI-030",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.writev",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.writev"
+    },
+    {
+      "id": "OMI-031",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.pwrite",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.pwrite"
+    },
+    {
+      "id": "OMI-032",
+      "kind": "unchecked_return",
+      "severity": "low",
+      "confidence": 0.80,
+      "location": {
+        "function": "posix.lseek_SET",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Exception crossing FFI boundary: posix.unexpectedErrno() throws but no handler in posix.lseek_SET"
+    },
+    {
+      "id": "OMI-033",
+      "kind": "memory_leak",
+      "severity": "low",
+      "confidence": 0.85,
+      "location": {
+        "function": "posix.mmap",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in posix.mmap: allocation may not be freed on error"
+    },
+    {
+      "id": "OMI-034",
+      "kind": "memory_leak",
+      "severity": "low",
+      "confidence": 0.85,
+      "location": {
+        "function": "heap.PageAllocator.map",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in heap.PageAllocator.map: allocation may not be freed on error"
+    },
+    {
+      "id": "OMI-035",
+      "kind": "memory_leak",
+      "severity": "low",
+      "confidence": 0.85,
+      "location": {
+        "function": "heap.PageAllocator.resize",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in heap.PageAllocator.resize: allocation may not be freed on error"
+    },
+    {
+      "id": "OMI-036",
+      "kind": "memory_leak",
+      "severity": "low",
+      "confidence": 0.85,
+      "location": {
+        "function": "heap.PageAllocator.remap",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in heap.PageAllocator.remap: allocation may not be freed on error"
+    },
+    {
+      "id": "OMI-037",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "debug.getDebugInfoAllocator",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in debug.getDebugInfoAllocator (zig) via heap.arena_allocator.ArenaAllocator.allocator but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-038",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "debug.SelfInfo.mapWholeFile",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in debug.SelfInfo.mapWholeFile (c) via posix.mmap but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-039",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "posix.mmap",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in posix.mmap (c) via mmap but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-040",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "debug.SelfInfo.readMachODebugInfo",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in debug.SelfInfo.readMachODebugInfo (zig) via mem.Allocator.alloc__anon_3716 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-041",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alloc__anon_3716",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alloc__anon_3716 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_5928 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-042",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.realloc__anon_3762",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.realloc__anon_3762 (c) via mem.Allocator.reallocAdvanced__anon_5943 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-043",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.create__anon_3517",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.create__anon_3517 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-044",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "fs.path.joinSepMaybeZ__anon_4818",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in fs.path.joinSepMaybeZ__anon_4818 (zig) via mem.Allocator.alloc__anon_4836 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-045",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.dupe__anon_4832",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.dupe__anon_4832 (zig) via mem.Allocator.alloc__anon_4836 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-046",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alloc__anon_4836",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alloc__anon_4836 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_6869 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-047",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_5928",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_5928 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-048",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_6869",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_6869 (zig) via mem.Allocator.allocBytesWithAlignment__anon_10352 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-049",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "debug.SelfInfo.unwindFrameDwarf",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in debug.SelfInfo.unwindFrameDwarf (zig) via heap.arena_allocator.ArenaAllocator.allocator but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-050",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.create__anon_8882",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.create__anon_8882 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-051",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alloc__anon_9992",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alloc__anon_9992 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_11971 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-052",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.dupe__anon_10079",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.dupe__anon_10079 (zig) via mem.Allocator.alloc__anon_9992 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-053",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_10327",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_10327 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_12170 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-054",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_11934",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_11934 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_5928 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-055",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_11952",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_11952 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_13562 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-056",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_11971",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_11971 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-057",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_12170",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_12170 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-058",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_13562",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_13562 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-059",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14131",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14131 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_11971 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-060",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14217",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14217 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_14671 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-061",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14388",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14388 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_11971 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-062",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14614",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14614 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_14884 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-063",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14651",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14651 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_14902 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-064",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_14671",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_14671 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-065",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14695",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14695 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_5928 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-066",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14703",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14703 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_13562 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-067",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14717",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14717 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_14942 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-068",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_14884",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_14884 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-069",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_14902",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_14902 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-070",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_14910",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_14910 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_11971 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-071",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_14942",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_14942 (zig) via mem.Allocator.allocBytesWithAlignment__anon_5758 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-072",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.alignedAlloc__anon_15109",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.alignedAlloc__anon_15109 (zig) via mem.Allocator.allocWithSizeAndAlignment__anon_15201 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-073",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "mem.Allocator.allocWithSizeAndAlignment__anon_15201",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in mem.Allocator.allocWithSizeAndAlignment__anon_15201 (zig) via mem.Allocator.allocBytesWithAlignment__anon_15215 but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-074",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "heap.PageAllocator.resize",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in heap.PageAllocator.resize (c) via heap.PageAllocator.realloc but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-075",
+      "kind": "cross_language_leak",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": {
+        "function": "heap.PageAllocator.remap",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in heap.PageAllocator.remap (c) via heap.PageAllocator.realloc but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-076",
+      "kind": "callback_ownership_risk",
+      "severity": "medium",
+      "confidence": 0.78,
+      "location": {
+        "function": "Io.Writer.defaultFlush",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Callback ownership risk: fn param → @local_callback (local_alloca) — caller controls lifetime"
+    }
+  ]
+}

@@ -34,6 +34,7 @@ const AllocNode = mg_types.AllocNode;
 const FamilyId = mg_types.FamilyId;
 const contract_db = @import("../../../resource/ffi_contract_db.zig");
 const FFIContractDB = contract_db.FFIContractDB;
+const cross_lang_detector = @import("cross_lang_free_detector.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -363,20 +364,35 @@ pub const FreeValidationPass = struct {
             // result == null → no contract info, continue to next layer
         }
 
-        // Layer 2: Double-free detection using MemoryGraph's path-sensitive analysis
+        // Layer 2: Double-free detection using enhanced analysis with FP reduction
         if (node.freed) {
-            log.warn("FREE_VALIDATION: DOUBLE-FREE detected! ptr 0x{x} already freed at 0x{x}", .{
+            log.warn("FREE_VALIDATION: Potential DOUBLE-FREE! ptr 0x{x} already freed at 0x{x}", .{
                 ptr_val,
                 node.freed_by orelse 0,
             });
 
-            // Check if on same execution path (real double-free vs multi-path cleanup)
-            if (ctx.memory_graph.isDoubleFreedOnSamePath(ptr_val)) {
+            // Use enhanced analysis with confidence scoring (v0.2.0 improvement)
+            const df_analysis = ctx.memory_graph.analyzeDoubleFreeWithConfidence(ptr_val);
+
+            if (df_analysis.is_double_free) {
+                // High-confidence double-free → report it
+                const conf_percent = @as(u32, @intFromFloat(df_analysis.confidence * 100.0));
+                log.warn("FREE_VALIDATION: DOUBLE-FREE CONFIRMED (confidence={d}%%): {s}", .{
+                    conf_percent,
+                    df_analysis.reason,
+                });
                 try reportDoubleFreeIssue(ctx, caller_func, callee_name, ptr_arg, node, diag);
                 return true; // Real double-free bug!
+            } else if (df_analysis.confidence > 0.3 and df_analysis.confidence < 0.6) {
+                // Medium confidence → log but don't report (likely FP)
+                log.debug("FREE_VALIDATION: Suspected double-free suppressed (confidence={d:.1}): {s}", .{
+                    df_analysis.confidence,
+                    df_analysis.reason,
+                });
+                return false; // Suppress as likely false positive
             } else {
-                log.debug("FREE_VALIDATION: Multi-path cleanup detected (not a real double-free)", .{});
-                return false; // Different branches, not a bug
+                log.debug("FREE_VALIDATION: Not a double-free: {s}", .{df_analysis.reason});
+                return false; // Different branches or low confidence
             }
         }
 
@@ -448,6 +464,27 @@ pub const FreeValidationPass = struct {
         // Check origin
         const origin_info = pointer_origins.get(ptr_arg);
         const origin = if (origin_info) |info| info.origin else .unknown;
+
+        // ── NEW: Cross-Language Free Detection (v0.2.0 enhancement) ──
+        // Detects when memory from one language's allocator is freed by
+        // a different language's deallocator - almost always a bug.
+        // This catches cases like Rust _RZN...allocate + C free().
+        if (origin_info) |info| {
+            const src_desc = info.source_desc;
+            // Extract alloc function name from source description
+            const alloc_func_name = extractAllocFuncNameForCrossLang(src_desc);
+            if (alloc_func_name) |alloc_func| {
+                log.debug("CROSS-LANG-CHECK: alloc={s}, free={s}", .{ alloc_func, callee_name });
+                if (try cross_lang_detector.detectCrossLanguageFree(alloc_func, callee_name, ctx.allocator)) |cross_issue| {
+                    defer ctx.allocator.free(cross_issue.message);
+
+                    // Report as CRITICAL cross-language mismatch
+                    try reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
+                    return true; // Bug detected and reported
+                }
+            }
+        }
+        // ── END Cross-Language Detection ──
 
         // ── NEW: FFI Contract Database Validation (source_desc-based) ──
         // This layer validates alloc/free pairs using library-specific contracts
@@ -765,8 +802,8 @@ pub const FreeValidationPass = struct {
 
         const message = try std.fmt.allocPrint(
             ctx.allocator,
-            "{s}() called on {s} pointer (confidence: {d:.0}%{s})",
-            .{ free_func_name, origin_str, base_confidence * 100.0, ffi_note },
+            "{s}() called on {s} pointer (confidence: {d:.0}%%{s})",
+            .{ free_func_name, origin_str, @as(u32, @intFromFloat(base_confidence * 100.0)), ffi_note },
         );
 
         var issue = Issue.initWithTrace(
@@ -1414,6 +1451,97 @@ pub const FreeValidationPass = struct {
             alloc_func_name,
             wrong_free_func,
             expected_str,
+        });
+    }
+
+    /// Extract allocation function name for cross-language detection.
+    /// Similar to extractAllocFuncName but optimized for cross-language patterns.
+    fn extractAllocFuncNameForCrossLang(source_desc: []const u8) ?[]const u8 {
+        // Pattern 1: "from XXXX()" - most common format
+        if (std.mem.indexOf(u8, source_desc, "from ")) |start| {
+            const after_from = source_desc[start + 5 ..];
+            // Skip "FFI call ", "parameter " prefixes
+            const trimmed = if (std.mem.indexOf(u8, after_from, "call ")) |call_start|
+                after_from[call_start + 5 ..]
+            else
+                after_from;
+
+            if (std.mem.indexOf(u8, trimmed, "()")) |end| {
+                if (end > 0 and end < 128) { // Allow longer names for mangled Rust functions
+                    return trimmed[0..end];
+                }
+            }
+        }
+
+        // Pattern 2: Direct function name with known Rust/C++ patterns
+        // This handles cases where the description is just the function name
+        if (std.mem.indexOf(u8, source_desc, "()")) |end| {
+            if (end > 3 and end < 128) {
+                // Must look like a function call (not a sentence)
+                const candidate = source_desc[0..end];
+                const first_char = candidate[0];
+                if ((first_char >= 'a' and first_char <= 'z') or first_char == '_' or
+                    (first_char >= 'A' and first_char <= 'Z'))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// Report a cross-language free mismatch issue.
+    /// Uses enhanced severity and confidence from cross_lang_detector.
+    fn reportCrossLangFreeIssue(
+        ctx: *PassContext,
+        caller_func: c.LLVMValueRef,
+        callee_name: []const u8,
+        ptr_arg: c.LLVMValueRef,
+        cross_issue: *const cross_lang_detector.CrossLangFreeIssue,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+            std.mem.span(caller_name_ptr)
+        else
+            "unknown";
+
+        const location = Location.init(caller_name);
+
+        // Build detailed trace showing the cross-language mismatch
+        const trace = try ctx.allocator.alloc(TraceEntry, 5);
+        trace[0] = TraceEntry.init("Cross-language free detected");
+        trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Pointer address: 0x{x}", .{@intFromPtr(ptr_arg)}));
+        trace[2] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Memory allocated by {s} ({s})", .{ cross_issue.alloc_family.displayName(), cross_issue.free_family.func_name }));
+        trace[3] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Freed using {s} ({s})", .{ cross_issue.free_family.family.displayName(), callee_name }));
+        trace[4] = TraceEntry.initOwned(try std.fmt.allocPrint(ctx.allocator, "Different runtimes may use different heaps - this is undefined behavior", .{}));
+
+        // Map to OmniScope severity
+        const severity: Severity = switch (cross_issue.severity) {
+            .critical => .critical,
+            .high => .high,
+        };
+
+        var issue = Issue.initWithTrace(
+            .invalid_free, // Use invalid_free kind for cross-lang issues
+            cross_issue.message,
+            location,
+            severity,
+            cross_issue.confidence,
+            trace,
+        );
+        errdefer issue.deinit(ctx.allocator);
+
+        try ctx.addIssue(&issue);
+
+        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
+        diag.warn("{s}Cross-language free in {s}: {s} freed by {s}. Confidence: {d:.0}%%", .{
+            omi_prefix,
+            caller_name,
+            cross_issue.alloc_family.displayName(),
+            cross_issue.free_family.family.displayName(),
+            @as(u32, @intFromFloat(cross_issue.confidence * 100.0)),
         });
     }
 };

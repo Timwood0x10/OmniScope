@@ -1,0 +1,32 @@
+{
+  "version": "0.1.9",
+  "function_count": 8,
+  "issue_count": 2,
+  "analysis_time_ms": 5,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "memory_leak",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "c_alloc_buffer",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in c_alloc_buffer: allocation may not be freed on error"
+    },
+    {
+      "id": "OMI-002",
+      "kind": "cross_language_leak",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": {
+        "function": "c_alloc_buffer",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in c_alloc_buffer (c) via malloc but never freed or transferred across FFI boundary"
+    }
+  ]
+}

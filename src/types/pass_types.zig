@@ -1143,7 +1143,10 @@ fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
 }
 
 fn isZigStdlibFunction(func_name: []const u8) bool {
-    const stdlib_prefixes = [_][]const u8{
+    // Fast path: prefix/substring match with extended pattern list (v0.2.0)
+    // Split into two groups to avoid comptime branch quota overflow
+    const stdlib_prefixes_group1 = [_][]const u8{
+        // Core patterns (high-frequency)
         "debug.",
         "heap.",
         "mem.",
@@ -1169,7 +1172,132 @@ fn isZigStdlibFunction(func_name: []const u8) bool {
         "hmac",
         "aead",
         "aes",
+
+        // I/O subsystem
+        "io.writer",
+        "io.reader",
+        "io.stream",
+
+        // Debug/DWARF
+        "debug.dwarf",
+        "debug.info",
+        "debug.format",
+
+        // Async/Event loop
+        "loop.",
+        "fs.file",
+        "fs.path",
+
+        // Crypto extensions
+        "crypto.chacha",
+        "crypto.salsa",
+
+        // Math extensions
+        "math.big",
+        "math.complex",
+
+        // Compression
+        "compress.zlib",
+        "compress.lz4",
+
+        // Unicode
+        "unicode.utf8view",
+        "unicode.utf16le",
     };
-    const trie = comptime PrefixTrie.init(&stdlib_prefixes, .substring);
-    return trie.contains(func_name);
+
+    const trie1 = comptime PrefixTrie.init(&stdlib_prefixes_group1, .substring);
+    if (trie1.contains(func_name)) return true;
+
+    // Second group: less common patterns (checked only if first group misses)
+    const stdlib_prefixes_group2 = [_][]const u8{
+        ".dwarf",
+        "crypto.curve",
+        "compress.xz",
+        "unicode.utf16be",
+        "unicode.ascii",
+        ".buffer",
+        ".queue",
+        ".stack",
+        ".allocator",
+        ".arena",
+        ".gpa",
+    };
+
+    const trie2 = comptime PrefixTrie.init(&stdlib_prefixes_group2, .substring);
+    if (trie2.contains(func_name)) return true;
+
+    // Slow path: substring matching for internal module detection
+    return looksLikeInternalZigFunction(func_name);
+}
+
+/// Check if a function name looks like an internal Zig stdlib function.
+/// Uses heuristics based on naming conventions:
+///   - Contains namespace separators (".")
+///   - Sufficiently long (>15 chars) to indicate mangled/generated names
+///   - Doesn't look like user code (no common user prefixes)
+fn looksLikeInternalZigFunction(func_name: []const u8) bool {
+    // Must contain namespace separator (Zig uses "." like "std.mem.copy")
+    if (std.mem.indexOf(u8, func_name, ".") == null) return false;
+
+    // Internal functions are typically longer than user-defined functions
+    if (func_name.len < 15) return false;
+
+    // Check for known internal markers (substring match)
+    const internal_markers = [_][]const u8{
+        ".debug.", // debug subsystem
+        ".dwarf", // DWARF debugging format
+        ".writer", // Writer interfaces
+        ".reader", // Reader interfaces
+        ".hash_", // Hash functions
+        ".alloc", // Allocation routines
+        ".format", // Formatting utilities
+    };
+
+    for (internal_markers) |marker| {
+        if (std.mem.indexOf(u8, func_name, marker) != null) {
+            // Additional validation: exclude obvious user code
+            if (!looksLikeUserCode(func_name)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Heuristic check if a function name looks like user-written code (not stdlib).
+/// Returns true if the name suggests it's application-level code.
+fn looksLikeUserCode(func_name: []const u8) bool {
+    const user_prefixes = [_][]const u8{
+        "main", // main() function
+        "test", // test functions
+        "my", // myCustomFunc
+        "app", // appInit
+        "user", // userInput
+        "handle", // handleClick (but not std.io.handle)
+        "callback", // callbackFn
+        "wrapper", // wrapperFunc
+    };
+
+    for (user_prefixes) |prefix| {
+        if (std.mem.startsWith(u8, func_name, prefix)) {
+            // Additional check: must be a simple name (no multiple "." separators)
+            // User code rarely has deep nesting like "main.helper.subfunc"
+            const dot_count = countChar(func_name, '.');
+            if (dot_count <= 1) {
+                return true; // Likely user code
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Count occurrences of a character in a string.
+fn countChar(s: []const u8, char: u8) usize {
+    var count: usize = 0;
+    for (s) |ch| {
+        if (ch == char) count += 1;
+    }
+    return count;
 }

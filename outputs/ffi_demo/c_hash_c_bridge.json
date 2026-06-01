@@ -1,0 +1,20 @@
+{
+  "version": "0.1.9",
+  "function_count": 12,
+  "issue_count": 1,
+  "analysis_time_ms": 9,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "memory_leak",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "c_hash",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Resource leak on error path in c_hash: allocation may not be freed on error"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "version": "0.1.9",
+  "function_count": 12,
+  "issue_count": 1,
+  "analysis_time_ms": 20,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "cross_language_leak",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "_ZN8cpp_hashL13CompressBlockEPKhPj",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in _ZN8cpp_hashL13CompressBlockEPKhPj (cpp) via _Znam but never freed or transferred across FFI boundary"
+    }
+  ]
+}

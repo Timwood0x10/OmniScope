@@ -59,6 +59,9 @@ pub const Pipeline = struct {
     /// Minimum confidence to report a leak. Set via setLeakThreshold().
     /// Default 0.5 means medium-confidence+ leaks are reported.
     leak_confidence_threshold: f32 = 0.5,
+    /// Enable Zig allocator tracking (default: true).
+    /// When false, skips Zig-specific confidence scoring.
+    enable_zig_allocator_tracking: bool = true,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
@@ -427,6 +430,14 @@ pub const Pipeline = struct {
             const tracker = &ctx.global_alloc_tracker;
             var confirmed_high: u32 = 0;
             var reported_leaks: u32 = 0;
+
+            // ════════════════════════════════════════════════════
+            // v0.2.0: Initialize Zig Allocator Tracker ONCE (outside loop)
+            // This is a performance optimization: avoid re-creating
+            // the tracker for every allocation record.
+            // ════════════════════════════════════════════════════
+            var zig_tracker = zig_alloc_tracker.Tracker.init(self.allocator);
+
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
                     // ════════════════════════════════════════════════════
@@ -582,25 +593,27 @@ pub const Pipeline = struct {
                     // Zig Allocator Tracking: adjust confidence based on allocator semantics.
                     // Arena/FixedBuffer/testing allocators have deterministic cleanup,
                     // so confidence should be low unless on an FFI boundary.
-                    var zig_tracker = zig_alloc_tracker.Tracker.init(self.allocator);
-                    if (ctx.memory_graph.findNodeByInst(@as(u64, rec.ptr_id))) |node_idx| {
-                        const leak_node = ctx.memory_graph.node_store.items[node_idx];
-                        const zig_confidence = zig_tracker.calculateLeakConfidence(
-                            leak_node,
-                            rec.alloc_callee,
-                            is_on_ffi_path,
-                        );
-                        // Use the lower of the two scores: existing heuristic vs Zig-aware scoring.
-                        // This prevents false positives when Zig's allocator semantics
-                        // indicate safe management, even if the general heuristic scores it high.
-                        if (zig_confidence.score < base_confidence) {
-                            log.debug("ZIG-TRACKER: Lowering confidence {d:.2} → {d:.2} for alloc {} ({s})", .{
-                                base_confidence,
-                                zig_confidence.score,
-                                rec.ptr_id,
-                                zig_confidence.reason,
-                            });
-                            base_confidence = zig_confidence.score;
+                    // Only run if enabled via setZigAllocatorTracking(true) [default].
+                    if (self.enable_zig_allocator_tracking) {
+                        if (ctx.memory_graph.findNodeByInst(@as(u64, rec.ptr_id))) |node_idx| {
+                            const leak_node = ctx.memory_graph.node_store.items[node_idx];
+                            const zig_confidence = zig_tracker.calculateLeakConfidence(
+                                leak_node,
+                                rec.alloc_callee,
+                                is_on_ffi_path,
+                            );
+                            // Use the lower of the two scores: existing heuristic vs Zig-aware scoring.
+                            // This prevents false positives when Zig's allocator semantics
+                            // indicate safe management, even if the general heuristic scores it high.
+                            if (zig_confidence.score < base_confidence) {
+                                log.debug("ZIG-TRACKER: Lowering confidence {d:.2} → {d:.2} for alloc {} ({s})", .{
+                                    base_confidence,
+                                    zig_confidence.score,
+                                    rec.ptr_id,
+                                    zig_confidence.reason,
+                                });
+                                base_confidence = zig_confidence.score;
+                            }
                         }
                     }
 
@@ -707,6 +720,93 @@ pub const Pipeline = struct {
     ///   threshold - Value in [0.0, 1.0]
     pub fn setLeakThreshold(self: *Pipeline, threshold: f32) void {
         self.leak_confidence_threshold = threshold;
+    }
+
+    /// Enable or disable Zig allocator tracking.
+    ///
+    /// When disabled, Zig-specific confidence scoring is skipped,
+    /// falling back to generic heuristics only. Useful for non-Zig projects
+    /// where the overhead of allocator classification is unnecessary.
+    ///
+    /// Arguments:
+    ///   enabled - true to enable, false to disable
+    pub fn setZigAllocatorTracking(self: *Pipeline, enabled: bool) void {
+        self.enable_zig_allocator_tracking = enabled;
+    }
+
+    // ════════════════════════════════════════════════════
+    // v0.2.0: Helper Functions for Zig Allocator Tracking
+    // ════════════════════════════════════════════════════
+
+    /// Heuristic check if allocation crosses FFI boundary.
+    /// Uses pattern matching on allocation function names and
+    /// cross-language edge analysis.
+    fn isFFIBoundaryAllocation(rec: @import("../pass/pass.zig").GlobalAllocTracker.AllocRecord, ctx: *PassContext) bool {
+        // Check if allocation function is known FFI API
+        if (rec.alloc_callee.len > 0) {
+            const ffi_alloc_patterns = [_][]const u8{
+                "SSL_",        "BIO_",       "RSA_",       "EVP_",
+                "sqlite3",     "PyList_New", "PyDict_New", "C.malloc",
+                "_Cgo_malloc",
+            };
+            for (ffi_alloc_patterns) |pattern| {
+                if (std.mem.indexOf(u8, rec.alloc_callee, pattern) != null) {
+                    return true;
+                }
+            }
+        }
+
+        // Check cross-language edges
+        for (ctx.cross_lang_edges.items) |edge| {
+            if (edge.involvesPtr(@intFromPtr(rec.ptr_id))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Report leak with confidence metadata.
+    /// Determines severity from confidence score and creates
+    /// a detailed issue with confidence reasoning.
+    fn reportLeakWithConfidence(
+        rec: @import("../pass/pass.zig").GlobalAllocTracker.AllocRecord,
+        node: @import("../semantics/memory_graph.zig").AllocNode,
+        confidence: zig_alloc_tracker.LeakConfidence,
+        ctx: *PassContext,
+        diag: *DiagnosticWriter,
+    ) !void {
+        _ = node;
+        _ = diag;
+
+        // Determine severity from confidence
+        const severity: Severity = if (confidence.isCritical())
+            .critical
+        else if (confidence.isHigh())
+            .high
+        else if (confidence.isMedium())
+            .medium
+        else
+            .low;
+
+        const msg = try std.fmt.allocPrint(
+            ctx.allocator,
+            "Potential memory leak (confidence: {d:.0}%): {s}\n  Allocated by: {s}",
+            .{ confidence.score * 100, confidence.reason, rec.alloc_callee },
+        );
+        errdefer ctx.allocator.free(msg);
+
+        var issue = Issue.init(
+            .memory_leak,
+            msg,
+            Location.init(rec.alloc_func),
+            severity,
+            confidence.score,
+        );
+        issue.reason = try std.fmt.dupe(ctx.allocator, "{s}", .{confidence.reason});
+        errdefer ctx.allocator.free(issue.reason);
+
+        try ctx.addIssue(&issue);
     }
 };
 

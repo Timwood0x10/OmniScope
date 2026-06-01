@@ -1,0 +1,32 @@
+{
+  "version": "0.1.9",
+  "function_count": 26,
+  "issue_count": 2,
+  "analysis_time_ms": 71,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "ffi_unsafe_call",
+      "severity": "low",
+      "confidence": 0.43,
+      "location": {
+        "function": "_ZN11rust_merkle10MerkleTree3new17h45b67272fd153021E",
+        "line": 0
+      },
+      "reason": "",
+      "message": "FFI Boundary: _ZN11rust_merkle10MerkleTree3new17h45b67272fd153021E (rust) -> c_hash (c)\nBoundary Kind: rust_to_c"
+    },
+    {
+      "id": "OMI-002",
+      "kind": "unchecked_return",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": {
+        "function": "_ZN11rust_merkle10MerkleTree3new17h45b67272fd153021E",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Unchecked error code from FFI call: _RNvNtCs1OjIl8oxbrv_5alloc5alloc18handle_alloc_error() in _ZN11rust_merkle10MerkleTree3new17h45b67272fd153021E"
+    }
+  ]
+}

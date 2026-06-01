@@ -1,0 +1,32 @@
+{
+  "version": "0.1.9",
+  "function_count": 12,
+  "issue_count": 2,
+  "analysis_time_ms": 17,
+  "issues": [
+    {
+      "id": "OMI-001",
+      "kind": "cross_language_leak",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": {
+        "function": "_ZN7cpp_fft11InitTwiddleEmPPdS1_",
+        "line": 0
+      },
+      "reason": "",
+      "message": "Orphan pointer detected: allocated in _ZN7cpp_fft11InitTwiddleEmPPdS1_ (cpp) via _Znam but never freed or transferred across FFI boundary"
+    },
+    {
+      "id": "OMI-002",
+      "kind": "memory_leak",
+      "severity": "low",
+      "confidence": 0.50,
+      "location": {
+        "function": "_ZN7cpp_fft11InitTwiddleEmPPdS1_",
+        "line": 0
+      },
+      "reason": "",
+      "message": "C++ heap allocation never freed (internal leak)"
+    }
+  ]
+}

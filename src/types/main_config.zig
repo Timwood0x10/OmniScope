@@ -176,6 +176,10 @@ pub const Config = struct {
     /// Lower = more reports (more noise), higher = fewer but more precise.
     /// Zig Arena/FixedBuffer allocations typically score < 0.3 (auto-suppressed).
     leak_confidence_threshold: f32 = 0.5,
+    /// Enable Zig allocator tracking (default: true).
+    /// When disabled, Zig-specific confidence scoring is skipped,
+    /// falling back to generic heuristics only.
+    enable_zig_allocator_tracking: bool = true,
     /// Surface filter configuration for fine-grained control
     surface_filter: SurfaceFilterConfig = .{},
 
@@ -285,6 +289,8 @@ pub fn parseArgs(allocator: Allocator) !Config {
             const thresh = std.fmt.parseFloat(f32, thresh_str) catch return error.InvalidOption;
             if (thresh < 0.0 or thresh > 1.0) return error.InvalidOption;
             config.leak_confidence_threshold = thresh;
+        } else if (std.mem.eql(u8, arg, "--no-zig-tracking")) {
+            config.enable_zig_allocator_tracking = false;
         } else if (std.mem.eql(u8, arg, "--min-severity")) {
             const sev_str = args.next() orelse {
                 return error.InvalidOption;
@@ -336,6 +342,7 @@ pub fn showHelp() void {
         \\  --boundary-only                  Only report issues on FFI boundaries (precision: ~95%)
         \\  --leak-threshold <0.0-1.0>       Minimum confidence to report leaks (default: 0.5)
         \\                                    Zig Arena/FixedBuffer allocs score ~0.2 (auto-suppressed)
+        \\  --no-zig-tracking                 Disable Zig allocator tracking (for non-Zig projects)
         \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
         \\  --show-surface <surfaces>        Comma-separated surfaces to show
         \\                                    (boundary,ffi,reachable,internal,runtime)
