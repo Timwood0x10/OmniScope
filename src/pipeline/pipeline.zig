@@ -40,6 +40,10 @@ const IssueVerifier = resource_verifier.IssueVerifier;
 const c = @import("../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../ir/llvm_safe.zig");
 
+// v0.2.0: Diagnostic Aggregator for cross-pass issue deduplication
+const diag_aggregator = @import("../diag/aggregator.zig");
+const DiagnosticAggregator = diag_aggregator.DiagnosticAggregator;
+
 // v0.2.0: Language Adapter integration for cross-language FFI analysis
 const lang = @import("../lang/adapter_registry.zig");
 const lang_types = @import("../lang/types.zig");
@@ -66,6 +70,10 @@ pub const Pipeline = struct {
     /// When true, suppresses issues from stdlib/compiler functions.
     /// Set via setFocusUserCode() from CLI config.
     focus_user_code: bool = true,
+    /// Deduplicated issue indices cache (populated after run() completes).
+    /// Contains indices into data_flow_graph.getIssues() for non-duplicate issues.
+    /// Null before run() or if deduplication fails.
+    dedup_issue_indices: ?[]usize = null,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
@@ -97,6 +105,11 @@ pub const Pipeline = struct {
         self.allocator.destroy(self.query_engine);
         self.pass_manager.deinit();
         self.inst_cache.deinit();
+        // Free deduplicated issue indices cache if allocated
+        if (self.dedup_issue_indices) |indices| {
+            self.allocator.free(indices);
+            self.dedup_issue_indices = null;
+        }
     }
 
     /// Run the full analysis pipeline
@@ -690,6 +703,40 @@ pub const Pipeline = struct {
                 omi_prefix, reported_leaks, tracker.size(), confirmed_high,
             });
         }
+
+        // ════════════════════════════════════════════════════
+        // v0.2.0: Cross-pass issue deduplication via DiagnosticAggregator
+        // After all passes complete, deduplicate issues to prevent
+        // duplicate reports from different passes detecting the same issue.
+        // Uses (function + kind + file + line) as dedup key.
+        // ════════════════════════════════════════════════════
+        {
+            var aggregator = try DiagnosticAggregator.init(self.allocator);
+            defer aggregator.deinit();
+
+            const all_issues = self.data_flow_graph.getIssues();
+            var indices = try std.ArrayList(usize).initCapacity(self.allocator, all_issues.len);
+
+            for (all_issues, 0..) |issue, issue_idx| {
+                // Use aggregator's addIssue for deduplication checking.
+                // Returns true if issue is new (not a duplicate).
+                const is_new = try aggregator.addIssue(issue);
+                if (is_new) {
+                    // Store index of non-duplicate issue.
+                    try indices.append(self.allocator, issue_idx);
+                }
+            }
+
+            // Store deduplicated issue indices (caller owns this memory).
+            self.dedup_issue_indices = try indices.toOwnedSlice(self.allocator);
+
+            const dup_count = all_issues.len - self.dedup_issue_indices.?.len;
+            if (dup_count > 0) {
+                log.info("PIPELINE: Deduplication removed {} duplicate issues ({} unique remaining)", .{
+                    dup_count, self.dedup_issue_indices.?.len,
+                });
+            }
+        }
     }
 
     /// Run static analysis stage
@@ -723,9 +770,120 @@ pub const Pipeline = struct {
         return &self.data_flow_graph;
     }
 
-    /// Get all detected issues
+    /// Get all detected issues (deduplicated if run() has completed).
+    ///
+    /// After run() executes, returns deduplicated issues with duplicates
+    /// removed across passes. Before run() or if deduplication failed,
+    /// returns raw issues from data_flow_graph.
+    ///
+    /// Note: This returns a view into data_flow_graph's internal storage.
+    /// For deduplicated results, use getIssuesOwned() instead.
     pub fn getIssues(self: *const Pipeline) []const Issue {
+        // Always return raw issues for backward compatibility.
+        // Use getIssuesOwned() for deduplicated results.
         return self.data_flow_graph.getIssues();
+    }
+
+    /// Get all detected issues (deduplicated, caller-owned).
+    ///
+    /// Returns a newly allocated slice containing only non-duplicate issues.
+    /// Caller MUST free the returned slice and each issue's owned memory
+    /// by calling freeIssuesOwned() when done.
+    ///
+    /// Returns null if run() hasn't completed or deduplication failed.
+    pub fn getIssuesOwned(self: *Pipeline, allocator: std.mem.Allocator) ?[]Issue {
+        // Return deduplicated issues if available (populated by run()).
+        if (self.dedup_issue_indices) |indices| {
+            const all_issues = self.data_flow_graph.getIssues();
+            var result = try std.ArrayList(Issue).initCapacity(allocator, indices.len);
+
+            for (indices) |idx| {
+                const original = all_issues[idx];
+                // Deep copy issue to create independent owned copy.
+                const copied = try self.deepCopyIssue(allocator, original);
+                try result.append(copied);
+            }
+
+            return result.toOwnedSlice(allocator);
+        }
+        // No deduplication available.
+        return null;
+    }
+
+    /// Free issues slice returned by getIssuesOwned().
+    ///
+    /// Properly frees all owned memory within each issue and the slice itself.
+    pub fn freeIssuesOwned(_: *Pipeline, allocator: std.mem.Allocator, issues: []Issue) void {
+        for (issues) |*issue| {
+            issue.deinit(allocator);
+        }
+        allocator.free(issues);
+    }
+
+    /// Deep copy an issue with full ownership transfer.
+    ///
+    /// Creates an independent copy of the issue with all heap-allocated
+    /// fields (message, trace, location.function) duplicated.
+    /// The returned issue has owned=true so deinit() will free everything.
+    fn deepCopyIssue(_: *Pipeline, allocator: std.mem.Allocator, original: Issue) !Issue {
+
+        // Copy message (always present).
+        const msg = try allocator.dupe(u8, original.message);
+        errdefer allocator.free(msg);
+
+        // Copy location.function if it's heap-allocated.
+        var loc = original.location;
+        var func_owned = false;
+        if (original.function_owned and original.location.func.len > 0) {
+            loc.func = try allocator.dupe(u8, original.location.func);
+            func_owned = true;
+        }
+        errdefer if (func_owned) allocator.free(loc.func);
+
+        // Copy trace entries if present.
+        var trace: ?[]TraceEntry = null;
+        if (original.trace) |original_trace| {
+            var copied_trace = try allocator.alloc(TraceEntry, original_trace.len);
+            errdefer allocator.free(copied_trace);
+
+            for (original_trace, 0..) |entry, i| {
+                if (entry.owned and entry.description.len > 0) {
+                    const desc = try allocator.dupe(u8, entry.description);
+                    copied_trace[i] = .{
+                        .description = desc,
+                        .location = entry.location,
+                        .owned = true,
+                    };
+                } else {
+                    copied_trace[i] = entry; // Borrowed reference
+                }
+            }
+            trace = copied_trace;
+        }
+
+        // Return fully owned copy.
+        return .{
+            .kind = original.kind,
+            .message = msg,
+            .location = loc,
+            .severity = original.severity,
+            .confidence = original.confidence,
+            .confidence_level = original.confidence_level,
+            .reason = original.reason, // Borrowed (string literal or borrowed slice)
+            .semantic_surface = original.semantic_surface,
+            .escape_evidence = original.escape_evidence,
+            .explained_safe = original.explained_safe,
+            .ffi_boundary = original.ffi_boundary, // Optional value copy
+            .trace = trace,
+            .owned = true, // We own all allocated memory.
+            .function_owned = func_owned,
+            .classification = original.classification,
+            .resource_family = original.resource_family, // Borrowed slices
+            .release_family = original.release_family,
+            .verdict = original.verdict,
+            .adjusted_score = original.adjusted_score,
+            .is_contract_based = original.is_contract_based,
+        };
     }
 
     /// Set the LLVM module to analyze

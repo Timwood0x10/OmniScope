@@ -16,6 +16,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const inst_cache_mod = @import("../../../ir/inst_cache.zig");
 const InstCache = inst_cache_mod.InstCache;
 const CommonTypes = @import("../../../common/types.zig");
@@ -129,7 +130,21 @@ pub const RustFfiAuditor = struct {
     /// Audit a single function for all Rust FFI patterns.
     fn auditFunction(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
         const func_name = getFunctionName(func);
-        const is_rust = ctx.isRustModule();
+
+        // IMPROVED: Multi-strategy Rust detection for higher recall
+        // Strategy 1: Global module language detection (existing)
+        const is_rust_module = ctx.isRustModule();
+        // Strategy 2: Function-level Rust pattern detection (NEW)
+        // Detects Rust FFI patterns even when language detector misidentifies the module
+        // This handles cases like C files with Rust mangled function names (_RZN..., __rust_*, etc.)
+        const has_rust_patterns = self.hasRustFfiPatterns(func, ctx);
+
+        // Run Rust-specific rules if EITHER strategy detects Rust
+        const is_rust = is_rust_module or has_rust_patterns;
+
+        if (has_rust_patterns and !is_rust_module) {
+            diag.debug("FFIAuditor: Function '{s}' has Rust FFI patterns but module not detected as Rust — enabling Rust-specific rules", .{func_name});
+        }
 
         // PERF: Initialize InstCache for this function's instructions (avoids 6× FFI overhead)
         var inst_cache = InstCache.init(self.allocator);
@@ -225,6 +240,59 @@ pub const RustFfiAuditor = struct {
     pub fn traceValueUsage(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef) ?UsageSet {
         _ = self;
         return tracking.traceValueUsage(val, func);
+    }
+
+    /// Check if a function contains Rust FFI patterns (mangled names, Rust allocators, etc.)
+    /// This enables Rust-specific rules even when the module language is misdetected.
+    /// Implements Strategy 2 of multi-strategy Rust detection for higher recall.
+    pub fn hasRustFfiPatterns(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext) bool {
+        _ = self;
+        const func_name = getFunctionName(func);
+
+        // Check 1: Function name has Rust mangled name pattern
+        if (isRustMangledName(func_name)) {
+            return true;
+        }
+
+        // Check 2: Function calls Rust allocator intrinsics
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
+
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                if (@intFromPtr(called_name_ptr) == 0) continue;
+
+                const called_name = std.mem.span(called_name_ptr);
+
+                // Check for Rust allocator patterns
+                if (std.mem.indexOf(u8, called_name, "__rust_alloc") != null or
+                    std.mem.indexOf(u8, called_name, "__rust_dealloc") != null or
+                    std.mem.indexOf(u8, called_name, "__rust_realloc") != null or
+                    std.mem.indexOf(u8, called_name, "_RZN") != null or
+                    std.mem.indexOf(u8, called_name, "_RNv") != null)
+                {
+                    return true;
+                }
+
+                // Check for Rust FFI boundary functions (into_raw, from_raw, as_ptr)
+                if (isRustIntoRawCall(called_name) or isRustFromRawCall(called_name) or isRustAsPtrCall(called_name)) {
+                    return true;
+                }
+            }
+        }
+
+        // Check 3: Module-level Rust FFI sets are populated (indicates Rust FFI analysis was done)
+        if (ctx.rust_into_raw_set.count() > 0 or ctx.rust_from_raw_set.count() > 0) {
+            return true;
+        }
+
+        return false;
     }
 };
 

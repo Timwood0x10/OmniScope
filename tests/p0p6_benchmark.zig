@@ -258,7 +258,7 @@ test "Language support matrix - 8 languages with FFI detection" {
     }
 
     try std.testing.expectEqual(@as(u32, 8), languages.len);
-    try std.testing.expectGreaterThan(full_support_count, 5); // At least 6 languages
+    try std.testing.expect(full_support_count > 5); // At least 6 languages
     try std.testing.expect(total_l0_patterns > 40); // Should have substantial L0 coverage
 }
 

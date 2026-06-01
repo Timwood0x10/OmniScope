@@ -561,7 +561,7 @@ fn builtinLibraries() []const LibraryContract {
             .pairs = &[_]AllocPairRule{},
             .managed_types = &[_]ManagedTypeInfo{
                 .{
-                    .type_patterns = &[_][]const u8{ "JSObject", "JSString", "JSContextRef", "JSValueRef", "JSPropertyNameArrayRef", "JSObjectMake", "JSStringCreateWithUTF8CString" },
+                    .type_patterns = &[_][]const u8{ "JSObject", "JSString", "JSContextRef", "JSValueRef", "JSPropertyNameArrayRef", "JSObjectMake", "JSStringCreateWithUTF8CString", "JSValueMakeString", "JSValueProtect", "JSValueRetain" },
                     .model = .gc,
                     .retain_funcs = &[_][]const u8{ "JSValueProtect", "JSValueRetain", "JSObjectSetPrivate" },
                     .release_funcs = &[_][]const u8{"JSValueUnprotect"},
@@ -869,8 +869,9 @@ test "shouldReportLeak - OpenSSL SSL_CTX requires manual free" {
 }
 
 test "shouldReportLeak - JSC objects are GC managed (suppress FP)" {
-    // Note: This test may emit "Failed to load file" warnings from logging subsystem
-    // The warnings are harmless and don't affect test correctness
+    // FFIContractDB uses built-in data (builtinLibraries() at compile time)
+    // No external file I/O needed - all JSC rules are embedded in this file
+    // See: javascriptcore library definition (lines 558-570)
     var db = try FFIContractDB.init(std.testing.allocator);
     defer db.deinit();
 
