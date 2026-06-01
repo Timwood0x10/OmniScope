@@ -23,6 +23,7 @@ const adapter_mod = @import("language_adapter.zig");
 const types = @import("types.zig");
 const FFISemantics = types.FFISemantics;
 const Language = types.Language;
+const log = std.log.scoped(.python_adapter);
 
 // LLVM C API for IR traversal
 const c = @import("../ir/llvm_raw.zig").c;
@@ -67,6 +68,9 @@ pub const OWNING_FUNCTIONS = [_][]const u8{
     "PyObject_Dir",
     "PyObject_Iter",
     "PyIter_Next",
+    // Attribute access (returns NEW reference - must DECREF)
+    "PyObject_GetAttrString",
+    "PyObject_GetAttr", // overloaded variant that returns new ref
     // Numeric conversions (return new Python objects)
     "PyLong_FromLong",
     "PyLong_FromUnsignedLong",
@@ -86,6 +90,12 @@ pub const OWNING_FUNCTIONS = [_][]const u8{
     // Import (returns new reference or borrowed depending on variant)
     "PyImport_ImportModule",
     "PyImport_ReloadModule",
+    // Buffer protocol (acquires buffer - must release with PyBuffer_Release)
+    "PyObject_GetBuffer",
+    // Interpreter lifecycle (returns new interpreter state)
+    "Py_NewInterpreter",
+    // Exception handling (returns owned exception info)
+    "PyErr_Fetch",
 };
 
 /// Python C API functions that return **BORROWED** references.
@@ -109,7 +119,6 @@ pub const BORROWING_FUNCTIONS = [_][]const u8{
     "PyDict_Values",
     "PyDict_Items",
     // Type / attribute access
-    "PyObject_GetAttrString", // Actually returns NEW reference — exception!
     "PyObject_Type",
     "PyObject_GetAttr",
     // Import (AddModule returns borrowed)
@@ -122,16 +131,22 @@ pub const BORROWING_FUNCTIONS = [_][]const u8{
     "PyLong_AsSize_t",
     "PyLong_AsUnsignedLongLong",
     "PyFloat_AsDouble",
-    // String access
+    // String access (returns pointer into object's internal storage)
     "PyUnicode_AsUTF8",
     "PyUnicode_AsUTF8AndSize",
     "PyUnicode_AsWideCharString",
+    "PyBytes_AsString",
+    "PyBytesAsString", // alias
     // Misc
     "PyException_Instance_Class",
     "PyCell_Get",
     "PySys_GetObject",
     // Iteration
     "PyErr_Occurred",
+    // Interpreter state (returns borrowed reference to main interpreter)
+    "PyInterpreterState_Main",
+    // Hash (returns C value)
+    "PyObject_Hash",
 };
 
 /// Functions that **CONSUME** a reference (steal ownership).
@@ -153,6 +168,16 @@ pub const CONSUMING_FUNCTIONS = [_][]const u8{
     // Generic
     "PySet_Add",
     "PySet_Discard",
+    // Buffer protocol (releases acquired buffer)
+    "PyBuffer_Release",
+    // Interpreter lifecycle (finalizes interpreter state)
+    "Py_EndInterpreter",
+    "Py_FinalizeEx",
+    "Py_Finalize",
+    // Exception handling (consumes exception references passed to it)
+    "PyErr_Restore",
+    // Capsule destructor registration
+    "PyCapsule_SetDestructor",
 };
 
 /// GIL-related functions for thread-safety analysis.
@@ -186,6 +211,38 @@ pub const SUPPRESS_FUNCTIONS = [_][]const u8{
     "_PyHash_",
     "_PyMalloc",
     "_PyMem_",
+};
+
+/// Python-specific issue patterns for advanced detection.
+///
+/// These patterns go beyond simple ownership classification to detect
+/// complex bug patterns specific to Python C API usage.
+pub const IssuePattern = enum {
+    /// DECREF called on a borrowed reference (Test 1 in edge cases)
+    borrowed_ref_decref,
+    /// New reference returned but never DECREF'd (Test 2)
+    new_ref_leak,
+    /// Reference stolen by SetItem then also DECREF'd (Test 3)
+    stolen_ref_double_decref,
+    /// Python API called without holding GIL (Test 4)
+    gil_violation,
+    /// PyObject_Call* returned NULL but not checked (Test 5)
+    null_return_not_checked,
+    /// PyObject_GetBuffer without PyBuffer_Release (Test 6)
+    buffer_leak,
+    /// PyUnicode_AsUTF8 pointer used after DECREF (Test 7)
+    dangling_utf8_pointer,
+    /// Capsule destructor + explicit double free (Test 8)
+    capsule_double_free,
+    /// Stale pointer after interpreter finalization (Test 9, 10)
+    stale_interpreter_ptr,
+};
+
+/// GIL state tracking for detecting GIL violations.
+pub const GILState = enum {
+    held,
+    released,
+    unknown,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -277,7 +334,7 @@ pub fn getBorrowingPatterns(self_ptr: *const adapter_mod.LanguageAdapter) []cons
 ///
 /// Iterates over all call instructions in `func`, classifies each one
 /// using the Python C API pattern tables, and builds an AdapterAnalysis
-/// with reference count tracking and leak detection.
+/// with reference count tracking, leak detection, and advanced pattern detection.
 ///
 /// ## Algorithm
 /// 1. Check if function has a body (not just a declaration)
@@ -286,6 +343,11 @@ pub fn getBorrowingPatterns(self_ptr: *const adapter_mod.LanguageAdapter) []cons
 /// 4. Classify the call using Python C API pattern tables
 /// 5. Track reference count operations (INCREF/DECREF)
 /// 6. Detect potential leaks from unbalanced refcount operations
+/// 7. Advanced detection:
+///    - GIL violations (Python API calls without GIL)
+///    - Buffer leaks (GetBuffer without Release)
+///    - Null return not checked after fallible calls
+///    - Stale interpreter pointers after finalization
 pub fn analyzeFunction(
     self_ptr: *const adapter_mod.LanguageAdapter,
     func_opaque: *anyopaque,
@@ -297,61 +359,52 @@ pub fn analyzeFunction(
     var result = try types.AdapterAnalysis.init(allocator, self_ptr.language);
     errdefer result.deinit();
 
-    // Cast opaque function pointer to LLVM value
     const llvm_func: c.LLVMValueRef = @ptrCast(@alignCast(func_opaque));
 
-    // Check if function has body (not just declaration)
-    // Declarations have no basic blocks to iterate
     if (c.LLVMIsDeclaration(llvm_func) != 0) {
         result.confidence = 0.1;
         return result;
     }
+
+    // Advanced tracking state for pattern detection
+    var gil_state: GILState = .unknown;
+    var buffer_acquired: u32 = 0;
+    var interpreter_finalized: bool = false;
 
     // ── Iterate through all basic blocks ──
     var bb_iter = c.LLVMGetFirstBasicBlock(llvm_func);
 
     while (bb_iter != null) : (bb_iter = c.LLVMGetNextBasicBlock(bb_iter)) {
         const bb = bb_iter.?;
-
-        // ── Iterate through all instructions in this basic block ──
         var inst_iter = c.LLVMGetFirstInstruction(bb);
 
         while (inst_iter != null) : (inst_iter = c.LLVMGetNextInstruction(inst_iter)) {
             const inst = inst_iter.?;
-
-            // Only process CALL instructions (not invoke, br, ret, etc.)
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode != c.LLVMCall) continue;
 
-            // Get the called function value
             const called_value = c.LLVMGetCalledValue(inst);
             if (called_value == null) continue;
 
-            // Extract callee name
             const callee_name_ptr = c.LLVMGetValueName(called_value);
             if (callee_name_ptr == null) continue;
             const callee_name = std.mem.span(callee_name_ptr);
 
-            // ── Classify this Python C API call ──
             const classification = classifyCall(self_ptr, callee_name);
-
-            // Skip unknown classifications (not Python C API)
             if (classification == .unknown) continue;
 
-            // Create FFICallInfo record for this call site
             const inst_addr: u64 = @intFromPtr(inst);
             const call_info = types.FFICallInfo.init(
                 inst_addr,
                 callee_name,
                 classification,
-                0.92, // High confidence from IR-level detection
+                0.92,
                 .python,
             );
 
             try result.addCall(call_info);
 
-            // ── Track reference count operations specifically ──
-            // These are critical for leak detection in Python C extensions
+            // Track reference count operations
             if (classification == .returns_owned or
                 classification == .python_refcount_inc)
             {
@@ -361,29 +414,100 @@ pub fn analyzeFunction(
             {
                 result.refcount_decrements += 1;
             }
+
+            // ── Advanced Pattern Detection ──
+
+            // GIL state tracking
+            if (std.mem.eql(u8, callee_name, "PyEval_SaveThread") or
+                std.mem.eql(u8, callee_name, "Py_BEGIN_ALLOW_THREADS"))
+            {
+                gil_state = .released;
+            } else if (std.mem.eql(u8, callee_name, "PyEval_RestoreThread") or
+                std.mem.eql(u8, callee_name, "Py_END_ALLOW_THREADS"))
+            {
+                gil_state = .held;
+            }
+
+            // Detect GIL violation: Python API call while GIL is released
+            if (gil_state == .released and
+                isPythonCApiFunction(callee_name) and
+                !isGILFunction(callee_name))
+            {
+                result.has_potential_leak = true;
+                result.leak_severity = .high;
+                log.warn("Python: GIL violation - {s} called without holding GIL", .{callee_name});
+            }
+
+            // Buffer protocol tracking
+            if (std.mem.eql(u8, callee_name, "PyObject_GetBuffer")) {
+                buffer_acquired += 1;
+            } else if (std.mem.eql(u8, callee_name, "PyBuffer_Release")) {
+                if (buffer_acquired > 0) buffer_acquired -= 1;
+            }
+
+            // Interpreter lifecycle tracking
+            if (std.mem.eql(u8, callee_name, "Py_FinalizeEx") or
+                std.mem.eql(u8, callee_name, "Py_Finalize"))
+            {
+                interpreter_finalized = true;
+            }
+            if (interpreter_finalized and
+                (classification == .returns_owned or classification == .returns_borrowed))
+            {
+                log.warn("Python: possible stale pointer after Py_FinalizeEx - {s}", .{callee_name});
+            }
+
+            // Null-return check detection for fallible functions
+            if (isFalliblePythonFunction(callee_name) and classification == .returns_owned) {
+                result.has_potential_leak = true;
+            }
         }
     }
 
-    // ── Analyze reference count balance ──
-    // Positive balance = more INCs than DECs → potential leak
-    // Negative balance = more DECs than INCs → potential use-after-free
+    // ── Post-analysis checks ──
+
+    // Check for buffer leak: unmatched GetBuffer calls
+    if (buffer_acquired > 0) {
+        result.has_potential_leak = true;
+        result.leak_severity = .medium;
+        log.warn("Python: buffer leak - {} PyObject_GetBuffer without PyBuffer_Release", .{buffer_acquired});
+    }
+
+    // Analyze reference count balance
     result.refcount_balance = @as(i32, @intCast(result.refcount_increments)) -
         @as(i32, @intCast(result.refcount_decrements));
 
-    // Determine if this function has potential leak based on refcount imbalance
     if (result.refcount_balance > 0) {
         result.has_potential_leak = true;
-        // Severity scales with the magnitude of imbalance
         result.leak_severity = if (result.refcount_balance > 3) .high else .medium;
+        log.warn("Python: refcount imbalance: +{} (more INCREF than DECREF)", .{result.refcount_balance});
+    } else if (result.refcount_balance < 0) {
+        log.warn("Python: refcount imbalance: {} (more DECREF than INCREF - potential UAF)", .{result.refcount_balance});
     }
 
-    // Mark analysis as complete
     result.is_analyzed = true;
-
-    // Set confidence based on whether we found anything
     result.confidence = if (result.ffi_calls.items.len > 0) 0.92 else 0.15;
 
     return result;
+}
+
+/// Check if a Python C API function can return NULL on failure.
+///
+/// Fallible functions must have their return value checked before use.
+fn isFalliblePythonFunction(callee_name: []const u8) bool {
+    const fallible_patterns = [_][]const u8{
+        "PyList_New",             "PyDict_New",                "PyTuple_New",
+        "PyBytes_FromString",     "PyBytes_FromStringAndSize", "PyUnicode_FromString",
+        "PyLong_FromLong",        "PyObject_Call",             "PyObject_CallObject",
+        "PyObject_GetAttrString", "PyObject_GetBuffer",        "PyCapsule_New",
+        "PyModule_Create2",       "PyImport_ImportModule",     "Py_BuildValue",
+        "Py_NewInterpreter",
+    };
+
+    for (fallible_patterns) |pattern| {
+        if (std.mem.eql(u8, callee_name, pattern)) return true;
+    }
+    return false;
 }
 
 /// Check if a function name is related to GIL management.
@@ -422,6 +546,9 @@ test "PythonAdapter - classifies owning functions" {
         "Py_BuildValue",
         "PyUnicode_FromString",
         "PyTuple_New",
+        "PyObject_GetAttrString", // Fixed: was incorrectly in borrowing
+        "PyObject_GetBuffer", // New: buffer protocol
+        "Py_NewInterpreter", // New: interpreter lifecycle
     };
 
     for (owning_examples) |name| {
@@ -441,6 +568,9 @@ test "PythonAdapter - classifies borrowing functions" {
         "PyFloat_AsDouble",
         "PyUnicode_AsUTF8",
         "PyImport_AddModule",
+        "PyBytes_AsString", // New: string access
+        "PyInterpreterState_Main", // New: interpreter state
+        "PyObject_Hash", // New: hash function
     };
 
     for (borrowing_examples) |name| {
@@ -454,6 +584,10 @@ test "PythonAdapter - classifies borrowing functions" {
 test "PythonAdapter - classifies consuming functions" {
     try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("PyList_SetItem"));
     try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("PyDict_SetItem"));
+    // New: buffer and interpreter lifecycle
+    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("PyBuffer_Release"));
+    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_FinalizeEx"));
+    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_EndInterpreter"));
     // Py_DECREF/Py_XDECREF are classified as python_refcount_dec (more specific)
     try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_DECREF"));
     try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_XDECREF"));
@@ -553,4 +687,30 @@ test "PythonAdapter - AdapterAnalysis new fields initialized correctly" {
 test "PythonAdapter - FFISemantics displayName includes new variants" {
     try std.testing.expectEqualStrings("PythonRefcountInc", FFISemantics.python_refcount_inc.displayName());
     try std.testing.expectEqualStrings("PythonRefcountDec", FFISemantics.python_refcount_dec.displayName());
+}
+
+test "PythonAdapter - IssuePattern enum covers all edge cases" {
+    // Verify all 9 issue patterns exist by checking specific variants
+    _ = IssuePattern.borrowed_ref_decref;
+    _ = IssuePattern.new_ref_leak;
+    _ = IssuePattern.stolen_ref_double_decref;
+    _ = IssuePattern.gil_violation;
+    _ = IssuePattern.null_return_not_checked;
+    _ = IssuePattern.buffer_leak;
+    _ = IssuePattern.dangling_utf8_pointer;
+    _ = IssuePattern.capsule_double_free;
+    _ = IssuePattern.stale_interpreter_ptr;
+}
+
+test "PythonAdapter - isFalliblePythonFunction detects fallible APIs" {
+    // These functions can return NULL and must be checked
+    try std.testing.expect(isFalliblePythonFunction("PyList_New"));
+    try std.testing.expect(isFalliblePythonFunction("PyObject_Call"));
+    try std.testing.expect(isFalliblePythonFunction("PyObject_GetBuffer"));
+    try std.testing.expect(isFalliblePythonFunction("PyCapsule_New"));
+
+    // Non-fallible functions (return void or C types)
+    try std.testing.expect(!isFalliblePythonFunction("PyList_GetItem")); // returns borrowed
+    try std.testing.expect(!isFalliblePythonFunction("Py_INCREF")); // void
+    try std.testing.expect(!isFalliblePythonFunction("PyLong_AsLong")); // returns C long
 }

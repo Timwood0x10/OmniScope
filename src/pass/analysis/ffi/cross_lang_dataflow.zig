@@ -36,6 +36,8 @@ pub const DataFlowStats = struct {
     orphan_pointers: u32 = 0,
     /// Number of double-free paths detected
     double_free_paths: u32 = 0,
+    /// Number of stdlib issues suppressed (P0-1 fix)
+    stdlib_suppressed: u32 = 0,
 };
 
 /// Represents a pointer allocation that may cross FFI boundaries
@@ -340,6 +342,31 @@ pub const CrossLangDataFlow = struct {
         for (allocations.items) |alloc| {
             if (alloc.freed) continue;
             if (alloc.passed_to_other_lang) continue;
+
+            // ── FOCUS-USER-CODE: Stdlib suppression (P0-1 fix) ──
+            // When focus_user_code is enabled (default), suppress issues from
+            // Zig stdlib and compiler-generated functions. This fixes the 86.8%
+            // FP rate caused by reporting stdlib allocator internals as leaks.
+            //
+            // Root cause: CLI config (focus_user_code=true) was not being passed
+            // to this pass. Passes hardcoded focus_user_code=true internally but
+            // cross_lang_dataflow was missing this check entirely.
+            //
+            // Fix: Check ctx.focus_user_code and use PassContext's built-in
+            // isZigStdlibFunction() classifier for accurate detection.
+            if (ctx.focus_user_code) {
+                const is_stdlib_alloc = ctx.isZigStdlibFunction(alloc.alloc_func);
+                const is_stdlib_callee = ctx.isZigStdlibFunction(alloc.alloc_callee);
+
+                if (is_stdlib_alloc or is_stdlib_callee) {
+                    log.debug("FOCUS-USER-CODE: Suppressing stdlib issue: alloc_func={s}, callee={s}", .{
+                        alloc.alloc_func,
+                        alloc.alloc_callee,
+                    });
+                    stats.stdlib_suppressed += 1;
+                    continue;
+                }
+            }
 
             // ── ALLOCATOR SHIM SUPPRESSION ──
             // Suppress false positives from allocator vtable functions

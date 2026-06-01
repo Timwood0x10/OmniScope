@@ -333,6 +333,11 @@ pub const PassContext = struct {
     /// Used by free_validation pass to detect mismatched alloc/free pairs.
     contract_db: FFIContractDB,
 
+    /// Whether to focus on user code only (skip stdlib).
+    /// Set from CLI config via Pipeline.setFocusUserCode().
+    /// When true, passes should suppress issues from stdlib functions.
+    focus_user_code: bool = true,
+
     pub fn init(
         allocator: Allocator,
         module: ?ModuleRef,
@@ -386,6 +391,7 @@ pub const PassContext = struct {
             .candidate_builder = null,
             .issue_verifier = null,
             .contract_db = try FFIContractDB.init(allocator),
+            .focus_user_code = true,
         };
     }
 
@@ -496,7 +502,7 @@ pub const PassContext = struct {
     ) noise_filter.ClassificationResult {
         _ = source_location;
 
-        if (isZigStdlibFunction(func_name)) {
+        if (isZigStdlibFunctionImpl(func_name)) {
             return .{
                 .origin = .stdlib,
                 .risk_level = noise_filter.getRiskLevel(.stdlib, .medium),
@@ -1064,6 +1070,20 @@ pub const PassContext = struct {
             a.reset();
         }
     }
+
+    /// Check if a function name is a Zig stdlib function.
+    /// Uses prefix/substring matching against known stdlib patterns.
+    /// This is the primary classifier for focus_user_code filtering.
+    ///
+    /// Arguments:
+    ///   func_name - Function name to check
+    ///
+    /// Returns:
+    ///   true if the function appears to be from Zig standard library
+    pub fn isZigStdlibFunction(self: *const PassContext, func_name: []const u8) bool {
+        _ = self;
+        return isZigStdlibFunctionImpl(func_name);
+    }
 };
 
 /// ANSI color codes for terminal output
@@ -1142,7 +1162,9 @@ fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
     };
 }
 
-fn isZigStdlibFunction(func_name: []const u8) bool {
+/// Internal implementation of stdlib detection.
+/// Separated from public API to allow reuse without &PassContext.
+fn isZigStdlibFunctionImpl(func_name: []const u8) bool {
     // Fast path: prefix/substring match with extended pattern list (v0.2.0)
     // Split into two groups to avoid comptime branch quota overflow
     const stdlib_prefixes_group1 = [_][]const u8{
@@ -1156,6 +1178,7 @@ fn isZigStdlibFunction(func_name: []const u8) bool {
         "hash_map.",
         "array_hash_map.",
         "array_list.",
+        "sort.",
         "bitmap.",
         "crypto.",
         "log.",

@@ -99,6 +99,9 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
     // Apply Zig allocator tracking enable/disable
     pipeline.setZigAllocatorTracking(config.enable_zig_allocator_tracking);
 
+    // Apply focus-user-code mode (stdlib suppression)
+    pipeline.setFocusUserCode(config.focus_user_code);
+
     try registerAllPasses(&pipeline);
 
     const analysis_start = std.time.milliTimestamp();

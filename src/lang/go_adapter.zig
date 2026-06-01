@@ -41,9 +41,13 @@ const c = @cImport({
 /// represent real FFI boundaries. They're part of Go's runtime system
 /// for GC, scheduling, and goroutine management.
 pub const RUNTIME_FUNCTIONS = [_][]const u8{
-    // Memory allocation (GC-managed)
+    // Memory allocation (GC-managed) - Go standard compiler
     "runtime.mallocgc",
     "runtime.newobject",
+    // Memory allocation - TinyGo compiler
+    "runtime.alloc",
+    "runtime.free",
+    "runtime.realloc",
     // Slice / map / channel construction
     "runtime.makeslice",
     "runtime.makemap",
@@ -77,6 +81,24 @@ pub const RUNTIME_FUNCTIONS = [_][]const u8{
     "runtime.gcDrain",
     "runtime.gcSweep",
     "runtime.gcBgMarkWorker",
+    // TinyGo-specific runtime functions
+    "runtime._panic",
+    "runtime._recover",
+    "runtime.trackPointer",
+    "runtime.setupDeferFrame",
+    "runtime.destroyDeferFrame",
+    "runtime.chanMake",
+    "runtime.chanSend",
+    "runtime.chanRecv",
+    "runtime.chanClose",
+    "runtime.hashmapMakeGeneric",
+    "runtime.stringConcat",
+    "runtime.typeAssert",
+    "runtime.sliceAppend",
+    // Write barriers (GC safety)
+    "runtime.writeBarrier",
+    "runtime.cgoCheckPointer",
+    "runtime.cgoCheckResult",
 };
 
 /// Prefix for cgo-generated wrapper functions.
@@ -117,6 +139,21 @@ pub const C_STDLIB_WRAPPERS = [_][]const u8{
     "C.memset",
 };
 
+/// Go-specific cgo string/bytes conversion functions.
+///
+/// These functions are part of Go's cgo package and handle conversion
+/// between Go types (string, []byte) and C types (char*, void*).
+/// They are common sources of memory safety issues at FFI boundaries.
+pub const CGO_CONVERSION_FUNCTIONS = [_][]const u8{
+    // Go → C conversions (allocate C memory)
+    "C.CString", // Go string → C char* (must call C.free)
+    "C.CBytes", // Go []byte → C void* (must call C.free)
+    // C → Go conversions (borrow C memory)
+    "C.GoString", // C char* → Go string (borrows, don't free)
+    "C.GoStringN", // C char* + length → Go string (borrows, don't free)
+    "C.GoBytes", // C void* + length → Go []byte (copies, don't free result)
+};
+
 /// Common syscall wrappers used by Go programs.
 pub const SYSCALL_WRAPPERS = [_][]const u8{
     "Syscall.open",
@@ -155,6 +192,7 @@ pub const instance = adapter_mod.LanguageAdapter{
 /// Go's model is different from Python:
 ///   - C.malloc / C.calloc → returns_owned (caller gets raw C heap pointer)
 ///   - C.free → consumes_arg (takes ownership of C heap pointer)
+///   - C.CString / C.CBytes → returns_owned (allocates C memory, needs C.free)
 ///   - runtime.* → suppressed (not real FFI)
 ///   - _Cgo_* → wrapper boundary (depends on wrapped function)
 pub fn classifyCall(
@@ -162,6 +200,20 @@ pub fn classifyCall(
     callee_name: []const u8,
 ) FFISemantics {
     _ = self_ptr;
+
+    // Go cgo conversion functions (high-value targets for FFI analysis)
+    for (CGO_CONVERSION_FUNCTIONS) |f| {
+        if (std.mem.eql(u8, callee_name, f)) {
+            // CString/CBytes allocate C memory that must be freed
+            if (std.mem.indexOf(u8, callee_name, "CString") != null or
+                std.mem.indexOf(u8, callee_name, "CBytes") != null)
+            {
+                return .returns_owned;
+            }
+            // GoString/GoStringN/GoBytes borrow or copy C memory
+            return .returns_borrowed;
+        }
+    }
 
     // C allocation wrappers return owned C pointers
     for (C_STDLIB_WRAPPERS) |f| {
@@ -172,7 +224,8 @@ pub fn classifyCall(
             }
             if (std.mem.indexOf(u8, callee_name, ".malloc") != null or
                 std.mem.indexOf(u8, callee_name, ".calloc") != null or
-                std.mem.indexOf(u8, callee_name, ".realloc") != null)
+                std.mem.indexOf(u8, callee_name, ".realloc") != null or
+                std.mem.indexOf(u8, callee_name, ".strdup") != null)
             {
                 return .returns_owned;
             }
@@ -209,9 +262,28 @@ pub fn shouldSuppress(
         "runtime.",
         "internal/abi.",
         "internal/task.",
+        "internal/runtime/", // TinyGo internal runtime
+        "reflect.", // Go reflection (compiler-generated)
     };
     for (suppress_prefixes) |prefix| {
         if (std.mem.startsWith(u8, func_name, prefix)) return true;
+    }
+
+    // Suppress compiler-generated symbols
+    const compiler_patterns = [_][]const u8{
+        "go:", // Reserved import prefix
+        "type:", // Type descriptor prefix
+        ".inittask", // Init task records
+        "type:.hash", // Type hash functions
+        "type:.eq", // Type equality functions
+        "type:.kind", // Type kind functions
+        "go:itab.", // Interface tables
+        "__cgo_", // Cgo static references
+        "gc.stackobject", // GC stack objects (TinyGo)
+        "stackalloc", // Stack allocation (TinyGo)
+    };
+    for (compiler_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
     }
 
     return false;
@@ -353,6 +425,75 @@ pub fn isLikelyDeferredCleanup(func_name: []const u8) bool {
     return false;
 }
 
+/// Detect cross-language free pattern: Go allocator + C deallocator.
+///
+/// This is a common source of memory safety bugs in Go cgo code:
+///   - runtime.mallocgc (Go GC heap) + free (C) → undefined behavior
+///   - _cgo_allocate (Go) + free (C) → cross-language free
+///   - C.CString (Go-allocated C memory) correctly freed by C.free ✓
+pub fn isCrossLanguageFreePattern(go_alloc: []const u8, c_free: []const u8) bool {
+    const go_allocators = [_][]const u8{
+        "runtime.mallocgc",
+        "runtime.newobject",
+        "_cgo_allocate",
+        "_Cfunc_GoMalloc",
+        "runtime.alloc", // TinyGo
+    };
+
+    const c_deallocators = [_][]const u8{
+        "free",
+        "C.free",
+        "_cgo_free",
+        "_Cgo_free",
+        "_Cfunc_GoFree",
+    };
+
+    var is_go_alloc = false;
+    for (go_allocators) |alloc| {
+        if (std.mem.indexOf(u8, go_alloc, alloc) != null) {
+            is_go_alloc = true;
+            break;
+        }
+    }
+
+    var is_c_free = false;
+    for (c_deallocators) |dealloc| {
+        if (std.mem.indexOf(u8, c_free, dealloc) != null) {
+            is_c_free = true;
+            break;
+        }
+    }
+
+    return is_go_alloc and is_c_free;
+}
+
+/// Detect potential memory leak pattern: C allocation without matching free.
+///
+/// Common in Go cgo when:
+///   - C.CString / C.CBytes allocated but result discarded or leaked
+///   - C.malloc called but C.free never called on the result
+///   - Return value from owning function escapes without cleanup
+pub fn isPotentialLeakPattern(alloc_call: []const u8, has_matching_free: bool) bool {
+    const owning_calls = [_][]const u8{
+        "C.CString",
+        "C.CBytes",
+        "C.malloc",
+        "C.calloc",
+        "C.strdup",
+        "_Cgo_malloc",
+    };
+
+    var is_owning = false;
+    for (owning_calls) |call| {
+        if (std.mem.indexOf(u8, alloc_call, call) != null) {
+            is_owning = true;
+            break;
+        }
+    }
+
+    return is_owning and !has_matching_free;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════
@@ -444,6 +585,69 @@ test "GoAdapter - pattern lists" {
         if (std.mem.eql(u8, p, "C.malloc")) found_malloc = true;
     }
     try testing.expect(found_malloc);
+}
+
+test "GoAdapter - classifies cgo conversion functions" {
+    // Go → C conversions (allocate C memory)
+    try testing.expectEqual(FFISemantics.returns_owned, instance.classifyCall("C.CString"));
+    try testing.expectEqual(FFISemantics.returns_owned, instance.classifyCall("C.CBytes"));
+
+    // C → Go conversions (borrow or copy)
+    try testing.expectEqual(FFISemantics.returns_borrowed, instance.classifyCall("C.GoString"));
+    try testing.expectEqual(FFISemantics.returns_borrowed, instance.classifyCall("C.GoStringN"));
+    try testing.expectEqual(FFISemantics.returns_borrowed, instance.classifyCall("C.GoBytes"));
+}
+
+test "GoAdapter - cross-language free detection" {
+    // Dangerous: Go allocator + C deallocator
+    try testing.expect(isCrossLanguageFreePattern("runtime.mallocgc", "free"));
+    try testing.expect(isCrossLanguageFreePattern("_cgo_allocate", "C.free"));
+    try testing.expect(isCrossLanguageFreePattern("runtime.alloc", "_cgo_free")); // TinyGo
+
+    // Safe: C.CString (allocates C memory) + C.free
+    try testing.expect(!isCrossLanguageFreePattern("C.CString", "C.free"));
+
+    // Safe: C allocator + C deallocator
+    try testing.expect(!isCrossLanguageFreePattern("C.malloc", "C.free"));
+}
+
+test "GoAdapter - potential leak detection" {
+    // Leak: allocation without free
+    try testing.expect(isPotentialLeakPattern("C.CString", false));
+    try testing.expect(isPotentialLeakPattern("C.CBytes", false));
+    try testing.expect(isPotentialLeakPattern("C.malloc", false));
+
+    // No leak: allocation with matching free
+    try testing.expect(!isPotentialLeakPattern("C.CString", true));
+    try testing.expect(!isPotentialLeakPattern("C.malloc", true));
+
+    // Not an owning call
+    try testing.expect(!isPotentialLeakPattern("C.GoString", false));
+}
+
+test "GoAdapter - suppresses compiler-generated symbols" {
+    // Compiler-generated patterns should be suppressed
+    try testing.expect(instance.shouldSuppress("go:itab.*os.File,io.Reader"));
+    try testing.expect(instance.shouldSuppress("type:.hash.int"));
+    try testing.expect(instance.shouldSuppress("type:.eqfunc.int"));
+    try testing.expect(instance.shouldSuppress("main.inittask"));
+    try testing.expect(instance.shouldSuppress("__cgo_puts"));
+    try testing.expect(instance.shouldSuppress("gc.stackobject"));
+    try testing.expect(instance.shouldSuppress("stackalloc"));
+    try testing.expect(instance.shouldSuppress("reflect.typestr"));
+
+    // User code should NOT be suppressed
+    try testing.expect(!instance.shouldSuppress("main.foo"));
+    try testing.expect(!instance.shouldSuppress("myFunction"));
+}
+
+test "GoAdapter - TinyGo runtime suppression" {
+    // TinyGo-specific runtime functions
+    try testing.expect(instance.shouldSuppress("runtime.alloc"));
+    try testing.expect(instance.shouldSuppress("runtime.free"));
+    try testing.expect(instance.shouldSuppress("runtime._panic"));
+    try testing.expect(instance.shouldSuppress("runtime.trackPointer"));
+    try testing.expect(instance.shouldSuppress("internal/task.start"));
 }
 
 const testing = std.testing;

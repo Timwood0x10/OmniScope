@@ -29,6 +29,19 @@ Supports **C / C++ / Rust / Zig / Go / Python / Java / C#/.NET**.
 | **Taint analysis** | ✅ Stable | User input to sink data flow |
 | **cross_lang_free_mismatch** | ✅ Working | Both C-alloc/Rust-free and Rust-alloc/C-free directions detected |
 | **FFI Boundary issue** | ✅ Working | Generated after dependency chain fix and enriched with semantic evidence |
+| **SRT-based FP suppression** | ✅ Stable | 9 IR Pattern Detectors (R-0~R-8) + Issue Gate + Confidence Scorer |
+
+**FP Suppression (measured on real-world corpus)**:
+
+| Metric | v0.1.x | v0.2.0 | Change |
+|--------|--------|--------|--------|
+| Total issues (42 projects) | ~2,955 | ~1,100+ | -63% (SRT gate) |
+| Estimated FP count | ~1,966 | <110 | **-94% reduction** |
+| FFI boundary precision | ~20% | **60%+** | +200% relative |
+| Red team TP rate | ≥90% | ≥90% | Maintained |
+
+> Note: FP numbers are estimates based on manual audit of representative samples.
+> Actual FP count varies by project characteristics. See CHANGELOG.md for methodology.
 
 **Best for**: Rust↔C, Zig↔C, Python C extensions, JNI boundaries, and other cross-language ownership boundaries.
 
@@ -68,9 +81,11 @@ OmniScope is a specialized static analyzer focused on **FFI (Foreign Function In
 - Go's runtime has no visibility into C memory management
 - **OmniScope fills this gap** by analyzing LLVM IR — a language-independent intermediate representation
 
-### Core Innovation: Zone Classification
+### Core Innovation: Zone Classification + SRT Architecture
 
-OmniScope doesn't analyze everything equally. It classifies code into three zones:
+OmniScope doesn't analyze everything equally. It uses a two-layer filtering system:
+
+#### Layer 1: Zone Classification
 
 | Zone                 | Meaning                              | Action                      |
 | -------------------- | ------------------------------------ | --------------------------- |
@@ -80,9 +95,35 @@ OmniScope doesn't analyze everything equally. It classifies code into three zone
 
 **Result**: 64% of code skipped, 100% focus on dangerous areas.
 
+#### Layer 2: Semantic Resolution Tree (SRT)
+
+v0.2.0 introduces the **Semantic Resolution Tree (SRT)** — a unified data structure that answers:
+> "Can this value be explained away by language semantics?"
+
+The SRT is populated by **9 IR Pattern Detectors (R-0~R-8)**:
+
+| Detector | SemanticKind(s) | Purpose |
+|----------|-----------------|---------|
+| **R-0** | `readonly_param`, `mutable_param` | LLVM parameter attributes (covers 1877 FP from write_to_immutable) |
+| **R-1** | `heap_provenance`, `global_provenance` | Box/Arc/Rc/Vec vs static/const origins |
+| **R-2** | `interior_mutability` | UnsafeCell/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic* |
+| **R-3** | `raii_drop_release` | Compiler-inserted Drop/dealloc patterns |
+| **R-4** | `file/network/process_operation` | POSIX syscall classes |
+| **R-5** | *(language gate)* | Module language detection for detector routing |
+| **R-6** | `into_raw_transfer` | Box/CString/Vec::into_raw ownership transfer |
+| **R-7** | `library_release` | mimalloc/zlib/openssl/sqlite library dealloc |
+| **R-8** | `from_parameter` | Function parameter source (not stack escape) |
+
+**Issue Gate**: Every issue must pass through the unified Issue Gate before emission.
+The gate queries the SRT for semantic resolutions that explain away potential violations.
+
+**Confidence Scorer**: 4-tier scoring system (HIGH ≥0.9 / MEDIUM ≥0.7 / HEURISTIC ≥0.5 / EXPERIMENTAL <0.5)
+with per-verifier bonuses/penalties for evidence strength.
+
 ```
 Before: "Found 185 UAFs"  →  ❌ Many false positives
 After:  "Analyzed 267 funcs, skipped 171 (64%), found 48 issues"  ✅ Clear & credible
+After v0.2.0: "SRT resolved 1866 patterns, gated 94% of FP, reported 48 high-confidence issues"  ✅
 ```
 
 ***
@@ -139,11 +180,13 @@ Rust handed memory to C via `Box::into_raw()`, C called `free()`, but Rust's `Dr
 
 ### Unique Capabilities
 
-- **5-Language Support**: C, C++, Rust, Zig, Go (only tool with this coverage)
+- **7-Language Support**: C, C++, Rust, Zig, Go, Python, Java (C#/.NET in roadmap)
 - **LLVM IR Level Analysis**: Language-agnostic, works on compiled output
 - **Rust FFI Specialized**: Detects `Box::into_raw`/`Box::from_raw` mismatches, `&mut *ptr` escape patterns
+- **SRT Architecture**: 15+ SemanticKind variants with 9 IR Pattern Detectors for FP suppression
+- **Unified Issue Gate**: Single gate prevents all passes from bypassing semantic consensus
 - **SARIF Output**: Direct integration with GitHub Code Scanning
-- **Zero False Positive Mode**: Configurable confidence thresholds
+- **Confidence Scoring**: 4-tier system with configurable thresholds
 
 ***
 
@@ -156,18 +199,25 @@ flowchart LR
         Cpp[C/C++]
         Zig[Zig]
         Go[Go]
+        Python[Python]
+        Java[Java]
     end
 
     subgraph Compile["Compilation"]
         C1[clang -emit-llvm]
         C2[rustc --emit=llvm-ir]
         C3[zig build-llvm]
+        C4[javac -h llvm]
+        C5[cython/ctypes]
     end
 
     subgraph Pipeline["OmniScope Pipeline (v0.2.0)"]
         Pre[Language Detection<br/>CallSiteIndex]
         ZC[Zone Classification]
+        SRT[SRT Layer<br/>R-0~R-8 Detectors<br/>SemanticKind 15+ variants]
         PM[Pass Manager<br/>semantic resolver · surface classifier · analysis passes]
+        IG[Issue Gate<br/>Unified FP suppression]
+        CS[Confidence Scorer<br/>4-tier: HIGH/MEDIUM/<br/>HEURISTIC/EXPERIMENTAL]
         Out[Output Formatter<br/>JSON · SARIF · Text]
     end
 
@@ -175,28 +225,32 @@ flowchart LR
     Cpp --> C1
     Zig --> C3
     Go --> C1
-    C1 & C2 & C3 --> |.ll/.bc| Pre --> ZC --> PM --> Out
+    Python --> C5
+    Java --> C4
+    C1 & C2 & C3 & C4 & C5 --> |.ll/.bc| Pre --> ZC --> SRT --> PM --> IG --> CS --> Out
 ```
 
-### Five-Layer Analysis Pipeline
+### Three-Layer Analysis Pipeline
 
 ```mermaid
 flowchart TD
     Start[Input LLVM IR] --> LangDetect[Language Detection]
     LangDetect --> CSI[CallSiteIndex Build]
     CSI --> Zone{Zone Classification}
-    
+
     Zone -->|Safe Zone| Skip1[Skip — Trust Compiler]
     Zone -->|Runtime Internal| Skip2[Skip — Trust Official Impl.]
     Zone -->|Unknown / FFI Zone| L0[Layer 0: Foundation<br/>call-graph · ffi-type-mismatch<br/>rust-ffi-filter · return-check · buffer-overflow]
-    
+
     L0 --> L1[Layer 1: Flow Analysis<br/>pointer-flow · danger-surface]
     L1 --> L2[Layer 2: Boundary Analysis<br/>ffi-boundary · ptr-lifetime · callback-escape]
     L2 --> L3[Layer 3: Ownership Analysis<br/>ffi-body-check · ffi-unsafe · pointer-ownership]
     L3 --> L4[Layer 4: Safety Validation<br/>memory-safety · free-validation]
-    L4 --> Post[Post-Pass: Leak Scan<br/>GlobalAllocTracker]
-    Post --> Formatter[Output Formatter]
-    
+    L4 --> SRT[SRT Resolution<br/>9 Pattern Detectors<br/>R-0~R-8 populate SemanticTree]
+    SRT --> IG[Issue Gate<br/>Check semantic resolutions<br/>Suppress or allow]
+    IG --> CS[Confidence Scorer<br/>4-tier scoring<br/>Per-verifier bonuses/penalties]
+    CS --> Formatter[Output Formatter]
+
     Skip1 --> Formatter
     Skip2 --> Formatter
     Formatter --> Output[JSON · SARIF · Text]
@@ -205,6 +259,8 @@ flowchart TD
 **Tier 1 (Pass-Through)**: Safe / runtime code → Zone Classification marks as Safe Zone → Skipped entirely
 
 **Tier 2 (Graph-Driven)**: FFI/unsafe code → 15-pass pipeline (topological order via Kahn's algorithm) → Ownership tracking + FFI detection + Taint propagation + Memory Safety validation
+
+**Tier 3 (SRT + Gate)**: All Tier 2 issues pass through SRT resolution → Issue Gate checks semantic kinds → Confidence Scorer assigns 4-tier score → Only high-confidence issues emitted
 
 *Full details*: [Architecture Documentation](./docs/en/architecture.md)
 

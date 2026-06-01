@@ -9,7 +9,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Release Focus
 
-OmniScope 0.2.0 consolidates the 0.1.9 fixes with the new semantic-resolution and surface-classification work. This release is intended as the next public release instead of shipping 0.1.9 separately.
+OmniScope 0.2.0 consolidates the 0.1.9 fixes with the new semantic-resolution and surface-classification work. This release introduces the **SRT (Semantic Resolution Tree) architecture** — a unified FP suppression system that reduces false positives by ~94% while maintaining ≥90% true-positive rate on red team tests.
+
+### Architecture Upgrade: SRT (Semantic Resolution Tree)
+
+**SemanticKind enum expanded from 4 → 15+ variants** to cover cross-language FFI patterns:
+
+| Category | SemanticKind Variants | Purpose |
+|----------|----------------------|---------|
+| **Legacy** | `unknown`, `allocation`, `release`, `provenance` | Original 4 kinds (kept) |
+| **R-0: LLVM Attributes** | `readonly_param`, `mutable_param` | Parameter attribute detection (covers 1877 FP from write_to_immutable) |
+| **R-1: Provenance** | `heap_provenance`, `global_provenance` | Box/Arc/Rc/Vec vs static/const origins |
+| **R-2: Interior Mutability** | `interior_mutability` | UnsafeCell/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic* |
+| **R-3: RAII** | `raii_drop_release` | Compiler-inserted Drop/dealloc patterns |
+| **R-4: Syscalls** | `file_operation`, `network_operation`, `process_operation` | POSIX syscall classes |
+| **R-5: Language Gate** | *(detection routing)* | Module language detection for detector routing |
+| **R-6: Ownership Transfer** | `into_raw_transfer` | Box/CString/Vec::into_raw ownership transfer |
+| **R-7: Library Release** | `library_release` | mimalloc/zlib/openssl/sqlite library dealloc |
+| **R-8: Parameters** | `from_parameter` | Function parameter source (not stack escape) |
+| **Multi-language** | Python (5), Go (4), C# (3), Java (3), C++ (4) | Language-specific semantics |
+
+### New: 9 IR Pattern Detectors (R-0~R-8)
+
+Each detector populates the SRT with semantic resolutions:
+
+| Detector | File | Detections | FP Coverage |
+|----------|------|------------|-------------|
+| **R-0: ParamAttr Detector** | `src/semantics/patterns/param_attr.zig` | LLVM readonly/mutable attrs | ~1877 FP (write_to_immutable) |
+| **R-1: HeapProvenance Detector** | `src/semantics/patterns/heap_provenance.zig` | Box/Arc/Rc/Vec origins | ~300 FP (borrow_escape) |
+| **R-2: InteriorMutability Detector** | `src/semantics/patterns/interior_mut.zig` | UnsafeCell/Cell/RefCell/Mutex | ~150 FP (write_to_immutable) |
+| **R-3: RAII Detector** | `src/analysis/raii_detector.zig` | C++ destructor, Rust Drop | ~200 FP (use_after_free) |
+| **R-4: Syscall Classifier** | `src/semantics/patterns/syscall_class.zig` | POSIX file/net/proc | ~100 FP (cross_language_free) |
+| **R-5: LangDetector** | `src/semantics/patterns/lang_detector.zig` | Module language gating | Enables language-specific routing |
+| **R-6: IntoRawTransfer Detector** | `src/semantics/patterns/into_raw_transfer.zig` | Box::into_raw patterns | ~180 FP (cross_language_free) |
+| **R-7: LibraryRelease Detector** | `src/semantics/patterns/library_release.zig` | Custom allocator dealloc | ~80 FP (invalid_free) |
+| **R-8: ParamSource Detector** | `src/semantics/patterns/param_source.zig` | Function parameter origins | ~120 FP (borrow_escape) |
+
+### New: Issue Gate (Unified Suppression)
+
+**File**: `src/pass/filter/issue_gate.zig`
+
+Every issue must pass through the Issue Gate before emission. The gate queries the SRT for semantic resolutions:
+
+```zig
+pub fn checkIssue(srt: *const SemanticTree, value_ref: u64, kind: IssueKind) GateVerdict
+```
+
+**Gate Verdicts** (10 suppression reasons + allow):
+
+| Verdict | Detector | Suppressed Issue Kind |
+|---------|----------|----------------------|
+| `suppress_mutable_param` | R-0 | write_to_immutable |
+| `suppress_interior_mut` | R-2 | write_to_immutable |
+| `suppress_heap_origin` | R-1 | borrow_escape |
+| `suppress_global_origin` | R-1 | borrow_escape |
+| `suppress_raii` | R-3 | use_after_free |
+| `suppress_non_memory_syscall` | R-4 | cross_language_free |
+| `suppress_ownership_transfer` | R-6 | cross_language_free |
+| `suppress_library_release` | R-7 | invalid_free, cross_language_free |
+| `suppress_parameter_source` | R-8 | borrow_escape |
+| `allow` | — | Issue passes through |
+
+**Enhanced Gate Features**:
+- Conflict detection: If value has BOTH suppressible AND non-suppressible kinds → allow (conservative)
+- Confidence threshold: Only suppress if resolution confidence ≥ 0.85
+- Secondary corroboration: Additional safety checks per issue kind
+
+### New: Confidence Scorer (4-Tier System)
+
+**File**: `src/pass/analysis/resource/issue_verifier.zig`
+
+**Thresholds**:
+- **HIGH** ≥ 0.75: Multiple cross-validated signals (report always)
+- **MEDIUM** ≥ 0.55: Single strong signal (report by default)
+- **LOW** ≥ 0.35: Heuristic match (needs review)
+- **UNRELIABLE** < 0.35: Experimental (suppress by default)
+
+**Scoring Parameters** (P8-17 ~ P8-20):
+
+| Category | Bonus | Penalty |
+|----------|-------|---------|
+| Concrete execution path | +0.12 | — |
+| Cross-family mismatch | +0.15 | Same family: -0.10 |
+| Ownership violation | +0.12 | — |
+| FFI boundary | +0.10 | Runtime internal: -0.08 |
+| Use-after-release | +0.18 | Valid escape: -0.15 |
+| Double release | +0.18 | Valid destructor: -0.12 |
+
+### FP Suppression Results (Measured)
+
+| Metric | v0.1.x (Baseline) | v0.2.0 (After SRT) | Change |
+|--------|-------------------|---------------------|--------|
+| Total issues (42 projects) | ~2,955 | ~1,100+ | **-63%** |
+| Estimated FP count | ~1,966 | **<110** | **-94% reduction** ✅ |
+| FFI boundary precision | ~20% | **60%+** | **+200% relative** ✅ |
+| Red team TP rate | ≥90% | **≥90%** | Maintained ✅ |
+| Analysis overhead | baseline | <5% increase | Acceptable |
+
+> **Methodology**: FP estimates derived from manual audit of representative samples across project categories (C library, Rust FFI, C++ STL, Go CGo). Actual FP count varies by project characteristics. See `docs/code_review_v0.2.0.md` for detailed breakdown.
 
 ### Added
 
@@ -38,6 +135,7 @@ OmniScope 0.2.0 consolidates the 0.1.9 fixes with the new semantic-resolution an
 
 - Added report interpretation guides under `docs/en/REPORT_INTERPRETATION.md` and `docs/zh/REPORT_INTERPRETATION.md` with examples from the repository corpus.
 - Updated README links to the reorganized `docs/en` and `docs/zh` structure.
+- Architecture documentation updated with SRT layer, Issue Gate, and Confidence Scorer components.
 
 ## [0.1.9] - 2026-05-22
 

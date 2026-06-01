@@ -23,6 +23,9 @@ const getFunctionName = rust_ffi_helpers.getFunctionName;
 
 const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKind;
 
+// Import enhanced drop glue detector
+const drop_glue = @import("../../../semantics/patterns/drop_glue.zig");
+
 /// Auditor type
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
 
@@ -448,6 +451,16 @@ pub fn getGepFieldIndex(gep: c.LLVMValueRef) u32 {
 pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
     const func_name = getFunctionName(func);
 
+    // P0 FIX: Run enhanced drop glue detection BEFORE UAF analysis
+    // This ensures all RAII patterns are marked in SRT and won't generate FP
+    if (ctx.semantic_resolution) |resolution_engine| {
+        const srt = resolution_engine.getSemanticTree();
+        const module = c.LLVMGetGlobalParent(func);
+        if (@intFromPtr(module) != 0) {
+            drop_glue.detectAll(module, srt) catch {};
+        }
+    }
+
     const MaxFreed: usize = 16;
     var freed_count: usize = 0;
     var freed_ptrs: [MaxFreed]struct {
@@ -712,10 +725,11 @@ pub fn isDeallocator(func_name: []const u8) bool {
 
 /// R-3: Check if function is a Rust drop context (drop_in_place / destructor).
 /// UAF patterns in these functions are compiler-generated RAII cleanup, not bugs.
+///
+/// Enhanced version using drop_glue detector for comprehensive pattern matching.
 fn isDropContext(func_name: []const u8) bool {
-    return std.mem.indexOf(u8, func_name, "drop_in_place") != null or
-        std.mem.indexOf(u8, func_name, "::drop") != null or
-        std.mem.indexOf(u8, func_name, "~") != null; // C++ destructors
+    // Use enhanced detection from drop_glue module
+    return drop_glue.isDropInPlaceContext(func_name);
 }
 
 /// Check if instruction A comes before (or at) instruction B in the same basic block.
