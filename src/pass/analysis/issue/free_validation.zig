@@ -1168,6 +1168,7 @@ pub const FreeValidationPass = struct {
                 .python_list, .python_dict => true, // Python objects are GC'd or refcounted
                 .go_slice, .go_map => true, // Go types are GC'd
                 .csharp_handle => true, // C# SafeHandle uses Dispose
+                .zig_arraylist, .zig_hashmap, .zig_buffer, .zig_multiarraylist => true, // Zig containers use deinit
                 .unknown => false,
             };
         }

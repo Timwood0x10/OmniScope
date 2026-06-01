@@ -911,7 +911,7 @@ pub const CrossLangDataFlow = struct {
             }
 
             // Create issue message
-            const message = try std.fmt.allocPrint(ctx.allocator, "Double-free path detected: pointer allocated in {s} ({s}) via {s} freed in multiple languages ({s}){}", .{
+            const message = try std.fmt.allocPrint(ctx.allocator, "Double-free path detected: pointer allocated in {s} ({s}) via {s} freed in multiple languages ({s}){s}", .{
                 alloc.alloc_func,
                 @tagName(alloc.alloc_lang),
                 alloc.alloc_callee,

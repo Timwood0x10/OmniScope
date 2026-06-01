@@ -209,6 +209,14 @@ pub const ContainerType = enum(u8) {
     go_map = 11,
     /// C# SafeHandle
     csharp_handle = 12,
+    /// Zig std.ArrayList
+    zig_arraylist = 13,
+    /// Zig std.HashMap / AutoHashMap
+    zig_hashmap = 14,
+    /// Zig Buffer / FixedBufferAllocator
+    zig_buffer = 15,
+    /// Zig std.MultiArrayList
+    zig_multiarraylist = 16,
 };
 
 /// Represents a single allocation (malloc/calloc/dlopen/mmap/etc).

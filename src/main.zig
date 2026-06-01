@@ -93,6 +93,9 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
         pipeline.setPerfStats(true);
     }
 
+    // Apply leak confidence threshold (Zig allocator tracking)
+    pipeline.setLeakThreshold(config.leak_confidence_threshold);
+
     try registerAllPasses(&pipeline);
 
     const analysis_start = std.time.milliTimestamp();

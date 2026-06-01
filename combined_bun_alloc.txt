@@ -1,0 +1,132 @@
+info: [INFO] CONFIG: Discovered config at omniscope.json
+
+
+info(omniscope_config): CONFIG: Loaded configuration from omniscope.json
+
+debug(platform_profile): Platform detected: macOS (Mach-O) arch=arm64 vendor=apple win_abi=Unknown-WinABI
+info: [INFO] Platform: macOS (Mach-O) arch=arm64 triple=arm64-apple-macosx11.0.0
+
+info: [INFO] PIPELINE: Initialized Language Adapter Registry (4 adapters)
+
+info: [INFO] PIPELINE: Detected language: python, using adapter: python (memory model: refcount)
+
+info: [INFO] PIPELINE: Analyzed 63 functions with python adapter (0 FFI calls classified)
+
+info: [33m[WARN][0m [P1-1] DangerSurfacePass: MemoryGraph is empty despite ptr-lifetime dep — ptr-lifetime may have skipped this module
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: _RNvNtCskhhhlZ4wWGP_5alloc5alloc18handle_alloc_error() in _RINvMNtNtNtCsg1bLsEOY8ZL_3std3sys4sync8once_boxINtB3_7OnceBoxNtNtNtNtNtB7_3pal4unix4sync5mutex5MutexE10initializeNCNvMNtNtB5_5mutex7pthreadNtB1S_5Mutex3get0ECs9SN9c7tmF9T_9bun_alloc
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: _RNvNtCskhhhlZ4wWGP_5alloc5alloc18handle_alloc_error() in _RNvMNtCs9SN9c7tmF9T_9bun_alloc9ast_allocNtB2_13AstAllocState9new_boxed
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: malloc_create_zone() in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone4init
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: malloc_set_zone_name() in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone4init
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: _RNvNtNtCsg1bLsEOY8ZL_3std9panicking11panic_count17is_zero_slow_path() in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: malloc_create_zone() in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: malloc_set_zone_name() in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Unchecked error code from FFI call: _RNvNtCskhhhlZ4wWGP_5alloc5alloc18handle_alloc_error() in _RNvXs2_NtCs9SN9c7tmF9T_9bun_alloc9ast_allocNtB5_14ScopedAstAllocNtNtCsgXhsEb1m4tm_4core7default7Default7default
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtCsgXhsEb1m4tm_4core9panicking18panic_bounds_check() throws but no handler in _RNvCs9SN9c7tmF9T_9bun_alloc14copy_lowercase
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtCsgXhsEb1m4tm_4core9panicking9panic_fmt() throws but no handler in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc18max_heap_allocatorNtB5_16MaxHeapAllocator6resize
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtNtCsg1bLsEOY8ZL_3std9panicking11panic_count17is_zero_slow_path() throws but no handler in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtNtCsg1bLsEOY8ZL_3std9panicking11panic_count17is_zero_slow_path() throws but no handler in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtNtCsg1bLsEOY8ZL_3std9panicking11panic_count17is_zero_slow_path() throws but no handler in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone
+
+info: [33m[WARN][0m ErrorPropagationTracer: Exception crossing FFI boundary: _RNvNtCsgXhsEb1m4tm_4core9panicking5panic() throws but no handler in _RNvNtCs9SN9c7tmF9T_9bun_alloc8c_thunks15mi_malloc_items
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvCs9SN9c7tmF9T_9bun_alloc11realloc_raw: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvCs9SN9c7tmF9T_9bun_alloc12default_dupe: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvCs9SN9c7tmF9T_9bun_alloc13realloc_slice: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvCs9SN9c7tmF9T_9bun_alloc14bss_arena_bump: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMNtCs9SN9c7tmF9T_9bun_alloc5basicNtB2_17MimallocAllocator28alloc_with_default_allocator: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMNtCs9SN9c7tmF9T_9bun_alloc5basicNtB2_17MimallocAllocator28alloc_with_default_allocator: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMNtCs9SN9c7tmF9T_9bun_alloc5basicNtB2_17MimallocAllocator28remap_with_default_allocator: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone4init: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone4init: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone9raw_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc18max_heap_allocatorNtB5_16MaxHeapAllocator5alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs4_NtCskhhhlZ4wWGP_5alloc7raw_vecNtB5_11RawVecInner11finish_growCs9SN9c7tmF9T_9bun_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z5alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z6resize: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14mimalloc_arena12vtable_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14mimalloc_arena12vtable_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14mimalloc_arena12vtable_remap: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14mimalloc_arena19global_vtable_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc14mimalloc_arena19global_vtable_alloc: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNtCs9SN9c7tmF9T_9bun_alloc8c_thunks15mi_malloc_items: allocation may not be freed on error
+
+info: [33m[WARN][0m ErrorPropagationTracer: Resource leak on error path in _RNvNvCs9SN9c7tmF9T_9bun_alloc14bss_arena_bump9map_arena: allocation may not be freed on error
+
+info: [INFO] CONTRACTS: Loaded 32 rules for 10 libraries
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 5 in _RNvCs9SN9c7tmF9T_9bun_alloc14bss_arena_bump (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 11 in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone4init (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 12 in _RNvMs0_NtCs9SN9c7tmF9T_9bun_alloc14heap_breakdownNtB5_4Zone9raw_alloc (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 17 in _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z5alloc (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 18 in _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z5alloc (c) (confidence: 0.95)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 19 in _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z6resize (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 22 in _RNvNtCs9SN9c7tmF9T_9bun_alloc14heap_breakdown8get_zone (c) (confidence: 0.85)
+
+info: [33m[WARN][0m CrossLangDataFlow: Orphan pointer 30 in _RNvNvCs9SN9c7tmF9T_9bun_alloc14bss_arena_bump9map_arena (c) (confidence: 0.85)
+
+info: [INFO] FFIContractDB Stats: libraries=10, rules=32, queries=55
+
+info: [33m[WARN][0m Unchecked malloc result in function: _RNvMs_NtNtCs9SN9c7tmF9T_9bun_alloc8fallback1zNtB4_1Z5alloc
+
+[1m[34m═══════════════════════════════════════════════════════════════
+  OmniScope — Cross-Language Memory Safety Analysis
+═══════════════════════════════════════════════════════════════
+[0m
+[1mCoverage
+[0m───────────────────────────────────────────────────────────────
+  Functions:          122
+  Issues detected:    0
+  Actionable:         0
+
+[1mFindings
+[0m───────────────────────────────────────────────────────────────
+[32m[1m  ✓ No issues detected.
+[0m
+[1mSummary
+[0m───────────────────────────────────────────────────────────────
+[32m[1m  ✓ No issues detected. Analysis clean.
+[0m[2m  Analysis time: 143 ms
+[0m  (use --verbose for pipeline metrics, --debug for full trace)
+═══════════════════════════════════════════════════════════════

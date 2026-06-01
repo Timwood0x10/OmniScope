@@ -23,6 +23,7 @@ const call_graph_mod = @import("../semantics/call_graph.zig");
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const rust_drop_semantics = @import("../semantics/rust_drop_semantics.zig");
+const zig_alloc_tracker = @import("../semantics/zig_allocator_tracker.zig");
 const PassManager = @import("../pass/manager.zig").PassManager;
 
 // Resource contract system: shared summaries for all passes
@@ -55,6 +56,9 @@ pub const Pipeline = struct {
     pass_manager: PassManager,
     module: ?ModuleRef,
     inst_cache: InstCache,
+    /// Minimum confidence to report a leak. Set via setLeakThreshold().
+    /// Default 0.5 means medium-confidence+ leaks are reported.
+    leak_confidence_threshold: f32 = 0.5,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
@@ -352,22 +356,55 @@ pub const Pipeline = struct {
         // After adapter analysis, infer container types for all allocations
         // to enable RAII/refcount/GC-aware leak suppression.
         //
-        // NOTE: Full inference will be activated in a future commit when
-        // alloc_callee field is populated by pointer_ownership pass.
-        // Currently this serves as the integration point and placeholder.
+        // This activates the ContainerInferer engine to classify allocations
+        // into Rust Box/Vec/String, C++ unique_ptr/shared_ptr, Python list/dict,
+        // and Go slice/map containers. Each classification sets the appropriate
+        // ownership_model on the AllocNode for downstream leak suppression.
         // ════════════════════════════════════════════════════
+        var container_inferer = container_inference.ContainerInferer.init(self.allocator);
         var containers_classified: u32 = 0;
 
-        // Count nodes that need container classification
-        for (ctx.memory_graph.node_store.items) |node| {
-            if (node.container_type == null) {
-                containers_classified += 1;
+        var idx: usize = 0;
+        while (idx < ctx.memory_graph.node_store.items.len) : (idx += 1) {
+            const node = ctx.memory_graph.node_store.items[idx];
+            // Only classify nodes that have alloc_callee and no container_type yet
+            // Note: We need to check if the node has alloc_callee information.
+            // Since AllocNode doesn't directly store alloc_callee, we use
+            // GlobalAllocTracker records as the source of truth for callee names.
+            if (node.*.container_type == null) {
+                // Try to find matching alloc record from GlobalAllocTracker
+                const tracker = &ctx.global_alloc_tracker;
+                for (tracker.records.items) |rec| {
+                    // Match by pointer ID or instruction address
+                    if (rec.ptr_id == @as(u32, @truncate(node.alloc_inst)) or
+                        @as(u64, rec.ptr_id) == node.alloc_inst)
+                    {
+                        // Found a match - apply container inference
+                        if (rec.alloc_callee.len > 0) {
+                            container_inferer.applyToNode(node, rec.alloc_callee);
+
+                            if (node.container_type != null) {
+                                containers_classified += 1;
+
+                                log.debug("PIPELINE: Node {d} ({s}) classified as {s} (ownership={s})", .{
+                                    node.id,
+                                    rec.alloc_callee,
+                                    @tagName(node.container_type.?),
+                                    @tagName(node.ownership_model),
+                                });
+                            }
+                        }
+                        break; // Found match, stop searching
+                    }
+                }
             }
         }
 
-        log.info("PIPELINE: Container inference initialized ({} nodes to classify)", .{
-            containers_classified,
-        });
+        if (containers_classified > 0) {
+            log.info("PIPELINE: Container inference classified {} nodes", .{containers_classified});
+        } else {
+            log.debug("PIPELINE: No nodes classified (alloc_callee may not be populated yet or no container patterns matched)", .{});
+        }
 
         // P0-3: If no FFI calls detected at IR level, skip heavy FFI analysis passes.
         // This eliminates significant overhead on pure single-language modules
@@ -392,20 +429,72 @@ pub const Pipeline = struct {
             var reported_leaks: u32 = 0;
             for (tracker.records.items) |rec| {
                 if (!rec.freed and !rec.is_global_or_static) {
-                    // Rust Drop Semantics: In Rust modules, allocations via __rust_alloc
-                    // or _Znwm are freed by __rust_dealloc at scope end (drop glue chain).
-                    // If no explicit free was found in this function, it's because the
-                    // compiler inserts __rust_dealloc at scope end (possibly inlined or
-                    // in a different basic block). This is NOT a leak.
-                    //
-                    // COMPILER_IR_PATTERNS.md §Rust Drop Glue:
-                    //   drop_in_place<T> → __rust_dealloc(ptr, size, align)
-                    // This chain runs automatically when values leave scope.
-                    //
-                    // We use alloc_callee (the actual allocator function name) rather than
-                    // alloc_func (the enclosing function name) to detect Rust allocator
-                    // intrinsics, because alloc_func stores the function CONTAINING the call
-                    // (e.g. _ZN11rust_merkle7new_sha...E), not the allocator itself.
+                    // ════════════════════════════════════════════════════
+                    // Phase 2: RAII Cleanup Check (Ownership-Aware Analysis)
+                    // Suppress false positives for allocations managed by:
+                    //   - Rust Drop trait (drop_in_place → __rust_dealloc)
+                    //   - C++ destructors (unique_ptr, shared_ptr)
+                    //   - Python refcount (Py_INCREF/DECREF)
+                    //   - Go GC (runtime GC)
+                    //   - Container types (Box, Vec, String, etc.)
+                    // ════════════════════════════════════════════════════
+
+                    // Check 1: RAII cleanup via MemoryGraph (trackRustDrop)
+                    if (ctx.memory_graph.hasRAIICleanup(@as(u64, rec.ptr_id))) {
+                        log.debug("LEAK-SUPPRESS: Alloc {} has RAII cleanup (drop/destructor)", .{
+                            rec.ptr_id,
+                        });
+                        continue;
+                    }
+
+                    // Check 2: Container type classification
+                    if (ctx.memory_graph.findNodeByInst(@as(u64, rec.ptr_id))) |node_idx| {
+                        const node = ctx.memory_graph.node_store.items[node_idx];
+
+                        // Container-managed memory (auto-cleanup)
+                        if (node.container_type) |container| {
+                            switch (container) {
+                                .rust_box,
+                                .rust_vec,
+                                .rust_string,
+                                .cpp_unique_ptr,
+                                .cpp_shared_ptr,
+                                .std_vector,
+                                .std_string,
+                                // Zig containers: all use deinit() for cleanup
+                                .zig_arraylist,
+                                .zig_hashmap,
+                                .zig_buffer,
+                                .zig_multiarraylist,
+                                => {
+                                    log.debug("LEAK-SUPPRESS: Alloc {} is in container {s} (auto-managed)", .{
+                                        rec.ptr_id,
+                                        @tagName(container),
+                                    });
+                                    continue;
+                                },
+                                else => {},
+                            }
+                        }
+
+                        // GC-managed memory
+                        if (node.is_gc_managed) {
+                            log.debug("LEAK-SUPPRESS: Alloc {} is GC-managed", .{
+                                rec.ptr_id,
+                            });
+                            continue;
+                        }
+
+                        // Borrowed references (owned by another runtime)
+                        if (node.is_borrowed) {
+                            log.debug("LEAK-SUPPRESS: Alloc {} is borrowed reference", .{
+                                rec.ptr_id,
+                            });
+                            continue;
+                        }
+                    }
+
+                    // Check 3: Rust allocator intrinsics (existing check)
                     if (ctx.isRustModule()) {
                         var is_rust_alloc = false;
                         // Check alloc_callee for Rust allocator intrinsics
@@ -489,6 +578,42 @@ pub const Pipeline = struct {
                         if (base_confidence < 0.30) base_confidence = 0.30;
                     }
                     base_confidence = @min(base_confidence, 0.95);
+
+                    // Zig Allocator Tracking: adjust confidence based on allocator semantics.
+                    // Arena/FixedBuffer/testing allocators have deterministic cleanup,
+                    // so confidence should be low unless on an FFI boundary.
+                    var zig_tracker = zig_alloc_tracker.Tracker.init(self.allocator);
+                    if (ctx.memory_graph.findNodeByInst(@as(u64, rec.ptr_id))) |node_idx| {
+                        const leak_node = ctx.memory_graph.node_store.items[node_idx];
+                        const zig_confidence = zig_tracker.calculateLeakConfidence(
+                            leak_node,
+                            rec.alloc_callee,
+                            is_on_ffi_path,
+                        );
+                        // Use the lower of the two scores: existing heuristic vs Zig-aware scoring.
+                        // This prevents false positives when Zig's allocator semantics
+                        // indicate safe management, even if the general heuristic scores it high.
+                        if (zig_confidence.score < base_confidence) {
+                            log.debug("ZIG-TRACKER: Lowering confidence {d:.2} → {d:.2} for alloc {} ({s})", .{
+                                base_confidence,
+                                zig_confidence.score,
+                                rec.ptr_id,
+                                zig_confidence.reason,
+                            });
+                            base_confidence = zig_confidence.score;
+                        }
+                    }
+
+                    // Suppress leak if final confidence is below user-configured threshold.
+                    if (base_confidence < self.leak_confidence_threshold) {
+                        log.debug("LEAK-SUPPRESS: confidence {d:.2} < threshold {d:.2}, skipping alloc {}", .{
+                            base_confidence,
+                            self.leak_confidence_threshold,
+                            rec.ptr_id,
+                        });
+                        continue;
+                    }
+
                     const confidence = base_confidence;
                     if (is_on_ffi_path) confirmed_high += 1;
 
@@ -570,6 +695,18 @@ pub const Pipeline = struct {
     /// Must be called before run() or runStaticAnalysis()
     pub fn setPerfStats(self: *Pipeline, enabled: bool) void {
         self.pass_manager.setPerfStats(enabled);
+    }
+
+    /// Set minimum confidence threshold for leak reporting.
+    ///
+    /// Leaks with confidence below this threshold are suppressed.
+    /// Zig Arena/FixedBuffer allocations typically score ~0.2 and are auto-suppressed
+    /// at the default threshold of 0.5.
+    ///
+    /// Arguments:
+    ///   threshold - Value in [0.0, 1.0]
+    pub fn setLeakThreshold(self: *Pipeline, threshold: f32) void {
+        self.leak_confidence_threshold = threshold;
     }
 };
 

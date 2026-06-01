@@ -92,6 +92,34 @@ pub const ContainerInferer = struct {
             return .go_slice;
         }
 
+        // Zig standard library containers
+        // Note: Check MultiArrayList BEFORE ArrayList to avoid false match
+        if (std.mem.indexOf(u8, func_name, "MultiArrayList") != null) {
+            return .zig_multiarraylist;
+        }
+
+        // ArrayList patterns: "ArrayList", "array_list"
+        if (std.mem.indexOf(u8, func_name, "ArrayList") != null or
+            std.mem.indexOf(u8, func_name, "array_list") != null)
+        {
+            return .zig_arraylist;
+        }
+
+        // HashMap patterns: "HashMap", "AutoHashMap", "hash_map"
+        if (std.mem.indexOf(u8, func_name, "HashMap") != null or
+            std.mem.indexOf(u8, func_name, "AutoHashMap") != null or
+            std.mem.indexOf(u8, func_name, "hash_map") != null)
+        {
+            return .zig_hashmap;
+        }
+
+        // Buffer patterns: "Buffer", "FixedBuffer"
+        if (std.mem.indexOf(u8, func_name, "Buffer") != null or
+            std.mem.indexOf(u8, func_name, "FixedBuffer") != null)
+        {
+            return .zig_buffer;
+        }
+
         return null;
     }
 
@@ -117,10 +145,11 @@ pub const ContainerInferer = struct {
                 .cpp_unique_ptr, .cpp_shared_ptr, .std_vector, .std_string => .raii,
                 .python_list, .python_dict => .refcount,
                 .go_slice, .go_map => .gc,
+                .zig_arraylist, .zig_hashmap, .zig_buffer, .zig_multiarraylist => .raii,
                 else => .manual,
             };
 
-            log.debug("CONTAINER: Inferred {} for alloc '{}' → ownership={}", .{
+            log.debug("CONTAINER: Inferred {s} for alloc '{s}' → ownership={s}", .{
                 @tagName(container_type),
                 alloc_func_name,
                 @tagName(node.ownership_model),
@@ -173,4 +202,120 @@ test "ContainerInferer - returns null for unknown" {
 
     try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("malloc"));
     try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("custom_alloc"));
+}
+
+test "ContainerInferer - detects Zig types" {
+    var inferer = ContainerInferer.init(testing.allocator);
+
+    // ArrayList patterns
+    try testing.expectEqual(.zig_arraylist, inferer.inferFromAllocName("std.ArrayList.append"));
+    try testing.expectEqual(.zig_arraylist, inferer.inferFromAllocName("std.array_list.ArrayList.ensureTotalCapacity"));
+    try testing.expectEqual(.zig_arraylist, inferer.inferFromAllocName("ArrayList.init"));
+
+    // HashMap patterns
+    try testing.expectEqual(.zig_hashmap, inferer.inferFromAllocName("std.HashMap.put"));
+    try testing.expectEqual(.zig_hashmap, inferer.inferFromAllocName("std.AutoHashMap.deinit"));
+    try testing.expectEqual(.zig_hashmap, inferer.inferFromAllocName("hash_map.ensureTotalCapacity"));
+
+    // Buffer patterns
+    try testing.expectEqual(.zig_buffer, inferer.inferFromAllocName("std.Buffer.init"));
+    try testing.expectEqual(.zig_buffer, inferer.inferFromAllocName("FixedBufferAllocator.alloc"));
+
+    // MultiArrayList
+    try testing.expectEqual(.zig_multiarraylist, inferer.inferFromAllocName("std.MultiArrayList.append"));
+}
+
+test "ContainerInferer - Zig containers set RAII ownership" {
+    var inferer = ContainerInferer.init(testing.allocator);
+
+    var node: memory_types.AllocNode = undefined;
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Test Zig ArrayList → RAII ownership
+    inferer.applyToNode(&node, "std.ArrayList.append");
+    try testing.expectEqual(.zig_arraylist, node.container_type.?);
+    try testing.expectEqual(.raii, node.ownership_model);
+
+    // Test Zig HashMap → RAII ownership
+    node.container_type = null;
+    node.ownership_model = .manual;
+    inferer.applyToNode(&node, "std.AutoHashMap.put");
+    try testing.expectEqual(.zig_hashmap, node.container_type.?);
+    try testing.expectEqual(.raii, node.ownership_model);
+}
+
+// ════════════════════════════════════════════════════
+// Phase 2 Integration Tests
+// ════════════════════════════════════════════════════
+
+test "Phase 2 Integration - applyToNode sets correct ownership model" {
+    var inferer = ContainerInferer.init(testing.allocator);
+
+    // Create a mock AllocNode (simplified version)
+    var node: memory_types.AllocNode = undefined;
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Test Rust container → RAII ownership
+    inferer.applyToNode(&node, "alloc::raw_vec::RawVec::<i32>::allocate_in");
+    try testing.expectEqual(.rust_vec, node.container_type.?);
+    try testing.expectEqual(.raii, node.ownership_model);
+
+    // Reset for next test
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Test C++ smart pointer → RAII ownership
+    inferer.applyToNode(&node, "_ZNSt10unique_ptrIiED1Ev");
+    try testing.expectEqual(.cpp_unique_ptr, node.container_type.?);
+    try testing.expectEqual(.raii, node.ownership_model);
+
+    // Reset for next test
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Test Python container → refcount ownership
+    inferer.applyToNode(&node, "PyList_New");
+    try testing.expectEqual(.python_list, node.container_type.?);
+    try testing.expectEqual(.refcount, node.ownership_model);
+
+    // Reset for next test
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Test Go container → GC ownership
+    inferer.applyToNode(&node, "runtime.makemap");
+    try testing.expectEqual(.go_map, node.container_type.?);
+    try testing.expectEqual(.gc, node.ownership_model);
+}
+
+test "Phase 2 Integration - unknown alloc does not modify node" {
+    var inferer = ContainerInferer.init(testing.allocator);
+
+    var node: memory_types.AllocNode = undefined;
+    node.container_type = null;
+    node.ownership_model = .manual;
+
+    // Apply inference with unknown function name
+    inferer.applyToNode(&node, "malloc");
+
+    // Node should remain unchanged
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), node.container_type);
+    try testing.expectEqual(.manual, node.ownership_model);
+}
+
+test "Phase 2 Integration - ContainerInferer handles edge cases" {
+    var inferer = ContainerInferer.init(testing.allocator);
+
+    // Empty string
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName(""));
+
+    // Partial matches (should not match)
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("not_a_vector"));
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("my_custom_list"));
+
+    // Case sensitivity (LLVM names are case-sensitive)
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("MALLOC"));
+    try testing.expectEqual(@as(?memory_types.ContainerType, null), inferer.inferFromAllocName("Runtime.Makeslice"));
 }

@@ -454,8 +454,9 @@ test "PythonAdapter - classifies borrowing functions" {
 test "PythonAdapter - classifies consuming functions" {
     try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("PyList_SetItem"));
     try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("PyDict_SetItem"));
-    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_DECREF"));
-    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_XDECREF"));
+    // Py_DECREF/Py_XDECREF are classified as python_refcount_dec (more specific)
+    try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_DECREF"));
+    try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_XDECREF"));
 }
 
 test "PythonAdapter - unknown functions return unknown" {
@@ -528,9 +529,9 @@ test "PythonAdapter - classifyCall detects refcount operations" {
     try std.testing.expectEqual(FFISemantics.python_refcount_inc, instance.classifyCall("Py_INCREF"));
     try std.testing.expectEqual(FFISemantics.python_refcount_inc, instance.classifyCall("Py_XINCREF"));
 
-    // Py_DECREF/Py_XDECREF are in CONSUMING_FUNCTIONS (contains match)
-    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_DECREF"));
-    try std.testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("Py_XDECREF"));
+    // Py_DECREF/Py_XDECREF are classified as python_refcount_dec (more specific than consumes_arg)
+    try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_DECREF"));
+    try std.testing.expectEqual(FFISemantics.python_refcount_dec, instance.classifyCall("Py_XDECREF"));
 }
 
 test "PythonAdapter - AdapterAnalysis new fields initialized correctly" {
