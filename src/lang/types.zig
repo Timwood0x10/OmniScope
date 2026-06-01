@@ -122,6 +122,7 @@ pub const AdapterAnalysis = struct {
     memory_model: MemoryModel,
     confidence: f32,
     ffi_calls: std.ArrayList(FFICallInfo),
+    issues: std.ArrayList(AdapterIssue),
     allocator: std.mem.Allocator,
 
     // Reference count tracking (for Python/refcount languages)
@@ -142,23 +143,46 @@ pub const AdapterAnalysis = struct {
             .memory_model = MemoryModel.forLanguage(lang),
             .confidence = 0.0,
             .ffi_calls = undefined,
+            .issues = undefined,
             .allocator = alloc,
         };
         result.ffi_calls = try std.ArrayList(FFICallInfo).initCapacity(alloc, 16);
+        result.issues = try std.ArrayList(AdapterIssue).initCapacity(alloc, 8);
         return result;
     }
 
     pub fn deinit(self: *AdapterAnalysis) void {
         self.ffi_calls.deinit(self.allocator);
+        for (self.issues.items) |issue| {
+            if (issue.message.len > 0) {
+                self.allocator.free(issue.message);
+            }
+        }
+        self.issues.deinit(self.allocator);
     }
 
     pub fn addCall(self: *AdapterAnalysis, info: FFICallInfo) !void {
         try self.ffi_calls.append(self.allocator, info);
     }
 
+    /// Add an issue detected during analysis.
+    pub fn addIssue(self: *AdapterAnalysis, issue: AdapterIssue) !void {
+        try self.issues.append(self.allocator, issue);
+        // Update legacy flags for backward compatibility
+        switch (issue.issue_type) {
+            .memory_leak, .use_after_free, .borrowed_ref_error => {
+                self.has_potential_leak = true;
+                if (issue.severity == .critical or issue.severity == .high) {
+                    self.leak_severity = issue.severity;
+                }
+            },
+            else => {},
+        }
+    }
+
     /// Check if this analysis has any meaningful findings.
     pub fn hasFindings(self: AdapterAnalysis) bool {
-        return self.ffi_calls.items.len > 0 or self.has_potential_leak;
+        return self.ffi_calls.items.len > 0 or self.has_potential_leak or self.issues.items.len > 0;
     }
 };
 
@@ -171,6 +195,108 @@ pub const Severity = enum(u8) {
     medium = 1,
     high = 2,
     critical = 3,
+};
+
+/// Issue type classification for adapter-detected problems.
+///
+/// These map to specific memory safety bugs that can occur at FFI boundaries.
+/// Each type has associated severity and confidence heuristics.
+pub const AdapterIssueType = enum {
+    /// Reference leak: owned reference never decremented (INC > DEC)
+    memory_leak,
+    /// Use-after-free or double-decref (DEC > INC)
+    use_after_free,
+    /// Python API called without holding GIL
+    gil_violation,
+    /// DECREF called on a borrowed reference (should INCREF first)
+    borrowed_ref_error,
+    /// Buffer protocol leak (GetBuffer without Release)
+    buffer_leak,
+    /// Null return value not checked after fallible call
+    null_return_not_checked,
+    /// Stale pointer used after interpreter finalization
+    stale_interpreter_ptr,
+
+    pub fn displayName(self: AdapterIssueType) []const u8 {
+        return switch (self) {
+            .memory_leak => "MemoryLeak",
+            .use_after_free => "UseAfterFree",
+            .gil_violation => "GILViolation",
+            .borrowed_ref_error => "BorrowedRefError",
+            .buffer_leak => "BufferLeak",
+            .null_return_not_checked => "NullReturnNotChecked",
+            .stale_interpreter_ptr => "StaleInterpreterPtr",
+        };
+    }
+
+    pub fn defaultSeverity(self: AdapterIssueType) Severity {
+        return switch (self) {
+            .memory_leak => .high,
+            .use_after_free => .critical,
+            .gil_violation => .critical,
+            .borrowed_ref_error => .high,
+            .buffer_leak => .medium,
+            .null_return_not_checked => .medium,
+            .stale_interpreter_ptr => .high,
+        };
+    }
+
+    /// Convert adapter issue type to canonical IssueKind for pipeline integration.
+    pub fn toIssueKind(self: AdapterIssueType) @import("../common/types.zig").IssueKind {
+        return switch (self) {
+            .memory_leak => .memory_leak,
+            .use_after_free => .use_after_free,
+            .gil_violation => .ffi_unsafe_call,
+            .borrowed_ref_error => .use_after_free,
+            .buffer_leak => .memory_leak,
+            .null_return_not_checked => .unchecked_return,
+            .stale_interpreter_ptr => .use_after_free,
+        };
+    }
+};
+
+/// Location information for an adapter issue.
+///
+/// Provides context about where in the source code the issue was detected.
+pub const IssueLocation = struct {
+    function_name: []const u8 = "unknown",
+    instruction_addr: u64 = 0,
+
+    pub fn init(func_name: []const u8) IssueLocation {
+        return .{
+            .function_name = func_name,
+            .instruction_addr = 0,
+        };
+    }
+
+    pub fn initWithAddr(func_name: []const u8, addr: u64) IssueLocation {
+        return .{
+            .function_name = func_name,
+            .instruction_addr = addr,
+        };
+    }
+};
+
+/// A single issue detected by a language adapter during FFI analysis.
+///
+/// Encapsulates all metadata needed to report a problem to the user:
+/// - What type of problem was found
+/// - Human-readable description
+/// - Where it occurred
+/// - How confident we are in the finding
+/// - What evidence supports this conclusion
+pub const AdapterIssue = struct {
+    issue_type: AdapterIssueType,
+    message: []const u8,
+    location: IssueLocation,
+    severity: Severity,
+    confidence: f32,
+    evidence: []const u8,
+
+    pub fn deinit(self: *AdapterIssue, allocator: std.mem.Allocator) void {
+        allocator.free(self.message);
+        allocator.free(self.evidence);
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════

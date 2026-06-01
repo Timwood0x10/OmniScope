@@ -208,10 +208,19 @@ pub const CrossLangDataFlow = struct {
                             "";
 
                         // 1. Track allocations
-                        if (isAllocationFunction(called_name)) {
+                        if (isAllocationFunction(called_name) or isJniAllocCall(called_name)) {
                             // CONTRACT-DB: Pre-check allocation with contract DB
                             const alloc_confidence = db.getConfidence(called_name);
                             const alloc_ownership = db.getOwnership(called_name);
+
+                            // JNI-specific: Log JNI allocation details
+                            if (isJniAllocCall(called_name)) {
+                                log.debug("JNI-ALLOC: {s} in {s} (requires_null_check={})", .{
+                                    called_name,
+                                    func_name,
+                                    requiresJniNullCheck(called_name),
+                                });
+                            }
 
                             const result_val = @intFromPtr(inst);
                             if (result_val != 0) {
@@ -243,8 +252,8 @@ pub const CrossLangDataFlow = struct {
                             }
                         }
 
-                        // 2. Track frees
-                        if (isFreeFunction(called_name)) {
+                        // 2. Track frees (including JNI releases)
+                        if (isFreeFunction(called_name) or isJniReleaseCall(called_name)) {
                             try funcs_with_frees.put(func_name, {});
 
                             const num_operands = c.LLVMGetNumOperands(inst);
@@ -329,6 +338,56 @@ pub const CrossLangDataFlow = struct {
                                         break;
                                     }
                                 }
+                            }
+                        }
+
+                        // 5. JNI Null Check Detection
+                        // Check if this is a JNI call that requires null check on return value
+                        if (isJniAllocCall(called_name) and requiresJniNullCheck(called_name)) {
+                            // Look for null check in subsequent instructions (simplified check)
+                            var has_null_check = false;
+                            var next_inst = c.LLVMGetNextInstruction(inst);
+                            var check_count: u32 = 0;
+                            while (@intFromPtr(next_inst) != 0 and check_count < 5) : ({
+                                next_inst = c.LLVMGetNextInstruction(next_inst);
+                                check_count += 1;
+                            }) {
+                                const next_opcode = c.LLVMGetInstructionOpcode(next_inst);
+                                // Check for ICMP (comparison instruction)
+                                if (next_opcode == c.LLVMICmp) {
+                                    // This could be a null check - simplified detection
+                                    has_null_check = true;
+                                    break;
+                                }
+                                // Check for conditional branch (might be result of null check)
+                                if (next_opcode == c.LLVMBr) {
+                                    const num_ops = c.LLVMGetNumOperands(next_inst);
+                                    if (num_ops >= 1) {
+                                        // Conditional branch indicates some check was done
+                                        has_null_check = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (!has_null_check) {
+                                const message = try std.fmt.allocPrint(ctx.allocator, "JNI function {s} requires null check on return value in function {s}", .{ called_name, func_name });
+                                defer ctx.allocator.free(message);
+
+                                const location = Location.init(func_name);
+                                const issue = Issue.init(
+                                    .malloc_unchecked,
+                                    message,
+                                    location,
+                                    .medium,
+                                    0.75,
+                                );
+                                try ctx.addIssue(&issue);
+
+                                diag.warn("JNI-NULL-CHECK: Missing null check for {s} return value in {s}", .{
+                                    called_name,
+                                    func_name,
+                                });
                             }
                         }
                     }
@@ -1329,6 +1388,93 @@ fn isKnownAllocFunction(func_name: []const u8) bool {
     return false;
 }
 
+/// Check if a function call is a JNI allocation (must pair with release).
+fn isJniAllocCall(callee_name: []const u8) bool {
+    const JNI_ALLOC_FUNCTIONS = [_][]const u8{
+        "NewGlobalRef",
+        "NewLocalRef",
+        "GetStringUTFChars",
+        "GetStringUTF",
+        "GetByteArrayElements",
+        "GetCharArrayElements",
+        "GetShortArrayElements",
+        "GetIntArrayElements",
+        "GetLongArrayElements",
+        "GetFloatArrayElements",
+        "GetDoubleArrayElements",
+        "GetBooleanArrayElements",
+        "GetByteArrayRegion",
+        "GetStringChars",
+        "AttachCurrentThread",
+        "FindClass",
+    };
+
+    for (JNI_ALLOC_FUNCTIONS) |pattern| {
+        if (std.mem.endsWith(u8, callee_name, pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Check if a function call is a JNI release (pairs with alloc).
+fn isJniReleaseCall(callee_name: []const u8) bool {
+    const JNI_RELEASE_FUNCTIONS = [_][]const u8{
+        "DeleteGlobalRef",
+        "DeleteLocalRef",
+        "ReleaseStringUTFChars",
+        "ReleaseStringUTF",
+        "ReleaseByteArrayElements",
+        "ReleaseCharArrayElements",
+        "ReleaseShortArrayElements",
+        "ReleaseIntArrayElements",
+        "ReleaseLongArrayElements",
+        "ReleaseFloatArrayElements",
+        "ReleaseDoubleArrayElements",
+        "ReleaseBooleanArrayElements",
+        "DetachCurrentThread",
+    };
+
+    for (JNI_RELEASE_FUNCTIONS) |pattern| {
+        if (std.mem.endsWith(u8, callee_name, pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Check if a JNI function requires null check on return value.
+fn requiresJniNullCheck(callee_name: []const u8) bool {
+    const JNI_NULL_CHECK_REQUIRED = [_][]const u8{
+        "FindClass",
+        "GetMethodID",
+        "GetStaticMethodID",
+        "GetFieldID",
+        "GetStaticFieldID",
+        "NewGlobalRef",
+        "GetStringUTFChars",
+        "GetByteArrayElements",
+        "GetCharArrayElements",
+        "GetShortArrayElements",
+        "GetIntArrayElements",
+        "GetLongArrayElements",
+        "GetFloatArrayElements",
+        "GetDoubleArrayElements",
+        "GetBooleanArrayElements",
+        "NewStringUTF",
+        "NewByteArray",
+        "NewCharArray",
+        "RegisterNatives",
+    };
+
+    for (JNI_NULL_CHECK_REQUIRED) |pattern| {
+        if (std.mem.endsWith(u8, callee_name, pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Calculate confidence score for orphan pointer detection
 /// Higher confidence for local variables, lower for globals
 fn calculateOrphanConfidence(alloc: CrossLangAlloc) f32 {
@@ -1637,4 +1783,162 @@ test "calculateOrphanConfidence returns appropriate confidence scores" {
 
     const confidence3 = calculateOrphanConfidence(alloc3);
     try std.testing.expect(confidence3 < 0.9); // Should be lower due to global address
+}
+
+// ============================================================================
+// Phase 3: Java JNI FFI Memory Safety Detection Tests
+// ============================================================================
+
+test "JNI: isJniAllocCall detects allocation functions" {
+    // GlobalRef and LocalRef creation
+    try std.testing.expect(isJniAllocCall("NewGlobalRef"));
+    try std.testing.expect(isJniAllocCall("NewLocalRef"));
+
+    // String operations
+    try std.testing.expect(isJniAllocCall("GetStringUTFChars"));
+    try std.testing.expect(isJniAllocCall("GetStringUTF"));
+
+    // Array element access (all types)
+    try std.testing.expect(isJniAllocCall("GetByteArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetCharArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetShortArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetIntArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetLongArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetFloatArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetDoubleArrayElements"));
+    try std.testing.expect(isJniAllocCall("GetBooleanArrayElements"));
+
+    // Thread attachment
+    try std.testing.expect(isJniAllocCall("AttachCurrentThread"));
+
+    // Class lookup
+    try std.testing.expect(isJniAllocCall("FindClass"));
+
+    // Should NOT detect non-alloc functions
+    try std.testing.expect(!isJniAllocCall("DeleteGlobalRef"));
+    try std.testing.expect(!isJniAllocCall("ReleaseStringUTFChars"));
+    try std.testing.expect(!isJniAllocCall("malloc"));
+    try std.testing.expect(!isJniAllocCall("free"));
+}
+
+test "JNI: isJniReleaseCall detects release functions" {
+    // Reference deletion
+    try std.testing.expect(isJniReleaseCall("DeleteGlobalRef"));
+    try std.testing.expect(isJniReleaseCall("DeleteLocalRef"));
+
+    // String release
+    try std.testing.expect(isJniReleaseCall("ReleaseStringUTFChars"));
+    try std.testing.expect(isJniReleaseCall("ReleaseStringUTF"));
+
+    // Array element release (all types)
+    try std.testing.expect(isJniReleaseCall("ReleaseByteArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseCharArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseShortArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseIntArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseLongArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseFloatArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseDoubleArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseBooleanArrayElements"));
+
+    // Thread detachment
+    try std.testing.expect(isJniReleaseCall("DetachCurrentThread"));
+
+    // Should NOT detect non-release functions
+    try std.testing.expect(!isJniReleaseCall("NewGlobalRef"));
+    try std.testing.expect(!isJniReleaseCall("GetStringUTFChars"));
+    try std.testing.expect(!isJniReleaseCall("malloc"));
+    try std.testing.expect(!isJniReleaseCall("free"));
+}
+
+test "JNI: requiresJniNullCheck identifies functions needing null check" {
+    // Class and method ID lookups require null check
+    try std.testing.expect(requiresJniNullCheck("FindClass"));
+    try std.testing.expect(requiresJniNullCheck("GetMethodID"));
+    try std.testing.expect(requiresJniNullCheck("GetStaticMethodID"));
+    try std.testing.expect(requiresJniNullCheck("GetFieldID"));
+    try std.testing.expect(requiresJniNullCheck("GetStaticFieldID"));
+
+    // Resource allocation functions require null check
+    try std.testing.expect(requiresJniNullCheck("NewGlobalRef"));
+    try std.testing.expect(requiresJniNullCheck("GetStringUTFChars"));
+    try std.testing.expect(requiresJniNullCheck("GetByteArrayElements"));
+    try std.testing.expect(requiresJniNullCheck("NewStringUTF"));
+    try std.testing.expect(requiresJniNullCheck("NewByteArray"));
+    try std.testing.expect(requiresJniNullCheck("RegisterNatives"));
+
+    // Functions that do NOT require null check
+    try std.testing.expect(!requiresJniNullCheck("DeleteGlobalRef"));
+    try std.testing.expect(!requiresJniNullCheck("ReleaseStringUTFChars"));
+    try std.testing.expect(!requiresJniNullCheck("CallVoidMethod"));
+    try std.testing.expect(!requiresJniNullCheck("ExceptionCheck"));
+}
+
+test "JNI: Suffix matching works for mangled names" {
+    // Test that suffix matching works for mangled/prefixed function names
+    // This is important because LLVM IR may have prefixed JNI function names
+
+    // Should match with various prefixes
+    try std.testing.expect(isJniAllocCall("JNIEnv_NewGlobalRef"));
+    try std.testing.expect(isJniAllocCall("_ZN6JNIEnv12NewGlobalRefE"));
+    try std.testing.expect(isJniReleaseCall("JNIEnv_DeleteGlobalRef"));
+    try std.testing.expect(isJniReleaseCall("_ZN6JNIEnv15DeleteGlobalRefE"));
+
+    // Should still match exact names
+    try std.testing.expect(isJniAllocCall("NewGlobalRef"));
+    try std.testing.expect(isJniReleaseCall("DeleteGlobalRef"));
+}
+
+test "JNI: Complete alloc/release pairing coverage" {
+    // Test that all major JNI resource types have both alloc and release detection
+
+    // GlobalRef lifecycle
+    try std.testing.expect(isJniAllocCall("NewGlobalRef"));
+    try std.testing.expect(isJniReleaseCall("DeleteGlobalRef"));
+
+    // LocalRef lifecycle
+    try std.testing.expect(isJniAllocCall("NewLocalRef"));
+    try std.testing.expect(isJniReleaseCall("DeleteLocalRef"));
+
+    // UTF String lifecycle
+    try std.testing.expect(isJniAllocCall("GetStringUTFChars"));
+    try std.testing.expect(isJniReleaseCall("ReleaseStringUTFChars"));
+
+    // ByteArray lifecycle
+    try std.testing.expect(isJniAllocCall("GetByteArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseByteArrayElements"));
+
+    // CharArray lifecycle
+    try std.testing.expect(isJniAllocCall("GetCharArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseCharArrayElements"));
+
+    // IntArray lifecycle
+    try std.testing.expect(isJniAllocCall("GetIntArrayElements"));
+    try std.testing.expect(isJniReleaseCall("ReleaseIntArrayElements"));
+
+    // Thread attachment lifecycle
+    try std.testing.expect(isJniAllocCall("AttachCurrentThread"));
+    try std.testing.expect(isJniReleaseCall("DetachCurrentThread"));
+}
+
+test "JNI: Edge cases - empty strings and non-JNI functions" {
+    // Empty string should not match
+    try std.testing.expect(!isJniAllocCall(""));
+    try std.testing.expect(!isJniReleaseCall(""));
+    try std.testing.expect(!requiresJniNullCheck(""));
+
+    // C standard library functions should not match JNI patterns
+    try std.testing.expect(!isJniAllocCall("malloc"));
+    try std.testing.expect(!isJniAllocCall("calloc"));
+    try std.testing.expect(!isJniAllocCall("realloc"));
+    try std.testing.expect(!isJniReleaseCall("free"));
+    try std.testing.expect(!isJniReleaseCall("munmap"));
+
+    // Python functions should not match JNI patterns
+    try std.testing.expect(!isJniAllocCall("PyList_New"));
+    try std.testing.expect(!isJniAllocCall("PyObject_Malloc"));
+    try std.testing.expect(!isJniReleaseCall("Py_DECREF"));
+
+    // Rust functions should not match JNI patterns
+    try std.testing.expect(!isJniAllocCall("into_raw"));
+    try std.testing.expect(!isJniReleaseCall("from_raw"));
 }

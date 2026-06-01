@@ -1,8 +1,10 @@
 # Module Reference
 
 > "We have 13 directories and 95 files. Somehow it all works. Mostly."
-
-Last updated: 2026-05-29 | Version: v0.2.0
+>
+> **⚠️ Realistic Statement**: This document reflects the real state of v0.2.0, including known limitations and incomplete features.
+>
+> Version: v0.2.0 | Last updated: 2026-06-01 | Corresponding code: VERSION 0.2.0, LLVM 22
 
 ## Architecture Layers
 

@@ -350,6 +350,35 @@ pub const Pipeline = struct {
                         else => {},
                     }
                 }
+
+                // Convert adapter issues to pipeline Issues (Phase 1: Go cgo integration)
+                // This implements the issue conversion point specified in
+                // docs/v2/ffi_lang_support_plan.md Step 2.
+                for (analysis.issues.items) |adapter_issue| {
+                    var issue = Issue.init(
+                        adapter_issue.issue_type.toIssueKind(),
+                        adapter_issue.message,
+                        Location.init(adapter_issue.location.function_name),
+                        switch (adapter_issue.severity) {
+                            .low => Severity.low,
+                            .medium => Severity.medium,
+                            .high => Severity.high,
+                            .critical => Severity.critical,
+                        },
+                        adapter_issue.confidence,
+                    );
+                    issue.owned = true; // We own the message allocation
+
+                    ctx.addIssue(&issue) catch |err| {
+                        log.warn("ADAPTER-ISSUE: Failed to add issue to context: {}", .{err});
+                    };
+
+                    log.debug("ADAPTER-ISSUE: [{s}] {s} (confidence={d:.2})", .{
+                        @tagName(adapter_issue.issue_type),
+                        adapter_issue.message,
+                        adapter_issue.confidence,
+                    });
+                }
             }
         }
 

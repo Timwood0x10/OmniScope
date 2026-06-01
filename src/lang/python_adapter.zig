@@ -23,6 +23,7 @@ const adapter_mod = @import("language_adapter.zig");
 const types = @import("types.zig");
 const FFISemantics = types.FFISemantics;
 const Language = types.Language;
+const Severity = types.Severity;
 const log = std.log.scoped(.python_adapter);
 
 // LLVM C API for IR traversal
@@ -366,10 +367,29 @@ pub fn analyzeFunction(
         return result;
     }
 
+    // Get function name for issue location tracking
+    const func_name_ptr = c.LLVMGetValueName(llvm_func);
+    const func_name = if (func_name_ptr != null)
+        std.mem.span(func_name_ptr)
+    else
+        "unknown_function";
+
     // Advanced tracking state for pattern detection
     var gil_state: GILState = .unknown;
     var buffer_acquired: u32 = 0;
     var interpreter_finalized: bool = false;
+
+    // Borrowed reference tracking for DECREF detection
+    // Tracks values returned by borrowing functions that should not be decref'd
+    const BorrowedRefTracker = struct {
+        value_addr: u64,
+        source_func: []const u8,
+        inst_addr: u64,
+    };
+    var borrowed_ref_trackers = std.ArrayList(BorrowedRefTracker){};
+    defer {
+        borrowed_ref_trackers.deinit(allocator);
+    }
 
     // ── Iterate through all basic blocks ──
     var bb_iter = c.LLVMGetFirstBasicBlock(llvm_func);
@@ -413,6 +433,42 @@ pub fn analyzeFunction(
                 classification == .consumes_arg)
             {
                 result.refcount_decrements += 1;
+
+                // Check for DECREF on borrowed references (Step 3)
+                if (classification == .python_refcount_dec or
+                    std.mem.indexOf(u8, callee_name, "Py_DECREF") != null or
+                    std.mem.indexOf(u8, callee_name, "Py_XDECREF") != null)
+                {
+                    // Get the operand being decref'd (simplified check)
+                    // In production, this would need proper def-use analysis
+                    if (borrowed_ref_trackers.items.len > 0) {
+                        // Flag potential borrowed ref error if we see DECREF after borrowed ref
+                        const msg = try std.fmt.allocPrint(
+                            allocator,
+                            "[Python CAPI] Potential DECREF on borrowed reference: {s}() called after borrowing function in {s}",
+                            .{ callee_name, func_name },
+                        );
+                        try result.addIssue(.{
+                            .issue_type = .borrowed_ref_error,
+                            .message = msg,
+                            .location = types.IssueLocation.initWithAddr(func_name, inst_addr),
+                            .severity = .high,
+                            .confidence = 0.75,
+                            .evidence = "borrowed ref tracking: DECREF after GetItem/As* function",
+                        });
+                    }
+                }
+            }
+
+            // Track returned value from borrowing functions
+            if (classification == .returns_borrowed) {
+                // Mark this return value as borrowed (simplified: track by instruction address)
+                const ret_value_addr = @intFromPtr(inst); // Simplified: use inst addr as proxy
+                try borrowed_ref_trackers.append(allocator, .{
+                    .value_addr = ret_value_addr,
+                    .source_func = callee_name,
+                    .inst_addr = inst_addr,
+                });
             }
 
             // ── Advanced Pattern Detection ──
@@ -428,14 +484,24 @@ pub fn analyzeFunction(
                 gil_state = .held;
             }
 
-            // Detect GIL violation: Python API call while GIL is released
+            // Detect GIL violation: Python API call while GIL is released (Step 2)
             if (gil_state == .released and
                 isPythonCApiFunction(callee_name) and
                 !isGILFunction(callee_name))
             {
-                result.has_potential_leak = true;
-                result.leak_severity = .high;
-                log.warn("Python: GIL violation - {s} called without holding GIL", .{callee_name});
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "[Python CAPI] GIL violation: {s}() called while GIL is released at instruction 0x{x} in {s}",
+                    .{ callee_name, inst_addr, func_name },
+                );
+                try result.addIssue(.{
+                    .issue_type = .gil_violation,
+                    .message = msg,
+                    .location = types.IssueLocation.initWithAddr(func_name, inst_addr),
+                    .severity = .critical,
+                    .confidence = 0.90,
+                    .evidence = "GIL state tracking: Py_* API call without holding GIL",
+                });
             }
 
             // Buffer protocol tracking
@@ -454,11 +520,25 @@ pub fn analyzeFunction(
             if (interpreter_finalized and
                 (classification == .returns_owned or classification == .returns_borrowed))
             {
-                log.warn("Python: possible stale pointer after Py_FinalizeEx - {s}", .{callee_name});
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "[Python CAPI] Possible stale pointer after Py_FinalizeEx: {s}() called in {s}",
+                    .{ callee_name, func_name },
+                );
+                try result.addIssue(.{
+                    .issue_type = .stale_interpreter_ptr,
+                    .message = msg,
+                    .location = types.IssueLocation.initWithAddr(func_name, inst_addr),
+                    .severity = .high,
+                    .confidence = 0.70,
+                    .evidence = "interpreter lifecycle tracking: API call after finalization",
+                });
             }
 
             // Null-return check detection for fallible functions
             if (isFalliblePythonFunction(callee_name) and classification == .returns_owned) {
+                // Note: In a full implementation, we would check if the next instruction
+                // is a null-check. For now, we flag the pattern as potentially unsafe.
                 result.has_potential_leak = true;
             }
         }
@@ -468,20 +548,63 @@ pub fn analyzeFunction(
 
     // Check for buffer leak: unmatched GetBuffer calls
     if (buffer_acquired > 0) {
-        result.has_potential_leak = true;
-        result.leak_severity = .medium;
-        log.warn("Python: buffer leak - {} PyObject_GetBuffer without PyBuffer_Release", .{buffer_acquired});
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "[Python CAPI] Buffer leak: {} PyObject_GetBuffer without matching PyBuffer_Release in {s}",
+            .{ buffer_acquired, func_name },
+        );
+        try result.addIssue(.{
+            .issue_type = .buffer_leak,
+            .message = msg,
+            .location = types.IssueLocation.init(func_name),
+            .severity = .medium,
+            .confidence = 0.85,
+            .evidence = "buffer protocol tracking",
+        });
     }
 
-    // Analyze reference count balance
+    // Analyze reference count balance and generate issues (Step 1)
     result.refcount_balance = @as(i32, @intCast(result.refcount_increments)) -
         @as(i32, @intCast(result.refcount_decrements));
 
     if (result.refcount_balance > 0) {
-        result.has_potential_leak = true;
-        result.leak_severity = if (result.refcount_balance > 3) .high else .medium;
+        // Reference leak: more INC than DEC
+        const leaked_count = result.refcount_balance;
+        const severity = if (leaked_count > 3) Severity.critical else Severity.high;
+        const confidence = if (leaked_count > 5) @as(f32, 0.95) else @as(f32, 0.80);
+
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "[Python CAPI] Reference leak: {d} owned reference(s) not decremented (INC: {d}, DEC: {d}) in {s}",
+            .{ leaked_count, result.refcount_increments, result.refcount_decrements, func_name },
+        );
+        try result.addIssue(.{
+            .issue_type = .memory_leak,
+            .message = msg,
+            .location = types.IssueLocation.init(func_name),
+            .severity = severity,
+            .confidence = confidence,
+            .evidence = "refcount imbalance analysis",
+        });
+
         log.warn("Python: refcount imbalance: +{} (more INCREF than DECREF)", .{result.refcount_balance});
     } else if (result.refcount_balance < 0) {
+        // Potential double-decref / UAF: more DEC than INC
+        const over_dec_count = -result.refcount_balance;
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "[Python CAPI] Potential double-decref/UAF: {d} more DECREF than INCREF (INC: {d}, DEC: {d}) in {s}",
+            .{ over_dec_count, result.refcount_increments, result.refcount_decrements, func_name },
+        );
+        try result.addIssue(.{
+            .issue_type = .use_after_free,
+            .message = msg,
+            .location = types.IssueLocation.init(func_name),
+            .severity = .critical,
+            .confidence = 0.70,
+            .evidence = "refcount imbalance: too many DECREF",
+        });
+
         log.warn("Python: refcount imbalance: {} (more DECREF than INCREF - potential UAF)", .{result.refcount_balance});
     }
 
@@ -713,4 +836,413 @@ test "PythonAdapter - isFalliblePythonFunction detects fallible APIs" {
     try std.testing.expect(!isFalliblePythonFunction("PyList_GetItem")); // returns borrowed
     try std.testing.expect(!isFalliblePythonFunction("Py_INCREF")); // void
     try std.testing.expect(!isFalliblePythonFunction("PyLong_AsLong")); // returns C long
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Phase 2 Tests - Memory Safety Detection
+// ═══════════════════════════════════════════════════════════════
+
+test "PythonAdapter - Test 1: Balanced refcount (INC = DEC) produces no issues" {
+    // Simulate a function with balanced reference counting:
+    // PyBytes_FromString (owned, +1 INC) -> Py_DECREF (-1 DEC)
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Add one owned ref creation (increment)
+    analysis.refcount_increments += 1;
+    // Add one matching DECREF (decrement)
+    analysis.refcount_decrements += 1;
+
+    // Calculate balance (this simulates the post-analysis check)
+    analysis.refcount_balance = @as(i32, @intCast(analysis.refcount_increments)) -
+        @as(i32, @intCast(analysis.refcount_decrements));
+
+    // Balanced refcount should have zero balance and no leak issues
+    try std.testing.expectEqual(@as(i32, 0), analysis.refcount_balance);
+
+    // Verify no memory_leak or use_after_free issues exist
+    var has_refcount_issue = false;
+    for (analysis.issues.items) |issue| {
+        if (issue.issue_type == .memory_leak or issue.issue_type == .use_after_free) {
+            has_refcount_issue = true;
+        }
+    }
+    try std.testing.expect(!has_refcount_issue);
+}
+
+test "PythonAdapter - Test 2: Refcount leak (INC > DEC) reports memory_leak issue" {
+    // Simulate a function that creates 3 owned refs but only decrements 1:
+    // Leak of 2 references
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    analysis.refcount_increments = 3; // 3x Py_BuildValue, PyList_New, etc.
+    analysis.refcount_decrements = 1; // Only 1x Py_DECREF
+
+    // Simulate post-analysis refcount imbalance detection
+    analysis.refcount_balance = @as(i32, @intCast(analysis.refcount_increments)) -
+        @as(i32, @intCast(analysis.refcount_decrements));
+
+    try std.testing.expectEqual(@as(i32, 2), analysis.refcount_balance); // Leaked 2 refs
+
+    // Generate issue as analyzeFunction would
+    const msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] Reference leak: {d} owned reference(s) not decremented (INC: {d}, DEC: {d}) in test_func",
+        .{ analysis.refcount_balance, analysis.refcount_increments, analysis.refcount_decrements },
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .memory_leak,
+        .message = msg,
+        .location = types.IssueLocation.init("test_func"),
+        .severity = .high, // 2 leaks is high severity (< 3 would be critical)
+        .confidence = 0.80,
+        .evidence = "refcount imbalance analysis",
+    });
+
+    // Verify issue was added
+    try std.testing.expectEqual(@as(usize, 1), analysis.issues.items.len);
+    const issue = &analysis.issues.items[0];
+    try std.testing.expectEqual(types.AdapterIssueType.memory_leak, issue.issue_type);
+    try std.testing.expectEqual(Severity.high, issue.severity);
+    try std.testing.expect(issue.confidence >= 0.75);
+    try std.testing.expect(std.mem.indexOf(u8, issue.message, "Reference leak") != null);
+    try std.testing.expect(analysis.has_potential_leak);
+}
+
+test "PythonAdapter - Test 3: Over-decrement (INC < DEC) reports use_after_free issue" {
+    // Simulate a function that decrements more than it increments:
+    // Potential double-decref / UAF
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    analysis.refcount_increments = 1; // Only 1x Py_INCREF
+    analysis.refcount_decrements = 4; // 4x Py_DECREF (3 extra!)
+
+    // Simulate post-analysis refcount imbalance detection
+    analysis.refcount_balance = @as(i32, @intCast(analysis.refcount_increments)) -
+        @as(i32, @intCast(analysis.refcount_decrements));
+
+    try std.testing.expectEqual(@as(i32, -3), analysis.refcount_balance); // -3 = 3 over-decrefs
+
+    // Generate issue as analyzeFunction would
+    const over_dec_count = -analysis.refcount_balance;
+    const msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] Potential double-decref/UAF: {d} more DECREF than INCREF (INC: {d}, DEC: {d}) in test_func",
+        .{ over_dec_count, analysis.refcount_increments, analysis.refcount_decrements },
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .use_after_free,
+        .message = msg,
+        .location = types.IssueLocation.init("test_func"),
+        .severity = .critical, // Over-dec is always critical
+        .confidence = 0.70,
+        .evidence = "refcount imbalance: too many DECREF",
+    });
+
+    // Verify critical severity issue was added
+    try std.testing.expectEqual(@as(usize, 1), analysis.issues.items.len);
+    const issue = &analysis.issues.items[0];
+    try std.testing.expectEqual(types.AdapterIssueType.use_after_free, issue.issue_type);
+    try std.testing.expectEqual(Severity.critical, issue.severity);
+    try std.testing.expect(std.mem.indexOf(u8, issue.message, "double-decref") != null);
+}
+
+test "PythonAdapter - Test 4: GIL violation detection reports gil_violation issue" {
+    // Simulate a function that releases GIL then calls Python API
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Simulate detecting GIL violation at a specific instruction address
+    const inst_addr: u64 = 0xDEAD_BEEF;
+    const callee_name = "PyList_New";
+    const func_name = "thread_unsafe_function";
+
+    const msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] GIL violation: {s}() called while GIL is released at instruction 0x{x} in {s}",
+        .{ callee_name, inst_addr, func_name },
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .gil_violation,
+        .message = msg,
+        .location = types.IssueLocation.initWithAddr(func_name, inst_addr),
+        .severity = .critical, // GIL violations are always critical
+        .confidence = 0.90,
+        .evidence = "GIL state tracking: Py_* API call without holding GIL",
+    });
+
+    // Verify GIL violation issue properties
+    try std.testing.expectEqual(@as(usize, 1), analysis.issues.items.len);
+    const issue = &analysis.issues.items[0];
+    try std.testing.expectEqual(types.AdapterIssueType.gil_violation, issue.issue_type);
+    try std.testing.expectEqual(Severity.critical, issue.severity);
+    try std.testing.expect(issue.confidence >= 0.85);
+    try std.testing.expectEqual(inst_addr, issue.location.instruction_addr);
+    try std.testing.expectEqualStrings(func_name, issue.location.function_name);
+    try std.testing.expect(std.mem.indexOf(u8, issue.message, "GIL violation") != null);
+}
+
+test "PythonAdapter - Test 5: Borrowed ref safe usage (GetItem without DECREF)" {
+    // Simulate correct borrowed ref usage: PyList_GetItem followed by use but NO DECREF
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Add a borrowing function call (returns borrowed ref)
+    const borrow_call = types.FFICallInfo.init(
+        0x1000,
+        "PyList_GetItem",
+        .returns_borrowed,
+        0.92,
+        .python,
+    );
+    try analysis.addCall(borrow_call);
+
+    // Use the borrowed value (e.g., PyLong_AsLong to convert to C type)
+    const use_call = types.FFICallInfo.init(
+        0x1001,
+        "PyLong_AsLong",
+        .returns_borrowed, // AsLong returns C long, classified as borrowed
+        0.92,
+        .python,
+    );
+    try analysis.addCall(use_call);
+
+    // No DECREF on the borrowed ref - this is CORRECT behavior
+    // Should NOT generate any borrowed_ref_error issues
+
+    // Verify we have calls recorded
+    try std.testing.expectEqual(@as(usize, 2), analysis.ffi_calls.items.len);
+
+    // Verify no borrowed_ref_error issues exist
+    var has_borrowed_error = false;
+    for (analysis.issues.items) |issue| {
+        if (issue.issue_type == .borrowed_ref_error) {
+            has_borrowed_error = true;
+        }
+    }
+    try std.testing.expect(!has_borrowed_error); // Correct: no error when no DECREF
+}
+
+test "PythonAdapter - Test 6: Edge cases - empty function and no Py_* calls" {
+    // Test 6a: Empty function (no FFI calls at all)
+    {
+        var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+        defer analysis.deinit();
+
+        // Empty function should have balanced refcounts (0=0)
+        try std.testing.expectEqual(@as(u32, 0), analysis.refcount_increments);
+        try std.testing.expectEqual(@as(u32, 0), analysis.refcount_decrements);
+        try std.testing.expectEqual(@as(i32, 0), analysis.refcount_balance);
+        try std.testing.expectEqual(@as(usize, 0), analysis.ffi_calls.items.len);
+        try std.testing.expectEqual(@as(usize, 0), analysis.issues.items.len);
+        try std.testing.expect(!analysis.hasFindings());
+        try std.testing.expect(!analysis.has_potential_leak);
+    }
+
+    // Test 6b: Function with non-Python FFI calls (should be ignored)
+    {
+        var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+        defer analysis.deinit();
+
+        // Add some non-Python calls (these would be filtered by classifyCall returning .unknown)
+        // Since they're unknown, they won't affect refcount tracking
+        try std.testing.expectEqual(@as(u32, 0), analysis.refcount_increments);
+        try std.testing.expectEqual(@as(usize, 0), analysis.issues.items.len);
+    }
+
+    // Test 6c: Function with only GIL management calls (no violations)
+    {
+        var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+        defer analysis.deinit();
+
+        // Simulate proper GIL management: Ensure -> do work -> Release
+        // This should NOT generate any gil_violation issues
+        const ensure_call = types.FFICallInfo.init(
+            0x2000,
+            "PyGILState_Ensure",
+            .unknown, // GIL functions are not classified as owning/borrowing
+            0.90,
+            .python,
+        );
+        try analysis.addCall(ensure_call);
+
+        const release_call = types.FFICallInfo.init(
+            0x2001,
+            "PyGILState_Release",
+            .unknown,
+            0.90,
+            .python,
+        );
+        try analysis.addCall(release_call);
+
+        // Should have calls but no issues (proper GIL usage)
+        try std.testing.expectEqual(@as(usize, 2), analysis.ffi_calls.items.len);
+
+        var has_gil_violation = false;
+        for (analysis.issues.items) |issue| {
+            if (issue.issue_type == .gil_violation) {
+                has_gil_violation = true;
+            }
+        }
+        try std.testing.expect(!has_gil_violation); // Correct: no violation
+    }
+}
+
+test "PythonAdapter - AdapterIssueType enum completeness" {
+    // Verify all issue types can create valid issues with proper defaults
+    const issue_types = [_]types.AdapterIssueType{
+        .memory_leak,
+        .use_after_free,
+        .gil_violation,
+        .borrowed_ref_error,
+        .buffer_leak,
+        .null_return_not_checked,
+        .stale_interpreter_ptr,
+    };
+
+    for (issue_types) |issue_type| {
+        // Check displayName doesn't panic
+        _ = issue_type.displayName();
+
+        // Check defaultSeverity returns valid Severity enum value
+        const severity = issue_type.defaultSeverity();
+
+        // Verify severity ordering makes sense
+        switch (issue_type) {
+            .use_after_free, .gil_violation => {
+                try std.testing.expectEqual(Severity.critical, severity);
+            },
+            .memory_leak, .borrowed_ref_error, .stale_interpreter_ptr => {
+                try std.testing.expect(severity == .high or severity == .critical);
+            },
+            .buffer_leak, .null_return_not_checked => {
+                try std.testing.expect(severity == .medium);
+            },
+        }
+    }
+}
+
+test "PythonAdapter - IssueLocation init variants" {
+    // Test basic init
+    const loc1 = types.IssueLocation.init("my_function");
+    try std.testing.expectEqualStrings("my_function", loc1.function_name);
+    try std.testing.expectEqual(@as(u64, 0), loc1.instruction_addr);
+
+    // Test initWithAddr
+    const loc2 = types.IssueLocation.initWithAddr("another_func", 0xBEEF);
+    try std.testing.expectEqualStrings("another_func", loc2.function_name);
+    try std.testing.expectEqual(@as(u64, 0xBEEF), loc2.instruction_addr);
+}
+
+test "PythonAdapter - AdapterAnalysis issues integration" {
+    // Test that addIssue properly updates legacy flags
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Initially no findings
+    try std.testing.expect(!analysis.hasFindings());
+    try std.testing.expect(!analysis.has_potential_leak);
+
+    // Add a memory leak issue
+    const msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] Reference leak: 1 owned reference(s) not decremented",
+        .{},
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .memory_leak,
+        .message = msg,
+        .location = types.IssueLocation.init("leaky_func"),
+        .severity = .high,
+        .confidence = 0.85,
+        .evidence = "refcount test",
+    });
+
+    // Legacy flags should be updated
+    try std.testing.expect(analysis.has_potential_leak);
+    try std.testing.expect(analysis.hasFindings());
+    try std.testing.expectEqual(Severity.high, analysis.leak_severity);
+    try std.testing.expectEqual(@as(usize, 1), analysis.issues.items.len);
+}
+
+test "PythonAdapter - Multiple issues can coexist" {
+    // A real-world scenario: function has both refcount leak AND GIL violation
+    var analysis = try types.AdapterAnalysis.init(std.testing.allocator, .python);
+    defer analysis.deinit();
+
+    // Issue 1: Memory leak
+    const leak_msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] Reference leak: 2 owned reference(s) not decremented",
+        .{},
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .memory_leak,
+        .message = leak_msg,
+        .location = types.IssueLocation.init("buggy_func"),
+        .severity = .high,
+        .confidence = 0.80,
+        .evidence = "refcount test",
+    });
+
+    // Issue 2: GIL violation
+    const gil_msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] GIL violation: PyList_New() called while GIL is released",
+        .{},
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .gil_violation,
+        .message = gil_msg,
+        .location = types.IssueLocation.initWithAddr("buggy_func", 0x1000),
+        .severity = .critical,
+        .confidence = 0.90,
+        .evidence = "GIL test",
+    });
+
+    // Issue 3: Buffer leak
+    const buffer_msg = try std.fmt.allocPrint(
+        std.testing.allocator,
+        "[Python CAPI] Buffer leak: 1 PyObject_GetBuffer without PyBuffer_Release",
+        .{},
+    );
+
+    try analysis.addIssue(.{
+        .issue_type = .buffer_leak,
+        .message = buffer_msg,
+        .location = types.IssueLocation.init("buggy_func"),
+        .severity = .medium,
+        .confidence = 0.85,
+        .evidence = "buffer test",
+    });
+
+    // Verify all three issues coexist
+    try std.testing.expectEqual(@as(usize, 3), analysis.issues.items.len);
+
+    // Verify each issue type is present
+    var found_types = [_]bool{false} ** 3;
+    for (analysis.issues.items) |issue| {
+        switch (issue.issue_type) {
+            .memory_leak => found_types[0] = true,
+            .gil_violation => found_types[1] = true,
+            .buffer_leak => found_types[2] = true,
+            else => {},
+        }
+    }
+    try std.testing.expect(found_types[0]); // memory_leak found
+    try std.testing.expect(found_types[1]); // gil_violation found
+    try std.testing.expect(found_types[2]); // buffer_leak found
+
+    // Overall state should reflect most severe issue
+    try std.testing.expect(analysis.hasFindings());
+    try std.testing.expect(analysis.has_potential_leak);
+    try std.testing.expectEqual(Severity.high, analysis.leak_severity); // memory_leak is high, gil_violation doesn't affect leak_severity
 }

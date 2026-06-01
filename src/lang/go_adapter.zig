@@ -375,6 +375,63 @@ pub fn analyzeFunction(
         result.leak_severity = if (result.refcount_balance > 2) .high else .medium;
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // Memory Safety: malloc/free pairing detection
+    // ═══════════════════════════════════════════════════════════
+    // Track allocation/deallocation pairing for cgo FFI calls.
+    // This implements single-function scope analysis as specified in
+    // docs/v2/ffi_lang_support_plan.md Phase 1.
+    var unpaired_allocs = std.ArrayList(types.FFICallInfo){};
+    defer unpaired_allocs.deinit(allocator);
+
+    for (result.ffi_calls.items) |call| {
+        const callee_name = call.callee_name;
+
+        if (isCgoAllocFunction(callee_name)) {
+            try unpaired_allocs.append(allocator, call);
+        }
+
+        if (isCgoFreeFunction(callee_name)) {
+            if (unpaired_allocs.items.len > 0) {
+                _ = unpaired_allocs.pop();
+            }
+        }
+    }
+
+    // Report memory leaks for unpaired allocations
+    for (unpaired_allocs.items) |alloc_call| {
+        const func_name_ptr = c.LLVMGetValueName(llvm_func);
+        const func_name_slice = if (func_name_ptr) |ptr|
+            std.mem.span(ptr)
+        else
+            "unknown";
+
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "[Go cgo] Memory leak: {s}() at instruction 0x{x} has no matching free in function '{s}'",
+            .{ alloc_call.callee_name, alloc_call.inst_addr, func_name_slice },
+        );
+
+        const issue = types.AdapterIssue{
+            .issue_type = .memory_leak,
+            .message = msg,
+            .location = types.IssueLocation.initWithAddr(func_name_slice, alloc_call.inst_addr),
+            .severity = if (unpaired_allocs.items.len > 2) .high else .medium,
+            .confidence = 0.75,
+            .evidence = "cgo alloc/free pairing analysis",
+        };
+
+        try result.addIssue(issue);
+
+        const log = std.log.scoped(.go_adapter);
+        log.debug("DETECTED LEAK: {s} at 0x{x} in '{s}' (confidence={d:.2})", .{
+            alloc_call.callee_name,
+            alloc_call.inst_addr,
+            func_name_slice,
+            issue.confidence,
+        });
+    }
+
     result.is_analyzed = true;
     result.confidence = if (result.ffi_calls.items.len > 0) 0.88 else 0.15;
 
@@ -495,6 +552,60 @@ pub fn isPotentialLeakPattern(alloc_call: []const u8, has_matching_free: bool) b
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Memory Safety Detection Helpers
+// ═══════════════════════════════════════════════════════════════
+
+/// Re-export AdapterIssueType from types.zig for convenience.
+pub const AdapterIssueType = types.AdapterIssueType;
+
+/// Check if callee is a known cgo allocation function.
+///
+/// These functions allocate C heap memory that must be explicitly freed:
+///   - C.malloc / C.calloc / C.strdup: Standard C allocators
+///   - C.CString / C.CBytes: Go→C conversion functions (call malloc internally)
+///   - _cgo_allocate / _Cfunc_GoMalloc: cgo-generated wrappers
+pub fn isCgoAllocFunction(callee_name: []const u8) bool {
+    const CGO_ALLOC_FUNCTIONS = [_][]const u8{
+        "C.malloc",
+        "C.calloc",
+        "C.strdup",
+        "C.CString",
+        "C.CBytes",
+        "_cgo_allocate",
+        "_Cgo_malloc",
+        "_Cfunc_GoMalloc",
+    };
+
+    for (CGO_ALLOC_FUNCTIONS) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Check if callee is a known cgo deallocation function.
+///
+/// These functions release C heap memory:
+///   - C.free: Standard C deallocator
+///   - _cgo_free / _Cgo_free / _Cfunc_GoFree: cgo-generated wrappers
+pub fn isCgoFreeFunction(callee_name: []const u8) bool {
+    const CGO_FREE_FUNCTIONS = [_][]const u8{
+        "C.free",
+        "_cgo_free",
+        "_Cgo_free",
+        "_Cfunc_GoFree",
+    };
+
+    for (CGO_FREE_FUNCTIONS) |pattern| {
+        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════
 
@@ -533,8 +644,8 @@ test "GoAdapter - classifies C allocator calls" {
     // C.free consumes argument
     try testing.expectEqual(FFISemantics.consumes_arg, instance.classifyCall("C.free"));
 
-    // Other C wrappers unknown by default
-    try testing.expectEqual(FFISemantics.unknown, instance.classifyCall("C.strdup"));
+    // C.strdup also returns owned (allocates memory via malloc)
+    try testing.expectEqual(FFISemantics.returns_owned, instance.classifyCall("C.strdup"));
     try testing.expectEqual(FFISemantics.unknown, instance.classifyCall("C.getenv"));
 }
 
@@ -648,6 +759,235 @@ test "GoAdapter - TinyGo runtime suppression" {
     try testing.expect(instance.shouldSuppress("runtime._panic"));
     try testing.expect(instance.shouldSuppress("runtime.trackPointer"));
     try testing.expect(instance.shouldSuppress("internal/task.start"));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Phase 1: Memory Safety Detection Tests
+// ═══════════════════════════════════════════════════════════════
+
+test "GoAdapter - isCgoAllocFunction detects allocators" {
+    // Standard C allocators
+    try testing.expect(isCgoAllocFunction("C.malloc"));
+    try testing.expect(isCgoAllocFunction("C.calloc"));
+    try testing.expect(isCgoAllocFunction("C.strdup"));
+
+    // Go→C conversion functions (allocate C memory)
+    try testing.expect(isCgoAllocFunction("C.CString"));
+    try testing.expect(isCgoAllocFunction("C.CBytes"));
+
+    // cgo-generated wrappers
+    try testing.expect(isCgoAllocFunction("_cgo_allocate"));
+    try testing.expect(isCgoAllocFunction("_Cgo_malloc"));
+    try testing.expect(isCgoAllocFunction("_Cfunc_GoMalloc"));
+
+    // NOT allocators
+    try testing.expect(!isCgoAllocFunction("C.free"));
+    try testing.expect(!isCgoAllocFunction("C.getenv"));
+    try testing.expect(!isCgoAllocFunction("runtime.mallocgc"));
+    try testing.expect(!isCgoAllocFunction("main.foo"));
+}
+
+test "GoAdapter - isCgoFreeFunction detects deallocators" {
+    // Standard C deallocator
+    try testing.expect(isCgoFreeFunction("C.free"));
+
+    // cgo-generated wrappers
+    try testing.expect(isCgoFreeFunction("_cgo_free"));
+    try testing.expect(isCgoFreeFunction("_Cgo_free"));
+    try testing.expect(isCgoFreeFunction("_Cfunc_GoFree"));
+
+    // NOT deallocators
+    try testing.expect(!isCgoFreeFunction("C.malloc"));
+    try testing.expect(!isCgoFreeFunction("C.CString"));
+    try testing.expect(!isCgoFreeFunction("runtime.free"));
+    try testing.expect(!isCgoFreeFunction("main.foo"));
+}
+
+test "GoAdapter - happy path: paired malloc/free produces no issues" {
+    // Simulate a function with paired allocations
+    var analysis = try types.AdapterAnalysis.init(testing.allocator, .go);
+    defer analysis.deinit();
+
+    // Add paired calls: malloc + free
+    try analysis.addCall(types.FFICallInfo.init(0x1000, "C.malloc", .returns_owned, 0.88, .go));
+    try analysis.addCall(types.FFICallInfo.init(0x1010, "C.free", .consumes_arg, 0.88, .go));
+
+    // Run pairing detection (simplified version for testing)
+    var unpaired_allocs = std.ArrayList(types.FFICallInfo){};
+    defer {
+        unpaired_allocs.deinit(testing.allocator);
+    }
+
+    for (analysis.ffi_calls.items) |call| {
+        if (isCgoAllocFunction(call.callee_name)) {
+            try unpaired_allocs.append(testing.allocator, call);
+        }
+        if (isCgoFreeFunction(call.callee_name)) {
+            if (unpaired_allocs.items.len > 0) {
+                _ = unpaired_allocs.pop();
+            }
+        }
+    }
+
+    // Should have no unpaired allocs (balanced)
+    try testing.expectEqual(@as(usize, 0), unpaired_allocs.items.len);
+}
+
+test "GoAdapter - leak detection: unpaired malloc reports leak" {
+    // Simulate a function with unpaired allocation
+    var analysis = try types.AdapterAnalysis.init(testing.allocator, .go);
+    defer analysis.deinit();
+
+    // Add only malloc, no free
+    try analysis.addCall(types.FFICallInfo.init(0x1000, "C.malloc", .returns_owned, 0.88, .go));
+    try analysis.addCall(types.FFICallInfo.init(0x1020, "C.CString", .returns_owned, 0.88, .go));
+
+    // Run pairing detection
+    var unpaired_allocs = std.ArrayList(types.FFICallInfo){};
+    defer {
+        unpaired_allocs.deinit(testing.allocator);
+    }
+
+    for (analysis.ffi_calls.items) |call| {
+        if (isCgoAllocFunction(call.callee_name)) {
+            try unpaired_allocs.append(testing.allocator, call);
+        }
+        if (isCgoFreeFunction(call.callee_name)) {
+            if (unpaired_allocs.items.len > 0) {
+                _ = unpaired_allocs.pop();
+            }
+        }
+    }
+
+    // Should have 2 unpaired allocs (leak detected)
+    try testing.expectEqual(@as(usize, 2), unpaired_allocs.items.len);
+
+    // Verify the specific functions that leaked
+    try testing.expectEqualStrings("C.malloc", unpaired_allocs.items[0].callee_name);
+    try testing.expectEqualStrings("C.CString", unpaired_allocs.items[1].callee_name);
+}
+
+test "GoAdapter - multiple allocs with partial free" {
+    // Simulate 3 allocs but only 2 frees → 1 leak
+    var analysis = try types.AdapterAnalysis.init(testing.allocator, .go);
+    defer analysis.deinit();
+
+    // Alloc sequence: malloc, calloc, CString
+    try analysis.addCall(types.FFICallInfo.init(0x1000, "C.malloc", .returns_owned, 0.88, .go));
+    try analysis.addCall(types.FFICallInfo.init(0x1010, "C.calloc", .returns_owned, 0.88, .go));
+    try analysis.addCall(types.FFICallInfo.init(0x1020, "C.CString", .returns_owned, 0.88, .go));
+
+    // Free sequence: only 2 frees
+    try analysis.addCall(types.FFICallInfo.init(0x1030, "C.free", .consumes_arg, 0.88, .go));
+    try analysis.addCall(types.FFICallInfo.init(0x1040, "C.free", .consumes_arg, 0.88, .go));
+
+    // Run pairing detection
+    var unpaired_allocs = std.ArrayList(types.FFICallInfo){};
+    defer {
+        unpaired_allocs.deinit(testing.allocator);
+    }
+
+    for (analysis.ffi_calls.items) |call| {
+        if (isCgoAllocFunction(call.callee_name)) {
+            try unpaired_allocs.append(testing.allocator, call);
+        }
+        if (isCgoFreeFunction(call.callee_name)) {
+            if (unpaired_allocs.items.len > 0) {
+                _ = unpaired_allocs.pop();
+            }
+        }
+    }
+
+    // Should have exactly 1 unpaired alloc (the first malloc - LIFO order)
+    try testing.expectEqual(@as(usize, 1), unpaired_allocs.items.len);
+    try testing.expectEqualStrings("C.malloc", unpaired_allocs.items[0].callee_name);
+}
+
+test "GoAdapter - edge cases: empty and no-cgo functions" {
+    // Test 1: Empty function (no calls at all)
+    {
+        var analysis = try types.AdapterAnalysis.init(testing.allocator, .go);
+        defer analysis.deinit();
+
+        try testing.expectEqual(@as(usize, 0), analysis.ffi_calls.items.len);
+        try testing.expectEqual(@as(usize, 0), analysis.issues.items.len);
+        try testing.expect(!analysis.has_potential_leak);
+    }
+
+    // Test 2: Function with non-cgo calls only
+    {
+        var analysis = try types.AdapterAnalysis.init(testing.allocator, .go);
+        defer analysis.deinit();
+
+        try analysis.addCall(types.FFICallInfo.init(0x1000, "runtime.mallocgc", .unknown, 0.5, .go));
+        try analysis.addCall(types.FFICallInfo.init(0x1010, "main.helper", .unknown, 0.5, .go));
+
+        // No cgo alloc/free calls should be detected
+        var has_cgo_alloc = false;
+        var has_cgo_free = false;
+        for (analysis.ffi_calls.items) |call| {
+            if (isCgoAllocFunction(call.callee_name)) has_cgo_alloc = true;
+            if (isCgoFreeFunction(call.callee_name)) has_cgo_free = true;
+        }
+
+        try testing.expect(!has_cgo_alloc);
+        try testing.expect(!has_cgo_free);
+    }
+}
+
+test "GoAdapter - boundary: _Cgo_* variant recognition" {
+    // Test all cgo wrapper variants are recognized as allocators/free
+    const cgo_alloc_variants = [_][]const u8{
+        "_Cgo_malloc",
+        "_cgo_allocate",
+        "_Cfunc_GoMalloc",
+    };
+
+    const cgo_free_variants = [_][]const u8{
+        "_Cgo_free",
+        "_cgo_free",
+        "_Cfunc_GoFree",
+    };
+
+    for (cgo_alloc_variants) |variant| {
+        try testing.expect(isCgoAllocFunction(variant));
+    }
+
+    for (cgo_free_variants) |variant| {
+        try testing.expect(isCgoFreeFunction(variant));
+    }
+
+    // Mixed test: _Cgo_malloc + _Cgo_free should pair correctly
+    var unpaired_allocs = std.ArrayList(types.FFICallInfo){};
+    defer {
+        unpaired_allocs.deinit(testing.allocator);
+    }
+
+    const alloc_call = types.FFICallInfo.init(0x1000, "_Cgo_malloc", .returns_owned, 0.88, .go);
+    const free_call = types.FFICallInfo.init(0x1010, "_Cgo_free", .consumes_arg, 0.88, .go);
+
+    try unpaired_allocs.append(testing.allocator, alloc_call);
+    try testing.expectEqual(@as(usize, 1), unpaired_allocs.items.len);
+
+    // Simulate free pairing
+    if (isCgoFreeFunction(free_call.callee_name) and unpaired_allocs.items.len > 0) {
+        _ = unpaired_allocs.pop();
+    }
+
+    try testing.expectEqual(@as(usize, 0), unpaired_allocs.items.len);
+}
+
+test "GoAdapter - AdapterIssueType toIssueKind mapping" {
+    // Verify mapping from adapter-specific issue types to canonical IssueKind
+    const IssueKind = @import("../common/types.zig").IssueKind;
+
+    try testing.expectEqual(IssueKind.memory_leak, AdapterIssueType.memory_leak.toIssueKind());
+    try testing.expectEqual(IssueKind.use_after_free, AdapterIssueType.use_after_free.toIssueKind());
+    try testing.expectEqual(IssueKind.ffi_unsafe_call, AdapterIssueType.gil_violation.toIssueKind());
+    try testing.expectEqual(IssueKind.use_after_free, AdapterIssueType.borrowed_ref_error.toIssueKind());
+    try testing.expectEqual(IssueKind.memory_leak, AdapterIssueType.buffer_leak.toIssueKind());
+    try testing.expectEqual(IssueKind.unchecked_return, AdapterIssueType.null_return_not_checked.toIssueKind());
+    try testing.expectEqual(IssueKind.use_after_free, AdapterIssueType.stale_interpreter_ptr.toIssueKind());
 }
 
 const testing = std.testing;

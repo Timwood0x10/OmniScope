@@ -17,7 +17,7 @@ OmniScope is a specialized LLVM IR auditor for **cross-language FFI boundaries**
 It is designed to surface high-confidence risks with traceable evidence, not to
 prove every possible vulnerability in a general-purpose static analysis sense.
 
-Supports **C / C++ / Rust / Zig / Go / Python / Java / C#/.NET**.
+Supports **C / C++ / Rust / Zig / Go / Python / Java** (C#/.NET in roadmap).
 
 ### Detection Capabilities (v0.2.0)
 
@@ -93,7 +93,7 @@ OmniScope doesn't analyze everything equally. It uses a two-layer filtering syst
 | **Runtime Internal** | Standard library / runtime code      | Skip (trust official impl.) |
 | **Unknown Zone**     | FFI / unsafe / cross-language code   | Deep analysis               |
 
-**Result**: 64% of code skipped, 100% focus on dangerous areas.
+**Result**: ~64% of code skipped, analysis resources focused on dangerous areas.
 
 #### Layer 2: Semantic Resolution Tree (SRT)
 
@@ -427,8 +427,8 @@ Validated on **42 real-world projects + expanded adversarial tests** (0.2.0 rele
 | **Analysis Speed**      | \~150ms per 1K functions (ReleaseFast) | sqlite3 (3.3K funcs): \~12s                   |
 | **Memory Usage**        | \~120MB per 1K functions (Release)     | Debug mode: \~400MB                           |
 | **Success Rate**        | 95.2% (40/42 files)                    | LLVM 22 compatible                            |
-| **Precision (FFI)** | **~100%** on Rust/Zig FFI projects     | wasmtime, ring, blst, ripgrep, etc.            |
-| **Precision (C/C++)** | **2-5%** on pure C/C++ libraries       | Not applicable (no FFI boundary), not a tool bug |
+| **Precision (FFI)** | **Estimated high** (measured on wasmtime, ring, blst, etc.) | Rust/Zig FFI projects |
+| **Precision (C/C++)** | **2-5%** on pure C/C++ libraries | Not applicable (no FFI boundary), not a tool bug |
 
 | File Scale         | Debug Mode | ReleaseFast |
 | ------------------ | ---------- | ----------- |
@@ -443,7 +443,7 @@ Validated on **42 real-world projects + expanded adversarial tests** (0.2.0 rele
 
 | Tool          | Input           | Cross-Language FFI    | IR-Level      | Taint Analysis | Ownership Tracking | Open Source    | Performance        |
 | ------------- | --------------- | --------------------- | ------------- | -------------- | ------------------ | -------------- | ------------------ |
-| **OmniScope** | **LLVM IR**     | **✅ (8 language/runtime families)**   | **✅**         | **✅**          | **✅**              | **Apache 2.0** | **\~150ms/Kfuncs** |
+| **OmniScope** | **LLVM IR**     | **✅ (7 languages)**   | **✅**         | **✅**          | **✅**              | **Apache 2.0** | **\~150ms/Kfuncs** |
 | CodeQL        | Source/AST      | ⚠️ (per-lang queries) | ❌             | ✅              | ⚠️                 | MIT            | \~minutes          |
 | Clang SA      | AST             | ❌ (C/C++ only)        | ❌             | ✅              | ⚠️                 | Apache 2.0     | \~seconds          |
 | Infer         | Source/AST      | ❌                     | ❌             | ✅              | ⚠️                 | MIT            | \~seconds          |
@@ -452,10 +452,10 @@ Validated on **42 real-world projects + expanded adversarial tests** (0.2.0 rele
 
 **Key Differentiators**:
 
-1. ✅ **Only tool** focused on **cross-language FFI boundaries**
-2. ✅ **Only tool** analyzing at **LLVM IR level** (language-agnostic)
-3. ✅ **Only tool** with **Zone Classification** (smart filtering)
-4. ✅ **Only tool** supporting **8 language/runtime families** in unified analysis
+1. ✅ **Focused on cross-language FFI boundary analysis**
+2. ✅ **Analyzes at LLVM IR level** (language-agnostic)
+3. ✅ **Zone Classification** (smart filtering mechanism)
+4. ✅ **Unified analysis framework for multiple languages**
 
 ***
 
@@ -508,11 +508,47 @@ Validated on **42 real-world projects + expanded adversarial tests** (0.2.0 rele
 
 ## Limitations
 
+### Technical Constraints
+
 1. Requires LLVM IR input (`clang -emit-llvm` or `rustc --emit=llvm-ir`)
 2. Debug info (`-g`) recommended for source location mapping
 3. Indirect calls via function pointers resolved heuristically
 4. Primarily intra-procedural analysis (ownership tracking supports inter-procedural)
 5. Some exotic FFI patterns may require custom rules
+
+### Not Applicable Scenarios
+
+OmniScope is **NOT suitable** for:
+
+- ❌ **Pure single-language projects without FFI boundaries**: e.g., pure Rust (no `extern "C"`), pure C (no cross-language calls)
+  - Such projects should use language-specific tools (Clippy, Clang Static Analyzer, etc.)
+  - OmniScope has lower precision (~2-5%) in these scenarios, which is expected behavior, not a tool bug
+- ❌ **Scenarios requiring complete program path analysis**: OmniScope is primarily based on pattern matching and flow analysis, not symbolic execution or model checking
+- ❌ **Real-time/online analysis requirements**: The tool is designed for offline batch processing, not real-time IDE integration
+- ❌ **Ultra-low latency requirements on performance-critical paths**: Large projects (>10K functions) may require tens of seconds for analysis
+
+### Known Issues
+
+1. **False positive rate varies by project**: While the SRT architecture significantly reduces FPs (~94% reduction), actual FP count depends on:
+   - Complexity of FFI boundaries
+   - Whether coding idioms used are covered by detectors
+   - Presence of custom memory allocators or special runtimes
+2. **Coverage is not 100%**: Cannot detect all possible FFI security issues, especially:
+   - Protocol-level violations (requires manual audit)
+   - Runtime behavior-related security issues (requires dynamic analysis support)
+   - Highly obfuscated or dynamically generated code
+
+### Applicability Guide
+
+| Scenario | Recommended | Notes |
+|----------|------------|-------|
+| Rust↔C FFI projects | ✅ Strongly recommended | Core optimization scenario |
+| Zig↔C FFI projects | ✅ Recommended | Good support |
+| Python C extensions | ✅ Recommended | Stable support |
+| JNI boundaries (Java↔C) | ✅ Available | Basic support, ongoing improvement |
+| Go cgo projects | ⚠️ Limited support | TinyGo support better, standard Go runtime filtering needs improvement |
+| Pure C/C++ projects | ❌ Not recommended | Use Clang SA, Infer, and other specialized tools |
+| Pure Rust projects (no FFI) | ❌ Not recommended | Use Clippy, Miri, and other tools |
 
 ---
 

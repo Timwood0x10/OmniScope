@@ -496,6 +496,7 @@ All `docs/investigation_reports/**/*.md` rewritten with latest 17-file benchmark
 
 | Version | Date | Major Feature | Key Metric |
 |---------|------|---------------|------------|
+| **v0.2.0** | **2026-05-26** | **SRT Architecture + FP Suppression System** | **FP -94%**, **TP ≥90%**, **9 detectors** |
 | **v0.1.7** | **2026-05-07** | **Exhaustive Bug Fix (Round 7+8)** | **67 bugs**, **343 tests**, **20 Issue Kinds** |
 | **v0.1.6** | **2026-05-04** | **Rust FFI Detection Restoration** | TP **20%**, Coverage **92%**, **191 tests** |
 | v0.1.5 | 2026-04-25 | Zone Classification | Skip rate **60%+** |

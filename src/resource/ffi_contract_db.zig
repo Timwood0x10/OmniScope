@@ -14,6 +14,7 @@
 
 const std = @import("std");
 const log = @import("../common/log.zig");
+const jni_reg = @import("../registry/jni_reg.zig");
 
 // ============================================================================
 // Public Types
@@ -690,36 +691,126 @@ fn builtinLibraries() []const LibraryContract {
             .description = "JNI local/global reference management",
             .error_prone = true,
             .pairs = &[_]AllocPairRule{
-                // JNI local/global references (must be explicitly deleted)
+                // JNI GlobalRef lifecycle (must be explicitly deleted)
+                .{
+                    .name = "jni_global_ref",
+                    .alloc_funcs = &[_][]const u8{"NewGlobalRef"},
+                    .release_funcs = &[_][]const u8{"DeleteGlobalRef"},
+                    .ownership = .caller,
+                    .confidence = 0.95,
+                },
+                // JNI LocalRef lifecycle (auto-freed, but can be explicit)
                 .{
                     .name = "jni_local_ref",
                     .alloc_funcs = &[_][]const u8{
                         "NewLocalRef",
-                        "NewGlobalRef",
                         "FindClass",
-                        "GetMethodID",
-                        "GetObjectField",
                         "CallObjectMethod",
                         "CallStaticObjectMethod",
-                        "GetStringUTFChars",
-                        "GetArrayElements",
+                        "GetObjectField",
+                        "NewStringUTF",
                     },
-                    .release_funcs = &[_][]const u8{
-                        "DeleteLocalRef",
-                        "DeleteGlobalRef",
-                        "ReleaseStringUTFChars",
-                        "ReleaseArrayElements",
-                    },
-                    .ownership = .caller,
-                    .confidence = 0.88,
-                },
-                // JNI strings (auto-managed by JVM in most cases)
-                .{
-                    .name = "jni_string",
-                    .alloc_funcs = &[_][]const u8{"NewStringUTF"},
-                    .release_funcs = &[_][]const u8{},
+                    .release_funcs = &[_][]const u8{"DeleteLocalRef"},
                     .ownership = .gc,
                     .confidence = 0.90,
+                },
+                // JNI String UTF chars (must be released)
+                .{
+                    .name = "jni_string_utf_chars",
+                    .alloc_funcs = &[_][]const u8{"GetStringUTFChars"},
+                    .release_funcs = &[_][]const u8{"ReleaseStringUTFChars"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI ByteArray elements (must be released)
+                .{
+                    .name = "jni_byte_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetByteArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseByteArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI CharArray elements (must be released)
+                .{
+                    .name = "jni_char_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetCharArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseCharArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI ShortArray elements (must be released)
+                .{
+                    .name = "jni_short_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetShortArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseShortArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI IntArray elements (must be released)
+                .{
+                    .name = "jni_int_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetIntArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseIntArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI LongArray elements (must be released)
+                .{
+                    .name = "jni_long_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetLongArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseLongArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI FloatArray elements (must be released)
+                .{
+                    .name = "jni_float_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetFloatArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseFloatArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI DoubleArray elements (must be released)
+                .{
+                    .name = "jni_double_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetDoubleArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseDoubleArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI BooleanArray elements (must be released)
+                .{
+                    .name = "jni_boolean_array_elements",
+                    .alloc_funcs = &[_][]const u8{"GetBooleanArrayElements"},
+                    .release_funcs = &[_][]const u8{"ReleaseBooleanArrayElements"},
+                    .ownership = .caller,
+                    .confidence = 0.92,
+                },
+                // JNI Thread attachment (must be detached)
+                .{
+                    .name = "jni_thread_attachment",
+                    .alloc_funcs = &[_][]const u8{"AttachCurrentThread"},
+                    .release_funcs = &[_][]const u8{"DetachCurrentThread"},
+                    .ownership = .caller,
+                    .confidence = 0.95,
+                },
+                // JNI arrays allocation (local refs, GC-managed)
+                .{
+                    .name = "jni_arrays",
+                    .alloc_funcs = &[_][]const u8{
+                        "NewByteArray",
+                        "NewCharArray",
+                        "NewShortArray",
+                        "NewIntArray",
+                        "NewLongArray",
+                        "NewFloatArray",
+                        "NewDoubleArray",
+                        "NewBooleanArray",
+                        "NewObjectArray",
+                    },
+                    .release_funcs = &[_][]const u8{},
+                    .ownership = .gc,
+                    .confidence = 0.88,
                 },
             },
         },
@@ -989,6 +1080,72 @@ test "mimalloc rules - Bun's underlying allocator" {
     try std.testing.expect(db.shouldReportLeak("mi_zalloc"));
     try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("mi_malloc", "mi_free"));
     try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("mi_malloc", "free"));
+}
+
+test "JNI rules - GlobalRef lifecycle" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // NewGlobalRef must be paired with DeleteGlobalRef
+    try std.testing.expect(db.shouldReportLeak("NewGlobalRef"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("NewGlobalRef", "DeleteGlobalRef"));
+    try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("NewGlobalRef", "DeleteLocalRef"));
+
+    // Verify jni_reg.zig is imported and accessible
+    try std.testing.expect(jni_reg.jni_functions.len == 27);
+}
+
+test "JNI rules - StringUTFChars lifecycle" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // GetStringUTFChars must be paired with ReleaseStringUTFChars
+    try std.testing.expect(db.shouldReportLeak("GetStringUTFChars"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("GetStringUTFChars", "ReleaseStringUTFChars"));
+    try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("GetStringUTFChars", "DeleteGlobalRef"));
+}
+
+test "JNI rules - ArrayElements lifecycle" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // All array Get* functions must be paired with corresponding Release* functions
+    try std.testing.expect(db.shouldReportLeak("GetByteArrayElements"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("GetByteArrayElements", "ReleaseByteArrayElements"));
+
+    try std.testing.expect(db.shouldReportLeak("GetCharArrayElements"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("GetCharArrayElements", "ReleaseCharArrayElements"));
+
+    try std.testing.expect(db.shouldReportLeak("GetIntArrayElements"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("GetIntArrayElements", "ReleaseIntArrayElements"));
+
+    // Mismatch detection
+    try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("GetByteArrayElements", "ReleaseIntArrayElements"));
+}
+
+test "JNI rules - Thread attachment lifecycle" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // AttachCurrentThread must be paired with DetachCurrentThread
+    try std.testing.expect(db.shouldReportLeak("AttachCurrentThread"));
+    try std.testing.expectEqual(PairMatchResult.valid_pair, db.isValidRelease("AttachCurrentThread", "DetachCurrentThread"));
+    try std.testing.expectEqual(PairMatchResult.mismatch, db.isValidRelease("AttachCurrentThread", "DeleteGlobalRef"));
+}
+
+test "JNI rules - LocalRef and arrays are GC-managed" {
+    var db = try FFIContractDB.init(std.testing.allocator);
+    defer db.deinit();
+
+    // LocalRefs are GC-managed → should NOT report as leak
+    try std.testing.expect(!db.shouldReportLeak("FindClass"));
+    try std.testing.expect(!db.shouldReportLeak("NewLocalRef"));
+    try std.testing.expect(!db.shouldReportLeak("CallObjectMethod"));
+
+    // New*Array functions are GC-managed (local refs)
+    try std.testing.expect(!db.shouldReportLeak("NewByteArray"));
+    try std.testing.expect(!db.shouldReportLeak("NewIntArray"));
+    try std.testing.expect(!db.shouldReportLeak("NewObjectArray"));
 }
 
 test "zlib rules - deflate/inflate streams" {

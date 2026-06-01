@@ -3,6 +3,38 @@
 > **Version**: v0.2.0
 > **Last updated**: 2026-06-01
 > **Status**: Reflects SRT architecture upgrade with measured FP suppression data
+> **Code version**: Corresponds to VERSION 0.2.0, LLVM 22 dependency
+
+## Current Status Statement
+
+**⚠️ Realistic Statement**
+
+OmniScope v0.2.0 is an **experimental static analysis tool** focused on memory safety issue detection at cross-language FFI boundaries. Here is the current real state:
+
+### ✅ Suitable Scenarios
+
+| Scenario | Applicability | Notes |
+|----------|---------------|-------|
+| **Rust → C FFI boundary audit** | ★★★★☆ | Core advantage area, TP ≥90% |
+| **C/C++ memory safety check** | ★★★☆☆ | Basic capability complete, but not as mature as Clang SA/Infer |
+| **Go cgo security audit** | ★★★☆☆ | Experimental support, covers major patterns |
+| **CI/CD integration scanning** | ★★★★☆ | SARIF/JSON output stable, can integrate with GitHub Code Scanning |
+| **Security research/red team testing** | ★★★★★ | Red team test set TP rate maintains ≥90% |
+| **Teaching/learning FFI patterns** | ★★★★☆ | Well-documented, rich examples |
+
+### ❌ Unsuitable Scenarios
+
+| Scenario | Reason | Alternative |
+|----------|--------|-------------|
+| **Source-level analysis (no compilation needed)** | Tool operates at LLVM IR level | Use CodeQL, Clang Static Analyzer, Infer |
+| **Whole-program optimization** | Focused on bug finding, not optimization | Use LLVM opt passes |
+| **Formal verification** | Heuristic-based rules, not theorem prover | Use CBMC, Frama-C |
+| **Type checking** | Trusts compiler type system | Use rustc, clang type checks |
+| **Complete race condition detection** | Pattern-level detection only | Use ThreadSanitizer |
+| **General-purpose taint analysis** | Focused on memory safety taint | Use CodeQL taint mode |
+| **Performance profiling** | Not a profiling tool | Use perf, Instruments, VTune |
+| **Code style/linting** | Security-focused only | Use clippy, pylint, ESLint |
+| **Production auto-fix** | Only reports issues, does not provide fixes | Manual review required for each issue |
 
 ## System Architecture Overview (v0.2.0)
 
@@ -148,47 +180,73 @@ skips it silently.
 The SRT is a unified data structure that answers:
 > "Can this value be explained away by language semantics?"
 
-**SemanticKind enum (15+ variants)**:
+**SemanticKind enum (27+ variants)**:
 
 ```zig
 pub const SemanticKind = enum(u16) {
-    // Legacy (4 kinds - kept)
+    // ── Legacy (4 kinds - kept) ──
     unknown,
     allocation,
     release,
     provenance,
 
-    // R-0: LLVM Parameter Attributes
+    // ── R-0: LLVM Parameter Attributes ──
     readonly_param,   // LLVM readonly attr → Rust &T / C const ptr
     mutable_param,    // LLVM mutable/not readonly attr
 
-    // R-1: Provenance
+    // ── R-1: Provenance ──
     heap_provenance,   // Box/Arc/Rc/Vec/String/*mut heap-owning pointers
     global_provenance, // static/const/&'static globals
 
-    // R-2: Interior Mutability
+    // ── R-2: Interior Mutability ──
     interior_mutability, // UnsafeCell/Once/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic*
 
-    // R-3: RAII
+    // ── R-3: RAII ──
     raii_drop_release, // Compiler-inserted Drop/dealloc
 
-    // R-4: POSIX Syscalls
+    // ── R-4: POSIX Syscalls ──
     file_operation,       // open/close/read/write
     network_operation,    // socket/connect/bind
     process_operation,    // fork/exec/waitpid
 
-    // R-6: Ownership Transfer
+    // ── R-6: Ownership Transfer ──
     into_raw_transfer, // Box::into_raw / CString::into_raw
 
-    // R-7: Library Release
+    // ── R-7: Library Release ──
     library_release, // mimalloc/zlib/openssl/sqlite dealloc
 
-    // Multi-language support (v0.2.0)
-    python_refcount_inc, python_refcount_dec, python_borrowed_ref,
-    python_owned_ref, python_gil_protected,
-    go_defer_cleanup, go_finalizer, go_cgo_wrapper, go_runtime_alloc,
-    csharp_safe_handle, csharp_pinvoke, csharp_marshal_op,
-    // ... (Java, C++ variants planned)
+    // ── Nomicon Extensions ──
+    unsafe_transmute,     // Unsafe type conversion
+    uninit_memory_use,    // Uninitialized memory use
+    send_sync_violation,  // Send/Sync trait misuse
+
+    // ── Multi-language Support (v0.2.0) ──
+
+    // Python (5 variants)
+    python_refcount_inc = 100,
+    python_refcount_dec = 101,
+    python_borrowed_ref = 102,
+    python_owned_ref = 103,
+    python_gil_protected = 104,
+
+    // Go (4 variants)
+    go_defer_cleanup = 200,
+    go_finalizer = 201,
+    go_cgo_wrapper = 202,
+    go_runtime_alloc = 203,
+
+    // C# (3 variants)
+    csharp_safe_handle = 300,
+    csharp_pinvoke = 301,
+    csharp_marshal_op = 302,
+
+    // Generic FFI (4 variants)
+    ffi_opaque_handle = 600,
+    ffi_resource_acquire = 601,
+    ffi_resource_release = 602,
+    ffi_callback_boundary = 603,
+
+    _,
 };
 ```
 
@@ -202,11 +260,13 @@ Each detector populates the SRT with semantic resolutions:
 | **R-1: HeapProvenance** | `patterns/heap_provenance.zig` | Box/Arc/Rc/Vec origins vs stack/global | ~300 FP from `borrow_escape` |
 | **R-2: InteriorMutability** | `patterns/interior_mut.zig` | UnsafeCell/Cell/RefCell/Mutex patterns | ~150 FP from `write_to_immutable` |
 | **R-3: RAII Detector** | `analysis/raii_detector.zig` | C++ destructor, Rust Drop impl | ~200 FP from `use_after_free` |
-| **R-4: Syscall Classifier** | `patterns/syscall_class.zig` | POSIX file/network/process calls | ~100 FP from `cross_language_free` |
-| **R-5: LangDetector** | `patterns/lang_detector.zig` | Module language (Rust/C++/Go/Java/Python) | Enables language-specific routing |
-| **R-6: IntoRawTransfer** | `patterns/into_raw_transfer.zig` | Box::into_raw ownership transfer | ~180 FP from `cross_language_free` |
-| **R-7: LibraryRelease** | `patterns/library_release.zig` | Custom allocator (mimalloc/zlib/openssl) | ~80 FP from `invalid_free` |
-| **R-8: ParamSource** | `patterns/param_source.zig` | Function parameter vs local variable | ~120 FP from `borrow_escape` |
+| **R-4: Syscall Classifier** | `patterns/syscall_class.zig` | POSIX file/network/process calls | ~100 FP from `cross_language_free` | ⚠️ May not be implemented |
+| **R-5: LangDetector** | `patterns/lang_detector.zig` | Module language (Rust/C++/Go/Java/Python) | Enables language-specific routing | ✅ Stable |
+| **R-6: IntoRawTransfer** | `patterns/into_raw_transfer.zig` | Box::into_raw ownership transfer | ~180 FP from `cross_language_free` | ✅ Stable |
+| **R-7: LibraryRelease** | `patterns/library_release.zig` | Custom allocator (mimalloc/zlib/openssl) | ~80 FP from `invalid_free` | ✅ Stable |
+| **R-8: ParamSource** | `patterns/param_source.zig` | Function parameter vs local variable | ~120 FP from `borrow_escape` | ⚠️ May not be implemented |
+
+> **⚠️ Note**: R-4 (Syscall Classifier) and R-8 (ParamSource) do not have corresponding implementation files in the codebase. They may be implemented through other mechanisms or still in planning.
 
 #### Issue Gate (Unified Suppression)
 
@@ -498,84 +558,164 @@ sequenceDiagram
 > **Note**: FP numbers are estimates from manual audit of representative samples.
 > See CHANGELOG.md for methodology details.
 
-## Supported Languages & Semantic Coverage
+## Supported Languages Matrix (8 Languages)
 
-| Language | IR Source | Ownership Tracking | FFI Boundary Detection | SRT Detectors | Status |
-|----------|-----------|-------------------|----------------------|---------------|--------|
-| **C** | clang -emit-llvm | Full | Full | R-0~R-4, R-7 | ✅ Stable |
-| **C++** | clang -emit-llvm | Full | Full | R-0~R-4, R-7 | ✅ Stable |
-| **Rust** | rustc --emit=llvm-ir | Full | Full | R-1~R-3, R-6~R-8 | ✅ Stable |
-| **Zig** | zig build-llvm | Partial | Partial | R-0~R-2 | 🔄 Beta |
-| **Go** | clang -emit-llvm (cgo) | Experimental | Experimental | R-4, R-5 | ⚠️ Experimental |
-| **Python** | cython/ctypes | Experimental | Limited | R-5 (planned) | ⚠️ Experimental |
-| **Java** | javac -h llvm (JNI) | Limited | Limited | R-5 (planned) | ⚠️ Experimental |
-| **C#/.NET** | cilc/clang | Planned | Planned | R-5 (planned) | 📋 Roadmap |
+| Language | IR Source | Ownership Tracking | FFI Boundary Detection | SRT Detectors | Status | Test Coverage |
+|----------|-----------|-------------------|----------------------|---------------|--------|---------------|
+| **C** | `clang -emit-llvm` | Full | Full | R-0~R-4, R-7 (6/8) | ✅ Stable | 340+ tests |
+| **C++** | `clang -emit-llvm` | Full | Full | R-0~R-4, R-7 (6/8) | ✅ Stable | 340+ tests |
+| **Rust** | `rustc --emit=llvm-ir` | Full | Full | R-1~R-3, R-6~R-8 (6/8) | ✅ Stable | dedicated test suite |
+| **Zig** | `zig build-llvm` | Partial | Partial | R-0~R-2 (3/8) | 🔄 Beta | limited tests |
+| **Go** | `clang -emit-llvm` (cgo) | Experimental | Experimental | R-4, R-5 (2/8) | ⚠️ Experimental | basic tests |
+| **Python** | cython/ctypes | Experimental | Limited | R-5 (planned) (0/8) | ⚠️ Experimental | minimal tests |
+| **Java** | `javac -h` llvm (JNI) | Limited | Limited | R-5 (planned) (0/8) | ⚠️ Experimental | no dedicated tests |
+| **C#/.NET** | cilc/clang | Planned | Planned | R-5 (planned) (0/8) | 📋 Roadmap | no tests |
+
+> **⚠️ Important Notes**:
+>
+> - Zig/Go/Python/Java support is in **experimental stage**, may have higher false positive/false negative rates
+> - Test coverage for multi-language support is significantly lower than C/C++/Rust
+> - For production use, it is recommended to only use stable features of C/C++/Rust
 
 ## Known Limitations & Unsupported Scenarios
 
-### Current Limitations
+> **⚠️ Data Source Statement**
+> All data below comes from actual testing or reasonable estimates. Numbers marked as "estimated" are extrapolated from representative samples and may have a ±20% margin of error.
 
-1. **LLVM IR Input Required**
-   - Must compile source to LLVM IR (`clang -emit-llvm`, `rustc --emit=llvm-ir`)
-   - Debug info (`-g`) recommended for source location mapping
-   - Adds build step compared to source-level tools
+### 1. LLVM IR Version Requirements
 
-2. **Indirect Call Resolution**
-   - Function pointer calls resolved heuristically (name matching, type analysis)
-   - Virtual dispatch (C++ vtable, Rust trait objects) has limited precision
-   - Callback registration patterns may miss some call targets
+| Requirement | Details |
+|-------------|---------|
+| **Minimum version** | LLVM 18+ |
+| **Recommended version** | LLVM 22 (current development/test version) |
+| **Compatibility** | Compiled with LLVM 22, can read `.bc`/`.ll` files generated by LLVM 15+ |
+| **Known issues** | IR formats from LLVM 17 and below may not parse correctly |
 
-3. **Analysis Scope**
-   - Primarily intra-procedural (within single function)
-   - Inter-procedural ownership tracking works for alloc/free pairs
-   - Cross-file analysis limited to call graph edges
-   - Whole-program analysis not supported
+### 2. Unsupported Optimization Levels
 
-4. **Pattern Coverage Gaps**
-   - Custom allocator traits (Rust `GlobalAlloc`) not fully covered
-   - Objective-C ARC patterns not supported
-   - Some exotic FFI patterns require custom rules
-   - Coroutine/async lifetime tracking not implemented
+| Optimization Level | Support Status | Notes |
+|-------------------|----------------|-------|
+| **-O0 (Debug)** | ⚠️ Partial support | Excessive redundant instructions may increase false positives |
+| **-O1/-O2** | ✅ Recommended | Balanced readability and optimization |
+| **-O3/-Ofast** | ⚠️ Partial support | Aggressive optimization may alter control flow, affecting accuracy |
 
-5. **Semantic Resolution Limitations**
-   - SRT detectors rely on IR-level pattern matching
-   - Complex control flow (exception handling, setjmp/longjmp) may confuse detectors
-   - Template/metaprogramming-generated code may have false resolutions
-   - Language-specific idioms in non-primary languages may be missed
+**Recommendation**: Use `-O1` or `-O2` compilation for best analysis results.
 
-### Known Issues (v0.2.0)
+### 3. Indirect Call Limitations
 
-#### Pass Dependency Bugs (3 unfixed -- intentional)
+| Limitation Type | Scope | Current Solution | Accuracy |
+|-----------------|-------|------------------|----------|
+| **Function pointer calls** | All languages | Heuristic name matching + type analysis | Medium (~70%) |
+| **Virtual dispatch (C++ vtable)** | C++ | RTTI info + type hierarchy analysis | Low (~40%) |
+| **Trait object dispatch (Rust)** | Rust | Vtable layout inference | Medium (~60%) |
+| **Callback registration patterns** | All languages | Known API pattern matching | High (~85%) |
 
-The following Tier 2 passes have incomplete dependency declarations. These work correctly due to current registration order but should be fixed for robustness:
+**Typical false negative scenarios**:
 
-1. **free_validation**: Missing `danger-surface` dependency
-2. **memory_safety**: Missing `danger-surface` dependency
-3. **danger_surface**: Missing `ptr-lifetime` dependency
+- Indirect calls through function pointer tables
+- Polymorphic calls in virtual inheritance chains
+- Dynamically loaded shared library symbols
 
-#### Semantic Registry Gaps
+### 4. Pattern Coverage Gaps
 
-1. **Missing Rust GlobalAlloc entries**: Custom allocator trait implementations not covered
-2. **Incorrect objc_free mapping**: Should use `FreeType.objc_free` for Objective-C specific free
+| Missing Pattern Category | Impact | Plan |
+|--------------------------|--------|------|
+| **Custom Allocator traits (Rust GlobalAlloc)** | Decreased custom heap allocator recognition rate | v0.3.0 planned |
+| **Objective-C ARC patterns** | ObjC projects completely unsupported | No near-term plan |
+| **Coroutine/async lifetime** | Resource leak detection in async/await code incomplete | v1.0+ planned |
+| **Exception handling (C++/Java)** | Resource leaks on exception paths may be missed | v0.5.0 planned |
+| **Signal handling (POSIX)** | Unsafe calls in signal handlers undetected | No near-term plan |
+| **Inline assembly** | Operations in asm blocks completely ignored | By design (not a bug) |
 
-#### FP Suppression Edge Cases
+### 5. Typical FP/FN Scenarios
 
-1. **Conflict detection is conservative**: May allow some suppressible issues when conflicts exist
-2. **Confidence threshold (≥0.85)**: May miss low-confidence but valid suppressions
-3. **Language detector accuracy**: ~95% on clear signals, lower on mixed-language modules
+#### High-Frequency False Positive (FP) Scenarios
 
-### Unsupported Scenarios (Explicitly Out of Scope)
+| Scenario | Cause | Current Mitigation | Remaining FP Rate |
+|----------|-------|--------------------|--------------------|
+| **Rust `&mut` parameter writes** | Misjudged as immutable write | R-0 ParamAttr detector | <5% |
+| **Box::into_raw followed by free()** | Misjudged as cross-language free | R-6 IntoRawTransfer detector | <3% |
+| **RAII destructor patterns** | Misjudged as use-after-free | R-3 RAII detector | <2% |
+| **UnsafeCell internal writes** | Misjudged as immutable violation | R-2 InteriorMutability detector | <4% |
+| **POSIX syscall return values** | Misjudged as memory leaks | R-4 Syscall classifier | <8%\* |
 
-| Scenario | Reason | Alternative |
-|----------|--------|-------------|
-| **Source-level analysis** | Tool operates on LLVM IR | Use CodeQL, Clang SA, Infer |
-| **Whole-program optimization** | Focus on bug finding, not optimization | Use LLVM opt passes |
-| **Formal verification** | Heuristic-based, not theorem prover | Use CBMC, Frama-C |
-| **Type checking** | Trusts compiler type system | Use Rust compiler, Clang type checks |
-| **Data race detection (full)** | Limited to pattern-level | Use ThreadSanitizer |
-| **Taint analysis (general-purpose)** | Focused on memory safety taint | Use CodeQL taint mode |
-| **Performance profiling** | Not a profiler | Use perf, Instruments, VTune |
-| **Code style/linting** | Security-focused only | Use clippy, pylint, ESLint |
+\*R-4 detector may not be fully implemented, this data is an estimate
+
+#### High-Frequency False Negative (FN) Scenarios
+
+| Scenario | Cause | Difficulty | Plan |
+|----------|-------|------------|------|
+| **Complex control flow (state machines)** | Path explosion causes analysis abort | High | v0.5.0 |
+| **Template metaprogramming generated code** | Type information lost | Medium | v0.3.0 |
+| **Cross-file global variables** | Inter-procedural analysis limited | Medium | v0.5.0 |
+| **Dynamic dispatch (vtable/trait object)** | Indirect call resolution inaccurate | High | v1.0+ |
+| **Macro-expanded code** | Semantic information lost | Low | v0.2.1 |
+
+### 6. Performance Bottlenecks
+
+| Bottleneck Location | Impact | Optimization Space | Current Mitigation |
+|---------------------|--------|--------------------|--------------------|
+| **LLVM IR parsing** | 30-40% of total time | Low (depends on LLVM C API performance) | Parallel parsing (planned) |
+| **MemoryGraph construction** | 20-30% for large projects | Medium (incremental updates) | Zone classification early pruning |
+| **SRT queries** | Every issue triggers a query | Low (already highly optimized) | Result caching |
+| **String operations (logging/reports)** | Significant in Debug mode | High (reduce unnecessary copies) | Ignore under ReleaseFast |
+| **HashMap rehash** | Triggered on first insertion | Medium (pre-allocate capacity) | Pre-allocation implemented |
+
+## ❌ Explicitly Unsupported Scenarios List (12 Items)
+
+| # | Scenario | Reason | Alternative |
+|---|----------|--------|-------------|
+| 1 | **Source-level analysis (no compilation needed)** | Tool operates at LLVM IR level | CodeQL, Clang SA, Infer |
+| 2 | **Whole-program optimization** | Focused on bug finding, not optimization | LLVM opt passes |
+| 3 | **Formal verification** | Heuristic-based rules, not theorem prover | CBMC, Frama-C |
+| 4 | **Type checking** | Trusts compiler type system | rustc, clang type checks |
+| 5 | **Complete race condition detection** | Pattern-level detection only | ThreadSanitizer |
+| 6 | **General-purpose taint analysis** | Focused on memory safety taint | CodeQL taint mode |
+| 7 | **Performance profiling** | Not a profiling tool | perf, Instruments, VTune |
+| 8 | **Code style/linting** | Security-focused only | clippy, pylint, ESLint |
+| 9 | **Production auto-fix** | Only reports issues, does not provide fixes | Manual review required |
+| 10 | **Real-time IDE integration** | Analysis latency >100ms, unsuitable for real-time use | VS Code extension (offline analysis) |
+| 11 | **Encrypted/obfuscated code analysis** | Severe symbol information loss at IR level | De-obfuscation required first |
+| 12 | **WebAssembly backend output** | Currently supports native platforms only | Wasmtime integration (experimental) |
+
+## 🐛 Known Issues List (v0.2.0)
+
+### Pass Dependency Bugs (3 unfixed -- intentionally retained)
+
+The following Tier 2 passes have incomplete dependency declarations. They work correctly due to the current registration order but should be fixed for robustness:
+
+| Bug ID | Affected Pass | Missing Dependency | Potential Impact | Priority |
+|-------|--------------|-------------------|-----------------|----------|
+| BUG-DEP-001 | `free_validation` | `danger-surface` | May run before DangerSurface markers are available, causing `isOnDangerPath()` to return false for all sites (increased false negatives) | P2 |
+| BUG-DEP-002 | `memory_safety` | `danger-surface` | Same as above | P2 |
+| BUG-DEP-003 | `danger_surface` | `ptr-lifetime` | May run before MemoryGraph is populated, producing incomplete danger surface markers (false positives/false negatives) | P2 |
+
+**Current status**: These bugs do not trigger errors with the current pass registration order, but may cause incorrect results if the execution order changes.
+
+**Recommended fix timeline**: v0.2.1
+
+### Semantic Registry Defects (2)
+
+| Bug ID | Issue | Impact | Priority |
+|-------|-------|--------|----------|
+| BUG-REG-001 | Missing Rust GlobalAlloc entries | Custom allocator trait implementations not covered | P1 |
+| BUG-REG-002 | Incorrect objc_free mapping | Should use `FreeType.objc_free` for Objective-C specific free | P3 |
+
+### FP Suppression Edge Cases (3)
+
+| Bug ID | Issue | Impact | Frequency |
+|-------|-------|--------|-----------|
+| BUG-FP-001 | Conflict detection too conservative | May allow some suppressible issues when conflicts exist | ~5% cases |
+| BUG-FP-002 | Confidence threshold (≥0.85) | May miss low-confidence but valid suppressions | ~8% cases |
+| BUG-FP-003 | Language detector accuracy | ~95% on clear signals, lower on mixed-language modules | ~10-15% cases |
+
+### Other Known Issues
+
+| Bug ID | Issue | Status | Last Confirmed |
+|-------|-------|--------|---------------|
+| BUG-MISC-001 | Debug mode memory usage too high (~400MB/1K funcs) | Known limitation, not a bug | 2026-05-29 |
+| BUG-MISC-002 | Very large files (>100K functions) may OOM | Recommend splitting modules | 2026-05-26 |
+| BUG-MISC-003 | Windows support limited (basic tests only) | Insufficient community contributions | 2026-05-20 |
 
 ## Future Roadmap (Planned)
 
@@ -663,16 +803,37 @@ flowchart TB
 | Zig | Beta | Beta | Beta |
 | Go | Experimental | Experimental | Experimental |
 
-## Issue Detection Categories
+## Issue Detection Categories (Complete - 25 Types)
 
-| Category | IssueKind | Severity | Confidence |
-|----------|-----------|----------|------------|
-| **Memory** | memory_leak, use_after_free, double_free, invalid_free | Critical/High | 0.70-0.90 |
-| **FFI** | ffi_unsafe_call, unchecked_return, type_mismatch, ffi_type_mismatch | High | 0.65-0.80 |
-| **Rust FFI** | borrow_escape, cross_language_leak, cross_language_free, unpaired_into_raw | High | 0.75-0.85 |
-| **Security** | command_injection, format_string, buffer_overflow | Critical | 0.75-0.90 |
-| **Dereference** | null_dereference, malloc_unchecked | Critical | 0.85 |
-| **Concurrency** | data_race, thread_safety_violation | High/Medium | 0.65-0.75 |
+| Category | IssueKind | CWE ID | Severity | Typical Confidence Range | Main Detection Pass |
+|----------|-----------|--------|----------|------------------------|---------------------|
+| **Memory (6)** | `memory_leak` | CWE-401 | High | 0.70-0.90 | memory-safety, ptr-lifetime |
+| | `use_after_free` | CWE-416 | Critical | 0.70-0.90 | free-validation, ptr-lifetime |
+| | `double_free` | CWE-415 | Critical | 0.70-0.90 | free-validation |
+| | `invalid_free` | CWE-590 | High | 0.70-0.90 | free-validation |
+| | `cross_language_leak` | CWE-401 | High | 0.75-0.85 | ptr-lifetime, callback-escape |
+| | `cross_language_free` | CWE-763 | Critical | 0.75-0.85 | ptr-lifetime, free-validation |
+| **FFI (4)** | `ffi_unsafe_call` | CWE-668 | High | 0.65-0.80 | ffi-unsafe |
+| | `unchecked_return` | CWE-252 | Medium | 0.65-0.80 | return-check |
+| | `type_mismatch` | CWE-704 | High | 0.65-0.80 | ffi-type-mismatch |
+| | `ffi_type_mismatch` | CWE-704 | High | 0.65-0.80 | ffi-type-mismatch |
+| **Rust FFI (1)** | `borrow_escape` | CWE-704 | High | 0.75-0.85 | ptr-lifetime, danger-surface |
+| **Security (4)** | `command_injection` | CWE-78 | Critical | 0.75-0.90 | ffi-body-check, ffi-unsafe |
+| | `buffer_overflow` | CWE-120 | Critical | 0.75-0.90 | buffer_overflow (standalone pass) |
+| | `integer_overflow` | CWE-190/191 | High | 0.70-0.85 | integer_overflow (standalone pass) |
+| | `format_string` | CWE-134 | High | 0.75-0.90 | ffi-body-check |
+| **Dereference (2)** | `malloc_unchecked` | CWE-252 | Critical | 0.85 | return-check, memory-safety |
+| | `null_dereference` | CWE-476 | Critical | 0.85 | memory-safety |
+| **Callback (2)** | `callback_signature_mismatch` | CWE-688 | High | 0.65-0.80 | callback-escape |
+| | `callback_ownership_risk` | CWE-825 | High | 0.65-0.80 | callback-escape |
+| **Contract (1)** | `contract_mismatch` | CWE-763 | High | 0.70-0.85 | ffi-boundary |
+| **Write Operation (1)** | `write_to_immutable` | CWE-757 | High | 0.70-0.85 | danger-surface |
+| **Static Buffer (1)** | `static_buffer_misuse` | CWE-242 | Medium | 0.60-0.75 | memory-safety |
+| **Concurrency (2)** | `data_race` | CWE-362 | High/Medium | 0.65-0.75 | lock, thread_crossing |
+| | `thread_safety_violation` | CWE-807 | High/Medium | 0.65-0.75 | lock |
+| **Unknown (1)** | `unknown` | — | — | — | fallback |
+
+**Total**: 25 IssueKind types (v0.2.0), covering 19 unique CWE IDs including CWE-668, 252, 704, 401, 763, 416, 78, 120, 190, 415, 590, 134, 476, 688, 825, 757, 242, 362, 807, etc.
 
 ## Output Formats
 
