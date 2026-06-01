@@ -408,13 +408,14 @@ test "Blacklist completeness: all critical vulnerabilities covered" {
     // Ensure all major CWE categories are represented in blacklist
     const dangerous_funcs = [_][]const u8{
         // CWE-78: OS Command Injection
-        "system", "popen", "execve",
+        "system", "popen",    "execve",
 
         // CWE-120: Buffer Copy without Checking Size
-        "strcpy", "strcat", "sprintf", "gets",
+        "strcpy", "strcat",   "sprintf",
+        "gets",
 
         // CWE-134: Format String
-        "vsprintf",
+          "vsprintf",
     };
 
     for (dangerous_funcs) |func| {

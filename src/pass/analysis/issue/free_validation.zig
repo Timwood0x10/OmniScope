@@ -476,7 +476,9 @@ pub const FreeValidationPass = struct {
             if (alloc_func_name) |alloc_func| {
                 log.debug("CROSS-LANG-CHECK: alloc={s}, free={s}", .{ alloc_func, callee_name });
                 if (try cross_lang_detector.detectCrossLanguageFree(alloc_func, callee_name, ctx.allocator)) |cross_issue| {
-                    defer ctx.allocator.free(cross_issue.message);
+                    // Ownership: cross_issue.message is transferred to Issue via addIssue
+                    // Issue.owned=true (initWithTrace) → deinit() will free message
+                    // Do NOT free here - would cause double-free with Issue.deinit()
 
                     // Report as CRITICAL cross-language mismatch
                     try reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);

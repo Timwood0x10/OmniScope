@@ -96,7 +96,7 @@ test "integration: Rust alloc -> C free (OK)" {
     // Expected: 0 issues when Rust allocates and C frees correctly
     const result = TestResult{
         .name = "Rust alloc -> C free",
-        .passed = true,  // TODO: Replace with actual pipeline execution result
+        .passed = true, // TODO: Replace with actual pipeline execution result
         .expected_issues = 0,
         .actual_issues = 0,
         .true_positives = 0,

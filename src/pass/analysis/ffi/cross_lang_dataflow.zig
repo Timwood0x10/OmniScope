@@ -6,6 +6,10 @@
 //!
 //! This module uses CrossLangEdge from pass_types.zig to identify FFI crossings
 //! and reports issues using IssueKind.cross_language_leak and IssueKind.double_free.
+//!
+//! T4 Enhancement: Integrated summary-based propagation for cross-function leak
+//! detection. Uses SummaryPropagation engine to query callee summaries and
+//! suppress false positives when ownership is legitimately transferred.
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
@@ -25,6 +29,11 @@ const allocator_shim = @import("../../../detectors/allocator_shim.zig");
 const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 const escape_analysis = @import("../../../analysis/escape_analysis.zig");
 const raii_detector = @import("../../../analysis/raii_detector.zig");
+
+// T4: Import summary propagation engine
+const summary_propagation = @import("../../../dataflow/summary_propagation.zig");
+const SummaryPropagation = summary_propagation.SummaryPropagation;
+const LeakAnalysisResult = summary_propagation.LeakAnalysisResult;
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -94,6 +103,20 @@ pub const CrossLangDataFlow = struct {
         };
         defer raii.deinit();
 
+        // T4: Initialize summary propagation engine for cross-function leak detection
+        var prop_engine: ?SummaryPropagation = SummaryPropagation.init(ctx.allocator) catch |err| {
+            log.warn("CrossLangDataFlow: Failed to init SummaryPropagation: {}", .{err});
+            // Continue without propagation engine (graceful degradation)
+            null;
+        };
+        defer if (prop_engine) |*engine| engine.deinit();
+
+        if (prop_engine) |*engine| {
+            engine.loadBuiltins() catch |err| {
+                log.warn("CrossLangDataFlow: Failed to load built-in summaries: {}", .{err});
+            };
+        }
+
         var stats = DataFlowStats{};
         var allocations = try std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 64);
         defer {
@@ -111,12 +134,22 @@ pub const CrossLangDataFlow = struct {
             return;
         }
 
-        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db, &esc_analysis, &raii);
+        // Pass propagation engine to unified analyzer
+        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db, &esc_analysis, &raii, if (prop_engine) |*e| e else null);
 
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag, &contract_db);
 
         // Print FFI Contract DB statistics
         contract_db.printStats();
+
+        // T4: Print propagation statistics
+        if (prop_engine) |*engine| {
+            const prop_stats = engine.getStats();
+            log.info("PROPAGATION: Analyzed {} calls, {} ownership transfers detected", .{
+                prop_stats.total_calls_analyzed,
+                prop_stats.ownership_transfers_detected,
+            });
+        }
 
         diag.info("CrossLangDataFlow: {} allocations tracked, {} cross-lang, {} orphans, {} double-frees", .{
             stats.alloc_count,
@@ -128,6 +161,10 @@ pub const CrossLangDataFlow = struct {
 
     /// Unified module analysis - single traversal collecting all data
     /// Replaces: trackAllocations + trackFrees + trackPointerPassing + detectOrphanPointers + detectUseAfterFreeAcrossBoundary
+    ///
+    /// T4 Enhanced: Now accepts optional SummaryPropagation engine for cross-function
+    /// leak detection. When provided, queries callee summaries to distinguish legitimate
+    /// ownership transfers from actual memory leaks.
     fn analyzeModuleUnified(
         ctx: *PassContext,
         allocations: *std.ArrayList(CrossLangAlloc),
@@ -137,6 +174,7 @@ pub const CrossLangDataFlow = struct {
         db: *ffi_contract_db.FFIContractDB,
         esc_analysis: *escape_analysis.EscapeAnalysis,
         raii: *raii_detector.RAIIDetector,
+        prop_engine: ?*SummaryPropagation, // T4: Optional propagation engine
     ) !void {
         const mod = ctx.module.?.raw;
         var func = c.LLVMGetFirstFunction(mod);
@@ -472,6 +510,36 @@ pub const CrossLangDataFlow = struct {
             if (raii.shouldSuppressLeakDueToRAII(&alloc)) {
                 log.debug("RAII-SUPPRESS: RAII-managed alloc 0x{x} (auto-cleanup)", .{alloc.ptr_val});
                 continue;
+            }
+
+            // ── T4: SUMMARY-BASED PROPAGATION CHECK ──
+            // Query the propagation engine to check if this allocation's ownership
+            // was transferred to a callee function. If so, suppress leak report.
+            if (prop_engine) |engine| {
+                // Check if any of the free functions we know about indicate ownership transfer
+                if (alloc.free_funcs.items.len > 0) {
+                    for (alloc.free_funcs.items) |free_func| {
+                        const prop_result = engine.analyzeCall(alloc.ptr_val, free_func, 0);
+                        switch (prop_result) {
+                            .ownership_transferred => {
+                                log.debug("PROPAGATION-SUPPRESS: Ownership of 0x{x} transferred to {s} in {s}", .{
+                                    alloc.ptr_val,
+                                    free_func,
+                                    alloc.alloc_func,
+                                });
+                                continue; // Skip to next allocation (not a leak)
+                            },
+                            .escaped => {
+                                log.debug("PROPAGATION-ESCAPE: Allocation 0x{x} may escape via {s}", .{
+                                    alloc.ptr_val,
+                                    free_func,
+                                });
+                                continue; // Escaped allocations are not leaks
+                            },
+                            else => {}, // Continue with other checks
+                        }
+                    }
+                }
             }
 
             // CONTRACT-DB: If we have free func info, check for pairing mismatch

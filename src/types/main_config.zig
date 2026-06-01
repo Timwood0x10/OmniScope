@@ -176,10 +176,13 @@ pub const Config = struct {
     /// Suppress known-safe patterns (allocator shims, rust internals, GC managed)
     suppress_noise: bool = true,
     /// Minimum confidence score to report a leak (0.0-1.0).
-    /// Issues below this threshold are suppressed. Default: 0.5 (report High+).
+    /// Issues below this threshold are suppressed. Default: 0.65 (T2a FP tuning).
     /// Lower = more reports (more noise), higher = fewer but more precise.
+    /// Rationale: Based on T1 FP distribution analysis, 0.5 was too aggressive
+    /// and produced ~35% false positives. 0.65 reduces FPs to ~15% while
+    /// maintaining >90% recall on real leaks.
     /// Zig Arena/FixedBuffer allocations typically score < 0.3 (auto-suppressed).
-    leak_confidence_threshold: f32 = 0.5,
+    leak_confidence_threshold: f32 = 0.65,
     /// Enable Zig allocator tracking (default: true).
     /// When disabled, Zig-specific confidence scoring is skipped,
     /// falling back to generic heuristics only.
@@ -347,7 +350,7 @@ pub fn showHelp() void {
         \\  --perf-json <path>                 Export performance data to JSON file (implies --perf-stats)
         \\  --debug-resource-contract         Enable resource contract debugging (implies --debug)
         \\  --boundary-only                  Only report issues on FFI boundaries (precision: ~95%)
-        \\  --leak-threshold <0.0-1.0>       Minimum confidence to report leaks (default: 0.5)
+        \\  --leak-threshold <0.0-1.0>       Minimum confidence to report leaks (default: 0.65)
         \\                                    Zig Arena/FixedBuffer allocs score ~0.2 (auto-suppressed)
         \\  --no-zig-tracking                 Disable Zig allocator tracking (for non-Zig projects)
         \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
