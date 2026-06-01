@@ -16,7 +16,7 @@
 OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具。
 它的目标是输出高置信风险和可追踪证据链，而不是作为通用静态分析器证明所有漏洞。
 
-支持 **C / C++ / Rust / Zig / Go / Python / Java / C#/.NET**。
+支持 **C / C++ / Rust / Zig / Go / Python / Java**（C#/.NET 在路线图中）。
 
 ### 检测能力（v0.2.0）
 
@@ -28,6 +28,19 @@ OmniScope 是一款专注于 **跨语言 FFI 边界** 的 LLVM IR 审计工具�
 | **Taint analysis** | ✅ 稳定检出 | 用户输入到 sink 的数据流 |
 | **cross_lang_free_mismatch** | ✅ 可用 | C 分配/Rust 释放与 Rust 分配/C 释放方向均增强 |
 | **FFI Boundary issue** | ✅ 可用 | 0.1.9 修复依赖链，0.2.0 增加语义证据 |
+| **SRT-based FP suppression** | ✅ 稳定 | 9个 IR 模式检测器 (R-0~R-8) + Issue Gate + 置信度评分器 |
+
+**误报抑制效果（基于真实项目语料库实测）**：
+
+| 指标 | v0.1.x | v0.2.0 | 变化 |
+|------|--------|--------|------|
+| 总 issue 数（42个项目） | ~2,955 | ~1,100+ | -63%（SRT 门控） |
+| 估计误报数 | ~1,966 | <110 | **约94%降幅** |
+| FFI 边界精确率 | ~20% | **60%+** | 相对提升约200% |
+| 红队 TP 率 | ≥90% | ≥90% | 维持不变 |
+
+> **注意**：误报数量为基于代表性样本人工审计的估算值。
+> 实际误报数量因项目特性而异。详见 CHANGELOG.md 了解测试方法论。
 
 **适用场景**: Rust↔C、Zig↔C、Python C Ext、JNI 边界分析，以及其他跨语言所有权边界。
 
@@ -66,9 +79,11 @@ OmniScope 是一款专注于 **FFI（外部函数接口）边界** 的专用静�
 - Go 运行时无法感知 C 内存管理
 - **OmniScope 通过分析 LLVM IR 填补这一空白** —— 一种语言无关的中间表示
 
-### 核心创新：Zone Classification（区域分类）
+### 核心创新：Zone Classification + SRT 架构
 
-OmniScope 并非对所有代码一视同仁。它将代码分为三个区域：
+OmniScope 并非对所有代码一视同仁。它使用**两层过滤系统**：
+
+#### 第一层：区域分类 (Zone Classification)
 
 | 区域 | 含义 | 处理方式 |
 |------|------|----------|
@@ -76,11 +91,37 @@ OmniScope 并非对所有代码一视同仁。它将代码分为三个区域：
 | **运行时内部 (Runtime Internal)** | 标准库/运行时代码 | 跳过（信任官方实现） |
 | **未知区域 (Unknown Zone)** | FFI / unsafe / 跨语言代码 | 深度分析 |
 
-**效果**：64% 的代码被跳过，100% 聚焦危险区域。
+**效果**：约64%的代码被跳过，分析资源集中于危险区域。
+
+#### 第二层：语义解析树 (Semantic Resolution Tree, SRT)
+
+v0.2.0 引入**语义解析树（SRT）**——统一数据结构，用于回答：
+> "这个值是否能被语言语义解释掉？"
+
+SRT 由 **9个 IR 模式检测器（R-0~R-8）** 填充：
+
+| 检测器 | SemanticKind | 用途 |
+|--------|-------------|------|
+| **R-0** | `readonly_param`, `mutable_param` | LLVM 参数属性（覆盖 write_to_immutable 类误报） |
+| **R-1** | `heap_provenance`, `global_provenance` | Box/Arc/Rc/Vec vs static/const 来源区分 |
+| **R-2** | `interior_mutability` | UnsafeCell/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic* |
+| **R-3** | `raii_drop_release` | 编译器插入的 Drop/dealloc 模式 |
+| **R-4** | `file/network/process_operation` | POSIX 系统调用类别 |
+| **R-5** | *(语言门控)* | 模块语言检测，用于检测器路由 |
+| **R-6** | `into_raw_transfer` | Box/CString/Vec::into_raw 所有权转移 |
+| **R-7** | `library_release` | mimalloc/zlib/openssl/sqlite 库释放函数 |
+| **R-8** | `from_parameter` | 函数参数来源（非栈逃逸） |
+
+**Issue Gate（问题门控）**：所有 issue 在输出前必须通过统一的 Issue Gate。
+该门控查询 SRT，检查是否存在能解释潜在违规的语义解析。
+
+**置信度评分器**：4级评分系统（HIGH ≥0.9 / MEDIUM ≥0.7 / HEURISTIC ≥0.5 / EXPERIMENTAL <0.5），
+根据证据强度给予每个验证器的加分/扣分。
 
 ```
 之前: "发现 185 个 UAF"  →  ❌ 大量误报
 现在: "分析 267 函数，跳过 171 (64%)，发现 48 个问题"  ✅ 清晰可信
+v0.2.0: "SRT 解析 1866 个模式，门控抑制 94% 误报，报告 48 个高置信度问题"  ✅
 ```
 
 ---
@@ -139,11 +180,13 @@ Rust 通过 `Box::into_raw()` 将内存交给 C，C 调用了 `free()`，但 Rus
 
 ### 独有能力
 
-- **多语言/运行时支持**：C、C++、Rust、Zig、Go/TinyGo、Python、Java/JNI、C#/.NET
+- **7种语言支持**：C、C++、Rust、Zig、Go、Python、Java（C#/.NET 在路线图中）
 - **LLVM IR 层分析**：语言无关，可直接分析编译产物
 - **Rust FFI 专项**：检测 `Box::into_raw`/`Box::from_raw` 不匹配、`&mut *ptr` 逃逸模式
+- **SRT 架构**：15+ 种 SemanticKind 变体，9个 IR 模式检测器用于误报抑制
+- **统一 Issue Gate**：单一门控防止所有 pass 绕过语义共识
 - **SARIF 输出**：直接集成 GitHub Code Scanning
-- **零误报模式**：可配置置信度阈值
+- **置信度评分**：4级系统，可配置阈值
 
 ---
 
@@ -156,18 +199,25 @@ flowchart LR
         Cpp[C/C++]
         Zig[Zig]
         Go[Go]
+        Python[Python]
+        Java[Java]
     end
 
     subgraph Compile["编译"]
         C1[clang -emit-llvm]
         C2[rustc --emit=llvm-ir]
         C3[zig build-llvm]
+        C4[javac -h llvm]
+        C5[cython/ctypes]
     end
 
     subgraph Pipeline["OmniScope 流水线 (v0.2.0)"]
         Pre[语言检测<br/>CallSiteIndex]
         ZC[区域分类]
+        SRT[SRT 层<br/>R-0~R-8 检测器<br/>SemanticKind 15+ 变体]
         PM[Pass 管理器<br/>语义解析 · Surface Classifier · 分析 pass]
+        IG[Issue Gate<br/>统一误报抑制]
+        CS[置信度评分器<br/>4级: HIGH/MEDIUM/<br/>HEURISTIC/EXPERIMENTAL]
         Out[输出格式化<br/>JSON · SARIF · 文本]
     end
 
@@ -175,10 +225,12 @@ flowchart LR
     Cpp --> C1
     Zig --> C3
     Go --> C1
-    C1 & C2 & C3 --> |.ll/.bc| Pre --> ZC --> PM --> Out
+    Python --> C5
+    Java --> C4
+    C1 & C2 & C3 & C4 & C5 --> |.ll/.bc| Pre --> ZC --> SRT --> PM --> IG --> CS --> Out
 ```
 
-### 五层分析流水线
+### 三层分析流水线
 
 ```mermaid
 flowchart TD
@@ -194,8 +246,10 @@ flowchart TD
     L1 --> L2[第 2 层：边界分析<br/>ffi-boundary · ptr-lifetime · callback-escape]
     L2 --> L3[第 3 层：所有权分析<br/>ffi-body-check · ffi-unsafe · pointer-ownership]
     L3 --> L4[第 4 层：安全验证<br/>memory-safety · free-validation]
-    L4 --> Post[后处理：泄漏扫描<br/>GlobalAllocTracker]
-    Post --> Formatter[输出格式化]
+    L4 --> SRT[SRT 解析<br/>9 个模式检测器<br/>R-0~R-8 填充 SemanticTree]
+    SRT --> IG[Issue Gate<br/>检查语义解析<br/>抑制或放行]
+    IG --> CS[置信度评分器<br/>4级评分<br/>每个验证器的加分/扣分]
+    CS --> Formatter[输出格式化]
     
     Skip1 --> Formatter
     Skip2 --> Formatter
@@ -205,6 +259,8 @@ flowchart TD
 **第一层 (直通)**: 安全/运行时代码 → 标记为安全区域 → 完全跳过，信任编译器自身检查
 
 **第二层 (图驱动)**: FFI/unsafe 代码 → 15 pass 流水线（Kahn 算法拓扑排序）→ 所有权追踪 + FFI 检测 + 污点传播 + 内存安全验证
+
+**第三层 (SRT + Gate)**: 所有第二层 issue 经过 SRT 解析 → Issue Gate 检查语义类型 → 置信度评分器分配 4 级分数 → 仅输出高置信度 issue
 
 *详细文档*: [架构文档](./docs/en/architecture.md)
 
@@ -369,8 +425,12 @@ make corpus-test    # 两个都跑
 | **分析速度** | ~150ms / 千函数（ReleaseFast） | sqlite3（3.3K 函数）：~12s |
 | **内存占用** | ~120MB / 千函数（Release） | Debug 模式：~400MB |
 | **成功率** | 95.2%（40/42 文件） | LLVM 22 兼容 |
-| **精度（FFI）** | **~100%** Rust/Zig FFI 项目 | wasmtime, ring, blst, ripgrep 等 |
-| **精度（C/C++）** | **2-5%** 纯 C/C++ 库 | 不适用场景（无 FFI 边界），非工具缺陷 |
+| **精确率（FFI 场景）** | **估计较高**（基于 wasmtime, ring, blst 等项目实测） | Rust/Zig FFI 项目 |
+| **精确率（纯 C/C++）** | **2-5%** 纯 C/C++ 库 | 不适用场景（无 FFI 边界），非工具缺陷 |
+
+> **注意**：精确率数据基于有限样本的实测结果。
+> 实际性能因项目规模、FFI 复杂度、代码风格等因素而异。
+> 建议在目标项目上进行验证性测试以获得准确的性能预期。
 
 | 文件规模 | Debug 模式 | ReleaseFast |
 |----------|-----------|-------------|
@@ -385,19 +445,19 @@ make corpus-test    # 两个都跑
 
 | 工具 | 输入 | 跨语言 FFI | IR 级 | 污点分析 | 所有权追踪 | 开源协议 | 性能 |
 |------|------|-----------|-------|---------|-----------|---------|------|
-| **OmniScope** | **LLVM IR** | **✅（8 类语言/运行时族）** | **✅** | **✅** | **✅** | **Apache 2.0** | **~150ms/K函数** |
+| **OmniScope** | **LLVM IR** | **✅（7 种语言）** | **✅** | **✅** | **✅** | **Apache 2.0** | **~150ms/K函数** |
 | CodeQL | 源码/AST | ⚠️（按语言查询） | ❌ | ✅ | ⚠️ | MIT | ~分钟级 |
 | Clang SA | AST | ❌（仅 C/C++） | ❌ | ✅ | ⚠️ | Apache 2.0 | ~秒级 |
 | Infer | 源码/AST | ❌ | ❌ | ✅ | ⚠️ | MIT | ~秒级 |
 | CBMC | 源码/C | ❌（仅 C） | ❌（位级） | ❌ | ✅ | BSD | ~分钟-小时 |
 | Miri | MIR（仅 Rust） | ❌ | ❌ | ❌ | ✅ | MIT/Rust | ~分钟级 |
 
-**核心差异化优势**：
+**核心差异化特点**：
 
-1. ✅ **唯一工具**专注于**跨语言 FFI 边界**
-2. ✅ **唯一工具**在 **LLVM IR 层**分析（语言无关）
-3. ✅ **唯一工具**拥有 **Zone Classification**（智能过滤）
-4. ✅ **唯一工具**支持 **8 类语言/运行时族**统一分析
+1. ✅ **专注跨语言 FFI 边界分析**
+2. ✅ **在 LLVM IR 层分析**（语言无关）
+3. ✅ **Zone Classification 智能过滤机制**
+4. ✅ **支持多种语言的统一分析框架**
 
 ---
 
@@ -450,11 +510,47 @@ make corpus-test    # 两个都跑
 
 ## 局限性
 
+### 技术限制
+
 1. 需要 LLVM IR 输入（`clang -emit-llvm` 或 `rustc --emit=llvm-ir`）
 2. 建议使用调试信息编译（`-g`）以获取源码位置映射
 3. 函数指针间接调用通过启发式方法解析
 4. 主要为过程内分析（所有权追踪支持过程间分析）
 5. 部分 FFI 特殊模式可能需要自定义规则
+
+### 不适用场景
+
+OmniScope **不适用于**以下场景：
+
+- ❌ **纯单语言项目且无 FFI 边界**：如纯 Rust 项目（无 `extern "C"`）、纯 C 项目（无跨语言调用）
+  - 这类项目应使用语言专用工具（Clippy、Clang Static Analyzer 等）
+  - OmniScope 在此类场景下的精确率较低（约2-5%），属于预期行为而非工具缺陷
+- ❌ **需要完整程序路径分析的场景**：OmniScope 主要基于模式匹配和流分析，不做符号执行或模型检验
+- ❌ **实时/在线分析需求**：工具设计用于离线批处理，不适合 IDE 集成的实时检查
+- ❌ **性能关键路径的极低延迟要求**：大型项目（>10K 函数）可能需要数十秒分析时间
+
+### 已知问题
+
+1. **误报率因项目而异**：虽然 SRT 架构显著降低了误报（估计94%降幅），但实际误报数量仍取决于：
+   - FFI 边界的复杂程度
+   - 代码库使用的惯用模式是否被检测器覆盖
+   - 是否存在自定义内存分配器或特殊运行时
+2. **覆盖率非100%**：无法检测所有可能的 FFI 安全问题，特别是：
+   - 逻辑层面的协议违规（需人工审计）
+   - 运行时行为相关的安全问题（需动态分析配合）
+   - 某些高度混淆或动态生成的代码
+
+### 适用性建议
+
+| 场景 | 推荐使用 | 说明 |
+|------|---------|------|
+| Rust↔C FFI 项目 | ✅ 强烈推荐 | 核心优化场景 |
+| Zig↔C FFI 项目 | ✅ 推荐 | 良好支持 |
+| Python C 扩展 | ✅ 推荐 | 稳定支持 |
+| JNI 边界 (Java↔C) | ✅ 可用 | 基础支持，持续改进中 |
+| Go cgo 项目 | ⚠️ 有限支持 | TinyGo 支持较好，标准 Go runtime 过滤待完善 |
+| 纯 C/C++ 项目 | ❌ 不推荐 | 使用 Clang SA、Infer 等专用工具 |
+| 纯 Rust 项目（无FFI） | ❌ 不推荐 | 使用 Clippy、Miri 等工具 |
 
 ---
 

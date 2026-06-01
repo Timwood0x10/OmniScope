@@ -1,8 +1,10 @@
 # 模块索引
 
 > "居然都能跑起来。大部分时候。"
-
-> 版本: v0.2.0 | 最后更新: 2026-05-29
+>
+> **⚠️ 实事求是声明**：以下文档反映 v0.2.0 的真实状态，包含已知的限制和不完整的功能。
+>
+> 版本: v0.2.0 | 最后更新: 2026-06-01 | 对应代码: VERSION 0.2.0, LLVM 22
 
 OmniScope 由若干个模块组成，每个模块各司其职。下面是完整的模块地图。
 
@@ -128,12 +130,47 @@ graph TD
 
 详见 [Pass 参考](./passes_zh.md)。
 
-#### `pass/filter/` -- 误报过滤器
+#### `pass/filter/` -- 误报过滤器与 Issue Gate
 
-| 文件 | 职责 |
-|------|------|
-| `fp_whitelist.zig` | 白名单过滤，减少已知安全模式的误报 |
-| `fp_precision_guard.zig` | 精度守卫，控制报告的精度阈值 |
+**v0.2.0 的核心创新：统一的 FP 抑制系统**
+
+| 文件 | 职责 | 状态 | 说明 |
+|------|------|------|------|
+| `fp_whitelist.zig` | 白名单过滤，减少已知安全模式的误报 | ✅ Stable | 基于规则的白名单 |
+| `fp_precision_guard.zig` | 精度守卫，控制报告的精度阈值 | ✅ Stable | 置信度阈值控制 |
+| **`issue_gate.zig`** | **Issue Gate（统一 FP 抑制）** | ✅ **Stable (New)** | **10 种 Verdict + allow，所有 issue 必须经过此 gate** |
+
+#### Issue Gate 详细说明
+
+**文件**: `src/pass/filter/issue_gate.zig`
+
+这是 v0.2.0 架构升级的核心组件。每个 issue 在发出前**必须**通过这个 gate：
+
+```zig
+pub fn checkIssue(srt: *const SemanticTree, value_ref: u64, kind: IssueKind) GateVerdict
+```
+
+**Gate Verdicts**（10 种抑制原因 + allow）：
+
+| Verdict | Detector | 被抑制的 Issue Kind | 抑制数量级 |
+|---------|----------|---------------------|-----------|
+| `suppress_mutable_param` | R-0 | write_to_immutable | ~1877 FP |
+| `suppress_interior_mut` | R-2 | write_to_immutable | ~150 FP |
+| `suppress_heap_origin` | R-1 | borrow_escape | ~300 FP |
+| `suppress_global_origin` | R-1 | borrow_escape | 部分 |
+| `suppress_raii` | R-3 | use_after_free | ~200 FP |
+| `suppress_non_memory_syscall` | R-4 | cross_language_free | ~100 FP* |
+| `suppress_ownership_transfer` | R-6 | cross_language_free | ~180 FP |
+| `suppress_library_release` | R-7 | invalid_free, cross_language_free | ~80 FP |
+| `suppress_parameter_source` | R-8 | borrow_escape | ~120 FP* |
+| `allow` | — | Issue 通过，正常报告 | — |
+
+*R-4 和 R-8 可能未完全实现
+
+**增强功能**：
+1. 冲突检测（保守策略）
+2. 置信度阈值（≥0.85）
+3. 二次验证机制
 
 #### `pass/instrumentation/` -- 插桩
 
@@ -170,21 +207,61 @@ graph TD
 
 **这个我们是用血泪换来的。** 每个函数的语义、噪声过滤、zone 分类——全在这里。
 
-| 文件 | 职责 |
-|------|------|
-| `memory_graph.zig` | 内存图（MemoryGraph）—— 指针分配、生命周期、跨边界流动 |
-| `memory_graph_types.zig` | MemoryGraph 类型定义 |
-| `memory_graph_fuzzy.zig` | MemoryGraph 模糊匹配 |
-| `memory_relations.zig` | 内存关系追踪（alloc/free 配对） |
-| `allocator_kb.zig` | 分配器知识库（400+ 函数的语义信息） |
-| `noise_filter.zig` | 噪声过滤器——区分真正的 bug 和无害的模式 |
-| `zone_classifier.zig` | Zone 分类器：safe / unsafe / ffi / unknown |
-| `language_detector.zig` | 语言检测器——判断函数是用什么语言写的 |
-| `path_filter.zig` | 路径过滤器 |
-| `behavior_filter.zig` | 行为过滤器 |
-| `output_param_classifier.zig` | 输出参数分类器 |
-| `intrinsic_filter.zig` | LLVM intrinsic 过滤器 |
-| `call_graph.zig` | 语义层的调用图 |
+| 文件 | 职责 | 状态 | 测试覆盖 |
+|------|------|------|----------|
+| `semantic_tree.zig` | SRT（语义解析树）核心数据结构，27+ SemanticKind 变体 | ✅ Stable | 340+ tests |
+| `memory_graph.zig` | 内存图（MemoryGraph）—— 指针分配、生命周期、跨边界流动 | ✅ Stable | dedicated tests |
+| `memory_graph_types.zig` | MemoryGraph 类型定义 | ✅ Stable | — |
+| `memory_graph_fuzzy.zig` | MemoryGraph 模糊匹配 | ✅ Stable | standalone test |
+| `memory_relations.zig` | 内存关系追踪（alloc/free 配对） | ✅ Stable | — |
+| `allocator_kb.zig` | 分配器知识库（311 函数的语义信息） | ✅ Stable | registry tests |
+| `noise_filter.zig` | 噪声过滤器——区分真正的 bug 和无害的模式 | ✅ Stable | 15+ tests |
+| `zone_classifier.zig` | Zone 分类器：safe / unsafe / ffi / unknown | ✅ Stable | integrated |
+| `language_detector.zig` | 语言检测器——判断函数是用什么语言写的 | ✅ Stable | lang_detector tests |
+| `path_filter.zig` | 路径过滤器 | ⚠️ Beta | limited tests |
+| `behavior_filter.zig` | 行为过滤器 | ⚠️ Beta | limited tests |
+| `output_param_classifier.zig` | 输出参数分类器 | ⚠️ Experimental | minimal tests |
+| `intrinsic_filter.zig` | LLVM intrinsic 过滤器 | ⚠️ Experimental | no dedicated tests |
+| `call_graph.zig` | 语义层的调用图 | ✅ Stable | — |
+
+#### SRT Pattern Detectors（v0.2.0 新增）
+
+**文件路径**: `src/semantics/patterns/`
+
+这些 detector 是 FP 抑制系统的核心：
+
+| Detector 文件 | R-ID | 检测能力 | FP 覆盖 | 状态 |
+|--------------|------|----------|---------|------|
+| `param_attr.zig` | R-0 | LLVM readonly/mutable 参数属性 | ~1877 FP (write_to_immutable) | ✅ Stable |
+| `heap_provenance.zig` | R-1 | Box/Arc/Rc/Vec 堆来源 vs 栈/全局 | ~300 FP (borrow_escape) | ✅ Stable |
+| `interior_mut.zig` | R-2 | UnsafeCell/Cell/RefCell/Mutex 内部可变性 | ~150 FP (write_to_immutable) | ✅ Stable |
+| `drop_glue.zig` | R-3 | 编译器插入的 Drop/dealloc（RAII） | ~200 FP (use_after_free) | ✅ Stable |
+| *(未找到)* | R-4 | POSIX syscall 分类（file/net/proc） | ~100 FP (cross_language_free) | ❓ 可能未实现 |
+| `lang_detector.zig` | R-5 | 模块语言检测（Rust/C++/Go/Java/Python） | 启用路由 | ✅ Stable |
+| `into_raw_transfer.zig` | R-6 | Box::into_raw 所有权转移 | ~180 FP (cross_language_free) | ✅ Stable |
+| `library_alloc_pairs.zig` | R-7 | 库级分配器释放（mimalloc/zlib/openssl） | ~80 FP (invalid_free) | ✅ Stable |
+| *(未找到)* | R-8 | 函数参数来源（非栈逃逸） | ~120 FP (borrow_escape) | ❓ 可能未实现 |
+
+> **⚠️ 注意**：R-4 和 R-8 在代码库中未找到对应的 `.zig` 实现文件。其功能可能通过其他机制实现或仍在规划中。
+
+#### 多语言语义扩展（v0.2.0）
+
+**文件路径**: `src/semantics/nomicon/`, `src/semantics/surface_classifier/`
+
+| 文件/目录 | 支持的语言 | 状态 | 说明 |
+|----------|-----------|------|------|
+| `nomicon/ch04_conversions.zig` | Rust | ✅ Stable | 不安全类型转换检测 |
+| `nomicon/ch05_uninitialized.zig` | Rust | ✅ Stable | MaybeUninit 使用检测 |
+| `nomicon/ch06_obrm.zig` | Rust | ✅ Stable | 所有权规则（OBRM） |
+| `nomicon/ch08_concurrency.zig` | Rust | ⚠️ Beta | Send/Sync 违规检测 |
+| `nomicon/ch09_vec_box.zig` | Rust | ✅ Stable | Vec/Box 语义 |
+| `nomicon/ch10_pin_box.zig` | Rust | ⚠️ Beta | Pin 语义 |
+| `posix_syscalls.zig` | C/POSIX | ✅ Stable | 系统调用分类 |
+| `zone_lang_cpp.zig` | C++ | ✅ Stable | C++ 特定 zone 规则 |
+| `zone_lang_go.zig` | Go | ⚠️ Experimental | Go 特定 zone 规则 |
+| `zone_lang_rust.zig` | Rust | ✅ Stable | Rust 特定 zone 规则 |
+| `zone_lang_zig.zig` | Zig | ⚠️ Beta | Zig 特定 zone 规则 |
+| `zone_lang_detectors.zig` | 多语言 | ✅ Stable | 语言特定 detector 注册 |
 
 ### `registry/` -- 语义注册表
 
@@ -327,10 +404,66 @@ fn isOnDangerPath(fn_or_ptr: ID) bool {
 
 ## 支持的语言
 
-| 语言 | IR 分析 | Ownership 追踪 | FFI 边界 |
-|------|---------|----------------|----------|
-| C | 完整 | 完整 | 完整 |
-| C++ | 完整 | 完整 | 完整 |
-| Rust | 完整 (LLVM IR) | 完整 | 完整 (Tier 2) |
-| Zig | Beta | Beta | Beta |
-| Go | 实验 | 实验 | 实验 |
+> **⚠️ 真实状态声明**：下表反映当前的实际支持程度，非营销承诺。
+
+| 语言 | IR 分析 | Ownership 追踪 | FFI 边界 | SRT Detectors 覆盖 | 整体状态 | 生产就绪 | 测试覆盖 |
+|------|---------|----------------|----------|-------------------|----------|----------|----------|
+| **C** | ✅ 完整 | ✅ 完整 | ✅ 完整 | R-0~R-4, R-7 (6/8) | ✅ Stable | **✅ 是** | 340+ tests |
+| **C++** | ✅ 完整 | ✅ 完整 | ✅ 完整 | R-0~R-4, R-7 (6/8) | ✅ Stable | **✅ 是** | 340+ tests |
+| **Rust** | ✅ 完整 (LLVM IR) | ✅ 完整 | ✅ 完整 (Tier 2) | R-1~R-3, R-6~R-8 (6/8) | ✅ Stable | **✅ 是** | dedicated suite |
+| **Zig** | 🔄 部分 (Beta) | 🔄 Beta | 🔄 Beta | R-0~R-2 (3/8) | 🔄 Beta | ⚠️ 仅实验 | limited tests |
+| **Go** | ⚠️ 实验 (cgo) | ⚠️ 实验 | ⚠️ 实验 | R-4, R-5 (2/8) | ⚠️ Experimental | ❌ 否 | basic tests |
+| **Python** | ⚠️ 实验 (cython) | ⚠️ 有限 | ⚠️ 有限 | 规划中 (0/8) | ⚠️ Experimental | ❌ 否 | minimal tests |
+| **Java** | ⚠️ 实验 (JNI) | ⚠️ 有限 | ⚠️ 有限 | 规划中 (0/8) | ⚠️ Experimental | ❌ 否 | no dedicated tests |
+| **C#/.NET** | 📋 规划 | 📋 规划 | 📋 规划 | 规划中 (0/8) | 📋 Roadmap | ❌ 否 | no tests |
+
+### 各语言的具体限制
+
+#### C / C++（✅ Stable）
+- **优势**：最成熟的语言支持，所有核心功能可用
+- **已知限制**：
+  - C++ 模板元编程生成的代码可能丢失类型信息
+  - 异常路径上的资源泄漏检测不完整
+  - 虚函数分发精度有限 (~40%)
+- **推荐优化级别**：`-O1` 或 `-O2`
+
+#### Rust（✅ Stable）
+- **优势**：FFI 边界检测的核心目标，TP ≥90%
+- **已知限制**：
+  - Trait 对象分发精度中等 (~60%)
+  - 自定义 `GlobalAlloc` trait 未完全支持（BUG-REG-001）
+  - async/await 代码中的生命周期跟踪不完整
+- **推荐编译选项**：`rustc --emit=llvm-ir -O`
+
+#### Zig（🔄 Beta）
+- **状态**：基本功能可用，但测试覆盖有限
+- **已知限制**：
+  - comptime 代码可能产生误报
+  - @cImport 生成的绑定处理不完整
+  - 标准库 allocator 模式识别率较低
+- **不建议**：在生产环境使用
+
+#### Go（⚠️ Experimental）
+- **状态**：仅限 cgo 场景的基本检测
+- **已知限制**：
+  - 仅支持通过 `clang -emit-llvm` 编译的 cgo 代码
+  - Go runtime 内部函数误报率高
+  - goroutine 生命周期未跟踪
+  - garbage collector 交互未建模
+- **仅适用于**：研究/实验目的
+
+#### Python / Java / C#（⚠️ Experimental / 📋 Roadmap）
+- **状态**：极早期或规划阶段
+- **已知限制**：
+  - Python: 仅支持 C API (ctypes/cython)，纯 Python 代码不支持
+  - Java: 仅支持 JNI 边界，纯 Java 代码不支持
+  - C#: 完全不支持，仅在路线图中
+- **不建议**：在任何严肃场景中使用
+
+### 语言支持路线图
+
+| 时间框架 | 计划 |
+|----------|------|
+| **v0.2.1~v0.3.0** | 改进 Zig 支持（comptime 处理）；扩展 Go cgo 覆盖 |
+| **v0.3.0~v0.5.0** | Python CFFI 语义解析；Java JNI LocalRef/GlobalRef 跟踪 |
+| **v1.0.0+** | C#/.NET P/Invoke 支持；社区贡献的多语言插件系统 |

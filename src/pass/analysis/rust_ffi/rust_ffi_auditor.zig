@@ -41,6 +41,7 @@ const PassKind = @import("../../pass.zig").PassKind;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
 const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
+const IssueClassification = @import("../../../diag/issue.zig").IssueClassification;
 const Confidence = @import("../../../diag/issue.zig").Confidence;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const Location = @import("../../../diag/issue.zig").Location;
@@ -98,9 +99,15 @@ pub const RustFfiAuditor = struct {
 
         // audit() returns toOwnedSlice — must free it to avoid leak
         const findings = try auditor.audit(mod, ctx, diag);
-        ctx.allocator.free(findings);
+        defer ctx.allocator.free(findings);
 
-        diag.info("FFIAuditor: analyzed {d} funcs, {d} findings ({d} stack escapes)", .{ auditor.stats.total_functions_analyzed, auditor.findings.items.len, auditor.stats.stack_escapes });
+        // Convert findings to Issues and add to context (bridge to main diagnostic flow)
+        for (findings) |finding| {
+            var issue = try findingToIssue(ctx.allocator, finding);
+            try ctx.addIssue(&issue);
+        }
+
+        diag.info("FFIAuditor: analyzed {d} funcs, {d} findings converted to Issues ({d} stack escapes)", .{ auditor.stats.total_functions_analyzed, findings.len, auditor.stats.stack_escapes });
     }
 
     /// Run full audit on an LLVM module
@@ -220,6 +227,66 @@ pub const RustFfiAuditor = struct {
         return tracking.traceValueUsage(val, func);
     }
 };
+
+// ============================================================================
+// RustFfiFinding → Issue Conversion Bridge
+// ============================================================================
+/// Map RustFfiIssueType to unified IssueKind for main diagnostic pipeline integration.
+/// This bridges the independent Rust FFI type system to the canonical Issue type.
+fn mapToIssueKind(ffi_type: RustFfiIssueType) IssueKind {
+    return switch (ffi_type) {
+        .unpaired_into_raw => .memory_leak,
+        .unpaired_cstring_into_raw => .cross_language_leak,
+        .as_ptr_borrow_escape => .borrow_escape,
+        .cross_lang_alloc_mismatch => .cross_language_free,
+        .unsafe_ffi_call => .ffi_unsafe_call,
+        .extern_c_type_mismatch => .ffi_type_mismatch,
+        .stack_address_escape => .buffer_overflow,
+    };
+}
+
+/// Convert a single RustFfiFinding to an Issue for integration with the main diagnostic pipeline.
+///
+/// ## Memory Ownership
+/// - Allocates message and trace on the heap (caller/ctx.addIssue takes ownership)
+/// - Sets `owned=true` so Issue.deinit() will free the allocated memory
+/// - finding.func_name and finding.reason are borrowed (not freed)
+///
+/// ## Error Handling
+/// - Returns error.OutOfMemory if allocation fails
+/// - Uses errdefer to clean up partially allocated memory on error
+pub fn findingToIssue(allocator: std.mem.Allocator, finding: RustFfiFinding) !Issue {
+    // Map issue type to canonical IssueKind
+    const issue_kind = mapToIssueKind(finding.issue_type);
+
+    // Format message with [Rust FFI] prefix (must be heap-allocated for ownership)
+    const msg = try std.fmt.allocPrint(
+        allocator,
+        "[Rust FFI] {s}: {s}",
+        .{ @tagName(finding.issue_type), finding.reason },
+    );
+    errdefer allocator.free(msg);
+
+    // Create trace entry with the reason as evidence
+    const trace = try allocator.alloc(TraceEntry, 1);
+    errdefer allocator.free(trace);
+    trace[0] = TraceEntry.init(finding.reason);
+
+    // Build issue with full context
+    var issue = Issue.initWithTrace(
+        issue_kind,
+        msg,
+        finding.location,
+        finding.severity,
+        finding.confidence,
+        trace,
+    );
+
+    // Mark as FFI boundary issue (90% core priority per project rules)
+    issue.classification = .ffi_boundary;
+
+    return issue;
+}
 
 // ============================================================================
 // Detection Helpers — Extracted to rust_ffi_helpers.zig
@@ -391,4 +458,137 @@ test "StringHashMap pairing stability - mangled Rust names" {
         defer testing.allocator.free(dup);
         try testing.expect(set.contains(dup));
     }
+}
+
+// ============================================================================
+// Tests for RustFfiFinding → Issue Conversion Bridge
+// ============================================================================
+
+test "mapToIssueKind - all mappings" {
+    // Test each RustFfiIssueType maps to the correct IssueKind
+    try std.testing.expectEqual(IssueKind.memory_leak, mapToIssueKind(.unpaired_into_raw));
+    try std.testing.expectEqual(IssueKind.cross_language_leak, mapToIssueKind(.unpaired_cstring_into_raw));
+    try std.testing.expectEqual(IssueKind.borrow_escape, mapToIssueKind(.as_ptr_borrow_escape));
+    try std.testing.expectEqual(IssueKind.cross_language_free, mapToIssueKind(.cross_lang_alloc_mismatch));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, mapToIssueKind(.unsafe_ffi_call));
+    try std.testing.expectEqual(IssueKind.ffi_type_mismatch, mapToIssueKind(.extern_c_type_mismatch));
+    try std.testing.expectEqual(IssueKind.buffer_overflow, mapToIssueKind(.stack_address_escape));
+}
+
+test "findingToIssue - basic conversion" {
+    const allocator = std.testing.allocator;
+
+    const finding = RustFfiFinding{
+        .func_name = "test_func",
+        .issue_type = .unpaired_into_raw,
+        .severity = .high,
+        .confidence = 0.85,
+        .reason = "into_raw() called but no matching from_raw() in module",
+        .location = Location.init("test_func"),
+    };
+
+    var issue = try findingToIssue(allocator, finding);
+    defer issue.deinit(allocator);
+
+    // Verify kind mapping
+    try std.testing.expectEqual(IssueKind.memory_leak, issue.kind);
+
+    // Verify message format (should have [Rust FFI] prefix)
+    try std.testing.expectEqualStrings(
+        "[Rust FFI] unpaired_into_raw: into_raw() called but no matching from_raw() in module",
+        issue.message,
+    );
+
+    // Verify severity and confidence preserved
+    try std.testing.expectEqual(Severity.high, issue.severity);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.85), issue.confidence, 0.001);
+
+    // Verify memory ownership
+    try std.testing.expect(issue.owned);
+    try std.testing.expect(issue.hasTrace());
+    try std.testing.expectEqual(@as(usize, 1), issue.trace.?.len);
+
+    // Verify classification as FFI boundary issue
+    try std.testing.expectEqual(IssueClassification.ffi_boundary, issue.classification);
+}
+
+test "findingToIssue - all issue types" {
+    const allocator = std.testing.allocator;
+
+    const TestCase = struct {
+        ffi_type: RustFfiIssueType,
+        expected_kind: IssueKind,
+        reason: []const u8,
+    };
+
+    const test_cases = [_]TestCase{
+        .{ .ffi_type = .unpaired_into_raw, .expected_kind = .memory_leak, .reason = "missing from_raw" },
+        .{ .ffi_type = .unpaired_cstring_into_raw, .expected_kind = .cross_language_leak, .reason = "CString leak" },
+        .{ .ffi_type = .as_ptr_borrow_escape, .expected_kind = .borrow_escape, .reason = "dangling borrow" },
+        .{ .ffi_type = .cross_lang_alloc_mismatch, .expected_kind = .cross_language_free, .reason = "alloc/free mismatch" },
+        .{ .ffi_type = .unsafe_ffi_call, .expected_kind = .ffi_unsafe_call, .reason = "unsafe extern call" },
+        .{ .ffi_type = .extern_c_type_mismatch, .expected_kind = .ffi_type_mismatch, .reason = "type size mismatch" },
+        .{ .ffi_type = .stack_address_escape, .expected_kind = .buffer_overflow, .reason = "stack addr escape" },
+    };
+
+    for (test_cases) |tc| {
+        const finding = RustFfiFinding{
+            .func_name = "test_func",
+            .issue_type = tc.ffi_type,
+            .severity = .medium,
+            .confidence = 0.7,
+            .reason = tc.reason,
+            .location = Location.init("test_func"),
+        };
+
+        var issue = try findingToIssue(allocator, finding);
+        defer issue.deinit(allocator);
+
+        try std.testing.expectEqual(tc.expected_kind, issue.kind);
+    }
+}
+
+test "findingToIssue - memory ownership and cleanup" {
+    const allocator = std.testing.allocator;
+
+    const finding = RustFfiFinding{
+        .func_name = "test_func",
+        .issue_type = .unsafe_ffi_call,
+        .severity = .critical,
+        .confidence = 0.95,
+        .reason = "calling unsafe extern function",
+        .location = Location.init("test_func"),
+    };
+
+    // Create and destroy multiple times to verify no double-free or leaks
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        var issue = try findingToIssue(allocator, finding);
+        issue.deinit(allocator);
+    }
+}
+
+test "findingToIssue - trace entry content" {
+    const allocator = std.testing.allocator;
+
+    const finding = RustFfiFinding{
+        .func_name = "test_func",
+        .issue_type = .as_ptr_borrow_escape,
+        .severity = .high,
+        .confidence = 0.9,
+        .reason = "as_ptr result passed to FFI boundary may dangle",
+        .location = Location.init("test_func"),
+    };
+
+    var issue = try findingToIssue(allocator, finding);
+    defer issue.deinit(allocator);
+
+    // Verify trace contains the reason
+    try std.testing.expect(issue.hasTrace());
+    const trace = issue.trace.?;
+    try std.testing.expectEqual(@as(usize, 1), trace.len);
+    try std.testing.expectEqualStrings(
+        "as_ptr result passed to FFI boundary may dangle",
+        trace[0].description,
+    );
 }
