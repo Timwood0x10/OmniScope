@@ -49,97 +49,97 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []
     var struct_field_ptrs: [MaxFieldPtrs]c.LLVMValueRef = undefined;
 
     for (insts) |inst| {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMLoad) continue;
+        if (c.LLVMGetInstructionOpcode(inst) != c.LLVMLoad) continue;
 
-            const load_src = c.LLVMGetOperand(inst, 0);
-            if (@intFromPtr(load_src) == 0) continue;
-            if (c.LLVMGetInstructionOpcode(load_src) != c.LLVMGetElementPtr) continue;
+        const load_src = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(load_src) == 0) continue;
+        if (c.LLVMGetInstructionOpcode(load_src) != c.LLVMGetElementPtr) continue;
 
-            const gep_base = c.LLVMGetOperand(load_src, 0);
-            if (@intFromPtr(gep_base) == 0) continue;
+        const gep_base = c.LLVMGetOperand(load_src, 0);
+        if (@intFromPtr(gep_base) == 0) continue;
 
-            const num_gep_operands = c.LLVMGetNumOperands(load_src);
-            const is_struct_gep = num_gep_operands >= 3;
+        const num_gep_operands = c.LLVMGetNumOperands(load_src);
+        const is_struct_gep = num_gep_operands >= 3;
 
-            const has_dbg_metadata = hasStructDebugMetadata(load_src);
+        const has_dbg_metadata = hasStructDebugMetadata(load_src);
 
-            if (!is_struct_gep and !has_dbg_metadata) continue;
+        if (!is_struct_gep and !has_dbg_metadata) continue;
 
-            if (field_ptr_count < MaxFieldPtrs) {
-                struct_field_ptrs[field_ptr_count] = inst;
-                field_ptr_count += 1;
-            }
+        if (field_ptr_count < MaxFieldPtrs) {
+            struct_field_ptrs[field_ptr_count] = inst;
+            field_ptr_count += 1;
+        }
     }
 
     if (field_ptr_count == 0) return;
 
     // Pass 2: Check each store instruction for writes through struct field pointers
     for (insts) |inst| {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
+        if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
 
-            const dest_ptr = c.LLVMGetOperand(inst, 1);
-            if (@intFromPtr(dest_ptr) == 0) continue;
+        const dest_ptr = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(dest_ptr) == 0) continue;
 
-            for (struct_field_ptrs[0..field_ptr_count]) |field_load| {
-                if (ptrTracesTo(dest_ptr, field_load)) {
-                    // SRT query: trace through def-use chain to check interior mutability
-                    // If the value is derived from UnsafeCell, this is legal interior mutability
-                    if (ctx.semantic_resolution) |resolution_engine| {
-                        const srt = resolution_engine.getSemanticTree();
-                        if (srt.*.traceToInteriorMutability(dest_ptr, 8)) {
-                            // Interior mutability via UnsafeCell — legal write
-                            continue;
-                        }
-
-                        // R-0: Check if dest traces back to a mutable_param (&mut T).
-                        // In LLVM IR: Rust's &mut T → NO readonly attribute.
-                        // Writing to a pointer derived from &mut T is legal.
-                        // Only writing to readonly_param (&T) is a true immutable violation.
-                        if (isFromMutableParamSRT(dest_ptr, func, srt)) {
-                            // Base is from &mut T — legal write, skip
-                            continue;
-                        }
-                    }
-
-                    // Check if the base pointer is from a readonly parameter.
-                    // In Rust: &T → readonly, &mut T → NOT readonly.
-                    // If the base is NOT from a readonly param, the write is legal (&mut T).
-                    const gep_base = c.LLVMGetOperand(field_load, 0);
-                    if (@intFromPtr(gep_base) != 0 and !isFromReadonlyParam(gep_base, func)) {
-                        // Base is from &mut T — legal write, skip
+        for (struct_field_ptrs[0..field_ptr_count]) |field_load| {
+            if (ptrTracesTo(dest_ptr, field_load)) {
+                // SRT query: trace through def-use chain to check interior mutability
+                // If the value is derived from UnsafeCell, this is legal interior mutability
+                if (ctx.semantic_resolution) |resolution_engine| {
+                    const srt = resolution_engine.getSemanticTree();
+                    if (srt.*.traceToInteriorMutability(dest_ptr, 8)) {
+                        // Interior mutability via UnsafeCell — legal write
                         continue;
                     }
 
-                    const struct_name = getStructNameForValue(field_load) orelse "unknown_struct";
-
-                    const trace = try auditor.allocator.alloc(TraceEntry, 4);
-                    errdefer auditor.allocator.free(trace);
-                    trace[0] = TraceEntry.init("Write through pointer loaded from struct field");
-                    trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(auditor.allocator, "Struct: {s} — field pointer used as write destination", .{struct_name}));
-                    trace[2] = TraceEntry.init("Writing to memory via struct field pointer may violate immutability");
-                    trace[3] = TraceEntry.init("Original data owner may assume field content is read-only");
-
-                    const message = try std.fmt.allocPrint(
-                        auditor.allocator,
-                        "Write to immutable memory via struct '{s}' field pointer — potential violation of immutability contract (CWE-757)",
-                        .{struct_name},
-                    );
-
-                    var issue = Issue.initWithTrace(
-                        .write_to_immutable,
-                        message,
-                        Location.init(func_name),
-                        .high,
-                        0.85,
-                        trace,
-                    );
-                    errdefer issue.deinit(auditor.allocator);
-
-                    try ctx.addIssue(&issue);
-                    diag.warn("[OMI-HIGH] [WRITE-IMMUTABLE] struct '{s}' in {s}", .{ struct_name, func_name });
-                    break;
+                    // R-0: Check if dest traces back to a mutable_param (&mut T).
+                    // In LLVM IR: Rust's &mut T → NO readonly attribute.
+                    // Writing to a pointer derived from &mut T is legal.
+                    // Only writing to readonly_param (&T) is a true immutable violation.
+                    if (isFromMutableParamSRT(dest_ptr, func, srt)) {
+                        // Base is from &mut T — legal write, skip
+                        continue;
+                    }
                 }
+
+                // Check if the base pointer is from a readonly parameter.
+                // In Rust: &T → readonly, &mut T → NOT readonly.
+                // If the base is NOT from a readonly param, the write is legal (&mut T).
+                const gep_base = c.LLVMGetOperand(field_load, 0);
+                if (@intFromPtr(gep_base) != 0 and !isFromReadonlyParam(gep_base, func)) {
+                    // Base is from &mut T — legal write, skip
+                    continue;
+                }
+
+                const struct_name = getStructNameForValue(field_load) orelse "unknown_struct";
+
+                const trace = try auditor.allocator.alloc(TraceEntry, 4);
+                errdefer auditor.allocator.free(trace);
+                trace[0] = TraceEntry.init("Write through pointer loaded from struct field");
+                trace[1] = TraceEntry.initOwned(try std.fmt.allocPrint(auditor.allocator, "Struct: {s} — field pointer used as write destination", .{struct_name}));
+                trace[2] = TraceEntry.init("Writing to memory via struct field pointer may violate immutability");
+                trace[3] = TraceEntry.init("Original data owner may assume field content is read-only");
+
+                const message = try std.fmt.allocPrint(
+                    auditor.allocator,
+                    "Write to immutable memory via struct '{s}' field pointer — potential violation of immutability contract (CWE-757)",
+                    .{struct_name},
+                );
+
+                var issue = Issue.initWithTrace(
+                    .write_to_immutable,
+                    message,
+                    Location.init(func_name),
+                    .high,
+                    0.85,
+                    trace,
+                );
+                errdefer issue.deinit(auditor.allocator);
+
+                try ctx.addIssue(&issue);
+                diag.warn("[OMI-HIGH] [WRITE-IMMUTABLE] struct '{s}' in {s}", .{ struct_name, func_name });
+                break;
             }
+        }
     }
 }
 
@@ -464,38 +464,38 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
     } = undefined;
 
     for (insts) |inst| {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            const called = c.LLVMGetCalledValue(inst);
-            if (@intFromPtr(called) == 0) continue;
-            if (c.LLVMIsAFunction(called) != null) continue;
+        const called = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called) == 0) continue;
+        if (c.LLVMIsAFunction(called) != null) continue;
 
-            const callee_name_ptr = c.LLVMGetValueName(called);
-            if (@intFromPtr(callee_name_ptr) == 0) continue;
-            const callee_name = std.mem.span(callee_name_ptr);
+        const callee_name_ptr = c.LLVMGetValueName(called);
+        if (@intFromPtr(callee_name_ptr) == 0) continue;
+        const callee_name = std.mem.span(callee_name_ptr);
 
-            if (!isDeallocator(callee_name)) continue;
+        if (!isDeallocator(callee_name)) continue;
 
-            const inst_ref = @intFromPtr(inst);
-            if (ctx.semantic_resolution) |resolution_engine| {
-                const srt = resolution_engine.getSemanticTree();
-                if (srt.hasKind(inst_ref, .raii_drop_release) != null) continue;
-                if (srt.hasKind(inst_ref, .file_operation) != null) continue;
-                if (srt.hasKind(inst_ref, .network_operation) != null) continue;
-            }
+        const inst_ref = @intFromPtr(inst);
+        if (ctx.semantic_resolution) |resolution_engine| {
+            const srt = resolution_engine.getSemanticTree();
+            if (srt.hasKind(inst_ref, .raii_drop_release) != null) continue;
+            if (srt.hasKind(inst_ref, .file_operation) != null) continue;
+            if (srt.hasKind(inst_ref, .network_operation) != null) continue;
+        }
 
-            const freed_ptr = c.LLVMGetOperand(inst, 0);
-            if (@intFromPtr(freed_ptr) == 0) continue;
+        const freed_ptr = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(freed_ptr) == 0) continue;
 
-            if (freed_count < MaxFreed) {
-                freed_ptrs[freed_count] = .{
-                    .ptr_val = freed_ptr,
-                    .free_inst = inst,
-                    .free_func_name = callee_name,
-                };
-                freed_count += 1;
-            }
+        if (freed_count < MaxFreed) {
+            freed_ptrs[freed_count] = .{
+                .ptr_val = freed_ptr,
+                .free_inst = inst,
+                .free_func_name = callee_name,
+            };
+            freed_count += 1;
+        }
     }
 
     if (freed_count == 0) return;
@@ -511,82 +511,82 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
     } = undefined;
 
     for (insts) |inst| {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMStore) continue;
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+        if (opcode != c.LLVMStore) continue;
 
-            const stored_val = c.LLVMGetOperand(inst, 0);
-            const dest = c.LLVMGetOperand(inst, 1);
-            if (@intFromPtr(dest) == 0 or @intFromPtr(stored_val) == 0) continue;
+        const stored_val = c.LLVMGetOperand(inst, 0);
+        const dest = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(dest) == 0 or @intFromPtr(stored_val) == 0) continue;
 
-            if (c.LLVMIsAGlobalValue(dest) == null) continue;
+        if (c.LLVMIsAGlobalValue(dest) == null) continue;
 
-            for (freed_ptrs[0..freed_count]) |fp| {
-                if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
+        for (freed_ptrs[0..freed_count]) |fp| {
+            if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
 
-                if (ptrTracesTo(stored_val, fp.ptr_val)) {
-                    if (freed_global_count < MaxFreedGlobals) {
-                        const gname_ptr = c.LLVMGetValueName(dest);
-                        const gname = if (@intFromPtr(gname_ptr) != 0)
-                            std.mem.span(gname_ptr)
-                        else
-                            "@anonymous";
-                        const gname_len = @min(gname.len, 255);
+            if (ptrTracesTo(stored_val, fp.ptr_val)) {
+                if (freed_global_count < MaxFreedGlobals) {
+                    const gname_ptr = c.LLVMGetValueName(dest);
+                    const gname = if (@intFromPtr(gname_ptr) != 0)
+                        std.mem.span(gname_ptr)
+                    else
+                        "@anonymous";
+                    const gname_len = @min(gname.len, 255);
 
-                        var gname_buf: [256]u8 = undefined;
-                        @memcpy(gname_buf[0..gname_len], gname[0..gname_len]);
+                    var gname_buf: [256]u8 = undefined;
+                    @memcpy(gname_buf[0..gname_len], gname[0..gname_len]);
 
-                        freed_globals[freed_global_count] = .{
-                            .global_val = dest,
-                            .global_name_buf = gname_buf,
-                            .global_name_len = gname_len,
-                            .free_func_name = fp.free_func_name,
-                            .store_inst = inst,
-                        };
-                        freed_global_count += 1;
-                    }
-                    break;
+                    freed_globals[freed_global_count] = .{
+                        .global_val = dest,
+                        .global_name_buf = gname_buf,
+                        .global_name_len = gname_len,
+                        .free_func_name = fp.free_func_name,
+                        .store_inst = inst,
+                    };
+                    freed_global_count += 1;
                 }
+                break;
             }
+        }
     }
 
     for (insts) |inst| {
-            for (freed_ptrs[0..freed_count]) |fp| {
-                if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
-                if (instructionUsesValue(inst, fp.ptr_val)) {
-                    if (ctx.semantic_resolution) |resolution_engine| {
-                        const srt = resolution_engine.getSemanticTree();
-                        if (srt.hasKind(@intFromPtr(fp.free_inst), .raii_drop_release) != null) continue;
-                    }
-                    try reportUafIssue(auditor, func, ctx, diag, func_name, fp.free_func_name, inst, "direct", null);
+        for (freed_ptrs[0..freed_count]) |fp| {
+            if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
+            if (instructionUsesValue(inst, fp.ptr_val)) {
+                if (ctx.semantic_resolution) |resolution_engine| {
+                    const srt = resolution_engine.getSemanticTree();
+                    if (srt.hasKind(@intFromPtr(fp.free_inst), .raii_drop_release) != null) continue;
+                }
+                try reportUafIssue(auditor, func, ctx, diag, func_name, fp.free_func_name, inst, "direct", null);
+                break;
+            }
+        }
+
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+        if (opcode == c.LLVMLoad) {
+            const load_src = c.LLVMGetOperand(inst, 0);
+            if (@intFromPtr(load_src) != 0) {
+                for (freed_globals[0..freed_global_count]) |fg| {
+                    if (load_src != fg.global_val) continue;
+                    if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
+                    const gname = fg.global_name_buf[0..fg.global_name_len];
+                    try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias", gname);
                     break;
                 }
             }
+        }
 
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode == c.LLVMLoad) {
-                const load_src = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(load_src) != 0) {
-                    for (freed_globals[0..freed_global_count]) |fg| {
-                        if (load_src != fg.global_val) continue;
-                        if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
-                        const gname = fg.global_name_buf[0..fg.global_name_len];
-                        try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias", gname);
-                        break;
-                    }
+        if (freed_global_count > 0) {
+            for (freed_globals[0..freed_global_count]) |fg| {
+                if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
+                if (inst == fg.store_inst) continue;
+                if (instructionUsesLoadedFromGlobal(inst, fg.global_val, func)) {
+                    const gname = fg.global_name_buf[0..fg.global_name_len];
+                    try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias_use", gname);
+                    break;
                 }
             }
-
-            if (freed_global_count > 0) {
-                for (freed_globals[0..freed_global_count]) |fg| {
-                    if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
-                    if (inst == fg.store_inst) continue;
-                    if (instructionUsesLoadedFromGlobal(inst, fg.global_val, func)) {
-                        const gname = fg.global_name_buf[0..fg.global_name_len];
-                        try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias_use", gname);
-                        break;
-                    }
-                }
-            }
+        }
     }
 }
 

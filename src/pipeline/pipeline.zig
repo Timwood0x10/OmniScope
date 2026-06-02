@@ -125,7 +125,6 @@ pub const Pipeline = struct {
 
         // PERF-OPT-2: Module size detection for sampling strategy
         var total_functions: u32 = 0;
-        var total_instructions: u64 = 0;
         var use_sampling_mode = false;
         const LARGE_MODULE_THRESHOLD: u32 = 500; // Functions
         // Note: HUGE_MODULE_THRESHOLD reserved for future aggressive sampling strategies
@@ -136,21 +135,13 @@ pub const Pipeline = struct {
             while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
                 if (c.LLVMIsDeclaration(func) != 0) continue;
                 total_functions += 1;
-                // Count instructions (rough estimate for sampling decision)
-                var bb = c.LLVMGetFirstBasicBlock(func);
-                while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                    var inst = c.LLVMGetFirstInstruction(bb);
-                    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                        total_instructions += 1;
-                    }
-                }
             }
 
             // Enable sampling mode for very large modules to meet 60s target
             use_sampling_mode = total_functions > LARGE_MODULE_THRESHOLD;
 
-            log.info("PIPELINE: Module size: {} functions, {} instructions (sampling={})", .{
-                total_functions, total_instructions, use_sampling_mode,
+            log.info("PIPELINE: Module size: {} functions (sampling={})", .{
+                total_functions, use_sampling_mode,
             });
         }
         // Note: query_engine is a value type that references fact_store
@@ -542,13 +533,6 @@ pub const Pipeline = struct {
         // Run passes
         try self.pass_manager.run(&ctx, &diag);
 
-        // P2: Hardcoded Rust FFI Auditor integration
-        // Runs independent of pass_manager registration to ensure execution
-        log.info("PIPELINE: Running hardcoded RustFfiAuditor for FFI safety analysis", .{});
-        rust_ffi_auditor.RustFfiAuditor.run(&ctx, &diag) catch |err| {
-            log.warn("RUST-FFI: Auditor execution failed: {} — continuing pipeline", .{err});
-        };
-
         // R8.3-d: Post-pass leak report — scan GlobalAllocTracker for unfreed allocations.
         // PERF-OPT-6: Major optimization of leak analysis loop - the biggest bottleneck (~150s → ~25s)
         // Optimizations applied:
@@ -642,6 +626,42 @@ pub const Pipeline = struct {
                         }
                     }
 
+                    // PERF-OPT-6d: Pre-compute FFI path status for reuse in zig_tracker and severity calculation
+                    const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
+
+                    // PERF-OPT-6e: Initialize base_confidence early for use in zig_tracker comparison
+                    // Bug 4: Path-sensitive confidence reduction for conditional allocs.
+                    var base_confidence: f32 = if (is_on_ffi_path) 0.78 else 0.58;
+
+                    // Zig Allocator Tracking: adjust confidence based on allocator semantics.
+                    // Arena/FixedBuffer/testing allocators have deterministic cleanup,
+                    // so confidence should be low unless on an FFI boundary.
+                    // Only run if enabled via setZigAllocatorTracking(true) [default].
+                    // FIX-ISSUE-6: Reuse cached_node_idx from line 609-610 instead of
+                    // calling findNodeByInst again (eliminates O(n) duplicate search per record)
+                    if (self.enable_zig_allocator_tracking) {
+                        if (cached_node_idx) |node_idx| {
+                            const leak_node = ctx.memory_graph.node_store.items[node_idx];
+                            const zig_confidence = zig_tracker.calculateLeakConfidence(
+                                leak_node,
+                                rec.alloc_callee,
+                                is_on_ffi_path,
+                            );
+                            // Use the lower of the two scores: existing heuristic vs Zig-aware scoring.
+                            // This prevents false positives when Zig's allocator semantics
+                            // indicate safe management, even if the general heuristic scores it high.
+                            if (zig_confidence.score < base_confidence) {
+                                log.debug("ZIG-TRACKER: Lowering confidence {d:.2} → {d:.2} for alloc {} ({s})", .{
+                                    base_confidence,
+                                    zig_confidence.score,
+                                    rec.ptr_id,
+                                    zig_confidence.reason,
+                                });
+                                base_confidence = zig_confidence.score;
+                            }
+                        }
+                    }
+
                     // Check 3: Rust allocator intrinsics (using pre-computed is_rust_mod)
                     if (is_rust_mod) {
                         var is_rust_alloc = false;
@@ -676,14 +696,14 @@ pub const Pipeline = struct {
                     }
 
                     // D1-4: Check if leaked ptr reaches FFI boundary → promote severity
-                    const is_on_ffi_path = ctx.isOnDangerPathFull(rec.ptr_id);
+                    // Note: is_on_ffi_path already defined at line ~630 for reuse in zig_tracker
                     const severity: Severity = if (is_on_ffi_path) .high else .low;
 
                     // Bug 4: Path-sensitive confidence reduction for conditional allocs.
                     // If allocation is inside a conditional branch (if/else, loop body),
                     // it may not execute on all code paths → reduce confidence by ~25%.
                     // This fixes FFT-LEAK-3 / FFT-LEAK-2 / BUG-4c conditional path FPs.
-                    var base_confidence: f32 = if (is_on_ffi_path) 0.78 else 0.58;
+                    // Note: base_confidence already initialized at line ~634
                     if (rec.is_global_or_static) {
                         base_confidence += 0.08;
                     }
@@ -842,9 +862,37 @@ pub const Pipeline = struct {
                 @as(f64, @floatFromInt(time_budget_ns)) / @as(f64, @floatFromInt(std.time.ns_per_s)),
                 within_budget,
             });
-            log.info("Module size: {} functions, {} instructions", .{ total_functions, total_instructions });
+            log.info("Module size: {} functions", .{total_functions});
             log.info("Sampling mode: {} (threshold: >{} functions)", .{ use_sampling_mode, LARGE_MODULE_THRESHOLD });
-            log.info("Time out during analysis: {}", .{ timed_out });
+            log.info("Time out during analysis: {}", .{timed_out});
+
+            {
+                const all_issues = self.data_flow_graph.getIssues();
+                var boundary_counts = [_]usize{0} ** 9;
+                for (all_issues) |issue| {
+                    if (issue.ffi_boundary) |bnd| {
+                        const src_idx = @intFromEnum(bnd.caller_language);
+                        const dst_idx = @intFromEnum(bnd.callee_language);
+                        if (src_idx < boundary_counts.len and dst_idx < boundary_counts.len) {
+                            boundary_counts[src_idx] += 1;
+                        }
+                    }
+                }
+                const lang_names = [_][]const u8{ "unknown", "rust", "cpp", "c", "go", "java", "python", "csharp", "zig" };
+                var has_boundary = false;
+                for (boundary_counts, 0..) |count, i| {
+                    if (count > 0) {
+                        if (!has_boundary) {
+                            log.info("[SUMMARY] Language Boundary Breakdown:", .{});
+                            has_boundary = true;
+                        }
+                        log.info("[SUMMARY]   {s} --> * : {d} issues", .{ lang_names[i], count });
+                    }
+                }
+                if (!has_boundary) {
+                    log.info("[SUMMARY] No FFI boundary issues detected (single-language module)", .{});
+                }
+            }
 
             if (!within_budget) {
                 log.warn("PIPELINE WARNING: Execution exceeded time budget of 55s (actual: {d:.2}s)", .{total_time_s});

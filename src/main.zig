@@ -1482,6 +1482,26 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
         result.issues.len, source_lang_name, target_lang_name,
     });
 
+    {
+        var rust_to_c: usize = 0;
+        var c_to_rust: usize = 0;
+        var other_boundary: usize = 0;
+        for (result.issues) |issue| {
+            if (issue.ffi_boundary) |bnd| {
+                if (bnd.caller_language == .rust and bnd.callee_language == .c) {
+                    rust_to_c += 1;
+                } else if (bnd.caller_language == .c and bnd.callee_language == .rust) {
+                    c_to_rust += 1;
+                } else {
+                    other_boundary += 1;
+                }
+            }
+        }
+        if (rust_to_c > 0) log.info("[Language]   rust --> c : {d} issues", .{rust_to_c});
+        if (c_to_rust > 0) log.info("[Language]   c --> rust : {d} issues", .{c_to_rust});
+        if (other_boundary > 0) log.info("[Language]   other boundary: {d} issues", .{other_boundary});
+    }
+
     if (config.visualize) {
         try generateVisualization(allocator, result.issues, path);
     }

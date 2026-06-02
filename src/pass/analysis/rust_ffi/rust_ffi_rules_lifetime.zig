@@ -46,28 +46,28 @@ pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, insts: []con
 
     // Use pre-collected instruction list (avoids redundant BB/inst traversal).
     for (insts) |inst| {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+        const opcode = c.LLVMGetInstructionOpcode(inst);
 
-            // Pattern: GEP extracting field 0 from a struct → likely as_ptr
-            if (opcode == c.LLVMGetElementPtr) {
-                const result_type = c.LLVMTypeOf(inst);
-                if (@intFromPtr(result_type) == 0) continue;
-                if (c.LLVMGetTypeKind(result_type) != c.LLVMPointerTypeKind) continue;
+        // Pattern: GEP extracting field 0 from a struct → likely as_ptr
+        if (opcode == c.LLVMGetElementPtr) {
+            const result_type = c.LLVMTypeOf(inst);
+            if (@intFromPtr(result_type) == 0) continue;
+            if (c.LLVMGetTypeKind(result_type) != c.LLVMPointerTypeKind) continue;
 
-                const operand = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(operand) == 0) continue;
-                const operand_type = c.LLVMTypeOf(operand);
-                if (@intFromPtr(operand_type) == 0) continue;
+            const operand = c.LLVMGetOperand(inst, 0);
+            if (@intFromPtr(operand) == 0) continue;
+            const operand_type = c.LLVMTypeOf(operand);
+            if (@intFromPtr(operand_type) == 0) continue;
 
-                // Parent must be a struct type (Vec = {ptr, len, cap}, String = {ptr, len})
-                if (c.LLVMGetTypeKind(operand_type) == c.LLVMStructTypeKind) {
-                    try as_ptrs.append(auditor.allocator, .{
-                        .as_ptr_value = inst,
-                        .parent_aggregate = operand,
-                        .extraction_inst = inst,
-                    });
-                }
+            // Parent must be a struct type (Vec = {ptr, len, cap}, String = {ptr, len})
+            if (c.LLVMGetTypeKind(operand_type) == c.LLVMStructTypeKind) {
+                try as_ptrs.append(auditor.allocator, .{
+                    .as_ptr_value = inst,
+                    .parent_aggregate = operand,
+                    .extraction_inst = inst,
+                });
             }
+        }
     }
 
     if (as_ptrs.items.len == 0) return;
@@ -204,55 +204,55 @@ pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, inst
     }
 
     for (insts) |inst| {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMStore) continue;
+        const opcode = c.LLVMGetInstructionOpcode(inst);
+        if (opcode != c.LLVMStore) continue;
 
-            // ── Mode A: Store to global variable (original logic) ──
-            const dest = c.LLVMGetOperand(inst, 1);
-            if (@intFromPtr(dest) == 0) continue;
+        // ── Mode A: Store to global variable (original logic) ──
+        const dest = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(dest) == 0) continue;
 
-            if (c.LLVMIsAGlobalValue(dest) != null) {
-                const global_name_ptr = c.LLVMGetValueName(dest);
-                const global_name = if (@intFromPtr(global_name_ptr) != 0)
-                    std.mem.span(global_name_ptr)
-                else
-                    "@anonymous_global";
+        if (c.LLVMIsAGlobalValue(dest) != null) {
+            const global_name_ptr = c.LLVMGetValueName(dest);
+            const global_name = if (@intFromPtr(global_name_ptr) != 0)
+                std.mem.span(global_name_ptr)
+            else
+                "@anonymous_global";
 
-                if (isSafeGlobalStore(global_name)) continue;
+            if (isSafeGlobalStore(global_name)) continue;
 
-                const value = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(value) == 0) continue;
+            const value = c.LLVMGetOperand(inst, 0);
+            if (@intFromPtr(value) == 0) continue;
 
-                const value_type = c.LLVMTypeOf(value);
-                if (@intFromPtr(value_type) == 0) continue;
-                if (c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind) continue;
+            const value_type = c.LLVMTypeOf(value);
+            if (@intFromPtr(value_type) == 0) continue;
+            if (c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind) continue;
 
-                // T4: Use unified traceValueSource instead of isValueFromParameter
-                const source = auditor.traceValueSource(value, func);
-                if (source != .from_parameter) continue;
+            // T4: Use unified traceValueSource instead of isValueFromParameter
+            const source = auditor.traceValueSource(value, func);
+            if (source != .from_parameter) continue;
 
-                // Verify global is used for indirect calls (behavioral confirmation)
-                if (!isGlobalUsedForIndirectCall(global_name, func)) continue;
+            // Verify global is used for indirect calls (behavioral confirmation)
+            if (!isGlobalUsedForIndirectCall(global_name, func)) continue;
 
-                try reportCallbackRisk(auditor, ctx, diag, func_name, global_name, "global", 0.85);
-            }
+            try reportCallbackRisk(auditor, ctx, diag, func_name, global_name, "global", 0.85);
+        }
 
-            // ── Mode B: Store to alloca (local callback variable) — NEW ──
-            if (c.LLVMGetInstructionOpcode(dest) == c.LLVMAlloca) {
-                const value = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(value) == 0) continue;
+        // ── Mode B: Store to alloca (local callback variable) — NEW ──
+        if (c.LLVMGetInstructionOpcode(dest) == c.LLVMAlloca) {
+            const value = c.LLVMGetOperand(inst, 0);
+            if (@intFromPtr(value) == 0) continue;
 
-                const source = auditor.traceValueSource(value, func);
-                if (source != .from_parameter) continue;
+            const source = auditor.traceValueSource(value, func);
+            if (source != .from_parameter) continue;
 
-                // Check if this alloca's loaded value is ever used as call target
-                const usages = auditor.traceValueUsage(value, func);
-                if (usages) |*u| {
-                    if (u.contains(.as_call_target)) {
-                        try reportCallbackRisk(auditor, ctx, diag, func_name, "@local_callback", "local_alloca", 0.78);
-                    }
+            // Check if this alloca's loaded value is ever used as call target
+            const usages = auditor.traceValueUsage(value, func);
+            if (usages) |*u| {
+                if (u.contains(.as_call_target)) {
+                    try reportCallbackRisk(auditor, ctx, diag, func_name, "@local_callback", "local_alloca", 0.78);
                 }
             }
+        }
     }
 }
 

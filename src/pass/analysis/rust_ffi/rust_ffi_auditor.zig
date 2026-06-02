@@ -109,6 +109,9 @@ pub const RustFfiAuditor = struct {
         }
 
         diag.info("FFIAuditor: analyzed {d} funcs, {d} findings converted to Issues ({d} stack escapes)", .{ auditor.stats.total_functions_analyzed, findings.len, auditor.stats.stack_escapes });
+
+        const module_lang = @tagName(ctx.module_language.language);
+        diag.info("[RUST-FFI] Boundary: {s} module analyzed, {d} cross-lang issues detected", .{ module_lang, findings.len });
     }
 
     /// Run full audit on an LLVM module
@@ -130,6 +133,9 @@ pub const RustFfiAuditor = struct {
     /// Audit a single function for all Rust FFI patterns.
     fn auditFunction(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
         const func_name = getFunctionName(func);
+
+        const caller_lang = ffi_language_classifier.identifyLanguage(func);
+        const caller_lang_tag = @tagName(caller_lang);
 
         // Multi-strategy Rust detection:
         // Strategy 1: Module-level detection (O(1), checked first)
@@ -192,6 +198,10 @@ pub const RustFfiAuditor = struct {
             // Rule 3: Cross-lang alloc mismatch (Rust _Znwm → C free)
             try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, &inst_cache);
 
+            if (self.stats.cross_lang_mismatches > 0) {
+                diag.debug("[RUST-FFI] Boundary detected: {s} --> c (cross-lang alloc mismatch, confidence: 0.85)", .{caller_lang_tag});
+            }
+
             // Rule 6: Ownership transfer protocol (into_raw/from_raw pairing)
             try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, &inst_cache);
 
@@ -203,6 +213,11 @@ pub const RustFfiAuditor = struct {
 
         // Rule 4: Unsafe block FFI call scan
         try basic_rules.detectUnsafeFfiCalls(self, func, &inst_cache);
+
+        if (self.stats.unsafe_ffi_calls > 0) {
+            const target_lang = if (caller_lang == .rust) "c" else @tagName(caller_lang);
+            diag.debug("[RUST-FFI] Boundary detected: {s} --> {s} (unsafe FFI call, confidence: 0.90)", .{ caller_lang_tag, target_lang });
+        }
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
         try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, &inst_cache);
@@ -377,6 +392,7 @@ pub fn findingToIssue(allocator: std.mem.Allocator, finding: RustFfiFinding) !Is
 // ============================================================================
 
 const rust_ffi_helpers = @import("rust_ffi_helpers.zig");
+const Language = ffi_language_classifier.Language;
 
 pub const getFunctionName = rust_ffi_helpers.getFunctionName;
 pub const isRustIntoRawCall = rust_ffi_helpers.isRustIntoRawCall;
