@@ -267,52 +267,7 @@ pub const PointerOwnershipPass = struct {
                 }
             }
 
-            // Source 3: IR-level free instruction scan (skips safe/runtime_internal zones)
-            {
-                var ir_func = c.LLVMGetFirstFunction(mod);
-                while (@intFromPtr(ir_func) != 0) : (ir_func = c.LLVMGetNextFunction(ir_func)) {
-                    if (c.LLVMIsDeclaration(ir_func) != 0) continue;
-                    // Skip safe/runtime_internal zones — their frees are not FFI-relevant
-                    const s3_name_raw = c.LLVMGetValueName(ir_func);
-                    const s3_name = if (s3_name_raw != null) std.mem.span(s3_name_raw) else "unknown";
-                    const s3_zone = ctx.getOrComputeZoneByName(s3_name);
-                    if (s3_zone == .safe or s3_zone == .runtime_internal) continue;
-                    var bb = c.LLVMGetFirstBasicBlock(ir_func);
-                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                        var inst = c.LLVMGetFirstInstruction(bb);
-                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                            const opcode = c.LLVMGetInstructionOpcode(inst);
-                            if (llvm_safe.isCallOrInvoke(opcode) and isFreeInstruction(inst, opcode)) {
-                                const ptr_arg = c.LLVMGetOperand(inst, 0);
-                                if (@intFromPtr(ptr_arg) == 0) continue;
-                                const ptr_id: u32 = id_map.getOrPutId(@intFromPtr(ptr_arg)) catch continue;
-                                const fn_name_raw = c.LLVMGetValueName(ir_func);
-                                const fn_name = if (fn_name_raw != null) std.mem.span(fn_name_raw) else "unknown";
-                                const fsite = try free_pool.alloc();
-                                fsite.* = .{
-                                    .inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch ptr_id,
-                                    .func_name = fn_name,
-                                    .lang = identifyLanguageFromCallee(inst, opcode),
-                                    .free_type = classifyFree(inst, opcode),
-                                    .ptr_value_id = ptr_id,
-                                    .bb_id = id_map.getOrPutId(@intFromPtr(bb)) catch 0,
-                                    .source = .ir_scan,
-                                    .debug_file = null,
-                                    .debug_line = null,
-                                    .debug_column = null,
-                                };
-                                if (!free_map.contains(ptr_id)) {
-                                    try free_map.put(ptr_id, fsite);
-                                    stats.free_sites += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-                diag.info("PointerOwnership: Source 3 (IR scan) added {d} frees — total now {d}", .{ stats.free_sites, stats.free_sites });
-            }
-
-            diag.info("PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker + IR-scan — {d} allocs, {d} frees", .{ stats.alloc_sites, stats.free_sites });
+            diag.info("PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker — {d} allocs, {d} frees", .{ stats.alloc_sites, stats.free_sites });
         }
 
         var func = c.LLVMGetFirstFunction(mod);
@@ -428,15 +383,8 @@ pub const PointerOwnershipPass = struct {
             detectRefCountedContainerFunctions(func, &ctx.rc_container_func_set);
             detectRustFfiPairingFunctions(func, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
             detectAsPtrBorrowEscape(ctx, func, diag);
-        }
 
-        // OPT #1: reverse_flow already built incrementally, now check ownership transfer
-        {
-            var func2 = c.LLVMGetFirstFunction(mod);
-            while (@intFromPtr(func2) != 0) : (func2 = c.LLVMGetNextFunction(func2)) {
-                if (c.LLVMIsDeclaration(func2) != 0) continue;
-                checkOwnershipTransferForFunction(func2, &alloc_map, &reverse_flow, &id_map);
-            }
+            checkOwnershipTransferForFunction(func, &alloc_map, &reverse_flow, &id_map);
         }
 
         // C1 FIX: Report detection results (previously in separate passes 4-8)

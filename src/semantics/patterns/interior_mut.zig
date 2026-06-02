@@ -34,58 +34,64 @@ const INTERIOR_MUT_PREFIXES = [_][]const u8{
     "std::cell::UnsafeCell<",
 };
 
-/// Detect interior mutability patterns and write to SRT.
-/// For each alloca with DI metadata, check if the DI type chain
-/// contains UnsafeCell. If so, mark the alloca as interior_mutability.
-pub fn detect(
+/// Detect interior mutability patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
+    _ = module;
     _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
 
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                // Check alloca instructions for DI type chain
-                if (c.LLVMGetInstructionOpcode(inst) == c.LLVMAlloca) {
-                    if (isAllocaInteriorMutable(inst)) |di_name| {
-                        try srt.recordResolution(
-                            @intFromPtr(inst),
-                            .interior_mutability,
-                            0.90,
-                            "R-2 UnsafeCell",
-                            di_name,
-                        );
-                    }
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            if (c.LLVMGetInstructionOpcode(inst) == c.LLVMAlloca) {
+                if (isAllocaInteriorMutable(inst)) |di_name| {
+                    try srt.recordResolution(
+                        @intFromPtr(inst),
+                        .interior_mutability,
+                        0.90,
+                        "R-2 UnsafeCell",
+                        di_name,
+                    );
                 }
+            }
 
-                // Check store instructions: if dest is a GEP from an
-                // interior-mutable alloca, mark the store too
-                if (c.LLVMGetInstructionOpcode(inst) == c.LLVMStore) {
-                    const dest = c.LLVMGetOperand(inst, 1);
-                    if (@intFromPtr(dest) != 0) {
-                        const alloca_base = traceToAlloca(dest);
-                        if (@intFromPtr(alloca_base) != 0) {
-                            if (srt.hasKind(@intFromPtr(alloca_base), .interior_mutability) != null) {
-                                try srt.recordResolution(
-                                    @intFromPtr(inst),
-                                    .interior_mutability,
-                                    0.85,
-                                    "R-2 UnsafeCell",
-                                    "store to interior-mutable alloca",
-                                );
-                            }
+            if (c.LLVMGetInstructionOpcode(inst) == c.LLVMStore) {
+                const dest = c.LLVMGetOperand(inst, 1);
+                if (@intFromPtr(dest) != 0) {
+                    const alloca_base = traceToAlloca(dest);
+                    if (@intFromPtr(alloca_base) != 0) {
+                        if (srt.hasKind(@intFromPtr(alloca_base), .interior_mutability) != null) {
+                            try srt.recordResolution(
+                                @intFromPtr(inst),
+                                .interior_mutability,
+                                0.85,
+                                "R-2 UnsafeCell",
+                                "store to interior-mutable alloca",
+                            );
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// Detect interior mutability patterns and write to SRT.
+pub fn detect(
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

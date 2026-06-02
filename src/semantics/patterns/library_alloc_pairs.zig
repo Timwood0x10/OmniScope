@@ -130,53 +130,60 @@ const TABLE = [_]LibraryAllocEntry{
     .{ .name = "zig_allocator_freeImpl", .language = .zig, .effect = .release },
 };
 
+/// Detect library allocator pairs (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
+
+            const callee_name = getCalleeName(inst) orelse continue;
+            const entry = lookupTable(callee_name) orelse continue;
+
+            const kind: SemanticKind = switch (entry.effect) {
+                .release, .conditional_release => .library_release,
+                .acquire => .allocation,
+                .borrow => .provenance,
+            };
+
+            const evidence = switch (entry.effect) {
+                .release => "library release",
+                .conditional_release => "library conditional release",
+                .acquire => "library acquire",
+                .borrow => "library borrow",
+            };
+
+            try srt.recordResolution(
+                @intFromPtr(inst),
+                kind,
+                0.95,
+                "R-7 lib alloc",
+                evidence,
+            );
+        }
+    }
+}
+
 /// Detect library allocator pair patterns and write to SRT.
-/// For each call instruction, checks if the callee matches a table entry.
-/// Release/conditional_release → write SRT .library_release
-/// Acquire → write SRT .allocation (for leak detection)
-/// Borrow → write SRT .provenance (for borrow tracking)
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
-
-                const callee_name = getCalleeName(inst) orelse continue;
-                const entry = lookupTable(callee_name) orelse continue;
-
-                const kind: SemanticKind = switch (entry.effect) {
-                    .release, .conditional_release => .library_release,
-                    .acquire => .allocation,
-                    .borrow => .provenance,
-                };
-
-                const evidence = switch (entry.effect) {
-                    .release => "library release",
-                    .conditional_release => "library conditional release",
-                    .acquire => "library acquire",
-                    .borrow => "library borrow",
-                };
-
-                try srt.recordResolution(
-                    @intFromPtr(inst),
-                    kind,
-                    0.95,
-                    "R-7 lib alloc",
-                    evidence,
-                );
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

@@ -29,42 +29,40 @@ const TRANSMUTE_PATTERNS = [_][]const u8{
     "bitcast",
 };
 
+/// Detect unsafe type conversions and transmute patterns (per-function).
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = diag;
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+
+            if (opcode == c.LLVMBitCast) {
+                if (analyzeBitcast(module, inst, srt)) {}
+            }
+
+            if (opcode == c.LLVMPtrToInt or opcode == c.LLVMIntToPtr) {
+                if (analyzePtrIntConversion(module, inst, srt)) {}
+            }
+        }
+    }
+}
+
 /// Detect unsafe type conversions and transmute patterns.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func_count: usize = 0;
-    var transmute_count: usize = 0;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-        func_count += 1;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Check for bitcast (transmute in LLVM IR)
-                if (opcode == c.LLVMBitCast) {
-                    if (analyzeBitcast(module, inst, srt)) {
-                        transmute_count += 1;
-                    }
-                }
-
-                // Check for ptrtoint/inttoptr (also transmute-like)
-                if (opcode == c.LLVMPtrToInt or opcode == c.LLVMIntToPtr) {
-                    if (analyzePtrIntConversion(module, inst, srt)) {
-                        transmute_count += 1;
-                    }
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

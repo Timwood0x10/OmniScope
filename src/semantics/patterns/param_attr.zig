@@ -20,50 +20,57 @@ const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
 
+/// Detect LLVM parameter attributes (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const num_params = c.LLVMCountParams(func);
+    var i: c_uint = 0;
+    while (i < num_params) : (i += 1) {
+        const param = c.LLVMGetParam(func, i);
+        if (@intFromPtr(param) == 0) continue;
+
+        const has_readonly = paramHasAttr(func, i + 1, "readonly");
+        const has_noalias = paramHasAttr(func, i + 1, "noalias");
+
+        const kind: SemanticKind = if (has_readonly) .readonly_param else .mutable_param;
+
+        const evidence: []const u8 = if (has_noalias and has_readonly)
+            "noalias+readonly=&T (exclusive shared ref)"
+        else if (has_readonly)
+            "readonly=&T (shared ref)"
+        else if (has_noalias)
+            "noalias=&mut T (exclusive mutable ref)"
+        else
+            "no attrs=&mut T (mutable ref)";
+
+        try srt.recordResolution(
+            @intFromPtr(param),
+            kind,
+            0.95,
+            "R-0 LLVM attrs",
+            evidence,
+        );
+    }
+}
+
 /// Detect LLVM parameter attributes and write to SRT.
-/// For each function parameter, records readonly_param or mutable_param.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        // Only process defined functions (not declarations)
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-
-        const num_params = c.LLVMCountParams(func);
-        var i: c_uint = 0;
-        while (i < num_params) : (i += 1) {
-            const param = c.LLVMGetParam(func, i);
-            if (@intFromPtr(param) == 0) continue;
-
-            // Check readonly attribute on parameter (1-based index for attributes)
-            const has_readonly = paramHasAttr(func, i + 1, "readonly");
-            const has_noalias = paramHasAttr(func, i + 1, "noalias");
-
-            const kind: SemanticKind = if (has_readonly) .readonly_param else .mutable_param;
-
-            // Build evidence string describing the attribute combination
-            const evidence: []const u8 = if (has_noalias and has_readonly)
-                "noalias+readonly=&T (exclusive shared ref)"
-            else if (has_readonly)
-                "readonly=&T (shared ref)"
-            else if (has_noalias)
-                "noalias=&mut T (exclusive mutable ref)"
-            else
-                "no attrs=&mut T (mutable ref)";
-
-            try srt.recordResolution(
-                @intFromPtr(param),
-                kind,
-                0.95,
-                "R-0 LLVM attrs",
-                evidence,
-            );
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

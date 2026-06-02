@@ -67,56 +67,59 @@ const COMPILER_INTERNAL_PREFIXES = [_][]const u8{
     "$sS",
 };
 
+/// Detect OBRM patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const func_name_raw = c.LLVMGetValueName(func);
+    if (@intFromPtr(func_name_raw) == 0) return;
+    const func_name = std.mem.sliceTo(func_name_raw, 0);
+
+    const is_drop_ctx = isDropContextFunction(func_name);
+    const is_compiler_gen = isCompilerGeneratedFunction(func_name);
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+            const callee_name = getCalleeName(inst) orelse continue;
+
+            if (!std.mem.eql(u8, callee_name, RUST_DEALLOC)) continue;
+
+            const should_mark_raii = shouldMarkAsRAII(is_drop_ctx, is_compiler_gen, func_name);
+
+            if (should_mark_raii) {
+                try srt.recordResolution(
+                    @intFromPtr(inst),
+                    .raii_drop_release,
+                    0.95,
+                    "Ch6 OBRM",
+                    if (is_drop_ctx) "dealloc in drop_in_place context" else "dealloc in tail position",
+                );
+            }
+        }
+    }
+}
+
 /// Detect OBRM patterns and write to SRT.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) == 0) continue;
-        const func_name = std.mem.sliceTo(func_name_raw, 0);
-
-        // Check if this function is a drop context
-        const is_drop_ctx = isDropContextFunction(func_name);
-
-        // Check if this is a compiler-generated function
-        const is_compiler_gen = isCompilerGeneratedFunction(func_name);
-
-        // Walk all instructions
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
-                const callee_name = getCalleeName(inst) orelse continue;
-
-                // Only care about Rust dealloc
-                if (!std.mem.eql(u8, callee_name, RUST_DEALLOC)) continue;
-
-                // FIX: Add context validation to distinguish compiler RAII from user unsafe code
-                const should_mark_raii = shouldMarkAsRAII(is_drop_ctx, is_compiler_gen, func_name);
-
-                if (should_mark_raii) {
-                    // This is legitimate compiler-generated RAII cleanup
-                    try srt.recordResolution(
-                        @intFromPtr(inst),
-                        .raii_drop_release,
-                        0.95,
-                        "Ch6 OBRM",
-                        if (is_drop_ctx) "dealloc in drop_in_place context" else "dealloc in tail position",
-                    );
-                } else {
-                    // User unsafe code using __rust_dealloc — do NOT mark as RAII
-                    // Let normal detection flow handle potential double-free/UAF
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

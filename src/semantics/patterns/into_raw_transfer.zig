@@ -24,56 +24,61 @@ const INTO_RAW_PATTERNS = [_][]const u8{
     "into_raw", // Fallback for legacy or demangled names
 };
 
+/// Detect into_raw ownership transfer (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
+
+            const callee_name = getCalleeName(inst) orelse continue;
+            if (!isIntoRawCall(callee_name)) continue;
+
+            try srt.recordResolution(
+                @intFromPtr(inst),
+                .into_raw_transfer,
+                0.95,
+                "R-6 into_raw",
+                callee_name,
+            );
+
+            const num_operands = c.LLVMGetNumOperands(inst);
+            if (num_operands >= 2) {
+                const box_arg = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(box_arg) != 0) {
+                    try srt.recordResolution(
+                        @intFromPtr(box_arg),
+                        .into_raw_transfer,
+                        0.90,
+                        "R-6 into_raw arg",
+                        "Box/CString consumed by into_raw",
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Detect into_raw ownership transfer calls and write to SRT.
-/// Pattern: %raw = call ptr @<mangled_name>_into_raw(...)
-/// The return value of into_raw is the transferred raw pointer.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst))) continue;
-
-                const callee_name = getCalleeName(inst) orelse continue;
-                if (!isIntoRawCall(callee_name)) continue;
-
-                // The return value of into_raw is the transferred pointer.
-                // Mark both the call instruction AND the return value.
-                try srt.recordResolution(
-                    @intFromPtr(inst),
-                    .into_raw_transfer,
-                    0.95,
-                    "R-6 into_raw",
-                    callee_name,
-                );
-
-                // Also mark the function argument (the Box/CString being consumed)
-                // The first argument (operand 0) is the box value being converted
-                const num_operands = c.LLVMGetNumOperands(inst);
-                if (num_operands >= 2) {
-                    const box_arg = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(box_arg) != 0) {
-                        try srt.recordResolution(
-                            @intFromPtr(box_arg),
-                            .into_raw_transfer,
-                            0.90,
-                            "R-6 into_raw arg",
-                            "Box/CString consumed by into_raw",
-                        );
-                    }
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

@@ -62,57 +62,54 @@ const INTERIOR_MUTABLE_PREFIXES = [_][]const u8{
     "core::mem::ManuallyDrop<",
 };
 
+/// Detect interior mutability patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const func_name_raw = c.LLVMGetValueName(func);
+    if (@intFromPtr(func_name_raw) == 0) return;
+    const func_name = std.mem.sliceTo(func_name_raw, 0);
+
+    if (isOnceInitContext(func_name)) {}
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
+
+            const dest = c.LLVMGetOperand(inst, 1);
+            if (@intFromPtr(dest) == 0) continue;
+
+            if (isInteriorMutableThroughChain(dest)) {
+                recordResolution(srt, @intFromPtr(inst), .interior_mutability, 0.90, "Ch10 DI type chain contains UnsafeCell");
+                continue;
+            }
+
+            if (isInteriorMutableByHeuristic(dest, func_name)) {
+                recordResolution(srt, @intFromPtr(inst), .interior_mutability, 0.70, "Ch10 heuristic-based interior mutability");
+            }
+        }
+    }
+}
+
 /// Detect interior mutability patterns and write to SRT.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func_count: usize = 0;
-    var interior_mutable_count: usize = 0;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-        func_count += 1;
-
-        // Check function name for interior mutability indicators
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) == 0) continue;
-        const func_name = std.mem.sliceTo(func_name_raw, 0);
-
-        // Check if function is in a once-init context
-        if (isOnceInitContext(func_name)) {
-            interior_mutable_count += 1;
-        }
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                // Only care about store instructions
-                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-
-                // Get the destination pointer (the GEP base)
-                const dest = c.LLVMGetOperand(inst, 1);
-                if (@intFromPtr(dest) == 0) continue;
-
-                // Strategy 1: Walk DI type chain to find UnsafeCell
-                if (isInteriorMutableThroughChain(dest)) {
-                    recordResolution(srt, @intFromPtr(inst), .interior_mutability, 0.90, "Ch10 DI type chain contains UnsafeCell");
-                    interior_mutable_count += 1;
-                    continue;
-                }
-
-                // Strategy 2: Fallback — check instruction-level patterns
-                // If we can't get DI types, use heuristic based on context
-                if (isInteriorMutableByHeuristic(dest, func_name)) {
-                    recordResolution(srt, @intFromPtr(inst), .interior_mutability, 0.70, "Ch10 heuristic-based interior mutability");
-                    interior_mutable_count += 1;
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

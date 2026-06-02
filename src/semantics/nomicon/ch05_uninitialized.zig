@@ -39,65 +39,60 @@ const ALLOC_UNINIT_PATTERNS = [_][]const u8{
     "__rust_alloc",
 };
 
+/// Detect uninitialized memory usage patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const func_name_raw = c.LLVMGetValueName(func);
+    if (@intFromPtr(func_name_raw) == 0) return;
+    const func_name = std.mem.sliceTo(func_name_raw, 0);
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_func = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_func) == 0) continue;
+
+                const called_name_raw = c.LLVMGetValueName(called_func);
+                if (@intFromPtr(called_name_raw) == 0) continue;
+                const called_name = std.mem.sliceTo(called_name_raw, 0);
+
+                if (isAssumeInitPattern(called_name)) {
+                    _ = analyzeAssumeInitUsage(inst, func_name, srt);
+                }
+
+                if (isUninitAllocPattern(called_name)) {
+                    _ = analyzeAllocWithoutInit(inst, func_name, srt);
+                }
+            }
+
+            if (opcode == c.LLVMLoad) {
+                _ = analyzePotentialUninitLoad(module, inst, srt);
+            }
+        }
+    }
+}
+
 /// Detect uninitialized memory usage patterns.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func_count: usize = 0;
-    var uninit_count: usize = 0;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-        func_count += 1;
-
-        // Check function name for MaybeUninit patterns
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) == 0) continue;
-        const func_name = std.mem.sliceTo(func_name_raw, 0);
-
-        // Scan for assume_init calls without proper initialization
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Check for call instructions to dangerous functions
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_func = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called_func) == 0) continue;
-
-                    const called_name_raw = c.LLVMGetValueName(called_func);
-                    if (@intFromPtr(called_name_raw) == 0) continue;
-                    const called_name = std.mem.sliceTo(called_name_raw, 0);
-
-                    // Check for assume_init pattern
-                    if (isAssumeInitPattern(called_name)) {
-                        if (analyzeAssumeInitUsage(inst, func_name, srt)) {
-                            uninit_count += 1;
-                        }
-                    }
-
-                    // Check for malloc/alloc without initialization
-                    if (isUninitAllocPattern(called_name)) {
-                        if (analyzeAllocWithoutInit(inst, func_name, srt)) {
-                            uninit_count += 1;
-                        }
-                    }
-                }
-
-                // Check for loads from alloca (stack variables) that might be uninitialized
-                if (opcode == c.LLVMLoad) {
-                    if (analyzePotentialUninitLoad(module, inst, srt)) {
-                        uninit_count += 1;
-                    }
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

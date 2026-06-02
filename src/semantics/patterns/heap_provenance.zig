@@ -75,74 +75,80 @@ pub const Provenance = enum {
     unknown,
 };
 
+/// Detect heap provenance patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                if (classifyAllocationCall(inst)) |prov| {
+                    if (prov == .heap) {
+                        try srt.recordResolution(
+                            @intFromPtr(inst),
+                            .heap_provenance,
+                            0.98,
+                            "R-1 alloc call",
+                            getCalleeName(inst) orelse "unknown_alloc",
+                        );
+                    }
+                }
+            }
+
+            if (opcode == c.LLVMAlloca) {
+                if (classifyAllocaDI(inst)) |prov| {
+                    if (prov == .heap) {
+                        const di_name = findAllocaDITypeName(inst) orelse "unknown";
+                        try srt.recordResolution(
+                            @intFromPtr(inst),
+                            .heap_provenance,
+                            0.90,
+                            "R-1 SROA DI",
+                            di_name,
+                        );
+                    }
+                }
+            }
+
+            if (opcode == c.LLVMStore) {
+                const stored = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(stored) != 0 and
+                    @intFromPtr(c.LLVMIsAGlobalValue(stored)) != 0)
+                {
+                    try srt.recordResolution(
+                        @intFromPtr(inst),
+                        .global_provenance,
+                        0.95,
+                        "R-1 global",
+                        "store of global value",
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Detect heap provenance patterns and write to SRT.
-/// Two-pass approach:
-///   Pass 1: Scan all call + alloca instructions, write to SRT.
-///   Pass 2 (lazy): Downstream passes call traceProvenance on demand.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Layer 1: Allocation call exact match
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    if (classifyAllocationCall(inst)) |prov| {
-                        if (prov == .heap) {
-                            try srt.recordResolution(
-                                @intFromPtr(inst),
-                                .heap_provenance,
-                                0.98,
-                                "R-1 alloc call",
-                                getCalleeName(inst) orelse "unknown_alloc",
-                            );
-                        }
-                    }
-                }
-
-                // Layer 2: Alloca DI type prefix match
-                if (opcode == c.LLVMAlloca) {
-                    if (classifyAllocaDI(inst)) |prov| {
-                        if (prov == .heap) {
-                            const di_name = findAllocaDITypeName(inst) orelse "unknown";
-                            try srt.recordResolution(
-                                @intFromPtr(inst),
-                                .heap_provenance,
-                                0.90,
-                                "R-1 SROA DI",
-                                di_name,
-                            );
-                        }
-                    }
-                }
-
-                // Global values → global_provenance
-                if (opcode == c.LLVMStore) {
-                    const stored = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(stored) != 0 and
-                        @intFromPtr(c.LLVMIsAGlobalValue(stored)) != 0)
-                    {
-                        try srt.recordResolution(
-                            @intFromPtr(inst),
-                            .global_provenance,
-                            0.95,
-                            "R-1 global",
-                            "store of global value",
-                        );
-                    }
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

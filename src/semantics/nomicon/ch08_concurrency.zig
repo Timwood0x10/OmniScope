@@ -55,64 +55,61 @@ const UNSAFE_CONCURRENCY_PATTERNS = [_][]const u8{
     "raw_ptr",
 };
 
+/// Detect concurrency violations (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = module;
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const func_name_raw = c.LLVMGetValueName(func);
+    if (@intFromPtr(func_name_raw) == 0) return;
+    const func_name = std.mem.sliceTo(func_name_raw, 0);
+
+    if (isThreadSpawnPattern(func_name)) {
+        _ = analyzeThreadSpawn(func, srt);
+    }
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_func = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_func) == 0) continue;
+
+                const called_name_raw = c.LLVMGetValueName(called_func);
+                if (@intFromPtr(called_name_raw) == 0) continue;
+                const called_name = std.mem.sliceTo(called_name_raw, 0);
+
+                if (isThreadSpawnPattern(called_name)) {
+                    _ = analyzeThreadSpawnCall(inst, srt);
+                }
+            }
+
+            if (isAtomicOperation(opcode)) {
+                _ = analyzeAtomicUsage(inst, srt);
+            }
+        }
+    }
+}
+
 /// Detect concurrency violations and unsafe threading patterns.
 pub fn detect(
     module: c.LLVMModuleRef,
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = diag;
-    var func_count: usize = 0;
-    var violation_count: usize = 0;
-
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        if (c.LLVMIsDeclaration(func) != 0) continue;
-        func_count += 1;
-
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) == 0) continue;
-        const func_name = std.mem.sliceTo(func_name_raw, 0);
-
-        // Check for thread spawning functions
-        if (isThreadSpawnPattern(func_name)) {
-            if (analyzeThreadSpawn(func, srt)) {
-                violation_count += 1;
-            }
-        }
-
-        // Scan instructions for unsafe concurrency patterns
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Check for calls to thread-related functions
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_func = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called_func) == 0) continue;
-
-                    const called_name_raw = c.LLVMGetValueName(called_func);
-                    if (@intFromPtr(called_name_raw) == 0) continue;
-                    const called_name = std.mem.sliceTo(called_name_raw, 0);
-
-                    // Thread spawn detected
-                    if (isThreadSpawnPattern(called_name)) {
-                        if (analyzeThreadSpawnCall(inst, srt)) {
-                            violation_count += 1;
-                        }
-                    }
-                }
-
-                // Check for atomic operations on suspicious types
-                if (isAtomicOperation(opcode)) {
-                    if (analyzeAtomicUsage(inst, srt)) {
-                        violation_count += 1;
-                    }
-                }
-            }
-        }
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
     }
 }
 

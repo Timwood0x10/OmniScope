@@ -12,6 +12,7 @@
 //! - GC-finalizer ordering: Finalizer runs before FFI cleanup completes
 
 const std = @import("std");
+const log = std.log.scoped(.gc_safety);
 const c = @import("../../../ir/llvm_raw.zig").c;
 const builtin = @import("builtin");
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
@@ -94,6 +95,14 @@ pub const GcSafetyAnalyzer = struct {
 
     /// Run the GC safety analysis pass
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        // Language gate: GC safety analysis only meaningful for GC languages (Java, Python)
+        // For Rust/C/C++, the borrow checker and manual memory management make this irrelevant
+        const lang = ctx.module_language.language;
+        if (lang != .java and lang != .python) {
+            log.debug("GcSafetyPass: skipping non-GC language module ({s})", .{@tagName(lang)});
+            return;
+        }
+
         if (ctx.module == null) return;
 
         const mod = ctx.module.?.raw;

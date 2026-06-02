@@ -137,11 +137,30 @@ pub const ErrorPropagationTracer = struct {
         try collectFFICalls(ctx, &ffi_calls, module);
         stats.ffi_calls_analyzed = @intCast(ffi_calls.items.len);
 
-        // Run detection functions
-        try detectUncheckedFFICalls(ctx, diag, &ffi_calls, &stats);
-        try detectExceptionBoundaryViolations(ctx, diag, module, &stats);
-        try detectErrorCodeMisinterpretation(ctx, diag, &ffi_calls, &stats);
-        try detectErrorPathLeaks(ctx, diag, module, &stats);
+        // Language-specific optimization: Skip irrelevant detectors for Rust modules
+        // Rust uses Result/? operator instead of C++ exceptions or errno-style error codes,
+        // so detectExceptionBoundaryViolations() and detectErrorCodeMisinterpretation()
+        // produce no meaningful results for Rust modules.
+        const lang = ctx.module_language.language;
+        if (lang == .rust) {
+            log.info("ErrorPropagationTracer: using Rust-optimized path (skipping exception/errno checks)", .{});
+
+            // Only run meaningful detectors for Rust:
+            // 1. detectUncheckedFFICalls(): Still relevant - FFI return values must be checked
+            // 2. detectErrorPathLeaks(): Still relevant - resource cleanup on error paths matters
+            //
+            // Skipped for Rust (target Java/C++/C exception model):
+            // - detectExceptionBoundaryViolations(): Rust doesn't use C++ exceptions or landingpad
+            // - detectErrorCodeMisinterpretation(): Rust doesn't use errno or HRESULT patterns
+            try detectUncheckedFFICalls(ctx, diag, &ffi_calls, &stats);
+            try detectErrorPathLeaks(ctx, diag, module, &stats);
+        } else {
+            // Full detection pipeline for non-Rust languages (C/C++, Zig, Go, etc.)
+            try detectUncheckedFFICalls(ctx, diag, &ffi_calls, &stats);
+            try detectExceptionBoundaryViolations(ctx, diag, module, &stats);
+            try detectErrorCodeMisinterpretation(ctx, diag, &ffi_calls, &stats);
+            try detectErrorPathLeaks(ctx, diag, module, &stats);
+        }
 
         diag.info("ErrorPropagationTracer: {d} FFI calls analyzed, {d} unchecked errors, {d} exception violations, {d} misinterpretations, {d} error path leaks", .{
             stats.ffi_calls_analyzed,
