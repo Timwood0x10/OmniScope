@@ -271,6 +271,7 @@ pub const semantics = struct {
 
     // Sub-modules for testing
     pub const platform_profile = @import("semantics/platform_profile.zig");
+    pub const language_detector = @import("semantics/language_detector.zig");
     pub const surface_classifier = struct {
         pub const mangled_name = @import("semantics/surface_classifier/mangled_name.zig");
         pub const surface_classifier = @import("semantics/surface_classifier.zig");

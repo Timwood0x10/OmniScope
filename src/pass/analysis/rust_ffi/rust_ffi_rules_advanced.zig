@@ -39,7 +39,8 @@ const instructionUsesValue = lifetime.instructionUsesValue;
 // ============================================================================
 
 /// Rule 9: Detect write-to-immutable violations.
-pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+/// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
+pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
     const func_name = getFunctionName(func);
 
     // Pass 1: Collect all struct field pointers loaded in this function
@@ -47,10 +48,7 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
     var field_ptr_count: usize = 0;
     var struct_field_ptrs: [MaxFieldPtrs]c.LLVMValueRef = undefined;
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             if (c.LLVMGetInstructionOpcode(inst) != c.LLVMLoad) continue;
 
             const load_src = c.LLVMGetOperand(inst, 0);
@@ -71,16 +69,12 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                 struct_field_ptrs[field_ptr_count] = inst;
                 field_ptr_count += 1;
             }
-        }
     }
 
     if (field_ptr_count == 0) return;
 
     // Pass 2: Check each store instruction for writes through struct field pointers
-    bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
 
             const dest_ptr = c.LLVMGetOperand(inst, 1);
@@ -146,7 +140,6 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
                     break;
                 }
             }
-        }
     }
 }
 
@@ -448,7 +441,8 @@ pub fn getGepFieldIndex(gep: c.LLVMValueRef) u32 {
 // ============================================================================
 
 /// Rule 10: Detect use-after-free within a single function.
-pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+/// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
+pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
     const func_name = getFunctionName(func);
 
     // P0 FIX: Run enhanced drop glue detection BEFORE UAF analysis
@@ -469,10 +463,7 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
         free_func_name: []const u8,
     } = undefined;
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
@@ -486,22 +477,12 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
 
             if (!isDeallocator(callee_name)) continue;
 
-            // SRT query: check if this dealloc is RAII drop
-            // If so, it's a compiler-inserted release — not a bug
             const inst_ref = @intFromPtr(inst);
             if (ctx.semantic_resolution) |resolution_engine| {
                 const srt = resolution_engine.getSemanticTree();
-                if (srt.hasKind(inst_ref, .raii_drop_release) != null) {
-                    // RAII drop — not a use-after-free
-                    continue;
-                }
-                // Also check if it's a non-memory syscall (file/net/proc)
-                if (srt.hasKind(inst_ref, .file_operation) != null) {
-                    continue;
-                }
-                if (srt.hasKind(inst_ref, .network_operation) != null) {
-                    continue;
-                }
+                if (srt.hasKind(inst_ref, .raii_drop_release) != null) continue;
+                if (srt.hasKind(inst_ref, .file_operation) != null) continue;
+                if (srt.hasKind(inst_ref, .network_operation) != null) continue;
             }
 
             const freed_ptr = c.LLVMGetOperand(inst, 0);
@@ -515,7 +496,6 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
                 };
                 freed_count += 1;
             }
-        }
     }
 
     if (freed_count == 0) return;
@@ -530,10 +510,7 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
         store_inst: c.LLVMValueRef,
     } = undefined;
 
-    bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode != c.LLVMStore) continue;
 
@@ -570,18 +547,12 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
                     break;
                 }
             }
-        }
     }
 
-    bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             for (freed_ptrs[0..freed_count]) |fp| {
                 if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
                 if (instructionUsesValue(inst, fp.ptr_val)) {
-                    // Defense-in-depth: check SRT on free_inst before reporting.
-                    // The first SRT check (line ~481) may be bypassed by LLVMIsAFunction filter.
                     if (ctx.semantic_resolution) |resolution_engine| {
                         const srt = resolution_engine.getSemanticTree();
                         if (srt.hasKind(@intFromPtr(fp.free_inst), .raii_drop_release) != null) continue;
@@ -594,15 +565,14 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode == c.LLVMLoad) {
                 const load_src = c.LLVMGetOperand(inst, 0);
-                if (@intFromPtr(load_src) == 0) continue;
-
-                for (freed_globals[0..freed_global_count]) |fg| {
-                    if (load_src != fg.global_val) continue;
-                    if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
-
-                    const gname = fg.global_name_buf[0..fg.global_name_len];
-                    try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias", gname);
-                    break;
+                if (@intFromPtr(load_src) != 0) {
+                    for (freed_globals[0..freed_global_count]) |fg| {
+                        if (load_src != fg.global_val) continue;
+                        if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
+                        const gname = fg.global_name_buf[0..fg.global_name_len];
+                        try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias", gname);
+                        break;
+                    }
                 }
             }
 
@@ -617,7 +587,6 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCon
                     }
                 }
             }
-        }
     }
 }
 

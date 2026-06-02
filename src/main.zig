@@ -24,6 +24,8 @@ const Config = main_config.Config;
 const OutputFormat = main_config.OutputFormat;
 
 const GraphKind = @import("./visual/graph_visualizer.zig").GraphKind;
+const LanguageDetector = OmniScope.semantics.language_detector;
+const FFI_Language = OmniScope.diag.FFIBoundary.Language;
 
 pub const AnalyzeResult = struct {
     issues: []const Issue,
@@ -296,7 +298,7 @@ fn isRuntimeInternalFunction(func_name: []const u8) bool {
     return false;
 }
 
-fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config) !void {
+fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config, source_lang: FFI_Language, target_lang: FFI_Language) !void {
     // Create mutable copy for classifySurfaces (which needs to set semantic_surface)
     var mutable_issues = try allocator.alloc(Issue, issues.len);
     defer allocator.free(mutable_issues);
@@ -356,7 +358,7 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
         }
     } else {
         // Text mode: emit structured report
-        const report = formatStructuredReport(allocator, filtered_issues, func_count, time_ms) catch |err| {
+        const report = formatStructuredReport(allocator, filtered_issues, func_count, time_ms, source_lang, target_lang) catch |err| {
             log.err("Failed to format report: {}\n", .{err});
             return;
         };
@@ -365,9 +367,48 @@ fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: u
     }
 }
 
+/// Convert FFI_Language enum to user-friendly display string.
+/// Returns uppercase language name for terminal output (e.g., "Rust", "C++", "Go").
+fn languageDisplayName(lang: FFI_Language) []const u8 {
+    return switch (lang) {
+        .c => "C",
+        .cpp => "C++",
+        .rust => "Rust",
+        .zig => "Zig",
+        .csharp => "C#",
+        .go => "Go",
+        .java => "Java",
+        .python => "Python",
+        .unknown => "Unknown",
+    };
+}
+
+/// Detect the dominant target language from FFI issues.
+/// Scans all issues with FFI boundary info to find the most common callee language.
+fn detectTargetLanguage(issues: []const Issue) FFI_Language {
+    var lang_counts = [_]usize{0} ** 9; // One per FFI_Language variant
+    for (issues) |issue| {
+        if (issue.ffi_boundary) |bnd| {
+            const idx = @intFromEnum(bnd.callee_language);
+            if (idx < lang_counts.len) {
+                lang_counts[idx] += 1;
+            }
+        }
+    }
+    var max_count: usize = 0;
+    var dominant_lang = FFI_Language.c; // Default to C as most common FFI target
+    for (lang_counts, 0..) |count, i| {
+        if (count > max_count) {
+            max_count = count;
+            dominant_lang = @as(FFI_Language, @enumFromInt(i));
+        }
+    }
+    return dominant_lang;
+}
+
 /// Format a structured report for text mode.
 /// Layout: Findings → Coverage → Summary → Verdict
-fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
+fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, source_lang: FFI_Language, target_lang: FFI_Language) ![]u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch return error.OutOfMemory;
     defer buf.deinit(allocator);
     const w = buf.writer(allocator);
@@ -378,6 +419,20 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
     try w.writeAll("═══════════════════════════════════════════════════════════════\n");
     try w.writeAll("  OmniScope — Cross-Language Memory Safety Analysis\n");
     try w.writeAll("═══════════════════════════════════════════════════════════════\n");
+    try w.writeAll(term.reset);
+    try w.writeAll("\n");
+
+    // ── Language Conversion Info (NEW) ──
+    try w.writeAll(term.bold);
+    try w.writeAll(term.magenta);
+    try w.writeAll("[Language] ");
+    try w.writeAll(term.reset);
+    try w.writeAll(term.cyan);
+    try w.print("{s}", .{languageDisplayName(source_lang)});
+    try w.writeAll(term.dim);
+    try w.writeAll(" --> ");
+    try w.writeAll(term.bright_cyan);
+    try w.print("{s}\n", .{languageDisplayName(target_lang)});
     try w.writeAll(term.reset);
     try w.writeAll("\n");
 
@@ -519,6 +574,26 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
             try w.writeAll(term.white);
             try w.print("{s}\n", .{issue.location.func});
             try w.writeAll(term.reset);
+
+            if (issue.ffi_boundary) |bnd| {
+                const caller = @tagName(bnd.caller_language);
+                const callee = @tagName(bnd.callee_language);
+                const is_unknown = std.mem.eql(u8, caller, "unknown") and std.mem.eql(u8, callee, "unknown");
+                if (!is_unknown) {
+                    try w.writeAll(term.dim);
+                    try w.print("    Language:   ", .{});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.bright_cyan);
+                    try w.print("{s}", .{caller});
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.dim);
+                    try w.writeAll(" → ");
+                    try w.writeAll(term.reset);
+                    try w.writeAll(term.bright_cyan);
+                    try w.print("{s}\n", .{callee});
+                    try w.writeAll(term.reset);
+                }
+            }
 
             if (issue.reason.len > 0) {
                 try w.writeAll(term.dim);
@@ -1370,8 +1445,8 @@ fn calculateFFISeverity(confidence: f32) Severity {
 }
 
 fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config: Config) !void {
-    log.debug("=== OmniScope IR Analysis ===\n", .{});
-    log.debug("File: {s}\n\n", .{path});
+    log.info("=== OmniScope IR Analysis ===\n", .{});
+    log.info("File: {s}\n\n", .{path});
 
     var loader = IRLoader.loadFile(allocator, path) catch |err| {
         log.err("Failed to load IR file: {s}\n", .{@errorName(err)});
@@ -1379,12 +1454,33 @@ fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, config:
     };
     defer loader.deinit();
 
+    // Detect source language from the loaded module
+    const source_lang = if (loader.getModule()) |module_ref|
+        LanguageDetector.detectModuleLanguage(module_ref.raw)
+    else
+        LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
+
+    const source_lang_name = languageDisplayName(source_lang.language);
+    log.info("[Language] Source: {s} (confidence: {:.1}%)\n", .{ source_lang_name, source_lang.confidence * 100 });
+
     log.debug("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
 
     var result = try runModulePipeline(allocator, &loader, config);
     defer deinitAnalyzeResult(&result);
 
-    try emitOutput(allocator, result.issues, result.func_count, result.time_ms, config);
+    // Detect target language from FFI boundary issues
+    const target_lang = detectTargetLanguage(result.issues);
+    const target_lang_name = languageDisplayName(target_lang);
+
+    // Display language conversion info at analysis start
+    log.info("[Language] Analyzing: {s} --> {s}\n", .{ source_lang_name, target_lang_name });
+
+    try emitOutput(allocator, result.issues, result.func_count, result.time_ms, config, source_lang.language, target_lang);
+
+    // Display language conversion summary at analysis end
+    log.info("[Language] Analysis complete: {d} issues in {s} --> {s} boundary\n", .{
+        result.issues.len, source_lang_name, target_lang_name,
+    });
 
     if (config.visualize) {
         try generateVisualization(allocator, result.issues, path);
@@ -1440,11 +1536,27 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
         loaders.deinit(allocator);
     }
 
+    // Track source languages for each file
+    var source_languages = try std.ArrayList(FFI_Language).initCapacity(allocator, files.len);
+    defer source_languages.deinit(allocator);
+
     for (files, 0..) |file, i| {
         log.info("  [{d}/{d}] Loading: {s}\n", .{ i + 1, files.len, file });
         var loader = try IRLoader.loadFile(allocator, file);
         errdefer loader.deinit();
         try loaders.append(allocator, loader);
+
+        // Detect source language for this file
+        const lang_profile = if (loader.getModule()) |module_ref|
+            LanguageDetector.detectModuleLanguage(module_ref.raw)
+        else
+            LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
+
+        try source_languages.append(allocator, lang_profile.language);
+        log.info("  [{d}/{d}] Language: {s} ({:.0}% confidence)\n", .{
+            i + 1,                                      files.len,
+            languageDisplayName(lang_profile.language), lang_profile.confidence * 100,
+        });
     }
     log.info("[*] All files loaded\n\n", .{});
 
@@ -1461,7 +1573,10 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
 
     log.info("[*] Running per-file pipelines...\n", .{});
     for (loaders.items, 0..) |*loader, i| {
-        log.info("  [{d}/{d}] Analyzing: {s} ({d} functions)\n", .{ i + 1, loaders.items.len, files[i], loader.getFunctionCount() });
+        const src_lang = languageDisplayName(source_languages.items[i]);
+        log.info("  [{d}/{d}] Analyzing: {s} ({d} functions) [{s}]\n", .{
+            i + 1, loaders.items.len, files[i], loader.getFunctionCount(), src_lang,
+        });
         const result = runModulePipeline(allocator, loader, config) catch |err| {
             log.err("  [{d}/{d}] Analysis FAILED: {}\n", .{ i + 1, loaders.items.len, err });
             continue;
@@ -1471,6 +1586,16 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
         total_facts += result.fact_count;
         total_time += result.time_ms;
         total_issues += result.issues.len;
+
+        // Show per-file language conversion info
+        if (result.issues.len > 0) {
+            const target_lang = detectTargetLanguage(result.issues);
+            log.info("  [{d}/{d}] Language: {s} --> {s} ({d} issues)\n", .{
+                i + 1,             loaders.items.len,
+                src_lang,          languageDisplayName(target_lang),
+                result.issues.len,
+            });
+        }
     }
 
     log.info("[*] Per-file pipeline complete: {d} issues from {d} files\n\n", .{ total_issues, files.len });
@@ -1524,7 +1649,37 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
 
     const ffi_issue_count = ffi_issues.items.len;
 
+    // Build combined issue list for language detection
+    var all_issues_for_lang = try std.ArrayList(Issue).initCapacity(allocator, total_issues + ffi_issue_count);
+    defer all_issues_for_lang.deinit(allocator);
+    for (results.items) |*r| {
+        for (r.issues) |iss| try all_issues_for_lang.append(allocator, iss);
+    }
+    for (ffi_issues.items) |iss| try all_issues_for_lang.append(allocator, iss);
+
+    // Detect dominant source and target languages across all files
+    const dominant_target = detectTargetLanguage(all_issues_for_lang.items);
+
+    // Count unique source languages
+    var unique_sources = std.StringHashMap(void).init(allocator);
+    defer unique_sources.deinit();
+    for (source_languages.items) |lang| {
+        const name = languageDisplayName(lang);
+        _ = try unique_sources.put(name, {});
+    }
+
     log.info("\n=== Multi-File Analysis Complete ===\n", .{});
+    log.info("[Language] Source languages: ", .{});
+    var first_src = true;
+    var src_it = unique_sources.iterator();
+    while (src_it.next()) |entry| {
+        if (!first_src) log.info(", ", .{});
+        first_src = false;
+        log.info("{s}", .{entry.key_ptr.*});
+    }
+    log.info("\n", .{});
+    log.info("[Language] Target language: {s}\n", .{languageDisplayName(dominant_target)});
+    log.info("[Language] Conversion: {d} files analyzed\n", .{files.len});
     log.info("Total functions: {d}\n", .{total_funcs});
     log.info("Total facts: {d}\n", .{total_facts});
     log.info("Total time: {d}ms\n", .{total_time});
@@ -1549,7 +1704,7 @@ fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const u8,
         for (all_slices.items) |slice| {
             for (slice) |iss| try merged.append(allocator, iss);
         }
-        try emitOutput(allocator, merged.items, total_funcs, total_time, config);
+        try emitOutput(allocator, merged.items, total_funcs, total_time, config, .unknown, dominant_target);
     } else {
         // For text output, report per-file issues
         log.info("Issues detected: {d} in pipeline, {d} FFI\n", .{ total_issues, ffi_issue_count });

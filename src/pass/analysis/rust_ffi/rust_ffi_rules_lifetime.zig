@@ -30,7 +30,8 @@ const basic = @import("rust_ffi_rules_basic.zig");
 const getBaseValue = basic.getBaseValue;
 
 /// Rule 7: Detect as_ptr dangling — borrowed pointer used after parent deallocation.
-pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+/// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
+pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
     // AsPtrEntry tracks one as_ptr-like extraction
     const AsPtrEntry = struct {
         as_ptr_value: c.LLVMValueRef,
@@ -41,19 +42,10 @@ pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCo
     var as_ptrs = std.ArrayList(AsPtrEntry).initCapacity(auditor.allocator, 16) catch return;
     defer as_ptrs.deinit(auditor.allocator);
 
-    // Collect all instructions ordered by position (for temporal analysis)
-    var all_instructions = std.ArrayList(c.LLVMValueRef).initCapacity(auditor.allocator, 64) catch return;
-    defer all_instructions.deinit(auditor.allocator);
-
     const func_name = getFunctionName(func);
 
-    // Single pass: collect as_ptr patterns and build instruction ordering
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            try all_instructions.append(auditor.allocator, inst);
-
+    // Use pre-collected instruction list (avoids redundant BB/inst traversal).
+    for (insts) |inst| {
             const opcode = c.LLVMGetInstructionOpcode(inst);
 
             // Pattern: GEP extracting field 0 from a struct → likely as_ptr
@@ -76,7 +68,6 @@ pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCo
                     });
                 }
             }
-        }
     }
 
     if (as_ptrs.items.len == 0) return;
@@ -86,7 +77,7 @@ pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCo
         var parent_dropped_at: ?usize = null;
         var last_use_at: ?usize = null;
 
-        for (all_instructions.items, 0..) |inst_i, idx| {
+        for (insts, 0..) |inst_i, idx| {
             const opcode = c.LLVMGetInstructionOpcode(inst_i);
 
             // Check if this instruction drops/deallocates the parent
@@ -193,7 +184,8 @@ pub fn detectAsPtrDangling(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCo
 ///                     and global is used for indirect calls
 ///   Mode B (new):      any from_parameter value whose usage includes
 ///                     as_call_target — catches local callback vars too
-pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+/// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
+pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
     const func_name = getFunctionName(func);
 
     // Collect all parameter values for Mode B scan
@@ -211,10 +203,7 @@ pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, ctx:
         }
     }
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    for (insts) |inst| {
             const opcode = c.LLVMGetInstructionOpcode(inst);
             if (opcode != c.LLVMStore) continue;
 
@@ -264,7 +253,6 @@ pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, ctx:
                     }
                 }
             }
-        }
     }
 }
 

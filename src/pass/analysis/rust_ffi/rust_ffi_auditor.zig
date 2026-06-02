@@ -131,24 +131,39 @@ pub const RustFfiAuditor = struct {
     fn auditFunction(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
         const func_name = getFunctionName(func);
 
-        // IMPROVED: Multi-strategy Rust detection for higher recall
-        // Strategy 1: Global module language detection (existing)
+        // Multi-strategy Rust detection:
+        // Strategy 1: Module-level detection (O(1), checked first)
         const is_rust_module = ctx.isRustModule();
-        // Strategy 2: Function-level Rust pattern detection (NEW)
-        // Detects Rust FFI patterns even when language detector misidentifies the module
-        // This handles cases like C files with Rust mangled function names (_RZN..., __rust_*, etc.)
-        const has_rust_patterns = self.hasRustFfiPatterns(func, ctx);
+        // Strategy 2: Function-level pattern scan — only run when module detection
+        // missed it (avoids full IR traversal for every function in Rust modules).
+        const has_rust_patterns = if (is_rust_module) true else blk: {
+            const p = self.hasRustFfiPatterns(func, ctx);
+            if (p) diag.debug("FFIAuditor: '{s}' has Rust FFI patterns but module not detected as Rust", .{func_name});
+            break :blk p;
+        };
 
-        // Run Rust-specific rules if EITHER strategy detects Rust
-        const is_rust = is_rust_module or has_rust_patterns;
+        const is_rust = has_rust_patterns;
 
-        if (has_rust_patterns and !is_rust_module) {
-            diag.debug("FFIAuditor: Function '{s}' has Rust FFI patterns but module not detected as Rust — enabling Rust-specific rules", .{func_name});
-        }
-
-        // PERF: Initialize InstCache for this function's instructions (avoids 6× FFI overhead)
+        // PERF: Collect all instructions ONCE; share the slice across all rules.
+        // Previously each rule did its own BB/inst traversal (6-8 independent sweeps).
+        // Now: 1 traversal here, all rules iterate the pre-built slice.
         var inst_cache = InstCache.init(self.allocator);
         defer inst_cache.deinit();
+
+        var all_insts = std.ArrayList(c.LLVMValueRef).initCapacity(self.allocator, 128) catch return;
+        defer all_insts.deinit(self.allocator);
+
+        {
+            var bb = c.LLVMGetFirstBasicBlock(func);
+            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                var inst = c.LLVMGetFirstInstruction(bb);
+                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                    all_insts.append(self.allocator, inst) catch {};
+                }
+            }
+        }
+
+        const insts = all_insts.items;
 
         // ── Rust-specific rules (language-gated) ──
         if (is_rust) {
@@ -181,7 +196,7 @@ pub const RustFfiAuditor = struct {
             try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, &inst_cache);
 
             // Rule 7: as_ptr dangling detection — borrowed ptr used after parent drop
-            try lifetime_rules.detectAsPtrDangling(self, func, ctx, diag);
+            try lifetime_rules.detectAsPtrDangling(self, func, insts, ctx, diag);
         }
 
         // ── Universal FFI boundary rules (run on ALL languages) ──
@@ -193,13 +208,13 @@ pub const RustFfiAuditor = struct {
         try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, &inst_cache);
 
         // Rule 8: Callback ownership risk — function pointer parameter stored to global
-        try lifetime_rules.detectCallbackOwnershipRisk(self, func, ctx, diag);
+        try lifetime_rules.detectCallbackOwnershipRisk(self, func, insts, ctx, diag);
 
         // Rule 9: Write to immutable — store through pointer from const-qualified struct field
-        try advanced_rules.detectWriteToImmutable(self, func, ctx, diag);
+        try advanced_rules.detectWriteToImmutable(self, func, insts, ctx, diag);
 
         // Rule 10: Use after free — post-free pointer use within same function
-        try advanced_rules.detectUseAfterFree(self, func, ctx, diag);
+        try advanced_rules.detectUseAfterFree(self, func, insts, ctx, diag);
     }
 
     /// Generate audit report as formatted text
@@ -249,12 +264,18 @@ pub const RustFfiAuditor = struct {
         _ = self;
         const func_name = getFunctionName(func);
 
-        // Check 1: Function name has Rust mangled name pattern
+        // Check 0 (fast path): module-level Rust FFI sets populated → whole module is Rust
+        // Avoids full IR scan when we already know this is a Rust module via other evidence.
+        if (ctx.rust_into_raw_set.count() > 0 or ctx.rust_from_raw_set.count() > 0) {
+            return true;
+        }
+
+        // Check 1: Function name has Rust mangled name pattern (O(1), no IR traversal)
         if (isRustMangledName(func_name)) {
             return true;
         }
 
-        // Check 2: Function calls Rust allocator intrinsics
+        // Check 2: Scan IR for Rust allocator / FFI boundary calls (only when checks 0+1 fail)
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -285,11 +306,6 @@ pub const RustFfiAuditor = struct {
                     return true;
                 }
             }
-        }
-
-        // Check 3: Module-level Rust FFI sets are populated (indicates Rust FFI analysis was done)
-        if (ctx.rust_into_raw_set.count() > 0 or ctx.rust_from_raw_set.count() > 0) {
-            return true;
         }
 
         return false;

@@ -247,6 +247,70 @@ pub const DataFlowGraph = struct {
     }
 
     /// Create FFI boundaries from FFIMatcher matches
+    /// Safe FFI function whitelist - these are well-known safe functions
+    /// that should not trigger ffi_unsafe_call warnings
+    const SAFE_FFI_PATTERNS = [_][]const u8{
+        // Standard I/O functions
+        "printf", "fprintf", "sprintf", "snprintf",
+        "scanf",  "fscanf",  "sscanf",
+        // String operations
+         "strlen",
+        "strcpy", "strcat",  "strncpy", "strncat",
+        "strcmp", "strncmp", "strstr",  "strchr",
+        "memcpy", "memmove", "memcmp",  "memset",
+        // Memory management (basic)
+        "malloc", "calloc",  "realloc", "free",
+        "alloca", "strdup",  "strndup",
+        // Math functions
+        "sin",
+        "cos",    "tan",     "sqrt",    "pow",
+        "abs",    "rand",    "srand",
+        // Time functions
+          "time",
+        "clock",  "sleep",
+    };
+
+    /// Internal implementation prefixes - these are internal functions
+    /// that should not be reported as FFI boundary issues
+    const INTERNAL_PREFIXES = [_][]const u8{
+        "__rust_", // Rust internal functions
+        "sqlite3Mem", // SQLite internal memory management
+        "uv__", // libuv internal functions
+        "std::", // C++ standard library internal
+        "_ZN", // C++ mangled names prefix
+    };
+
+    /// Checks if an FFI function name is considered dangerous and should be reported.
+    /// Implements three-layer defense:
+    /// Layer 1: Safe function whitelist (exact match)
+    /// Layer 2: Internal implementation prefix check
+    /// Layer 3: Default to potentially dangerous
+    ///
+    /// Parameters:
+    ///   - func_name: The FFI function name to check
+    ///
+    /// Returns:
+    ///   - true if the function should be included in FFI boundary analysis
+    ///   - false if the function is safe and should be filtered out
+    fn isDangerousFFIFunction(func_name: []const u8) bool {
+        // Layer 1: Check safe whitelist (exact match)
+        for (SAFE_FFI_PATTERNS) |pattern| {
+            if (std.mem.eql(u8, func_name, pattern)) {
+                return false; // Safe function, skip
+            }
+        }
+
+        // Layer 2: Check internal implementation prefixes
+        for (INTERNAL_PREFIXES) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) {
+                return false; // Internal implementation, skip
+            }
+        }
+
+        // Not in whitelist or internal list - consider it potentially dangerous
+        return true;
+    }
+
     ///
     /// This method iterates through all FFI matches and creates
     /// corresponding FFIBoundary entries in the graph.
@@ -262,8 +326,21 @@ pub const DataFlowGraph = struct {
         // Generate IDs starting from the current boundary count + 1
         var id: u32 = @intCast(self.ffi_boundaries.items.len + 1);
 
+        // Statistics for filtering effectiveness
+        const total_matches = matches.len;
+        var filtered_count: usize = 0;
+        var retained_count: usize = 0;
+
         for (matches) |match| {
             if (!match.isValid()) continue;
+
+            // ⭐ NEW: Pre-filter non-dangerous functions (三层防御)
+            if (!isDangerousFFIFunction(match.name)) {
+                filtered_count += 1;
+                continue; // Skip this safe/internal function entirely
+            }
+
+            retained_count += 1;
 
             // Infer languages from function names
             const declare_name = match.declare_func.?.name;
@@ -289,6 +366,15 @@ pub const DataFlowGraph = struct {
 
             try self.ffi_boundaries.append(self.allocator, boundary);
             id += 1;
+        }
+
+        // Log filtering statistics (only if filtering occurred)
+        if (filtered_count > 0) {
+            std.log.info("FFI-FILTER: Total={}, Filtered={} safe/internal functions, Retained={} potentially dangerous", .{
+                total_matches,
+                filtered_count,
+                retained_count,
+            });
         }
     }
 

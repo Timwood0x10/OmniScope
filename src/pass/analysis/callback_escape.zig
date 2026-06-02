@@ -312,8 +312,10 @@ pub const CallbackEscapePass = struct {
                 wctx.ctx_ptr.allocator.free(msg);
                 return result;
             };
+            defer wctx.ctx_ptr.allocator.free(trace);
             trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
-            const issue = Issue.initWithTrace(.cross_language_leak, msg, Location.init(item.func_name), .medium, 0.65, trace);
+            var issue = Issue.initWithTrace(.cross_language_leak, msg, Location.init(item.func_name), .medium, 0.65, trace);
+            issue.owned = true;
             wctx.ctx_ptr.addIssue(&issue) catch {};
         }
         {
@@ -327,8 +329,10 @@ pub const CallbackEscapePass = struct {
                     wctx.ctx_ptr.allocator.free(msg);
                     return result;
                 };
+                defer wctx.ctx_ptr.allocator.free(trace);
                 trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
-                const issue = Issue.initWithTrace(.use_after_free, msg, Location.init(item.func_name), .high, 0.80, trace);
+                var issue = Issue.initWithTrace(.use_after_free, msg, Location.init(item.func_name), .high, 0.80, trace);
+                issue.owned = true;
                 wctx.ctx_ptr.addIssue(&issue) catch {};
             }
         }
