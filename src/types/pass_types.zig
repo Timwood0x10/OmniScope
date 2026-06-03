@@ -54,6 +54,9 @@ pub const IssueVerifier = resource_verifier_mod.IssueVerifier;
 const contract_db_mod = @import("../resource/ffi_contract_db.zig");
 pub const FFIContractDB = contract_db_mod.FFIContractDB;
 
+const ir_store_mod = @import("../ir/ir_store.zig");
+pub const ModuleIRStore = ir_store_mod.ModuleIRStore;
+
 /// Pass kind classification
 pub const PassKind = enum {
     foundation,
@@ -338,12 +341,15 @@ pub const PassContext = struct {
     /// When true, passes should suppress issues from stdlib functions.
     focus_user_code: bool = true,
 
+    ir_store: *ModuleIRStore,
+
     pub fn init(
         allocator: Allocator,
         module: ?ModuleRef,
         fact_store: *FactStore,
         query_engine: *QueryEngine,
         data_flow_graph: *DataFlowGraph,
+        ir_store: *ModuleIRStore,
     ) !PassContext {
         return .{
             .allocator = allocator,
@@ -392,6 +398,7 @@ pub const PassContext = struct {
             .issue_verifier = null,
             .contract_db = try FFIContractDB.init(allocator),
             .focus_user_code = true,
+            .ir_store = ir_store,
         };
     }
 

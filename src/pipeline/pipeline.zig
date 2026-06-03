@@ -39,6 +39,8 @@ const resource_verifier = @import("../pass/analysis/resource/issue_verifier.zig"
 const IssueVerifier = resource_verifier.IssueVerifier;
 const c = @import("../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../ir/llvm_safe.zig");
+const ir_store_mod = @import("../ir/ir_store.zig");
+const ModuleIRStore = ir_store_mod.ModuleIRStore;
 
 // v0.2.0: Diagnostic Aggregator for cross-pass issue deduplication
 const diag_aggregator = @import("../diag/aggregator.zig");
@@ -169,6 +171,38 @@ pub const Pipeline = struct {
         var issue_verifier = IssueVerifier.init(self.allocator);
         defer issue_verifier.deinit();
 
+        var ir_store_ptr: ?*ModuleIRStore = null;
+        defer if (ir_store_ptr) |ptr| {
+            ptr.deinit();
+            self.allocator.destroy(ptr);
+        };
+
+        if (self.module) |mod| {
+            const raw_mod = mod.raw;
+            if (@intFromPtr(raw_mod) != 0) {
+                const store = self.allocator.create(ModuleIRStore) catch |err| {
+                    log.err("[IRStore] Allocation failed: {}", .{err});
+                    return error.OutOfMemory;
+                };
+                store.* = ModuleIRStore.collect(raw_mod, self.allocator) catch |err| {
+                    log.err("[IRStore] Collection failed: {}", .{err});
+                    self.allocator.destroy(store);
+                    return error.IRStoreCollectionFailed;
+                };
+                ir_store_ptr = store;
+
+                log.info("[IRStore] Initialized: {} functions, {} total instructions", .{
+                    store.function_count,
+                    store.total_instruction_count,
+                });
+            }
+        }
+
+        const ir_store = ir_store_ptr orelse {
+            log.err("[IRStore] No LLVM module available — cannot continue without IR Store", .{});
+            return error.IRStoreNotAvailable;
+        };
+
         var ctx = PassContext{
             .allocator = self.allocator,
             .module = self.module,
@@ -215,6 +249,7 @@ pub const Pipeline = struct {
             .issue_verifier = &issue_verifier,
             .contract_db = try @import("../resource/ffi_contract_db.zig").FFIContractDB.init(self.allocator),
             .focus_user_code = self.focus_user_code,
+            .ir_store = ir_store,
         };
         // Inject resource family registry into memory graph for P2/P3 classification
         ctx.memory_graph.setFamilyRegistry(&family_registry);

@@ -193,17 +193,17 @@ pub const RustFfiAuditor = struct {
             }
 
             // Rule 2: as_ptr borrow escape detection
-            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, &inst_cache);
+            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, insts, &inst_cache);
 
             // Rule 3: Cross-lang alloc mismatch (Rust _Znwm → C free)
-            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, &inst_cache);
+            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, insts, &inst_cache);
 
             if (self.stats.cross_lang_mismatches > 0) {
                 diag.debug("[RUST-FFI] Boundary detected: {s} --> c (cross-lang alloc mismatch, confidence: 0.85)", .{caller_lang_tag});
             }
 
             // Rule 6: Ownership transfer protocol (into_raw/from_raw pairing)
-            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, &inst_cache);
+            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, insts, &inst_cache);
 
             // Rule 7: as_ptr dangling detection — borrowed ptr used after parent drop
             try lifetime_rules.detectAsPtrDangling(self, func, insts, ctx, diag);
@@ -212,7 +212,7 @@ pub const RustFfiAuditor = struct {
         // ── Universal FFI boundary rules (run on ALL languages) ──
 
         // Rule 4: Unsafe block FFI call scan
-        try basic_rules.detectUnsafeFfiCalls(self, func, &inst_cache);
+        try basic_rules.detectUnsafeFfiCalls(self, func, insts, &inst_cache);
 
         if (self.stats.unsafe_ffi_calls > 0) {
             const target_lang = if (caller_lang == .rust) "c" else @tagName(caller_lang);
@@ -220,7 +220,7 @@ pub const RustFfiAuditor = struct {
         }
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
-        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, &inst_cache);
+        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, insts, &inst_cache);
 
         // Rule 8: Callback ownership risk — function pointer parameter stored to global
         try lifetime_rules.detectCallbackOwnershipRisk(self, func, insts, ctx, diag);

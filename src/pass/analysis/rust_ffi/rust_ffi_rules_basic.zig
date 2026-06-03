@@ -46,174 +46,162 @@ const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKin
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
 
 /// Detect as_ptr borrow escape in function body (Rule 2).
-pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            // PERF: Use InstCache for opcode lookup
-            const opcode = inst_cache.getOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
+    for (insts) |inst| {
+        // PERF: Use InstCache for opcode lookup
+        const opcode = inst_cache.getOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            // PERF: Use InstCache for operand count and callee name lookup
-            const num_operands: c_uint = inst_cache.getNumOperands(inst);
-            if (num_operands < 2) continue;
+        // PERF: Use InstCache for operand count and callee name lookup
+        const num_operands: c_uint = inst_cache.getNumOperands(inst);
+        if (num_operands < 2) continue;
 
-            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
-            const name_slice = callee_name;
+        const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+        const name_slice = callee_name;
 
-            if (!isRustAsPtrCall(name_slice)) continue;
+        if (!isRustAsPtrCall(name_slice)) continue;
 
-            // R-1/R-8: Check SRT for provenance — heap/global pointers are
-            // not stack escapes; from_parameter is not a local stack escape.
-            // R-8: Function parameters are NOT stack escapes — the caller
-            // owns the pointer and is responsible for its lifetime.
-            // R-1: Heap provenance (Box/Arc/Vec/String) — pointer from heap
-            // allocation passed to FFI is not a borrow escape.
-            if (ctx.semantic_resolution) |resolution_engine| {
-                const srt = resolution_engine.getSemanticTree();
-                // Check the as_ptr return value's provenance
-                const inst_ref = @intFromPtr(inst);
-                if (srt.hasKind(inst_ref, .heap_provenance) != null) continue;
-                if (srt.hasKind(inst_ref, .global_provenance) != null) continue;
-                // Trace the as_ptr base pointer back to check provenance
-                if (srt.*.traceToHeapProvenance(inst, 8)) continue;
-            }
-
-            auditor.stats.as_ptr_escapes += 1;
-            const func_name = getFunctionName(func);
-
-            try addFinding(auditor, .{
-                .func_name = func_name,
-                .issue_type = .as_ptr_borrow_escape,
-                .severity = .high,
-                .confidence = 0.80,
-                .reason = "as_ptr() on local String/Vec passed to extern C - pointer may dangle after drop",
-                .location = Location.init(func_name),
-            });
-
-            const vuln_id = ctx.getNextVulnId();
-            ctx.addIssue(&Issue.initWithReason(
-                .borrow_escape,
-                "Potential as_ptr borrow escape: local Rust value pointer passed to FFI",
-                Location.init(func_name),
-                .high,
-                0.8,
-                "as_ptr() on local String/Vec passed to extern C - pointer may dangle after drop",
-            )) catch |err| {
-                diag.warn("Failed to register borrow_escape issue: {any}", .{err});
-            };
-            diag.err("VULNERABILITY OMI-{d:0>3} [high] [Confidence: medium]", .{vuln_id});
-            diag.err("Type: borrow_escape", .{});
-            diag.err("Reason: as_ptr() on local value passed to FFI - may dangle", .{});
+        // R-1/R-8: Check SRT for provenance — heap/global pointers are
+        // not stack escapes; from_parameter is not a local stack escape.
+        // R-8: Function parameters are NOT stack escapes — the caller
+        // owns the pointer and is responsible for its lifetime.
+        // R-1: Heap provenance (Box/Arc/Vec/String) — pointer from heap
+        // allocation passed to FFI is not a borrow escape.
+        if (ctx.semantic_resolution) |resolution_engine| {
+            const srt = resolution_engine.getSemanticTree();
+            // Check the as_ptr return value's provenance
+            const inst_ref = @intFromPtr(inst);
+            if (srt.hasKind(inst_ref, .heap_provenance) != null) continue;
+            if (srt.hasKind(inst_ref, .global_provenance) != null) continue;
+            // Trace the as_ptr base pointer back to check provenance
+            if (srt.*.traceToHeapProvenance(inst, 8)) continue;
         }
+
+        auditor.stats.as_ptr_escapes += 1;
+        const func_name = getFunctionName(func);
+
+        try addFinding(auditor, .{
+            .func_name = func_name,
+            .issue_type = .as_ptr_borrow_escape,
+            .severity = .high,
+            .confidence = 0.80,
+            .reason = "as_ptr() on local String/Vec passed to extern C - pointer may dangle after drop",
+            .location = Location.init(func_name),
+        });
+
+        const vuln_id = ctx.getNextVulnId();
+        ctx.addIssue(&Issue.initWithReason(
+            .borrow_escape,
+            "Potential as_ptr borrow escape: local Rust value pointer passed to FFI",
+            Location.init(func_name),
+            .high,
+            0.8,
+            "as_ptr() on local String/Vec passed to extern C - pointer may dangle after drop",
+        )) catch |err| {
+            diag.warn("Failed to register borrow_escape issue: {any}", .{err});
+        };
+        diag.err("VULNERABILITY OMI-{d:0>3} [high] [Confidence: medium]", .{vuln_id});
+        diag.err("Type: borrow_escape", .{});
+        diag.err("Reason: as_ptr() on local value passed to FFI - may dangle", .{});
     }
 }
 
 /// Detect cross-language allocation mismatch (Rule 3): Rust _Znwm → C free.
-pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
+pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
     var visited = std.AutoHashMap(usize, void).init(auditor.allocator);
     defer visited.deinit();
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            // PERF: Use InstCache for opcode lookup
-            const opcode = inst_cache.getOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+    for (insts) |inst| {
+        // PERF: Use InstCache for opcode lookup
+        const opcode = inst_cache.getOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            // PERF: Use InstCache for operand count and callee name lookup
-            const num_operands: c_uint = inst_cache.getNumOperands(inst);
-            if (num_operands < 2) continue;
+        // PERF: Use InstCache for operand count and callee name lookup
+        const num_operands: c_uint = inst_cache.getNumOperands(inst);
+        if (num_operands < 2) continue;
 
-            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+        const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            if (!isCFreeCall(callee_name)) continue;
+        if (!isCFreeCall(callee_name)) continue;
 
-            // R-6: If the freed pointer came from into_raw, ownership was
-            // explicitly transferred — C free() is legal, not a bug.
-            // R-7: If the callee is a library allocator release function
-            // (e.g., mi_free, sqlite3_finalize), it's not cross-language.
-            const inst_ref = @intFromPtr(inst);
-            if (ctx.semantic_resolution) |resolution_engine| {
-                const srt = resolution_engine.getSemanticTree();
-                // R-7: Library allocator release — not cross-language
-                if (srt.hasKind(inst_ref, .library_release) != null) continue;
-                // R-4: Non-memory syscall (file/net/proc) — not a free
-                if (srt.hasKind(inst_ref, .file_operation) != null) continue;
-                if (srt.hasKind(inst_ref, .network_operation) != null) continue;
-                if (srt.hasKind(inst_ref, .process_operation) != null) continue;
-            }
-
-            // Get the pointer argument to free() and trace its origin
-            // FIXED: LLVM call instruction: [callee, arg0, arg1, ...], so ptr is at index 1
-            const ptr_arg = c.LLVMGetOperand(inst, 1);
-            if (@intFromPtr(ptr_arg) == 0) continue;
-
-            // R-6: Check if the pointer came from into_raw (ownership transfer)
-            const ptr_ref = @intFromPtr(ptr_arg);
-            if (ctx.semantic_resolution) |resolution_engine| {
-                const srt = resolution_engine.getSemanticTree();
-                if (srt.hasKind(ptr_ref, .into_raw_transfer) != null) {
-                    // Ownership was transferred via into_raw — C free() is legal
-                    continue;
-                }
-            }
-
-            // Only report if the pointer can be traced back to a Rust allocator
-            if (!ptrOriginatesFromRustAlloc(func, ptr_arg, &visited)) continue;
-
-            const func_name = getFunctionName(func);
-            auditor.stats.cross_lang_mismatches += 1;
-
-            try addFinding(auditor, .{
-                .func_name = func_name,
-                .issue_type = .cross_lang_alloc_mismatch,
-                .severity = .high,
-                .confidence = 0.85,
-                .reason = "C free() may be freeing Rust-allocated memory (_Znwm)",
-                .location = Location.init(func_name),
-            });
-
-            const vuln_id = ctx.getNextVulnId();
-            ctx.addIssue(&Issue.initWithReason(
-                .cross_language_leak,
-                "Cross-language alloc mismatch: Rust-alloc freed by C free()",
-                Location.init(func_name),
-                .high,
-                0.85,
-                "Rust _Znwm allocation freed by C free() - heap mismatch",
-            )) catch |err| {
-                diag.warn("Failed to register cross_language_leak issue: {any}", .{err});
-            };
-            diag.err("CROSS-LANG MISMATCH OMI-{d:0>3} [high] [Confidence: high]", .{vuln_id});
-            diag.err("Type: cross_language_alloc_mismatch", .{});
-            diag.err("Reason: Rust _Znwm allocation freed by C free() - heap mismatch", .{});
+        // R-6: If the freed pointer came from into_raw, ownership was
+        // explicitly transferred — C free() is legal, not a bug.
+        // R-7: If the callee is a library allocator release function
+        // (e.g., mi_free, sqlite3_finalize), it's not cross-language.
+        const inst_ref = @intFromPtr(inst);
+        if (ctx.semantic_resolution) |resolution_engine| {
+            const srt = resolution_engine.getSemanticTree();
+            // R-7: Library allocator release — not cross-language
+            if (srt.hasKind(inst_ref, .library_release) != null) continue;
+            // R-4: Non-memory syscall (file/net/proc) — not a free
+            if (srt.hasKind(inst_ref, .file_operation) != null) continue;
+            if (srt.hasKind(inst_ref, .network_operation) != null) continue;
+            if (srt.hasKind(inst_ref, .process_operation) != null) continue;
         }
+
+        // Get the pointer argument to free() and trace its origin
+        // FIXED: LLVM call instruction: [callee, arg0, arg1, ...], so ptr is at index 1
+        const ptr_arg = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(ptr_arg) == 0) continue;
+
+        // R-6: Check if the pointer came from into_raw (ownership transfer)
+        const ptr_ref = @intFromPtr(ptr_arg);
+        if (ctx.semantic_resolution) |resolution_engine| {
+            const srt = resolution_engine.getSemanticTree();
+            if (srt.hasKind(ptr_ref, .into_raw_transfer) != null) {
+                // Ownership was transferred via into_raw — C free() is legal
+                continue;
+            }
+        }
+
+        // Only report if the pointer can be traced back to a Rust allocator
+        if (!ptrOriginatesFromRustAlloc(func, ptr_arg, &visited)) continue;
+
+        const func_name = getFunctionName(func);
+        auditor.stats.cross_lang_mismatches += 1;
+
+        try addFinding(auditor, .{
+            .func_name = func_name,
+            .issue_type = .cross_lang_alloc_mismatch,
+            .severity = .high,
+            .confidence = 0.85,
+            .reason = "C free() may be freeing Rust-allocated memory (_Znwm)",
+            .location = Location.init(func_name),
+        });
+
+        const vuln_id = ctx.getNextVulnId();
+        ctx.addIssue(&Issue.initWithReason(
+            .cross_language_leak,
+            "Cross-language alloc mismatch: Rust-alloc freed by C free()",
+            Location.init(func_name),
+            .high,
+            0.85,
+            "Rust _Znwm allocation freed by C free() - heap mismatch",
+        )) catch |err| {
+            diag.warn("Failed to register cross_language_leak issue: {any}", .{err});
+        };
+        diag.err("CROSS-LANG MISMATCH OMI-{d:0>3} [high] [Confidence: high]", .{vuln_id});
+        diag.err("Type: cross_language_alloc_mismatch", .{});
+        diag.err("Reason: Rust _Znwm allocation freed by C free() - heap mismatch", .{});
     }
 }
 
 /// Detect unsafe FFI calls without validation (Rule 4).
-pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, inst_cache: *InstCache) !void {
+pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
     var has_unsafe_ffi = false;
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            // PERF: Use InstCache for opcode lookup
-            const opcode = inst_cache.getOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+    for (insts) |inst| {
+        // PERF: Use InstCache for opcode lookup
+        const opcode = inst_cache.getOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            // PERF: Use InstCache for operand count and callee name lookup
-            const num_operands: c_uint = inst_cache.getNumOperands(inst);
-            if (num_operands < 2) continue;
+        // PERF: Use InstCache for operand count and callee name lookup
+        const num_operands: c_uint = inst_cache.getNumOperands(inst);
+        if (num_operands < 2) continue;
 
-            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+        const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            if (isExternCCall(callee_name)) {
-                has_unsafe_ffi = true;
-            }
+        if (isExternCCall(callee_name)) {
+            has_unsafe_ffi = true;
         }
         if (has_unsafe_ffi) break;
     }
@@ -235,134 +223,130 @@ pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, inst_cache:
 
 /// Detect stack address escape to FFI boundary (Rule 5):
 /// alloca/local variable address passed to FFI boundary that may retain pointer.
-pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            // PERF: Use InstCache for opcode lookup
-            const opcode = inst_cache.getOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
+    for (insts) |inst| {
+        // PERF: Use InstCache for opcode lookup
+        const opcode = inst_cache.getOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
-            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+        // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
+        const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            // Must be FFI boundary (non-Rust-mangled)
-            if (isRustMangledName(callee_name)) continue;
-            if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
+        // Must be FFI boundary (non-Rust-mangled)
+        if (isRustMangledName(callee_name)) continue;
+        if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
 
-            // Skip pure consumption functions (memcpy, printf, etc.)
-            if (isPureConsumptionFunction(callee_name)) continue;
+        // Skip pure consumption functions (memcpy, printf, etc.)
+        if (isPureConsumptionFunction(callee_name)) continue;
 
-            // Semantic classification: if callee is a memory manager (deallocator/reallocator),
-            // its arguments are semantically heap pointers — not stack escapes.
-            // This is language-agnostic semantic abstraction, not a whitelist.
-            if (isMemoryManagerCallee(callee_name)) continue;
+        // Semantic classification: if callee is a memory manager (deallocator/reallocator),
+        // its arguments are semantically heap pointers — not stack escapes.
+        // This is language-agnostic semantic abstraction, not a whitelist.
+        if (isMemoryManagerCallee(callee_name)) continue;
 
-            // Check each argument for alloca-derived pointers
-            const num_args = c.LLVMGetNumArgOperands(inst);
-            var arg_i: u32 = 0;
-            while (arg_i < num_args) : (arg_i += 1) {
-                const arg = c.LLVMGetOperand(inst, arg_i);
-                if (@intFromPtr(arg) == 0) continue;
+        // Check each argument for alloca-derived pointers
+        const num_args = c.LLVMGetNumArgOperands(inst);
+        var arg_i: u32 = 0;
+        while (arg_i < num_args) : (arg_i += 1) {
+            const arg = c.LLVMGetOperand(inst, arg_i);
+            if (@intFromPtr(arg) == 0) continue;
 
-                // Only check pointer-type arguments
-                const arg_type = c.LLVMTypeOf(arg);
-                if (@intFromPtr(arg_type) == 0) continue;
-                if (c.LLVMGetTypeKind(arg_type) != c.LLVMPointerTypeKind) continue;
+            // Only check pointer-type arguments
+            const arg_type = c.LLVMTypeOf(arg);
+            if (@intFromPtr(arg_type) == 0) continue;
+            if (c.LLVMGetTypeKind(arg_type) != c.LLVMPointerTypeKind) continue;
 
-                // T3: Use unified traceValueSource instead of isDerivedFromAlloca
-                const source = auditor.traceValueSource(arg, func);
+            // T3: Use unified traceValueSource instead of isDerivedFromAlloca
+            const source = auditor.traceValueSource(arg, func);
 
-                switch (source) {
-                    .from_code_section, .from_constant => {
-                        continue;
-                    },
-                    .from_alloca => {},
-                    .from_parameter => {
-                        // Parameters are not stack escapes in the current function.
-                        // The caller owns the pointer and is responsible for its lifetime.
-                        // Only local alloca (stack allocation) is a real stack escape.
-                        continue;
-                    },
-                    else => continue,
-                }
+            switch (source) {
+                .from_code_section, .from_constant => {
+                    continue;
+                },
+                .from_alloca => {},
+                .from_parameter => {
+                    // Parameters are not stack escapes in the current function.
+                    // The caller owns the pointer and is responsible for its lifetime.
+                    // Only local alloca (stack allocation) is a real stack escape.
+                    continue;
+                },
+                else => continue,
+            }
 
-                // SRT query: trace through def-use chain to check heap/global provenance
-                // If the value is derived from a heap allocation, this is NOT a stack escape
-                if (ctx.semantic_resolution) |resolution_engine| {
-                    const srt = resolution_engine.getSemanticTree();
-                    const arg_ref = @intFromPtr(arg);
-                    log.debug("[SRT-QUERY] Checking arg {d} for heap_provenance in {s}", .{ arg_ref, callee_name });
-                    if (srt.*.traceToHeapProvenance(arg, 8)) {
-                        // Heap origin — not a stack escape
-                        log.debug("[SRT-SUPPRESS] heap_provenance traced for arg {d} -> skip", .{arg_ref});
-                        continue;
-                    } else {
-                        log.debug("[SRT-NO-MATCH] arg {d} not traced to heap_provenance", .{arg_ref});
-                    }
+            // SRT query: trace through def-use chain to check heap/global provenance
+            // If the value is derived from a heap allocation, this is NOT a stack escape
+            if (ctx.semantic_resolution) |resolution_engine| {
+                const srt = resolution_engine.getSemanticTree();
+                const arg_ref = @intFromPtr(arg);
+                log.debug("[SRT-QUERY] Checking arg {d} for heap_provenance in {s}", .{ arg_ref, callee_name });
+                if (srt.*.traceToHeapProvenance(arg, 8)) {
+                    // Heap origin — not a stack escape
+                    log.debug("[SRT-SUPPRESS] heap_provenance traced for arg {d} -> skip", .{arg_ref});
+                    continue;
                 } else {
-                    log.warn("[SRT-NULL] semantic_resolution is null! SRT not initialized before RustFfiAuditor", .{});
+                    log.debug("[SRT-NO-MATCH] arg {d} not traced to heap_provenance", .{arg_ref});
                 }
+            } else {
+                log.warn("[SRT-NULL] semantic_resolution is null! SRT not initialized before RustFfiAuditor", .{});
+            }
 
-                // Confirm callee may retain the pointer
-                if (mayRetainPointer(callee_name)) {
-                    auditor.stats.stack_escapes += 1;
-                    const func_name = getFunctionName(func);
+            // Confirm callee may retain the pointer
+            if (mayRetainPointer(callee_name)) {
+                auditor.stats.stack_escapes += 1;
+                const func_name = getFunctionName(func);
 
-                    try addFinding(auditor, .{
-                        .func_name = func_name,
-                        .issue_type = .stack_address_escape,
-                        .severity = .high,
-                        .confidence = 0.82,
-                        .reason = "Stack address (alloca/local) escapes to FFI function that may retain pointer",
-                        .location = Location.init(func_name),
-                    });
+                try addFinding(auditor, .{
+                    .func_name = func_name,
+                    .issue_type = .stack_address_escape,
+                    .severity = .high,
+                    .confidence = 0.82,
+                    .reason = "Stack address (alloca/local) escapes to FFI function that may retain pointer",
+                    .location = Location.init(func_name),
+                });
 
-                    const source_tag = @tagName(source);
-                    const trace = try auditor.allocator.alloc(TraceEntry, 4);
-                    errdefer auditor.allocator.free(trace);
-                    trace[0] = TraceEntry.init("Stack address escapes across FFI boundary");
+                const source_tag = @tagName(source);
+                const trace = try auditor.allocator.alloc(TraceEntry, 4);
+                errdefer auditor.allocator.free(trace);
+                trace[0] = TraceEntry.init("Stack address escapes across FFI boundary");
 
-                    const desc1 = try std.fmt.allocPrint(
-                        auditor.allocator,
-                        "Argument {d} of {s} derived from {s}",
-                        .{ arg_i, callee_name, source_tag },
-                    );
-                    errdefer auditor.allocator.free(desc1);
-                    trace[1] = TraceEntry.initOwned(desc1);
+                const desc1 = try std.fmt.allocPrint(
+                    auditor.allocator,
+                    "Argument {d} of {s} derived from {s}",
+                    .{ arg_i, callee_name, source_tag },
+                );
+                errdefer auditor.allocator.free(desc1);
+                trace[1] = TraceEntry.initOwned(desc1);
 
-                    const desc2 = try std.fmt.allocPrint(
-                        auditor.allocator,
-                        "Callee may store pointer beyond caller's lifetime",
-                        .{},
-                    );
-                    errdefer auditor.allocator.free(desc2);
-                    trace[2] = TraceEntry.initOwned(desc2);
+                const desc2 = try std.fmt.allocPrint(
+                    auditor.allocator,
+                    "Callee may store pointer beyond caller's lifetime",
+                    .{},
+                );
+                errdefer auditor.allocator.free(desc2);
+                trace[2] = TraceEntry.initOwned(desc2);
 
-                    trace[3] = TraceEntry.init("Provenance-aware: only real stack/parameter sources flagged");
+                trace[3] = TraceEntry.init("Provenance-aware: only real stack/parameter sources flagged");
 
-                    const msg = try std.fmt.allocPrint(
-                        auditor.allocator,
-                        "Stack address escapes to FFI: {s}() receives {s}-derived pointer",
-                        .{ callee_name, source_tag },
-                    );
-                    errdefer auditor.allocator.free(msg);
+                const msg = try std.fmt.allocPrint(
+                    auditor.allocator,
+                    "Stack address escapes to FFI: {s}() receives {s}-derived pointer",
+                    .{ callee_name, source_tag },
+                );
+                errdefer auditor.allocator.free(msg);
 
-                    const issue = Issue.initWithTrace(
-                        .borrow_escape,
-                        msg,
-                        Location.init(func_name),
-                        .high,
-                        0.82,
-                        trace,
-                    );
-                    var mutable_issue = issue;
-                    mutable_issue.owned = true;
-                    try ctx.addIssue(&mutable_issue);
+                const issue = Issue.initWithTrace(
+                    .borrow_escape,
+                    msg,
+                    Location.init(func_name),
+                    .high,
+                    0.82,
+                    trace,
+                );
+                var mutable_issue = issue;
+                mutable_issue.owned = true;
+                try ctx.addIssue(&mutable_issue);
 
-                    diag.warn("FFIAuditor: stack escape in {s} → {s}() arg {d} [{s}", .{ func_name, callee_name, arg_i, source_tag });
-                }
+                diag.warn("FFIAuditor: stack escape in {s} → {s}() arg {d} [{s}", .{ func_name, callee_name, arg_i, source_tag });
             }
         }
     }
@@ -375,7 +359,7 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
 ///   (A) passed to an FFI boundary function (ownership transfer OUT), AND
 ///   (B) later passed to free/dealloc (double-free risk), OR
 ///   (C) used after the transfer target may have freed it (UAF risk)
-pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
+pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
     // Collect all pointers passed to FFI boundary calls
     var ffi_transferred_ptrs = std.ArrayList(c.LLVMValueRef).initCapacity(auditor.allocator, 16) catch return;
     defer ffi_transferred_ptrs.deinit(auditor.allocator);
@@ -387,54 +371,50 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
     const func_name = getFunctionName(func);
 
     // Single pass: categorize all call/invoke instructions
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            // PERF: Use InstCache for opcode and callee name lookup
-            const opcode = inst_cache.getOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+    for (insts) |inst| {
+        // PERF: Use InstCache for opcode and callee name lookup
+        const opcode = inst_cache.getOpcode(inst);
+        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-            // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
-            const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+        // PERF: Use InstCache for callee name lookup (avoids 3 FFI calls)
+        const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
-            // Is this an FFI boundary call? (non-Rust-mangled, non-llvm intrinsic)
-            // Exclude Rust-internal allocator functions (__rust_alloc, __rust_dealloc, etc.)
-            // which are not real FFI boundaries even though they lack the _R mangling prefix.
-            const is_rust_alloc = std.mem.startsWith(u8, callee_name, "__rust_alloc") or
-                std.mem.startsWith(u8, callee_name, "__rust_dealloc") or
-                std.mem.startsWith(u8, callee_name, "__rust_realloc");
-            const is_ffi_boundary = !isRustMangledName(callee_name) and
-                !std.mem.startsWith(u8, callee_name, "llvm.") and
-                !is_rust_alloc;
+        // Is this an FFI boundary call? (non-Rust-mangled, non-llvm intrinsic)
+        // Exclude Rust-internal allocator functions (__rust_alloc, __rust_dealloc, etc.)
+        // which are not real FFI boundaries even though they lack the _R mangling prefix.
+        const is_rust_alloc = std.mem.startsWith(u8, callee_name, "__rust_alloc") or
+            std.mem.startsWith(u8, callee_name, "__rust_dealloc") or
+            std.mem.startsWith(u8, callee_name, "__rust_realloc");
+        const is_ffi_boundary = !isRustMangledName(callee_name) and
+            !std.mem.startsWith(u8, callee_name, "llvm.") and
+            !is_rust_alloc;
 
-            // Is this a free-like call?
-            const is_free_call = isFreeLikeFunction(callee_name);
+        // Is this a free-like call?
+        const is_free_call = isFreeLikeFunction(callee_name);
 
-            if (is_ffi_boundary) {
-                // Record pointer-type arguments that were transferred to FFI
-                const num_args = c.LLVMGetNumArgOperands(inst);
-                var arg_i: u32 = 0;
-                while (arg_i < num_args) : (arg_i += 1) {
-                    const arg = c.LLVMGetOperand(inst, arg_i);
-                    if (@intFromPtr(arg) == 0) continue;
-                    const arg_type = c.LLVMTypeOf(arg);
-                    if (@intFromPtr(arg_type) == 0) continue;
-                    if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
-                        try ffi_transferred_ptrs.append(auditor.allocator, arg);
-                    }
+        if (is_ffi_boundary) {
+            // Record pointer-type arguments that were transferred to FFI
+            const num_args = c.LLVMGetNumArgOperands(inst);
+            var arg_i: u32 = 0;
+            while (arg_i < num_args) : (arg_i += 1) {
+                const arg = c.LLVMGetOperand(inst, arg_i);
+                if (@intFromPtr(arg) == 0) continue;
+                const arg_type = c.LLVMTypeOf(arg);
+                if (@intFromPtr(arg_type) == 0) continue;
+                if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
+                    try ffi_transferred_ptrs.append(auditor.allocator, arg);
                 }
             }
+        }
 
-            if (is_free_call) {
-                // Record the freed pointer
-                const num_args = c.LLVMGetNumArgOperands(inst);
-                if (num_args >= 1) {
-                    const freed_arg = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(freed_arg) != 0) {
-                        // Store callee_name as slice backed by LLVM string (no copy needed — used immediately below)
-                        try freed_ptrs.append(auditor.allocator, .{ .val = freed_arg, .free_name = callee_name });
-                    }
+        if (is_free_call) {
+            // Record the freed pointer
+            const num_args = c.LLVMGetNumArgOperands(inst);
+            if (num_args >= 1) {
+                const freed_arg = c.LLVMGetOperand(inst, 0);
+                if (@intFromPtr(freed_arg) != 0) {
+                    // Store callee_name as slice backed by LLVM string (no copy needed — used immediately below)
+                    try freed_ptrs.append(auditor.allocator, .{ .val = freed_arg, .free_name = callee_name });
                 }
             }
         }
