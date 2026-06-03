@@ -10,6 +10,7 @@
 const std = @import("std");
 const c = @import("../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../ir/llvm_safe.zig");
+const ir_store_mod = @import("../ir/ir_store.zig");
 
 const types = @import("./ownership_types.zig");
 pub const AllocSite = types.AllocSite;
@@ -33,12 +34,12 @@ const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 // ============================================================================
 
 /// Analyze a single function for allocation and free sites.
-/// Iterates all basic blocks and instructions, calling analyzeInstructionForOwnership
-/// for each instruction. Also initializes null-check recognition for the function.
+/// Uses pre-cached IRStore data (fir.instructions + fir.opcodes) instead of
+/// LLVM C API traversal for better performance.
 ///
 /// Parameters:
 ///   - allocator: Memory allocator for HashMap operations
-///   - func: LLVM function to analyze
+///   - fir: Pre-cached function IR from IRStore
 ///   - alloc_map: Output map of allocation sites (inst_id → AllocSite)
 ///   - free_map: Output map of free sites (inst_id → FreeSite)
 ///   - flow_graph: Output flow graph tracking pointer movement
@@ -51,7 +52,7 @@ const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 ///   - null_check_recognizer: Null check pattern recognizer
 pub fn analyzeFunctionForOwnership(
     allocator: std.mem.Allocator,
-    func: c.LLVMValueRef,
+    fir: *const ir_store_mod.FunctionIR,
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
     free_map: *std.AutoHashMap(u32, *FreeSite),
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
@@ -63,29 +64,27 @@ pub fn analyzeFunctionForOwnership(
     free_pool: *MemoryPool(FreeSite),
     null_check_recognizer: *NullCheckRecognizer,
 ) !void {
-    const func_name = getFunctionName(func);
+    const func = fir.func;
+    const func_name = fir.name;
 
     null_check_recognizer.recognizeInFunction(func, id_map) catch {};
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            try analyzeInstructionForOwnership(
-                allocator,
-                inst,
-                func_name,
-                alloc_map,
-                free_map,
-                flow_graph,
-                reverse_flow,
-                stats,
-                has_debug_info,
-                id_map,
-                alloc_pool,
-                free_pool,
-            );
-        }
+    for (fir.instructions, fir.opcodes) |inst, opcode| {
+        try analyzeInstructionForOwnership(
+            allocator,
+            inst,
+            opcode,
+            func_name,
+            alloc_map,
+            free_map,
+            flow_graph,
+            reverse_flow,
+            stats,
+            has_debug_info,
+            id_map,
+            alloc_pool,
+            free_pool,
+        );
     }
 }
 
@@ -94,6 +93,9 @@ pub fn analyzeFunctionForOwnership(
 // ============================================================================
 
 /// Check if allocation results are transferred to caller via return/output-param.
+/// Uses pre-cached IRStore data (fir.returns[] + fir.stores[]) instead of
+/// full C API instruction scan.
+///
 /// Marks matching AllocSites as .transferred = true.
 ///
 /// Scans the function for:
@@ -104,11 +106,12 @@ pub fn analyzeFunctionForOwnership(
 /// allocation is returned to C caller or stored to an output parameter, it
 /// indicates ownership transfer that must be tracked for cross-language safety.
 pub fn checkOwnershipTransferForFunction(
-    func: c.LLVMValueRef,
+    fir: *const ir_store_mod.FunctionIR,
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
     reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
     id_map: *ValueIdMap,
 ) void {
+    const func = fir.func;
     const num_params = c.LLVMCountParams(func);
 
     var param_value_ids: [32]u32 = undefined;
@@ -124,36 +127,30 @@ pub fn checkOwnershipTransferForFunction(
         }
     }
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-
-            if (opcode == c.LLVMRet) {
-                const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-                if (num_operands > 0) {
-                    const ret_val = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(ret_val) != 0) {
-                        const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
-                        markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, ret_value_id) catch {};
-                    }
-                }
+    // Use pre-cached returns[] instead of scanning all instructions
+    for (fir.returns) |inst| {
+        const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+        if (num_operands > 0) {
+            const ret_val = c.LLVMGetOperand(inst, 0);
+            if (@intFromPtr(ret_val) != 0) {
+                const ret_value_id = id_map.getOrPutId(@intFromPtr(ret_val)) catch continue;
+                markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, ret_value_id) catch {};
             }
+        }
+    }
 
-            if (opcode == c.LLVMStore) {
-                if (c.LLVMGetNumOperands(inst) >= 2) {
-                    const store_val = c.LLVMGetOperand(inst, 0);
-                    const store_ptr = c.LLVMGetOperand(inst, 1);
-                    if (@intFromPtr(store_val) != 0 and @intFromPtr(store_ptr) != 0) {
-                        const ptr_value_id = id_map.getOrPutId(@intFromPtr(store_ptr)) catch continue;
-                        for (param_value_ids[0..param_count]) |param_id| {
-                            if (ptr_value_id == param_id) {
-                                const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
-                                markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, val_value_id) catch {};
-                                break;
-                            }
-                        }
+    // Use pre-cached stores[] instead of scanning all instructions
+    for (fir.stores) |inst| {
+        if (c.LLVMGetNumOperands(inst) >= 2) {
+            const store_val = c.LLVMGetOperand(inst, 0);
+            const store_ptr = c.LLVMGetOperand(inst, 1);
+            if (@intFromPtr(store_val) != 0 and @intFromPtr(store_ptr) != 0) {
+                const ptr_value_id = id_map.getOrPutId(@intFromPtr(store_ptr)) catch continue;
+                for (param_value_ids[0..param_count]) |param_id| {
+                    if (ptr_value_id == param_id) {
+                        const val_value_id = id_map.getOrPutId(@intFromPtr(store_val)) catch continue;
+                        markAllocSitesReachingValue(alloc_map.allocator, alloc_map, reverse_flow, val_value_id) catch {};
+                        break;
                     }
                 }
             }
@@ -177,6 +174,7 @@ pub fn checkOwnershipTransferForFunction(
 pub fn analyzeInstructionForOwnership(
     allocator: std.mem.Allocator,
     inst: c.LLVMValueRef,
+    opcode: c_uint,
     func_name: []const u8,
     alloc_map: *std.AutoHashMap(u32, *AllocSite),
     free_map: *std.AutoHashMap(u32, *FreeSite),
@@ -188,7 +186,6 @@ pub fn analyzeInstructionForOwnership(
     alloc_pool: *MemoryPool(AllocSite),
     free_pool: *MemoryPool(FreeSite),
 ) !void {
-    const opcode = c.LLVMGetInstructionOpcode(inst);
     const inst_id = id_map.getOrPutId(@intFromPtr(inst)) catch return;
     _ = has_debug_info;
 

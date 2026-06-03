@@ -339,7 +339,7 @@ pub const PointerOwnershipPass = struct {
             // Function-level error isolation
             analyzeFunctionForOwnership(
                 ctx.allocator,
-                func,
+                fir,
                 &alloc_map,
                 &free_map,
                 &flow_graph,
@@ -374,7 +374,7 @@ pub const PointerOwnershipPass = struct {
             detectRustFfiPairingFunctions(fir.calls, fir.name, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
             detectAsPtrBorrowEscape(ctx, func, diag);
 
-            checkOwnershipTransferForFunction(func, &alloc_map, &reverse_flow, &id_map);
+            checkOwnershipTransferForFunction(fir, &alloc_map, &reverse_flow, &id_map);
         }
 
         // C1 FIX: Report detection results (previously in separate passes 4-8)

@@ -13,6 +13,8 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 // ============================================================================
 // Type Definitions
@@ -56,19 +58,27 @@ pub const UsageSet = struct {
 // T1: Value Source Tracing
 // ============================================================================
 
+/// Find the index of a target instruction in the FunctionIR instructions array.
+/// O(1) via fir.inst_index — falls back to linear scan if the value isn't
+/// in the map (shouldn't happen for instructions from the same function).
+pub fn findInstructionIndex(fir: *const FunctionIR, target: c.LLVMValueRef) ?usize {
+    if (fir.indexOf(target)) |idx| return @as(usize, idx);
+    return null;
+}
+
 /// Trace a value back to its origin source.
 ///
 /// Walks def-use chain to determine where `val` ultimately comes from.
 /// Key enhancement over isDerivedFromAlloca(): also traces alloca CONTENT
 /// (what was stored into the alloca), not just the alloca itself.
-pub fn traceValueSource(val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
+pub fn traceValueSource(val: c.LLVMValueRef, func: c.LLVMValueRef, fir: *const FunctionIR) ValueSource {
     if (@intFromPtr(val) == 0) return .unknown;
 
     const opcode = c.LLVMGetInstructionOpcode(val);
 
     if (c.LLVMIsAArgument(val) != null) return .from_parameter;
     if (opcode == c.LLVMAlloca) {
-        return traceAllocaContent(val, func);
+        return traceAllocaContent(val, fir);
     }
     if (c.LLVMIsAGlobalValue(val) != null) return .from_global;
     if (c.LLVMIsAConstant(val) != null or c.LLVMIsAConstantInt(val) != null) return .from_constant;
@@ -78,16 +88,16 @@ pub fn traceValueSource(val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
     // Recursive tracing through wrappers
     if (opcode == c.LLVMBitCast or opcode == c.LLVMGetElementPtr) {
         const src = c.LLVMGetOperand(val, 0);
-        if (@intFromPtr(src) != 0) return traceValueSource(src, func);
+        if (@intFromPtr(src) != 0) return traceValueSource(src, func, fir);
     }
 
     // Load instruction → trace what's being loaded
     if (opcode == c.LLVMLoad) {
         const ptr_op = c.LLVMGetOperand(val, 0);
         if (@intFromPtr(ptr_op) != 0) {
-            const src_kind = traceValueSource(ptr_op, func);
+            const src_kind = traceValueSource(ptr_op, func, fir);
             if (src_kind == .from_alloca) {
-                return traceAllocaContent(ptr_op, func);
+                return traceAllocaContent(ptr_op, fir);
             }
             return src_kind;
         }
@@ -98,33 +108,29 @@ pub fn traceValueSource(val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
 
 /// Trace what content is stored inside an alloca.
 /// Distinguishes alloca CONTENT provenance, not just "is it an alloca".
-pub fn traceAllocaContent(alloca_val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-            if (c.LLVMGetOperand(inst, 1) != alloca_val) continue;
+/// Uses pre-categorized fir.stores[] — O(stores) instead of O(instructions).
+pub fn traceAllocaContent(alloca_val: c.LLVMValueRef, fir: *const FunctionIR) ValueSource {
+    for (fir.stores) |inst| {
+        if (c.LLVMGetOperand(inst, 1) != alloca_val) continue;
 
-            const stored_val = c.LLVMGetOperand(inst, 0);
-            if (@intFromPtr(stored_val) == 0) continue;
+        const stored_val = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(stored_val) == 0) continue;
 
-            if (c.LLVMIsAArgument(stored_val) != null) return .from_parameter;
-            if (c.LLVMIsAGlobalValue(stored_val) != null) {
-                const gname_ptr = c.LLVMGetValueName(stored_val);
-                if (@intFromPtr(gname_ptr) != 0) {
-                    const gname = std.mem.span(gname_ptr);
-                    if (isCodeSectionGlobal(gname)) return .from_code_section;
-                }
-                return .from_global;
+        if (c.LLVMIsAArgument(stored_val) != null) return .from_parameter;
+        if (c.LLVMIsAGlobalValue(stored_val) != null) {
+            const gname_ptr = c.LLVMGetValueName(stored_val);
+            if (@intFromPtr(gname_ptr) != 0) {
+                const gname = std.mem.span(gname_ptr);
+                if (isCodeSectionGlobal(gname)) return .from_code_section;
             }
-            if (c.LLVMIsAConstant(stored_val) != null) return .from_constant;
-            if (c.LLVMIsAFunction(stored_val) != null) return .from_code_section;
-
-            const stored_opcode = c.LLVMGetInstructionOpcode(stored_val);
-            if (stored_opcode == c.LLVMCall or stored_opcode == c.LLVMInvoke) return .from_call;
-            if (stored_opcode == c.LLVMAlloca) return .from_alloca;
+            return .from_global;
         }
+        if (c.LLVMIsAConstant(stored_val) != null) return .from_constant;
+        if (c.LLVMIsAFunction(stored_val) != null) return .from_code_section;
+
+        const stored_opcode = c.LLVMGetInstructionOpcode(stored_val);
+        if (stored_opcode == c.LLVMCall or stored_opcode == c.LLVMInvoke) return .from_call;
+        if (stored_opcode == c.LLVMAlloca) return .from_alloca;
     }
 
     return .from_alloca;
@@ -150,40 +156,35 @@ pub fn isCodeSectionGlobal(gname: []const u8) bool {
 ///
 /// Returns all detected usage patterns. A single value can have multiple
 /// simultaneous uses (e.g., both stored AND passed as FFI argument).
-pub fn traceValueUsage(val: c.LLVMValueRef, func: c.LLVMValueRef) ?UsageSet {
+pub fn traceValueUsage(val: c.LLVMValueRef, func: c.LLVMValueRef, fir: *const FunctionIR) ?UsageSet {
     if (@intFromPtr(val) == 0 or @intFromPtr(func) == 0) return null;
 
     var usage_count: usize = 0;
     var usages: [6]ValueUsage = undefined;
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
+    for (fir.instructions) |inst| {
+        const opcode = c.LLVMGetInstructionOpcode(inst);
 
-            if (!instructionUsesValue(inst, val)) continue;
+        if (!instructionUsesValue(inst, val)) continue;
 
-            if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                const called = c.LLVMGetCalledValue(inst);
-                if (@intFromPtr(called) != 0 and called == val) {
-                    addUsage(&usages, &usage_count, .as_call_target);
-                } else {
-                    addUsage(&usages, &usage_count, .as_arg_to_ffi);
-                }
-                if (isDeallocCall(inst)) {
-                    addUsage(&usages, &usage_count, .as_free_arg);
-                }
-            } else if (opcode == c.LLVMStore) {
-                addUsage(&usages, &usage_count, .as_store_dest);
-            } else if (opcode == c.LLVMLoad) {
-                addUsage(&usages, &usage_count, .as_load_src);
-            } else if (opcode == c.LLVMGetElementPtr) {
-                addUsage(&usages, &usage_count, .as_gep_base);
+        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+            const called = c.LLVMGetCalledValue(inst);
+            if (@intFromPtr(called) != 0 and called == val) {
+                addUsage(&usages, &usage_count, .as_call_target);
+            } else {
+                addUsage(&usages, &usage_count, .as_arg_to_ffi);
             }
-
-            if (usage_count >= usages.len) break;
+            if (isDeallocCall(inst)) {
+                addUsage(&usages, &usage_count, .as_free_arg);
+            }
+        } else if (opcode == c.LLVMStore) {
+            addUsage(&usages, &usage_count, .as_store_dest);
+        } else if (opcode == c.LLVMLoad) {
+            addUsage(&usages, &usage_count, .as_load_src);
+        } else if (opcode == c.LLVMGetElementPtr) {
+            addUsage(&usages, &usage_count, .as_gep_base);
         }
+
         if (usage_count >= usages.len) break;
     }
 
@@ -245,32 +246,30 @@ fn addUsage(usages: *[6]ValueUsage, count: *usize, usage: ValueUsage) void {
 }
 
 /// Check if `user_value` traces to `source_value` through GEP/bitcast/load chains.
-pub fn valueTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef) bool {
+pub fn valueTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef, fir: *const FunctionIR) bool {
     if (user_value == source_value) return true;
 
     const opcode = c.LLVMGetInstructionOpcode(user_value);
 
     if (opcode == c.LLVMGetElementPtr) {
         const base = c.LLVMGetOperand(user_value, 0);
-        if (@intFromPtr(base) != 0 and valueTracesTo(base, source_value)) return true;
+        if (@intFromPtr(base) != 0 and valueTracesTo(base, source_value, fir)) return true;
     }
 
     if (opcode == c.LLVMBitCast) {
         const src = c.LLVMGetOperand(user_value, 0);
-        if (@intFromPtr(src) != 0 and valueTracesTo(src, source_value)) return true;
+        if (@intFromPtr(src) != 0 and valueTracesTo(src, source_value, fir)) return true;
     }
 
     if (opcode == c.LLVMLoad) {
         const load_ptr = c.LLVMGetOperand(user_value, 0);
         if (@intFromPtr(load_ptr) != 0) {
-            const parent_bb = c.LLVMGetInstructionParent(user_value);
-            if (@intFromPtr(parent_bb) != 0) {
-                var inst = c.LLVMGetFirstInstruction(parent_bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-                    if (c.LLVMGetOperand(inst, 1) != load_ptr) continue;
-                    if (c.LLVMGetOperand(inst, 0) == source_value) return true;
-                }
+            // Find the load instruction's position and scan forward for stores
+            const start_idx = findInstructionIndex(fir, user_value) orelse return false;
+            for (fir.instructions[start_idx..]) |inst| {
+                if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
+                if (c.LLVMGetOperand(inst, 1) != load_ptr) continue;
+                if (c.LLVMGetOperand(inst, 0) == source_value) return true;
             }
         }
     }

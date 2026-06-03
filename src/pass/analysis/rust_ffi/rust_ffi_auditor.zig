@@ -26,6 +26,7 @@ const tracking = @import("../ptr_lifetime/value_tracking.zig");
 const helpers = @import("../ffi/ffi_helpers.zig");
 const debug_info = @import("../debug_info.zig");
 const alias = @import("../alias_analysis.zig");
+const drop_glue = @import("../../../semantics/patterns/drop_glue.zig");
 
 // Import shared types from extracted module
 const types = @import("../../../types/rust_ffi_types.zig");
@@ -118,9 +119,20 @@ pub const RustFfiAuditor = struct {
 
     /// Run full audit using IR Store — eliminates per-pass LLVM function iteration.
     pub fn audit(self: *RustFfiAuditor, module: c.LLVMModuleRef, ctx: *PassContext, diag: *DiagnosticWriter) ![]const RustFfiFinding {
-        _ = module; // IR Store provides all function data — raw module handle no longer traversed
         self.findings.clearRetainingCapacity();
         self.stats = .{};
+
+        // PERF: Run module-level drop_glue detection exactly once before the
+        // per-function loop. It used to be called from detectUseAfterFree(),
+        // which made every function trigger a full-module scan (O(N²) total).
+        // Lifting it here cut Rule 10 from ~126s to a small constant on
+        // wasmtime_test.bc.
+        if (ctx.semantic_resolution) |resolution_engine| {
+            const srt = resolution_engine.getSemanticTree();
+            if (@intFromPtr(module) != 0) {
+                drop_glue.detectAll(module, srt) catch {};
+            }
+        }
 
         // Single InstCache reused across all functions (clear() between calls).
         // Avoids per-function HashMap alloc/deinit (previously 4654 cycles).
@@ -142,6 +154,14 @@ pub const RustFfiAuditor = struct {
         const func = fir.func;
         const func_name = fir.name;
 
+        // FAST PATH: Skip non-FFI functions entirely (saves 80%+ of work).
+        // Most functions in a module have no FFI calls and are not into_raw/from_raw.
+        // Skip them before running any rule or language detection.
+        const is_ffi_candidate = fir.calls.len > 0 or
+            ctx.rust_into_raw_set.contains(func_name) or
+            ctx.rust_from_raw_set.contains(func_name);
+        if (!is_ffi_candidate) return;
+
         const caller_lang = ffi_language_classifier.identifyLanguage(func);
         const caller_lang_tag = @tagName(caller_lang);
 
@@ -156,7 +176,9 @@ pub const RustFfiAuditor = struct {
 
         const is_rust = has_rust_patterns;
 
-        // Use IR Store pre-collected instruction array — no ArrayList alloc, no BB/inst traversal.
+        // calls: pre-filtered Call/Invoke only (rules 2-6 only need calls, 10x fewer iterations)
+        // insts: all instructions — kept for rules 7-10 which may inspect stores/loads
+        const calls = fir.calls;
         const insts = fir.instructions;
 
         // ── Rust-specific rules (language-gated) ──
@@ -177,27 +199,27 @@ pub const RustFfiAuditor = struct {
             }
 
             // Rule 2: as_ptr borrow escape detection
-            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, insts, inst_cache);
+            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, calls, inst_cache);
 
             // Rule 3: Cross-lang alloc mismatch (Rust _Znwm → C free)
             // Pass fir.stores so ptrOriginatesFromRustAlloc can find store sources without BB/inst scan
-            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, insts, inst_cache, fir.stores);
+            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, calls, inst_cache, fir.stores);
 
             if (self.stats.cross_lang_mismatches > 0) {
                 diag.debug("[RUST-FFI] Boundary detected: {s} --> c (cross-lang alloc mismatch, confidence: 0.85)", .{caller_lang_tag});
             }
 
             // Rule 6: Ownership transfer protocol (into_raw/from_raw pairing)
-            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, insts, inst_cache);
+            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, calls, inst_cache);
 
             // Rule 7: as_ptr dangling detection — borrowed ptr used after parent drop
-            try lifetime_rules.detectAsPtrDangling(self, func, insts, ctx, diag);
+            try lifetime_rules.detectAsPtrDangling(self, func, insts, ctx, diag, fir);
         }
 
         // ── Universal FFI boundary rules (run on ALL languages) ──
 
         // Rule 4: Unsafe block FFI call scan
-        try basic_rules.detectUnsafeFfiCalls(self, func, insts, inst_cache);
+        try basic_rules.detectUnsafeFfiCalls(self, func, calls, inst_cache);
 
         if (self.stats.unsafe_ffi_calls > 0) {
             const target_lang = if (caller_lang == .rust) "c" else @tagName(caller_lang);
@@ -205,16 +227,16 @@ pub const RustFfiAuditor = struct {
         }
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
-        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, insts, inst_cache);
+        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, calls, inst_cache, fir);
 
         // Rule 8: Callback ownership risk — function pointer parameter stored to global
-        try lifetime_rules.detectCallbackOwnershipRisk(self, func, insts, ctx, diag);
+        try lifetime_rules.detectCallbackOwnershipRisk(self, func, insts, ctx, diag, fir);
 
         // Rule 9: Write to immutable — store through pointer from const-qualified struct field
-        try advanced_rules.detectWriteToImmutable(self, func, insts, ctx, diag);
+        try advanced_rules.detectWriteToImmutable(self, func, insts, ctx, diag, fir);
 
         // Rule 10: Use after free — post-free pointer use within same function
-        try advanced_rules.detectUseAfterFree(self, func, insts, ctx, diag);
+        try advanced_rules.detectUseAfterFree(self, func, insts, ctx, diag, fir);
     }
 
     /// Generate audit report as formatted text
@@ -247,14 +269,14 @@ pub const RustFfiAuditor = struct {
     // Unified Value Tracking API (T1 + T2) — delegates to value_tracking.zig
     // =====================================================================
 
-    pub fn traceValueSource(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef) ValueSource {
+    pub fn traceValueSource(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef, fir: *const FunctionIR) ValueSource {
         _ = self;
-        return tracking.traceValueSource(val, func);
+        return tracking.traceValueSource(val, func, fir);
     }
 
-    pub fn traceValueUsage(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef) ?UsageSet {
+    pub fn traceValueUsage(self: *RustFfiAuditor, val: c.LLVMValueRef, func: c.LLVMValueRef, fir: *const FunctionIR) ?UsageSet {
         _ = self;
-        return tracking.traceValueUsage(val, func);
+        return tracking.traceValueUsage(val, func, fir);
     }
 
     /// Check if a function contains Rust FFI patterns (mangled names, Rust allocators, etc.)

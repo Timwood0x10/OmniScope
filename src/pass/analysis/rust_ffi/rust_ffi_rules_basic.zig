@@ -19,6 +19,8 @@ const inst_cache_mod = @import("../../../ir/inst_cache.zig");
 const InstCache = inst_cache_mod.InstCache;
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 const tracking = @import("../ptr_lifetime/value_tracking.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const types = @import("../../../types/rust_ffi_types.zig");
 pub const RustFfiFinding = types.RustFfiFinding;
@@ -225,7 +227,7 @@ pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, insts: []co
 
 /// Detect stack address escape to FFI boundary (Rule 5):
 /// alloca/local variable address passed to FFI boundary that may retain pointer.
-pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
+pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache, fir: *const FunctionIR) !void {
     for (insts) |inst| {
         // PERF: Use InstCache for opcode lookup
         const opcode = inst_cache.getOpcode(inst);
@@ -259,7 +261,7 @@ pub fn detectStackEscapeToFFI(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pas
             if (c.LLVMGetTypeKind(arg_type) != c.LLVMPointerTypeKind) continue;
 
             // T3: Use unified traceValueSource instead of isDerivedFromAlloca
-            const source = auditor.traceValueSource(arg, func);
+            const source = auditor.traceValueSource(arg, func, fir);
 
             switch (source) {
                 .from_code_section, .from_constant => {

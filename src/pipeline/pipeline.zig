@@ -293,60 +293,27 @@ pub const Pipeline = struct {
         {
             const t_idx = std.time.nanoTimestamp();
             var funcs_processed: u32 = 0;
-            const sample_rate: u32 = if (use_sampling_mode) 3 else 1; // Analyze every Nth function in sampling mode
 
-            if (self.module) |mod| {
-                const raw_mod = mod.raw;
-                var func = c.LLVMGetFirstFunction(raw_mod);
-                while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-                    // PERF-OPT-3a: Time budget check every 100 functions
-                    funcs_processed += 1;
-                    if (funcs_processed % 100 == 0) {
-                        const elapsed = std.time.nanoTimestamp() - pipeline_start;
-                        if (elapsed > time_budget_ns * 3 / 5) { // 60% of budget
-                            log.warn("PIPELINE: Time budget exceeded during CallSiteIndex build ({} functions processed), enabling aggressive sampling", .{funcs_processed});
-                            timed_out = true;
-                            break; // Early exit to save time for remaining passes
-                        }
-                    }
-
-                    if (c.LLVMIsDeclaration(func) != 0) continue;
-
-                    // PERF-OPT-3b: Sampling mode - skip functions to meet time target
-                    if (use_sampling_mode and (funcs_processed % sample_rate != 0)) {
-                        continue; // Skip this function in sampling mode
-                    }
-
-                    const func_ptr = @as(u64, @intFromPtr(func));
-                    var bb = c.LLVMGetFirstBasicBlock(func);
-                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                        var inst = c.LLVMGetFirstInstruction(bb);
-                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                            const opcode = c.LLVMGetInstructionOpcode(inst);
-                            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
-                            const called_val = c.LLVMGetCalledValue(inst);
-                            if (@intFromPtr(called_val) == 0) continue;
-                            // PERF-OPT-3c: Cache declaration check result
-                            const is_decl = c.LLVMIsDeclaration(called_val) != 0;
-                            if (is_decl) {
-                                has_ffi_calls = true;
-                                // PERF-OPT-3d: In sampling mode, once we know FFI exists, we can be less aggressive
-                                // But still need to build index for call sites we do process
-                            }
-                            const called_name_ptr = c.LLVMGetValueName(called_val);
-                            if (@intFromPtr(called_name_ptr) == 0) continue;
-                            const called_name = std.mem.span(called_name_ptr);
-                            const inst_ptr = @as(u64, @intFromPtr(inst));
-                            ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
-                                log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
-                            };
-                        }
-                    }
+            for (ir_store.function_list) |fir| {
+                funcs_processed += 1;
+                const func_ptr = @as(u64, @intFromPtr(fir.func));
+                for (fir.calls) |inst| {
+                    const called_val = c.LLVMGetCalledValue(inst);
+                    if (@intFromPtr(called_val) == 0) continue;
+                    const is_decl = c.LLVMIsDeclaration(called_val) != 0;
+                    if (is_decl) has_ffi_calls = true;
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    if (@intFromPtr(called_name_ptr) == 0) continue;
+                    const called_name = std.mem.span(called_name_ptr);
+                    const inst_ptr = @as(u64, @intFromPtr(inst));
+                    ctx.CallSiteIndex.addCall(self.allocator, called_name, func_ptr, inst_ptr) catch |err| {
+                        log.warn("[WARN] Failed to add call site for '{s}': {}", .{ called_name, err });
+                    };
                 }
             }
             const idx_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - t_idx)) / 1_000_000.0;
-            log.info("[PERF] CallSiteIndex build: {d:.1} ms ({} functions processed, sampling={})", .{
-                @as(u32, @intFromFloat(idx_ms)), funcs_processed, use_sampling_mode,
+            log.info("[PERF] CallSiteIndex build: {d:.1} ms ({} functions, ir_store)", .{
+                @as(u32, @intFromFloat(idx_ms)), funcs_processed,
             });
         }
 
@@ -391,92 +358,69 @@ pub const Pipeline = struct {
         var functions_analyzed: u32 = 0;
         var adapter_funcs_processed: u32 = 0;
 
-        // Iterate over all functions in the module (same loop as CallSiteIndex)
-        if (self.module) |mod| {
-            const raw_mod = mod.raw;
-            var func_iter = c.LLVMGetFirstFunction(raw_mod);
-            while (@intFromPtr(func_iter) != 0) : (func_iter = c.LLVMGetNextFunction(func_iter)) {
-                // Skip declarations (no body)
-                if (c.LLVMIsDeclaration(func_iter) != 0) continue;
+        // Iterate over all functions using IR Store (pre-collected, no BB/inst traversal needed)
+        for (ir_store.function_list) |fir| {
+            adapter_funcs_processed += 1;
+            functions_analyzed += 1;
 
-                adapter_funcs_processed += 1;
+            // Run adapter analysis on this function
+            var analysis = detected_adapter.analyzeFunction(
+                @ptrCast(fir.func),
+                @ptrCast(&ctx),
+                self.allocator,
+            ) catch |err| {
+                log.warn("ADAPTER: Failed to analyze function: {}", .{err});
+                continue;
+            };
 
-                // PERF-OPT-4a: Time budget check every 50 functions
-                if (adapter_funcs_processed % 50 == 0) {
-                    const elapsed = std.time.nanoTimestamp() - pipeline_start;
-                    if (elapsed > time_budget_ns * 4 / 5) { // 80% of budget
-                        log.warn("PIPELINE: Time budget exceeded during adapter analysis ({} functions processed), skipping remaining", .{adapter_funcs_processed});
-                        timed_out = true;
-                        break; // Early exit to save time for remaining passes
-                    }
+            // Count classified FFI calls
+            total_ffi_calls_classified += @intCast(analysis.ffi_calls.items.len);
+
+            // Process analysis results immediately (no storage needed)
+            defer analysis.deinit();
+
+            // ═══════════════════════════════════════════════
+            // Write analysis results into MemoryGraph (INTEGRATION POINT)
+            // PERF-OPT-4c: Only process meaningful semantics (skip no-op cases)
+            // ═══════════════════════════════════════════════
+            for (analysis.ffi_calls.items) |call| {
+                switch (call.semantics) {
+                    .returns_borrowed => {
+                        // Mark as borrowed - don't report as leak even if not freed
+                        ctx.memory_graph.markBorrowedReference(call.inst_addr) catch |err| {
+                            log.warn("ADAPTER: Failed to mark borrowed ref at 0x{x}: {}", .{
+                                call.inst_addr, err,
+                            });
+                        };
+                    },
+                    .consumes_arg => {
+                        // Mark that argument ownership is transferred - no action needed here
+                        // The transfer is recorded in the analysis result for later passes
+                    },
+                    else => {}, // Skip returns_owned and other cases (handled later)
                 }
+            }
 
-                // PERF-OPT-4b: Sampling mode - skip functions to meet time target
-                if (use_sampling_mode and (adapter_funcs_processed % 3 != 0)) {
-                    continue; // Skip this function in sampling mode
-                }
+            // Convert adapter issues to pipeline Issues (Phase 1: Go cgo integration)
+            // PERF-OPT-4d: Batch issue creation to reduce allocation overhead
+            for (analysis.issues.items) |adapter_issue| {
+                var issue = Issue.init(
+                    adapter_issue.issue_type.toIssueKind(),
+                    adapter_issue.message,
+                    Location.init(adapter_issue.location.function_name),
+                    switch (adapter_issue.severity) {
+                        .low => Severity.low,
+                        .medium => Severity.medium,
+                        .high => Severity.high,
+                        .critical => Severity.critical,
+                    },
+                    adapter_issue.confidence,
+                );
+                issue.owned = true; // We own the message allocation
 
-                functions_analyzed += 1;
-
-                // Run adapter analysis on this function
-                var analysis = detected_adapter.analyzeFunction(
-                    @ptrCast(func_iter),
-                    @ptrCast(&ctx),
-                    self.allocator,
-                ) catch |err| {
-                    log.warn("ADAPTER: Failed to analyze function: {}", .{err});
-                    continue;
+                ctx.addIssue(&issue) catch |err| {
+                    log.warn("ADAPTER-ISSUE: Failed to add issue to context: {}", .{err});
                 };
-
-                // Count classified FFI calls
-                total_ffi_calls_classified += @intCast(analysis.ffi_calls.items.len);
-
-                // Process analysis results immediately (no storage needed)
-                defer analysis.deinit();
-
-                // ═══════════════════════════════════════════════
-                // Write analysis results into MemoryGraph (INTEGRATION POINT)
-                // PERF-OPT-4c: Only process meaningful semantics (skip no-op cases)
-                // ═══════════════════════════════════════════════
-                for (analysis.ffi_calls.items) |call| {
-                    switch (call.semantics) {
-                        .returns_borrowed => {
-                            // Mark as borrowed - don't report as leak even if not freed
-                            ctx.memory_graph.markBorrowedReference(call.inst_addr) catch |err| {
-                                log.warn("ADAPTER: Failed to mark borrowed ref at 0x{x}: {}", .{
-                                    call.inst_addr, err,
-                                });
-                            };
-                        },
-                        .consumes_arg => {
-                            // Mark that argument ownership is transferred - no action needed here
-                            // The transfer is recorded in the analysis result for later passes
-                        },
-                        else => {}, // Skip returns_owned and other cases (handled later)
-                    }
-                }
-
-                // Convert adapter issues to pipeline Issues (Phase 1: Go cgo integration)
-                // PERF-OPT-4d: Batch issue creation to reduce allocation overhead
-                for (analysis.issues.items) |adapter_issue| {
-                    var issue = Issue.init(
-                        adapter_issue.issue_type.toIssueKind(),
-                        adapter_issue.message,
-                        Location.init(adapter_issue.location.function_name),
-                        switch (adapter_issue.severity) {
-                            .low => Severity.low,
-                            .medium => Severity.medium,
-                            .high => Severity.high,
-                            .critical => Severity.critical,
-                        },
-                        adapter_issue.confidence,
-                    );
-                    issue.owned = true; // We own the message allocation
-
-                    ctx.addIssue(&issue) catch |err| {
-                        log.warn("ADAPTER-ISSUE: Failed to add issue to context: {}", .{err});
-                    };
-                }
             }
         }
 
@@ -783,8 +727,9 @@ pub const Pipeline = struct {
                     // Arena/FixedBuffer/testing allocators have deterministic cleanup,
                     // so confidence should be low unless on an FFI boundary.
                     // Only run if enabled via setZigAllocatorTracking(true) [default].
+                    // FIX-ISSUE-6: Reuse cached_node_idx from earlier lookup (eliminates O(n) duplicate scan)
                     if (self.enable_zig_allocator_tracking) {
-                        if (ctx.memory_graph.findNodeByInst(@as(u64, rec.ptr_id))) |node_idx| {
+                        if (cached_node_idx) |node_idx| {
                             const leak_node = ctx.memory_graph.node_store.items[node_idx];
                             const zig_confidence = zig_tracker.calculateLeakConfidence(
                                 leak_node,

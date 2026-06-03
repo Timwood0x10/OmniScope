@@ -34,6 +34,7 @@ const raii_detector = @import("../../../analysis/raii_detector.zig");
 const summary_propagation = @import("../../../dataflow/summary_propagation.zig");
 const SummaryPropagation = summary_propagation.SummaryPropagation;
 const LeakAnalysisResult = summary_propagation.LeakAnalysisResult;
+const ir_store_mod = @import("../../../ir/ir_store.zig");
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -391,28 +392,30 @@ pub const CrossLangDataFlow = struct {
                     // Check if this is a JNI call that requires null check on return value
                     // Only apply to verified real JNI calls to avoid false positives
                     if (isJniAllocCall(called_name) and isRealJNICall(inst) and requiresJniNullCheck(called_name)) {
-                        // Look for null check in subsequent instructions (simplified check)
+                        // Look for null check in subsequent instructions using pre-cached IR
                         var has_null_check = false;
-                        var next_inst = c.LLVMGetNextInstruction(inst);
+                        const inst_idx = findInstructionIndexFir(fir, inst);
+                        const scan_limit: u32 = 5;
                         var check_count: u32 = 0;
-                        while (@intFromPtr(next_inst) != 0 and check_count < 5) : ({
-                            next_inst = c.LLVMGetNextInstruction(next_inst);
-                            check_count += 1;
-                        }) {
-                            const next_opcode = c.LLVMGetInstructionOpcode(next_inst);
-                            // Check for ICMP (comparison instruction)
-                            if (next_opcode == c.LLVMICmp) {
-                                // This could be a null check - simplified detection
-                                has_null_check = true;
-                                break;
-                            }
-                            // Check for conditional branch (might be result of null check)
-                            if (next_opcode == c.LLVMBr) {
-                                const num_ops = c.LLVMGetNumOperands(next_inst);
-                                if (num_ops >= 1) {
-                                    // Conditional branch indicates some check was done
+                        if (inst_idx) |si| {
+                            for (fir.instructions[si + 1 ..], fir.opcodes[si + 1 ..]) |next_inst, next_opcode| {
+                                if (check_count >= scan_limit) break;
+                                check_count += 1;
+
+                                // Check for ICMP (comparison instruction)
+                                if (next_opcode == c.LLVMICmp) {
+                                    // This could be a null check - simplified detection
                                     has_null_check = true;
                                     break;
+                                }
+                                // Check for conditional branch (might be result of null check)
+                                if (next_opcode == c.LLVMBr) {
+                                    const num_ops = c.LLVMGetNumOperands(next_inst);
+                                    if (num_ops >= 1) {
+                                        // Conditional branch indicates some check was done
+                                        has_null_check = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -1565,6 +1568,13 @@ fn isJNIStructType(llvm_type: c.LLVMTypeRef) bool {
     }
 
     return false;
+}
+
+/// Find the index of a target instruction in FunctionIR.instructions array.
+/// O(1) via fir.inst_index — was O(n) linear scan.
+fn findInstructionIndexFir(fir: *const ir_store_mod.FunctionIR, target: c.LLVMValueRef) ?usize {
+    if (fir.indexOf(target)) |idx| return @as(usize, idx);
+    return null;
 }
 
 /// Calculate confidence score for orphan pointer detection

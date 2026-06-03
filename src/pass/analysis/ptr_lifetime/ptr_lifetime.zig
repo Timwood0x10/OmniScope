@@ -32,6 +32,9 @@ const c = @import("../../../ir/llvm_raw.zig").c;
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../../ir/llvm_safe.zig").getCallInstArgCount;
 
+// IRStore for pre-cached instruction iteration (avoids C API re-traversal)
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+
 const zone_cls = @import("../../../semantics/zone_classifier.zig");
 const ZoneKind = zone_cls.ZoneKind;
 const Lang = zone_cls.Language;
@@ -218,6 +221,7 @@ pub const PtrLifetimePass = struct {
                 .func = @intFromPtr(fir.func),
                 .func_name = fir.name,
                 .is_declaration = false,
+                .fir_idx = idx,
             };
         }
 
@@ -389,14 +393,17 @@ pub const PtrLifetimePass = struct {
         // Phase R5.1: Reset hook state per function scope (global, but sequential-per-func)
         hooks.resetHookStatesForFunction();
 
-        // Core analysis — locked because it writes to MemoryGraph and issues
+        // Get IRStore FunctionIR for IRStore-based instruction iteration
+        const fir = wctx.ctx_ptr.ir_store.function_list[item.fir_idx];
+
+        // Core analysis — locked because it writes to MemoryGraph, issues, and zone_cache (HashMap is not thread-safe)
         wctx.mutex.lock();
         defer wctx.mutex.unlock();
 
         const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
         wctx.ctx_ptr.zone_stats.record(zone);
 
-        analyzeFunction(wctx.ctx_ptr, func, wctx.diag_ptr, &fn_stats, wctx.mem_graph_ptr, &fn_t_track, &fn_t_check, is_ffi_func) catch |err| {
+        analyzeFunction(wctx.ctx_ptr, func, fir, wctx.diag_ptr, &fn_stats, wctx.mem_graph_ptr, &fn_t_track, &fn_t_check, is_ffi_func) catch |err| {
             wctx.diag_ptr.warn("PtrLifetime: skipped function due to error: {} ({s})", .{ err, item.func_name });
             wctx.ctx_ptr.recordDegradedFunction();
             result.funcs_errored += 1;
@@ -491,6 +498,7 @@ pub const PtrLifetimePass = struct {
     fn analyzeFunction(
         ctx: *PassContext,
         func: c.LLVMValueRef,
+        fir: *const ir_store_mod.FunctionIR,
         diag: *DiagnosticWriter,
         stats: *LifetimeStats,
         mem_graph: ?*memory_graph.MemoryGraph,
@@ -498,11 +506,7 @@ pub const PtrLifetimePass = struct {
         t_check: *i128,
         is_ffi_func: bool,
     ) !void {
-        const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_ptr) != 0)
-            std.mem.span(func_name_ptr)
-        else
-            "unknown";
+        const func_name = fir.name;
 
         stats.total_functions_analyzed += 1;
 
@@ -530,7 +534,6 @@ pub const PtrLifetimePass = struct {
             free_sites.deinit();
         }
 
-        var bb_id: usize = 0;
         var total_insts: usize = 0;
 
         const conv_lang: Lang = toZoneLanguage(ctx.module_language.language);
@@ -538,6 +541,7 @@ pub const PtrLifetimePass = struct {
 
         // P2: Build BB control-flow graph for path-sensitive double-free analysis.
         // Extract successor edges from each BB's terminator instruction.
+        // Note: IRStore does not cache terminator successor info, so we still use C API here.
         if (mem_graph) |mg| {
             var cfg_bb = c.LLVMGetFirstBasicBlock(func);
             while (@intFromPtr(cfg_bb) != 0) : (cfg_bb = c.LLVMGetNextBasicBlock(cfg_bb)) {
@@ -557,30 +561,25 @@ pub const PtrLifetimePass = struct {
             }
         }
 
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            if (bb_id >= 1000) break;
-            var inst = c.LLVMGetFirstInstruction(bb);
-            const bb_ref: c.LLVMValueRef = @ptrCast(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                total_insts += 1;
-                if (total_insts > 50000) return;
-                {
-                    const t0 = std.time.nanoTimestamp();
-                    try trackInstruction(ctx.allocator, inst, func, bb_id, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
-                    t_track.* += std.time.nanoTimestamp() - t0;
-                }
-                {
-                    const t0 = std.time.nanoTimestamp();
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                        _ = c.LLVMGetCalledValue(inst);
-                    }
-                    try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
-                    t_check.* += std.time.nanoTimestamp() - t0;
-                }
+        // Use IRStore pre-cached instruction list instead of C API re-traversal.
+        // This avoids repeated LLVMGetFirstBasicBlock/GetNextBasicBlock/GetNextInstruction calls.
+        for (fir.instructions, fir.opcodes) |inst, opcode| {
+            total_insts += 1;
+            if (total_insts > 50000) return;
+            // Get the real BasicBlock from this instruction for CFG-aware analysis
+            const parent_bb = c.LLVMGetInstructionParent(inst);
+            const bb_id: usize = @intFromPtr(parent_bb);
+            const bb_ref: c.LLVMValueRef = @ptrCast(parent_bb); // real BasicBlockRef for areMutuallyExclusive etc.
+            {
+                const t0 = std.time.nanoTimestamp();
+                try trackInstruction(ctx.allocator, inst, func, bb_id, opcode, &pointer_map, mem_graph, stats, &ctx.global_alloc_tracker, conv_lang, func_zone, is_ffi_func, &lifetime_map);
+                t_track.* += std.time.nanoTimestamp() - t0;
             }
-            bb_id += 1;
+            {
+                const t0 = std.time.nanoTimestamp();
+                try checkViolations(ctx, inst, func, func_name, bb_id, bb_ref, &pointer_map, mem_graph, diag, stats, &free_sites, &lifetime_map);
+                t_check.* += std.time.nanoTimestamp() - t0;
+            }
         }
     }
 
@@ -589,6 +588,7 @@ pub const PtrLifetimePass = struct {
         inst: c.LLVMValueRef,
         func: c.LLVMValueRef,
         bb_id: usize,
+        opcode: c_uint,
         pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
         mem_graph: ?*memory_graph.MemoryGraph,
         stats: *LifetimeStats,
@@ -598,8 +598,6 @@ pub const PtrLifetimePass = struct {
         is_ffi_func: bool,
         lifetime_map: *LifetimeMap,
     ) !void {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-
         var ctx = TrackContext{
             .allocator = allocator,
             .inst = inst,

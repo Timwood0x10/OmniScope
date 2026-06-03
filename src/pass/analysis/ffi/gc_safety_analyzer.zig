@@ -16,6 +16,8 @@ const log = std.log.scoped(.gc_safety);
 const c = @import("../../../ir/llvm_raw.zig").c;
 const builtin = @import("builtin");
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -105,22 +107,16 @@ pub const GcSafetyAnalyzer = struct {
 
         if (ctx.module == null) return;
 
-        const mod = ctx.module.?.raw;
-        const first_func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(first_func) == 0) return;
+        const ir_store = ctx.ir_store;
+        if (ir_store.function_list.len == 0) return;
 
         var result = GcSafetyResult{};
-        var func = first_func;
 
         // Iterate through all functions in the module
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ir_store.function_list) |fir| {
+            if (c.LLVMIsDeclaration(fir.func) != 0) continue;
 
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
+            const func_name = fir.name;
 
             // Skip internal/runtime functions
             if (zone_check.isZigInternalFunction(func_name) or
@@ -130,7 +126,7 @@ pub const GcSafetyAnalyzer = struct {
             }
 
             // Analyze function for GC safety issues
-            try analyzeFunction(ctx, func, func_name, diag, &result);
+            try analyzeFunction(ctx, fir, func_name, diag, &result);
             result.functions_analyzed += 1;
         }
 
@@ -143,7 +139,7 @@ pub const GcSafetyAnalyzer = struct {
     /// Analyze a single function for GC safety issues
     fn analyzeFunction(
         ctx: *PassContext,
-        func: c.LLVMValueRef,
+        fir: *const FunctionIR,
         func_name: []const u8,
         diag: *DiagnosticWriter,
         result: *GcSafetyResult,
@@ -161,28 +157,24 @@ pub const GcSafetyAnalyzer = struct {
         var has_finalizer = false;
         var has_ffi_cleanup = false;
 
-        // Scan basic blocks and instructions
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                // Check call instructions
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    try analyzeCallInstruction(
-                        ctx,
-                        inst,
-                        func_name,
-                        diag,
-                        result,
-                        &jni_global_refs,
-                        &gil_held,
-                        &gil_acquired_count,
-                        &gil_released_count,
-                        &has_finalizer,
-                        &has_ffi_cleanup,
-                    );
-                }
+        // Scan instructions using pre-collected IR store
+        for (fir.instructions) |inst| {
+            // Check call instructions
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                try analyzeCallInstruction(
+                    ctx,
+                    inst,
+                    func_name,
+                    diag,
+                    result,
+                    &jni_global_refs,
+                    &gil_held,
+                    &gil_acquired_count,
+                    &gil_released_count,
+                    &has_finalizer,
+                    &has_ffi_cleanup,
+                );
             }
         }
 
@@ -642,7 +634,7 @@ pub const GcSafetyAnalyzer = struct {
     /// from collecting them.
     fn detectReferenceCycle(
         ctx: *PassContext,
-        func: c.LLVMValueRef,
+        fir: *const FunctionIR,
         func_name: []const u8,
         diag: *DiagnosticWriter,
         result: *GcSafetyResult,
@@ -654,33 +646,29 @@ pub const GcSafetyAnalyzer = struct {
         var referenced_objects = std.StringHashMap(u32).init(ctx.allocator);
         defer referenced_objects.deinit();
 
-        // Scan for object creation and reference patterns
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_val = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called_val) == 0) continue;
+        // Scan for object creation and reference patterns using pre-collected instructions
+        for (fir.instructions) |inst| {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                    const called_name_ptr = c.LLVMGetValueName(called_val);
-                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                        std.mem.span(called_name_ptr)
-                    else
-                        continue;
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    continue;
 
-                    // Track object creation patterns
-                    if (isJniObjectCreation(called_name) or isPythonObjectCreation(called_name)) {
-                        const count = created_objects.get(called_name) orelse 0;
-                        try created_objects.put(called_name, count + 1);
-                    }
+                // Track object creation patterns
+                if (isJniObjectCreation(called_name) or isPythonObjectCreation(called_name)) {
+                    const count = created_objects.get(called_name) orelse 0;
+                    try created_objects.put(called_name, count + 1);
+                }
 
-                    // Track reference patterns
-                    if (isJniReferenceOperation(called_name) or isPythonReferenceOperation(called_name)) {
-                        const count = referenced_objects.get(called_name) orelse 0;
-                        try referenced_objects.put(called_name, count + 1);
-                    }
+                // Track reference patterns
+                if (isJniReferenceOperation(called_name) or isPythonReferenceOperation(called_name)) {
+                    const count = referenced_objects.get(called_name) orelse 0;
+                    try referenced_objects.put(called_name, count + 1);
                 }
             }
         }
@@ -793,7 +781,7 @@ pub const GcSafetyAnalyzer = struct {
     /// and don't access them after they've been cleaned up.
     fn checkFinalizerSafety(
         ctx: *PassContext,
-        func: c.LLVMValueRef,
+        fir: *const FunctionIR,
         func_name: []const u8,
         diag: *DiagnosticWriter,
         result: *GcSafetyResult,
@@ -804,40 +792,36 @@ pub const GcSafetyAnalyzer = struct {
         var cleanup_position: u32 = 0;
         var current_position: u32 = 0;
 
-        // Scan for finalizer patterns and FFI operations
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_val = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called_val) == 0) continue;
+        // Scan for finalizer patterns and FFI operations using pre-collected instructions
+        for (fir.instructions) |inst| {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                    const called_name_ptr = c.LLVMGetValueName(called_val);
-                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                        std.mem.span(called_name_ptr)
-                    else
-                        continue;
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    continue;
 
-                    current_position += 1;
+                current_position += 1;
 
-                    // Check for finalizer patterns
-                    if (isGcFinalizerPattern(called_name)) {
-                        has_finalizer = true;
-                    }
+                // Check for finalizer patterns
+                if (isGcFinalizerPattern(called_name)) {
+                    has_finalizer = true;
+                }
 
-                    // Check for FFI cleanup patterns
-                    if (isFfiCleanupPattern(called_name)) {
-                        has_ffi_cleanup = true;
-                        cleanup_position = current_position;
-                    }
+                // Check for FFI cleanup patterns
+                if (isFfiCleanupPattern(called_name)) {
+                    has_ffi_cleanup = true;
+                    cleanup_position = current_position;
+                }
 
-                    // Check for FFI access after cleanup
-                    if (has_ffi_cleanup and current_position > cleanup_position) {
-                        if (isFfiAccessPattern(called_name)) {
-                            has_ffi_access_after_cleanup = true;
-                        }
+                // Check for FFI access after cleanup
+                if (has_ffi_cleanup and current_position > cleanup_position) {
+                    if (isFfiAccessPattern(called_name)) {
+                        has_ffi_access_after_cleanup = true;
                     }
                 }
             }

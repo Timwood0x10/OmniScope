@@ -12,6 +12,7 @@ const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const builtin = @import("builtin");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
 
 /// Compile-time debug flag: true only in Debug builds.
 /// All verbose diagnostic logging below is eliminated by the compiler
@@ -136,36 +137,18 @@ pub const FFIBoundaryPass = struct {
         const first_func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(first_func) == 0) return;
 
-        // T3.1: Pre-collect all non-declaration functions into work items.
-        var func_count: usize = 0;
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                if (c.LLVMIsDeclaration(f) == 0) func_count += 1;
-            }
-        }
-        if (func_count == 0) return;
+        // T3.1: Pre-collect all non-declaration functions into work items using IRStore.
+        if (ctx.ir_store.function_list.len == 0) return;
 
-        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, ctx.ir_store.function_list.len);
         defer ctx.allocator.free(work_items);
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            var idx: usize = 0;
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                if (c.LLVMIsDeclaration(f) == 0) {
-                    const func_name_ptr = c.LLVMGetValueName(f);
-                    const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                        std.mem.span(func_name_ptr)
-                    else
-                        "unknown";
-                    work_items[idx] = .{
-                        .func = @intFromPtr(f),
-                        .func_name = func_name,
-                        .is_declaration = false,
-                    };
-                    idx += 1;
-                }
-            }
+        for (ctx.ir_store.function_list, 0..) |fir, idx| {
+            work_items[idx] = .{
+                .func = @intFromPtr(fir.func),
+                .func_name = fir.name,
+                .is_declaration = false,
+                .fir_idx = idx,
+            };
         }
 
         // T3.1: Shared state for parallel analysis
@@ -199,15 +182,10 @@ pub const FFIBoundaryPass = struct {
     ///   Phase 1: Noise reduction (secondary filter for edge cases)
     ///   Phase 2: FP whitelist (defense-in-depth, will be migrated into zone)
     ///   Phase 3: Scan call instructions with zone-aware analysis
-    pub fn analyze(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !AnalyzeResult {
+    pub fn analyze(ctx: *PassContext, fir: *const ir_store_mod.FunctionIR, diag: *DiagnosticWriter) !AnalyzeResult {
         var result = AnalyzeResult{};
-
-        // Get function name for logging
-        const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_ptr) != 0)
-            std.mem.span(func_name_ptr)
-        else
-            "unknown";
+        const func = fir.func;
+        const func_name = fir.name;
 
         // Phase 0: Zone-First Classification (R7.0)
         const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
@@ -253,15 +231,11 @@ pub const FFIBoundaryPass = struct {
         // Zone-First gate (Phase 0) now handles all of these before reaching here.
 
         // Phase 3: Scan all call instructions for FFI boundaries (zone-aware)
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    if (try checkCallForFFI(ctx, inst, func, diag, &result, zone)) {
-                        result.count += 1;
-                    }
+        for (fir.instructions, 0..) |inst, idx| {
+            const opcode = fir.opcodes[idx];
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                if (try checkCallForFFI(ctx, inst, func, diag, &result, zone, fir)) {
+                    result.count += 1;
                 }
             }
         }
@@ -280,6 +254,7 @@ pub const FFIBoundaryPass = struct {
         diag: *DiagnosticWriter,
         stats: *AnalyzeResult,
         caller_zone: zone_classifier.ZoneKind,
+        fir: *const ir_store_mod.FunctionIR,
     ) !bool {
         const called_val = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called_val) == 0) return false;
@@ -578,7 +553,7 @@ pub const FFIBoundaryPass = struct {
         // This prevents POSIX API (pthread_*, setsockopt, etc.) in pure C code
         // from being flagged as risky when they're not on an FFI boundary.
         if (semantics) |sem| {
-            try reportRiskyCall(ctx, inst, caller_name, called_name, sem, diag);
+            try reportRiskyCall(ctx, inst, caller_name, called_name, sem, diag, fir);
         }
 
         // Classify the boundary kind
@@ -661,11 +636,9 @@ pub const FFIBoundaryPass = struct {
         // deallocator (or vice versa), the FFI boundary call is safe.
         if (semantics) |sem| {
             if (sem.kind == .allocator or sem.kind == .deallocator) {
-                if (c.LLVMGetInstructionParent(inst)) |bb| {
-                    if (functionHasMatchingPair(c.LLVMGetBasicBlockParent(bb), sem.kind)) {
-                        diag.debug("BOUNDARY-PAIR-SKIP: {s} in {s} — matching pair found", .{ called_name, caller_name });
-                        return false;
-                    }
+                if (functionHasMatchingPair(fir, sem.kind)) {
+                    diag.debug("BOUNDARY-PAIR-SKIP: {s} in {s} — matching pair found", .{ called_name, caller_name });
+                    return false;
                 }
             }
         }
@@ -714,26 +687,20 @@ pub const FFIBoundaryPass = struct {
     /// Check if a function calls both an allocator and its matching deallocator.
     /// Returns true if the function has a correctly-paired alloc/free pattern,
     /// meaning the allocator call is NOT a leak and the deallocator call is NOT invalid.
-    fn functionHasMatchingPair(func: c.LLVMValueRef, target_kind: RiskKind) bool {
-        if (@intFromPtr(func) == 0) return false;
+    fn functionHasMatchingPair(fir: *const ir_store_mod.FunctionIR, target_kind: RiskKind) bool {
+        for (fir.instructions, 0..) |inst, idx| {
+            const opcode = fir.opcodes[idx];
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+            const called_val = c.LLVMGetCalledValue(inst) orelse continue;
+            const callee_name_ptr = c.LLVMGetValueName(called_val);
+            const callee_name = if (@intFromPtr(callee_name_ptr) != 0) std.mem.span(callee_name_ptr) else continue;
 
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
-                const called_val = c.LLVMGetCalledValue(inst) orelse continue;
-                const callee_name_ptr = c.LLVMGetValueName(called_val);
-                const callee_name = if (@intFromPtr(callee_name_ptr) != 0) std.mem.span(callee_name_ptr) else continue;
-
-                if (SemanticRegistry.lookup(callee_name)) |sem| {
-                    if (target_kind == .allocator and sem.kind == .deallocator) {
-                        return true;
-                    }
-                    if (target_kind == .deallocator and sem.kind == .allocator) {
-                        return true;
-                    }
+            if (SemanticRegistry.lookup(callee_name)) |sem| {
+                if (target_kind == .allocator and sem.kind == .deallocator) {
+                    return true;
+                }
+                if (target_kind == .deallocator and sem.kind == .allocator) {
+                    return true;
                 }
             }
         }
@@ -748,6 +715,7 @@ pub const FFIBoundaryPass = struct {
         called_name: []const u8,
         sem: FunctionSemantics,
         diag: *DiagnosticWriter,
+        fir: *const ir_store_mod.FunctionIR,
     ) !void {
         // : Format string constant detection.
         // If the format argument (operand 0 for printf-like functions) is a
@@ -817,11 +785,9 @@ pub const FFIBoundaryPass = struct {
         // Only suppresses for .allocator and .deallocator kinds — other kinds
         // (format_string, unchecked_copy, etc.) are not affected.
         if (sem.kind == .allocator or sem.kind == .deallocator) {
-            if (c.LLVMGetInstructionParent(inst)) |bb| {
-                if (functionHasMatchingPair(c.LLVMGetBasicBlockParent(bb), sem.kind)) {
-                    diag.debug("PAIR-SKIP: {s} in {s} — matching pair found in function", .{ called_name, caller_name });
-                    return;
-                }
+            if (functionHasMatchingPair(fir, sem.kind)) {
+                diag.debug("PAIR-SKIP: {s} in {s} — matching pair found in function", .{ called_name, caller_name });
+                return;
             }
         }
 

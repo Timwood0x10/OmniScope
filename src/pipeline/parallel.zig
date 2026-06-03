@@ -47,6 +47,7 @@ pub const WorkItem = struct {
     func: usize, // c.LLVMValueRef as integer (LLVM API is C-compatible)
     func_name: []const u8,
     is_declaration: bool,
+    fir_idx: usize = 0, // index into ir_store.function_list for IRStore-based iteration
 };
 
 /// Per-worker result buffer for collecting analysis output without locks.

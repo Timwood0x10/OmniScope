@@ -24,6 +24,12 @@ pub const FunctionIR = struct {
     bitcasts: []c.LLVMValueRef,
     opcodes: []c_uint,
 
+    /// Map from LLVMValueRef pointer (@intFromPtr) → index into `instructions[]`.
+    /// Built once during collect() — turns linear instruction-position lookups
+    /// (findInstructionIndex / instructionComesBeforeOrEqual) into O(1).
+    /// Hot path: Rule 10 UAF, error_propagation_tracer, cross_lang_dataflow.
+    inst_index: std.AutoHashMapUnmanaged(usize, u32),
+
     allocator: std.mem.Allocator,
 
     pub fn init(
@@ -39,6 +45,7 @@ pub const FunctionIR = struct {
         geps: []c.LLVMValueRef,
         bitcasts: []c.LLVMValueRef,
         opcodes: []c_uint,
+        inst_index: std.AutoHashMapUnmanaged(usize, u32),
     ) FunctionIR {
         return .{
             .func = func,
@@ -52,6 +59,7 @@ pub const FunctionIR = struct {
             .geps = geps,
             .bitcasts = bitcasts,
             .opcodes = opcodes,
+            .inst_index = inst_index,
             .allocator = allocator,
         };
     }
@@ -66,6 +74,13 @@ pub const FunctionIR = struct {
         self.allocator.free(self.geps);
         self.allocator.free(self.bitcasts);
         self.allocator.free(self.opcodes);
+        self.inst_index.deinit(self.allocator);
+    }
+
+    /// O(1) lookup: instruction position within this function's `instructions[]`.
+    /// Returns null if `inst` doesn't belong to this function.
+    pub fn indexOf(self: *const FunctionIR, inst: c.LLVMValueRef) ?u32 {
+        return self.inst_index.get(@intFromPtr(inst));
     }
 
     pub fn getInstructionCount(self: *const FunctionIR) usize {
@@ -209,7 +224,7 @@ fn collectFunctionIR(allocator: std.mem.Allocator, func: c.LLVMValueRef) !*Funct
             try opcodes.append(allocator, opcode);
 
             switch (opcode) {
-                c.LLVMCall => try calls.append(allocator, inst),
+                c.LLVMCall, c.LLVMInvoke => try calls.append(allocator, inst),
                 c.LLVMStore => try stores.append(allocator, inst),
                 c.LLVMLoad => try loads.append(allocator, inst),
                 c.LLVMAlloca => try allocas.append(allocator, inst),
@@ -222,11 +237,21 @@ fn collectFunctionIR(allocator: std.mem.Allocator, func: c.LLVMValueRef) !*Funct
     }
 
     const fir = try allocator.create(FunctionIR);
+    const insts_slice = try instructions.toOwnedSlice(allocator);
+
+    // Build inst → index map for O(1) position lookups (hot path for
+    // Rule 10 UAF and other passes that compare instruction order).
+    var inst_index: std.AutoHashMapUnmanaged(usize, u32) = .{};
+    try inst_index.ensureTotalCapacity(allocator, @intCast(insts_slice.len));
+    for (insts_slice, 0..) |inst, idx| {
+        inst_index.putAssumeCapacity(@intFromPtr(inst), @intCast(idx));
+    }
+
     fir.* = FunctionIR.init(
         allocator,
         func,
         name,
-        try instructions.toOwnedSlice(allocator),
+        insts_slice,
         try calls.toOwnedSlice(allocator),
         try stores.toOwnedSlice(allocator),
         try loads.toOwnedSlice(allocator),
@@ -235,6 +260,7 @@ fn collectFunctionIR(allocator: std.mem.Allocator, func: c.LLVMValueRef) !*Funct
         try geps.toOwnedSlice(allocator),
         try bitcasts.toOwnedSlice(allocator),
         try opcodes.toOwnedSlice(allocator),
+        inst_index,
     );
 
     return fir;

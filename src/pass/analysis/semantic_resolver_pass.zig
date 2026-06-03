@@ -129,7 +129,7 @@ pub const SemanticResolverPass = struct {
             // Must run AFTER all single-pass detectors because it propagates
             // heap_provenance marks through GEP/Load/BitCast/PHI chains.
             // This is inherently multi-pass (up to 20 iterations over entire module).
-            nomicon_ch09.detect(raw_mod, srt, diag) catch |err| {
+            nomicon_ch09.detect(ctx.ir_store, srt, diag) catch |err| {
                 log.warn("[SemanticResolver] ch09_vec_box detector failed: {any}", .{err});
             };
 

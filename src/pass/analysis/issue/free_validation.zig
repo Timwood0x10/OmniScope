@@ -12,6 +12,9 @@ const std = @import("std");
 const log = std.log.scoped(.free_validation);
 const c = @import("../../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const ModuleIRStore = ir_store_mod.ModuleIRStore;
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -63,18 +66,15 @@ pub const FreeValidationPass = struct {
         // If empty, DangerSurfacePass didn't run or found nothing — skip to avoid false positives.
         if (ctx.danger_surface_relevant.count() == 0) return;
 
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        const ir_store = ctx.ir_store;
+        if (ir_store.function_list.len == 0) return;
 
         var issue_count: usize = 0;
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
+        for (ir_store.function_list) |fir| {
+            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(fir.func)))) continue;
             // Function-level error isolation
-            const count = analyzeFunction(ctx, func, diag) catch |err| {
-                const func_name_raw = c.LLVMGetValueName(func);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, func_name });
+            const count = analyzeFunction(ctx, fir, diag) catch |err| {
+                diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, fir.name });
                 ctx.recordDegradedFunction();
                 continue;
             };
@@ -88,13 +88,12 @@ pub const FreeValidationPass = struct {
         }
     }
 
-    fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
+    fn analyzeFunction(ctx: *PassContext, fir: *const FunctionIR, diag: *DiagnosticWriter) !usize {
         var issue_count: usize = 0;
+        const func = fir.func;
 
         // INTEGRATION: Three-layer noise filter (name + path)
-        const func_name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_ptr) == 0) return 0;
-        const func_name = std.mem.span(func_name_ptr);
+        const func_name = fir.name;
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
         const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return 0;
@@ -132,22 +131,15 @@ pub const FreeValidationPass = struct {
         }
 
         // Second pass: track instruction pointer origins
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try trackPointerOrigin(ctx.allocator, inst, &pointer_origins);
-            }
+        for (fir.instructions, 0..) |inst, idx| {
+            _ = idx;
+            try trackPointerOrigin(ctx.allocator, inst, &pointer_origins);
         }
 
         // Third pass: check free calls
-        bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag)) {
-                    issue_count += 1;
-                }
+        for (fir.instructions) |inst| {
+            if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag)) {
+                issue_count += 1;
             }
         }
 

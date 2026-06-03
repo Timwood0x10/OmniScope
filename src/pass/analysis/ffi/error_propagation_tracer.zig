@@ -25,6 +25,7 @@ const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
 const log = @import("../../../common/log.zig");
 const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 const allocator_shim = @import("../../../detectors/allocator_shim.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
 
 /// Statistics for error propagation analysis
 pub const ErrorPropagationStats = struct {
@@ -232,7 +233,8 @@ pub const ErrorPropagationTracer = struct {
             }
 
             // Check if the return value is used (stored, compared, or passed to another function)
-            const is_checked = isReturnValueChecked(call_info.inst);
+            const caller_fir = ctx.ir_store.functions.get(call_info.caller_name) orelse continue;
+            const is_checked = isReturnValueChecked(call_info.inst, caller_fir);
 
             if (!is_checked) {
                 stats.unchecked_errors += 1;
@@ -280,7 +282,7 @@ pub const ErrorPropagationTracer = struct {
                     "";
 
                 if (isExceptionThrowingFunction(called_name)) {
-                    const has_handler = hasExceptionHandler(inst, fir.func);
+                    const has_handler = hasExceptionHandler(inst, fir);
 
                     if (!has_handler) {
                         stats.exception_violations += 1;
@@ -316,7 +318,8 @@ pub const ErrorPropagationTracer = struct {
             if (!call_info.returns_error) continue;
 
             // Check if the error code is used in a way that suggests misinterpretation
-            const is_misused = checkErrorCodeUsage(call_info.inst, call_info.callee_lang);
+            const caller_fir = ctx.ir_store.functions.get(call_info.caller_name) orelse continue;
+            const is_misused = checkErrorCodeUsage(call_info.inst, call_info.callee_lang, caller_fir);
 
             if (is_misused) {
                 stats.error_misinterpretations += 1;
@@ -381,7 +384,7 @@ pub const ErrorPropagationTracer = struct {
             // Check for leaks on error paths
             for (error_returns.items) |error_inst| {
                 // Check if allocations made before this error are properly freed
-                const has_leak = checkForLeakOnErrorPath(error_inst, allocations.items);
+                const has_leak = checkForLeakOnErrorPath(error_inst, allocations.items, fir);
 
                 if (has_leak) {
                     stats.error_path_leaks += 1;
@@ -501,18 +504,24 @@ fn isAllocationFunction(func_name: []const u8) bool {
     return false;
 }
 
-/// Check if the return value of a call is checked
-fn isReturnValueChecked(inst: c.LLVMValueRef) bool {
-    // Scan forward to see how the return value is used
-    var next_inst = c.LLVMGetNextInstruction(inst);
-    var scanned: u32 = 0;
-    const scan_limit: u32 = 10;
+/// Find the index of a target instruction in FunctionIR.instructions array.
+/// O(1) via fir.inst_index — was O(n) linear scan, hot path in
+/// error_propagation_tracer pass (previously ~14s for wasmtime_test.bc).
+fn findInstructionIndex(fir: *const ir_store_mod.FunctionIR, target: c.LLVMValueRef) ?usize {
+    if (fir.indexOf(target)) |idx| return @as(usize, idx);
+    return null;
+}
 
-    while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
-        next_inst = c.LLVMGetNextInstruction(next_inst);
+/// Check if the return value of a call is checked
+fn isReturnValueChecked(inst: c.LLVMValueRef, fir: *const ir_store_mod.FunctionIR) bool {
+    // Scan forward to see how the return value is used
+    const start_idx = findInstructionIndex(fir, inst) orelse return false;
+    const scan_limit: u32 = 10;
+    var scanned: u32 = 0;
+
+    for (fir.instructions[start_idx + 1 ..], fir.opcodes[start_idx + 1 ..]) |next_inst, opcode| {
+        if (scanned >= scan_limit) break;
         scanned += 1;
-    }) {
-        const opcode = c.LLVMGetInstructionOpcode(next_inst);
 
         // Store instruction - return value is stored (could be checked later)
         if (opcode == c.LLVMStore) {
@@ -558,24 +567,19 @@ fn isReturnValueChecked(inst: c.LLVMValueRef) bool {
 }
 
 /// Check if there's an exception handler (landingpad or invoke) for an instruction
-fn hasExceptionHandler(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
+fn hasExceptionHandler(inst: c.LLVMValueRef, fir: *const ir_store_mod.FunctionIR) bool {
     _ = inst;
 
     // Check if function has landingpad instructions (exception handling)
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var bb_inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(bb_inst) != 0) : (bb_inst = c.LLVMGetNextInstruction(bb_inst)) {
-            // Check for landingpad instruction
-            if (@intFromPtr(c.LLVMIsALandingPadInst(bb_inst)) != 0) {
-                return true;
-            }
+    for (fir.instructions, fir.opcodes) |bb_inst, opcode| {
+        // Check for landingpad instruction
+        if (@intFromPtr(c.LLVMIsALandingPadInst(bb_inst)) != 0) {
+            return true;
+        }
 
-            // Check for invoke instruction (which has exception handling)
-            const opcode = c.LLVMGetInstructionOpcode(bb_inst);
-            if (opcode == c.LLVMInvoke) {
-                return true;
-            }
+        // Check for invoke instruction (which has exception handling)
+        if (opcode == c.LLVMInvoke) {
+            return true;
         }
     }
 
@@ -583,20 +587,18 @@ fn hasExceptionHandler(inst: c.LLVMValueRef, func: c.LLVMValueRef) bool {
 }
 
 /// Check if an error code is misused
-fn checkErrorCodeUsage(inst: c.LLVMValueRef, source_lang: Language) bool {
+fn checkErrorCodeUsage(inst: c.LLVMValueRef, source_lang: Language, fir: *const ir_store_mod.FunctionIR) bool {
     // This is a simplified check - in practice, we would analyze how the error code is used
     // For now, we'll check for common misuse patterns
 
     // Check if the error code is used in a way that suggests misinterpretation
-    var next_inst = c.LLVMGetNextInstruction(inst);
-    var scanned: u32 = 0;
+    const start_idx = findInstructionIndex(fir, inst) orelse return false;
     const scan_limit: u32 = 10;
+    var scanned: u32 = 0;
 
-    while (@intFromPtr(next_inst) != 0 and scanned < scan_limit) : ({
-        next_inst = c.LLVMGetNextInstruction(next_inst);
+    for (fir.instructions[start_idx + 1 ..], fir.opcodes[start_idx + 1 ..]) |next_inst, opcode| {
+        if (scanned >= scan_limit) break;
         scanned += 1;
-    }) {
-        const opcode = c.LLVMGetInstructionOpcode(next_inst);
 
         // Check for comparison with wrong error code values
         if (opcode == c.LLVMICmp) {
@@ -640,51 +642,42 @@ fn checkErrorCodeUsage(inst: c.LLVMValueRef, source_lang: Language) bool {
 fn checkForLeakOnErrorPath(
     error_inst: c.LLVMValueRef,
     allocations: []const c.LLVMValueRef,
+    fir: *const ir_store_mod.FunctionIR,
 ) bool {
     // This is a simplified check - in practice, we would need to do path-sensitive analysis
     // For now, we'll check if there are allocations that might not be freed on error paths
 
-    // Get the basic block of the error instruction
-    const error_bb = c.LLVMGetInstructionParent(error_inst);
-    if (@intFromPtr(error_bb) == 0) return false;
-
-    // Check if there are allocations in the same basic block that might leak
+    // Check if there are allocations in the same function that might leak
     for (allocations) |alloc_inst| {
-        const alloc_bb = c.LLVMGetInstructionParent(alloc_inst);
-        if (@intFromPtr(alloc_bb) == 0) continue;
+        // If allocation and error are in the same function, check for free between them
+        const alloc_idx = findInstructionIndex(fir, alloc_inst) orelse continue;
+        const error_idx = findInstructionIndex(fir, error_inst) orelse continue;
 
-        // If allocation is in the same basic block as error, it might leak
-        if (@intFromPtr(alloc_bb) == @intFromPtr(error_bb)) {
-            // Check if there's a free call after the allocation
-            var has_free = false;
-            var next_inst = c.LLVMGetNextInstruction(alloc_inst);
-            while (@intFromPtr(next_inst) != 0) : (next_inst = c.LLVMGetNextInstruction(next_inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(next_inst);
-                if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_val = c.LLVMGetCalledValue(next_inst);
-                    if (@intFromPtr(called_val) != 0) {
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+        // Only check if allocation comes before error instruction
+        if (alloc_idx >= error_idx) continue;
 
-                        if (isFreeFunction(called_name)) {
-                            has_free = true;
-                            break;
-                        }
+        // Check if there's a free call after the allocation (before error)
+        var has_free = false;
+        for (fir.instructions[alloc_idx + 1 .. error_idx], fir.opcodes[alloc_idx + 1 .. error_idx]) |next_inst, opcode| {
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_val = c.LLVMGetCalledValue(next_inst);
+                if (@intFromPtr(called_val) != 0) {
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                        std.mem.span(called_name_ptr)
+                    else
+                        "";
+
+                    if (isFreeFunction(called_name)) {
+                        has_free = true;
+                        break;
                     }
                 }
-
-                // Stop at the error instruction
-                if (@intFromPtr(next_inst) == @intFromPtr(error_inst)) {
-                    break;
-                }
             }
+        }
 
-            if (!has_free) {
-                return true; // Potential leak
-            }
+        if (!has_free) {
+            return true; // Potential leak
         }
     }
 

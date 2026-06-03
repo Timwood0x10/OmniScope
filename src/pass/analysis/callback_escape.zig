@@ -25,6 +25,7 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const safe = @import("../../ir/llvm_safe.zig"); // Issue2/3: Standardized LLVM helpers
+const ir_store_mod = @import("../../ir/ir_store.zig");
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
@@ -152,31 +153,18 @@ pub const CallbackEscapePass = struct {
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
 
-        // T3.1: Pre-collect all functions into work items for parallel distribution.
-        var func_count: usize = 0;
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                func_count += 1;
-            }
-        }
-        if (func_count == 0) return;
-        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        // T3.1: Pre-collect all functions into work items using IRStore.
+        // IRStore already excludes declarations — no two-pass counting needed.
+        if (ctx.ir_store.function_list.len == 0) return;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, ctx.ir_store.function_list.len);
         defer ctx.allocator.free(work_items);
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            var idx: usize = 0;
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                const func_name_raw = c.LLVMGetValueName(f);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const is_decl = c.LLVMIsDeclaration(f) != 0;
-                work_items[idx] = .{
-                    .func = @intFromPtr(f),
-                    .func_name = func_name,
-                    .is_declaration = is_decl,
-                };
-                idx += 1;
-            }
+        for (ctx.ir_store.function_list, 0..) |fir, idx| {
+            work_items[idx] = .{
+                .func = @intFromPtr(fir.func),
+                .func_name = fir.name,
+                .is_declaration = false,
+                .fir_idx = idx,
+            };
         }
 
         // T3.1: Mutex protecting shared PassContext state during parallel analysis.
@@ -244,19 +232,11 @@ pub const CallbackEscapePass = struct {
     fn cbEscapeWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
         _ = worker_id;
         var result = parallel.WorkerResult{};
-        const func: c.LLVMValueRef = @ptrFromInt(item.func);
-
-        if (item.is_declaration) {
-            const wctx = getCBWorkerContext();
-            wctx.mutex.lock();
-            defer wctx.mutex.unlock();
-            const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
-            wctx.ctx_ptr.zone_stats.record(zone);
-            result.funcs_skipped += 1;
-            return result;
-        }
-
         const wctx = getCBWorkerContext();
+
+        // Get IRStore FunctionIR for this function
+        const fir = wctx.ctx_ptr.ir_store.function_list[item.fir_idx];
+        const func = fir.func;
 
         // Noise filtering (read-only, no lock needed)
         const debug_file_path = extractDebugFilePath(func);
@@ -287,7 +267,7 @@ pub const CallbackEscapePass = struct {
         wctx.mutex.lock();
         defer wctx.mutex.unlock();
 
-        analyzeFunction(wctx.ctx_ptr, func, wctx.diag_ptr, &fn_stats) catch |err| {
+        analyzeFunction(wctx.ctx_ptr, fir, wctx.diag_ptr, &fn_stats) catch |err| {
             wctx.diag_ptr.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, item.func_name });
             wctx.ctx_ptr.recordDegradedFunction();
             result.funcs_errored += 1;
@@ -359,15 +339,12 @@ pub const CallbackEscapePass = struct {
 
     fn analyzeFunction(
         ctx: *PassContext,
-        func: c.LLVMValueRef,
+        fir: *const ir_store_mod.FunctionIR,
         diag: *DiagnosticWriter,
         stats: *EscapeStats,
     ) !void {
-        const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_ptr) != 0)
-            std.mem.span(func_name_ptr)
-        else
-            "unknown";
+        const func = fir.func;
+        const func_name = fir.name;
 
         // R7.2 Language Channel Gate
         const escape_channel = ctx.channelCallbackEscape();
@@ -415,23 +392,19 @@ pub const CallbackEscapePass = struct {
         var callback_escapes: std.ArrayList(CallbackEscapeInfo) = .{};
         defer callback_escapes.deinit(ctx.allocator);
 
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(
-                    ctx.allocator,
-                    inst,
-                    &keepalive_protected,
-                    &alloc_sites,
-                    &free_sites,
-                    &cgo_calls,
-                    &callback_escapes,
-                    ctx.isGoModule(),
-                    ctx.module_language.language,
-                    ctx.platform_profile,
-                );
-            }
+        for (fir.instructions) |inst| {
+            try scanInstruction(
+                ctx.allocator,
+                inst,
+                &keepalive_protected,
+                &alloc_sites,
+                &free_sites,
+                &cgo_calls,
+                &callback_escapes,
+                ctx.isGoModule(),
+                ctx.module_language.language,
+                ctx.platform_profile,
+            );
         }
 
         if (callback_escapes.items.len == 0) {

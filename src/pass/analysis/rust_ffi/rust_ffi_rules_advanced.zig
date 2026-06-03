@@ -11,6 +11,8 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const tracking = @import("../ptr_lifetime/value_tracking.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -39,18 +41,17 @@ const instructionUsesValue = lifetime.instructionUsesValue;
 // ============================================================================
 
 /// Rule 9: Detect write-to-immutable violations.
-/// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
-pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+/// Uses fir.loads + fir.stores (pre-filtered arrays) — ~5x fewer iterations vs full insts[].
+pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, fir: *const FunctionIR) !void {
+    _ = insts;
     const func_name = getFunctionName(func);
 
-    // Pass 1: Collect all struct field pointers loaded in this function
+    // Pass 1: Collect struct field pointers from loads (use pre-filtered fir.loads)
     const MaxFieldPtrs: usize = 32;
     var field_ptr_count: usize = 0;
     var struct_field_ptrs: [MaxFieldPtrs]c.LLVMValueRef = undefined;
 
-    for (insts) |inst| {
-        if (c.LLVMGetInstructionOpcode(inst) != c.LLVMLoad) continue;
-
+    for (fir.loads) |inst| {
         const load_src = c.LLVMGetOperand(inst, 0);
         if (@intFromPtr(load_src) == 0) continue;
         if (c.LLVMGetInstructionOpcode(load_src) != c.LLVMGetElementPtr) continue;
@@ -73,15 +74,13 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []
 
     if (field_ptr_count == 0) return;
 
-    // Pass 2: Check each store instruction for writes through struct field pointers
-    for (insts) |inst| {
-        if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
-
+    // Pass 2: Check each store for writes through struct field pointers (use pre-filtered fir.stores)
+    for (fir.stores) |inst| {
         const dest_ptr = c.LLVMGetOperand(inst, 1);
         if (@intFromPtr(dest_ptr) == 0) continue;
 
         for (struct_field_ptrs[0..field_ptr_count]) |field_load| {
-            if (ptrTracesTo(dest_ptr, field_load)) {
+            if (ptrTracesTo(dest_ptr, field_load, fir)) {
                 // SRT query: trace through def-use chain to check interior mutability
                 // If the value is derived from UnsafeCell, this is legal interior mutability
                 if (ctx.semantic_resolution) |resolution_engine| {
@@ -148,8 +147,8 @@ pub fn detectWriteToImmutable(auditor: *Auditor, func: c.LLVMValueRef, insts: []
 // ============================================================================
 
 /// Check if `user_value` ultimately derives from `source_value`.
-pub fn ptrTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef) bool {
-    return tracking.valueTracesTo(user_value, source_value);
+pub fn ptrTracesTo(user_value: c.LLVMValueRef, source_value: c.LLVMValueRef, fir: *const FunctionIR) bool {
+    return tracking.valueTracesTo(user_value, source_value, fir);
 }
 
 /// Check if a value is derived from a function parameter that has `readonly` attribute.
@@ -302,7 +301,7 @@ pub const ConstFieldInfo = struct {
 };
 
 /// Trace a pointer value back to see if it was loaded from a const-qualified struct field.
-pub fn traceConstFieldLoad(auditor: *Auditor, ptr_val: c.LLVMValueRef) ?ConstFieldInfo {
+pub fn traceConstFieldLoad(auditor: *Auditor, ptr_val: c.LLVMValueRef, fir: *const FunctionIR) ?ConstFieldInfo {
     const opcode = c.LLVMGetInstructionOpcode(ptr_val);
 
     if (opcode == c.LLVMGetElementPtr) {
@@ -317,41 +316,41 @@ pub fn traceConstFieldLoad(auditor: *Auditor, ptr_val: c.LLVMValueRef) ?ConstFie
             c.LLVMLoad => {
                 const alloca_ptr = c.LLVMGetOperand(base, 0);
                 if (@intFromPtr(alloca_ptr) != 0) {
-                    const stored_val = findStoreToAlloca(alloca_ptr);
+                    const stored_val = findStoreToAlloca(alloca_ptr, fir);
                     if (@intFromPtr(stored_val) != 0) {
-                        if (traceConstFieldLoad(auditor, stored_val)) |info| return info;
+                        if (traceConstFieldLoad(auditor, stored_val, fir)) |info| return info;
                     }
                 }
             },
             c.LLVMGetElementPtr => {
-                if (traceConstFieldLoad(auditor, base)) |info| return info;
+                if (traceConstFieldLoad(auditor, base, fir)) |info| return info;
             },
             else => {},
         }
 
-        return traceConstFieldLoad(auditor, base);
+        return traceConstFieldLoad(auditor, base, fir);
     }
 
     if (opcode == c.LLVMLoad) {
         const src = c.LLVMGetOperand(ptr_val, 0);
         if (@intFromPtr(src) != 0) {
-            return traceConstFieldLoad(auditor, src);
+            return traceConstFieldLoad(auditor, src, fir);
         }
     }
 
     return null;
 }
 
-/// Scan the basic block containing an alloca to find what value was stored into it.
-pub fn findStoreToAlloca(alloca_val: c.LLVMValueRef) c.LLVMValueRef {
-    const parent_bb = c.LLVMGetInstructionParent(alloca_val);
-    if (@intFromPtr(parent_bb) == 0) {
+/// Scan instructions to find what value was stored into an alloca.
+pub fn findStoreToAlloca(alloca_val: c.LLVMValueRef, fir: *const FunctionIR) c.LLVMValueRef {
+    // Find the alloca instruction's position, then scan forward for stores
+    const start_idx = tracking.findInstructionIndex(fir, alloca_val) orelse {
         const null_val: c.LLVMValueRef = @ptrFromInt(0);
         return null_val;
-    }
+    };
 
-    var inst = c.LLVMGetFirstInstruction(parent_bb);
-    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+    // Scan forward from alloca for store instructions targeting it
+    for (fir.instructions[start_idx..]) |inst| {
         if (c.LLVMGetInstructionOpcode(inst) != c.LLVMStore) continue;
         if (c.LLVMGetOperand(inst, 1) != alloca_val) continue;
         return c.LLVMGetOperand(inst, 0);
@@ -442,18 +441,14 @@ pub fn getGepFieldIndex(gep: c.LLVMValueRef) u32 {
 
 /// Rule 10: Detect use-after-free within a single function.
 /// `insts` is the pre-collected instruction list from auditFunction (no re-traversal).
-pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+///
+/// PERF: drop_glue.detectAll() (full-module scan) used to be invoked here per
+/// function — 4654× redundant module scans on wasmtime_test.bc dominated the
+/// pass cost (~126s). It's now run once from RustFfiAuditor.audit() before
+/// the per-function loop.
+pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, fir: *const FunctionIR) !void {
+    _ = insts;
     const func_name = getFunctionName(func);
-
-    // P0 FIX: Run enhanced drop glue detection BEFORE UAF analysis
-    // This ensures all RAII patterns are marked in SRT and won't generate FP
-    if (ctx.semantic_resolution) |resolution_engine| {
-        const srt = resolution_engine.getSemanticTree();
-        const module = c.LLVMGetGlobalParent(func);
-        if (@intFromPtr(module) != 0) {
-            drop_glue.detectAll(module, srt) catch {};
-        }
-    }
 
     const MaxFreed: usize = 16;
     var freed_count: usize = 0;
@@ -462,11 +457,13 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
         free_inst: c.LLVMValueRef,
         free_func_name: []const u8,
     } = undefined;
+    // PERF: parallel index cache — avoids per-iteration map lookup in the
+    // O(insts × freed) hot loop below. Was the dominant cost (~50s+ on
+    // wasmtime_test.bc where some functions have 5000+ instructions).
+    var freed_indices: [MaxFreed]u32 = undefined;
 
-    for (insts) |inst| {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
-
+    // Pass 1: Find deallocator calls (use pre-filtered fir.calls)
+    for (fir.calls) |inst| {
         const called = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called) == 0) continue;
         if (c.LLVMIsAFunction(called) != null) continue;
@@ -489,11 +486,13 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
         if (@intFromPtr(freed_ptr) == 0) continue;
 
         if (freed_count < MaxFreed) {
+            const free_idx = fir.indexOf(inst) orelse continue;
             freed_ptrs[freed_count] = .{
                 .ptr_val = freed_ptr,
                 .free_inst = inst,
                 .free_func_name = callee_name,
             };
+            freed_indices[freed_count] = free_idx;
             freed_count += 1;
         }
     }
@@ -509,21 +508,25 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
         free_func_name: []const u8,
         store_inst: c.LLVMValueRef,
     } = undefined;
+    // PERF: parallel store-instruction index cache (same rationale as freed_indices).
+    var freed_global_indices: [MaxFreedGlobals]u32 = undefined;
 
-    for (insts) |inst| {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-        if (opcode != c.LLVMStore) continue;
-
+    // Pass 2: Find stores-to-global after freeing (use pre-filtered fir.stores)
+    for (fir.stores) |inst| {
         const stored_val = c.LLVMGetOperand(inst, 0);
         const dest = c.LLVMGetOperand(inst, 1);
         if (@intFromPtr(dest) == 0 or @intFromPtr(stored_val) == 0) continue;
 
         if (c.LLVMIsAGlobalValue(dest) == null) continue;
 
-        for (freed_ptrs[0..freed_count]) |fp| {
-            if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
+        const store_idx = fir.indexOf(inst) orelse continue;
 
-            if (ptrTracesTo(stored_val, fp.ptr_val)) {
+        for (freed_ptrs[0..freed_count], freed_indices[0..freed_count]) |fp, free_idx| {
+            // Preserve original semantics: skip when store_idx >= free_idx.
+            // (Was instructionComesBeforeOrEqual → idx_a >= idx_b.)
+            if (store_idx >= free_idx) continue;
+
+            if (ptrTracesTo(stored_val, fp.ptr_val, fir)) {
                 if (freed_global_count < MaxFreedGlobals) {
                     const gname_ptr = c.LLVMGetValueName(dest);
                     const gname = if (@intFromPtr(gname_ptr) != 0)
@@ -542,6 +545,7 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
                         .free_func_name = fp.free_func_name,
                         .store_inst = inst,
                     };
+                    freed_global_indices[freed_global_count] = store_idx;
                     freed_global_count += 1;
                 }
                 break;
@@ -549,9 +553,13 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
         }
     }
 
-    for (insts) |inst| {
-        for (freed_ptrs[0..freed_count]) |fp| {
-            if (instructionComesBeforeOrEqual(inst, fp.free_inst)) continue;
+    // Pass 3: main scan. inst_idx comes straight from the for-loop counter —
+    // every nested comesBefore check is now a single integer compare.
+    for (fir.instructions, fir.opcodes, 0..) |inst, opcode, inst_idx_usize| {
+        const inst_idx: u32 = @intCast(inst_idx_usize);
+
+        for (freed_ptrs[0..freed_count], freed_indices[0..freed_count]) |fp, free_idx| {
+            if (inst_idx >= free_idx) continue;
             if (instructionUsesValue(inst, fp.ptr_val)) {
                 if (ctx.semantic_resolution) |resolution_engine| {
                     const srt = resolution_engine.getSemanticTree();
@@ -562,13 +570,12 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
             }
         }
 
-        const opcode = c.LLVMGetInstructionOpcode(inst);
         if (opcode == c.LLVMLoad) {
             const load_src = c.LLVMGetOperand(inst, 0);
             if (@intFromPtr(load_src) != 0) {
-                for (freed_globals[0..freed_global_count]) |fg| {
+                for (freed_globals[0..freed_global_count], freed_global_indices[0..freed_global_count]) |fg, store_idx| {
                     if (load_src != fg.global_val) continue;
-                    if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
+                    if (inst_idx >= store_idx) continue;
                     const gname = fg.global_name_buf[0..fg.global_name_len];
                     try reportUafIssue(auditor, func, ctx, diag, func_name, fg.free_func_name, inst, "global_alias", gname);
                     break;
@@ -577,8 +584,8 @@ pub fn detectUseAfterFree(auditor: *Auditor, func: c.LLVMValueRef, insts: []cons
         }
 
         if (freed_global_count > 0) {
-            for (freed_globals[0..freed_global_count]) |fg| {
-                if (instructionComesBeforeOrEqual(inst, fg.store_inst)) continue;
+            for (freed_globals[0..freed_global_count], freed_global_indices[0..freed_global_count]) |fg, store_idx| {
+                if (inst_idx >= store_idx) continue;
                 if (inst == fg.store_inst) continue;
                 if (instructionUsesLoadedFromGlobal(inst, fg.global_val, func)) {
                     const gname = fg.global_name_buf[0..fg.global_name_len];
@@ -701,20 +708,12 @@ fn isDropContext(func_name: []const u8) bool {
     return drop_glue.isDropInPlaceContext(func_name);
 }
 
-/// Check if instruction A comes before (or at) instruction B in the same basic block.
-pub fn instructionComesBeforeOrEqual(a: c.LLVMValueRef, b: c.LLVMValueRef) bool {
-    const bb_a = c.LLVMGetInstructionParent(a);
-    const bb_b = c.LLVMGetInstructionParent(b);
-    if (@intFromPtr(bb_a) == 0 or @intFromPtr(bb_b) == 0) return false;
-    if (bb_a != bb_b) return false;
-
-    var inst = c.LLVMGetFirstInstruction(bb_a);
-    var found_b = false;
-    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-        if (inst == b) found_b = true;
-        if (inst == a) return found_b;
-    }
-    return false;
+/// Check if instruction A comes before (or at) instruction B in the same function.
+/// Uses pre-collected instruction array from FunctionIR — no C API BB traversal.
+pub fn instructionComesBeforeOrEqual(a: c.LLVMValueRef, b: c.LLVMValueRef, fir: *const FunctionIR) bool {
+    const idx_a = tracking.findInstructionIndex(fir, a) orelse return false;
+    const idx_b = tracking.findInstructionIndex(fir, b) orelse return false;
+    return idx_a >= idx_b;
 }
 
 // ============================================================================

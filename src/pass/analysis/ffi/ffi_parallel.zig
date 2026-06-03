@@ -10,7 +10,6 @@
 //!   - Uses std.Thread.Mutex for protecting shared PassContext state
 
 const std = @import("std");
-const c = @import("../../../ir/llvm_raw.zig").c;
 
 const parallel = @import("../../../pipeline/parallel.zig");
 const PassContext = @import("../../pass.zig").PassContext;
@@ -51,7 +50,6 @@ pub fn clearFFIWorkerContext() void {
 pub fn ffiBoundaryWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
     _ = worker_id;
     var result = parallel.WorkerResult{};
-    const func: c.LLVMValueRef = @ptrFromInt(item.func);
     const wctx = getFFIWorkerContext();
 
     // P0-2: Function-level gate — skip functions without danger-surface-relevant pointers.
@@ -71,8 +69,9 @@ pub fn ffiBoundaryWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.
     wctx.mutex.lock();
     defer wctx.mutex.unlock();
 
+    const fir = wctx.ctx_ptr.ir_store.function_list[item.fir_idx];
     const FFIBoundaryPass = @import("ffi_boundary.zig").FFIBoundaryPass;
-    const analyze_result = FFIBoundaryPass.analyze(wctx.ctx_ptr, func, wctx.diag_ptr) catch |err| {
+    const analyze_result = FFIBoundaryPass.analyze(wctx.ctx_ptr, fir, wctx.diag_ptr) catch |err| {
         wctx.diag_ptr.warn("FFIBoundary: skipped function due to error: {} ({s})", .{ err, item.func_name });
         wctx.ctx_ptr.recordDegradedFunction();
         result.funcs_errored += 1;
