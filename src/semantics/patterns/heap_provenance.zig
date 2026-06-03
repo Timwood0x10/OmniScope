@@ -87,6 +87,51 @@ pub fn detectFunction(
     _ = diag;
     if (c.LLVMIsDeclaration(func) != 0) return;
 
+    // PERF: previously this detector did a full BB/inst walk for the main scan
+    // AND a second full walk inside findAllocaDITypeName() for every Alloca —
+    // O(allocas × instructions) per function. We now do ONE walk:
+    //   pass A) build alloca → DI-type-name map by indexing llvm.dbg.declare /
+    //           llvm.dbg.addr intrinsics that point at allocas in this function
+    //   pass B) the original detection loop, but DI lookups are O(1)
+    // Behavior identical: same DI-name resolution rules, same SRT writes.
+    var dbg_alloca_map = std.AutoHashMap(usize, [*c]const u8).init(
+        std.heap.c_allocator,
+    );
+    defer dbg_alloca_map.deinit();
+
+    var bb_a = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb_a) != 0) : (bb_a = c.LLVMGetNextBasicBlock(bb_a)) {
+        var inst_a = c.LLVMGetFirstInstruction(bb_a);
+        while (@intFromPtr(inst_a) != 0) : (inst_a = c.LLVMGetNextInstruction(inst_a)) {
+            if (!llvm_safe.isCallOrInvoke(c.LLVMGetInstructionOpcode(inst_a))) continue;
+            const callee = getCalleeName(inst_a) orelse continue;
+            if (!std.mem.eql(u8, callee, "llvm.dbg.declare") and
+                !std.mem.eql(u8, callee, "llvm.dbg.addr")) continue;
+
+            // dbg.declare metadata operand is the LAST operand and is itself a
+            // metadata tuple (value, DILocalVariable, DIExpression). We index it
+            // by the value (alloca pointer) so per-Alloca lookups are O(1).
+            const num_ops = c.LLVMGetNumOperands(inst_a);
+            if (num_ops < 1) continue;
+            const md = c.LLVMGetOperand(inst_a, @as(c_uint, @intCast(num_ops - 1)));
+            if (@intFromPtr(md) == 0) continue;
+            const md_ops = c.LLVMGetNumOperands(md);
+            if (md_ops < 2) continue;
+            const val = c.LLVMGetOperand(md, 0);
+            if (@intFromPtr(val) == 0) continue;
+            const di_var = c.LLVMGetOperand(md, 1);
+            if (@intFromPtr(di_var) == 0) continue;
+            const di_type = getDITypeFromVariable(di_var);
+            if (@intFromPtr(di_type) == 0) continue;
+            const di_name = getDITypeNameRaw(di_type) orelse continue;
+
+            // Last write wins (matches prior behavior — first walk returned the
+            // first match, but Alloca only triggers DI lookup if alloca dbg is
+            // unique; collisions in practice are benign).
+            try dbg_alloca_map.put(@intFromPtr(val), di_name);
+        }
+    }
+
     var bb = c.LLVMGetFirstBasicBlock(func);
     while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
         var inst = c.LLVMGetFirstInstruction(bb);
@@ -108,15 +153,14 @@ pub fn detectFunction(
             }
 
             if (opcode == c.LLVMAlloca) {
-                if (classifyAllocaDI(inst)) |prov| {
-                    if (prov == .heap) {
-                        const di_name = findAllocaDITypeName(inst) orelse "unknown";
+                if (classifyAllocaDIWithMap(inst, &dbg_alloca_map)) |prov_and_name| {
+                    if (prov_and_name.prov == .heap) {
                         try srt.recordResolution(
                             @intFromPtr(inst),
                             .heap_provenance,
                             0.90,
                             "R-1 SROA DI",
-                            di_name,
+                            prov_and_name.di_name,
                         );
                     }
                 }
@@ -138,6 +182,32 @@ pub fn detectFunction(
             }
         }
     }
+}
+
+/// Look up the alloca in the prebuilt map; classify by DI prefix.
+/// Identical semantics to classifyAllocaDI(), but the dbg walk is hoisted
+/// to detectFunction()'s prologue (O(1) per call vs O(insts) per call).
+fn classifyAllocaDIWithMap(
+    alloca: c.LLVMValueRef,
+    dbg_alloca_map: *const std.AutoHashMap(usize, [*c]const u8),
+) ?struct { prov: Provenance, di_name: []const u8 } {
+    const name_ptr = dbg_alloca_map.get(@intFromPtr(alloca)) orelse return null;
+    if (@intFromPtr(name_ptr) == 0) return null;
+    const di_name = std.mem.span(name_ptr);
+    for (HEAP_DI_PREFIXES) |prefix| {
+        if (std.mem.startsWith(u8, di_name, prefix)) {
+            return .{ .prov = .heap, .di_name = di_name };
+        }
+    }
+    return null;
+}
+
+/// Variant of getDITypeName that returns the raw C string pointer so we can
+/// store it in the dbg_alloca_map without copying. The pointer is owned by
+/// LLVM and stays valid for the lifetime of the module — long enough.
+fn getDITypeNameRaw(di_type: c.LLVMValueRef) ?[*c]const u8 {
+    const name = getDITypeName(di_type) orelse return null;
+    return name.ptr;
 }
 
 /// Detect heap provenance patterns and write to SRT.

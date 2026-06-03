@@ -343,6 +343,20 @@ pub const ErrorPropagationTracer = struct {
     }
 
     /// Detect resource leaks when errors occur (missing cleanup on error paths)
+    ///
+    /// Algorithmic note: the previous implementation collected allocs and
+    /// errors separately, then for every (alloc, error) pair re-scanned the
+    /// instruction window between them looking for a free. On a 4654-function
+    /// module that was O(allocs × errors × distance) per function and the
+    /// single biggest cost in this pass (~11s of 13.6s on wasmtime_test.bc).
+    ///
+    /// The detection is logically equivalent to a single forward sweep that
+    /// tracks one boolean per function: "have we seen an alloc since the last
+    /// free?". On encountering an error-returning call, if that flag is true
+    /// the alloc that set it cannot have been freed between itself and this
+    /// error — exactly the original "no free in (alloc, error)" condition.
+    /// We can therefore stream the function's calls in order, in O(calls), no
+    /// temporary arrays, no hash maps.
     fn detectErrorPathLeaks(
         ctx: *PassContext,
         diag: *DiagnosticWriter,
@@ -356,11 +370,28 @@ pub const ErrorPropagationTracer = struct {
                 continue;
             }
 
-            var allocations = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
-            defer allocations.deinit(ctx.allocator);
-
-            var error_returns = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
-            defer error_returns.deinit(ctx.allocator);
+            // Single forward sweep. `has_unfreed_alloc` reflects whether at
+            // least one allocation call has occurred since the most recent
+            // free in this function. An error call while the flag is set
+            // matches the original "alloc-before-error with no free in
+            // between" leak condition.
+            //
+            // Branches are NOT mutually exclusive: many names (malloc, calloc,
+            // realloc, free) qualify as more than one of {alloc, free, error}
+            // simultaneously, and the original code processed each name
+            // independently. We preserve that.
+            //
+            // Order within a single instruction matches the original [alloc+1,
+            // error] half-open window:
+            //   1. error check first  — uses the state established by all
+            //      strictly-earlier instructions (does NOT include this one's
+            //      side effects yet)
+            //   2. free check second  — clears the flag at the current
+            //      instruction so subsequent allocs start fresh
+            //   3. alloc check third  — sets the flag for subsequent errors
+            // This ordering is equivalent to the original code's
+            // `[alloc+1, error_idx]` and `next_inst != error_inst` semantics.
+            var has_unfreed_alloc = false;
 
             for (fir.calls) |inst| {
                 const called_val = c.LLVMGetCalledValue(inst);
@@ -372,26 +403,15 @@ pub const ErrorPropagationTracer = struct {
                 else
                     "";
 
-                if (isAllocationFunction(called_name)) {
-                    try allocations.append(ctx.allocator, inst);
-                }
-
-                if (isErrorReturningFunction(called_name)) {
-                    try error_returns.append(ctx.allocator, inst);
-                }
-            }
-
-            // Check for leaks on error paths
-            for (error_returns.items) |error_inst| {
-                // Check if allocations made before this error are properly freed
-                const has_leak = checkForLeakOnErrorPath(error_inst, allocations.items, fir);
-
-                if (has_leak) {
+                if (has_unfreed_alloc and isErrorReturningFunction(called_name)) {
                     stats.error_path_leaks += 1;
 
-                    const message = try std.fmt.allocPrint(ctx.allocator, "Resource leak on error path in {s}: allocation may not be freed on error", .{func_name});
+                    const message = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "Resource leak on error path in {s}: allocation may not be freed on error",
+                        .{func_name},
+                    );
                     defer ctx.allocator.free(message);
-
                     diag.warn("ErrorPropagationTracer: {s}", .{message});
 
                     const location = Location.init(func_name);
@@ -403,6 +423,13 @@ pub const ErrorPropagationTracer = struct {
                         0.85,
                     );
                     try ctx.addIssue(&issue);
+                }
+
+                if (isFreeFunction(called_name)) {
+                    has_unfreed_alloc = false;
+                }
+                if (isAllocationFunction(called_name)) {
+                    has_unfreed_alloc = true;
                 }
             }
         }
