@@ -107,7 +107,9 @@ pub fn detectAsPtrEscape(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassCont
 }
 
 /// Detect cross-language allocation mismatch (Rule 3): Rust _Znwm → C free.
-pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
+/// `stores` is the pre-categorized Store instruction slice from IR Store, used by
+/// ptrOriginatesFromRustAlloc to trace allocation origins without BB/inst traversal.
+pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter, insts: []const c.LLVMValueRef, inst_cache: *InstCache, stores: []const c.LLVMValueRef) !void {
     var visited = std.AutoHashMap(usize, void).init(auditor.allocator);
     defer visited.deinit();
 
@@ -155,7 +157,7 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
         }
 
         // Only report if the pointer can be traced back to a Rust allocator
-        if (!ptrOriginatesFromRustAlloc(func, ptr_arg, &visited)) continue;
+        if (!ptrOriginatesFromRustAlloc(stores, ptr_arg, &visited)) continue;
 
         const func_name = getFunctionName(func);
         auditor.stats.cross_lang_mismatches += 1;

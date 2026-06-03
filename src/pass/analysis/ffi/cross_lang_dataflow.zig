@@ -176,9 +176,7 @@ pub const CrossLangDataFlow = struct {
         raii: *raii_detector.RAIIDetector,
         prop_engine: ?*SummaryPropagation, // T4: Optional propagation engine
     ) !void {
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
         var next_id: u32 = 1;
 
@@ -200,166 +198,136 @@ pub const CrossLangDataFlow = struct {
         var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer freed_alloc_by_ptr.deinit();
 
-        // Single traversal - collect all data
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
-
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
-
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
             const func_lang = ctx.getModuleLanguage().language;
 
-            // Per-function store→load map for free tracking
             var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
             defer store_map.deinit();
 
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
+            for (fir.instructions, fir.opcodes) |inst, opcode| {
 
-                    // Track store→load chains for free matching
-                    if (opcode == c.LLVMStore) {
-                        const stored_val = c.LLVMGetOperand(inst, 0);
-                        const store_addr = c.LLVMGetOperand(inst, 1);
-                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
-                            const stored_val_int = @intFromPtr(stored_val);
-                            if (alloc_by_ptr.contains(stored_val_int)) {
-                                store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
+                // Track store→load chains for free matching
+                if (opcode == c.LLVMStore) {
+                    const stored_val = c.LLVMGetOperand(inst, 0);
+                    const store_addr = c.LLVMGetOperand(inst, 1);
+                    if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
+                        const stored_val_int = @intFromPtr(stored_val);
+                        if (alloc_by_ptr.contains(stored_val_int)) {
+                            store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
+                        }
+                    }
+                }
+
+                // Process call/invoke instructions
+                if (llvm_safe.isCallOrInvoke(opcode)) {
+                    const called_val = c.LLVMGetCalledValue(inst);
+                    if (@intFromPtr(called_val) == 0) continue;
+
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                        std.mem.span(called_name_ptr)
+                    else
+                        "";
+
+                    // 1. Track allocations
+                    if (isAllocationFunction(called_name) or isJniAllocCall(called_name)) {
+                        // JNI STRUCTURE VALIDATION: Eliminate ~80% false positives
+                        // by verifying the call has proper JNIEnv* first parameter.
+                        // Many functions contain "JNI"/"FindClass"/"GetMethodID" substrings
+                        // in their names but are not actual JNI calls (e.g., helper wrappers,
+                        // logging functions, test utilities). This IR-level check ensures
+                        // only real JNI calls with correct calling convention are tracked.
+                        if (isJniAllocCall(called_name) and !isRealJNICall(inst)) {
+                            log.debug("JNI-FP-FILTER: Skipping non-JNI call '{s}' - missing JNIEnv* parameter", .{called_name});
+                            // Don't track this as a JNI allocation - it's a false positive
+                            // Fall through to check if it's a regular allocation function
+                            if (!isAllocationFunction(called_name)) {
+                                continue; // Skip entirely if not a regular alloc either
+                            }
+                        }
+
+                        // CONTRACT-DB: Pre-check allocation with contract DB
+                        const alloc_confidence = db.getConfidence(called_name);
+                        const alloc_ownership = db.getOwnership(called_name);
+
+                        // JNI-specific: Log JNI allocation details
+                        if (isJniAllocCall(called_name) and isRealJNICall(inst)) {
+                            log.debug("JNI-ALLOC: {s} in {s} (requires_null_check={})", .{
+                                called_name,
+                                func_name,
+                                requiresJniNullCheck(called_name),
+                            });
+                        }
+
+                        const result_val = @intFromPtr(inst);
+                        if (result_val != 0) {
+                            const alloc_lang = classifyAllocLanguage(called_name, func_lang);
+                            const alloc = CrossLangAlloc{
+                                .id = next_id,
+                                .ptr_val = result_val,
+                                .alloc_lang = alloc_lang,
+                                .alloc_func = func_name,
+                                .alloc_callee = called_name,
+                                .free_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
+                                .free_funcs = try std.ArrayList([]const u8).initCapacity(ctx.allocator, 2),
+                                .passed_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
+                            };
+                            try allocations.append(ctx.allocator, alloc);
+                            try alloc_by_ptr.put(result_val, allocations.items.len - 1);
+                            stats.alloc_count += 1;
+                            next_id += 1;
+
+                            // Log high-confidence contract matches
+                            if (alloc_confidence > 0.9) {
+                                log.debug("CONTRACT-ALLOC: {s} in {s} (confidence={d:.2}, ownership={s})", .{
+                                    called_name,
+                                    func_name,
+                                    alloc_confidence,
+                                    if (alloc_ownership) |o| @tagName(o) else "unknown",
+                                });
                             }
                         }
                     }
 
-                    // Process call/invoke instructions
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
-
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
-
-                        // 1. Track allocations
-                        if (isAllocationFunction(called_name) or isJniAllocCall(called_name)) {
-                            // JNI STRUCTURE VALIDATION: Eliminate ~80% false positives
-                            // by verifying the call has proper JNIEnv* first parameter.
-                            // Many functions contain "JNI"/"FindClass"/"GetMethodID" substrings
-                            // in their names but are not actual JNI calls (e.g., helper wrappers,
-                            // logging functions, test utilities). This IR-level check ensures
-                            // only real JNI calls with correct calling convention are tracked.
-                            if (isJniAllocCall(called_name) and !isRealJNICall(inst)) {
-                                log.debug("JNI-FP-FILTER: Skipping non-JNI call '{s}' - missing JNIEnv* parameter", .{called_name});
-                                // Don't track this as a JNI allocation - it's a false positive
-                                // Fall through to check if it's a regular allocation function
-                                if (!isAllocationFunction(called_name)) {
-                                    continue; // Skip entirely if not a regular alloc either
-                                }
-                            }
-
-                            // CONTRACT-DB: Pre-check allocation with contract DB
-                            const alloc_confidence = db.getConfidence(called_name);
-                            const alloc_ownership = db.getOwnership(called_name);
-
-                            // JNI-specific: Log JNI allocation details
-                            if (isJniAllocCall(called_name) and isRealJNICall(inst)) {
-                                log.debug("JNI-ALLOC: {s} in {s} (requires_null_check={})", .{
-                                    called_name,
-                                    func_name,
-                                    requiresJniNullCheck(called_name),
-                                });
-                            }
-
-                            const result_val = @intFromPtr(inst);
-                            if (result_val != 0) {
-                                const alloc_lang = classifyAllocLanguage(called_name, func_lang);
-                                const alloc = CrossLangAlloc{
-                                    .id = next_id,
-                                    .ptr_val = result_val,
-                                    .alloc_lang = alloc_lang,
-                                    .alloc_func = func_name,
-                                    .alloc_callee = called_name,
-                                    .free_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
-                                    .free_funcs = try std.ArrayList([]const u8).initCapacity(ctx.allocator, 2),
-                                    .passed_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
-                                };
-                                try allocations.append(ctx.allocator, alloc);
-                                try alloc_by_ptr.put(result_val, allocations.items.len - 1);
-                                stats.alloc_count += 1;
-                                next_id += 1;
-
-                                // Log high-confidence contract matches
-                                if (alloc_confidence > 0.9) {
-                                    log.debug("CONTRACT-ALLOC: {s} in {s} (confidence={d:.2}, ownership={s})", .{
-                                        called_name,
-                                        func_name,
-                                        alloc_confidence,
-                                        if (alloc_ownership) |o| @tagName(o) else "unknown",
-                                    });
-                                }
+                    // 2. Track frees (including JNI releases)
+                    if (isFreeFunction(called_name) or isJniReleaseCall(called_name)) {
+                        // JNI STRUCTURE VALIDATION: Same FP filtering for release calls
+                        if (isJniReleaseCall(called_name) and !isRealJNICall(inst)) {
+                            log.debug("JNI-FP-FILTER: Skipping non-JNI release call '{s}' - missing JNIEnv* parameter", .{called_name});
+                            if (!isFreeFunction(called_name)) {
+                                continue;
                             }
                         }
 
-                        // 2. Track frees (including JNI releases)
-                        if (isFreeFunction(called_name) or isJniReleaseCall(called_name)) {
-                            // JNI STRUCTURE VALIDATION: Same FP filtering for release calls
-                            if (isJniReleaseCall(called_name) and !isRealJNICall(inst)) {
-                                log.debug("JNI-FP-FILTER: Skipping non-JNI release call '{s}' - missing JNIEnv* parameter", .{called_name});
-                                if (!isFreeFunction(called_name)) {
-                                    continue;
+                        try funcs_with_frees.put(func_name, {});
+
+                        const num_operands = c.LLVMGetNumOperands(inst);
+                        if (num_operands >= 2) {
+                            const ptr_arg = c.LLVMGetOperand(inst, 1);
+                            var ptr_val = @intFromPtr(ptr_arg);
+                            if (ptr_val != 0) {
+                                // Resolve through store→load chain
+                                if (store_map.get(ptr_val)) |original_val| {
+                                    ptr_val = original_val;
                                 }
-                            }
 
-                            try funcs_with_frees.put(func_name, {});
-
-                            const num_operands = c.LLVMGetNumOperands(inst);
-                            if (num_operands >= 2) {
-                                const ptr_arg = c.LLVMGetOperand(inst, 1);
-                                var ptr_val = @intFromPtr(ptr_arg);
-                                if (ptr_val != 0) {
-                                    // Resolve through store→load chain
-                                    if (store_map.get(ptr_val)) |original_val| {
-                                        ptr_val = original_val;
-                                    }
-
-                                    if (alloc_by_ptr.get(ptr_val)) |idx| {
-                                        const alloc = &allocations.items[idx];
-                                        if (!alloc.freed) {
-                                            const free_lang = classifyFreeLanguage(called_name, .unknown);
-                                            try alloc.free_langs.append(ctx.allocator, free_lang);
-                                            try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
-                                            alloc.freed = true;
-                                            try freed_alloc_by_ptr.put(ptr_val, idx);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 3. Track pointer passing across FFI
-                        if (edge_map.get(called_name)) |edge| {
-                            const num_operands = c.LLVMGetNumOperands(inst);
-                            var arg_idx: u32 = 0;
-                            while (arg_idx < num_operands) : (arg_idx += 1) {
-                                const arg = c.LLVMGetOperand(inst, arg_idx);
-                                const arg_val = @intFromPtr(arg);
-                                if (arg_val == 0) continue;
-
-                                if (alloc_by_ptr.get(arg_val)) |idx| {
+                                if (alloc_by_ptr.get(ptr_val)) |idx| {
                                     const alloc = &allocations.items[idx];
-                                    alloc.passed_to_other_lang = true;
-                                    try alloc.passed_langs.append(ctx.allocator, edge.callee_lang);
-                                    break;
+                                    if (!alloc.freed) {
+                                        const free_lang = classifyFreeLanguage(called_name, .unknown);
+                                        try alloc.free_langs.append(ctx.allocator, free_lang);
+                                        try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
+                                        alloc.freed = true;
+                                        try freed_alloc_by_ptr.put(ptr_val, idx);
+                                    }
                                 }
                             }
                         }
+                    }
 
-                        // 4. Detect use-after-free across FFI (inline)
+                    // 3. Track pointer passing across FFI
+                    if (edge_map.get(called_name)) |edge| {
                         const num_operands = c.LLVMGetNumOperands(inst);
                         var arg_idx: u32 = 0;
                         while (arg_idx < num_operands) : (arg_idx += 1) {
@@ -367,90 +335,106 @@ pub const CrossLangDataFlow = struct {
                             const arg_val = @intFromPtr(arg);
                             if (arg_val == 0) continue;
 
-                            if (freed_alloc_by_ptr.get(arg_val)) |idx| {
+                            if (alloc_by_ptr.get(arg_val)) |idx| {
                                 const alloc = &allocations.items[idx];
-                                var use_lang = func_lang;
+                                alloc.passed_to_other_lang = true;
+                                try alloc.passed_langs.append(ctx.allocator, edge.callee_lang);
+                                break;
+                            }
+                        }
+                    }
 
-                                if (edge_map.get(called_name)) |edge| {
-                                    use_lang = edge.callee_lang;
+                    // 4. Detect use-after-free across FFI (inline)
+                    const num_operands = c.LLVMGetNumOperands(inst);
+                    var arg_idx: u32 = 0;
+                    while (arg_idx < num_operands) : (arg_idx += 1) {
+                        const arg = c.LLVMGetOperand(inst, arg_idx);
+                        const arg_val = @intFromPtr(arg);
+                        if (arg_val == 0) continue;
+
+                        if (freed_alloc_by_ptr.get(arg_val)) |idx| {
+                            const alloc = &allocations.items[idx];
+                            var use_lang = func_lang;
+
+                            if (edge_map.get(called_name)) |edge| {
+                                use_lang = edge.callee_lang;
+                            }
+
+                            for (alloc.free_langs.items) |free_lang| {
+                                if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
+                                    const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
+                                    defer ctx.allocator.free(message);
+
+                                    const location = Location.init(func_name);
+                                    const issue = Issue.init(
+                                        .use_after_free,
+                                        message,
+                                        location,
+                                        .critical,
+                                        0.95,
+                                    );
+                                    try ctx.addIssue(&issue);
+
+                                    diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
+                                        alloc.id,
+                                        @tagName(free_lang),
+                                        @tagName(use_lang),
+                                        func_name,
+                                    });
+                                    break;
                                 }
+                            }
+                        }
+                    }
 
-                                for (alloc.free_langs.items) |free_lang| {
-                                    if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
-                                        const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
-                                        defer ctx.allocator.free(message);
-
-                                        const location = Location.init(func_name);
-                                        const issue = Issue.init(
-                                            .use_after_free,
-                                            message,
-                                            location,
-                                            .critical,
-                                            0.95,
-                                        );
-                                        try ctx.addIssue(&issue);
-
-                                        diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
-                                            alloc.id,
-                                            @tagName(free_lang),
-                                            @tagName(use_lang),
-                                            func_name,
-                                        });
-                                        break;
-                                    }
+                    // 5. JNI Null Check Detection
+                    // Check if this is a JNI call that requires null check on return value
+                    // Only apply to verified real JNI calls to avoid false positives
+                    if (isJniAllocCall(called_name) and isRealJNICall(inst) and requiresJniNullCheck(called_name)) {
+                        // Look for null check in subsequent instructions (simplified check)
+                        var has_null_check = false;
+                        var next_inst = c.LLVMGetNextInstruction(inst);
+                        var check_count: u32 = 0;
+                        while (@intFromPtr(next_inst) != 0 and check_count < 5) : ({
+                            next_inst = c.LLVMGetNextInstruction(next_inst);
+                            check_count += 1;
+                        }) {
+                            const next_opcode = c.LLVMGetInstructionOpcode(next_inst);
+                            // Check for ICMP (comparison instruction)
+                            if (next_opcode == c.LLVMICmp) {
+                                // This could be a null check - simplified detection
+                                has_null_check = true;
+                                break;
+                            }
+                            // Check for conditional branch (might be result of null check)
+                            if (next_opcode == c.LLVMBr) {
+                                const num_ops = c.LLVMGetNumOperands(next_inst);
+                                if (num_ops >= 1) {
+                                    // Conditional branch indicates some check was done
+                                    has_null_check = true;
+                                    break;
                                 }
                             }
                         }
 
-                        // 5. JNI Null Check Detection
-                        // Check if this is a JNI call that requires null check on return value
-                        // Only apply to verified real JNI calls to avoid false positives
-                        if (isJniAllocCall(called_name) and isRealJNICall(inst) and requiresJniNullCheck(called_name)) {
-                            // Look for null check in subsequent instructions (simplified check)
-                            var has_null_check = false;
-                            var next_inst = c.LLVMGetNextInstruction(inst);
-                            var check_count: u32 = 0;
-                            while (@intFromPtr(next_inst) != 0 and check_count < 5) : ({
-                                next_inst = c.LLVMGetNextInstruction(next_inst);
-                                check_count += 1;
-                            }) {
-                                const next_opcode = c.LLVMGetInstructionOpcode(next_inst);
-                                // Check for ICMP (comparison instruction)
-                                if (next_opcode == c.LLVMICmp) {
-                                    // This could be a null check - simplified detection
-                                    has_null_check = true;
-                                    break;
-                                }
-                                // Check for conditional branch (might be result of null check)
-                                if (next_opcode == c.LLVMBr) {
-                                    const num_ops = c.LLVMGetNumOperands(next_inst);
-                                    if (num_ops >= 1) {
-                                        // Conditional branch indicates some check was done
-                                        has_null_check = true;
-                                        break;
-                                    }
-                                }
-                            }
+                        if (!has_null_check) {
+                            const message = try std.fmt.allocPrint(ctx.allocator, "JNI function {s} requires null check on return value in function {s}", .{ called_name, func_name });
+                            defer ctx.allocator.free(message);
 
-                            if (!has_null_check) {
-                                const message = try std.fmt.allocPrint(ctx.allocator, "JNI function {s} requires null check on return value in function {s}", .{ called_name, func_name });
-                                defer ctx.allocator.free(message);
+                            const location = Location.init(func_name);
+                            const issue = Issue.init(
+                                .malloc_unchecked,
+                                message,
+                                location,
+                                .medium,
+                                0.75,
+                            );
+                            try ctx.addIssue(&issue);
 
-                                const location = Location.init(func_name);
-                                const issue = Issue.init(
-                                    .malloc_unchecked,
-                                    message,
-                                    location,
-                                    .medium,
-                                    0.75,
-                                );
-                                try ctx.addIssue(&issue);
-
-                                diag.warn("JNI-NULL-CHECK: Missing null check for {s} return value in {s}", .{
-                                    called_name,
-                                    func_name,
-                                });
-                            }
+                            diag.warn("JNI-NULL-CHECK: Missing null check for {s} return value in {s}", .{
+                                called_name,
+                                func_name,
+                            });
                         }
                     }
                 }
@@ -689,71 +673,47 @@ pub const CrossLangDataFlow = struct {
         diag: *DiagnosticWriter,
     ) !void {
         _ = diag;
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
         var next_id: u32 = 1;
 
-        // Scan all functions for allocation calls
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
-
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
-
-            // Get function language
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
             const func_lang = ctx.getModuleLanguage().language;
 
-            // Scan instructions in this function
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+            for (fir.calls) |inst| {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    "";
 
-                        // Check if this is an allocation function
-                        if (isAllocationFunction(called_name)) {
-                            // Get the result pointer value
-                            const result_val = @intFromPtr(inst);
-                            if (result_val == 0) continue;
+                if (isAllocationFunction(called_name)) {
+                    const result_val = @intFromPtr(inst);
+                    if (result_val == 0) continue;
 
-                            // Determine allocation language based on function name
-                            const alloc_lang = classifyAllocLanguage(called_name, func_lang);
+                    const alloc_lang = classifyAllocLanguage(called_name, func_lang);
 
-                            // Create allocation record
-                            const alloc = CrossLangAlloc{
-                                .id = next_id,
-                                .ptr_val = result_val,
-                                .alloc_lang = alloc_lang,
-                                .alloc_func = func_name,
-                                .alloc_callee = called_name,
-                                .free_langs = std.ArrayList(Language).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
-                                .free_funcs = std.ArrayList([]const u8).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
-                                .passed_langs = std.ArrayList(Language).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
-                            };
+                    const alloc = CrossLangAlloc{
+                        .id = next_id,
+                        .ptr_val = result_val,
+                        .alloc_lang = alloc_lang,
+                        .alloc_func = func_name,
+                        .alloc_callee = called_name,
+                        .free_langs = std.ArrayList(Language).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
+                        .free_funcs = std.ArrayList([]const u8).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
+                        .passed_langs = std.ArrayList(Language).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory,
+                    };
 
-                            try allocations.append(ctx.allocator, alloc);
-                            stats.alloc_count += 1;
-                            next_id += 1;
+                    try allocations.append(ctx.allocator, alloc);
+                    stats.alloc_count += 1;
+                    next_id += 1;
 
-                            // Check if allocation language differs from function language
-                            if (alloc_lang != func_lang and alloc_lang != .unknown) {
-                                stats.cross_lang_allocs += 1;
-                            }
-                        }
+                    if (alloc_lang != func_lang and alloc_lang != .unknown) {
+                        stats.cross_lang_allocs += 1;
                     }
                 }
             }
@@ -770,78 +730,59 @@ pub const CrossLangDataFlow = struct {
     ) !void {
         _ = stats;
         _ = diag;
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
-        // Build a set of tracked allocation pointer values for O(1) lookup
         var tracked_ptrs = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer tracked_ptrs.deinit();
         for (allocations.items, 0..) |alloc, idx| {
             try tracked_ptrs.put(alloc.ptr_val, idx);
         }
 
-        // Scan all functions for free calls, with store→load resolution
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
-
-            // Per-function store→load map: address → stored value (only for tracked ptrs)
+        for (ctx.ir_store.function_list) |fir| {
             var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
             defer store_map.deinit();
 
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                    // Track store → load chains for tracked pointers
-                    if (opcode == c.LLVMStore) {
-                        const stored_val = c.LLVMGetOperand(inst, 0);
-                        const store_addr = c.LLVMGetOperand(inst, 1);
-                        if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
-                            const stored_val_int = @intFromPtr(stored_val);
-                            if (tracked_ptrs.contains(stored_val_int)) {
-                                store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
-                            }
+            for (fir.instructions, fir.opcodes) |inst, opcode| {
+                if (opcode == c.LLVMStore) {
+                    const stored_val = c.LLVMGetOperand(inst, 0);
+                    const store_addr = c.LLVMGetOperand(inst, 1);
+                    if (@intFromPtr(stored_val) != 0 and @intFromPtr(store_addr) != 0) {
+                        const stored_val_int = @intFromPtr(stored_val);
+                        if (tracked_ptrs.contains(stored_val_int)) {
+                            store_map.put(@intFromPtr(store_addr), stored_val_int) catch {};
                         }
                     }
+                }
 
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+                if (llvm_safe.isCallOrInvoke(opcode)) {
+                    const called_val = c.LLVMGetCalledValue(inst);
+                    if (@intFromPtr(called_val) == 0) continue;
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                        std.mem.span(called_name_ptr)
+                    else
+                        "";
 
-                        // Check if this is a free function
-                        if (isFreeFunction(called_name)) {
-                            // LLVMGetNumOperands includes callee. Operand layout: [callee, arg0, arg1, ...]
-                            // First argument (pointer to free) is at index 1.
-                            const num_operands = c.LLVMGetNumOperands(inst);
-                            if (num_operands < 2) continue;
+                    if (isFreeFunction(called_name)) {
+                        const num_operands = c.LLVMGetNumOperands(inst);
+                        if (num_operands < 2) continue;
 
-                            const ptr_arg = c.LLVMGetOperand(inst, 1);
-                            var ptr_val = @intFromPtr(ptr_arg);
-                            if (ptr_val == 0) continue;
+                        const ptr_arg = c.LLVMGetOperand(inst, 1);
+                        var ptr_val = @intFromPtr(ptr_arg);
+                        if (ptr_val == 0) continue;
 
-                            // Resolve through store→load chain
-                            if (store_map.get(ptr_val)) |original_val| {
-                                ptr_val = original_val;
-                            }
+                        if (store_map.get(ptr_val)) |original_val| {
+                            ptr_val = original_val;
+                        }
 
-                            // Find matching allocation
-                            if (tracked_ptrs.get(ptr_val)) |idx| {
-                                const alloc = &allocations.items[idx];
-                                if (!alloc.freed) {
-                                    const free_lang = classifyFreeLanguage(called_name, .unknown);
-                                    try alloc.free_langs.append(ctx.allocator, free_lang);
-                                    try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
-                                    alloc.freed = true;
-                                }
+                        if (tracked_ptrs.get(ptr_val)) |idx| {
+                            const alloc = &allocations.items[idx];
+                            if (!alloc.freed) {
+                                const free_lang = classifyFreeLanguage(called_name, .unknown);
+                                try alloc.free_langs.append(ctx.allocator, free_lang);
+                                try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
+                                alloc.freed = true;
                             }
                         }
                     }
@@ -860,18 +801,14 @@ pub const CrossLangDataFlow = struct {
     ) !void {
         _ = stats;
         _ = diag;
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
-        // Build HashMap index for O(1) allocation lookup by pointer value
         var alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer alloc_by_ptr.deinit();
         for (allocations.items, 0..) |alloc, idx| {
             try alloc_by_ptr.put(alloc.ptr_val, idx);
         }
 
-        // Build HashMap index for O(1) FFI edge lookup by callee name
         var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
         defer edge_map.deinit();
         for (cross_edges) |edge| {
@@ -880,45 +817,32 @@ pub const CrossLangDataFlow = struct {
             }
         }
 
-        // Scan all functions for calls that pass pointers across FFI boundaries
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ctx.ir_store.function_list) |fir| {
+            for (fir.calls) |inst| {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    "";
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                const edge = edge_map.get(called_name) orelse continue;
+                const callee_lang = edge.callee_lang;
 
-                        // O(1) lookup: check if this call crosses FFI boundary
-                        const edge = edge_map.get(called_name) orelse continue;
-                        const callee_lang = edge.callee_lang;
+                const num_operands = c.LLVMGetNumOperands(inst);
+                var arg_idx: u32 = 0;
+                while (arg_idx < num_operands) : (arg_idx += 1) {
+                    const arg = c.LLVMGetOperand(inst, arg_idx);
+                    const arg_val = @intFromPtr(arg);
+                    if (arg_val == 0) continue;
 
-                        // Check if any arguments are tracked pointers
-                        const num_operands = c.LLVMGetNumOperands(inst);
-                        var arg_idx: u32 = 0;
-                        while (arg_idx < num_operands) : (arg_idx += 1) {
-                            const arg = c.LLVMGetOperand(inst, arg_idx);
-                            const arg_val = @intFromPtr(arg);
-                            if (arg_val == 0) continue;
-
-                            // O(1) lookup: check if this argument is a tracked allocation
-                            if (alloc_by_ptr.get(arg_val)) |idx| {
-                                const alloc = &allocations.items[idx];
-                                alloc.passed_to_other_lang = true;
-                                try alloc.passed_langs.append(ctx.allocator, callee_lang);
-                                break;
-                            }
-                        }
+                    if (alloc_by_ptr.get(arg_val)) |idx| {
+                        const alloc = &allocations.items[idx];
+                        alloc.passed_to_other_lang = true;
+                        try alloc.passed_langs.append(ctx.allocator, callee_lang);
+                        break;
                     }
                 }
             }
@@ -939,28 +863,16 @@ pub const CrossLangDataFlow = struct {
         var funcs_with_frees = std.StringHashMap(void).init(ctx.allocator);
         defer funcs_with_frees.deinit();
         {
-            const mod = ctx.module.?.raw;
-            var func = c.LLVMGetFirstFunction(mod);
-            while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-                if (c.LLVMIsDeclaration(func) != 0) continue;
-                const func_name_ptr = c.LLVMGetValueName(func);
-                const func_name = if (@intFromPtr(func_name_ptr) != 0) std.mem.span(func_name_ptr) else continue;
-
-                var bb = c.LLVMGetFirstBasicBlock(func);
-                while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                    var inst = c.LLVMGetFirstInstruction(bb);
-                    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                        const opcode = c.LLVMGetInstructionOpcode(inst);
-                        if (!llvm_safe.isCallOrInvoke(opcode)) continue;
-                        const called_val = c.LLVMGetCalledValue(inst) orelse continue;
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else continue;
-                        if (isFreeFunction(called_name)) {
-                            try funcs_with_frees.put(func_name, {});
-                            break;
-                        }
+            for (ctx.ir_store.function_list) |fir| {
+                const func_name = fir.name;
+                for (fir.calls) |inst| {
+                    const called_val = c.LLVMGetCalledValue(inst) orelse continue;
+                    const called_name_ptr = c.LLVMGetValueName(called_val);
+                    const called_name = if (@intFromPtr(called_name_ptr) != 0) std.mem.span(called_name_ptr) else continue;
+                    if (isFreeFunction(called_name)) {
+                        try funcs_with_frees.put(func_name, {});
+                        break;
                     }
-                    if (funcs_with_frees.contains(func_name)) break;
                 }
             }
         }
@@ -1128,11 +1040,8 @@ pub const CrossLangDataFlow = struct {
         cross_edges: []const CrossLangEdge,
         diag: *DiagnosticWriter,
     ) !void {
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
-        // Build HashMap index for O(1) allocation lookup by pointer value (only freed ones)
         var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer freed_alloc_by_ptr.deinit();
         for (allocations.items, 0..) |alloc, idx| {
@@ -1141,7 +1050,6 @@ pub const CrossLangDataFlow = struct {
             }
         }
 
-        // Build HashMap index for O(1) FFI edge lookup by callee name
         var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
         defer edge_map.deinit();
         for (cross_edges) |edge| {
@@ -1150,75 +1058,59 @@ pub const CrossLangDataFlow = struct {
             }
         }
 
-        // Scan all functions for uses of freed pointers
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
 
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
+            for (fir.instructions, fir.opcodes) |inst, opcode| {
+                const num_operands = c.LLVMGetNumOperands(inst);
+                var arg_idx: u32 = 0;
+                while (arg_idx < num_operands) : (arg_idx += 1) {
+                    const arg = c.LLVMGetOperand(inst, arg_idx);
+                    const arg_val = @intFromPtr(arg);
+                    if (arg_val == 0) continue;
 
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const num_operands = c.LLVMGetNumOperands(inst);
-                    var arg_idx: u32 = 0;
-                    while (arg_idx < num_operands) : (arg_idx += 1) {
-                        const arg = c.LLVMGetOperand(inst, arg_idx);
-                        const arg_val = @intFromPtr(arg);
-                        if (arg_val == 0) continue;
+                    if (freed_alloc_by_ptr.get(arg_val)) |idx| {
+                        const alloc = &allocations.items[idx];
+                        const func_lang = ctx.getModuleLanguage().language;
+                        var use_lang = func_lang;
 
-                        // O(1) lookup: check if this argument is a freed allocation
-                        if (freed_alloc_by_ptr.get(arg_val)) |idx| {
-                            const alloc = &allocations.items[idx];
-                            const func_lang = ctx.getModuleLanguage().language;
-                            var use_lang = func_lang;
+                        if (llvm_safe.isCallOrInvoke(opcode)) {
+                            const called_val = c.LLVMGetCalledValue(inst);
+                            if (@intFromPtr(called_val) != 0) {
+                                const called_name_ptr = c.LLVMGetValueName(called_val);
+                                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                                    std.mem.span(called_name_ptr)
+                                else
+                                    "";
 
-                            // Check if this call crosses FFI boundary
-                            const opcode = c.LLVMGetInstructionOpcode(inst);
-                            if (llvm_safe.isCallOrInvoke(opcode)) {
-                                const called_val = c.LLVMGetCalledValue(inst);
-                                if (@intFromPtr(called_val) != 0) {
-                                    const called_name_ptr = c.LLVMGetValueName(called_val);
-                                    const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                                        std.mem.span(called_name_ptr)
-                                    else
-                                        "";
-
-                                    // O(1) lookup: check if this crosses FFI boundary
-                                    if (edge_map.get(called_name)) |edge| {
-                                        use_lang = edge.callee_lang;
-                                    }
+                                if (edge_map.get(called_name)) |edge| {
+                                    use_lang = edge.callee_lang;
                                 }
                             }
+                        }
 
-                            // Check if any free was in a different language
-                            for (alloc.free_langs.items) |free_lang| {
-                                if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
-                                    const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
-                                    defer ctx.allocator.free(message);
+                        for (alloc.free_langs.items) |free_lang| {
+                            if (free_lang != use_lang and free_lang != .unknown and use_lang != .unknown) {
+                                const message = try std.fmt.allocPrint(ctx.allocator, "Use-after-free across FFI boundary: pointer freed in {s} used in {s} in function {s}", .{ @tagName(free_lang), @tagName(use_lang), func_name });
+                                defer ctx.allocator.free(message);
 
-                                    const location = Location.init(func_name);
-                                    const issue = Issue.init(
-                                        .use_after_free,
-                                        message,
-                                        location,
-                                        .critical,
-                                        0.95,
-                                    );
-                                    try ctx.addIssue(&issue);
+                                const location = Location.init(func_name);
+                                const issue = Issue.init(
+                                    .use_after_free,
+                                    message,
+                                    location,
+                                    .critical,
+                                    0.95,
+                                );
+                                try ctx.addIssue(&issue);
 
-                                    diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
-                                        alloc.id,
-                                        @tagName(free_lang),
-                                        @tagName(use_lang),
-                                        func_name,
-                                    });
-                                    break;
-                                }
+                                diag.err("CrossLangDataFlow: Use-after-free across boundary: ptr {} freed in {s} used in {s} in {s}", .{
+                                    alloc.id,
+                                    @tagName(free_lang),
+                                    @tagName(use_lang),
+                                    func_name,
+                                });
+                                break;
                             }
                         }
                     }

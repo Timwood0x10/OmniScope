@@ -270,8 +270,6 @@ pub const PointerOwnershipPass = struct {
             diag.info("PointerOwnership: Pre-populated from MemoryGraph + GlobalAllocTracker — {d} allocs, {d} frees", .{ stats.alloc_sites, stats.free_sites });
         }
 
-        var func = c.LLVMGetFirstFunction(mod);
-
         var analysis_timer = ScopedTimer.start(&profiler, "analysis") catch |err| {
             diag.debug("PointerOwnership: Failed to start analysis timer: {}", .{err});
             return;
@@ -285,20 +283,12 @@ pub const PointerOwnershipPass = struct {
         // C1: Single-pass detection (was 8 separate traversals, ~5-8× faster)
         var raii_count: u32 = 0;
 
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            const func_name_raw = c.LLVMGetValueName(func);
-            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
+        for (ctx.ir_store.function_list) |fir| {
+            const func = fir.func;
+            const func_name = fir.name;
 
             const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
             ctx.zone_stats.record(zone);
-
-            // Skip declarations (extern functions without bodies in this module).
-            // PointerOwnership is an intra-procedural pass that scans instructions
-            // inside function bodies (alloc/store/load/call/GEP). Declarations have
-            // no body to analyze — their effects are handled at call sites within
-            // defined (non-declaration) caller functions. Zone classification is
-            // recorded above for accurate statistics before skipping.
-            if (c.LLVMIsDeclaration(func) != 0) continue;
 
             // R7.0: Shared zone gate (single source of truth, also used by ffi_boundary).
             if (!PassContext.shouldAnalyzeZone(zone)) {
@@ -381,7 +371,7 @@ pub const PointerOwnershipPass = struct {
             detectRaiiManagedAllocations(func, &alloc_map, &id_map, &raii_count, &ctx.raii_func_set);
             detectMeyersSingletonFunctions(func, &ctx.meyers_singleton_set);
             detectRefCountedContainerFunctions(func, &ctx.rc_container_func_set);
-            detectRustFfiPairingFunctions(func, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
+            detectRustFfiPairingFunctions(fir.calls, fir.name, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
             detectAsPtrBorrowEscape(ctx, func, diag);
 
             checkOwnershipTransferForFunction(func, &alloc_map, &reverse_flow, &id_map);
@@ -533,8 +523,8 @@ pub const PointerOwnershipPass = struct {
     fn detectRefCountedContainerFunctions(func: c.LLVMValueRef, rcs: *std.AutoHashMap(usize, void)) void {
         cpp_fp.detectRefCountedContainerFunctions(func, rcs, cpp_fp.isAllocationByName);
     }
-    fn detectRustFfiPairingFunctions(func: c.LLVMValueRef, irs: *std.StringHashMap(void), frs: *std.StringHashMap(void)) void {
-        cpp_fp.detectRustFfiPairingFunctions(func, irs, frs);
+    fn detectRustFfiPairingFunctions(calls: []const c.LLVMValueRef, func_name: []const u8, irs: *std.StringHashMap(void), frs: *std.StringHashMap(void)) void {
+        cpp_fp.detectRustFfiPairingFunctions(calls, func_name, irs, frs);
     }
     fn isAllocationByName(cn: []const u8) bool {
         return cpp_fp.isAllocationByName(cn);

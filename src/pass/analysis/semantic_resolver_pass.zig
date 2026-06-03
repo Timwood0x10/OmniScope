@@ -8,7 +8,6 @@ const std = @import("std");
 const log = @import("../../common/log.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
-const llvm_safe = @import("../../ir/llvm_safe.zig");
 
 const resolution_engine = @import("../../semantics/resolution_engine.zig");
 const ResolutionEngine = resolution_engine.ResolutionEngine;
@@ -67,38 +66,25 @@ pub const SemanticResolverPass = struct {
 
             log.debug("[SemanticResolver] Running merged single-pass detectors...", .{});
 
-            var func = c.LLVMGetFirstFunction(raw_mod);
-            while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-                if (c.LLVMIsDeclaration(func) != 0) continue;
+            for (ctx.ir_store.function_list) |fir| {
+                const func = fir.func;
+                const caller_name = fir.name;
 
-                // Get the caller function name for tagging
-                const caller_name_raw = c.LLVMGetValueName(func);
-                const caller_name = if (caller_name_raw != null) std.mem.span(caller_name_raw) else "unknown";
-
-                // Phase 0: Process function calls (resolution engine pre-scan)
-                {
-                    var bb = c.LLVMGetFirstBasicBlock(func);
-                    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                        var inst = c.LLVMGetFirstInstruction(bb);
-                        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                            const opcode = c.LLVMGetInstructionOpcode(inst);
-                            if (llvm_safe.isCallOrInvoke(opcode)) {
-                                const called_val = c.LLVMGetCalledValue(inst);
-                                if (@intFromPtr(called_val) != 0) {
-                                    const called_name_ptr = c.LLVMGetValueName(called_val);
-                                    if (@intFromPtr(called_name_ptr) != 0) {
-                                        const callee_name = std.mem.span(called_name_ptr);
-                                        const inst_addr = @as(u64, @intFromPtr(inst));
-                                        try engine.processFunctionCall(
-                                            callee_name,
-                                            caller_name,
-                                            inst_addr,
-                                            "unknown",
-                                            0,
-                                        );
-                                    }
-                                }
-                            }
+                // Phase 0: Use pre-categorized calls[] — no BB/inst traversal
+                for (fir.calls) |inst| {
+                    const called_val = c.LLVMGetCalledValue(inst);
+                    if (@intFromPtr(called_val) != 0) {
+                        const called_name_ptr = c.LLVMGetValueName(called_val);
+                        if (@intFromPtr(called_name_ptr) != 0) {
+                            const callee_name = std.mem.span(called_name_ptr);
+                            const inst_addr = @as(u64, @intFromPtr(inst));
+                            try engine.processFunctionCall(
+                                callee_name,
+                                caller_name,
+                                inst_addr,
+                                "unknown",
+                                0,
+                            );
                         }
                     }
                 }

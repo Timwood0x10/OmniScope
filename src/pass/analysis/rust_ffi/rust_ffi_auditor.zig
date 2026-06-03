@@ -16,7 +16,6 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
-const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const inst_cache_mod = @import("../../../ir/inst_cache.zig");
 const InstCache = inst_cache_mod.InstCache;
 const CommonTypes = @import("../../../common/types.zig");
@@ -52,6 +51,9 @@ const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const basic_rules = @import("rust_ffi_rules_basic.zig");
 const lifetime_rules = @import("rust_ffi_rules_lifetime.zig");
 const advanced_rules = @import("rust_ffi_rules_advanced.zig");
+
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 /// Main Rust FFI Auditor struct
 pub const RustFfiAuditor = struct {
@@ -114,96 +116,79 @@ pub const RustFfiAuditor = struct {
         diag.info("[RUST-FFI] Boundary: {s} module analyzed, {d} cross-lang issues detected", .{ module_lang, findings.len });
     }
 
-    /// Run full audit on an LLVM module
+    /// Run full audit using IR Store — eliminates per-pass LLVM function iteration.
     pub fn audit(self: *RustFfiAuditor, module: c.LLVMModuleRef, ctx: *PassContext, diag: *DiagnosticWriter) ![]const RustFfiFinding {
+        _ = module; // IR Store provides all function data — raw module handle no longer traversed
         self.findings.clearRetainingCapacity();
         self.stats = .{};
 
-        var func = c.LLVMGetFirstFunction(module);
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
-            self.stats.total_functions_analyzed += 1;
+        // Single InstCache reused across all functions (clear() between calls).
+        // Avoids per-function HashMap alloc/deinit (previously 4654 cycles).
+        var inst_cache = InstCache.init(self.allocator);
+        defer inst_cache.deinit();
 
-            try self.auditFunction(func, ctx, diag);
+        for (ctx.ir_store.function_list) |fir| {
+            self.stats.total_functions_analyzed += 1;
+            inst_cache.clear();
+            try self.auditFunction(fir, ctx, diag, &inst_cache);
         }
 
         return try self.findings.toOwnedSlice(self.allocator);
     }
 
-    /// Audit a single function for all Rust FFI patterns.
-    fn auditFunction(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext, diag: *DiagnosticWriter) !void {
-        const func_name = getFunctionName(func);
+    /// Audit a single function using pre-collected IR Store data.
+    /// Accepts a FunctionIR (pre-categorized instruction arrays) — no BB/inst traversal here.
+    fn auditFunction(self: *RustFfiAuditor, fir: *const FunctionIR, ctx: *PassContext, diag: *DiagnosticWriter, inst_cache: *InstCache) !void {
+        const func = fir.func;
+        const func_name = fir.name;
 
         const caller_lang = ffi_language_classifier.identifyLanguage(func);
         const caller_lang_tag = @tagName(caller_lang);
 
-        // Multi-strategy Rust detection:
         // Strategy 1: Module-level detection (O(1), checked first)
         const is_rust_module = ctx.isRustModule();
-        // Strategy 2: Function-level pattern scan — only run when module detection
-        // missed it (avoids full IR traversal for every function in Rust modules).
+        // Strategy 2: Function-level pattern scan — only when module detection missed it
         const has_rust_patterns = if (is_rust_module) true else blk: {
-            const p = self.hasRustFfiPatterns(func, ctx);
+            const p = self.hasRustFfiPatterns(fir, ctx);
             if (p) diag.debug("FFIAuditor: '{s}' has Rust FFI patterns but module not detected as Rust", .{func_name});
             break :blk p;
         };
 
         const is_rust = has_rust_patterns;
 
-        // PERF: Collect all instructions ONCE; share the slice across all rules.
-        // Previously each rule did its own BB/inst traversal (6-8 independent sweeps).
-        // Now: 1 traversal here, all rules iterate the pre-built slice.
-        var inst_cache = InstCache.init(self.allocator);
-        defer inst_cache.deinit();
-
-        var all_insts = std.ArrayList(c.LLVMValueRef).initCapacity(self.allocator, 128) catch return;
-        defer all_insts.deinit(self.allocator);
-
-        {
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    all_insts.append(self.allocator, inst) catch {};
-                }
-            }
-        }
-
-        const insts = all_insts.items;
+        // Use IR Store pre-collected instruction array — no ArrayList alloc, no BB/inst traversal.
+        const insts = fir.instructions;
 
         // ── Rust-specific rules (language-gated) ──
         if (is_rust) {
             // Rule 1: into_raw/from_raw pairing check
-            const func_name_ptr = c.LLVMGetValueName(func);
-            if (@intFromPtr(func_name_ptr) != 0) {
-                const func_name_slice = std.mem.sliceTo(func_name_ptr, 0);
-                if (ctx.rust_into_raw_set.contains(func_name_slice)) {
-                    if (ctx.rust_from_raw_set.count() == 0) {
-                        try basic_rules.addFinding(self, .{
-                            .func_name = func_name,
-                            .issue_type = .unpaired_into_raw,
-                            .severity = .high,
-                            .confidence = 0.75,
-                            .reason = "into_raw() called but no matching from_raw() in module",
-                            .location = Location.init(func_name),
-                        });
-                        self.stats.into_raw_funcs += 1;
-                    }
+            if (ctx.rust_into_raw_set.contains(func_name)) {
+                if (ctx.rust_from_raw_set.count() == 0) {
+                    try basic_rules.addFinding(self, .{
+                        .func_name = func_name,
+                        .issue_type = .unpaired_into_raw,
+                        .severity = .high,
+                        .confidence = 0.75,
+                        .reason = "into_raw() called but no matching from_raw() in module",
+                        .location = Location.init(func_name),
+                    });
+                    self.stats.into_raw_funcs += 1;
                 }
             }
 
             // Rule 2: as_ptr borrow escape detection
-            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, insts, &inst_cache);
+            try basic_rules.detectAsPtrEscape(self, func, ctx, diag, insts, inst_cache);
 
             // Rule 3: Cross-lang alloc mismatch (Rust _Znwm → C free)
-            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, insts, &inst_cache);
+            // Pass fir.stores so ptrOriginatesFromRustAlloc can find store sources without BB/inst scan
+            try basic_rules.detectCrossLangMismatch(self, func, ctx, diag, insts, inst_cache, fir.stores);
 
             if (self.stats.cross_lang_mismatches > 0) {
                 diag.debug("[RUST-FFI] Boundary detected: {s} --> c (cross-lang alloc mismatch, confidence: 0.85)", .{caller_lang_tag});
             }
 
             // Rule 6: Ownership transfer protocol (into_raw/from_raw pairing)
-            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, insts, &inst_cache);
+            try basic_rules.detectOwnershipTransferViolations(self, func, ctx, diag, insts, inst_cache);
 
             // Rule 7: as_ptr dangling detection — borrowed ptr used after parent drop
             try lifetime_rules.detectAsPtrDangling(self, func, insts, ctx, diag);
@@ -212,7 +197,7 @@ pub const RustFfiAuditor = struct {
         // ── Universal FFI boundary rules (run on ALL languages) ──
 
         // Rule 4: Unsafe block FFI call scan
-        try basic_rules.detectUnsafeFfiCalls(self, func, insts, &inst_cache);
+        try basic_rules.detectUnsafeFfiCalls(self, func, insts, inst_cache);
 
         if (self.stats.unsafe_ffi_calls > 0) {
             const target_lang = if (caller_lang == .rust) "c" else @tagName(caller_lang);
@@ -220,7 +205,7 @@ pub const RustFfiAuditor = struct {
         }
 
         // Rule 5: Stack address escape to FFI boundary (alloca/local → extern "C")
-        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, insts, &inst_cache);
+        try basic_rules.detectStackEscapeToFFI(self, func, ctx, diag, insts, inst_cache);
 
         // Rule 8: Callback ownership risk — function pointer parameter stored to global
         try lifetime_rules.detectCallbackOwnershipRisk(self, func, insts, ctx, diag);
@@ -273,53 +258,43 @@ pub const RustFfiAuditor = struct {
     }
 
     /// Check if a function contains Rust FFI patterns (mangled names, Rust allocators, etc.)
-    /// This enables Rust-specific rules even when the module language is misdetected.
     /// Implements Strategy 2 of multi-strategy Rust detection for higher recall.
-    pub fn hasRustFfiPatterns(self: *RustFfiAuditor, func: c.LLVMValueRef, ctx: *PassContext) bool {
+    /// Uses pre-categorized fir.calls[] — no BB/inst traversal for Check 2.
+    fn hasRustFfiPatterns(self: *RustFfiAuditor, fir: *const FunctionIR, ctx: *PassContext) bool {
         _ = self;
-        const func_name = getFunctionName(func);
 
         // Check 0 (fast path): module-level Rust FFI sets populated → whole module is Rust
-        // Avoids full IR scan when we already know this is a Rust module via other evidence.
         if (ctx.rust_into_raw_set.count() > 0 or ctx.rust_from_raw_set.count() > 0) {
             return true;
         }
 
         // Check 1: Function name has Rust mangled name pattern (O(1), no IR traversal)
-        if (isRustMangledName(func_name)) {
+        if (isRustMangledName(fir.name)) {
             return true;
         }
 
-        // Check 2: Scan IR for Rust allocator / FFI boundary calls (only when checks 0+1 fail)
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+        // Check 2: Scan pre-categorized call instructions for Rust allocator / FFI boundary patterns.
+        // fir.calls[] already contains only Call/Invoke — no opcode filter needed.
+        for (fir.calls) |inst| {
+            const called_val = c.LLVMGetCalledValue(inst);
+            if (@intFromPtr(called_val) == 0) continue;
 
-                const called_val = c.LLVMGetCalledValue(inst);
-                if (@intFromPtr(called_val) == 0) continue;
+            const called_name_ptr = c.LLVMGetValueName(called_val);
+            if (@intFromPtr(called_name_ptr) == 0) continue;
 
-                const called_name_ptr = c.LLVMGetValueName(called_val);
-                if (@intFromPtr(called_name_ptr) == 0) continue;
+            const called_name = std.mem.span(called_name_ptr);
 
-                const called_name = std.mem.span(called_name_ptr);
+            if (std.mem.indexOf(u8, called_name, "__rust_alloc") != null or
+                std.mem.indexOf(u8, called_name, "__rust_dealloc") != null or
+                std.mem.indexOf(u8, called_name, "__rust_realloc") != null or
+                std.mem.indexOf(u8, called_name, "_RZN") != null or
+                std.mem.indexOf(u8, called_name, "_RNv") != null)
+            {
+                return true;
+            }
 
-                // Check for Rust allocator patterns
-                if (std.mem.indexOf(u8, called_name, "__rust_alloc") != null or
-                    std.mem.indexOf(u8, called_name, "__rust_dealloc") != null or
-                    std.mem.indexOf(u8, called_name, "__rust_realloc") != null or
-                    std.mem.indexOf(u8, called_name, "_RZN") != null or
-                    std.mem.indexOf(u8, called_name, "_RNv") != null)
-                {
-                    return true;
-                }
-
-                // Check for Rust FFI boundary functions (into_raw, from_raw, as_ptr)
-                if (isRustIntoRawCall(called_name) or isRustFromRawCall(called_name) or isRustAsPtrCall(called_name)) {
-                    return true;
-                }
+            if (isRustIntoRawCall(called_name) or isRustFromRawCall(called_name) or isRustAsPtrCall(called_name)) {
+                return true;
             }
         }
 

@@ -183,9 +183,7 @@ pub const PtrLifetimePass = struct {
             @tagName(lifetime_channel),
         });
 
-        const mod = ctx.module.?.raw;
-        const first_func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(first_func) == 0) return;
+        if (ctx.ir_store.function_list.len == 0) return;
 
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = LifetimeStats{};
@@ -211,32 +209,16 @@ pub const PtrLifetimePass = struct {
         }
 
         // T3.1: Pre-collect all functions into work items for parallel distribution.
-        // Two-pass approach: count first, then allocate exact-sized array.
-        // This avoids ArrayList cross-module type issues in Zig 0.15.2.
-        var func_count: usize = 0;
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                func_count += 1;
-            }
-        }
-        if (func_count == 0) return;
-        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_count);
+        // IR Store already excludes declarations — no two-pass counting needed.
+        const func_list = ctx.ir_store.function_list;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_list.len);
         defer ctx.allocator.free(work_items);
-        {
-            var f = c.LLVMGetFirstFunction(mod);
-            var idx: usize = 0;
-            while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
-                const func_name_raw = c.LLVMGetValueName(f);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const is_decl = c.LLVMIsDeclaration(f) != 0;
-                work_items[idx] = .{
-                    .func = @intFromPtr(f),
-                    .func_name = func_name,
-                    .is_declaration = is_decl,
-                };
-                idx += 1;
-            }
+        for (func_list, 0..) |fir, idx| {
+            work_items[idx] = .{
+                .func = @intFromPtr(fir.func),
+                .func_name = fir.name,
+                .is_declaration = false,
+            };
         }
 
         // T3.1: Mutex protecting shared PassContext state during parallel analysis.

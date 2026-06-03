@@ -15,6 +15,8 @@ const tracking = @import("../ptr_lifetime/value_tracking.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const ModuleIRStore = ir_store_mod.ModuleIRStore;
 const Issue = @import("../../../diag/issue.zig").Issue;
 const Location = @import("../../../diag/issue.zig").Location;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
@@ -232,7 +234,7 @@ pub fn detectCallbackOwnershipRisk(auditor: *Auditor, func: c.LLVMValueRef, inst
             if (source != .from_parameter) continue;
 
             // Verify global is used for indirect calls (behavioral confirmation)
-            if (!isGlobalUsedForIndirectCall(global_name, func)) continue;
+            if (!isGlobalUsedForIndirectCall(global_name, ctx.ir_store)) continue;
 
             try reportCallbackRisk(auditor, ctx, diag, func_name, global_name, "global", 0.85);
         }
@@ -318,36 +320,20 @@ pub fn isSafeGlobalStore(global_name: []const u8) bool {
 }
 
 /// Check if a global variable is used for indirect calls anywhere in the module.
-/// This confirms that the global is being treated as a function pointer (callback).
-pub fn isGlobalUsedForIndirectCall(global_name: []const u8, current_func: c.LLVMValueRef) bool {
-    const module = c.LLVMGetGlobalParent(current_func);
-    if (@intFromPtr(module) == 0) return false;
+/// Uses IR Store pre-categorized calls[] — eliminates full module BB/inst traversal.
+pub fn isGlobalUsedForIndirectCall(global_name: []const u8, ir_store: *const ModuleIRStore) bool {
+    for (ir_store.function_list) |fir| {
+        // fir.calls[] contains only Call/Invoke instructions — no opcode check needed
+        for (fir.calls) |inst| {
+            const callee = c.LLVMGetCalledValue(inst);
+            if (@intFromPtr(callee) == 0) continue;
 
-    var func = c.LLVMGetFirstFunction(module);
-    while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-
-                // Check for indirect call (call/invoke with non-function callee)
-                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                    const callee = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(callee) == 0) continue;
-
-                    // If callee is not a direct function, it's an indirect call
-                    if (c.LLVMIsAFunction(callee) == null) {
-                        // Check if this indirect call uses our global
-                        if (isValueFromGlobal(callee, global_name)) {
-                            return true;
-                        }
-                    }
-                }
+            // Indirect call: callee is not a direct function reference
+            if (c.LLVMIsAFunction(callee) == null) {
+                if (isValueFromGlobal(callee, global_name)) return true;
             }
         }
     }
-
     return false;
 }
 

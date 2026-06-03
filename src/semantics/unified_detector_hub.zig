@@ -352,9 +352,9 @@ pub const HubStats = struct {
         , .{self.total_instructions});
 
         const names = [14][]const u8{
-            "ch04",      "ch05",      "ch06",      "ch08",
-            "ch09",      "ch10",      "posix",     "param_attr",
-            "heap_prov", "int_mut",   "into_raw",  "lib_alloc",
+            "ch04",      "ch05",    "ch06",     "ch08",
+            "ch09",      "ch10",    "posix",    "param_attr",
+            "heap_prov", "int_mut", "into_raw", "lib_alloc",
             "lang_det",  "res_eng",
         };
 

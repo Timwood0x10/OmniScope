@@ -416,54 +416,32 @@ pub fn detectStructMemberStores(
 }
 
 /// Detect Rust FFI ownership transfer patterns in function bodies.
-/// Scans for into_raw (ownership OUT) and from_raw (ownership IN) calls.
+/// Accepts pre-categorized calls[] from IR Store — no BB/inst traversal.
 pub fn detectRustFfiPairingFunctions(
-    func: c.LLVMValueRef,
+    calls: []const c.LLVMValueRef,
+    func_name: []const u8,
     into_raw_set: *std.StringHashMap(void),
     from_raw_set: *std.StringHashMap(void),
 ) void {
     var has_into_raw = false;
     var has_from_raw = false;
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+    for (calls) |inst| {
+        const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+        if (num_operands == 0) continue;
+        const callee = c.LLVMGetOperand(inst, num_operands - 1);
+        if (@intFromPtr(callee) == 0) continue;
+        const callee_name = c.LLVMGetValueName(callee);
+        if (@intFromPtr(callee_name) == 0) continue;
+        const name_slice = std.mem.sliceTo(callee_name, 0);
 
-            const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-            if (num_operands == 0) continue;
-            const callee = c.LLVMGetOperand(inst, num_operands - 1);
-            if (@intFromPtr(callee) == 0) continue;
-            const callee_name = c.LLVMGetValueName(callee);
-            if (@intFromPtr(callee_name) == 0) continue;
-            const name_slice = std.mem.sliceTo(callee_name, 0);
-
-            if (isRustIntoRawCall(name_slice)) {
-                has_into_raw = true;
-            }
-            if (isRustFromRawCall(name_slice)) {
-                has_from_raw = true;
-            }
-        }
+        if (isRustIntoRawCall(name_slice)) has_into_raw = true;
+        if (isRustFromRawCall(name_slice)) has_from_raw = true;
         if (has_into_raw and has_from_raw) break;
     }
 
-    if (has_into_raw) {
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) != 0) {
-            const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-            into_raw_set.put(func_name_slice, {}) catch {};
-        }
-    }
-    if (has_from_raw) {
-        const func_name_raw = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_raw) != 0) {
-            const func_name_slice = std.mem.sliceTo(func_name_raw, 0);
-            from_raw_set.put(func_name_slice, {}) catch {};
-        }
-    }
+    if (has_into_raw) into_raw_set.put(func_name, {}) catch {};
+    if (has_from_raw) from_raw_set.put(func_name, {}) catch {};
 }
 
 // ==================== Flow Graph Helpers ====================

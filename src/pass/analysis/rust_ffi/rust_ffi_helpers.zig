@@ -252,11 +252,14 @@ pub fn classifyFfiBoundaryType(
 }
 
 /// Detect Rust FFI pairing functions (populates into_raw/from_raw sets)
-/// POT-BUG-8 FIX: Changed from AutoHashMap(usize, void) to StringHashMap(void)
-/// to use string content as key instead of pointer address, preventing missed
-/// ownership-transfer detections when the same function name has different
-/// backing string allocations.
+/// Detect into_raw/from_raw pairing functions using pre-categorized call instructions.
+///
+/// POT-BUG-8 FIX: uses string content as key (StringHashMap) not pointer address,
+/// preventing missed detections when the same function name has different backing allocations.
+///
+/// Accepts pre-filtered Call/Invoke instructions from IR Store — no BB/inst traversal needed.
 pub fn detectRustFfiPairingFunctions(
+    calls: []const c.LLVMValueRef,
     func: c.LLVMValueRef,
     into_raw_set: *std.StringHashMap(void),
     from_raw_set: *std.StringHashMap(void),
@@ -264,24 +267,18 @@ pub fn detectRustFfiPairingFunctions(
     var has_into_raw = false;
     var has_from_raw = false;
 
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-            const opcode = c.LLVMGetInstructionOpcode(inst);
-            if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
+    // calls[] already contains only Call/Invoke — skip opcode check
+    for (calls) |inst| {
+        const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
+        if (num_operands == 0) continue;
+        const callee = c.LLVMGetOperand(inst, num_operands - 1);
+        if (@intFromPtr(callee) == 0) continue;
+        const callee_name = c.LLVMGetValueName(callee);
+        if (@intFromPtr(callee_name) == 0) continue;
+        const name_slice = std.mem.sliceTo(callee_name, 0);
 
-            const num_operands: c_uint = @intCast(c.LLVMGetNumOperands(inst));
-            if (num_operands == 0) continue;
-            const callee = c.LLVMGetOperand(inst, num_operands - 1);
-            if (@intFromPtr(callee) == 0) continue;
-            const callee_name = c.LLVMGetValueName(callee);
-            if (@intFromPtr(callee_name) == 0) continue;
-            const name_slice = std.mem.sliceTo(callee_name, 0);
-
-            if (isRustIntoRawCall(name_slice)) has_into_raw = true;
-            if (isRustFromRawCall(name_slice)) has_from_raw = true;
-        }
+        if (isRustIntoRawCall(name_slice)) has_into_raw = true;
+        if (isRustFromRawCall(name_slice)) has_from_raw = true;
         if (has_into_raw and has_from_raw) break;
     }
 
@@ -358,8 +355,11 @@ pub fn mayRetainPointer(callee_name: []const u8) bool {
 /// Check if a value originates from a Rust allocator call within the same function.
 /// Walks use-def chains through phi/select/bitcast/GEP instructions to find
 /// the ultimate source. Returns true if traced back to isRustAllocCall.
+///
+/// Accepts pre-filtered Store instructions from IR Store — findStoreToAddr no longer
+/// does BB/inst traversal.
 pub fn ptrOriginatesFromRustAlloc(
-    func: c.LLVMValueRef,
+    stores: []const c.LLVMValueRef,
     val: c.LLVMValueRef,
     visited: *std.AutoHashMap(usize, void),
 ) bool {
@@ -394,42 +394,35 @@ pub fn ptrOriginatesFromRustAlloc(
         var i: c_uint = 0;
         while (i < num_operands) : (i += 1) {
             const op = c.LLVMGetOperand(val, i);
-            if (ptrOriginatesFromRustAlloc(func, op, visited)) return true;
+            if (ptrOriginatesFromRustAlloc(stores, op, visited)) return true;
         }
     }
 
     // Follow load instructions: find what was stored to the loaded-from address
     if (opcode == c.LLVMLoad) {
         const addr = c.LLVMGetOperand(val, 0);
-        if (ptrOriginatesFromRustAlloc(func, addr, visited)) return true;
-        // Also scan for stores to this address in the same function
-        if (findStoreToAddr(func, addr, visited)) |stored_val| {
-            if (ptrOriginatesFromRustAlloc(func, stored_val, visited)) return true;
+        if (ptrOriginatesFromRustAlloc(stores, addr, visited)) return true;
+        // Scan pre-categorized stores for any write to this address
+        if (findStoreToAddr(stores, addr, visited)) |stored_val| {
+            if (ptrOriginatesFromRustAlloc(stores, stored_val, visited)) return true;
         }
     }
 
     return false;
 }
 
-/// Find a store instruction that writes to `addr` within `func`.
+/// Find a store instruction that writes to `addr` using pre-categorized Store instructions.
 /// Returns the stored value if found, null otherwise.
-fn findStoreToAddr(func: c.LLVMValueRef, addr: c.LLVMValueRef, visited: *std.AutoHashMap(usize, void)) ?c.LLVMValueRef {
-    var bb = c.LLVMGetFirstBasicBlock(func);
-    while (@intFromPtr(bb) != 0) {
-        var inst = c.LLVMGetFirstInstruction(bb);
-        while (@intFromPtr(inst) != 0) {
-            if (c.LLVMGetInstructionOpcode(inst) == c.LLVMStore) {
-                // Store operands: [value, address]
-                const store_addr = c.LLVMGetOperand(inst, 1);
-                if (@intFromPtr(store_addr) == @intFromPtr(addr)) {
-                    return c.LLVMGetOperand(inst, 0);
-                }
-            }
-            inst = c.LLVMGetNextInstruction(inst);
-        }
-        bb = c.LLVMGetNextBasicBlock(bb);
-    }
+fn findStoreToAddr(stores: []const c.LLVMValueRef, addr: c.LLVMValueRef, visited: *std.AutoHashMap(usize, void)) ?c.LLVMValueRef {
     _ = visited;
+    // stores[] already contains only Store instructions — no opcode check or BB traversal needed
+    for (stores) |inst| {
+        // Store operands: [value, address]
+        const store_addr = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(store_addr) == @intFromPtr(addr)) {
+            return c.LLVMGetOperand(inst, 0);
+        }
+    }
     return null;
 }
 

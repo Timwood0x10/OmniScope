@@ -122,9 +122,7 @@ pub const ErrorPropagationTracer = struct {
         if (ctx.module == null) return;
 
         var stats = ErrorPropagationStats{};
-        const module = ctx.module.?.raw;
 
-        // Collect all FFI calls
         var ffi_calls = std.ArrayList(FFICallInfo).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
         defer {
             for (ffi_calls.items) |*call_info| {
@@ -134,32 +132,19 @@ pub const ErrorPropagationTracer = struct {
             ffi_calls.deinit(ctx.allocator);
         }
 
-        try collectFFICalls(ctx, &ffi_calls, module);
+        try collectFFICalls(ctx, &ffi_calls);
         stats.ffi_calls_analyzed = @intCast(ffi_calls.items.len);
 
-        // Language-specific optimization: Skip irrelevant detectors for Rust modules
-        // Rust uses Result/? operator instead of C++ exceptions or errno-style error codes,
-        // so detectExceptionBoundaryViolations() and detectErrorCodeMisinterpretation()
-        // produce no meaningful results for Rust modules.
         const lang = ctx.module_language.language;
         if (lang == .rust) {
             log.info("ErrorPropagationTracer: using Rust-optimized path (skipping exception/errno checks)", .{});
-
-            // Only run meaningful detectors for Rust:
-            // 1. detectUncheckedFFICalls(): Still relevant - FFI return values must be checked
-            // 2. detectErrorPathLeaks(): Still relevant - resource cleanup on error paths matters
-            //
-            // Skipped for Rust (target Java/C++/C exception model):
-            // - detectExceptionBoundaryViolations(): Rust doesn't use C++ exceptions or landingpad
-            // - detectErrorCodeMisinterpretation(): Rust doesn't use errno or HRESULT patterns
             try detectUncheckedFFICalls(ctx, diag, &ffi_calls, &stats);
-            try detectErrorPathLeaks(ctx, diag, module, &stats);
+            try detectErrorPathLeaks(ctx, diag, &stats);
         } else {
-            // Full detection pipeline for non-Rust languages (C/C++, Zig, Go, etc.)
             try detectUncheckedFFICalls(ctx, diag, &ffi_calls, &stats);
-            try detectExceptionBoundaryViolations(ctx, diag, module, &stats);
+            try detectExceptionBoundaryViolations(ctx, diag, &stats);
             try detectErrorCodeMisinterpretation(ctx, diag, &ffi_calls, &stats);
-            try detectErrorPathLeaks(ctx, diag, module, &stats);
+            try detectErrorPathLeaks(ctx, diag, &stats);
         }
 
         diag.info("ErrorPropagationTracer: {d} FFI calls analyzed, {d} unchecked errors, {d} exception violations, {d} misinterpretations, {d} error path leaks", .{
@@ -175,63 +160,45 @@ pub const ErrorPropagationTracer = struct {
     fn collectFFICalls(
         ctx: *PassContext,
         ffi_calls: *std.ArrayList(FFICallInfo),
-        module: c.LLVMModuleRef,
     ) !void {
-        var func = c.LLVMGetFirstFunction(module);
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
 
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
-
-            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals entirely ──
             if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
                 log.debug("RUST-INTERNAL-SKIP: {s} — skipping FFI analysis", .{func_name});
                 continue;
             }
 
-            // Scan instructions in this function
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+            for (fir.calls) |inst| {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    "";
 
-                        // Check if this is an FFI call (external function or different language)
-                        if (isFFIFunction(called_name)) {
-                            const callee_name_dup = ctx.allocator.dupe(u8, called_name) catch continue;
-                            const caller_name_dup = ctx.allocator.dupe(u8, func_name) catch {
-                                ctx.allocator.free(callee_name_dup);
-                                continue;
-                            };
+                if (isFFIFunction(called_name)) {
+                    const callee_name_dup = ctx.allocator.dupe(u8, called_name) catch continue;
+                    const caller_name_dup = ctx.allocator.dupe(u8, func_name) catch {
+                        ctx.allocator.free(callee_name_dup);
+                        continue;
+                    };
 
-                            const call_info = FFICallInfo{
-                                .inst = inst,
-                                .callee_name = callee_name_dup,
-                                .caller_name = caller_name_dup,
-                                .callee_lang = classifyLanguage(called_name),
-                                .returns_error = isErrorReturningFunction(called_name),
-                                .return_checked = false,
-                            };
+                    const call_info = FFICallInfo{
+                        .inst = inst,
+                        .callee_name = callee_name_dup,
+                        .caller_name = caller_name_dup,
+                        .callee_lang = classifyLanguage(called_name),
+                        .returns_error = isErrorReturningFunction(called_name),
+                        .return_checked = false,
+                    };
 
-                            ffi_calls.append(ctx.allocator, call_info) catch {
-                                ctx.allocator.free(callee_name_dup);
-                                ctx.allocator.free(caller_name_dup);
-                            };
-                        }
-                    }
+                    ffi_calls.append(ctx.allocator, call_info) catch {
+                        ctx.allocator.free(callee_name_dup);
+                        ctx.allocator.free(caller_name_dup);
+                    };
                 }
             }
         }
@@ -292,65 +259,46 @@ pub const ErrorPropagationTracer = struct {
     fn detectExceptionBoundaryViolations(
         ctx: *PassContext,
         diag: *DiagnosticWriter,
-        module: c.LLVMModuleRef,
         stats: *ErrorPropagationStats,
     ) !void {
-        var func = c.LLVMGetFirstFunction(module);
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
 
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
-
-            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals ──
             if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
                 log.debug("RUST-INTERNAL-SKIP: {s} — skipping exception analysis", .{func_name});
                 continue;
             }
 
-            // Scan instructions in this function
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+            for (fir.calls) |inst| {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    "";
 
-                        // Check if this is an exception throwing function
-                        if (isExceptionThrowingFunction(called_name)) {
-                            // Check if there's a catch handler (landingpad or invoke)
-                            const has_handler = hasExceptionHandler(inst, func);
+                if (isExceptionThrowingFunction(called_name)) {
+                    const has_handler = hasExceptionHandler(inst, fir.func);
 
-                            if (!has_handler) {
-                                stats.exception_violations += 1;
+                    if (!has_handler) {
+                        stats.exception_violations += 1;
 
-                                const message = try std.fmt.allocPrint(ctx.allocator, "Exception crossing FFI boundary: {s}() throws but no handler in {s}", .{ called_name, func_name });
-                                defer ctx.allocator.free(message);
+                        const message = try std.fmt.allocPrint(ctx.allocator, "Exception crossing FFI boundary: {s}() throws but no handler in {s}", .{ called_name, func_name });
+                        defer ctx.allocator.free(message);
 
-                                diag.warn("ErrorPropagationTracer: {s}", .{message});
+                        diag.warn("ErrorPropagationTracer: {s}", .{message});
 
-                                const location = Location.init(func_name);
-                                const issue = Issue.init(
-                                    .unchecked_return,
-                                    message,
-                                    location,
-                                    .high,
-                                    0.80,
-                                );
-                                try ctx.addIssue(&issue);
-                            }
-                        }
+                        const location = Location.init(func_name);
+                        const issue = Issue.init(
+                            .unchecked_return,
+                            message,
+                            location,
+                            .high,
+                            0.80,
+                        );
+                        try ctx.addIssue(&issue);
                     }
                 }
             }
@@ -395,59 +343,38 @@ pub const ErrorPropagationTracer = struct {
     fn detectErrorPathLeaks(
         ctx: *PassContext,
         diag: *DiagnosticWriter,
-        module: c.LLVMModuleRef,
         stats: *ErrorPropagationStats,
     ) !void {
-        var func = c.LLVMGetFirstFunction(module);
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) continue;
+        for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
 
-            const func_name_ptr = c.LLVMGetValueName(func);
-            const func_name = if (@intFromPtr(func_name_ptr) != 0)
-                std.mem.span(func_name_ptr)
-            else
-                "unknown";
-
-            // ── RUST INTERNAL WHITELIST: Skip panic/unwind internals ──
             if (rust_whitelist.RustInternalWhitelist.shouldSkipAnalysis(func_name)) {
                 log.debug("RUST-INTERNAL-SKIP: {s} — skipping error path analysis", .{func_name});
                 continue;
             }
 
-            // Track allocations in this function
             var allocations = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
             defer allocations.deinit(ctx.allocator);
 
-            // Track error returns
             var error_returns = std.ArrayList(c.LLVMValueRef).initCapacity(ctx.allocator, 0) catch return error.OutOfMemory;
             defer error_returns.deinit(ctx.allocator);
 
-            // Scan instructions in this function
-            var bb = c.LLVMGetFirstBasicBlock(func);
-            while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-                var inst = c.LLVMGetFirstInstruction(bb);
-                while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                    const opcode = c.LLVMGetInstructionOpcode(inst);
-                    if (llvm_safe.isCallOrInvoke(opcode)) {
-                        const called_val = c.LLVMGetCalledValue(inst);
-                        if (@intFromPtr(called_val) == 0) continue;
+            for (fir.calls) |inst| {
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
 
-                        const called_name_ptr = c.LLVMGetValueName(called_val);
-                        const called_name = if (@intFromPtr(called_name_ptr) != 0)
-                            std.mem.span(called_name_ptr)
-                        else
-                            "";
+                const called_name_ptr = c.LLVMGetValueName(called_val);
+                const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                    std.mem.span(called_name_ptr)
+                else
+                    "";
 
-                        // Track allocations
-                        if (isAllocationFunction(called_name)) {
-                            try allocations.append(ctx.allocator, inst);
-                        }
+                if (isAllocationFunction(called_name)) {
+                    try allocations.append(ctx.allocator, inst);
+                }
 
-                        // Track error returns
-                        if (isErrorReturningFunction(called_name)) {
-                            try error_returns.append(ctx.allocator, inst);
-                        }
-                    }
+                if (isErrorReturningFunction(called_name)) {
+                    try error_returns.append(ctx.allocator, inst);
                 }
             }
 
