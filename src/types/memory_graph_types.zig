@@ -241,6 +241,10 @@ pub const AllocNode = struct {
     zone: ZoneKind = .unknown,
     /// Language of the module/function where this allocation was made.
     alloc_lang: Language = .unknown,
+    /// Callee name that performed the allocation (e.g., "__rust_alloc", "malloc", "into_raw").
+    /// Used by danger_surface and other passes to detect intentional ownership transfer patterns
+    /// (Box::leak, into_raw, ManuallyDrop, forget) that legitimize cross-language frees.
+    alloc_callee: ?[]const u8 = null,
     /// Resource family of the allocator (from family registry).
     /// null = unclassified; .invalid = lookup failed.
     alloc_family: ?FamilyId = null,

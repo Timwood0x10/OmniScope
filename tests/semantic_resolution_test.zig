@@ -74,6 +74,7 @@ test "Memory graph integration" {
         .heap_alloc,
         .safe,
         .c,
+        null,
     );
 
     // Test adding a free

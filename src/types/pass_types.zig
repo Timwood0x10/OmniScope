@@ -375,17 +375,49 @@ pub const PassContext = struct {
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,
             .early_exit = false,
             .global_alloc_tracker = GlobalAllocTracker.init(allocator),
-            .memory_graph = try memory_graph_mod.MemoryGraph.init(allocator),
-            .danger_surface_relevant = std.AutoHashMap(u64, void).init(allocator),
-            .ffi_auto_relevant = std.AutoHashMap(u64, void).init(allocator),
-            .relevant_functions = std.AutoHashMap(u64, void).init(allocator),
+            .memory_graph = try memory_graph_mod.MemoryGraph.initWithCapacity(allocator, .{
+                .nodes = 16384,
+                .call_arg_by_ptr = 80000,
+                .call_arg_by_callee = 4096,
+                .call_ret_by_callee = 2048,
+                .call_ret_by_ptr = 20480,
+                .alias_to_canonical = 16384,
+                .weak_aliases = 1024,
+                .bb_edges = 512,
+                .reachability_cache = 16384,
+                .func_counters = 4096,
+                .content_sources = 16384,
+            }),
+            .danger_surface_relevant = blk: {
+                var m = std.AutoHashMap(u64, void).init(allocator);
+                try m.ensureTotalCapacity(8192);
+                break :blk m;
+            },
+            .ffi_auto_relevant = blk: {
+                var m = std.AutoHashMap(u64, void).init(allocator);
+                try m.ensureTotalCapacity(8192);
+                break :blk m;
+            },
+            .relevant_functions = blk: {
+                var m = std.AutoHashMap(u64, void).init(allocator);
+                try m.ensureTotalCapacity(4096);
+                break :blk m;
+            },
             .CallSiteIndex = CallSiteIndex.init(allocator),
-            .cross_edge_by_callee = std.StringHashMap(std.ArrayList(u32)).init(allocator),
+            .cross_edge_by_callee = blk: {
+                var m = std.StringHashMap(std.ArrayList(u32)).init(allocator);
+                try m.ensureTotalCapacity(1024);
+                break :blk m;
+            },
             .semantics_call_graph = null,
             .ffi_set_cache = null,
             .danger_surfaces_cache = null,
             .danger_path_visited_cache = null,
-            .function_surface = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator),
+            .function_surface = blk: {
+                var m = std.AutoHashMap(u64, surface_classifier.FunctionSurface).init(allocator);
+                try m.ensureTotalCapacity(4096);
+                break :blk m;
+            },
             .has_ffi_boundary = true,
             .suppression_stats = .{},
             .semantic_resolution = null,

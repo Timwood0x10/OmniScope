@@ -136,6 +136,20 @@ pub fn detectCrossLanguageFree(
     // Same family → no cross-language issue
     if (alloc_family == free_family) return null;
 
+    // Check for intentional ownership transfer patterns (e.g., Box::leak → C free())
+    // These are legitimate cross-language frees where ownership was explicitly transferred
+    const intentional_patterns = [_][]const u8{
+        "leak", "into_raw", "ManuallyDrop", "forget",
+        "donate", "transfer_ownership", "export_ptr", "handoff",
+        "ffi_export", "c_export",
+    };
+    for (intentional_patterns) |pattern| {
+        if (std.mem.indexOf(u8, alloc_func, pattern) != null) {
+            log.debug("CROSS-LANG-FREE: Intentional ownership transfer detected in alloc={s}, skipping", .{alloc_func});
+            return null;
+        }
+    }
+
     // Check for safe cross-family patterns
     if (isSafeCrossPattern(alloc_family, free_family, free_func)) {
         log.debug("CROSS-LANG-FREE: Safe pattern detected, skipping", .{});

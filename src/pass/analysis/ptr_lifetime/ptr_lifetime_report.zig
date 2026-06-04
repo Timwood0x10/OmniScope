@@ -17,6 +17,8 @@ const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const PtrInfo = @import("ptr_lifetime_types.zig").PtrInfo;
 const ResourceType = @import("ptr_lifetime_types.zig").ResourceType;
 const is_extern_function = @import("ptr_lifetime_types.zig").is_extern_function;
+const ptr_utils = @import("ptr_lifetime_utils.zig");
+const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
 const provenance = @import("../provenance.zig");
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const escape_mod = @import("../../../semantics/resource/escape.zig");
@@ -550,6 +552,15 @@ pub fn reportCrossLanguageFree(
     inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
 ) !void {
+    // Suppress false positives for intentional ownership transfer patterns
+    // (e.g., Box::leak → C free(), into_raw → C free(), ManuallyDrop, forget)
+    if (isIntentionalOwnershipTransfer(func_name)) {
+        diag.info("[SUPPRESSED] Cross-language free in {s}: intentional ownership transfer detected (alloc={s}, free={s})", .{
+            func_name, alloc_lang, free_lang,
+        });
+        return;
+    }
+
     _ = inst;
     const location = Location.init(func_name);
 

@@ -43,6 +43,8 @@ const ptrOriginatesFromRustAlloc = rust_ffi_helpers.ptrOriginatesFromRustAlloc;
 const isPureConsumptionFunction = rust_ffi_helpers.isPureConsumptionFunction;
 
 const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKind;
+const ptr_lifetime_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
+const isIntentionalOwnershipTransfer = ptr_lifetime_utils.isIntentionalOwnershipTransfer;
 
 /// Auditor type (forward declaration - will be resolved at compile time)
 const Auditor = @import("rust_ffi_auditor.zig").RustFfiAuditor;
@@ -459,6 +461,12 @@ pub fn detectOwnershipTransferViolations(auditor: *Auditor, func: c.LLVMValueRef
             // correct way to free __rust_alloc memory. Real cross-lang free
             // uses C free() or a language-specific deallocator.
             if (std.mem.indexOf(u8, free_entry.free_name, "__rust_dealloc") != null) {
+                continue;
+            }
+
+            // Suppress FP: intentional ownership transfer (e.g., Box::leak → C free)
+            if (isIntentionalOwnershipTransfer(func_name)) {
+                diag.info("[SUPPRESSED] FFIAuditor: ownership violation in {s}: intentional ownership transfer detected", .{func_name});
                 continue;
             }
 

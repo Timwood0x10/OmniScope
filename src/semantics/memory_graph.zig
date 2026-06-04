@@ -106,6 +106,22 @@ pub const MemoryGraph = struct {
     /// families via registry lookup. null = legacy language-only mode (no family data).
     family_registry: ?*ResourceFamilyRegistry,
 
+    /// Capacity hints for HashMap pre-allocation (avoids rehash during population).
+    /// Based on sqlite3 profile data; conservative over-estimates are fine.
+    pub const CapacityHints = struct {
+        nodes: usize = 0,
+        call_arg_by_ptr: usize = 0,
+        call_arg_by_callee: usize = 0,
+        call_ret_by_callee: usize = 0,
+        call_ret_by_ptr: usize = 0,
+        alias_to_canonical: usize = 0,
+        weak_aliases: usize = 0,
+        bb_edges: usize = 0,
+        reachability_cache: usize = 0,
+        func_counters: usize = 0,
+        content_sources: usize = 0,
+    };
+
     /// Initializes a new memory graph.
     pub fn init(allocator: std.mem.Allocator) MemoryGraphError!MemoryGraph {
         return MemoryGraph{
@@ -128,6 +144,24 @@ pub const MemoryGraph = struct {
             .node_pool = try std.ArrayList(*AllocNode).initCapacity(allocator, 32),
             .family_registry = null,
         };
+    }
+
+    /// Initializes a new memory graph with pre-allocated HashMap capacities.
+    /// Use this for large-scale analysis (e.g. sqlite3) to avoid rehash overhead.
+    pub fn initWithCapacity(allocator: std.mem.Allocator, hints: CapacityHints) MemoryGraphError!MemoryGraph {
+        var mg = try init(allocator);
+        if (hints.nodes > 0) try mg.nodes.ensureTotalCapacity(@as(u32, @intCast(hints.nodes)));
+        if (hints.call_arg_by_ptr > 0) try mg.call_arg_by_ptr.ensureTotalCapacity(@as(u32, @intCast(hints.call_arg_by_ptr)));
+        if (hints.call_arg_by_callee > 0) try mg.call_arg_by_callee.ensureTotalCapacity(@as(u32, @intCast(hints.call_arg_by_callee)));
+        if (hints.call_ret_by_callee > 0) try mg.call_ret_by_callee.ensureTotalCapacity(@as(u32, @intCast(hints.call_ret_by_callee)));
+        if (hints.call_ret_by_ptr > 0) try mg.call_ret_by_ptr.ensureTotalCapacity(@as(u32, @intCast(hints.call_ret_by_ptr)));
+        if (hints.alias_to_canonical > 0) try mg.alias_to_canonical.ensureTotalCapacity(@as(u32, @intCast(hints.alias_to_canonical)));
+        if (hints.weak_aliases > 0) try mg.weak_aliases.ensureTotalCapacity(@as(u32, @intCast(hints.weak_aliases)));
+        if (hints.bb_edges > 0) try mg.bb_edges.ensureTotalCapacity(@as(u32, @intCast(hints.bb_edges)));
+        if (hints.reachability_cache > 0) try mg.reachability_cache.ensureTotalCapacity(@as(u32, @intCast(hints.reachability_cache)));
+        if (hints.func_counters > 0) try mg.func_counters.ensureTotalCapacity(@as(u32, @intCast(hints.func_counters)));
+        if (hints.content_sources > 0) try mg.content_sources.ensureTotalCapacity(@as(u32, @intCast(hints.content_sources)));
+        return mg;
     }
 
     /// Inject a resource family registry for automatic family classification.
@@ -231,6 +265,7 @@ pub const MemoryGraph = struct {
     /// Creates a new allocation node and returns its ID.
     /// Accepts raw pointer values as u64 to avoid cross-cimport type mismatches.
     /// `kind` indicates how this allocation was created (alloca, heap, resource, etc.).
+    /// `alloc_callee_opt` optionally records the callee name for ownership transfer detection.
     pub fn trackAlloc(
         graph: *MemoryGraph,
         alloc_inst_ptr: u64,
@@ -238,6 +273,7 @@ pub const MemoryGraph = struct {
         kind: SourceKind,
         alloc_zone: ZoneKind,
         alloc_lang: Language,
+        alloc_callee_opt: ?[]const u8,
     ) MemoryGraphError!u64 {
         const id = graph.next_id;
         graph.next_id += 1;
@@ -262,6 +298,7 @@ pub const MemoryGraph = struct {
             .source_kind = kind,
             .zone = alloc_zone,
             .alloc_lang = alloc_lang,
+            .alloc_callee = alloc_callee_opt,
             .free_sites = try std.ArrayList(FreeRecord).initCapacity(graph.allocator, 4),
             .escapes = null,
             // v0.2.0: Multi-language lifecycle tracking

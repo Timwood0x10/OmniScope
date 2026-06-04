@@ -38,6 +38,8 @@ const FamilyId = mg_types.FamilyId;
 const contract_db = @import("../../../resource/ffi_contract_db.zig");
 const FFIContractDB = contract_db.FFIContractDB;
 const cross_lang_detector = @import("cross_lang_free_detector.zig");
+const ptr_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
+const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -1500,6 +1502,15 @@ pub const FreeValidationPass = struct {
             std.mem.span(caller_name_ptr)
         else
             "unknown";
+
+        // Suppress false positives for intentional ownership transfer patterns
+        // (e.g., Box::leak → C free(), into_raw → C free())
+        if (isIntentionalOwnershipTransfer(caller_name)) {
+            diag.info("[SUPPRESSED] Cross-language free in {s}: intentional ownership transfer (alloc={s}, free={s})", .{
+                caller_name, cross_issue.alloc_family.displayName(), cross_issue.free_family.family.displayName(),
+            });
+            return;
+        }
 
         const location = Location.init(caller_name);
 

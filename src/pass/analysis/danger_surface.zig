@@ -26,6 +26,7 @@ const PassKind = @import("../pass.zig").PassKind;
 const MemoryGraph = @import("../../semantics/memory_graph.zig").MemoryGraph;
 const DangerSurface = @import("../../types/memory_graph_types.zig").DangerSurface;
 const DangerPathKind = @import("../../semantics/memory_graph.zig").DangerPathKind;
+const c = @import("../../ir/llvm_raw.zig").c;
 
 pub const DangerSurfacePass = struct {
     pub const name = "danger-surface";
@@ -62,38 +63,68 @@ pub const DangerSurfacePass = struct {
             }
         }
 
-        // visited set for alias closure — shared across all traversals.
-        // traceAliasClosure is idempotent (skips already-relevant allocs), so sharing
-        // visited is safe and avoids O(N × alias_size) revisits.
+        // visited set for alias closure — pre-allocated to node count.
         var visited = std.AutoHashMap(u64, void).init(ctx.allocator);
         defer visited.deinit();
+        try visited.ensureTotalCapacity(@as(u32, @intCast(@max(mg.nodes.count(), 16384))));
 
         const t0 = std.time.nanoTimestamp();
         var total_alias_traces: u64 = 0;
         var cross_lang_frees: u64 = 0;
 
-        // v0.1.9: Phase 0 fallback REMOVED — ptr-lifetime now runs BEFORE danger-surface,
-        // so MemoryGraph is guaranteed to be populated. No need for CrossLangEdge name-matching.
-        // If MemoryGraph is somehow still empty, that indicates a ptr-lifetime bug, not a
-        // danger-surface issue. Log a diagnostic warning instead.
         const mg_has_data = mg.call_args.items.len > 0 or mg.call_rets.items.len > 0;
         if (!mg_has_data) {
             diag.warn("[P1-1] DangerSurfacePass: MemoryGraph is empty despite ptr-lifetime dep — ptr-lifetime may have skipped this module", .{});
         }
 
-        // PERF v2: Unified single-pass algorithm replacing the old Phase 1 + Phase 2.
-        // Old Phase 1 iterated call_arg_by_callee per FFI boundary — O(FFI_count × avg_args_per_callee)
-        // which was 72K × ~1.4K = 101M iterations (40s). Old Phase 2 iterated nodes — O(N) = 17K.
-        // New unified pass iterates only nodes — O(N × avg_args_per_ptr) — same as old Phase 2
-        // but now covers FFI arg/ret detection too, since getCallArgsForPtr + ffi_set.contains
-        // is equivalent to iterating call_arg_by_callee per FFI boundary.
+        // OPTIMIZATION 2: Integer hash set for O(1) FFI boundary name lookup.
+        // Avoids StringHashMap's eql string comparison on every contains().
         var ffi_set = std.StringHashMap(void).init(ctx.allocator);
         defer ffi_set.deinit();
+        try ffi_set.ensureTotalCapacity(@as(u32, @intCast(ffi_count * 2)));
+        var ffi_hash_set = std.AutoHashMap(u64, void).init(ctx.allocator);
+        defer ffi_hash_set.deinit();
+        try ffi_hash_set.ensureTotalCapacity(@as(u32, @intCast(ffi_count * 2)));
         for (ffis) |surface| {
             if (surface.is_ffi_boundary) {
                 ffi_set.put(surface.callee_name, {}) catch {};
+                const hash = std.hash.Wyhash.hash(0, surface.callee_name);
+                ffi_hash_set.put(hash, {}) catch {};
             }
         }
+
+        // OPTIMIZATION 3: FAST PATH — pre-build set of functions that have FFI calls.
+        var ffi_func_set = std.AutoHashMap(u64, void).init(ctx.allocator);
+        defer ffi_func_set.deinit();
+        {
+            for (mg.call_args.items) |arg_edge| {
+                if (ffi_hash_set.contains(std.hash.Wyhash.hash(0, arg_edge.callee_name))) {
+                    const inst = @as(c.LLVMValueRef, @ptrFromInt(arg_edge.caller_inst));
+                    if (@intFromPtr(inst) == 0) continue;
+                    const bb = c.LLVMGetInstructionParent(inst);
+                    if (@intFromPtr(bb) == 0) continue;
+                    const func = c.LLVMGetBasicBlockParent(bb);
+                    if (@intFromPtr(func) == 0) continue;
+                    ffi_func_set.put(@as(u64, @intFromPtr(func)), {}) catch {};
+                }
+            }
+            for (mg.call_rets.items) |ret_edge| {
+                if (ffi_hash_set.contains(std.hash.Wyhash.hash(0, ret_edge.callee_name))) {
+                    const inst = @as(c.LLVMValueRef, @ptrFromInt(ret_edge.caller_inst));
+                    if (@intFromPtr(inst) == 0) continue;
+                    const bb = c.LLVMGetInstructionParent(inst);
+                    if (@intFromPtr(bb) == 0) continue;
+                    const func = c.LLVMGetBasicBlockParent(bb);
+                    if (@intFromPtr(func) == 0) continue;
+                    ffi_func_set.put(@as(u64, @intFromPtr(func)), {}) catch {};
+                }
+            }
+        }
+
+        // OPTIMIZATION 4: Danger path cache — avoid repeated isOnDangerPath for same ptr_val.
+        var danger_cache = std.AutoHashMap(u64, DangerPathKind).init(ctx.allocator);
+        defer danger_cache.deinit();
+        try danger_cache.ensureTotalCapacity(4096);
 
         var node_iter = mg.nodes.iterator();
         while (node_iter.next()) |entry| {
@@ -104,46 +135,72 @@ pub const DangerSurfacePass = struct {
             const node = entry.value_ptr.*;
             var on_danger = false;
 
-            // (1) Unsafe zone
+            // (1) Unsafe zone — always check (no FFI dependency)
             if (node.zone == .unsafe) on_danger = true;
 
-            // (2) Cross-language lifecycle (alloc and free in different languages)
+            // (2) Cross-language lifecycle — always check (no FFI dependency)
+            // Suppress intentional ownership transfers (Box::leak, into_raw,
+            // ManuallyDrop, forget) where cross-lang free is legitimate.
             if (!on_danger and node.freed and node.free_lang != null and node.alloc_lang != node.free_lang.?) {
-                on_danger = true;
-                cross_lang_frees += 1;
+                if (!isIntentionalOwnershipTransfer(node.alloc_callee)) {
+                    on_danger = true;
+                    cross_lang_frees += 1;
+                }
             }
 
-            // Cache call edge indices for this ptr — used in both check (3)/(4) and marking phase.
-            // Avoids redundant HashMap lookups in call_arg_by_ptr / call_ret_by_ptr.
+            // FAST PATH: if (1)(2) didn't trigger, check if alloc's function has FFI calls.
+            // If not, skip expensive FFI arg/ret + alias walk entirely.
+            if (!on_danger and ffi_func_set.count() > 0) {
+                const alloc_inst = @as(c.LLVMValueRef, @ptrFromInt(node.alloc_inst));
+                if (@intFromPtr(alloc_inst) != 0) {
+                    const bb = c.LLVMGetInstructionParent(alloc_inst);
+                    if (@intFromPtr(bb) != 0) {
+                        const func = c.LLVMGetBasicBlockParent(bb);
+                        if (@intFromPtr(func) != 0) {
+                            if (!ffi_func_set.contains(@as(u64, @intFromPtr(func)))) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
             var cached_arg_indices: []const u32 = &.{};
             var cached_ret_indices: []const u32 = &.{};
 
-            // (3) FFI arg — check if ptr flows into any FFI boundary call
+            // (3) FFI arg — use integer hash set for O(1) lookup
             if (!on_danger) {
                 cached_arg_indices = mg.getCallArgsForPtr(ptr_val);
                 for (cached_arg_indices) |aidx| {
-                    if (ffi_set.contains(mg.call_args.items[aidx].callee_name)) {
+                    if (ffi_hash_set.contains(std.hash.Wyhash.hash(0, mg.call_args.items[aidx].callee_name))) {
                         on_danger = true;
                         break;
                     }
                 }
             }
 
-            // (4) FFI ret — check if ptr returns from FFI boundary
+            // (4) FFI ret — use integer hash set for O(1) lookup
             if (!on_danger) {
                 cached_ret_indices = mg.getCallRetsForPtr(ptr_val);
                 for (cached_ret_indices) |ridx| {
-                    if (ffi_set.contains(mg.call_rets.items[ridx].callee_name)) {
+                    if (ffi_hash_set.contains(std.hash.Wyhash.hash(0, mg.call_rets.items[ridx].callee_name))) {
                         on_danger = true;
                         break;
                     }
                 }
             }
 
-            // (5) Alias closure — only walk aliases if cheap checks failed but node has aliases
+            // (5) Alias closure with danger path cache
             if (!on_danger and node.aliases.count() > 0) {
-                visited.clearRetainingCapacity();
-                const path_kind = mg.isOnDangerPath(ptr_val, ffis, &visited, &ffi_set);
+                const cached_kind = danger_cache.get(ptr_val);
+                const path_kind = if (cached_kind) |k|
+                    k
+                else blk: {
+                    visited.clearRetainingCapacity();
+                    const k = mg.isOnDangerPath(ptr_val, ffis, &visited, &ffi_set);
+                    danger_cache.put(ptr_val, k) catch {};
+                    break :blk k;
+                };
                 on_danger = path_kind != .none;
             }
 
@@ -172,13 +229,15 @@ pub const DangerSurfacePass = struct {
             };
         }
 
-        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | {d:.0}ms (cross_lang_free={d} alias_traces={d})", .{
+        diag.info("[P1-1] DangerSurfacePass: {d} FFI, {d} allocs, {d} funcs | {d:.0}ms (cross_lang_free={d} alias_traces={d} ffi_funcs={d} cache={d})", .{
             ffi_count,
             ctx.danger_surface_relevant.count(),
             ctx.relevant_functions.count(),
             @as(u32, @intFromFloat(@as(f64, @floatFromInt(std.time.nanoTimestamp() - t0)) / 1_000_000.0)),
             cross_lang_frees,
             total_alias_traces,
+            ffi_func_set.count(),
+            danger_cache.count(),
         });
     }
 };
@@ -212,6 +271,37 @@ fn traceAliasClosure(
     }
 }
 
+/// Check if an allocation's callee indicates intentional ownership transfer
+/// (not a leak or cross-language free bug).
+///
+/// Covers patterns like Box::leak(), Box::into_raw(), ManuallyDrop,
+/// std::mem::forget, and functions with explicit transfer semantics
+/// (leak/donate/transfer/export/handoff). When these patterns are detected,
+/// the cross-language free is legitimate — ownership was deliberately
+/// transferred to another language's deallocator.
+///
+/// This mirrors the logic in cross_lang_dataflow.isIntentionalOwnershipTransfer
+/// but operates on AllocNode.alloc_callee (a single field) rather than
+/// CrossLangAlloc (which has both alloc_callee and alloc_func).
+fn isIntentionalOwnershipTransfer(alloc_callee: ?[]const u8) bool {
+    const callee = alloc_callee orelse return false;
+
+    // Known intentional transfer callee names (mangled Rust symbols)
+    const intentional_patterns = [_][]const u8{
+        "leak", // Box::leak
+        "into_raw", // Box::into_raw, CString::into_raw, Vec::into_raw
+        "ManuallyDrop", // ManuallyDrop::new
+        "forget", // std::mem::forget
+    };
+    for (intentional_patterns) |pattern| {
+        if (std.mem.indexOf(u8, callee, pattern) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 test "DangerSurfacePass - isOnDangerPath integration with FFI arg" {
     const testing = std.testing;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -224,7 +314,7 @@ test "DangerSurfacePass - isOnDangerPath integration with FFI arg" {
     var graph = try MemoryGraph.init(allocator);
     defer graph.deinit();
 
-    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c, null);
     try graph.trackCallArg(0x2000, "ffi_func", 0xA001, 0);
 
     var ffis = [_]DangerSurface{
@@ -250,7 +340,7 @@ test "DangerSurfacePass - zero FFI boundaries returns early" {
     var graph = try MemoryGraph.init(allocator);
     defer graph.deinit();
 
-    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c);
+    _ = try graph.trackAlloc(0x1000, 0xA001, .heap_alloc, .safe, .c, null);
     _ = try graph.trackFree(0x3000, 0xA001, .c, 0);
 
     var empty_ffis = [_]DangerSurface{};
@@ -260,4 +350,33 @@ test "DangerSurfacePass - zero FFI boundaries returns early" {
     const dpk = graph.isOnDangerPath(0xA001, &empty_ffis, &visited, null);
 
     try testing.expectEqual(DangerPathKind.none, dpk);
+}
+
+test "isIntentionalOwnershipTransfer - detects Box::leak pattern" {
+    const t = std.testing;
+    try t.expect(isIntentionalOwnershipTransfer("_ZN5alloc5boxed19Box$LT$T$GT$4leak17h") == true);
+    try t.expect(isIntentionalOwnershipTransfer("_R...leak...") == true);
+}
+
+test "isIntentionalOwnershipTransfer - detects into_raw pattern" {
+    const t = std.testing;
+    try t.expect(isIntentionalOwnershipTransfer("_ZN5alloc5boxed19Box$LT$T$GT$9into_raw17h") == true);
+}
+
+test "isIntentionalOwnershipTransfer - detects forget and ManuallyDrop" {
+    const t = std.testing;
+    try t.expect(isIntentionalOwnershipTransfer("_ZN4core3mem5forget17h") == true);
+    try t.expect(isIntentionalOwnershipTransfer("_ZN8core6mem13ManuallyDrop") == true);
+}
+
+test "isIntentionalOwnershipTransfer - rejects normal allocators" {
+    const t = std.testing;
+    try t.expect(isIntentionalOwnershipTransfer("__rust_alloc") == false);
+    try t.expect(isIntentionalOwnershipTransfer("malloc") == false);
+    try t.expect(isIntentionalOwnershipTransfer("free") == false);
+}
+
+test "isIntentionalOwnershipTransfer - null callee returns false" {
+    const t = std.testing;
+    try t.expect(isIntentionalOwnershipTransfer(null) == false);
 }

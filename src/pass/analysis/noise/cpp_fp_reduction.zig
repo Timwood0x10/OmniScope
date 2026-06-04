@@ -57,6 +57,8 @@ const isCppNewAllocation = cpp_helpers.isCppNewAllocation;
 const isCppAbiInternalFunction = cpp_helpers.isCppAbiInternalFunction;
 const isMeyersSingletonPattern = cpp_helpers.isMeyersSingletonPattern;
 const is_likely_intentional_pattern = cpp_helpers.is_likely_intentional_pattern;
+const ptr_lifetime_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
+const isIntentionalOwnershipTransfer = ptr_lifetime_utils.isIntentionalOwnershipTransfer;
 pub const isAllocationByName = cpp_helpers.isAllocationByName;
 const isKnownRcContainerFunction = cpp_helpers.isKnownRcContainerFunction;
 const isRefCountOperation = cpp_helpers.isRefCountOperation;
@@ -526,6 +528,10 @@ pub fn detectViolations(
 
                     if (boundary_id == 0) {
                         diag.warn("Failed to register FFI boundary for analysis", .{});
+                    } else if (isIntentionalOwnershipTransfer(alloc.func_name)) {
+                        // Suppress FP: intentional ownership transfer (e.g., Box::leak → C free)
+                        diag.info("[SUPPRESSED] Ownership violation in {s}: intentional ownership transfer detected", .{alloc.func_name});
+                        continue; // Skip fact_store insert + stats increment below
                     } else if (boundary_analyzer.checkOwnershipViolation(
                         resource_fact,
                         .free,
@@ -627,6 +633,12 @@ pub fn detectCrossLangAllocMismatch(
 
             const flows_to_free = canReach(flow_graph, alloc.ptr_value_id, free_site.ptr_value_id, &visited);
             if (!flows_to_free) continue;
+
+            // Suppress FP: intentional ownership transfer (e.g., Box::leak → C free)
+            if (isIntentionalOwnershipTransfer(alloc.func_name)) {
+                diag.info("[SUPPRESSED] Cross-lang alloc mismatch in {s}: intentional ownership transfer", .{alloc.func_name});
+                continue;
+            }
 
             const vuln_id = ctx.getNextVulnId();
             ctx.addIssue(&Issue.initWithReason(

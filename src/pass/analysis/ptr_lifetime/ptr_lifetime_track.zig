@@ -86,7 +86,7 @@ pub fn handleAlloca(ctx: *TrackContext) !void {
 
     if (ctx.mgEffective()) |mg| {
         const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-        _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, ctx.zone, ctx.lang) catch {};
+        _ = mg.trackAlloc(inst_ptr, inst_ptr, .alloca, ctx.zone, ctx.lang, null) catch {};
     }
 }
 
@@ -126,7 +126,7 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
             if (ctx.mgEffective()) |mg| {
                 const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
                 const alloc_lang = classifyAllocLanguageEnum(callee_name, ctx.lang) orelse ctx.lang;
-                _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang) catch {};
+                _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang, callee_name) catch {};
                 mg.recordFuncAlloc(ctx.funcPtr());
             }
         }
@@ -147,7 +147,7 @@ pub fn handleCallInvoke(ctx: *TrackContext) !void {
 
         if (ctx.mgEffective()) |mg| {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang) catch {};
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, .resource_alloc, ctx.zone, ctx.lang, callee_name) catch {};
             mg.recordFuncAlloc(ctx.funcPtr());
         }
     }
@@ -210,7 +210,7 @@ fn handleHeapAlloc(ctx: *TrackContext, callee_name: []const u8) void {
     if (ctx.mgEffective()) |mg| {
         const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
         const alloc_lang = classifyAllocLanguageEnum(callee_name, ctx.lang) orelse ctx.lang;
-        _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang) catch return;
+        _ = mg.trackAlloc(inst_ptr, inst_ptr, .heap_alloc, ctx.zone, alloc_lang, callee_name) catch return;
         mg.recordFuncAlloc(ctx.funcPtr());
     }
 
@@ -447,7 +447,7 @@ pub fn handleLoad(ctx: *TrackContext) !void {
         const content_kind = mg.getContentSource(src_ptr);
         if (content_kind != .unknown) {
             const inst_ptr = @as(u64, @intFromPtr(ctx.inst));
-            _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, ctx.zone, ctx.lang) catch {};
+            _ = mg.trackAlloc(inst_ptr, inst_ptr, content_kind, ctx.zone, ctx.lang, null) catch {};
         }
     }
 

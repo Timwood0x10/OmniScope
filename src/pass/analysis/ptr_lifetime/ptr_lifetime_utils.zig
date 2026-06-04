@@ -41,8 +41,32 @@ pub fn isCppDestructorOrConstructor(func_name: []const u8) bool {
     return false;
 }
 
-/// Check if a function name indicates intentional ownership transfer
+/// Check if a function name indicates intentional ownership transfer.
+/// Covers:
+///   - Factory prefixes/suffixes (create, new, make, alloc, from_raw, etc.)
+///   - Rust-specific patterns (Box::leak, into_raw, ManuallyDrop, forget)
+///   - FFI transfer semantics (donate, transfer_ownership, export_ptr, handoff, ffi_export, c_export)
 pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
+    // Pattern 1: Known intentional leak/transfer callee names (mangled Rust symbols)
+    const intentional_patterns = [_][]const u8{
+        "leak",       // Box::leak — mangled name contains "leak"
+        "into_raw",   // Box::into_raw — ownership transfer to raw ptr
+        "ManuallyDrop", // ManuallyDrop::new — suppresses drop/free
+        "forget",     // std::mem::forget — intentionally leaks
+        "donate",     // Ownership donation pattern
+        "transfer_ownership", // Explicit transfer
+        "export_ptr", // FFI export pointer
+        "handoff",    // Handoff pattern
+        "ffi_export", // FFI export marker
+        "c_export",   // C export marker
+    };
+    for (intentional_patterns) |pattern| {
+        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            return true;
+        }
+    }
+
+    // Pattern 2: Factory prefix/suffix patterns
     const factory_prefixes = [_][]const u8{
         "create", "Create", "CREATE",
         "new",    "New",    "NEW",

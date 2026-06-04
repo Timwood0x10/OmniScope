@@ -19,7 +19,7 @@ test "trackAlloc - creates allocation node (happy path)" {
     const ptr_val: u64 = 0x12345678;
     const alloc_inst: u64 = 0x111;
 
-    const node_id = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    const node_id = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try std.testing.expect(node_id > 0, "Should return valid node ID");
 
     const alloc_info = MemoryGraph.getAllocInfo(&graph, ptr_val);
@@ -34,7 +34,7 @@ test "trackFree - marks allocation as freed (happy path)" {
     const alloc_inst: u64 = 0x111;
     const free_inst: u64 = 0x222;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     _ = MemoryGraph.trackFree(&graph, ptr_val, free_inst, .c);
 
     const is_freed = MemoryGraph.isFreed(&graph, ptr_val);
@@ -61,7 +61,7 @@ test "trackAlias - creates alias relationship (happy path)" {
     const alias_val: u64 = 0x2000;
     const alloc_inst: u64 = 0x111;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try MemoryGraph.trackAlias(&graph, alias_val, ptr_val, false);
 
     // Both should resolve to the same allocation
@@ -78,7 +78,7 @@ test "trackAliasStrong - creates strong alias (happy path)" {
     const alias_val: u64 = 0x2000;
     const alloc_inst: u64 = 0x111;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try MemoryGraph.trackAliasStrong(&graph, alias_val, ptr_val);
 
     const source1 = MemoryGraph.getSourceKind(&graph, ptr_val);
@@ -99,7 +99,7 @@ test "isUseAfterFreeViaAlias - detects UAF when pointer used after free (happy p
     const alloc_inst: u64 = 0x111;
     const free_inst: u64 = 0x222;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try MemoryGraph.trackFree(&graph, ptr_val, free_inst, .c);
 
     const result = MemoryGraph.isUseAfterFreeViaAlias(&graph, ptr_val, use_inst);
@@ -113,7 +113,7 @@ test "isUseAfterFreeViaAlias - returns null when pointer not freed (boundary)" {
     const ptr_val: u64 = 0x12345678;
     const alloc_inst: u64 = 0x111;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     // Don't free
 
     const result = MemoryGraph.isUseAfterFreeViaAlias(&graph, ptr_val, 0xBBB);
@@ -142,7 +142,7 @@ test "findDangerousAliases - returns aliases of freed pointer (happy path)" {
     const alloc_inst: u64 = 0x111;
     const free_inst: u64 = 0x222;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try MemoryGraph.trackAlias(&graph, alias1, ptr_val, false);
     try MemoryGraph.trackAlias(&graph, alias2, ptr_val, false);
     try MemoryGraph.trackFree(&graph, ptr_val, free_inst, .c);
@@ -160,7 +160,7 @@ test "findDangerousAliases - returns empty for non-freed pointer (boundary)" {
     const ptr_val: u64 = 0x1000;
     const alloc_inst: u64 = 0x111;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     // Don't free
 
     const aliases = try MemoryGraph.findDangerousAliases(&graph, ptr_val, std.testing.allocator);
@@ -180,7 +180,7 @@ test "isOnDangerPath - returns safe for non-FFI pointer (happy path)" {
     const ptr_val: u64 = 0x1000;
     const alloc_inst: u64 = 0x111;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
 
     // This is a simplified test - full isOnDangerPath testing requires
     // PassContext with FFI boundaries, which is beyond scope here
@@ -200,7 +200,7 @@ test "trackCallArg - records pointer passed to function (happy path)" {
     const alloc_inst: u64 = 0x111;
     const call_inst: u64 = 0x222;
 
-    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c);
+    _ = try MemoryGraph.trackAlloc(&graph, alloc_inst, ptr_val, .heap, .unknown, .c, null);
     try MemoryGraph.trackCallArg(&graph, call_inst, "free", ptr_val, 0);
 
     const is_passed = MemoryGraph.isPassedAsArg(&graph, ptr_val);
