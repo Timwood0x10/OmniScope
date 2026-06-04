@@ -143,7 +143,10 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
     if (config.config_path) |cp| {
         if (file_config.loadFromFile(allocator, cp)) |file_cfg_val| {
             var file_cfg = file_cfg_val;
-            defer file_cfg.deinit();
+            defer {
+                // Inline cleanup: free lang_registry heap memory (FileConfig owns it)
+                if (file_cfg.lang_registry) |*reg| reg.deinit();
+            }
             if (file_cfg.lang_registry) |*file_reg| {
                 // Merge file-based overrides into CLI registry (CLI already added, wins on conflict)
                 // Exact matches: only add if not already present in CLI registry
