@@ -523,6 +523,19 @@ pub const CrossLangDataFlow = struct {
                 continue;
             }
 
+            // ── INTENTIONAL OWNERSHIP TRANSFER CHECK ──
+            // Distinguish intentional leaks (Box::leak, into_raw, ManuallyDrop,
+            // forget) from forgotten frees. These are legitimate FFI patterns
+            // where ownership is deliberately transferred to another language.
+            if (isIntentionalOwnershipTransfer(&alloc)) {
+                log.debug("INTENTIONAL-TRANSFER: Alloc 0x{x} via {s} in {s} is intentional ownership transfer, not a leak", .{
+                    alloc.ptr_val,
+                    alloc.alloc_callee,
+                    alloc.alloc_func,
+                });
+                continue;
+            }
+
             // ── T4: SUMMARY-BASED PROPAGATION CHECK ──
             // Query the propagation engine to check if this allocation's ownership
             // was transferred to a callee function. If so, suppress leak report.
@@ -1601,6 +1614,46 @@ fn calculateOrphanConfidence(alloc: CrossLangAlloc) f32 {
     return std.math.clamp(confidence, 0.0, 1.0);
 }
 
+/// Check if an allocation is an intentional ownership transfer (not a leak).
+/// Covers patterns like Box::leak(), Box::into_raw(), ManuallyDrop,
+/// and functions with transfer semantics (leak/donate/transfer/export/handoff).
+///
+/// Returns true if the allocation should be suppressed as intentional.
+fn isIntentionalOwnershipTransfer(alloc: *const CrossLangAlloc) bool {
+    // Pattern 1: Known intentional leak/transfer callee names (mangled Rust symbols)
+    const intentional_callees = [_][]const u8{
+        "leak", // Box::leak — mangled name contains "leak"
+        "into_raw", // Box::into_raw — ownership transfer to raw ptr
+        "ManuallyDrop", // ManuallyDrop::new — suppresses drop/free
+        "forget", // std::mem::forget — intentionally leaks
+    };
+    for (intentional_callees) |pattern| {
+        if (std.mem.indexOf(u8, alloc.alloc_callee, pattern) != null) {
+            return true;
+        }
+    }
+
+    // Pattern 2: Function name indicates ownership transfer semantics
+    const transfer_keywords = [_][]const u8{
+        "leak",
+        "donate",
+        "transfer_ownership",
+        "export_ptr",
+        "handoff",
+        "into_raw",
+        "forget",
+        "ffi_export",
+        "c_export",
+    };
+    for (transfer_keywords) |kw| {
+        if (std.mem.indexOf(u8, alloc.alloc_func, kw) != null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -2043,4 +2096,115 @@ test "JNI: Edge cases - empty strings and non-JNI functions" {
     // Rust functions should not match JNI patterns
     try std.testing.expect(!isJniAllocCall("into_raw"));
     try std.testing.expect(!isJniReleaseCall("from_raw"));
+}
+
+test "isIntentionalOwnershipTransfer detects Box::leak and into_raw" {
+    // Pattern 1: Known intentional callee names
+    const alloc_leak = CrossLangAlloc{
+        .id = 1,
+        .ptr_val = 0x1000,
+        .alloc_lang = .rust,
+        .alloc_func = "test_func",
+        .alloc_callee = "_ZN5alloc5boxed19Box$LT$T$GT$4leak17h",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_leak.free_langs.deinit(std.testing.allocator);
+        alloc_leak.free_funcs.deinit(std.testing.allocator);
+        alloc_leak.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(isIntentionalOwnershipTransfer(&alloc_leak));
+
+    const alloc_into_raw = CrossLangAlloc{
+        .id = 2,
+        .ptr_val = 0x2000,
+        .alloc_lang = .rust,
+        .alloc_func = "test_func",
+        .alloc_callee = "_ZN5alloc5boxed19Box$LT$T$GT$9into_raw17h",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_into_raw.free_langs.deinit(std.testing.allocator);
+        alloc_into_raw.free_funcs.deinit(std.testing.allocator);
+        alloc_into_raw.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(isIntentionalOwnershipTransfer(&alloc_into_raw));
+
+    const alloc_forget = CrossLangAlloc{
+        .id = 3,
+        .ptr_val = 0x3000,
+        .alloc_lang = .rust,
+        .alloc_func = "test_func",
+        .alloc_callee = "_ZN4core3mem5forget17h",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_forget.free_langs.deinit(std.testing.allocator);
+        alloc_forget.free_funcs.deinit(std.testing.allocator);
+        alloc_forget.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(isIntentionalOwnershipTransfer(&alloc_forget));
+}
+
+test "isIntentionalOwnershipTransfer detects transfer keyword function names" {
+    // Pattern 2: Function names with transfer semantics
+    const alloc_donate = CrossLangAlloc{
+        .id = 4,
+        .ptr_val = 0x4000,
+        .alloc_lang = .rust,
+        .alloc_func = "donate_ptr_to_c",
+        .alloc_callee = "malloc",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_donate.free_langs.deinit(std.testing.allocator);
+        alloc_donate.free_funcs.deinit(std.testing.allocator);
+        alloc_donate.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(isIntentionalOwnershipTransfer(&alloc_donate));
+
+    const alloc_export = CrossLangAlloc{
+        .id = 5,
+        .ptr_val = 0x5000,
+        .alloc_lang = .rust,
+        .alloc_func = "ffi_export_data",
+        .alloc_callee = "__rust_alloc",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_export.free_langs.deinit(std.testing.allocator);
+        alloc_export.free_funcs.deinit(std.testing.allocator);
+        alloc_export.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(isIntentionalOwnershipTransfer(&alloc_export));
+}
+
+test "isIntentionalOwnershipTransfer rejects normal allocations" {
+    // Regular malloc should NOT be flagged as intentional transfer
+    const alloc_normal = CrossLangAlloc{
+        .id = 6,
+        .ptr_val = 0x6000,
+        .alloc_lang = .c,
+        .alloc_func = "process_data",
+        .alloc_callee = "malloc",
+        .free_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .free_funcs = std.ArrayList([]const u8).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+        .passed_langs = std.ArrayList(Language).initCapacity(std.testing.allocator, 0) catch return error.OutOfMemory,
+    };
+    defer {
+        alloc_normal.free_langs.deinit(std.testing.allocator);
+        alloc_normal.free_funcs.deinit(std.testing.allocator);
+        alloc_normal.passed_langs.deinit(std.testing.allocator);
+    }
+    try std.testing.expect(!isIntentionalOwnershipTransfer(&alloc_normal));
 }

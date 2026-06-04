@@ -60,6 +60,7 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.JniLeakDetectorPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
     try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
     try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);

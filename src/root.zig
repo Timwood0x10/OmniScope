@@ -179,6 +179,7 @@ pub const cross_lang = struct {
 
     pub const FFIUnsafePass = @import("pass/analysis/issue/ffi_unsafe.zig").FFIUnsafePass;
     pub const FFIBodyCheckPass = @import("pass/analysis/issue/ffi_body_check.zig").FFIBodyCheckPass;
+    pub const JniLeakDetectorPass = @import("pass/analysis/issue/jni_leak_detector.zig").JniLeakDetectorPass;
     pub const ReturnCheckPass = @import("pass/analysis/issue/return_check.zig").ReturnCheckPass;
     pub const MemorySafetyPass = @import("pass/analysis/issue/memory_safety.zig").MemorySafetyPass;
     pub const IntegerOverflowPass = @import("pass/analysis/issue/integer_overflow.zig").IntegerOverflowPass;

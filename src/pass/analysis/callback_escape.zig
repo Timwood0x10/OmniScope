@@ -528,6 +528,7 @@ pub const CallbackEscapePass = struct {
                                     result.adjusted_score,
                                     &[_]TraceEntry{},
                                 );
+                                candidate.reason = null; // Transfer ownership to Issue to avoid double-free
                                 try ctx.addIssue(&issue);
                             }
                         } else {
@@ -540,6 +541,7 @@ pub const CallbackEscapePass = struct {
                                 0.65, // med_cbytes_escape confidence
                                 &[_]TraceEntry{},
                             );
+                            candidate.reason = null; // Transfer ownership to Issue to avoid double-free
                             try ctx.addIssue(&issue);
                         }
                         stats.cbytes_escapes += 1;
@@ -571,6 +573,7 @@ pub const CallbackEscapePass = struct {
                             result.adjusted_score,
                             &[_]TraceEntry{},
                         );
+                        candidate.reason = null; // Transfer ownership to Issue to avoid double-free
                         try ctx.addIssue(&issue);
                     }
                 } else {
@@ -583,6 +586,7 @@ pub const CallbackEscapePass = struct {
                         0.72, // med_unsafe_ptr confidence
                         &[_]TraceEntry{},
                     );
+                    candidate.reason = null; // Transfer ownership to Issue to avoid double-free
                     try ctx.addIssue(&issue);
                 }
                 stats.unsafeptr_risks += 1;

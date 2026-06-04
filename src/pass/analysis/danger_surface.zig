@@ -20,7 +20,6 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const c = @import("../../ir/llvm_raw.zig").c;
 const PassContext = @import("../pass.zig").PassContext;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const PassKind = @import("../pass.zig").PassKind;
@@ -114,10 +113,15 @@ pub const DangerSurfacePass = struct {
                 cross_lang_frees += 1;
             }
 
+            // Cache call edge indices for this ptr — used in both check (3)/(4) and marking phase.
+            // Avoids redundant HashMap lookups in call_arg_by_ptr / call_ret_by_ptr.
+            var cached_arg_indices: []const u32 = &.{};
+            var cached_ret_indices: []const u32 = &.{};
+
             // (3) FFI arg — check if ptr flows into any FFI boundary call
             if (!on_danger) {
-                const arg_indices = mg.getCallArgsForPtr(ptr_val);
-                for (arg_indices) |aidx| {
+                cached_arg_indices = mg.getCallArgsForPtr(ptr_val);
+                for (cached_arg_indices) |aidx| {
                     if (ffi_set.contains(mg.call_args.items[aidx].callee_name)) {
                         on_danger = true;
                         break;
@@ -127,8 +131,8 @@ pub const DangerSurfacePass = struct {
 
             // (4) FFI ret — check if ptr returns from FFI boundary
             if (!on_danger) {
-                const ret_indices = mg.getCallRetsForPtr(ptr_val);
-                for (ret_indices) |ridx| {
+                cached_ret_indices = mg.getCallRetsForPtr(ptr_val);
+                for (cached_ret_indices) |ridx| {
                     if (ffi_set.contains(mg.call_rets.items[ridx].callee_name)) {
                         on_danger = true;
                         break;
@@ -146,18 +150,17 @@ pub const DangerSurfacePass = struct {
             if (!on_danger) continue;
 
             try ctx.markRelevantAlloc(ptr_val);
-            try markFunctionFromInst(ctx, node.alloc_inst);
+            try ctx.markFunctionFromInst(node.alloc_inst);
             try ctx.markFfiRelevant(ptr_val);
 
-            // Mark caller functions for all call_args/call_rets involving this ptr
-            const arg_indices2 = mg.getCallArgsForPtr(ptr_val);
-            for (arg_indices2) |aidx| {
+            // Mark caller functions for all call_args/call_rets involving this ptr.
+            // Reuses cached indices from checks (3)/(4) above — no redundant HashMap lookups.
+            for (cached_arg_indices) |aidx| {
                 ctx.markFunctionFromInst(mg.call_args.items[aidx].caller_inst) catch |err| {
                     diag.debug("[P0-1] markFunctionFromInst (call_arg) failed: {}", .{err});
                 };
             }
-            const ret_indices2 = mg.getCallRetsForPtr(ptr_val);
-            for (ret_indices2) |ridx| {
+            for (cached_ret_indices) |ridx| {
                 ctx.markFunctionFromInst(mg.call_rets.items[ridx].caller_inst) catch |err| {
                     diag.debug("[P0-1] markFunctionFromInst (call_ret) failed: {}", .{err});
                 };
@@ -207,16 +210,6 @@ fn traceAliasClosure(
             diag.debug("[P1-1] Recursive alias error for 0x{x} -> 0x{x}: {}", .{ ptr_val, alias_ptr, err });
         };
     }
-}
-
-fn markFunctionFromInst(ctx: *PassContext, inst_ptr: u64) !void {
-    if (inst_ptr == 0) return;
-    const inst: c.LLVMValueRef = @ptrFromInt(inst_ptr);
-    const bb = c.LLVMGetInstructionParent(inst);
-    if (@intFromPtr(bb) == 0) return;
-    const func = c.LLVMGetBasicBlockParent(bb);
-    if (@intFromPtr(func) == 0) return;
-    try ctx.markRelevantFunction(@as(u64, @intFromPtr(func)));
 }
 
 test "DangerSurfacePass - isOnDangerPath integration with FFI arg" {

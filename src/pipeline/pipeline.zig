@@ -416,7 +416,9 @@ pub const Pipeline = struct {
                     },
                     adapter_issue.confidence,
                 );
-                issue.owned = true; // We own the message allocation
+                // owned=false (default): addIssue() will clone the message for emitted issues.
+                // AdapterAnalysis.deinit() retains ownership of the original and frees it there.
+                // This prevents double-free between data_flow_graph and AdapterAnalysis.
 
                 ctx.addIssue(&issue) catch |err| {
                     log.warn("ADAPTER-ISSUE: Failed to add issue to context: {}", .{err});

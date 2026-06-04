@@ -32,6 +32,10 @@ const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const hooks = @import("../../registry/hooks.zig");
 
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../pipeline/parallel.zig");
+const ir_store_mod = @import("../../ir/ir_store.zig");
+
 const types = @import("../../types/ownership_types.zig");
 pub const OwnershipError = types.OwnershipError;
 pub const OwnershipViolationType = types.OwnershipViolationType;
@@ -283,99 +287,62 @@ pub const PointerOwnershipPass = struct {
         // C1: Single-pass detection (was 8 separate traversals, ~5-8× faster)
         var raii_count: u32 = 0;
 
-        for (ctx.ir_store.function_list) |fir| {
-            const func = fir.func;
-            const func_name = fir.name;
-
-            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-            ctx.zone_stats.record(zone);
-
-            // R7.0: Shared zone gate (single source of truth, also used by ffi_boundary).
-            if (!PassContext.shouldAnalyzeZone(zone)) {
-                diag.debug("ZONE-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
-                continue;
-            }
-
-            // INTEGRATION: Use three-layer noise filter (name + path + behavior)
-            // Layer 2 uses debug info from the function's source location
-            const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const classification = ctx.classifyFunctionSurface(func_name, func_loc);
-            if (!classification.origin.shouldReportByDefault()) {
-                diag.debug("NOISE-SKIP: {s} is {s} — {s}", .{ func_name, classification.origin.toString(), classification.reason });
-                continue;
-            }
-
-            // OPT #2: Use cached isRustFFIRelevantFunction result
-            const func_ptr = @as(usize, @intFromPtr(func));
-            const is_ffi_relevant = if (ffi_relevant_cache.get(func_ptr)) |cached| cached else blk: {
-                const result = isRustFFIRelevantFunction(func);
-                ffi_relevant_cache.put(func_ptr, result) catch {};
-                break :blk result;
+        // T3.1: Pre-collect all functions into work items for parallel distribution.
+        const func_list = ctx.ir_store.function_list;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_list.len);
+        defer ctx.allocator.free(work_items);
+        for (func_list, 0..) |fir, idx| {
+            work_items[idx] = .{
+                .func = @intFromPtr(fir.func),
+                .func_name = fir.name,
+                .is_declaration = false,
+                .fir_idx = idx,
             };
-            if (!is_ffi_relevant) continue;
-
-            // SRT: Skip Rust Drop/destructor functions (guaranteed safe by Rust ownership)
-            if (ctx.semantic_resolution) |engine| {
-                if (engine.isSemanticallyRelease(func_name)) {
-                    diag.debug("SRT-SKIP: {s} is semantically resolved as release — Rust Drop/destructor, skipping analysis", .{func_name});
-                    continue;
-                }
-            } else {
-                diag.info("SRT-DEBUG: ctx.semantic_resolution is NULL for func {s}", .{func_name});
-            }
-
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
-                // Fallback: analyze .unknown/.ffi zone functions anyway
-                const is_fallback_zone = (zone == .unknown or zone == .ffi);
-                if (!is_fallback_zone) {
-                    diag.debug("RELEVANT-SKIP [{s}]: {s}", .{ @tagName(zone), func_name });
-                    continue;
-                }
-            }
-
-            // Phase R5.3: Reset hook state per function scope
-            hooks.resetHookStatesForFunction();
-
-            // Function-level error isolation
-            analyzeFunctionForOwnership(
-                ctx.allocator,
-                fir,
-                &alloc_map,
-                &free_map,
-                &flow_graph,
-                &reverse_flow,
-                &stats,
-                has_debug_info,
-                &id_map,
-                &alloc_pool,
-                &free_pool,
-                &null_check_recognizer,
-            ) catch |err| {
-                diag.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, func_name });
-                ctx.recordDegradedFunction();
-                continue;
-            };
-
-            // Phase R5.3: Check hook state for end-of-function ownership issues.
-            if (hooks.rustUnpairedTransferCount() > 0) {
-                diag.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{func_name});
-                stats.cross_ffi_transfers += 1;
-            }
-            if (hooks.pythonUnbalancedDecrefCount() > 0) {
-                diag.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), func_name });
-                stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
-            }
-
-            // C1 FIX: Perform all detection tasks in single traversal (eliminate 7 redundant passes)
-            detectStructMemberStores(func, &alloc_map, &id_map);
-            detectRaiiManagedAllocations(func, &alloc_map, &id_map, &raii_count, &ctx.raii_func_set);
-            detectMeyersSingletonFunctions(func, &ctx.meyers_singleton_set);
-            detectRefCountedContainerFunctions(func, &ctx.rc_container_func_set);
-            detectRustFfiPairingFunctions(fir.calls, fir.name, &ctx.rust_into_raw_set, &ctx.rust_from_raw_set);
-            detectAsPtrBorrowEscape(ctx, func, diag);
-
-            checkOwnershipTransferForFunction(fir, &alloc_map, &reverse_flow, &id_map);
         }
+
+        // T3.1: Mutex protecting shared state during parallel analysis.
+        // Coarse-grained lock: held during analyzeFunctionForOwnership + detects.
+        // Noise filtering runs unlocked for parallelism (same pattern as ptr_lifetime).
+        var analysis_mutex = std.Thread.Mutex{};
+
+        // T3.1: Worker context — all shared state needed by per-function analysis.
+        var worker_ctx = OwnershipWorkerContext{
+            .ctx_ptr = ctx,
+            .diag_ptr = diag,
+            .alloc_map = &alloc_map,
+            .free_map = &free_map,
+            .flow_graph = &flow_graph,
+            .reverse_flow = &reverse_flow,
+            .stats = &stats,
+            .has_debug_info = has_debug_info,
+            .id_map = &id_map,
+            .alloc_pool = &alloc_pool,
+            .free_pool = &free_pool,
+            .null_check_recognizer = &null_check_recognizer,
+            .ffi_relevant_cache = &ffi_relevant_cache,
+            .raii_count = &raii_count,
+            .mutex = &analysis_mutex,
+        };
+
+        // T3.1: Publish worker context for worker function access
+        worker_context_ptr = &worker_ctx;
+        defer worker_context_ptr = null;
+
+        // T3.1: Parallel execution — distribute functions across worker threads.
+        // Use limited worker count (2) to avoid contention with wasmtime's internal rayon pool
+        // and LLVM C API thread-safety limitations.
+        var executor = parallel.ParallelExecutor.init(ctx.allocator, 2) catch |err| {
+            diag.warn("PointerOwnership: failed to init parallel executor: {}", .{err});
+            return error.OutOfMemory;
+        };
+        defer executor.deinit();
+        const results = executor.run(work_items, ownershipWorkerFn) catch |err| {
+            diag.warn("PointerOwnership: parallel execution error: {}", .{err});
+            return error.OutOfMemory;
+        };
+
+        // T3.1: Merge per-worker results (funcs_analyzed/skipped/errored already accumulated via mutex)
+        _ = results;
 
         // C1 FIX: Report detection results (previously in separate passes 4-8)
         if (raii_count > 0) {
@@ -549,5 +516,144 @@ pub const PointerOwnershipPass = struct {
     }
     fn hasUseAfterFree(fp: u32, flow: std.AutoHashMap(u32, void), fg: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)), v: *std.AutoHashMap(u32, void)) bool {
         return cpp_fp.hasUseAfterFree(fp, &flow, fg, v);
+    }
+
+    // =====================================================================
+    // T3.1: Parallel Execution Support
+    // =====================================================================
+
+    /// T3.1: Worker context — shared state passed to each worker thread.
+    const OwnershipWorkerContext = struct {
+        ctx_ptr: *PassContext,
+        diag_ptr: *DiagnosticWriter,
+        alloc_map: *std.AutoHashMap(u32, *AllocSite),
+        free_map: *std.AutoHashMap(u32, *FreeSite),
+        flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        reverse_flow: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
+        stats: *OwnershipStats,
+        has_debug_info: bool,
+        id_map: *ValueIdMap,
+        alloc_pool: *MemoryPool(AllocSite),
+        free_pool: *MemoryPool(FreeSite),
+        null_check_recognizer: *NullCheckRecognizer,
+        ffi_relevant_cache: *std.AutoHashMap(usize, bool),
+        raii_count: *u32,
+        mutex: *std.Thread.Mutex,
+    };
+
+    /// T3.1: Global pointer to worker context (set during run(), read by workers).
+    var worker_context_ptr: ?*OwnershipWorkerContext = null;
+
+    fn getWorkerContext() *OwnershipWorkerContext {
+        return worker_context_ptr.?;
+    }
+
+    /// T3.1: Worker function for parallel per-function analysis.
+    /// Pattern (same as ptr_lifetime): noise filters run unlocked for parallelism;
+    /// analysis + detection run under coarse lock for shared HashMap safety.
+    fn ownershipWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
+        _ = worker_id;
+        var result = parallel.WorkerResult{};
+
+        const func: c.LLVMValueRef = @ptrFromInt(item.func);
+        const wctx = getWorkerContext();
+
+        // Phase 1: Noise filtering (read-only ctx, no lock needed)
+        const func_loc = DebugInfoUtils.getFunctionLocation(func);
+        const classification = wctx.ctx_ptr.classifyFunctionSurface(item.func_name, func_loc);
+        if (!classification.origin.shouldReportByDefault()) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        // FFI relevance check with cache (needs lock for HashMap write)
+        const func_ptr_val = @as(usize, @intFromPtr(func));
+        const is_ffi_relevant = blk: {
+            wctx.mutex.lock();
+            defer wctx.mutex.unlock();
+            if (wctx.ffi_relevant_cache.get(func_ptr_val)) |cached| {
+                break :blk cached;
+            }
+            const result_inner = isRustFFIRelevantFunction(func);
+            wctx.ffi_relevant_cache.put(func_ptr_val, result_inner) catch {};
+            break :blk result_inner;
+        };
+        if (!is_ffi_relevant) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        // SRT check (read-only)
+        if (wctx.ctx_ptr.semantic_resolution) |engine| {
+            if (engine.isSemanticallyRelease(item.func_name)) {
+                result.funcs_skipped += 1;
+                return result;
+            }
+        }
+
+        // Phase 2: Zone gate + core analysis + detection — all under coarse lock.
+        wctx.mutex.lock();
+        defer wctx.mutex.unlock();
+
+        const fir = wctx.ctx_ptr.ir_store.function_list[item.fir_idx];
+        const zone = wctx.ctx_ptr.getOrComputeZone(@ptrCast(func), item.func_name);
+        wctx.ctx_ptr.zone_stats.record(zone);
+
+        if (!PassContext.shouldAnalyzeZone(zone)) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        if (!wctx.ctx_ptr.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
+            const is_fallback_zone = (zone == .unknown or zone == .ffi);
+            if (!is_fallback_zone) {
+                result.funcs_skipped += 1;
+                return result;
+            }
+        }
+
+        hooks.resetHookStatesForFunction();
+
+        analyzeFunctionForOwnership(
+            wctx.ctx_ptr.allocator,
+            fir,
+            wctx.alloc_map,
+            wctx.free_map,
+            wctx.flow_graph,
+            wctx.reverse_flow,
+            wctx.stats,
+            wctx.has_debug_info,
+            wctx.id_map,
+            wctx.alloc_pool,
+            wctx.free_pool,
+            wctx.null_check_recognizer,
+        ) catch |err| {
+            wctx.diag_ptr.warn("PointerOwnership: skipped function due to error: {} ({s})", .{ err, item.func_name });
+            wctx.ctx_ptr.recordDegradedFunction();
+            result.funcs_errored += 1;
+            return result;
+        };
+
+        result.funcs_analyzed = 1;
+
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            wctx.diag_ptr.warn("PointerOwnership: Unpaired Rust ownership transfer in {s} — potential cross-language leak", .{item.func_name});
+            wctx.stats.cross_ffi_transfers += 1;
+        }
+        if (hooks.pythonUnbalancedDecrefCount() > 0) {
+            wctx.diag_ptr.warn("PointerOwnership: {} unbalanced Py_DECREF(s) in {s}", .{ hooks.pythonUnbalancedDecrefCount(), item.func_name });
+            wctx.stats.use_after_frees += @intCast(hooks.pythonUnbalancedDecrefCount());
+        }
+
+        detectStructMemberStores(func, wctx.alloc_map, wctx.id_map);
+        detectRaiiManagedAllocations(func, wctx.alloc_map, wctx.id_map, wctx.raii_count, &wctx.ctx_ptr.raii_func_set);
+        detectMeyersSingletonFunctions(func, &wctx.ctx_ptr.meyers_singleton_set);
+        detectRefCountedContainerFunctions(func, &wctx.ctx_ptr.rc_container_func_set);
+        detectRustFfiPairingFunctions(fir.calls, fir.name, &wctx.ctx_ptr.rust_into_raw_set, &wctx.ctx_ptr.rust_from_raw_set);
+        detectAsPtrBorrowEscape(wctx.ctx_ptr, func, wctx.diag_ptr);
+
+        checkOwnershipTransferForFunction(fir, wctx.alloc_map, wctx.reverse_flow, wctx.id_map);
+
+        return result;
     }
 };
