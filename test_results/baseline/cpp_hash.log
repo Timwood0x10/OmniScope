@@ -1,0 +1,27 @@
+info: [INFO] === OmniScope IR Analysis ===
+
+
+info: [INFO] File: /Users/scc/code/ffi-demo/output/cpp_hash.ll
+
+
+
+warning: llvm-as conversion failed for /Users/scc/code/ffi-demo/output/cpp_hash.ll: Operation not permitted
+
+warning: [WARN] Failed to load file: error.ParseFailed
+
+error: [ERROR] Failed to load IR file: ModuleParseFailed
+
+
+error: ModuleParseFailed
+/Users/scc/code/zigcode/OmniScope/src/ir/llvm_safe.zig:185:17: 0x1028b886f in loadFile (OmniScope)
+                return Error.ParseFailed;
+                ^
+/Users/scc/code/zigcode/OmniScope/src/engine/loader.zig:58:13: 0x1028a9d73 in loadFile (OmniScope)
+            return switch (err) {
+            ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:1494:9: 0x1028a92b7 in runSingleFileAnalysis (OmniScope)
+        return err;
+        ^
+/Users/scc/code/zigcode/OmniScope/src/main.zig:1872:9: 0x1028b0e9f in main (OmniScope)
+        try runSingleFileAnalysis(allocator, config.input_files.items[0], config);
+        ^

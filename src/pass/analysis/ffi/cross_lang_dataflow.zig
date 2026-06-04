@@ -263,7 +263,7 @@ pub const CrossLangDataFlow = struct {
 
                         const result_val = @intFromPtr(inst);
                         if (result_val != 0) {
-                            const alloc_lang = classifyAllocLanguage(called_name, func_lang);
+                            const alloc_lang = classifyAllocLanguage(called_name, func_lang, ctx);
                             const alloc = CrossLangAlloc{
                                 .id = next_id,
                                 .ptr_val = result_val,
@@ -316,7 +316,7 @@ pub const CrossLangDataFlow = struct {
                                 if (alloc_by_ptr.get(ptr_val)) |idx| {
                                     const alloc = &allocations.items[idx];
                                     if (!alloc.freed) {
-                                        const free_lang = classifyFreeLanguage(called_name, .unknown);
+                                        const free_lang = classifyFreeLanguage(called_name, .unknown, ctx);
                                         try alloc.free_langs.append(ctx.allocator, free_lang);
                                         try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
                                         alloc.freed = true;
@@ -711,7 +711,7 @@ pub const CrossLangDataFlow = struct {
                     const result_val = @intFromPtr(inst);
                     if (result_val == 0) continue;
 
-                    const alloc_lang = classifyAllocLanguage(called_name, func_lang);
+                    const alloc_lang = classifyAllocLanguage(called_name, func_lang, ctx);
 
                     const alloc = CrossLangAlloc{
                         .id = next_id,
@@ -795,7 +795,7 @@ pub const CrossLangDataFlow = struct {
                         if (tracked_ptrs.get(ptr_val)) |idx| {
                             const alloc = &allocations.items[idx];
                             if (!alloc.freed) {
-                                const free_lang = classifyFreeLanguage(called_name, .unknown);
+                                const free_lang = classifyFreeLanguage(called_name, .unknown, ctx);
                                 try alloc.free_langs.append(ctx.allocator, free_lang);
                                 try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
                                 alloc.freed = true;
@@ -1252,7 +1252,14 @@ fn isFreeFunction(func_name: []const u8) bool {
 }
 
 /// Classify the language of an allocation based on function name
-fn classifyAllocLanguage(callee_name: []const u8, caller_lang: Language) Language {
+/// Checks language override registry first before pattern matching.
+fn classifyAllocLanguage(callee_name: []const u8, caller_lang: Language, ctx: *const PassContext) Language {
+    // Check language override registry first — user-specified classifications
+    // take priority over auto-detection. This is the primary FP elimination point.
+    if (ctx.lookupFunctionLanguage(callee_name)) |overridden_lang| {
+        return overridden_lang;
+    }
+
     // Rust allocation patterns
     if (std.mem.indexOf(u8, callee_name, "into_raw") != null or
         std.mem.indexOf(u8, callee_name, "Box::into_raw") != null or
@@ -1305,7 +1312,14 @@ fn classifyAllocLanguage(callee_name: []const u8, caller_lang: Language) Languag
 }
 
 /// Classify the language of a free based on function name
-fn classifyFreeLanguage(callee_name: []const u8, caller_lang: Language) Language {
+/// Checks language override registry first before pattern matching.
+fn classifyFreeLanguage(callee_name: []const u8, caller_lang: Language, ctx: *const PassContext) Language {
+    // Check language override registry first — user-specified classifications
+    // take priority over auto-detection. This is the primary FP elimination point.
+    if (ctx.lookupFunctionLanguage(callee_name)) |overridden_lang| {
+        return overridden_lang;
+    }
+
     // Rust deallocation patterns
     if (std.mem.indexOf(u8, callee_name, "from_raw") != null or
         std.mem.indexOf(u8, callee_name, "Box::from_raw") != null or

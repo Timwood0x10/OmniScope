@@ -115,6 +115,13 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
     }
 
     if (max_vote < 0.3 or total_weight < 0.3) {
+        // Low confidence: check if user configured a default language override.
+        // This handles cases like pure-C projects with Rust allocator symbols
+        // where auto-detection is confused by cross-language runtime artifacts.
+        // The default_lang is accessed via PassContext.getDefaultLanguage(),
+        // but since this function doesn't have PassContext, we return unknown here.
+        // Callers that have PassContext should check getDefaultLanguage() when
+        // they receive .unknown with low confidence.
         return .{
             .language = .unknown,
             .confidence = 0.0,

@@ -17,8 +17,9 @@ const CommonTypes = OmniScope.common.types;
 const log = OmniScope.log;
 const writeJsonEscaped = OmniScope.output.writeJsonEscaped;
 
-const main_config = @import("./types/main_config.zig");
-const file_config = @import("./types/file_config.zig");
+const main_config = OmniScope.config.main_config;
+const file_config = OmniScope.config.file_config;
+const language_override = OmniScope.config.language_override;
 const term = main_config.term;
 const Config = main_config.Config;
 const OutputFormat = main_config.OutputFormat;
@@ -104,6 +105,49 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
 
     // Apply focus-user-code mode (stdlib suppression)
     pipeline.setFocusUserCode(config.focus_user_code);
+
+    // Build language override registry from CLI config (--lang, --lang-prefix, etc.)
+    // This allows users to override auto-detected function languages to eliminate FPs.
+    var lang_registry = try language_override.LanguageOverrideRegistry.init(allocator);
+    defer lang_registry.deinit();
+
+    // Apply CLI language overrides (exact, prefix, suffix, source-file, default)
+    // Convert LangKV (key/value fields) to individual registry calls
+    for (config.lang_overrides.items) |kv| {
+        const lang = language_override.LanguageOverrideRegistry.parseLangString(kv.value) orelse continue;
+        try lang_registry.addExact(kv.key, lang);
+    }
+    for (config.lang_prefix_overrides.items) |kv| {
+        const lang = language_override.LanguageOverrideRegistry.parseLangString(kv.value) orelse continue;
+        try lang_registry.addPrefix(kv.key, lang);
+    }
+    for (config.lang_suffix_overrides.items) |kv| {
+        const lang = language_override.LanguageOverrideRegistry.parseLangString(kv.value) orelse continue;
+        try lang_registry.addSuffix(kv.key, lang);
+    }
+    for (config.source_lang_overrides.items) |kv| {
+        const lang = language_override.LanguageOverrideRegistry.parseLangString(kv.value) orelse continue;
+        try lang_registry.addSourceFile(kv.key, lang);
+    }
+    if (config.default_lang_override) |default_lang_str| {
+        if (language_override.LanguageOverrideRegistry.parseLangString(default_lang_str)) |default_lang| {
+            lang_registry.setDefault(default_lang);
+        }
+    }
+
+    // Sort prefix/suffix rules so longest match wins during lookup
+    lang_registry.sortPrefixRules();
+    lang_registry.sortSuffixRules();
+
+    // Load JSON overrides from config file if present
+    if (config.config_path) |cp| {
+        _ = cp; // Config file loading handled by file_config module
+        // Note: JSON overrides could be loaded here in the future.
+        // For now, CLI flags take priority and are sufficient.
+    }
+
+    // Pass registry to pipeline — all passes will check it before auto-detection
+    pipeline.setLanguageOverrides(&lang_registry);
 
     try registerAllPasses(&pipeline);
 

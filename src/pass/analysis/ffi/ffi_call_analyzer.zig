@@ -230,11 +230,13 @@ pub fn classifyCallLanguages(ac: *CallAnalysisContext) void {
         ac.caller_name,
         ac.ctx.module_language.language,
         ac.ctx.platform_profile,
+        ac.ctx.lookupFunctionLanguage(ac.caller_name),
     );
     ac.callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
         ac.called_name,
         ac.ctx.module_language.language,
         ac.ctx.platform_profile,
+        ac.ctx.lookupFunctionLanguage(ac.called_name),
     );
 
     // Bug 2 final fix: Transitive Zig inference for entry-point callers.

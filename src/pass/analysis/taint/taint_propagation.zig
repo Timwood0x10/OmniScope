@@ -908,7 +908,23 @@ test "TaintPropagationPass - handles null module gracefully" {
     var data_flow_graph = try @import("../../../dataflow/graph.zig").DataFlowGraph.init(allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
 
-    var context = try PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph);
+    // Create minimal IR store for PassContext (no LLVM module needed for this test)
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &[_]c.LLVMValueRef{},
+        .global_names = std.StringHashMap(usize).init(allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var context = try PassContext.init(allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
     defer context.deinit();
 
     var diagnostics = DiagnosticWriter{ .allocator = allocator };

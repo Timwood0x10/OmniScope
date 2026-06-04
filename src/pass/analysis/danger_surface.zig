@@ -141,10 +141,25 @@ pub const DangerSurfacePass = struct {
             // (2) Cross-language lifecycle — always check (no FFI dependency)
             // Suppress intentional ownership transfers (Box::leak, into_raw,
             // ManuallyDrop, forget) where cross-lang free is legitimate.
+            // Also check language override registry: if user explicitly classified
+            // the allocator as the same language as the free site, suppress this detection.
             if (!on_danger and node.freed and node.free_lang != null and node.alloc_lang != node.free_lang.?) {
                 if (!isIntentionalOwnershipTransfer(node.alloc_callee)) {
-                    on_danger = true;
-                    cross_lang_frees += 1;
+                    // Defensive check: registry may have overridden the alloc language
+                    // to match the free language, making this cross-lang detection a FP.
+                    var registry_suppressed = false;
+                    if (ctx.language_overrides) |reg| {
+                        const alloc_lang = reg.lookup(node.alloc_callee orelse "") orelse reg.getDefault();
+                        if (alloc_lang) |overridden| {
+                            if (overridden == node.free_lang.?) {
+                                registry_suppressed = true;
+                            }
+                        }
+                    }
+                    if (!registry_suppressed) {
+                        on_danger = true;
+                        cross_lang_frees += 1;
+                    }
                 }
             }
 

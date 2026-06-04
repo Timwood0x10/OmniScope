@@ -420,11 +420,13 @@ pub const FFIBoundaryPass = struct {
             caller_name,
             ctx.module_language.language,
             ctx.platform_profile,
+            ctx.lookupFunctionLanguage(caller_name),
         );
         var callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
             called_name,
             ctx.module_language.language,
             ctx.platform_profile,
+            ctx.lookupFunctionLanguage(called_name),
         );
 
         // Bug 2 final fix: Transitive Zig inference for entry-point callers.

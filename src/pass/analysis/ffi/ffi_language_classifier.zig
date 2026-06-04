@@ -427,11 +427,20 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
 ///   - func_name: Function name string
 ///   - module_lang: The detected language of the containing module (from PassContext)
 ///   - profile: Optional platform profile for triple-based disambiguation (can be null)
+///   - override_lang: Optional language from user-specified override registry.
+///                    If non-null, takes priority over all auto-detection.
 pub fn identifyCalleeLanguageWithContext(
     func_name: []const u8,
     module_lang: Language,
     profile: ?PlatformProfile,
+    override_lang: ?Language,
 ) Language {
+    // Check language override first — user-specified classifications
+    // take priority over all auto-detection logic.
+    if (override_lang) |lang| {
+        return lang;
+    }
+
     const base_result = identifyCalleeLanguage(func_name);
 
     // Only disambiguate when base result is .go — other languages are unambiguous

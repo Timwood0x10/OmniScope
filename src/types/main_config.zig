@@ -144,6 +144,12 @@ pub const SurfaceFilterConfig = struct {
     }
 };
 
+/// Key-value pair for language override CLI arguments (name=lang format).
+pub const LangKV = struct {
+    key: []const u8,
+    value: []const u8,
+};
+
 /// NOTE: This module defines its own Severity enum (see above) due to Zig module system
 /// constraints. It is type-compatible with CommonTypes.Severity but cannot import from it.
 /// See the detailed design decision documentation in the Severity enum definition above.
@@ -190,9 +196,25 @@ pub const Config = struct {
     /// Surface filter configuration for fine-grained control
     surface_filter: SurfaceFilterConfig = .{},
 
+    // ── Language Override Options ──────────────────────────────────────
+    /// Exact symbol name → language (e.g. --lang __rust_alloc=rust)
+    lang_overrides: std.ArrayList(LangKV),
+    /// Prefix → language (e.g. --lang-prefix sqlite3_=c)
+    lang_prefix_overrides: std.ArrayList(LangKV),
+    /// Suffix → language (e.g. --lang-suffix _rs=rust)
+    lang_suffix_overrides: std.ArrayList(LangKV),
+    /// Source file → language (e.g. --source-lang generated.ll:c)
+    source_lang_overrides: std.ArrayList(LangKV),
+    /// Global default language override (e.g. --default-lang c)
+    default_lang_override: ?[]const u8 = null,
+
     pub fn init(allocator: Allocator) !Config {
         return .{
             .input_files = std.ArrayList([]const u8).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .lang_overrides = std.ArrayList(LangKV).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .lang_prefix_overrides = std.ArrayList(LangKV).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .lang_suffix_overrides = std.ArrayList(LangKV).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .source_lang_overrides = std.ArrayList(LangKV).initCapacity(allocator, 0) catch return error.OutOfMemory,
         };
     }
 
@@ -216,6 +238,37 @@ pub const Config = struct {
         if (self.config_path) |path| {
             if (path.len > 0) {
                 allocator.free(path);
+            }
+        }
+
+        // Free language override entries
+        for (self.lang_overrides.items) |entry| {
+            allocator.free(entry.key);
+            allocator.free(entry.value);
+        }
+        self.lang_overrides.deinit(allocator);
+
+        for (self.lang_prefix_overrides.items) |entry| {
+            allocator.free(entry.key);
+            allocator.free(entry.value);
+        }
+        self.lang_prefix_overrides.deinit(allocator);
+
+        for (self.lang_suffix_overrides.items) |entry| {
+            allocator.free(entry.key);
+            allocator.free(entry.value);
+        }
+        self.lang_suffix_overrides.deinit(allocator);
+
+        for (self.source_lang_overrides.items) |entry| {
+            allocator.free(entry.key);
+            allocator.free(entry.value);
+        }
+        self.source_lang_overrides.deinit(allocator);
+
+        if (self.default_lang_override) |lang| {
+            if (lang.len > 0) {
+                allocator.free(lang);
             }
         }
     }
@@ -312,6 +365,38 @@ pub fn parseArgs(allocator: Allocator) !Config {
                 return error.InvalidOption;
             };
             config.surface_filter.parseFromString(surfaces_str);
+        } else if (std.mem.eql(u8, arg, "--lang")) {
+            // Exact symbol name → language override: --lang name=lang
+            const override = args.next() orelse return error.InvalidOption;
+            const eq_idx = std.mem.indexOf(u8, override, "=") orelse return error.InvalidOption;
+            const name = try allocator.dupe(u8, override[0..eq_idx]);
+            const lang_str = try allocator.dupe(u8, override[eq_idx + 1 ..]);
+            try config.lang_overrides.append(allocator, .{ .key = name, .value = lang_str });
+        } else if (std.mem.eql(u8, arg, "--lang-prefix")) {
+            // Prefix → language override: --lang-prefix prefix=lang
+            const override = args.next() orelse return error.InvalidOption;
+            const eq_idx = std.mem.indexOf(u8, override, "=") orelse return error.InvalidOption;
+            const prefix = try allocator.dupe(u8, override[0..eq_idx]);
+            const lang_str = try allocator.dupe(u8, override[eq_idx + 1 ..]);
+            try config.lang_prefix_overrides.append(allocator, .{ .key = prefix, .value = lang_str });
+        } else if (std.mem.eql(u8, arg, "--lang-suffix")) {
+            // Suffix → language override: --lang-suffix suffix=lang
+            const override = args.next() orelse return error.InvalidOption;
+            const eq_idx = std.mem.indexOf(u8, override, "=") orelse return error.InvalidOption;
+            const suffix = try allocator.dupe(u8, override[0..eq_idx]);
+            const lang_str = try allocator.dupe(u8, override[eq_idx + 1 ..]);
+            try config.lang_suffix_overrides.append(allocator, .{ .key = suffix, .value = lang_str });
+        } else if (std.mem.eql(u8, arg, "--source-lang")) {
+            // Source file → language override: --source-lang file:lang
+            const override = args.next() orelse return error.InvalidOption;
+            const sep_idx = std.mem.indexOf(u8, override, ":") orelse return error.InvalidOption;
+            const filename = try allocator.dupe(u8, override[0..sep_idx]);
+            const lang_str = try allocator.dupe(u8, override[sep_idx + 1 ..]);
+            try config.source_lang_overrides.append(allocator, .{ .key = filename, .value = lang_str });
+        } else if (std.mem.eql(u8, arg, "--default-lang")) {
+            // Global default language override: --default-lang lang
+            const lang = args.next() orelse return error.InvalidOption;
+            config.default_lang_override = try allocator.dupe(u8, lang);
         } else if (std.mem.eql(u8, arg, "--config")) {
             const config_path_arg = args.next() orelse return error.InvalidOption;
             if (config_path_arg.len == 0) return error.InvalidOption;
@@ -356,6 +441,19 @@ pub fn showHelp() void {
         \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
         \\  --show-surface <surfaces>        Comma-separated surfaces to show
         \\                                    (boundary,ffi,reachable,internal,runtime)
+        \\
+        \\Language Overrides:
+        \\  --lang <name=lang>               Override language for exact symbol name
+        \\                                    (e.g. --lang __rust_alloc=rust)
+        \\  --lang-prefix <prefix=lang>      Override language for symbols with prefix
+        \\                                    (e.g. --lang-prefix sqlite3_=c)
+        \\  --lang-suffix <suffix=lang>      Override language for symbols with suffix
+        \\                                    (e.g. --lang-suffix _rs=rust)
+        \\  --source-lang <file:lang>        Override language for source file
+        \\                                    (e.g. --source-lang generated.ll:c)
+        \\  --default-lang <lang>            Set global default language
+        \\                                    (c|cpp|rust|zig|go|java|python|csharp)
+        \\
         \\  --version           Show version information
         \\  --json              Output in JSON format
         \\  --sarif             Output in SARIF format

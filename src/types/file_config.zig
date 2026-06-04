@@ -34,6 +34,21 @@ pub const FileConfig = struct {
             enabled_languages: [6][]const u8 = .{
                 "rust", "zig", "python", "go", "c", "cpp",
             },
+
+            /// Language override rules for per-symbol/per-file language assignment.
+            /// These override auto-detection when configured.
+            overrides: LanguageOverridesConfig = .{},
+
+            pub const LanguageOverridesConfig = struct {
+                /// Exact symbol name → language mappings (e.g. {"__rust_alloc": "rust"})
+                exact: [][]const u8 = &.{},
+                /// Prefix → language mappings (e.g. {"sqlite3_": "c"})
+                prefix: [][]const u8 = &.{},
+                /// Suffix → language mappings (e.g. {"_rs": "rust"})
+                suffix: [][]const u8 = &.{},
+                /// Source file basename → language mappings (e.g. {"generated.ll": "c"})
+                source_files: [][]const u8 = &.{},
+            };
         };
     };
 
@@ -214,7 +229,27 @@ pub fn generateDefaultConfig(allocator: std.mem.Allocator) ![]u8 {
         \\    "language_detection": {
         \\      "auto_detect": true,
         \\      "default_language": "unknown",
-        \\      "enabled_languages": ["rust", "zig", "python", "go", "c", "cpp"]
+        \\      "enabled_languages": ["rust", "zig", "python", "go", "c", "cpp"],
+        \\
+        \\      "overrides": {
+        \\        "exact": {
+        \\          "__rust_alloc": "rust",
+        \\          "malloc": "c"
+        \\        },
+        \\        "prefix": {
+        \\          "sqlite3_": "c",
+        \\          "PyInit_": "python"
+        \\        },
+        \\        "suffix": {
+        \\          "_rs": "rust",
+        \\          "_vtable": "c"
+        \\        },
+        \\        "source_files": {
+        \\          "generated.ll": "c",
+        \\          "wrapper.go": "go"
+        \\        },
+        \\        "default_language": null
+        \\      }
         \\    }
         \\  },
         \\

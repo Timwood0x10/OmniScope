@@ -56,6 +56,9 @@ const rust_ffi_auditor = @import("../pass/analysis/rust_ffi/rust_ffi_auditor.zig
 // v0.2.0: Container type inference for ownership-aware analysis
 const container_inference = @import("../semantics/container_inference.zig");
 
+// Language Override Registry for user-specified language classifications
+const language_override = @import("../config/language_override.zig");
+
 /// Analysis pipeline
 pub const Pipeline = struct {
     allocator: std.mem.Allocator,
@@ -76,6 +79,10 @@ pub const Pipeline = struct {
     /// When true, suppresses issues from stdlib/compiler functions.
     /// Set via setFocusUserCode() from CLI config.
     focus_user_code: bool = true,
+    /// Language override registry for user-specified function language classifications.
+    /// When non-null, passes will check this registry before auto-detecting languages.
+    /// Set via setLanguageOverrides() from main.zig.
+    language_overrides: ?*language_override.LanguageOverrideRegistry = null,
     /// Deduplicated issue indices cache (populated after run() completes).
     /// Contains indices into data_flow_graph.getIssues() for non-duplicate issues.
     /// Null before run() or if deduplication fails.
@@ -262,6 +269,7 @@ pub const Pipeline = struct {
             .contract_db = try @import("../resource/ffi_contract_db.zig").FFIContractDB.init(self.allocator),
             .focus_user_code = self.focus_user_code,
             .ir_store = ir_store,
+            .language_overrides = self.language_overrides,
         };
         // Inject resource family registry into memory graph for P2/P3 classification
         ctx.memory_graph.setFamilyRegistry(&family_registry);
@@ -1095,6 +1103,19 @@ pub const Pipeline = struct {
     ///   value - true to focus on user code only, false to report all issues
     pub fn setFocusUserCode(self: *Pipeline, value: bool) void {
         self.focus_user_code = value;
+    }
+
+    /// Set the language override registry for user-specified classifications.
+    ///
+    /// When set, all analysis passes will check this registry before
+    /// auto-detecting function languages. This allows users to override
+    /// misclassified functions via CLI flags (--lang, --lang-prefix, etc.)
+    /// or config file.
+    ///
+    /// Arguments:
+    ///   registry - Pointer to a LanguageOverrideRegistry (must outlive pipeline run)
+    pub fn setLanguageOverrides(self: *Pipeline, registry: *language_override.LanguageOverrideRegistry) void {
+        self.language_overrides = registry;
     }
 
     // ════════════════════════════════════════════════════

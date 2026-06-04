@@ -887,7 +887,7 @@ test "FFIBodyCheckPass - vulnerability descriptions" {
     );
 }
 
-test "FFIBodyCheckPass - format string vulnerability check" {
+test "FFIBodyCheckPass - format string vulnerability detection" {
     const FactStore = @import("../../../fact/store.zig").FactStore;
     const QueryEngine = @import("../../../fact/query.zig").QueryEngine;
     const DataFlowGraph = @import("../../../dataflow/graph.zig").DataFlowGraph;
@@ -897,7 +897,24 @@ test "FFIBodyCheckPass - format string vulnerability check" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &[_]c.LLVMValueRef{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
     defer pass_ctx.deinit();
 
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);
@@ -948,7 +965,24 @@ test "FFIBodyCheckPass - command injection requires taint" {
     var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &[_]c.LLVMValueRef{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
     defer pass_ctx.deinit();
 
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);

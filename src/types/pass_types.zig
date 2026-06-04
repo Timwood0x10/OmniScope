@@ -54,6 +54,9 @@ pub const IssueVerifier = resource_verifier_mod.IssueVerifier;
 const contract_db_mod = @import("../resource/ffi_contract_db.zig");
 pub const FFIContractDB = contract_db_mod.FFIContractDB;
 
+// Language Override Registry for user-specified function language classifications
+const language_override = @import("../config/language_override.zig");
+
 const ir_store_mod = @import("../ir/ir_store.zig");
 pub const ModuleIRStore = ir_store_mod.ModuleIRStore;
 
@@ -341,6 +344,11 @@ pub const PassContext = struct {
     /// When true, passes should suppress issues from stdlib functions.
     focus_user_code: bool = true,
 
+    /// Language override registry for user-specified function language classifications.
+    /// When non-null, passes can check this registry before auto-detecting languages.
+    /// Set from CLI config via Pipeline.setLanguageOverrides().
+    language_overrides: ?*language_override.LanguageOverrideRegistry = null,
+
     ir_store: *ModuleIRStore,
 
     pub fn init(
@@ -508,6 +516,27 @@ pub const PassContext = struct {
 
     pub fn getFunctionSurface(self: *const PassContext, func_ptr: u64) ?surface_classifier.FunctionSurface {
         return self.function_surface.get(func_ptr);
+    }
+
+    /// Look up language for a function name from the override registry.
+    /// Returns null if not in registry (caller should use auto-detect).
+    /// This is the primary entry point for all passes to check user-specified
+    /// language classifications before falling back to auto-detection.
+    pub fn lookupFunctionLanguage(self: *const PassContext, func_name: []const u8) ?language_override.Language {
+        if (self.language_overrides) |reg| {
+            return reg.lookup(func_name);
+        }
+        return null;
+    }
+
+    /// Get default language from override config.
+    /// Returns null if no default is configured.
+    /// Used by language_detector as fallback when auto-detection confidence is low.
+    pub fn getDefaultLanguage(self: *const PassContext) ?language_override.Language {
+        if (self.language_overrides) |reg| {
+            return reg.getDefault();
+        }
+        return null;
     }
 
     pub fn shouldAnalyzeFunctionSurface(self: *const PassContext, func_ptr: u64) bool {
@@ -825,6 +854,25 @@ pub const PassContext = struct {
 
         self.module_language = language_detector.detectModuleLanguage(llvm_module);
         self.language_detected = true;
+
+        // R7.2-b: Default language fallback from override registry.
+        // When auto-detection confidence is low and user configured --default-lang,
+        // use the configured language instead of .unknown. This handles pure-C projects
+        // with cross-language runtime artifacts (e.g., Rust stdlib linked into C binary).
+        if (self.module_language.language == .unknown or self.module_language.confidence < 0.6) {
+            if (self.getDefaultLanguage()) |default_lang| {
+                if (default_lang != .unknown) {
+                    log.debug("[pass-types] LANG-OVERRIDE: Using default_lang={s} (auto-detection confidence too low)", .{
+                        @tagName(default_lang),
+                    });
+                    self.module_language = .{
+                        .language = default_lang,
+                        .confidence = 0.8, // User-configured: moderate-high confidence
+                        .method = .unknown, // Not auto-detected
+                    };
+                }
+            }
+        }
 
         if (self.evidence == null) {
             var evidence_collector = ir_evidence.EvidenceCollector.init(self.allocator, llvm_module) catch |err| {

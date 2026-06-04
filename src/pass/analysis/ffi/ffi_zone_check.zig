@@ -152,8 +152,9 @@ pub fn identifyCalleeLanguageWithContext(
     func_name: []const u8,
     module_lang: Language,
     platform_profile: ?PlatformProfile,
+    override_lang: ?Language,
 ) Language {
-    return lang_classifier.identifyCalleeLanguageWithContext(func_name, module_lang, platform_profile);
+    return lang_classifier.identifyCalleeLanguageWithContext(func_name, module_lang, platform_profile, override_lang);
 }
 
 /// Classify the boundary kind based on caller and callee languages.

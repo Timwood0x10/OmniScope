@@ -319,6 +319,13 @@ pub const lifetime = struct {
     pub const detectLanguage = @import("lifetime/boundary.zig").detectLanguage;
 };
 
+// Export config system
+pub const config = struct {
+    pub const file_config = @import("types/file_config.zig");
+    pub const main_config = @import("types/main_config.zig");
+    pub const language_override = @import("config/language_override.zig");
+};
+
 // Export output system
 pub const output = struct {
     pub const Formatter = @import("output/formatter.zig").Formatter;

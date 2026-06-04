@@ -331,12 +331,29 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &.{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
     var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
         &data_flow_graph,
+        &ir_store,
     );
     defer ctx.deinit();
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };

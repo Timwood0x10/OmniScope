@@ -175,6 +175,28 @@ pub const FFIUnsafePass = struct {
             return result;
         }
 
+        // Language override check: if both caller and callee are classified
+        // as the same language by the user's override registry, skip unsafe marking.
+        // This handles cases where auto-detection misclassified a monolingual project.
+        if (ctx.language_overrides) |reg| {
+            const callee_name = cleanFunctionName(boundary.function_name);
+            const caller_lang = reg.lookup(boundary.location.func) orelse reg.getDefault();
+            const callee_lang = reg.lookup(callee_name) orelse reg.getDefault();
+            if (caller_lang) |cl| {
+                if (callee_lang) |cal| {
+                    if (cl == cal) {
+                        log.debug("FFIUnsafe-SKIP [LANG-OVERRIDE]: {s} caller={s} — same overridden language={s}", .{
+                            callee_name,
+                            boundary.location.func,
+                            @tagName(cl),
+                        });
+                        result.skipped += 1;
+                        return result;
+                    }
+                }
+            }
+        }
+
         // P1 Task 2.2: Sink Context Sensitivity
         // Downgrade or skip issues where the dangerous call appears in safe contexts.
         if (isLikelySafeContext(boundary, vuln_type)) {
