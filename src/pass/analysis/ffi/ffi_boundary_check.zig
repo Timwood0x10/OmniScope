@@ -289,7 +289,10 @@ pub fn checkReturnValueEscape(
             const callee_name_ptr = c.LLVMGetValueName(callee);
             if (@intFromPtr(callee_name_ptr) != 0) {
                 const callee_name = std.mem.span(callee_name_ptr);
-                if (lang_classifier.identifyCalleeLanguage(callee_name) != .c) {
+                // Check override registry first — user classification wins
+                const callee_lang = ctx.lookupFunctionLanguage(callee_name) orelse
+                    lang_classifier.identifyCalleeLanguage(callee_name);
+                if (callee_lang != .c) {
                     ffi_reentry = true;
                 }
             }

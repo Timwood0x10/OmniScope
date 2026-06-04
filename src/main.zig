@@ -139,11 +139,48 @@ fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Co
     lang_registry.sortPrefixRules();
     lang_registry.sortSuffixRules();
 
-    // Load JSON overrides from config file if present
+    // Load JSON overrides from config file if present (merge with CLI — CLI wins)
     if (config.config_path) |cp| {
-        _ = cp; // Config file loading handled by file_config module
-        // Note: JSON overrides could be loaded here in the future.
-        // For now, CLI flags take priority and are sufficient.
+        if (file_config.loadFromFile(allocator, cp)) |file_cfg_val| {
+            var file_cfg = file_cfg_val;
+            defer file_cfg.deinit();
+            if (file_cfg.lang_registry) |*file_reg| {
+                // Merge file-based overrides into CLI registry (CLI already added, wins on conflict)
+                // Exact matches: only add if not already present in CLI registry
+                var file_exact_iter = file_reg.exact_map.iterator();
+                while (file_exact_iter.next()) |entry| {
+                    if (!lang_registry.exact_map.contains(entry.key_ptr.*)) {
+                        lang_registry.addExact(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                    }
+                }
+                // Prefix rules: append from file config (additive)
+                for (file_reg.prefix_rules.items) |rule| {
+                    lang_registry.addPrefix(rule.prefix, rule.lang) catch {};
+                }
+                // Suffix rules: append from file config (additive)
+                for (file_reg.suffix_rules.items) |rule| {
+                    lang_registry.addSuffix(rule.suffix, rule.lang) catch {};
+                }
+                // Source file mappings: only add if not already present in CLI
+                var file_sf_iter = file_reg.source_file_map.iterator();
+                while (file_sf_iter.next()) |entry| {
+                    if (!lang_registry.source_file_map.contains(entry.key_ptr.*)) {
+                        lang_registry.addSourceFile(entry.key_ptr.*, entry.value_ptr.*) catch {};
+                    }
+                }
+                // Default language: only set if CLI hasn't set one
+                if (file_reg.default_lang) |fdef| {
+                    if (lang_registry.default_lang == null) {
+                        lang_registry.setDefault(fdef);
+                    }
+                }
+                // Re-sort after merge in case file config added new prefix/suffix rules
+                lang_registry.sortPrefixRules();
+                lang_registry.sortSuffixRules();
+            }
+        } else |err| {
+            log.warn("CONFIG: Failed to load config file '{s}': {}", .{ cp, err });
+        }
     }
 
     // Pass registry to pipeline — all passes will check it before auto-detection
@@ -1824,26 +1861,15 @@ pub fn main() !void {
         }
     }
 
-    // Load and merge configuration from file (if exists)
+    // Validate config file exists (actual override merge happens inside runModulePipeline)
     if (config.config_path) |config_path| {
-        log.info("CONFIG: Loading explicit config from {s}\n", .{config_path});
-        if (file_config.loadFromFile(allocator, config_path)) |file_cfg| {
-            _ = file_cfg;
-        } else |err| {
-            log.warn("CONFIG: Failed to load config file '{s}': {}, using CLI defaults\n", .{ config_path, err });
-        }
+        log.info("CONFIG: Will load explicit config from {s}\n", .{config_path});
+        // Config file loading and lang_registry merge happen in runModulePipeline()
+        // to ensure CLI overrides are applied first (CLI > file config priority)
     } else {
-        // Auto-discover config file
         if (file_config.discoverConfigFile()) |discovered_path| {
             log.info("CONFIG: Discovered config at {s}\n", .{discovered_path});
-            // Store discovered path for reference
             config.config_path = allocator.dupe(u8, discovered_path) catch null;
-
-            if (file_config.loadFromFile(allocator, discovered_path)) |file_cfg| {
-                _ = file_cfg;
-            } else |err| {
-                log.warn("CONFIG: Failed to load discovered config '{s}': {}, using defaults\n", .{ discovered_path, err });
-            }
         }
     }
 

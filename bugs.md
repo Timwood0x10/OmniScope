@@ -1,77 +1,81 @@
----
-  Code Review Results
-     
-  🔴 Critical — Breaks documented behavior 
-     
-  1. Missing sortPrefixRules() / sortSuffixRules() after CLI loop (src/main.zig ~line 131)
+Code Review Round 2
   
-  addPrefix()'s own docstring says "call sortPrefixRules() after all additions," but the CLI loop in main.zig never calls it. The lookup() function iterates in insertion order, so --lang-prefix sqlite3_=c --lang-prefix sqlite3_open_=rust will
-  match the shorter prefix first and return wrong results. loadFromJson() and mergeFromCLI() both sort — only this path forgets.
+  🔴 Critical — Feature completely dead
   
-  2. std.meta.stringToEnum rejects all documented aliases (src/main.zig ~line 117)
+  8. --config JSON overrides are end-to-end non-functional (src/types/file_config.zig:111)
   
-  The Language enum tags are cpp, python, csharp, but parseLangString() — which exists precisely to handle aliases — also accepts c++, py, c#. main.zig uses stringToEnum instead, so those CLI values silently continue with zero diagnostic. --lang
-   foo=c++ is a silent no-op.
+  file_config.zig:loadFromFile() is still the TODO stub that returns FileConfig{} empty. main.zig's config_path block explicitly says // JSON overrides could be loaded here in the future. So omniscope --config myfile.json logs "Loaded
+  configuration from..." but zero overrides are applied. The loadFromJson() method and all its unit tests are correct but completely unreachable in production.
   
-  Fix: call language_override.LanguageOverrideRegistry.parseLangString(kv.value) instead of std.meta.stringToEnum.
+  9. run_full_test.sh — safe_grep_count -i silently measures nothing (run_full_test.sh:107)
+  
+  The function signature is safe_grep_count $1 $2, where $1=pattern and $2=file. But callers pass it as safe_grep_count -i 'PATTERN' "$out" — making $1="-i" (the literal flag) and $2 the pattern (interpreted as filename). grep fails, || true
+  masks it, and ${cl:=0} forces the count to 0. Every row in phase1_baseline.csv and phase2_override.csv has cross_lang=0, ownership=0, danger=0, ffi_type=0. The override comparison numbers are fabricated zeros.
   
   ---
-  🟠 High — Documented use cases silently non-functional
-
-  3. --default-lang has no effect in danger_surface.zig (src/pass/analysis/danger_surface.zig ~line 146)
-
-  The cross-lang lifecycle suppression block calls reg.lookup(alloc_callee) but never reg.getDefault(). The primary sqlite3 FP (documented in P0) requires --default-lang c to work — but if the user passes only --default-lang c with no prefix
-  rules, lookup() returns null, registry_suppressed stays false, and the FP fires. The feature silently does nothing for this case.
+  🟠 High — Incomplete override coverage
   
-  4. --default-lang has no effect in ffi_unsafe.zig (src/pass/analysis/issue/ffi_unsafe.zig ~line 181)
+  10. call_graph.zig classifies cross-lang edges without override (src/pass/analysis/call_graph.zig:411)
   
-  Same root cause: the same-language skip requires caller_lang AND callee_lang both non-null from lookup(). If neither function is in a specific rule, both return null, the entire block is dead. The 2,611 ffi_unsafe_call FPs remain unchanged
-  under --default-lang c. 
+  CallGraphPass builds the CrossLangEdge list using identifyCalleeLanguage (the non-context version, no override). Even if cross_lang_dataflow.zig respects --lang __rust_alloc=rust, call_graph will still emit a CrossLangEdge for it, and
+  downstream passes that consume edges (including DangerSurfacePass's FFI boundary set) re-process the FP.
   
-  Both fixes are the same: substitute reg.lookup(name) orelse reg.getDefault().
+  11. ffi_boundary_check.zig has a ffi_reentry check with no override (src/pass/analysis/ffi/ffi_boundary_check.zig:292)
   
-  5. --source-lang feature is wired to the registry but never consulted by any pass (src/config/language_override.zig:lookupSourceFile)
+  A direct call to identifyCalleeLanguage(callee_name) != .c — no ctx, no override. A user's --lang wrapper_cb=c is respected by ffi_boundary.zig but ignored by this check in the same pass group. Same symbol gets two contradicting answers.
   
-  lookupSourceFile() has no callers outside tests. --source-lang parses fine, builds the source_file_map correctly, but zero analysis passes call lookupSourceFile(). Scenario 3 from the design doc is a complete no-op end-to-end.
+  12. classifyFreeLanguage always called with caller_lang = .unknown — fallback is dead (src/pass/analysis/ffi/cross_lang_dataflow.zig:~1371)
   
-  ---
-  🟡 Medium — Memory safety
-  
-  6. mergeFromCLI leaks the old duped key on overwrite (src/config/language_override.zig ~line 315)
-  
-  self.exact_map.remove(entry[0]) removes the old entry without freeing the previously-duped key. deinit() only iterates the current map state, so the orphaned string leaks. Same pattern in addSourceFile if called twice for the same filename —
-  put overwrites the value, the first duped key is unreachable and leaked.
-  
-  Fix: use fetchRemove() to capture and free the old key before inserting the replacement.
+  Both free classification call sites hard-code caller_lang = .unknown. The function's final fallback return caller_lang was designed to default to the caller's language for unrecognized custom deallocators — but with .unknown always passed,
+  every unrecognized free returns .unknown instead of the caller's actual language. This means custom deallocators like my_arena_free in a Rust module will never get classified as .rust. The diff preserved and re-annotated the pre-existing bug
+  without fixing it.
   
   ---
-  🔵 Low — Semantic gap
+  🟡 Medium — Test / tooling correctness
   
-  7. pass_types.zig default-lang fallback only fires when detector returns .unknown (src/types/pass_types.zig ~line 862)
+  13. run_full_test.sh — hardcoded /Users/scc/ absolute paths + no set -e (run_full_test.sh:17)
   
-  The comment says "when auto-detection confidence is low" but the code checks language == .unknown. Any well-formed IR returns a concrete language with reasonable confidence, so --default-lang rust is a no-op when you're trying to override a
-  wrong high-confidence detection. This is an accuracy gap for the module-level reclassification use case.
+  10 test fixture paths are absolute paths to another machine's home directory. Combined with missing -e flag (only -uo pipefail), failures silently produce PARSE_FAIL rows in the CSV and the script exits 0. CI gets green with a corrupted
+  baseline. 
+  
+  14. --source-lang untested and never exercised by run_full_test.sh (run_full_test.sh:76)
+  
+  get_override_args builds --default-lang, --lang-prefix, --lang — but never --source-lang. Given that lookupSourceFile() has no callers in any analysis pass (found in Round 1), the test suite cannot detect that the entire Scenario 3 feature is
+  dead.
   
   ---
-  Summary table
+  Summary table (both review rounds combined)
   
-  ┌─────┬───────────────────────┬─────────────┬─────────────────────────────────────────────────────────────────────────────────┐
-  │  #  │         File          │  Severity   │                                      Issue                                      │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 1   │ main.zig              │ 🔴 Critical │ Missing sortPrefixRules()/sortSuffixRules() after CLI loops                     │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 2   │ main.zig              │ 🔴 Critical │ stringToEnum rejects c++/py/c# aliases silently                                 │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 3   │ danger_surface.zig    │ 🟠 High     │ getDefault() never consulted — --default-lang c has no effect on cross-lang FPs │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 4   │ ffi_unsafe.zig        │ 🟠 High     │ getDefault() never consulted — --default-lang c cannot suppress 2611 reports    │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 5   │ language_override.zig │ 🟠 High     │ --source-lang builds map but lookupSourceFile() has zero callers in passes      │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 6   │ language_override.zig │ 🟡 Medium   │ mergeFromCLI + duplicate addSourceFile leak the old duped key string            │
-  ├─────┼───────────────────────┼─────────────┼─────────────────────────────────────────────────────────────────────────────────┤
-  │ 7   │ pass_types.zig        │ 🔵 Low      │ default-lang override blocked by any non-.unknown detector result               │
-  └─────┴───────────────────────┴─────────────┴─────────────────────────────────────────────────────────────────────────────────┘
+  ┌─────┬───────────────────────────────┬──────────┬─────────────────────────────────────────────────────────────────────────────┐
+  │  #  │             File              │ Severity │                                    Issue                                    │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 1   │ main.zig                      │ 🔴       │ Missing sortPrefixRules()/sortSuffixRules() after CLI loops                 │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 2   │ main.zig                      │ 🔴       │ stringToEnum rejects c++/py/c# aliases silently                             │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 3   │ danger_surface.zig            │ 🟠       │ getDefault() not consulted — --default-lang c can't suppress cross-lang FPs │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 4   │ ffi_unsafe.zig                │ 🟠       │ getDefault() not consulted — 2611 reports unaffected by --default-lang      │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 5   │ language_override.zig         │ 🟠       │ --source-lang builds map but lookupSourceFile() has zero pass callers       │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 6   │ language_override.zig         │ 🟡       │ mergeFromCLI + duplicate addSourceFile leak the old duped key string        │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 7   │ pass_types.zig                │ 🔵       │ --default-lang blocked by any non-.unknown detector result                  │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 8   │ file_config.zig:111           │ 🔴       │ --config JSON override path is a TODO stub — entire JSON feature dead       │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 9   │ run_full_test.sh:107          │ 🔴       │ safe_grep_count -i arg order wrong — all comparison metrics record 0        │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 10  │ call_graph.zig:411            │ 🟠       │ Cross-lang edge detection ignores override registry                         │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 11  │ ffi_boundary_check.zig:292    │ 🟠       │ ffi_reentry check uses no-context classifier — contradicts ffi_boundary.zig │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 12  │ cross_lang_dataflow.zig:~1371 │ 🟡       │ classifyFreeLanguage always receives .unknown caller — fallback is dead     │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 13  │ run_full_test.sh:17           │ 🟡       │ Hardcoded absolute paths + no set -e — CI false-positive                    │
+  ├─────┼───────────────────────────────┼──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ 14  │ run_full_test.sh:76           │ 🔵       │ --source-lang never tested                                                  │
+  └─────┴───────────────────────────────┴──────────┴─────────────────────────────────────────────────────────────────────────────┘
   
-  Items 1 and 2 are the most impactful — they affect basic CLI operation. Items 3 and 4 mean the headline P0 use case (--default-lang c) produces no visible effect without additional explicit prefix rules. Item 5 means Scenario 3 (--source-lang)
-   is dead code. Want me to fix these?
+  Items 1, 2, 8, 9 are the highest-priority fixes — each silently breaks a documented use case. Want me to start fixing them?

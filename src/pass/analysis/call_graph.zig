@@ -403,14 +403,18 @@ pub const CallGraphPass = struct {
             const caller_node = nodes.items[edge.caller];
             const callee_node = nodes.items[edge.callee];
 
-            // Detect language of caller (has LLVM function ref)
-            const caller_lang = language_detector.identifyLanguage(caller_node.func_ref);
+            // Detect language of caller (has LLVM function ref).
+            // Check override registry first — user-specified language wins over auto-detection.
+            const caller_lang = ctx.lookupFunctionLanguage(caller_node.name) orelse
+                language_detector.identifyLanguage(caller_node.func_ref);
 
-            // Detect language of callee (may be external — use name-based detection)
-            const callee_lang = if (callee_node.is_external)
-                language_detector.identifyCalleeLanguage(callee_node.name)
-            else
-                language_detector.identifyLanguage(callee_node.func_ref);
+            // Detect language of callee (may be external — use name-based detection).
+            // Override registry takes priority for external functions too.
+            const callee_lang = ctx.lookupFunctionLanguage(callee_node.name) orelse
+                if (callee_node.is_external)
+                    language_detector.identifyCalleeLanguage(callee_node.name)
+                else
+                    language_detector.identifyLanguage(callee_node.func_ref);
 
             // Cross-language condition: languages differ OR callee is external unknown
             const is_cross = caller_lang != callee_lang or callee_node.kind == .external_unknown;

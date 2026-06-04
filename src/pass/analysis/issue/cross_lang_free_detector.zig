@@ -139,8 +139,8 @@ pub fn detectCrossLanguageFree(
     // Check for intentional ownership transfer patterns (e.g., Box::leak → C free())
     // These are legitimate cross-language frees where ownership was explicitly transferred
     const intentional_patterns = [_][]const u8{
-        "leak", "into_raw", "ManuallyDrop", "forget",
-        "donate", "transfer_ownership", "export_ptr", "handoff",
+        "leak",       "into_raw",           "ManuallyDrop", "forget",
+        "donate",     "transfer_ownership", "export_ptr",   "handoff",
         "ffi_export", "c_export",
     };
     for (intentional_patterns) |pattern| {

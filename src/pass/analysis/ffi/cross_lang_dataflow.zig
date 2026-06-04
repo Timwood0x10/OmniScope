@@ -29,6 +29,7 @@ const allocator_shim = @import("../../../detectors/allocator_shim.zig");
 const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 const escape_analysis = @import("../../../analysis/escape_analysis.zig");
 const raii_detector = @import("../../../analysis/raii_detector.zig");
+const language_detector = @import("../../../semantics/language_detector.zig");
 
 // T4: Import summary propagation engine
 const summary_propagation = @import("../../../dataflow/summary_propagation.zig");
@@ -316,7 +317,10 @@ pub const CrossLangDataFlow = struct {
                                 if (alloc_by_ptr.get(ptr_val)) |idx| {
                                     const alloc = &allocations.items[idx];
                                     if (!alloc.freed) {
-                                        const free_lang = classifyFreeLanguage(called_name, .unknown, ctx);
+                                        // Determine caller language for free classification fallback.
+                                        // Use override registry first, then fall back to module-level language.
+                                        const effective_caller_lang = ctx.lookupFunctionLanguage(func_name) orelse func_lang;
+                                        const free_lang = classifyFreeLanguage(called_name, effective_caller_lang, ctx);
                                         try alloc.free_langs.append(ctx.allocator, free_lang);
                                         try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
                                         alloc.freed = true;
@@ -755,6 +759,7 @@ pub const CrossLangDataFlow = struct {
         }
 
         for (ctx.ir_store.function_list) |fir| {
+            const func_name = fir.name;
             var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
             defer store_map.deinit();
 
@@ -795,7 +800,11 @@ pub const CrossLangDataFlow = struct {
                         if (tracked_ptrs.get(ptr_val)) |idx| {
                             const alloc = &allocations.items[idx];
                             if (!alloc.freed) {
-                                const free_lang = classifyFreeLanguage(called_name, .unknown, ctx);
+                                // Determine caller language for free classification fallback.
+                                // Use override registry first, then fall back to auto-detection.
+                                const effective_caller_lang = ctx.lookupFunctionLanguage(func_name) orelse
+                                    language_detector.identifyLanguage(fir.func);
+                                const free_lang = classifyFreeLanguage(called_name, effective_caller_lang, ctx);
                                 try alloc.free_langs.append(ctx.allocator, free_lang);
                                 try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
                                 alloc.freed = true;

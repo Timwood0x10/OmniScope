@@ -49,16 +49,16 @@ pub fn isCppDestructorOrConstructor(func_name: []const u8) bool {
 pub fn isIntentionalOwnershipTransfer(func_name: []const u8) bool {
     // Pattern 1: Known intentional leak/transfer callee names (mangled Rust symbols)
     const intentional_patterns = [_][]const u8{
-        "leak",       // Box::leak — mangled name contains "leak"
-        "into_raw",   // Box::into_raw — ownership transfer to raw ptr
+        "leak", // Box::leak — mangled name contains "leak"
+        "into_raw", // Box::into_raw — ownership transfer to raw ptr
         "ManuallyDrop", // ManuallyDrop::new — suppresses drop/free
-        "forget",     // std::mem::forget — intentionally leaks
-        "donate",     // Ownership donation pattern
+        "forget", // std::mem::forget — intentionally leaks
+        "donate", // Ownership donation pattern
         "transfer_ownership", // Explicit transfer
         "export_ptr", // FFI export pointer
-        "handoff",    // Handoff pattern
+        "handoff", // Handoff pattern
         "ffi_export", // FFI export marker
-        "c_export",   // C export marker
+        "c_export", // C export marker
     };
     for (intentional_patterns) |pattern| {
         if (std.mem.indexOf(u8, func_name, pattern) != null) {

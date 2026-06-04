@@ -7,6 +7,8 @@ set -uo pipefail
 OMNISCOPE="./zig-out/bin/OmniScope"
 TIMEOUT_SEC=60
 RESULTS_DIR="./test_results"
+# External test fixture directory (override with EXTERNAL_FIXTURES env var)
+EXTERNAL_FIXTURES="${EXTERNAL_FIXTURES:-./corpus/external}"
 BASELINE_DIR="${RESULTS_DIR}/baseline"
 OVERRIDE_DIR="${RESULTS_DIR}/override"
 
@@ -14,16 +16,16 @@ mkdir -p "$BASELINE_DIR" "$OVERRIDE_DIR"
 
 # ─── 所有测试文件列表 ───
 declare -a ALL_FILES=(
-  "/Users/scc/code/ffi-demo/output/cpp_hash.ll"
-  "/Users/scc/code/ffi-demo/output/cpp_fft.ll"
-  "/Users/scc/code/ffi-demo/output/c_hash_c_bridge.ll"
-  "/Users/scc/code/ffi-demo/output/c_fft_c_bridge.ll"
-  "/Users/scc/code/ffi-demo/output/c_ffi_traps.ll"
-  "/Users/scc/code/ffi-demo/output/c_merkle_tree.ll"
-  "/Users/scc/code/ffi-demo/output/rust_hash.ll"
-  "/Users/scc/code/ffi-demo/output/rust_merkle.ll"
-  "/Users/scc/code/ffi-demo/output/zig_ffi_bridge.ll"
-  "/Users/scc/code/ffi-demo/output/zig_main.ll"
+  "${EXTERNAL_FIXTURES}/cpp_hash.ll"
+  "${EXTERNAL_FIXTURES}/cpp_fft.ll"
+  "${EXTERNAL_FIXTURES}/c_hash_c_bridge.ll"
+  "${EXTERNAL_FIXTURES}/c_fft_c_bridge.ll"
+  "${EXTERNAL_FIXTURES}/c_ffi_traps.ll"
+  "${EXTERNAL_FIXTURES}/c_merkle_tree.ll"
+  "${EXTERNAL_FIXTURES}/rust_hash.ll"
+  "${EXTERNAL_FIXTURES}/rust_merkle.ll"
+  "${EXTERNAL_FIXTURES}/zig_ffi_bridge.ll"
+  "${EXTERNAL_FIXTURES}/zig_main.ll"
   "./corpus/red_team_test/rust_ffi_bugs.ll"
   "./corpus/red_team_test/go_tinygo_ffi_bugs.ll"
   "./corpus/red_team_test/go_cgo_bugs.ll"
@@ -73,6 +75,25 @@ echo "=============================================="
 echo " OmniScope 全量测试 v3: 共 ${TOTAL} 个文件"
 echo "=============================================="
 
+# Filter out non-existent fixture files (graceful degradation)
+declare -a EXISTING_FILES=()
+for F in "${ALL_FILES[@]}"; do
+  if [ -f "$F" ]; then
+    EXISTING_FILES+=("$F")
+  else
+    echo "[WARN] Fixture not found: $F (skipping)"
+  fi
+done
+ALL_FILES=("${EXISTING_FILES[@]}")
+TOTAL=${#ALL_FILES[@]}
+if [ "$TOTAL" -eq 0 ]; then
+  echo "ERROR: No test fixtures found. Set EXTERNAL_FIXTURES=/path/to/fixtures"
+  exit 1
+fi
+
+# get_override_args: 为不同测试文件生成 --lang / --default-lang 等覆盖参数。
+# 注意：--source-lang 在此函数中用于覆盖解析路径的测试覆盖率，
+# 尽管 lookupSourceFile() 与各 pass 的端到端集成尚待完成（参见 bugs.md #5）。
 get_override_args() {
   local bn="$1"
   case "$bn" in
@@ -94,7 +115,7 @@ get_override_args() {
     csharp_ffi_edge_cases|csharp_ffi_bugs)
       printf "%s" "--lang-prefix _N=csharp --default-lang csharp"; return ;;
     python_capi_edge_cases|python_cffi_bugs)
-      printf "%s" "--lang-prefix PyInit_=python --lang-prefix _Py=python --default-lang python"; return ;;
+      printf "%s" "--lang-prefix PyInit_=python --lang-prefix _Py=python --default-lang python --source-lang python_wrapper.py:python"; return ;;
     java_jni_edge_cases|java_jni_bugs)
       printf "%s" "--lang-prefix Java_=java --lang-prefix JNI_=java --default-lang java"; return ;;
     red_team_triple_chain)
@@ -104,7 +125,11 @@ get_override_args() {
 }
 
 # 安全计数：grep 匹配数，无匹配返回 0
-safe_grep_count() { grep -cE "$1" "$2" 2>/dev/null || true; }
+safe_grep_count() {
+  local flag="" pattern="$1" file="$2"
+  if [ "$pattern" = "-i" ]; then flag="-i"; pattern="$2"; file="$3"; fi
+  grep -c${flag:+ $flag}E "$pattern" "$file" 2>/dev/null || true
+}
 
 # 运行单次测试
 run_test() {
