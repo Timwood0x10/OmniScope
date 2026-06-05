@@ -866,6 +866,8 @@ pub const AbiCompatChecker = struct {
         diag: *DiagnosticWriter,
     ) !void {
         _ = call_inst;
+        defer ctx.allocator.free(mismatch.expected);
+        defer ctx.allocator.free(mismatch.actual);
         const location = Location.init(mismatch.caller_name);
 
         const trace = try ctx.allocator.alloc(TraceEntry, 4);

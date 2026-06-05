@@ -388,8 +388,7 @@ pub const JniLeakDetectorPass = struct {
             else => .medium,
         };
 
-        var issue = Issue.init(issue_kind, message, location, severity, 0.85);
-        issue.owned = true;
+        const issue = Issue.init(issue_kind, message, location, severity, 0.85);
         try ctx.addIssue(&issue);
     }
 

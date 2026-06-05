@@ -165,16 +165,15 @@ pub const FFIAnalysisPass = struct {
         const mod = ctx.module.?.raw;
 
         // Step 1: Initialize FFIMatcher and extract functions
-        var matcher = try FFIMatcher.init(ctx.allocator);
-        self.matcher = matcher;
+        self.matcher = try FFIMatcher.init(ctx.allocator);
 
         const safe_module = llvm_safe.Module{ .raw = mod };
-        try matcher.extractFunctions(safe_module);
-        try matcher.matchFunctions();
-        diag.info("OwnershipViolation: Found {} FFI matches", .{matcher.getMatches().len});
+        try self.matcher.?.extractFunctions(safe_module);
+        try self.matcher.?.matchFunctions();
+        diag.info("OwnershipViolation: Found {} FFI matches", .{self.matcher.?.getMatches().len});
 
-        // Step 2: Set matcher in DataFlowGraph
-        ctx.data_flow_graph.setFFIMatcher(&matcher);
+        // Step 2: Set matcher in DataFlowGraph — pointer stable for pass lifetime
+        ctx.data_flow_graph.setFFIMatcher(&self.matcher.?);
         try ctx.data_flow_graph.createFFIBoundariesFromMatcher();
 
         // Phase R5.2: Initialize Hook system for cross-language ownership tracking.

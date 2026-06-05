@@ -1197,7 +1197,7 @@ test "libraryCount and totalRules - database statistics" {
     try std.testing.expect(rule_count > 20);
 
     // Log for debugging
-    std.debug.print("\nFFI Contract DB: {} libraries, {} rules\n", .{ lib_count, rule_count });
+    std.log.info("FFI Contract DB: {} libraries, {} rules", .{ lib_count, rule_count });
 }
 
 test "FFIContractDB - performance benchmark" {
@@ -1232,17 +1232,17 @@ test "FFIContractDB - performance benchmark" {
     const total_queries = iterations * test_funcs.len * 5;
     const per_query_ns = @divTrunc(elapsed_ns, total_queries);
 
-    std.debug.print("\n=== FFIContractDB Performance Benchmark ===\n", .{});
-    std.debug.print("  Total queries: {}\n", .{total_queries});
-    std.debug.print("  Elapsed time: {} ns ({d:.1} ms)\n", .{
+    std.log.info("=== FFIContractDB Performance Benchmark ===", .{});
+    std.log.info("  Total queries: {}", .{total_queries});
+    std.log.info("  Elapsed time: {} ns ({d:.1} ms)", .{
         elapsed_ns,
         @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0,
     });
-    std.debug.print("  Per-query average: {} ns ({d:.1} µs)\n", .{
+    std.log.info("  Per-query average: {} ns ({d:.1} µs)", .{
         per_query_ns,
         @as(f64, @floatFromInt(per_query_ns)) / 1_000.0,
     });
-    std.debug.print("  Libraries: {}, Rules: {}\n", .{
+    std.log.info("  Libraries: {}, Rules: {}", .{
         db.libraryCount(),
         db.totalRules(),
     });
@@ -1250,7 +1250,7 @@ test "FFIContractDB - performance benchmark" {
     // Performance requirement: < 100 µs per query (very relaxed for CI/debug/slow systems)
     // Original target was < 1µs, but debug builds and CI variability require relaxation
     if (per_query_ns >= 100_000) {
-        std.debug.print("  CRITICAL: Query time extremely slow: {} ns\n", .{per_query_ns});
+        std.log.warn("  CRITICAL: Query time extremely slow: {} ns", .{per_query_ns});
     }
     // Relaxed assert: just ensure it completes in reasonable time
     try std.testing.expect(per_query_ns < 100_000);

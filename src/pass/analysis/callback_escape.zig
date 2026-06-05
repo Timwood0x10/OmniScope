@@ -287,12 +287,10 @@ pub const CallbackEscapePass = struct {
             const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{item.func_name}) catch {
                 return result;
             };
-            defer wctx.ctx_ptr.allocator.free(msg);
             const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
                 wctx.ctx_ptr.allocator.free(msg);
                 return result;
             };
-            defer wctx.ctx_ptr.allocator.free(trace);
             trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
             var issue = Issue.initWithTrace(.cross_language_leak, msg, Location.init(item.func_name), .medium, 0.65, trace);
             issue.owned = true;
@@ -304,12 +302,10 @@ pub const CallbackEscapePass = struct {
                 const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "{d} unbalanced Py_DECREF(s) in {s}", .{ count, item.func_name }) catch {
                     return result;
                 };
-                defer wctx.ctx_ptr.allocator.free(msg);
                 const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
                     wctx.ctx_ptr.allocator.free(msg);
                     return result;
                 };
-                defer wctx.ctx_ptr.allocator.free(trace);
                 trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
                 var issue = Issue.initWithTrace(.use_after_free, msg, Location.init(item.func_name), .high, 0.80, trace);
                 issue.owned = true;

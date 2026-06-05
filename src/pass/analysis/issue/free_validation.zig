@@ -823,7 +823,6 @@ pub const FreeValidationPass = struct {
                 errdefer issue.deinit(ctx.allocator);
 
                 try ctx.addIssue(&issue);
-                ctx.allocator.free(message);
                 diag.warn("[OMI-CRITICAL] Invalid free of borrowed library ref in {s}: {s}() on borrowed pointer", .{
                     caller_name, callee_name,
                 });
