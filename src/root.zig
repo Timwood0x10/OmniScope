@@ -126,6 +126,7 @@ pub const cross_lang = struct {
     pub const TaintContext = @import("pass/analysis/taint/taint_state.zig").TaintContext;
 
     pub const FFIDetector = @import("pass/analysis/ffi/ffi_detector.zig").FFIDetector;
+    pub const FFIDetectorPass = @import("pass/analysis/ffi/ffi_detector.zig").FFIDetectorPass;
     pub const getCWEID = @import("pass/analysis/ffi/ffi_detector.zig").getCWEID;
     pub const FFIVulnerability = @import("pass/analysis/ffi/ffi_detector.zig").FFIVulnerability;
     pub const FFIVulnerabilityType = @import("pass/analysis/ffi/ffi_detector.zig").FFIVulnerabilityType;
@@ -162,6 +163,8 @@ pub const cross_lang = struct {
     pub const EscapeStats = @import("pass/analysis/callback_escape.zig").EscapeStats;
     pub const isCgoBoundary = @import("pass/analysis/callback_escape.zig").isCgoBoundary;
 
+    pub const CallbackLifecycleChecker = @import("pass/analysis/ffi/callback_lifecycle_checker.zig").CallbackLifecycleChecker;
+
     pub const LockPass = @import("pass/analysis/lock.zig").LockPass;
     pub const LockViolation = @import("pass/analysis/lock.zig").LockViolation;
     pub const LockStats = @import("pass/analysis/lock.zig").LockStats;
@@ -187,6 +190,7 @@ pub const cross_lang = struct {
     pub const FreeValidationPass = @import("pass/analysis/issue/free_validation.zig").FreeValidationPass;
     pub const BufferOverflowPass = @import("pass/analysis/buffer_overflow.zig").BufferOverflowPass;
     pub const FFITypeMismatchPass = @import("pass/analysis/ffi/ffi_type_mismatch.zig").FFITypeMismatchPass;
+    pub const AbiCompatChecker = @import("pass/analysis/ffi/abi_compat_checker.zig").AbiCompatChecker;
     pub const CrossLangDataFlowPass = @import("pass/analysis/ffi/cross_lang_dataflow.zig").CrossLangDataFlow;
     pub const RustFfiAuditor = @import("pass/analysis/rust_ffi/rust_ffi_auditor.zig").RustFfiAuditor;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisPass;

@@ -785,7 +785,7 @@ pub const FFITypeMismatchPass = struct {
     }
 
     /// Checks if a call is an FFI boundary.
-    fn isFFIBoundary(caller_name: []const u8, callee_name: []const u8) bool {
+    pub fn isFFIBoundary(caller_name: []const u8, callee_name: []const u8) bool {
         // Pattern 1: Rust extern "C" functions
         const caller_is_rust = std.mem.startsWith(u8, caller_name, "_R") or
             (std.mem.startsWith(u8, caller_name, "_ZN") and

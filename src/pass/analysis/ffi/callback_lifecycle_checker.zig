@@ -163,7 +163,6 @@ pub const CallbackLifecycleChecker = struct {
         registrations: *std.ArrayList(CallbackRegistration),
         invocations: *std.ArrayList(CallbackInvocation),
     ) !void {
-        _ = ctx;
         _ = diag;
 
         // Scan basic blocks and instructions
@@ -210,7 +209,7 @@ pub const CallbackLifecycleChecker = struct {
                                     .may_capture_pointers = mayCapturePointers(arg),
                                 };
 
-                                try registrations.append(registration);
+                                try registrations.append(ctx.allocator, registration);
                                 stats.callback_registrations += 1;
                             }
                         }
@@ -237,7 +236,7 @@ pub const CallbackLifecycleChecker = struct {
                             .is_cross_boundary = isCrossBoundaryCall(called_name),
                         };
 
-                        try invocations.append(invocation);
+                        try invocations.append(ctx.allocator, invocation);
                         stats.callback_invocations += 1;
                     }
                 }
@@ -301,6 +300,7 @@ pub const CallbackLifecycleChecker = struct {
         stats: *CallbackLifecycleStats,
     ) !void {
         _ = diag;
+        _ = stats;
 
         // Track callbacks registered to multiple registrars
         var callback_registrar_count = std.StringHashMap(u32).init(ctx.allocator);

@@ -58,15 +58,23 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     // Core analysis passes
     try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
     try pipeline.registerPass(OmniScope.cross_lang.TaintPropagationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FFIDetectorPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFIBoundaryPass);
     try pipeline.registerPass(OmniScope.cross_lang.FFITypeMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.AbiCompatChecker); // abi-compat-checker
     try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.JniLeakDetectorPass);
+    // NOTE: FFIAnalysisPass (ownership-violation) has method-style run(self, ctx, diag)
+    // that doesn't match the Pass interface expecting static run(ctx, diag).
+    // It also has pre-existing compile errors (append API, missing debug_info method).
+    // TODO: Refactor to static-run pattern (like LockPass) then uncomment below.
+    // try pipeline.registerPass(OmniScope.cross_lang.FFIAnalysisPass); // ownership-violation
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
     try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
     try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
     try pipeline.registerPass(OmniScope.cross_lang.PointerOwnershipPass);
     try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackLifecycleChecker); // callback-lifecycle
     try pipeline.registerPass(OmniScope.cross_lang.RustFfiAuditor);
     try pipeline.registerPass(OmniScope.cross_lang.CrossLangDataFlowPass);
     try pipeline.registerPass(OmniScope.cross_lang.ReturnCheckPass);

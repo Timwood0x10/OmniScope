@@ -164,7 +164,7 @@ pub const AbiCompatChecker = struct {
         ctx: *PassContext,
         func: c.LLVMValueRef,
         func_decls: *std.StringHashMap(FunctionSignature),
-        stats: *AbiCompatStats,
+        _: *AbiCompatStats,
     ) !void {
         const func_name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(func_name_ptr) == 0) return;
@@ -173,9 +173,13 @@ pub const AbiCompatChecker = struct {
         // Skip LLVM intrinsics
         if (std.mem.startsWith(u8, func_name, "llvm.")) return;
 
-        // Get function type
-        const func_type = c.LLVMTypeOf(func);
+        // Get function type: LLVMTypeOf returns a pointer type, not the function type.
+        // Must call LLVMGetElementType to get the underlying function type.
+        const func_ptr_type = c.LLVMTypeOf(func);
+        if (@intFromPtr(func_ptr_type) == 0) return;
+        const func_type = c.LLVMGetElementType(func_ptr_type);
         if (@intFromPtr(func_type) == 0) return;
+        if (c.LLVMGetTypeKind(func_type) != c.LLVMFunctionTypeKind) return;
 
         // Get parameter count
         const param_count = c.LLVMCountParamTypes(func_type);
@@ -268,9 +272,17 @@ pub const AbiCompatChecker = struct {
         if (@intFromPtr(callee_name_ptr) == 0) return;
         const callee_name = std.mem.span(callee_name_ptr);
 
-        // Check if this is an FFI boundary
+        // Check if this is an FFI boundary.
+        // Three ways to detect: explicit cross-lang edge, mangling-based heuristic,
+        // or callee is a declaration-only external symbol (defined in another TU/library).
+        const callee_func_val = c.LLVMGetCalledValue(call_inst);
+        const callee_is_declaration = if (@intFromPtr(callee_func_val) != 0)
+            c.LLVMIsDeclaration(callee_func_val) != 0
+        else
+            false;
         const is_ffi = ctx.getCrossEdgeByCallee(callee_name) != null or
-            ffi_type_mismatch.FFITypeMismatchPass.isFFIBoundary(caller_name, callee_name);
+            ffi_type_mismatch.FFITypeMismatchPass.isFFIBoundary(caller_name, callee_name) or
+            callee_is_declaration;
         if (!is_ffi) return;
 
         stats.ffi_boundaries_found += 1;
@@ -553,18 +565,18 @@ pub const AbiCompatChecker = struct {
         diag: *DiagnosticWriter,
         stats: *AbiCompatStats,
     ) !void {
-        _ = diag;
         const num_args = c.LLVMGetNumArgOperands(call_inst);
         const called_val = c.LLVMGetCalledValue(call_inst);
         if (@intFromPtr(called_val) == 0) return;
 
+        // Get callee's function type for parameter-level analysis
         const func_type = c.LLVMGetCalledFunctionType(call_inst);
-        if (@intFromPtr(func_type) == 0) return;
+        if (@intFromPtr(func_type) == 0) return; // Indirect call — skip
 
         const expected_params = c.LLVMCountParamTypes(func_type);
         const is_varargs = c.LLVMIsFunctionVarArg(func_type) != 0;
 
-        // Check parameter count mismatch
+        // Check 1: Parameter count mismatch
         if (!is_varargs and num_args != expected_params) {
             stats.param_count_mismatches += 1;
             const mismatch = AbiMismatchInfo{
@@ -581,7 +593,7 @@ pub const AbiCompatChecker = struct {
             reportAbiMismatch(ctx, call_inst, mismatch, diag) catch {};
         }
 
-        // Check for extra arguments to non-varargs function
+        // Check 2: Extra arguments to non-varargs function
         if (!is_varargs and num_args > expected_params) {
             stats.varargs_mismatches += 1;
             const mismatch = AbiMismatchInfo{
@@ -597,13 +609,79 @@ pub const AbiCompatChecker = struct {
             };
             reportAbiMismatch(ctx, call_inst, mismatch, diag) catch {};
         }
+
+        // Check 3: Parameter type compatibility at FFI boundary (cross-language safety net).
+        // Catches Zig u64→C u32 truncation, struct padding differences, pointer confusion.
+        var param_types_buf: ?[]c.LLVMTypeRef = null;
+        defer if (param_types_buf) |buf| ctx.allocator.free(buf);
+
+        if (expected_params > 0) {
+            param_types_buf = try ctx.allocator.alloc(c.LLVMTypeRef, expected_params);
+            c.LLVMGetParamTypes(func_type, param_types_buf.?.ptr);
+        }
+
+        const check_limit = @min(num_args, expected_params);
+        var idx: c_uint = 0;
+        while (idx < check_limit) : (idx += 1) {
+            const arg_val = c.LLVMGetOperand(call_inst, idx);
+            if (@intFromPtr(arg_val) == 0) continue;
+
+            const arg_llvm_type = c.LLVMTypeOf(arg_val);
+            if (@intFromPtr(arg_llvm_type) == 0) continue;
+
+            const param_type = if (param_types_buf) |buf| buf[idx] else continue;
+
+            // Integer width mismatch: e.g., Zig i64 → C i32 (silent truncation)
+            if (c.LLVMGetTypeKind(arg_llvm_type) == c.LLVMIntegerTypeKind and
+                c.LLVMGetTypeKind(param_type) == c.LLVMIntegerTypeKind)
+            {
+                const arg_width = c.LLVMGetIntTypeWidth(arg_llvm_type);
+                const param_width = c.LLVMGetIntTypeWidth(param_type);
+                if (arg_width != param_width) {
+                    stats.param_type_mismatches += 1;
+                    const mismatch = AbiMismatchInfo{
+                        .kind = .param_type_mismatch,
+                        .caller_name = caller_name,
+                        .callee_name = callee_name,
+                        .caller_lang = "unknown",
+                        .callee_lang = "unknown",
+                        .param_index = idx,
+                        .expected = try std.fmt.allocPrint(ctx.allocator, "i{}", .{param_width}),
+                        .actual = try std.fmt.allocPrint(ctx.allocator, "i{}", .{arg_width}),
+                        .description = "Integer width mismatch at FFI boundary: caller passes wider integer than callee expects (truncation risk)",
+                    };
+                    reportAbiMismatch(ctx, call_inst, mismatch, diag) catch {};
+                    continue;
+                }
+            }
+
+            // Struct layout mismatch at FFI boundary — only when both sides are structs
+            if (c.LLVMGetTypeKind(arg_llvm_type) == c.LLVMStructTypeKind and
+                c.LLVMGetTypeKind(param_type) == c.LLVMStructTypeKind and
+                !checkStructLayoutCompatibility(arg_llvm_type, param_type))
+            {
+                stats.struct_layout_mismatches += 1;
+                const mismatch = AbiMismatchInfo{
+                    .kind = .struct_layout_mismatch,
+                    .caller_name = caller_name,
+                    .callee_name = callee_name,
+                    .caller_lang = "unknown",
+                    .callee_lang = "unknown",
+                    .param_index = idx,
+                    .expected = getTypeName(param_type),
+                    .actual = getTypeName(arg_llvm_type),
+                    .description = "Struct layout or field type mismatch at FFI boundary (padding/alignment difference between languages)",
+                };
+                reportAbiMismatch(ctx, call_inst, mismatch, diag) catch {};
+            }
+        }
     }
 
     /// Get the size of a type in bytes (estimated from LLVM type).
     /// Returns null if size cannot be determined from type alone.
     pub fn getTypeSizeEstimate(type_ref: c.LLVMTypeRef) ?u32 {
-        const kind = c.LLVMGetTypeKind(type_ref);
-        return switch (kind) {
+        const type_kind = c.LLVMGetTypeKind(type_ref);
+        return switch (type_kind) {
             c.LLVMVoidTypeKind => 0,
             c.LLVMHalfTypeKind => 2,
             c.LLVMFloatTypeKind => 4,
@@ -686,8 +764,8 @@ pub const AbiCompatChecker = struct {
 
     /// Get human-readable type name.
     fn getTypeName(type_ref: c.LLVMTypeRef) []const u8 {
-        const kind = c.LLVMGetTypeKind(type_ref);
-        return switch (kind) {
+        const type_kind = c.LLVMGetTypeKind(type_ref);
+        return switch (type_kind) {
             c.LLVMVoidTypeKind => "void",
             c.LLVMHalfTypeKind => "f16",
             c.LLVMFloatTypeKind => "f32",
@@ -716,71 +794,10 @@ pub const AbiCompatChecker = struct {
     /// Get human-readable calling convention name.
     fn getCallingConventionName(cc: c_uint) []const u8 {
         return switch (cc) {
-            // Standard x86/x86_64 conventions
             c.LLVMCCallConv => "cdecl",
-            c.LLVMX8664_SysVCallConv => "x86_64_sysv",
-            c.LLVMFastCallConv, c.LLVMX86FastcallCallConv => "fastcall",
+            10 => "x86_64_sysv", // X86_64 SysV
+            c.LLVMFastCallConv => "fastcall",
             c.LLVMX86StdcallCallConv => "stdcall",
-            c.LLVMX86ThisCallCallConv => "thiscall",
-            c.LLVMX86_VectorCallCallConv => "x86_vectorcall",
-            c.LLVMWin64CallConv, c.LLVM_Win64_CDecl_Conv => "win64",
-            c.LLVMColdCallConv => "coldcc",
-            c.LLVMWebKitJSCallConv => "webkit_js",
-            c.LLVMAnyRegCallConv => "anyreg",
-            c.LLVMX86_IntrCallConv => "x86_intr",
-
-            // ARM conventions
-            c.LLVMARMAAPCSCallConv => "arm_aapcs",
-            c.LLVMARMAAPCSVFPCallConv => "arm_aapcs_vfp",
-            c.LLVMARMAAPCSSoftCallConv => "arm_aapcs_soft",
-
-            // AArch64 conventions
-            c.LLVMAArch64VectorCallCallConv => "aarch64_vectorcall",
-
-            // RISC-V conventions
-            c.LLVMRISCVVectorCallCallConv => "riscv_vectorcall",
-
-            // MSP430 conventions
-            c.LLVMMSP430INTRCallConv, c.LLVM_MSP430_BUILTIN_Conv => "msp430",
-
-            // PTX (NVIDIA GPU) conventions
-            c.LLVMPTXKernelCallConv => "ptx_kernel",
-            c.LLVMPTXDeviceCallConv => "ptx_device",
-
-            // SPIR conventions
-            c.LLVMSPIRFUNCCallConv => "spir_func",
-            c.LLVMSPIRKERNELCallConv => "spir_kernel",
-
-            // Intel OCL conventions
-            c.LLVMIntelOCL_BICallConv => "intel_ocl_bi",
-
-            // HHVM conventions
-            c.LLVMHHVMCallConv, c.LLVMHHVM_CCallConv => "hhvm",
-
-            // AVR conventions
-            c.LLVMAvrInterruptCallConv => "avr_intr",
-            c.LLVMAvrSignalCallConv => "avr_signal",
-            c.LLVMAVR_BUILTINCallConv => "avr_builtin",
-
-            // AMDGPU conventions
-            c.LLVMAMDGPU_VS => "amdgpu_vs",
-            c.LLVMAMDGPU_GS => "amdgpu_gs",
-            c.LLVMAMDGPU_CS_Thunk, c.LLVMAMDGPU_CS => "amdgpu_cs",
-            c.LLVMAMDGPU_KERNEL => "amdgpu_kernel",
-            c.LLVMAMDGPU_HS => "amdgpu_hs",
-            c.LLVMAMDGPU_PS => "amdgpu_ps",
-            c.LLVMAMDGPU_LS => "amdgpu_ls",
-            c.LLVMAMDGPU_ES => "amdgpu_es",
-            c.LLVMAmdgpuNumCallConv => "amdgpu_num",
-
-            // M68k conventions
-            c.LLVM_M68k_INTR_Conv => "m68k_intr",
-            c.LLVM_M68k_BCC_Conv => "m68k_bcc",
-            c.LLVM_M68k_Compact_Conv => "m68k_compact",
-
-            // Other conventions
-            c.LLVM_Renderer_Conv => "renderer",
-
             else => "unknown",
         };
     }
@@ -850,7 +867,7 @@ pub const AbiCompatChecker = struct {
             message,
             location,
             severity,
-            confidence,
+            @floatCast(confidence),
             trace,
         );
 

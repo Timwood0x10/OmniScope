@@ -62,6 +62,8 @@ pub const FFIVulnerabilityType = enum {
     deserialization,
     /// Race condition
     race_condition,
+    /// Tainted input crossing FFI boundary (data integrity risk)
+    tainted_input,
     /// Unknown vulnerability type
     unknown,
 };
@@ -108,6 +110,7 @@ pub fn getCWEID(vuln_type: FFIVulnerabilityType) u32 {
         .xxe => 611,
         .deserialization => 502,
         .race_condition => 362,
+        .tainted_input => 20,
         .unknown => 0,
     };
 }
@@ -149,13 +152,15 @@ pub const FFIDetector = struct {
     vulnerability_count: u32,
     vulnerabilities: std.ArrayList(FFIVulnerability),
 
-    /// Initialize the FFI detector
-    pub fn init(allocator: Allocator, store: *FactStore) FFIDetector {
+    /// Initialize the FFI detector.
+    /// Returns error.OutOfMemory on allocation failure instead of panicking.
+    pub fn init(allocator: Allocator, store: *FactStore) !FFIDetector {
+        const vulnerabilities = std.ArrayList(FFIVulnerability).initCapacity(allocator, 0) catch return error.OutOfMemory;
         return .{
             .allocator = allocator,
             .store = store,
             .vulnerability_count = 0,
-            .vulnerabilities = std.ArrayList(FFIVulnerability).init(allocator),
+            .vulnerabilities = vulnerabilities,
         };
     }
 
@@ -164,7 +169,7 @@ pub const FFIDetector = struct {
         for (self.vulnerabilities.items) |*v| {
             v.deinit(self.allocator);
         }
-        self.vulnerabilities.deinit();
+        self.vulnerabilities.deinit(self.allocator);
     }
 
     /// Run the FFI detector pass
@@ -174,7 +179,7 @@ pub const FFIDetector = struct {
         const module = ctx.module.?.raw;
 
         // Create matcher for this analysis
-        var matcher = FFIMatcher.init(ctx.allocator);
+        var matcher = try FFIMatcher.init(ctx.allocator);
         defer matcher.deinit();
 
         // Extract functions from module
@@ -193,7 +198,7 @@ pub const FFIDetector = struct {
             const vulnerabilities = try self.analyzeFFIMatch(ctx, match);
             defer self.allocator.free(vulnerabilities);
             for (vulnerabilities) |vuln| {
-                try self.vulnerabilities.append(vuln);
+                try self.vulnerabilities.append(self.allocator, vuln);
                 try self.reportVulnerability(&vuln, diag);
             }
         }
@@ -404,33 +409,101 @@ pub const FFIDetector = struct {
         return null;
     }
 
+    /// Detect tainted data crossing FFI boundary (data integrity risk).
+    /// Even without a specific dangerous function, tainted input at FFI boundary
+    /// indicates potential information leakage or injection vector.
+    fn detectTaintedCrossBoundary(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) !?FFIVulnerability {
+        // Always check taint for every valid FFI match — don't gate on "dangerous path"
+        const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
+
+        if (has_taint) {
+            self.vulnerability_count += 1;
+            const vuln = FFIVulnerability{
+                .id = self.vulnerability_count - 1,
+                .vuln_type = .tainted_input,
+                .severity = .high,
+                .ffi_match = ffi_match,
+                .description = "Tainted data flows across FFI boundary — unvalidated input may reach sensitive operations",
+                .source_location = ffi_match.declare_func.?.name,
+                .sink_location = ffi_match.define_func.?.name,
+                .dangerous_function = null,
+            };
+            return vuln;
+        }
+
+        return null;
+    }
+
+    /// Detect potential buffer overflow via tainted size parameters.
+    /// Checks if any tainted value is used as a length/size argument to
+    /// memcpy, memset, strcpy, memmove, or similar memory operations.
+    fn detectTaintedBufferSize(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) !?FFIVulnerability {
+        const define_func = ffi_match.define_func orelse return null;
+
+        // Memory operations where tainted size = overflow risk
+        const mem_ops = &[_][]const u8{
+            "llvm.memcpy", "llvm.memset", "llvm.memmove",
+            "llvm.strcpy", "memcpy",      "memset",
+            "memmove",     "strcpy",      "strncpy",
+        };
+
+        if (try self.callsDangerousFunction(define_func, mem_ops)) |func_name| {
+            const has_taint = try self.hasTaintedDataFlow(ctx, ffi_match);
+            if (has_taint) {
+                self.vulnerability_count += 1;
+                return FFIVulnerability{
+                    .id = self.vulnerability_count - 1,
+                    .vuln_type = .buffer_overflow,
+                    .severity = .critical,
+                    .ffi_match = ffi_match,
+                    .description = "Tainted size parameter reaches memory operation — buffer overflow risk across FFI boundary",
+                    .source_location = ffi_match.declare_func.?.name,
+                    .sink_location = ffi_match.define_func.?.name,
+                    .dangerous_function = func_name,
+                };
+            }
+        }
+
+        return null;
+    }
+
     /// Analyze FFI match for vulnerabilities
     fn analyzeFFIMatch(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) ![]FFIVulnerability {
         var vulnerabilities = std.ArrayList(FFIVulnerability).initCapacity(self.allocator, 0) catch return error.OutOfMemory;
-        errdefer vulnerabilities.deinit();
+        errdefer vulnerabilities.deinit(self.allocator);
 
         // Try to detect each type of vulnerability
         if (try self.detectCommandInjection(ctx, ffi_match)) |vuln| {
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(self.allocator, vuln);
         }
 
         if (try self.detectBufferOverflow(ctx, ffi_match)) |vuln| {
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(self.allocator, vuln);
         }
 
         if (try self.detectFormatString(ctx, ffi_match)) |vuln| {
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(self.allocator, vuln);
         }
 
         if (try self.detectUseAfterFree(ctx, ffi_match)) |vuln| {
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(self.allocator, vuln);
         }
 
         if (try self.detectIntegerOverflow(ctx, ffi_match)) |vuln| {
-            try vulnerabilities.append(vuln);
+            try vulnerabilities.append(self.allocator, vuln);
         }
 
-        return vulnerabilities.toOwnedSlice();
+        // Check for tainted data crossing FFI boundary (catch-all taint check)
+        if (try self.detectTaintedCrossBoundary(ctx, ffi_match)) |vuln| {
+            try vulnerabilities.append(self.allocator, vuln);
+        }
+
+        // Check for buffer overflow via tainted size parameters
+        if (try self.detectTaintedBufferSize(ctx, ffi_match)) |vuln| {
+            try vulnerabilities.append(self.allocator, vuln);
+        }
+
+        return vulnerabilities.toOwnedSlice(self.allocator);
     }
 
     /// Check if function calls any dangerous function
@@ -442,16 +515,16 @@ pub const FFIDetector = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_func = c.LLVMGetCalledFunction(inst);
-                    if (called_func != null) {
-                        const func_name = c.LLVMGetValueName(called_func);
+                    const called_val = c.LLVMGetOperand(inst, 0);
+                    if (called_val != null) {
+                        const func_name = c.LLVMGetValueName(called_val);
                         if (func_name != null) {
                             const func_name_slice = std.mem.span(func_name);
 
                             for (dangerous_funcs) |dangerous| {
                                 if (std.mem.eql(u8, func_name_slice, dangerous)) {
                                     // Copy the function name to avoid dangling pointer
-                                    return self.allocator.dupe(u8, func_name_slice);
+                                    return try self.allocator.dupe(u8, func_name_slice);
                                 }
                             }
                         }
@@ -480,9 +553,9 @@ pub const FFIDetector = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 if (llvm_safe.isCallOrInvoke(opcode)) {
-                    const called_func = c.LLVMGetCalledFunction(inst);
-                    if (called_func != null) {
-                        const func_name = c.LLVMGetValueName(called_func);
+                    const called_val = c.LLVMGetOperand(inst, 0);
+                    if (called_val != null) {
+                        const func_name = c.LLVMGetValueName(called_val);
                         if (func_name == null) continue;
                         const func_name_slice = std.mem.span(func_name);
 
@@ -575,7 +648,7 @@ pub const FFIDetector = struct {
         _ = self;
 
         const func_name = if (ffi_match.define_func) |f| f.name else ffi_match.name;
-        const target_hash = std.hash.Fnv1a.hash(func_name);
+        const target_hash = std.hash.Wyhash.hash(0, func_name);
 
         const symbols = try ctx.query_engine.queryByKind(.func_symbol, ctx.allocator);
         defer ctx.allocator.free(symbols);
@@ -617,9 +690,30 @@ pub const FFIDetector = struct {
     }
 };
 
+/// Pass-compliant wrapper for FFIDetector — bridges method-style API to static Pass interface.
+/// Follows the same pattern as LockPass: static run() creates instance internally.
+pub const FFIDetectorPass = struct {
+    pub const name = "ffi-detector";
+    pub const kind = PassKind.analysis;
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
+
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        var store = try FactStore.init(ctx.allocator);
+        defer store.deinit();
+        var detector = try FFIDetector.init(ctx.allocator, &store);
+        defer detector.deinit();
+        try detector.run(ctx, diag);
+    }
+};
+
 // Validate that FFIDetector satisfies Pass interface
 comptime {
     _ = Pass(FFIDetector);
+}
+
+// Validate that FFIDetectorPass satisfies Pass interface
+comptime {
+    _ = Pass(FFIDetectorPass);
 }
 
 test "FFIVulnerability - struct fields" {
@@ -644,7 +738,8 @@ test "FFIVulnerabilityType - enum values" {
     try std.testing.expectEqual(@as(usize, 2), @intFromEnum(FFIVulnerabilityType.use_after_free));
     try std.testing.expectEqual(@as(usize, 3), @intFromEnum(FFIVulnerabilityType.integer_overflow));
     try std.testing.expectEqual(@as(usize, 4), @intFromEnum(FFIVulnerabilityType.format_string));
-    try std.testing.expectEqual(@as(usize, 5), @intFromEnum(FFIVulnerabilityType.unknown));
+    try std.testing.expectEqual(@as(usize, 11), @intFromEnum(FFIVulnerabilityType.tainted_input));
+    try std.testing.expectEqual(@as(usize, 12), @intFromEnum(FFIVulnerabilityType.unknown));
 }
 
 test "FFIDetector - pass interface" {

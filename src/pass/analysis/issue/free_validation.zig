@@ -40,6 +40,7 @@ const FFIContractDB = contract_db.FFIContractDB;
 const cross_lang_detector = @import("cross_lang_free_detector.zig");
 const ptr_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
 const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
+const library_alloc_pairs = @import("../../../semantics/patterns/library_alloc_pairs.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -198,6 +199,44 @@ pub const FreeValidationPass = struct {
                                 .source_inst = inst,
                                 .source_desc = desc,
                             };
+                        } else if (library_alloc_pairs.lookupTable(func_name)) |entry| {
+                            // Library allocator pair lookup: detect borrowed/non-owned returns.
+                            // Functions like ffi_borrowed_label(), sqlite3_column_text(), getenv()
+                            // return pointers the caller must NOT free. Tracking this prevents
+                            // false negative when such a pointer IS incorrectly freed.
+                            if (entry.effect == .borrow) {
+                                const desc = try std.fmt.allocPrint(
+                                    allocator,
+                                    "from borrowed library func {s}() [DO NOT FREE]",
+                                    .{func_name},
+                                );
+                                const gop = try pointer_origins.getOrPut(inst);
+                                if (gop.found_existing) {
+                                    allocator.free(gop.value_ptr.source_desc);
+                                }
+                                gop.value_ptr.* = .{
+                                    .origin = .from_library_borrow,
+                                    .source_inst = inst,
+                                    .source_desc = desc,
+                                };
+                            } else if (entry.effect == .acquire) {
+                                // Library acquire function — treat like malloc for ownership tracking
+                                const desc = try std.fmt.allocPrint(
+                                    allocator,
+                                    "from library alloc {s}()",
+                                    .{func_name},
+                                );
+                                const gop = try pointer_origins.getOrPut(inst);
+                                if (gop.found_existing) {
+                                    allocator.free(gop.value_ptr.source_desc);
+                                }
+                                gop.value_ptr.* = .{
+                                    .origin = .from_malloc,
+                                    .source_inst = inst,
+                                    .source_desc = desc,
+                                };
+                            }
+                            // release functions are handled separately in free-site validation
                         } else if (isFFIBoundaryCall(func_name)) {
                             // FFI boundary call returning a pointer — cross-allocator risk
                             const desc = try std.fmt.allocPrint(allocator, "from FFI call {s}()", .{func_name});
@@ -302,6 +341,48 @@ pub const FreeValidationPass = struct {
                         .source_inst = info.source_inst,
                         .source_desc = desc,
                     };
+                }
+            },
+
+            // PHI node - merge origins from all incoming values (if/else, switch branches).
+            // Uses LLVMCountIncoming (LLVM 22 C API) to iterate incoming values.
+            c.LLVMPHI => {
+                const num_incoming = c.LLVMCountIncoming(inst);
+                var best_origin: ?PointerInfo = null;
+                var best_priority: i32 = -1;
+                var i: c_uint = 0;
+                while (i < num_incoming) : (i += 1) {
+                    const incoming_val = c.LLVMGetIncomingValue(inst, i);
+                    if (pointer_origins.get(incoming_val)) |info| {
+                        // Priority: higher = more risky origin
+                        const priority: i32 = switch (info.origin) {
+                            .from_malloc => 5,
+                            .from_ffi_call => 4,
+                            .from_library_borrow => 6, // Borrowed refs are highest risk if freed
+                            .from_param => 3,
+                            .from_global => 2,
+                            .from_constant => 1,
+                            .unknown => 0,
+                        };
+                        if (priority > best_priority) {
+                            // Free previous candidate's desc before overwriting
+                            if (best_origin) |prev| allocator.free(prev.source_desc);
+                            const desc = try allocator.dupe(u8, info.source_desc);
+                            best_origin = .{
+                                .origin = info.origin,
+                                .source_inst = info.source_inst,
+                                .source_desc = desc,
+                            };
+                            best_priority = priority;
+                        }
+                    }
+                }
+                if (best_origin) |origin| {
+                    const gop = try pointer_origins.getOrPut(inst);
+                    if (gop.found_existing) {
+                        allocator.free(gop.value_ptr.source_desc);
+                    }
+                    gop.value_ptr.* = origin;
                 }
             },
 
@@ -528,8 +609,8 @@ pub const FreeValidationPass = struct {
                 const caller_name_ptr = c.LLVMGetValueName(caller_func);
                 const caller_name_str = if (@intFromPtr(caller_name_ptr) != 0) std.mem.span(caller_name_ptr) else "";
                 const intentional_caller_patterns = [_][]const u8{
-                    "into_raw", "ManuallyDrop", "forget",      "transfer_ownership",
-                    "handoff",  "ffi_export",   "c_export",    "export_ptr",
+                    "into_raw", "ManuallyDrop", "forget",   "transfer_ownership",
+                    "handoff",  "ffi_export",   "c_export", "export_ptr",
                     "donate",
                 };
                 var is_intentional = false;
@@ -708,6 +789,45 @@ pub const FreeValidationPass = struct {
                     try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
                     return true;
                 }
+            },
+            .from_library_borrow => {
+                // Freeing a borrowed/library reference is almost always a bug.
+                // e.g., free(sqlite3_column_text(...)) or free(ffi_borrowed_label())
+                const caller_name_ptr = c.LLVMGetValueName(caller_func);
+                const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+                    std.mem.span(caller_name_ptr)
+                else
+                    "unknown";
+
+                const message = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "Invalid free: pointer from borrowed library function was freed. " ++
+                        "Borrowed references must not be freed by the caller (origin: {s}).",
+                    .{if (origin_info) |info| info.source_desc else "unknown"},
+                );
+                const location = Location.init(caller_name);
+
+                const trace = try ctx.allocator.alloc(TraceEntry, 3);
+                trace[0] = TraceEntry.init("Free called on borrowed library reference");
+                trace[1] = try createOriginTraceEntry(ctx.allocator, origin, origin_info);
+                trace[2] = try createFreeTraceEntry(ctx.allocator, callee_name);
+
+                var issue = Issue.initWithTrace(
+                    .invalid_free,
+                    message,
+                    location,
+                    .critical, // Freeing borrowed data is critical — causes heap corruption
+                    0.90, // High confidence: library contract violation
+                    trace,
+                );
+                errdefer issue.deinit(ctx.allocator);
+
+                try ctx.addIssue(&issue);
+                ctx.allocator.free(message);
+                diag.warn("[OMI-CRITICAL] Invalid free of borrowed library ref in {s}: {s}() on borrowed pointer", .{
+                    caller_name, callee_name,
+                });
+                return true;
             },
             .unknown => {},
         }
@@ -971,6 +1091,7 @@ pub const FreeValidationPass = struct {
             .from_param => "function parameter",
             .from_global => "global variable",
             .from_constant => "constant",
+            .from_library_borrow => "borrowed library reference",
             .unknown => "unknown source",
             else => "non-heap source",
         };
@@ -1011,6 +1132,7 @@ pub const FreeValidationPass = struct {
             .from_param => try allocator.dupe(u8, "Pointer origin: function parameter"),
             .from_global => try allocator.dupe(u8, "Pointer origin: global variable"),
             .from_constant => try allocator.dupe(u8, "Pointer origin: constant value"),
+            .from_library_borrow => try allocator.dupe(u8, "Pointer origin: borrowed library reference"),
             .unknown => try allocator.dupe(u8, "Pointer origin: unknown"),
             else => try allocator.dupe(u8, "Pointer origin: non-heap source"),
         };

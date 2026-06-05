@@ -31,6 +31,10 @@ pub const ValueOrigin = enum {
     /// Returned from an FFI boundary call (non-Rust-mangled callee)
     /// Indicates potential cross-allocator ownership risk.
     from_ffi_call,
+    /// Returned from a library borrow function (e.g., sqlite3_column_text,
+    /// ffi_borrowed_label, PyList_GetItem). The caller does NOT own this
+    /// memory and must NOT free it.
+    from_library_borrow,
 };
 
 /// Memory ownership semantics

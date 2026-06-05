@@ -701,10 +701,14 @@ pub const TaintPropagationPass = struct {
             const taint_info = entry.value_ptr.*;
 
             if (taint_info.state != .none) {
-                // E2-1a: MemoryGraph gate - only store taint facts for pointers
-                // that are on a danger path (FFI-relevant). This prevents non-FFI
-                // taint data from polluting downstream analysis passes.
-                if (!ctx.isRelevantAlloc(value_id)) {
+                // E2-1a: MemoryGraph gate - only filter when the danger surface has
+                // actually been populated. If both sets are empty the danger surface
+                // pass either hasn't run yet or found nothing — in that case store all
+                // taint facts so ffi_detector still has data to work with.
+                const danger_surface_populated =
+                    ctx.danger_surface_relevant.count() > 0 or
+                    ctx.ffi_auto_relevant.count() > 0;
+                if (danger_surface_populated and !ctx.isRelevantAlloc(value_id)) {
                     filtered_count += 1;
                     continue;
                 }
