@@ -136,20 +136,6 @@ pub fn detectCrossLanguageFree(
     // Same family → no cross-language issue
     if (alloc_family == free_family) return null;
 
-    // Check for intentional ownership transfer patterns (e.g., Box::leak → C free())
-    // These are legitimate cross-language frees where ownership was explicitly transferred
-    const intentional_patterns = [_][]const u8{
-        "leak",       "into_raw",           "ManuallyDrop", "forget",
-        "donate",     "transfer_ownership", "export_ptr",   "handoff",
-        "ffi_export", "c_export",
-    };
-    for (intentional_patterns) |pattern| {
-        if (std.mem.indexOf(u8, alloc_func, pattern) != null) {
-            log.debug("CROSS-LANG-FREE: Intentional ownership transfer detected in alloc={s}, skipping", .{alloc_func});
-            return null;
-        }
-    }
-
     // Check for safe cross-family patterns
     if (isSafeCrossPattern(alloc_family, free_family, free_func)) {
         log.debug("CROSS-LANG-FREE: Safe pattern detected, skipping", .{});
@@ -189,22 +175,26 @@ fn isRustMangledName(func: []const u8) bool {
     // _R prefix indicates Rust v0 mangling (RFC 2603)
     if (std.mem.startsWith(u8, func, "_R")) return true;
 
-    // Legacy _ZN prefix (Rust's old Itanium-like mangling)
-    if (std.mem.startsWith(u8, func, "_ZN")) return true;
-
-    // Common Rust stdlib patterns in mangled names
-    const rust_mangled_patterns = [_][]const u8{
-        "alloc5alloc", // alloc::alloc
-        "alloc5dealloc", // alloc::dealloc
-        "std3box", // std::box
-        "std3string", // std::string
-        "std3vec", // std::vec
-        "std3rc", // std::rc
-        "std3arc", // std::arc
-    };
-
-    for (rust_mangled_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func, pattern) != null) return true;
+    // _ZN is shared by both Rust legacy mangling and C++ Itanium ABI.
+    // Require a Rust-specific crate/module pattern to avoid misclassifying
+    // C++ member functions (e.g., _ZN3FooC1Ev) as Rust.
+    if (std.mem.startsWith(u8, func, "_ZN")) {
+        const rust_zn_patterns = [_][]const u8{
+            "alloc5alloc", // alloc::alloc
+            "alloc5dealloc", // alloc::dealloc
+            "std3box", // std::box
+            "std3string", // std::string
+            "std3vec", // std::vec
+            "std3rc", // std::rc
+            "std3arc", // std::arc
+            "4core", // core::
+            "5alloc", // alloc:: (crate root)
+            "3std", // std::
+        };
+        for (rust_zn_patterns) |pattern| {
+            if (std.mem.indexOf(u8, func, pattern) != null) return true;
+        }
+        return false; // _ZN without Rust crate pattern → likely C++
     }
 
     return false;

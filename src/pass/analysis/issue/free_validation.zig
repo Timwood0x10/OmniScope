@@ -64,18 +64,22 @@ pub const FreeValidationPass = struct {
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
-        // Runtime dependency validation: danger_surface must have populated relevant set.
-        // If empty, DangerSurfacePass didn't run or found nothing — skip to avoid false positives.
-        if (ctx.danger_surface_relevant.count() == 0) return;
 
         const ir_store = ctx.ir_store;
         if (ir_store.function_list.len == 0) return;
 
+        // DangerSurface data is optional for cross-language free detection.
+        // When absent, we skip only the danger-surface-dependent sub-checks,
+        // but cross-language allocator mismatch detection still runs.
+        const has_danger_surface = ctx.danger_surface_relevant.count() > 0;
+
         var issue_count: usize = 0;
         for (ir_store.function_list) |fir| {
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(fir.func)))) continue;
+            // Only gate on relevance when danger surface data is present.
+            // When absent, run on all functions so cross-lang free detection still works.
+            if (has_danger_surface and !ctx.isRelevantFunction(@as(u64, @intFromPtr(fir.func)))) continue;
             // Function-level error isolation
-            const count = analyzeFunction(ctx, fir, diag) catch |err| {
+            const count = analyzeFunction(ctx, fir, diag, has_danger_surface) catch |err| {
                 diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, fir.name });
                 ctx.recordDegradedFunction();
                 continue;
@@ -90,7 +94,7 @@ pub const FreeValidationPass = struct {
         }
     }
 
-    fn analyzeFunction(ctx: *PassContext, fir: *const FunctionIR, diag: *DiagnosticWriter) !usize {
+    fn analyzeFunction(ctx: *PassContext, fir: *const FunctionIR, diag: *DiagnosticWriter, has_danger_surface: bool) !usize {
         var issue_count: usize = 0;
         const func = fir.func;
 
@@ -135,12 +139,12 @@ pub const FreeValidationPass = struct {
         // Second pass: track instruction pointer origins
         for (fir.instructions, 0..) |inst, idx| {
             _ = idx;
-            try trackPointerOrigin(ctx.allocator, inst, &pointer_origins);
+            try trackPointerOrigin(ctx, inst, &pointer_origins);
         }
 
         // Third pass: check free calls
         for (fir.instructions) |inst| {
-            if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag)) {
+            if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag, has_danger_surface)) {
                 issue_count += 1;
             }
         }
@@ -158,12 +162,20 @@ pub const FreeValidationPass = struct {
         source_desc: []const u8,
     };
 
+    /// Check if a function is a known library-specific allocator from FFIContractDB.
+    /// Used by trackPointerOrigin to identify library allocators (e.g., SSL_new,
+    /// sqlite3_open, BIO_new) so their release functions can be validated later.
+    fn isContractDbAllocFunc(ctx: *PassContext, func_name: []const u8) bool {
+        return ctx.contract_db.isKnownAllocator(func_name);
+    }
+
     /// Track the origin of pointers
     fn trackPointerOrigin(
-        allocator: std.mem.Allocator,
+        ctx: *PassContext,
         inst: c.LLVMValueRef,
         pointer_origins: *std.AutoHashMap(c.LLVMValueRef, PointerInfo),
     ) !void {
+        const allocator = ctx.allocator;
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         switch (opcode) {
@@ -189,6 +201,45 @@ pub const FreeValidationPass = struct {
                         } else if (isFFIBoundaryCall(func_name)) {
                             // FFI boundary call returning a pointer — cross-allocator risk
                             const desc = try std.fmt.allocPrint(allocator, "from FFI call {s}()", .{func_name});
+                            const gop = try pointer_origins.getOrPut(inst);
+                            if (gop.found_existing) {
+                                allocator.free(gop.value_ptr.source_desc);
+                            }
+                            gop.value_ptr.* = .{
+                                .origin = .from_ffi_call,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                            };
+                        } else if (isRustAllocCall(func_name)) {
+                            // Rust v0 mangled allocators (__rust_alloc, _RZN4alloc...)
+                            // Track as from_malloc so cross-lang free detection can match them
+                            const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
+                            const gop = try pointer_origins.getOrPut(inst);
+                            if (gop.found_existing) {
+                                allocator.free(gop.value_ptr.source_desc);
+                            }
+                            gop.value_ptr.* = .{
+                                .origin = .from_malloc,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                            };
+                        } else if (isCppNewCall(func_name)) {
+                            // C++ operator new (mangled as _Znwm, _Znam, etc.)
+                            const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
+                            const gop = try pointer_origins.getOrPut(inst);
+                            if (gop.found_existing) {
+                                allocator.free(gop.value_ptr.source_desc);
+                            }
+                            gop.value_ptr.* = .{
+                                .origin = .from_malloc,
+                                .source_inst = inst,
+                                .source_desc = desc,
+                            };
+                        } else if (isContractDbAllocFunc(ctx, func_name)) {
+                            // Library-specific allocator (e.g., sqlite3_open, SSL_CTX_new, BIO_new).
+                            // Tracked so that validateWithContractDBFromSource() can later
+                            // validate the matching release function.
+                            const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
                             const gop = try pointer_origins.getOrPut(inst);
                             if (gop.found_existing) {
                                 allocator.free(gop.value_ptr.source_desc);
@@ -437,6 +488,7 @@ pub const FreeValidationPass = struct {
         pointer_origins: *const std.AutoHashMap(c.LLVMValueRef, PointerInfo),
         caller_func: c.LLVMValueRef,
         diag: *DiagnosticWriter,
+        has_danger_surface: bool,
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
@@ -469,14 +521,32 @@ pub const FreeValidationPass = struct {
             const alloc_func_name = extractAllocFuncNameForCrossLang(src_desc);
             if (alloc_func_name) |alloc_func| {
                 log.debug("CROSS-LANG-CHECK: alloc={s}, free={s}", .{ alloc_func, callee_name });
-                if (try cross_lang_detector.detectCrossLanguageFree(alloc_func, callee_name, ctx.allocator)) |cross_issue| {
-                    // Ownership: cross_issue.message is transferred to Issue via addIssue
-                    // Issue.owned=true (initWithTrace) → deinit() will free message
-                    // Do NOT free here - would cause double-free with Issue.deinit()
 
-                    // Report as CRITICAL cross-language mismatch
-                    try reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
-                    return true; // Bug detected and reported
+                // Check for intentional ownership transfer at the call site (caller function).
+                // Patterns like Box::into_raw / ManuallyDrop appear in the CALLER's name,
+                // not in the low-level allocator name (__rust_alloc etc.).
+                const caller_name_ptr = c.LLVMGetValueName(caller_func);
+                const caller_name_str = if (@intFromPtr(caller_name_ptr) != 0) std.mem.span(caller_name_ptr) else "";
+                const intentional_caller_patterns = [_][]const u8{
+                    "into_raw", "ManuallyDrop", "forget",      "transfer_ownership",
+                    "handoff",  "ffi_export",   "c_export",    "export_ptr",
+                    "donate",
+                };
+                var is_intentional = false;
+                for (intentional_caller_patterns) |pat| {
+                    if (std.mem.indexOf(u8, caller_name_str, pat) != null) {
+                        is_intentional = true;
+                        break;
+                    }
+                }
+
+                if (!is_intentional) {
+                    if (try cross_lang_detector.detectCrossLanguageFree(alloc_func, callee_name, ctx.allocator)) |cross_issue| {
+                        try reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
+                        return true;
+                    }
+                } else {
+                    log.debug("CROSS-LANG-CHECK: Intentional transfer in caller={s}, skipping", .{caller_name_str});
                 }
             }
         }
@@ -510,11 +580,13 @@ pub const FreeValidationPass = struct {
                 const src = if (origin_info) |info| info.source_desc else "";
                 if (isFreeSafe(callee_name, origin, src)) return false;
 
-                // Unified MemoryGraph validation (replaces 27 lines of duplicated logic)
-                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
-                    return result; // true = bug reported, false = safe
+                // Unified MemoryGraph validation (requires danger surface data)
+                if (has_danger_surface) {
+                    if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result; // true = bug reported, false = safe
+                    }
                 }
-                // result == null → fallback to legacy C free exemption
+                // result == null or no danger surface → fallback to legacy C free exemption
 
                 // Fallback: C free/operator delete on param is normal ownership transfer
                 if (std.mem.eql(u8, callee_name, "free") or
@@ -537,11 +609,34 @@ pub const FreeValidationPass = struct {
                 }
                 if (isFreeSafe(callee_name, origin, src)) return false;
 
-                // Unified MemoryGraph validation for FFI-sourced pointers
-                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
-                    return result;
+                // Unified MemoryGraph validation for FFI-sourced pointers (requires danger surface)
+                if (has_danger_surface) {
+                    if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result;
+                    }
                 }
-                // result == null → fallback to legacy C/C++ free exemption
+                // result == null or no danger surface → fallback to legacy C/C++ free exemption
+
+                // Cross-allocator check: detect new+free or malloc+delete UB BEFORE exemption
+                if (origin_info) |info| {
+                    const cross_src = info.source_desc;
+                    const alloc_is_cpp_new = std.mem.indexOf(u8, cross_src, "_Znwm") != null or
+                        std.mem.indexOf(u8, cross_src, "_Znam") != null or
+                        std.mem.indexOf(u8, cross_src, "operator new") != null;
+                    const free_is_c_free = std.mem.eql(u8, callee_name, "free");
+                    const alloc_is_c_malloc = std.mem.indexOf(u8, cross_src, "malloc") != null or
+                        std.mem.indexOf(u8, cross_src, "calloc") != null or
+                        std.mem.indexOf(u8, cross_src, "realloc") != null;
+                    const free_is_cpp_delete = std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                        std.mem.indexOf(u8, callee_name, "_ZdaPv") != null;
+
+                    if ((alloc_is_cpp_new and free_is_c_free) or
+                        (alloc_is_c_malloc and free_is_cpp_delete))
+                    {
+                        try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                        return true;
+                    }
+                }
 
                 // P1 FIX: Standard C free()/operator delete on FFI-sourced pointer is normal.
                 // (keep existing comment block here, it's important documentation)
@@ -567,11 +662,34 @@ pub const FreeValidationPass = struct {
                 }
                 if (isFreeSafe(callee_name, origin, src)) return false;
 
-                // Unified MemoryGraph validation for malloc'd pointers
-                if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
-                    return result;
+                // Unified MemoryGraph validation for malloc'd pointers (requires danger surface)
+                if (has_danger_surface) {
+                    if (try validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result;
+                    }
                 }
-                // result == null → fallback to legacy C/C++ free exemption
+                // result == null or no danger surface → fallback to legacy C/C++ free exemption
+
+                // Cross-allocator check: detect new+free or malloc+delete UB BEFORE exemption
+                if (origin_info) |info| {
+                    const cross_src = info.source_desc;
+                    const alloc_is_cpp_new = std.mem.indexOf(u8, cross_src, "_Znwm") != null or
+                        std.mem.indexOf(u8, cross_src, "_Znam") != null or
+                        std.mem.indexOf(u8, cross_src, "operator new") != null;
+                    const free_is_c_free = std.mem.eql(u8, callee_name, "free");
+                    const alloc_is_c_malloc = std.mem.indexOf(u8, cross_src, "malloc") != null or
+                        std.mem.indexOf(u8, cross_src, "calloc") != null or
+                        std.mem.indexOf(u8, cross_src, "realloc") != null;
+                    const free_is_cpp_delete = std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                        std.mem.indexOf(u8, callee_name, "_ZdaPv") != null;
+
+                    if ((alloc_is_cpp_new and free_is_c_free) or
+                        (alloc_is_c_malloc and free_is_cpp_delete))
+                    {
+                        try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                        return true;
+                    }
+                }
 
                 // P1 FIX: free() on malloc'd memory is always valid (C/C++ pattern).
                 // (keep existing comment block here)
@@ -607,6 +725,69 @@ pub const FreeValidationPass = struct {
         };
         for (rust_dealloc_patterns) |p| {
             if (std.mem.indexOf(u8, func_name, p) != null) return true;
+        }
+        return false;
+    }
+
+    /// Check if a function name is a Rust allocator call.
+    ///
+    /// Covers four categories so that cross-language free detection has complete
+    /// visibility into all Rust allocation sources:
+    ///   - Stable ABI:  __rust_alloc, __rust_alloc_zeroed, __rust_realloc
+    ///   - Legacy ABI:  __rdl_alloc, __rdl_alloc_zeroed, __rg_alloc, __rg_alloc_zeroed
+    ///   - v0 mangling: _R*...alloc... (Rust's modern name mangling)
+    ///   - Itanium:     _ZN*...alloc... (older Rust, before v0 migration)
+    ///
+    /// Without _ZN / __rdl_ / __rg_ coverage, trackPointerOrigin never records
+    /// these allocs in the pointer origin map, so cross-lang free checks silently
+    /// skip them even when __rust_dealloc frees such a pointer — a real mismatch.
+    fn isRustAllocCall(func_name: []const u8) bool {
+        // Stable Rust allocator ABI
+        if (std.mem.eql(u8, func_name, "__rust_alloc") or
+            std.mem.eql(u8, func_name, "__rust_alloc_zeroed") or
+            std.mem.eql(u8, func_name, "__rust_realloc") or
+            std.mem.eql(u8, func_name, "__rdl_alloc") or
+            std.mem.eql(u8, func_name, "__rdl_alloc_zeroed") or
+            std.mem.eql(u8, func_name, "__rg_alloc") or
+            std.mem.eql(u8, func_name, "__rg_alloc_zeroed"))
+        {
+            return true;
+        }
+        // Rust v0 mangled names start with _R and contain alloc/allocate
+        if (func_name.len > 4 and func_name[0] == '_' and func_name[1] == 'R') {
+            const alloc_patterns = [_][]const u8{ "alloc", "allocate", "global_alloc" };
+            for (alloc_patterns) |pat| {
+                if (std.mem.indexOf(u8, func_name, pat) != null) {
+                    return true;
+                }
+            }
+        }
+        // Itanium-style (_ZN) Rust mangled names containing alloc patterns
+        if (std.mem.startsWith(u8, func_name, "_ZN")) {
+            const zn_alloc_patterns = [_][]const u8{ "alloc", "allocate", "global_alloc" };
+            for (zn_alloc_patterns) |pat| {
+                if (std.mem.indexOf(u8, func_name, pat) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Check if a function name is a C++ operator new (mangled).
+    /// Matches _Znwm (operator new), _Znam (operator new[]),
+    /// and their aligned variants.
+    fn isCppNewCall(func_name: []const u8) bool {
+        const cpp_new_patterns = [_][]const u8{
+            "_Znwm", // operator new(unsigned long)
+            "_Znam", // operator new[](unsigned long)
+            "_ZnwmSt11align_val_t", // aligned new
+            "_ZnamSt11align_val_t", // aligned new[]
+        };
+        for (cpp_new_patterns) |pat| {
+            if (std.mem.indexOf(u8, func_name, pat) != null) {
+                return true;
+            }
         }
         return false;
     }
@@ -1568,4 +1749,29 @@ test "FreeValidationPass - isAllocFunction" {
     try std.testing.expect(FreeValidationPass.isAllocFunction("calloc"));
     try std.testing.expect(!FreeValidationPass.isAllocFunction("free"));
     try std.testing.expect(!FreeValidationPass.isAllocFunction("printf"));
+}
+
+test "FreeValidationPass - isRustAllocCall extended coverage" {
+    // Stable ABI — existing
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rust_alloc"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rust_alloc_zeroed"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rust_realloc"));
+
+    // Legacy (__rdl_ / __rg_) — newly added
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rdl_alloc"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rdl_alloc_zeroed"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rg_alloc"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("__rg_alloc_zeroed"));
+
+    // v0 mangling (_R prefix) — existing path
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("_RNvNtCsi3aA3my_lib4core4foo5allocE"));
+
+    // Itanium (_ZN prefix) — newly added
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("_ZN4alloc5allocE"));
+    try std.testing.expect(FreeValidationPass.isRustAllocCall("_ZN3std2io5allocateE"));
+
+    // Negative cases: _ZN without alloc pattern, random names
+    try std.testing.expect(!FreeValidationPass.isRustAllocCall("_ZN3foo3barE"));
+    try std.testing.expect(!FreeValidationPass.isRustAllocCall("malloc"));
+    try std.testing.expect(!FreeValidationPass.isRustAllocCall("free"));
 }

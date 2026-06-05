@@ -106,6 +106,10 @@ pub const LanguageOverrideRegistry = struct {
 
     /// Add an exact match rule. Owns the string copy.
     pub fn addExact(self: *LanguageOverrideRegistry, name: []const u8, lang: Language) !void {
+        // Free old key if overwriting (put() replaces value but not the key pointer)
+        if (self.exact_map.fetchRemove(name)) |removed| {
+            self.allocator.free(removed.key);
+        }
         const owned = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(owned);
         try self.exact_map.put(owned, lang);

@@ -180,8 +180,11 @@ pub const FFIUnsafePass = struct {
         // This handles cases where auto-detection misclassified a monolingual project.
         if (ctx.language_overrides) |reg| {
             const callee_name = cleanFunctionName(boundary.function_name);
-            const caller_lang = reg.lookup(boundary.location.func) orelse reg.getDefault();
-            const callee_lang = reg.lookup(callee_name) orelse reg.getDefault();
+            // Only skip when BOTH sides have an explicit rule (exact/prefix/suffix).
+            // Falling back to getDefault() here would silence all boundaries when
+            // --default-lang is set but no per-symbol rules exist.
+            const caller_lang = reg.lookup(boundary.location.func);
+            const callee_lang = reg.lookup(callee_name);
             if (caller_lang) |cl| {
                 if (callee_lang) |cal| {
                     if (cl == cal) {
@@ -299,8 +302,14 @@ pub const FFIUnsafePass = struct {
 
         // Check safe function name patterns (getters, setters, validators)
         for (SafePatterns.safe_name_patterns) |pattern| {
-            // Only match at word boundaries to avoid false negatives
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
+            // Use startsWith for short patterns (len <= 5) to avoid false positives
+            // e.g. "settings" should not match "set_", "initialize" should not match "init"
+            const matched = if (pattern.len <= 5)
+                std.mem.startsWith(u8, func_name, pattern)
+            else
+                std.mem.indexOf(u8, func_name, pattern) != null;
+
+            if (matched) {
                 // Additional check: ensure it's not a dangerous function with "safe" in name
                 if (!isDangerous(func_name)) {
                     return true;
@@ -381,7 +390,7 @@ pub const FFIUnsafePass = struct {
             // Additional heuristic: longer function names without validation = more suspicious
             // This catches cases like custom wrapper functions that don't validate
             const risky_prefixes = [_][]const u8{
-                "wrap", "call", "invoke", "exec", "run", "do_",
+                "wrap", "invoke", "do_",
             };
             for (risky_prefixes) |prefix| {
                 if (std.mem.indexOf(u8, func_name, prefix) != null) {
@@ -405,7 +414,7 @@ pub const FFIUnsafePass = struct {
             return .ffi_unsafe_call;
         }
         if (std.mem.indexOf(u8, func_name, "system") != null or
-            std.mem.indexOf(u8, func_name, "exec") != null)
+            std.mem.startsWith(u8, func_name, "exec"))
         {
             return .command_injection;
         }

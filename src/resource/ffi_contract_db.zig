@@ -323,7 +323,7 @@ pub const FFIContractDB = struct {
     /// Look up a specific rule by allocation function name.
     /// Internal use; prefer public query APIs.
     pub fn findRuleForAlloc(
-        self: *FFIContractDB,
+        self: *const FFIContractDB,
         alloc_func: []const u8,
     ) ?*const AllocPairRule {
         for (self.libraries) |lib| {
@@ -336,6 +336,16 @@ pub const FFIContractDB = struct {
             }
         }
         return null;
+    }
+
+    /// Check if a function name is a known library allocator in the contract DB.
+    ///
+    /// Returns true if the function appears as an allocation function in any
+    /// AllocPairRule (e.g., sqlite3_open, SSL_CTX_new, BIO_new, deflateInit_).
+    /// Used by trackPointerOrigin to decide whether to record pointer origin
+    /// entries for contract-based release validation.
+    pub fn isKnownAllocator(self: *const FFIContractDB, func_name: []const u8) bool {
+        return self.findRuleForAlloc(func_name) != null;
     }
 
     /// Print usage statistics for the contract database.

@@ -357,13 +357,74 @@ pub const Pipeline = struct {
             adapter_registry.adapterCount(),
         });
 
-        // Auto-detect target language from module metadata
-        const detected_adapter = if (self.module) |mod| blk: {
-            const raw_mod = mod.raw;
-            break :blk adapter_registry.detectAdapter(@ptrCast(raw_mod));
-        } else blk: {
-            break :blk adapter_registry.detectAdapter(undefined);
+        // Auto-detect target language from module metadata.
+        // BUGFIX: detectAdapter() was a stub that always returned the first registered
+        // adapter (Python, due to registration order). We already have a correct language
+        // detection result in ctx.module_language from initModuleLanguage() above.
+        // Use that result to select the appropriate adapter instead.
+        var detected_adapter: *const @import("../lang/language_adapter.zig").LanguageAdapter = blk: {
+            const detected_lang = ctx.module_language.language;
+            // Try exact match for detected language
+            if (adapter_registry.getAdapter(detected_lang)) |a| {
+                log.info("PIPELINE: Auto-detected language '{s}' (confidence={d:.0}%, method={s})", .{
+                    @tagName(detected_lang),
+                    ctx.module_language.confidence * 100,
+                    @tagName(ctx.module_language.method),
+                });
+                break :blk a;
+            }
+            // Detected language has no dedicated adapter — apply same fallback logic
+            // as the user-override path: manual-memory → C, GC → Go/Python
+            const fallback_lang = switch (detected_lang) {
+                .rust, .zig => lang_types.Language.c,
+                .csharp => lang_types.Language.go,
+                .java => lang_types.Language.python,
+                else => lang_types.Language.c, // ultimate fallback
+            };
+            const fallback = adapter_registry.getAdapter(fallback_lang) orelse
+                adapter_registry.getAdapter(.c).?;
+            log.info("PIPELINE: No adapter for '{s}' — falling back to '{s}' adapter", .{
+                @tagName(detected_lang), @tagName(fallback_lang),
+            });
+            break :blk fallback;
         };
+
+        // Override auto-detected language if user specified --default-lang.
+        // User-specified default takes priority over IR metadata heuristics,
+        // since the user knows their project's actual language better than
+        // any heuristic can infer from LLVM bitcode alone.
+        if (self.language_overrides) |reg| {
+            if (reg.getDefault()) |default_lang| {
+                // Try exact adapter match first
+                var override_adapter = adapter_registry.getAdapter(default_lang);
+                if (override_adapter == null) {
+                    // No dedicated adapter for this language — fall back to
+                    // the semantically closest available adapter:
+                    //   Manual-memory languages (rust/zig/cpp) → C adapter
+                    //   GC languages (csharp)                → Go adapter
+                    //   Refcount/GC languages (java)         → Python adapter
+                    const fallback = switch (default_lang) {
+                        .rust, .zig, .cpp => language_override.Language.c,
+                        .csharp => language_override.Language.go,
+                        .java => language_override.Language.python,
+                        else => default_lang,
+                    };
+                    override_adapter = adapter_registry.getAdapter(fallback);
+                    if (override_adapter != null) {
+                        log.info("PIPELINE: No {s} adapter — falling back to {s} adapter", .{
+                            @tagName(default_lang), @tagName(fallback),
+                        });
+                    }
+                }
+                if (override_adapter) |adapter| {
+                    log.info("PIPELINE: Overriding detected language '{s}' → user default '{s}'", .{
+                        @tagName(detected_adapter.language),
+                        @tagName(default_lang),
+                    });
+                    detected_adapter = adapter;
+                }
+            }
+        }
 
         log.info("PIPELINE: Detected language: {s}, using adapter: {s} (memory model: {s})", .{
             @tagName(detected_adapter.language),
