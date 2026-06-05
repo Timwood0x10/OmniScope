@@ -247,7 +247,7 @@ pub const PassManager = struct {
             const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
             const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
             if (elapsed_ms >= 0) {
-                log.info("[PERF] Pass '{s}': {d:.2} ms", .{ pass_name, elapsed_ms });
+                log.debug("[PERF] Pass '{s}': {d:.2} ms", .{ pass_name, elapsed_ms });
             }
         }
 

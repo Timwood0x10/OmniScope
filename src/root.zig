@@ -194,6 +194,7 @@ pub const cross_lang = struct {
     pub const CrossLangDataFlowPass = @import("pass/analysis/ffi/cross_lang_dataflow.zig").CrossLangDataFlow;
     pub const RustFfiAuditor = @import("pass/analysis/rust_ffi/rust_ffi_auditor.zig").RustFfiAuditor;
     pub const FFIAnalysisPass = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisPass;
+    pub const FFIAnalysisPassWrapper = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisPassWrapper;
     pub const FFIAnalysisResult = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisResult;
     pub const FFIAnalysisVulnerability = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisVulnerability;
     pub const FFIAnalysisError = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisError;

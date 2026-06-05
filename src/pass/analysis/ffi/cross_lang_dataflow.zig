@@ -669,7 +669,7 @@ pub const CrossLangDataFlow = struct {
             );
             try ctx.addIssue(&issue);
 
-            diag.warn("CrossLangDataFlow: Orphan pointer {} in {s} ({s}) (confidence: {d:.2})", .{
+            diag.debug("CrossLangDataFlow: Orphan pointer {} in {s} ({s}) (confidence: {d:.2})", .{
                 alloc.id,
                 alloc.alloc_func,
                 @tagName(alloc.alloc_lang),
@@ -955,7 +955,7 @@ pub const CrossLangDataFlow = struct {
             );
             try ctx.addIssue(&issue);
 
-            diag.warn("CrossLangDataFlow: Orphan pointer {} in {s} ({s}) (confidence: {d:.2})", .{
+            diag.debug("CrossLangDataFlow: Orphan pointer {} in {s} ({s}) (confidence: {d:.2})", .{
                 alloc.id,
                 alloc.alloc_func,
                 @tagName(alloc.alloc_lang),

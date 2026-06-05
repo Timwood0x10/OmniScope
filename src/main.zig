@@ -64,11 +64,9 @@ fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.AbiCompatChecker); // abi-compat-checker
     try pipeline.registerPass(OmniScope.cross_lang.FFIBodyCheckPass);
     try pipeline.registerPass(OmniScope.cross_lang.JniLeakDetectorPass);
-    // NOTE: FFIAnalysisPass (ownership-violation) has method-style run(self, ctx, diag)
-    // that doesn't match the Pass interface expecting static run(ctx, diag).
-    // It also has pre-existing compile errors (append API, missing debug_info method).
-    // TODO: Refactor to static-run pattern (like LockPass) then uncomment below.
-    // try pipeline.registerPass(OmniScope.cross_lang.FFIAnalysisPass); // ownership-violation
+    // NOTE: FFIAnalysisPass (ownership-violation) uses method-style run(self, ctx, diag).
+    // Wrapped via FFIAnalysisPassWrapper for Pass interface compatibility.
+    try pipeline.registerPass(OmniScope.cross_lang.FFIAnalysisPassWrapper); // ownership-violation
     try pipeline.registerPass(OmniScope.cross_lang.FFIUnsafePass);
     try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
     try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);

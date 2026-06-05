@@ -57,8 +57,6 @@ pub const FFIUnsafePass = struct {
         "vprintf",     "vfprintf",
         "vsprintf",    "vsnprintf",
         "vsscanf",     "vfscanf",
-        "execl",       "execle",
-        "execlp",      "execvp",
     };
 
     // Whitelist of known-safe FFI patterns that should NOT be reported.

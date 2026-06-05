@@ -149,7 +149,7 @@ pub const Pipeline = struct {
             // Enable sampling mode for very large modules to meet 60s target
             use_sampling_mode = total_functions > LARGE_MODULE_THRESHOLD;
 
-            log.info("PIPELINE: Module size: {} functions (sampling={})", .{
+            log.debug("PIPELINE: Module size: {} functions (sampling={})", .{
                 total_functions, use_sampling_mode,
             });
         }
@@ -198,7 +198,7 @@ pub const Pipeline = struct {
                 };
                 ir_store_ptr = store;
 
-                log.info("[IRStore] Initialized: {} functions, {} total instructions", .{
+                log.debug("[IRStore] Initialized: {} functions, {} total instructions", .{
                     store.function_count,
                     store.total_instruction_count,
                 });
@@ -353,7 +353,7 @@ pub const Pipeline = struct {
         };
         defer adapter_registry.deinit();
 
-        log.info("PIPELINE: Initialized Language Adapter Registry ({} adapters)", .{
+        log.debug("PIPELINE: Initialized Language Adapter Registry ({} adapters)", .{
             adapter_registry.adapterCount(),
         });
 
@@ -366,7 +366,7 @@ pub const Pipeline = struct {
             const detected_lang = ctx.module_language.language;
             // Try exact match for detected language
             if (adapter_registry.getAdapter(detected_lang)) |a| {
-                log.info("PIPELINE: Auto-detected language '{s}' (confidence={d:.0}%, method={s})", .{
+                log.debug("PIPELINE: Auto-detected language '{s}' (confidence={d:.0}%, method={s})", .{
                     @tagName(detected_lang),
                     ctx.module_language.confidence * 100,
                     @tagName(ctx.module_language.method),
@@ -426,7 +426,7 @@ pub const Pipeline = struct {
             }
         }
 
-        log.info("PIPELINE: Detected language: {s}, using adapter: {s} (memory model: {s})", .{
+        log.debug("PIPELINE: Detected language: {s}, using adapter: {s} (memory model: {s})", .{
             @tagName(detected_adapter.language),
             detected_adapter.name,
             @tagName(detected_adapter.memory_model),
@@ -507,7 +507,7 @@ pub const Pipeline = struct {
             }
         }
 
-        log.info("PIPELINE: Analyzed {} functions with {s} adapter ({} FFI calls classified, sampled={}/{})", .{
+        log.debug("PIPELINE: Analyzed {} functions with {s} adapter ({} FFI calls classified, sampled={}/{})", .{
             functions_analyzed,
             detected_adapter.name,
             total_ffi_calls_classified,

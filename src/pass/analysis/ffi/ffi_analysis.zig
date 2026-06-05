@@ -116,12 +116,13 @@ pub const FFIAnalysisPass = struct {
         inst_ptr: c.LLVMValueRef,
     };
 
-    pub fn init(allocator: Allocator, store: *FactStore) FFIAnalysisPass {
+    pub fn init(allocator: Allocator, store: *FactStore) !FFIAnalysisPass {
+        const violations = std.ArrayList(OwnershipViolation).initCapacity(allocator, 0) catch return error.OutOfMemory;
         return .{
             .allocator = allocator,
             .store = store,
             .matcher = null,
-            .violations = std.ArrayList(OwnershipViolation).init(allocator),
+            .violations = violations,
             .allocation_sites = std.AutoHashMap(u64, AllocationInfo).init(allocator),
             .free_sites = std.AutoHashMap(u64, std.ArrayList(FreeInfo)).init(allocator),
             .alloc_bb_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(allocator),
@@ -136,12 +137,12 @@ pub const FFIAnalysisPass = struct {
         for (self.violations.items) |*v| {
             v.deinit(self.allocator);
         }
-        self.violations.deinit();
+        self.violations.deinit(self.allocator);
         self.allocation_sites.deinit();
         {
             var iter = self.free_sites.iterator();
             while (iter.next()) |entry| {
-                entry.value_ptr.*.deinit();
+                entry.value_ptr.*.deinit(self.allocator);
             }
             self.free_sites.deinit();
         }
@@ -149,7 +150,7 @@ pub const FFIAnalysisPass = struct {
         {
             var iter = self.free_bb_map.iterator();
             while (iter.next()) |entry| {
-                entry.value_ptr.*.deinit();
+                entry.value_ptr.*.deinit(self.allocator);
             }
             self.free_bb_map.deinit();
         }
@@ -201,7 +202,7 @@ pub const FFIAnalysisPass = struct {
         if (hooks.pythonUnbalancedDecrefCount() > 0) {
             const count = hooks.pythonUnbalancedDecrefCount();
             const desc = std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) across FFI boundary", .{count}) catch null;
-            try self.violations.append(.{
+            try self.violations.append(self.allocator, .{
                 .violation_type = .use_after_free,
                 .severity = .high,
                 .function_name = "python_ffi_boundary",
@@ -328,20 +329,23 @@ pub const FFIAnalysisPass = struct {
                                 .inst_ptr = inst,
                             };
                             if (self.free_sites.getPtr(ptr_value_id)) |list_ptr| {
-                                try list_ptr.append(free_info);
+                                try list_ptr.append(self.allocator, free_info);
                             } else {
-                                var list = std.ArrayList(FreeInfo).init(self.allocator);
-                                errdefer list.deinit();
-                                try list.append(free_info);
+                                var list = std.ArrayList(FreeInfo).initCapacity(self.allocator, 0) catch return;
+                                errdefer {
+                                    _ = &list;
+                                    list.deinit(self.allocator);
+                                }
+                                try list.append(self.allocator, free_info);
                                 try self.free_sites.put(ptr_value_id, list);
                             }
                             // v0.1.6: Track which BB this free is in
                             if (self.free_bb_map.getPtr(ptr_value_id)) |bb_list_ptr| {
-                                try bb_list_ptr.append(bb);
+                                try bb_list_ptr.append(self.allocator, bb);
                             } else {
-                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).init(self.allocator);
-                                errdefer bb_list.deinit();
-                                try bb_list.append(bb);
+                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).initCapacity(self.allocator, 0) catch return;
+                                errdefer bb_list.deinit(self.allocator);
+                                try bb_list.append(self.allocator, bb);
                                 try self.free_bb_map.put(ptr_value_id, bb_list);
                             }
                         }
@@ -364,7 +368,7 @@ pub const FFIAnalysisPass = struct {
             // If a pointer was freed more than once, it's a double free
             if (free_list.items.len > 1) {
                 const first_free = free_list.items[0];
-                try self.violations.append(.{
+                try self.violations.append(self.allocator, .{
                     .violation_type = .double_free,
                     .severity = .critical,
                     .function_name = first_free.func_name,
@@ -376,42 +380,24 @@ pub const FFIAnalysisPass = struct {
     }
 
     fn detectOwnershipMismatch(self: *FFIAnalysisPass, _: *DiagnosticWriter) !void {
-        // H21 FIX: Optimize from O(N×M) Cartesian product to O(N+M) using HashMap index.
-        // Previous implementation nested loops over all allocations × all frees,
-        // comparing every pair regardless of pointer identity.
-        // New approach: Index free sites by pointer, only compare matching pairs.
+        // H21 FIX: O(N+M) matching via direct HashMap lookup.
+        // Previous implementation nested loops over all allocations × all frees.
+        // New approach: iterate allocations, look up matching frees by pointer value.
 
-        // Build index: ptr_value → []FreeInfo
-        var free_index = std.AutoHashMap(u64, usize).init(self.allocator);
-        defer free_index.deinit();
-
-        {
-            var free_iter = self.free_sites.iterator();
-            var idx: usize = 0;
-            while (free_iter.next()) |entry| {
-                const ptr_val = entry.key_ptr.*;
-                try free_index.put(ptr_val, idx);
-                idx += 1;
-            }
-        }
-
-        // Now iterate allocations and check only matching frees
         var alloc_iter = self.allocation_sites.iterator();
         while (alloc_iter.next()) |alloc_entry| {
             const ptr_val = alloc_entry.key_ptr.*;
             const alloc_info = alloc_entry.value_ptr.*;
 
             // Only check if this pointer has corresponding frees
-            if (free_index.get(ptr_val)) |free_idx| {
-                const free_list = self.free_sites.items[free_idx].value_ptr.*;
-
+            if (self.free_sites.get(ptr_val)) |*free_list| {
                 for (free_list.items) |free_info| {
                     // Check if allocation and free are from different languages
                     if (alloc_info.language != free_info.language and
                         alloc_info.language != .unknown and
                         free_info.language != .unknown)
                     {
-                        try self.violations.append(.{
+                        try self.violations.append(self.allocator, .{
                             .violation_type = .ownership_mismatch,
                             .severity = .high,
                             .function_name = free_info.func_name,
@@ -451,7 +437,7 @@ pub const FFIAnalysisPass = struct {
             const has_any_free = self.free_sites.contains(ptr_id);
 
             if (!has_any_free) {
-                try self.violations.append(.{
+                try self.violations.append(self.allocator, .{
                     .violation_type = .leak,
                     .severity = .high,
                     .function_name = alloc_info.func_name,
@@ -476,7 +462,7 @@ pub const FFIAnalysisPass = struct {
                         while (succ_idx < num_successors) : (succ_idx += 1) {
                             const succ_bb = c.LLVMGetSuccessor(terminator, succ_idx);
                             if (self.bbHasReturnWithoutFree(succ_bb, ptr_id)) {
-                                try self.violations.append(.{
+                                try self.violations.append(self.allocator, .{
                                     .violation_type = .leak,
                                     .severity = .medium,
                                     .function_name = alloc_info.func_name,
@@ -552,7 +538,7 @@ pub const FFIAnalysisPass = struct {
                     if (self.free_sites.get(ptr_id)) |free_list| {
                         if (free_list.items.len > 0) {
                             const first_free = free_list.items[0];
-                            try self.violations.append(.{
+                            try self.violations.append(self.allocator, .{
                                 .violation_type = .double_free,
                                 .severity = .critical,
                                 .function_name = first_free.func_name,
@@ -575,17 +561,16 @@ pub const FFIAnalysisPass = struct {
 
     fn detectLanguageFromDwarf(func: c.LLVMValueRef) ?Language {
         if (@intFromPtr(func) == 0) return null;
-        const subprogram = debug_info.getFunctionSubprogram(func) orelse return null;
+        const subprogram = debug_info.DebugInfoUtils.getFunctionSubprogram(func) orelse return null;
         const compile_unit = subprogram.getCompileUnit() orelse return null;
         const dwarf_lang = compile_unit.getLanguage();
 
         return switch (dwarf_lang) {
-            .C => .c,
-            .C_plus_plus, .C_plus_plus_03, .C_plus_plus_11, .C_plus_plus_14, .C_plus_plus_17, .C_plus_plus_20, .C_plus_plus_23 => .cpp,
+            .C, .C89, .C99 => .c,
+            .C_plus_plus, .C_plus_plus_03 => .cpp,
             .Rust => .rust,
-            .Zig => .zig,
-            .C_Sharp => .csharp,
-            .Go, .Go_language => .go,
+            .CSharp => .csharp,
+            .Python => .python,
             else => null,
         };
     }
@@ -739,4 +724,26 @@ test "FFIAnalysisPass - detectLanguage fallback" {
 test "FFIAnalysisPass - detectLanguageFromDwarf with null returns null" {
     const result = FFIAnalysisPass.detectLanguageFromDwarf(null);
     try std.testing.expect(result == null);
+}
+
+/// Pass interface adapter for FFIAnalysisPass.
+/// Wraps method-style run(self, ctx, diag) into static run(ctx, diag)
+/// required by the pipeline's Pass trait.
+pub const FFIAnalysisPassWrapper = struct {
+    pub const name = "ownership-violation";
+    pub const kind = PassKind.analysis;
+    pub const deps = &[_][]const u8{ "cfg", "dfg", "pointer-flow" };
+
+    pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        var store = try FactStore.init(ctx.allocator);
+        defer store.deinit();
+        var pass = try FFIAnalysisPass.init(ctx.allocator, &store);
+        defer pass.deinit();
+        try pass.run(ctx, diag);
+    }
+};
+
+// Validate wrapper satisfies Pass interface
+comptime {
+    _ = Pass(FFIAnalysisPassWrapper);
 }

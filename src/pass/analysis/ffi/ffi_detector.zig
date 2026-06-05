@@ -153,12 +153,13 @@ pub const FFIDetector = struct {
     vulnerabilities: std.ArrayList(FFIVulnerability),
 
     /// Pre-computed set of function-scope IDs that contain taint.
-    /// Populated once in run() from FactStore's SoA arrays (O(1) kind_index),
-    /// then used for O(1) per-edge membership checks via hasTaintedDataFlow().
     tainted_contexts: std.AutoHashMap(u32, void),
 
+    /// Tracks all name strings allocated during run() for cross-edge matches.
+    /// Freed in deinit() to prevent GPA leak warnings at exit.
+    owned_names: std.ArrayList([]u8),
+
     /// Initialize the FFI detector.
-    /// Returns error.OutOfMemory on allocation failure instead of panicking.
     pub fn init(allocator: Allocator, store: *FactStore) !FFIDetector {
         const vulnerabilities = std.ArrayList(FFIVulnerability).initCapacity(allocator, 0) catch return error.OutOfMemory;
         return .{
@@ -167,6 +168,7 @@ pub const FFIDetector = struct {
             .vulnerability_count = 0,
             .vulnerabilities = vulnerabilities,
             .tainted_contexts = std.AutoHashMap(u32, void).init(allocator),
+            .owned_names = std.ArrayList([]u8).initCapacity(allocator, 0) catch return error.OutOfMemory,
         };
     }
 
@@ -177,6 +179,11 @@ pub const FFIDetector = struct {
             v.deinit(self.allocator);
         }
         self.vulnerabilities.deinit(self.allocator);
+        // Free all cross-edge match name copies
+        for (self.owned_names.items) |n| {
+            self.allocator.free(n);
+        }
+        self.owned_names.deinit(self.allocator);
     }
 
     /// Run the FFI detector pass
@@ -208,13 +215,13 @@ pub const FFIDetector = struct {
             if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
 
             // Allocate owned copies for FFIMatch lifecycle.
-            // These outlive the loop iteration because stored vulnerabilities
-            // hold references into them via ffi_match. Freed on detector.deinit().
+            // Registered in owned_names and freed uniformly in deinit(),
+            // eliminating per-allocation errdefer + GPA leak warnings.
             const name_copy = try ctx.allocator.dupe(u8, callee_name);
-            errdefer ctx.allocator.free(name_copy);
+            try self.owned_names.append(self.allocator, name_copy);
 
             const caller_name_copy = try ctx.allocator.dupe(u8, edge.caller_name);
-            errdefer ctx.allocator.free(caller_name_copy);
+            try self.owned_names.append(self.allocator, caller_name_copy);
 
             // Build synthetic FunctionInfo for declare (callee) and define (caller) sides.
             // func field is undefined because we don't have a local LLVM function ref for
