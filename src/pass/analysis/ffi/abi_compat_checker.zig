@@ -274,15 +274,17 @@ pub const AbiCompatChecker = struct {
 
         // Check if this is an FFI boundary.
         // Three ways to detect: explicit cross-lang edge, mangling-based heuristic,
-        // or callee is a declaration-only external symbol (defined in another TU/library).
-        const callee_func_val = c.LLVMGetCalledValue(call_inst);
-        const callee_is_declaration = if (@intFromPtr(callee_func_val) != 0)
-            c.LLVMIsDeclaration(callee_func_val) != 0
-        else
-            false;
+        // or callee is a declaration-only external symbol from another language TU.
+        //
+        // Declaration-only calls to well-known C stdlib functions are NOT FFI
+        // boundaries — they're normal cdecl→cdecl within the same ABI domain.
+        // Only promote declaration-only calls to FFI status when they also pass
+        // the name heuristic or cross-edge check, avoiding noise from printf/malloc/etc.
+        const callee_is_declaration = c.LLVMIsDeclaration(called_val) != 0;
+        const is_c_stdlib = isCStdlibFunction(callee_name);
         const is_ffi = ctx.getCrossEdgeByCallee(callee_name) != null or
             ffi_type_mismatch.FFITypeMismatchPass.isFFIBoundary(caller_name, callee_name) or
-            callee_is_declaration;
+            (callee_is_declaration and !is_c_stdlib);
         if (!is_ffi) return;
 
         stats.ffi_boundaries_found += 1;
@@ -629,7 +631,7 @@ pub const AbiCompatChecker = struct {
             const arg_llvm_type = c.LLVMTypeOf(arg_val);
             if (@intFromPtr(arg_llvm_type) == 0) continue;
 
-            const param_type = if (param_types_buf) |buf| buf[idx] else continue;
+            const param_type = param_types_buf.?[idx];
 
             // Integer width mismatch: e.g., Zig i64 → C i32 (silent truncation)
             if (c.LLVMGetTypeKind(arg_llvm_type) == c.LLVMIntegerTypeKind and
@@ -792,14 +794,43 @@ pub const AbiCompatChecker = struct {
     }
 
     /// Get human-readable calling convention name.
+    ///
+    /// Note: The numeric value 10 for X86_64 SysV is verified against LLVM 22.
+    /// LLVMCallConv enum values are NOT stable across major versions — if linking
+    /// against a different LLVM build, verify this value matches
+    /// `LLVMX8664_SysVCallConv` in llvm-c/Types.h.
     fn getCallingConventionName(cc: c_uint) []const u8 {
         return switch (cc) {
             c.LLVMCCallConv => "cdecl",
-            10 => "x86_64_sysv", // X86_64 SysV
+            10 => "x86_64_sysv", // X86_64 SysV (LLVM 22: LLVMX8664_SysVCallConv)
             c.LLVMFastCallConv => "fastcall",
             c.LLVMX86StdcallCallConv => "stdcall",
             else => "unknown",
         };
+    }
+
+    /// Check if a function name belongs to well-known C standard library namespaces.
+    ///
+    /// These functions are declaration-only externals but are NOT FFI boundaries —
+    /// they're normal cdecl→cdecl calls within the same ABI domain. Including them
+    /// would flood ABI output with trivially compatible calls (printf, malloc, strlen,
+    /// pthread_mutex_lock, etc.) and drown legitimate cross-language findings.
+    fn isCStdlibFunction(func_name: []const u8) bool {
+        // Prefix-based fast reject for common C stdlib namespaces
+        const prefixes = [_][]const u8{
+            "malloc", "calloc", "realloc", "free", // <stdlib.h>
+            "memcpy", "memmove", "memset", "memcmp", // <string.h>
+            "strlen", "strcpy", "strcat", "strcmp", // <string.h>
+            "printf", "fprintf", "sprintf", "snprintf", // <stdio.h>
+            "fopen", "fclose", "fread", "fwrite", // <stdio.h>
+            "pthread_", // <pthread.h>
+            "__builtin_", // compiler builtins
+            "llvm.", // LLVM intrinsics
+        };
+        for (prefixes) |p| {
+            if (std.mem.startsWith(u8, func_name, p)) return true;
+        }
+        return false;
     }
 
     /// Calculate confidence score based on mismatch type.

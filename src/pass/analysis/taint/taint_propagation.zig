@@ -696,21 +696,39 @@ pub const TaintPropagationPass = struct {
         var count: u32 = 0;
         var filtered_count: u32 = 0;
 
+        // Check if this is an FFI-aware analysis (has cross-lang edges or FFI boundaries)
+        const has_ffi_context =
+            ctx.cross_lang_edges.items.len > 0 or
+            ctx.ffi_auto_relevant.count() > 0 or
+            ctx.danger_surface_relevant.count() > 0;
+
+        // Safety valve: cap total stored taint facts per module to prevent
+        // unbounded memory growth in large FFI-heavy inputs (e.g., 651-edge
+        // cross-module files). The per-edge detector only needs a representative
+        // sample — the first N facts are the most impactful (source params).
+        const max_taint_per_module: u32 = 500;
+
         while (iter.next()) |entry| {
             const value_id = entry.key_ptr.*;
             const taint_info = entry.value_ptr.*;
 
             if (taint_info.state != .none) {
-                // E2-1a: MemoryGraph gate - only filter when the danger surface has
-                // actually been populated. If both sets are empty the danger surface
-                // pass either hasn't run yet or found nothing — in that case store all
-                // taint facts so ffi_detector still has data to work with.
-                const danger_surface_populated =
-                    ctx.danger_surface_relevant.count() > 0 or
-                    ctx.ffi_auto_relevant.count() > 0;
-                if (danger_surface_populated and !ctx.isRelevantAlloc(value_id)) {
-                    filtered_count += 1;
-                    continue;
+                if (!has_ffi_context) {
+                    // Pure single-language analysis: strict filter to reduce noise
+                    if (!ctx.isRelevantAlloc(value_id)) {
+                        filtered_count += 1;
+                        continue;
+                    }
+                } else {
+                    // FFI context: apply safety cap after exhausting budget.
+                    // Still prefer relevant allocs; deprioritize non-relevant ones.
+                    if (count >= max_taint_per_module) {
+                        if (!ctx.isRelevantAlloc(value_id)) {
+                            filtered_count += 1;
+                            continue;
+                        }
+                        // Allow relevant allocs through even past the cap
+                    }
                 }
 
                 try ctx.fact_store.insert(
@@ -724,9 +742,9 @@ pub const TaintPropagationPass = struct {
         }
 
         if (count > 0) {
-            diag.info("PointerFlow: Stored {} pointer flow facts ({} filtered as non-FFI)", .{ count, filtered_count });
+            diag.info("PointerFlow: Stored {} taint facts ({} filtered)", .{ count, filtered_count });
         } else if (filtered_count > 0) {
-            diag.debug("PointerFlow: All {} taint facts filtered (not on FFI danger path)", .{filtered_count});
+            diag.debug("PointerFlow: {} taint facts filtered (no FFI context)", .{filtered_count});
         }
     }
 

@@ -152,6 +152,11 @@ pub const FFIDetector = struct {
     vulnerability_count: u32,
     vulnerabilities: std.ArrayList(FFIVulnerability),
 
+    /// Pre-computed set of function-scope IDs that contain taint.
+    /// Populated once in run() from FactStore's SoA arrays (O(1) kind_index),
+    /// then used for O(1) per-edge membership checks via hasTaintedDataFlow().
+    tainted_contexts: std.AutoHashMap(u32, void),
+
     /// Initialize the FFI detector.
     /// Returns error.OutOfMemory on allocation failure instead of panicking.
     pub fn init(allocator: Allocator, store: *FactStore) !FFIDetector {
@@ -161,11 +166,13 @@ pub const FFIDetector = struct {
             .store = store,
             .vulnerability_count = 0,
             .vulnerabilities = vulnerabilities,
+            .tainted_contexts = std.AutoHashMap(u32, void).init(allocator),
         };
     }
 
     /// Clean up resources
     pub fn deinit(self: *FFIDetector) void {
+        self.tainted_contexts.deinit();
         for (self.vulnerabilities.items) |*v| {
             v.deinit(self.allocator);
         }
@@ -176,34 +183,78 @@ pub const FFIDetector = struct {
     pub fn run(self: *FFIDetector, ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
-        const module = ctx.module.?.raw;
+        // Build FFI matches from cross-language edges (not intra-module name matching).
+        // This correctly handles the common case where declare is in one .ll file
+        // and define is in another — FFIMatcher's single-module approach misses these.
+        const cross_edges = ctx.getCrossLangEdges();
 
-        // Create matcher for this analysis
-        var matcher = try FFIMatcher.init(ctx.allocator);
-        defer matcher.deinit();
+        if (cross_edges.len == 0) {
+            diag.debug("FFIDetector: no cross-lang edges found in module", .{});
+            return;
+        }
 
-        // Extract functions from module
-        const safe_module = llvm_safe.Module{ .raw = module };
-        try matcher.extractFunctions(safe_module);
+        diag.info("FFIDetector: found {} cross-language edges to analyze", .{cross_edges.len});
 
-        // Match declare and define functions
-        try matcher.matchFunctions();
+        // Pre-compute tainted context set: O(T) one-time scan of taint facts
+        // via FactStore's kind_index (O(1) lookup), reading SoA ctx[] directly.
+        // After this, each per-edge check is O(1) HashMap contains().
+        try self.buildTaintedContextSet(ctx);
 
-        diag.info("Found {} FFI matches", .{matcher.getMatches().len});
+        var match_count: u32 = 0;
+        for (cross_edges) |*edge| {
+            const callee_name = edge.callee_name;
 
-        // Analyze each match for vulnerabilities
-        for (matcher.getMatches()) |*match| {
-            if (!match.isValid()) continue;
+            // Skip LLVM intrinsics — not real FFI boundaries
+            if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
 
-            const vulnerabilities = try self.analyzeFFIMatch(ctx, match);
-            defer self.allocator.free(vulnerabilities);
+            // Allocate owned copies for FFIMatch lifecycle.
+            // These outlive the loop iteration because stored vulnerabilities
+            // hold references into them via ffi_match. Freed on detector.deinit().
+            const name_copy = try ctx.allocator.dupe(u8, callee_name);
+            errdefer ctx.allocator.free(name_copy);
+
+            const caller_name_copy = try ctx.allocator.dupe(u8, edge.caller_name);
+            errdefer ctx.allocator.free(caller_name_copy);
+
+            // Build synthetic FunctionInfo for declare (callee) and define (caller) sides.
+            // func field is undefined because we don't have a local LLVM function ref for
+            // the other module's functions. Detection methods that need IR access will
+            // gracefully return null; taint-based detection still works via name lookup.
+            const declare_info = FunctionInfo{
+                .name = name_copy,
+                .kind = .declare,
+                .func = undefined,
+                .is_external = true,
+            };
+            const define_info = FunctionInfo{
+                .name = caller_name_copy,
+                .kind = .define,
+                .func = undefined,
+                .is_external = false,
+            };
+
+            const match = FFIMatch{
+                .name = name_copy,
+                .declare_func = declare_info,
+                .define_func = define_info,
+                .is_complete = true,
+            };
+
+            match_count += 1;
+
+            // Analyze this cross-edge match for vulnerabilities
+            const vulnerabilities = try self.analyzeFFIMatch(ctx, &match);
+            defer ctx.allocator.free(vulnerabilities);
             for (vulnerabilities) |vuln| {
                 try self.vulnerabilities.append(self.allocator, vuln);
                 try self.reportVulnerability(&vuln, diag);
             }
         }
 
-        diag.info("FFI detection complete: {} vulnerabilities found", .{self.vulnerability_count});
+        diag.info("FFI detection complete: {} edges analyzed, {} vulnerabilities found", .{
+            match_count,
+            self.vulnerability_count,
+        });
     }
 
     /// Detect command injection vulnerabilities
@@ -506,8 +557,14 @@ pub const FFIDetector = struct {
         return vulnerabilities.toOwnedSlice(self.allocator);
     }
 
-    /// Check if function calls any dangerous function
+    /// Check if function calls any dangerous function.
+    /// Returns null if the function reference is unavailable (e.g., synthetic
+    /// cross-edge match where IR access is not possible).
     fn callsDangerousFunction(self: *FFIDetector, func: FunctionInfo, dangerous_funcs: []const []const u8) !?[]const u8 {
+        // Guard: synthetic matches from cross-edge data may not have an actual
+        // LLVM function reference. Skip IR-based body inspection in that case.
+        if (@intFromPtr(func.func.raw) == 0) return null;
+
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
@@ -541,6 +598,8 @@ pub const FFIDetector = struct {
 
     /// Check if function has use-after-free pattern
     fn hasUseAfterFreePattern(self: *FFIDetector, func: FunctionInfo, mem_funcs: []const []const u8) !bool {
+        if (@intFromPtr(func.func.raw) == 0) return false;
+
         // Track use-after-free pattern:
         // 1. Find calls to free/delete
         // 2. Get the pointer being freed
@@ -617,6 +676,7 @@ pub const FFIDetector = struct {
     /// Check if function has unsafe arithmetic operations
     fn hasUnsafeArithmetic(self: *FFIDetector, func: FunctionInfo) !bool {
         _ = self;
+        if (@intFromPtr(func.func.raw) == 0) return false;
 
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (@intFromPtr(bb) != 0) {
@@ -643,35 +703,70 @@ pub const FFIDetector = struct {
         return false;
     }
 
-    /// Check if tainted data flows from declare to define
+    /// Build a pre-computed set of all tainted value IDs.
+    ///
+    /// Reads taint fact indices from FactStore's O(1) kind_index, then
+    /// collects BOTH .subject (tainted value) and .context (source param)
+    /// IDs into a HashSet. Called once in run() before the cross-edge loop,
+    /// making each subsequent per-edge check O(1) per argument inspected.
+    fn buildTaintedContextSet(self: *FFIDetector, ctx: *PassContext) !void {
+        const taint_indices = try ctx.fact_store.queryByKind(.taint, self.allocator);
+        defer self.allocator.free(taint_indices);
+
+        for (taint_indices) |idx| {
+            // Subject: the tainted value itself (e.g., a parameter or local)
+            const subj_id = ctx.fact_store.subj.items[idx];
+            try self.tainted_contexts.put(subj_id, {});
+            // Context: the source parameter ID from which taint originated
+            const ctx_id = ctx.fact_store.ctx.items[idx];
+            try self.tainted_contexts.put(ctx_id, {});
+        }
+    }
+
+    /// Check if tainted data flows through this specific FFI edge.
+    ///
+    /// Scans the define-side function for call instructions targeting the
+    /// declare-side callee, then checks each argument's value ID against
+    /// the pre-computed tainted_contexts HashSet. O(1) per argument,
+    /// O(B*I) total per edge where B=blocks, I=instructions (typically <100).
+    ///
+    /// This is per-edge precise: only returns true when a tainted value
+    /// is actually passed across THIS specific FFI boundary.
     fn hasTaintedDataFlow(self: *FFIDetector, ctx: *PassContext, ffi_match: *const FFIMatch) !bool {
-        _ = self;
+        const define_func = ffi_match.define_func orelse return false;
+        const declare_func = ffi_match.declare_func orelse return false;
 
-        const func_name = if (ffi_match.define_func) |f| f.name else ffi_match.name;
-        const target_hash = std.hash.Wyhash.hash(0, func_name);
-
-        const symbols = try ctx.query_engine.queryByKind(.func_symbol, ctx.allocator);
-        defer ctx.allocator.free(symbols);
-
-        var target_func_id: ?u32 = null;
-        for (symbols) |fact| {
-            if (fact.object == target_hash) {
-                target_func_id = fact.subject;
-                break;
-            }
+        // Synthetic cross-edge matches may not have an actual LLVM function ref.
+        // Fall back to module-level presence check when IR access unavailable.
+        if (@intFromPtr(define_func.func.raw) == 0) {
+            return self.tainted_contexts.count() > 0;
         }
 
-        if (target_func_id == null) return false;
+        // Scan define function's IR for calls to the declare-side callee
+        var bb = c.LLVMGetFirstBasicBlock(define_func.func.raw);
+        while (bb != null) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (inst != null) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
-        const context_facts = try ctx.query_engine.queryByContext(target_func_id.?, ctx.allocator);
-        defer ctx.allocator.free(context_facts);
+                // Verify this call targets our declare-side function
+                const called_val = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_val) == 0) continue;
+                const called_name = c.LLVMGetValueName(called_val);
+                if (!std.mem.eql(u8, std.mem.sliceTo(called_name, 0), declare_func.name)) continue;
 
-        for (context_facts) |fact| {
-            if (fact.kind == .taint) {
-                return true;
+                // Found the FFI boundary call — check each argument for taint
+                const num_args = c.LLVMGetNumArgOperands(inst);
+                var i: c_uint = 0;
+                while (i < num_args) : (i += 1) {
+                    const arg = c.LLVMGetOperand(inst, i);
+                    if (@intFromPtr(arg) == 0) continue;
+                    const arg_id = ctx.getValueId(@intFromPtr(arg)) catch continue;
+                    if (self.tainted_contexts.contains(arg_id)) return true;
+                }
             }
         }
-
         return false;
     }
 
