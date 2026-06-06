@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = @import("../common/log.zig");
 const Allocator = std.mem.Allocator;
 
 /// CLI Severity enum for argument parsing.
@@ -478,7 +479,7 @@ pub fn showHelp() void {
         \\  Runs full pipeline on each file + cross-language FFI matching
         \\
     ;
-    std.log.info("{s}", .{help_text});
+    log.info("{s}", .{help_text});
 }
 
 // ============================================================================

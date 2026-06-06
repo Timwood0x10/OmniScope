@@ -46,111 +46,111 @@ pub fn printZoneSummary(stats: zone_classifier.ZoneStats, dfg: *DataFlowGraph) v
         }
     }
 
-    std.log.info("═══════════════════════════════════════════════════════════════", .{});
-    std.log.info("Zone Classification Summary", .{});
-    std.log.info("═══════════════════════════════════════════════════════════════", .{});
+    log.info("═══════════════════════════════════════════════════════════════", .{});
+    log.info("Zone Classification Summary", .{});
+    log.info("═══════════════════════════════════════════════════════════════", .{});
 
-    std.log.info("  Total functions analyzed:    {d}", .{total});
-    std.log.info("  Safe zone (skipped):         {d} ({d:.1}%)", .{ stats.safe_count, skip_ratio * 100 });
-    std.log.info("  Runtime internal (skipped):  {d}", .{stats.runtime_count});
-    std.log.info("  Unsafe zone (analyzed):      {d}", .{stats.unsafe_count});
-    std.log.info("  FFI zone (analyzed):         {d}", .{stats.ffi_count});
-    std.log.info("  Unknown zone:                {d}", .{stats.unknown_count});
-    std.log.info("", .{});
+    log.info("  Total functions analyzed:    {d}", .{total});
+    log.info("  Safe zone (skipped):         {d} ({d:.1}%)", .{ stats.safe_count, skip_ratio * 100 });
+    log.info("  Runtime internal (skipped):  {d}", .{stats.runtime_count});
+    log.info("  Unsafe zone (analyzed):      {d}", .{stats.unsafe_count});
+    log.info("  FFI zone (analyzed):         {d}", .{stats.ffi_count});
+    log.info("  Unknown zone:                {d}", .{stats.unknown_count});
+    log.info("", .{});
 
-    std.log.info("  Escape zone functions:       {d} ({d:.1}% of total)", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
+    log.info("  Escape zone functions:       {d} ({d:.1}% of total)", .{ escape_count, if (total > 0) @as(f64, @floatFromInt(escape_count)) / @as(f64, @floatFromInt(total)) * 100 else 0 });
 
     if (issue_stats.total > 0) {
-        std.log.info("  Issues found:              {d}", .{issue_stats.total});
+        log.info("  Issues found:              {d}", .{issue_stats.total});
 
-        std.log.info("    Issue breakdown by category:", .{});
+        log.info("    Issue breakdown by category:", .{});
         if (issue_stats.memory_leak > 0) {
-            std.log.info("      Memory leak:              {d}", .{issue_stats.memory_leak});
+            log.info("      Memory leak:              {d}", .{issue_stats.memory_leak});
         }
         if (issue_stats.use_after_free > 0) {
-            std.log.info("      Use after free:           {d}", .{issue_stats.use_after_free});
+            log.info("      Use after free:           {d}", .{issue_stats.use_after_free});
         }
         if (issue_stats.double_free > 0) {
-            std.log.info("      Double free:               {d}", .{issue_stats.double_free});
+            log.info("      Double free:               {d}", .{issue_stats.double_free});
         }
         if (issue_stats.ffi_unsafe > 0) {
-            std.log.info("      FFI unsafe call:          {d}", .{issue_stats.ffi_unsafe});
+            log.info("      FFI unsafe call:          {d}", .{issue_stats.ffi_unsafe});
         }
         if (issue_stats.command_injection > 0) {
-            std.log.info("      Command injection:         {d}", .{issue_stats.command_injection});
+            log.info("      Command injection:         {d}", .{issue_stats.command_injection});
         }
         if (issue_stats.buffer_overflow > 0) {
-            std.log.info("      Buffer overflow:          {d}", .{issue_stats.buffer_overflow});
+            log.info("      Buffer overflow:          {d}", .{issue_stats.buffer_overflow});
         }
         if (issue_stats.format_string > 0) {
-            std.log.info("      Format string:            {d}", .{issue_stats.format_string});
+            log.info("      Format string:            {d}", .{issue_stats.format_string});
         }
         if (issue_stats.type_mismatch > 0) {
-            std.log.info("      Type mismatch:            {d}", .{issue_stats.type_mismatch});
+            log.info("      Type mismatch:            {d}", .{issue_stats.type_mismatch});
         }
         if (issue_stats.borrow_escape > 0) {
-            std.log.info("      Borrow escape:            {d}", .{issue_stats.borrow_escape});
+            log.info("      Borrow escape:            {d}", .{issue_stats.borrow_escape});
         }
         if (issue_stats.null_dereference > 0) {
-            std.log.info("      Null dereference:         {d}", .{issue_stats.null_dereference});
+            log.info("      Null dereference:         {d}", .{issue_stats.null_dereference});
         }
         if (issue_stats.invalid_free > 0) {
-            std.log.info("      Invalid free:             {d}", .{issue_stats.invalid_free});
+            log.info("      Invalid free:             {d}", .{issue_stats.invalid_free});
         }
         if (issue_stats.unchecked_return > 0) {
-            std.log.info("      Unchecked return:         {d}", .{issue_stats.unchecked_return});
+            log.info("      Unchecked return:         {d}", .{issue_stats.unchecked_return});
         }
         if (issue_stats.malloc_unchecked > 0) {
-            std.log.info("      Malloc unchecked:         {d}", .{issue_stats.malloc_unchecked});
+            log.info("      Malloc unchecked:         {d}", .{issue_stats.malloc_unchecked});
         }
         if (issue_stats.callback_mismatch > 0) {
-            std.log.info("      Callback mismatch:        {d}", .{issue_stats.callback_mismatch});
+            log.info("      Callback mismatch:        {d}", .{issue_stats.callback_mismatch});
         }
         if (issue_stats.unknown > 0) {
-            std.log.info("      Unknown:                  {d}", .{issue_stats.unknown});
+            log.info("      Unknown:                  {d}", .{issue_stats.unknown});
         }
 
-        std.log.info("", .{});
-        std.log.info("    90/10 Priority Classification:", .{});
-        std.log.info("      FFI Boundary (90% core):     {d}", .{ffi_issues});
-        std.log.info("      Local Only (10% auxiliary):  {d}", .{local_issues});
+        log.info("", .{});
+        log.info("    90/10 Priority Classification:", .{});
+        log.info("      FFI Boundary (90% core):     {d}", .{ffi_issues});
+        log.info("      Local Only (10% auxiliary):  {d}", .{local_issues});
 
-        std.log.info("    Origin breakdown:", .{});
-        std.log.info("      ✅ User code:             {d:>6} (ACTION NEEDED)", .{issue_stats.user_code});
-        std.log.info("      📦 Third-party (FFI):     {d:>6}", .{issue_stats.third_party});
-        std.log.info("      📚 Stdlib (suppressed):  {d:>6}", .{issue_stats.stdlib_suppressed});
-        std.log.info("      🔧 Compiler (ignored):   {d:>6}", .{issue_stats.compiler_ignored});
+        log.info("    Origin breakdown:", .{});
+        log.info("      ✅ User code:             {d:>6} (ACTION NEEDED)", .{issue_stats.user_code});
+        log.info("      📦 Third-party (FFI):     {d:>6}", .{issue_stats.third_party});
+        log.info("      📚 Stdlib (suppressed):  {d:>6}", .{issue_stats.stdlib_suppressed});
+        log.info("      🔧 Compiler (ignored):   {d:>6}", .{issue_stats.compiler_ignored});
 
         const actionable = issue_stats.user_code + issue_stats.third_party;
         if (actionable > 0) {
-            std.log.info("    → {d} actionable issues ({d} user, {d} FFI boundary)", .{
+            log.info("    → {d} actionable issues ({d} user, {d} FFI boundary)", .{
                 actionable,
                 issue_stats.user_code,
                 issue_stats.third_party,
             });
         }
-        std.log.info("", .{});
+        log.info("", .{});
 
         const graph_stats = dfg.getStats();
         const coverage_pct: f64 = if (graph_stats.node_count > 0)
             @as(f64, @floatFromInt(graph_stats.tainted_node_count)) / @as(f64, @floatFromInt(graph_stats.node_count)) * 100
         else
             0;
-        std.log.info("    Graph coverage:", .{});
-        std.log.info("      Total nodes analyzed:     {d}", .{graph_stats.node_count});
-        std.log.info("      Nodes on danger path:     {d} ({d:.1}%)", .{ graph_stats.tainted_node_count, coverage_pct });
-        std.log.info("      FFI boundaries tracked:   {d}", .{dfg.getFFIBoundaries().len});
-        std.log.info("      Issues in graph:          {d}", .{dfg.getIssues().len});
+        log.info("    Graph coverage:", .{});
+        log.info("      Total nodes analyzed:     {d}", .{graph_stats.node_count});
+        log.info("      Nodes on danger path:     {d} ({d:.1}%)", .{ graph_stats.tainted_node_count, coverage_pct });
+        log.info("      FFI boundaries tracked:   {d}", .{dfg.getFFIBoundaries().len});
+        log.info("      Issues in graph:          {d}", .{dfg.getIssues().len});
 
         if (issue_stats.total > 0) {
             const depth_hint = if (coverage_pct > 50) "deep alias analysis" else if (coverage_pct > 20) "moderate reach" else "shallow scan";
-            std.log.info("      Analysis depth:           {s}", .{depth_hint});
+            log.info("      Analysis depth:           {s}", .{depth_hint});
         }
     } else {
-        std.log.info("  Issues found:                0", .{});
+        log.info("  Issues found:                0", .{});
     }
 
-    std.log.info("═══════════════════════════════════════════════════════════════", .{});
+    log.info("═══════════════════════════════════════════════════════════════", .{});
 }
 
 /// Pass comptime wrapper with type validation

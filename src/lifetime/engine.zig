@@ -28,6 +28,7 @@
 //! ```
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 const CommonTypes = @import("../common/types.zig");
 
 /// Re-export Location for backward compatibility.
@@ -391,7 +392,7 @@ pub const LifetimeEngine = struct {
     /// Add an issue to the issue list.
     fn addIssue(self: *LifetimeEngine, issue: Issue) void {
         self.issues.append(self.allocator, issue) catch |err| {
-            std.log.err("LifetimeEngine: Failed to add issue: {}", .{err});
+            log.err("LifetimeEngine: Failed to add issue: {}", .{err});
         };
     }
 

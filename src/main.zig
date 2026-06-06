@@ -17,7 +17,7 @@ pub fn main() !void {
         const leaked = gpa.deinit();
         if (leaked == .leak) {
             if (log.current_log_level != .quiet) {
-                std.log.warn("Memory leak detected!\n", .{});
+                log.warn("Memory leak detected!\n", .{});
             }
         }
     }

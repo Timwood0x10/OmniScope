@@ -15,6 +15,7 @@
 //! - Transformed to a different taint kind
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 
 /// Sanitizer effectiveness level
 pub const SanitizerEffectiveness = enum {
@@ -488,7 +489,7 @@ pub const SanitizerRegistry = struct {
 
         for (SANITIZER_FUNCTIONS) |info| {
             registry.sanitizers.put(info.name, info) catch |err| {
-                std.log.err("SanitizerRegistry: Failed to register sanitizer '{s}': {}", .{ info.name, err });
+                log.err("SanitizerRegistry: Failed to register sanitizer '{s}': {}", .{ info.name, err });
                 return err;
             };
         }

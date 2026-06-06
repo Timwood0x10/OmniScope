@@ -22,7 +22,7 @@ pub const DependencyError = error{
 };
 
 /// Pass manager
-const log = std.log.scoped(.pass_manager);
+const log = @import("../common/log.zig");
 
 pub const PassManager = struct {
     allocator: Allocator,
@@ -131,7 +131,7 @@ pub const PassManager = struct {
             for (pass.deps) |dep_name| {
                 // Find dependency index
                 const dep_idx = self.pass_map.get(dep_name) orelse {
-                    std.log.err("PassManager: pass '{s}' depends on '{s}' which is not registered", .{ pass.name, dep_name });
+                    log.err("PassManager: pass '{s}' depends on '{s}' which is not registered", .{ pass.name, dep_name });
                     return error.MissingDependency;
                 };
                 // Add edge: dep_idx -> i
@@ -247,7 +247,7 @@ pub const PassManager = struct {
             const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
             const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
             if (elapsed_ms >= 0) {
-                log.debug("[PERF] Pass '{s}': {d:.2} ms", .{ pass_name, elapsed_ms });
+                log.info("[PERF] Pass '{s}': {d:.2} ms", .{ pass_name, elapsed_ms });
             }
         }
 

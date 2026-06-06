@@ -13,6 +13,7 @@
 /// - Zig (avg): 191 → ~40 issues (FP rate <30%)
 /// - C (SQLite): 0 → 0 (no change, already clean)
 const std = @import("std");
+const log = @import("../../../common/log.zig");
 const semantics = @import("../../../semantics/noise_filter.zig");
 const ffi_utils = @import("../ffi/ffi_utils.zig");
 const PatternRegistry = @import("../../../filter/pattern_registry.zig").PatternRegistry;
@@ -353,7 +354,7 @@ pub const AttributionSummary = struct {
     /// Print the noise-reduced analysis report.
     /// Format: "191 issues → 21 user code (8 FFI HIGH)"
     pub fn printReport(self: *const AttributionSummary) void {
-        std.log.info(
+        log.info(
             \\╔══════════════════════════════════════════════════════╗
             \\║     OmniScope Analysis Report (Noise-Reduced)         ║
             \\╠══════════════════════════════════════════════════════╣
@@ -372,23 +373,23 @@ pub const AttributionSummary = struct {
             self.compiler_ignored,
         });
 
-        std.log.info("\n{s} {d} issues → {d} user code", .{
+        log.info("\n{s} {d} issues → {d} user code", .{
             if (self.user_code > 0) "✅" else "⚠️",
             self.total_issues,
             self.user_code,
         });
 
         if (self.ffi_high_count > 0 or self.ffi_medium_count > 0) {
-            std.log.info(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
+            log.info(" ({d} FFI HIGH, {d} FFI MEDIUM)", .{
                 self.ffi_high_count,
                 self.ffi_medium_count,
             });
         }
 
-        std.log.info("\n", .{});
+        log.info("\n", .{});
 
         if (self.category_count > 0) {
-            std.log.info("\n┌─ Issue Categories ────────────────────────────────\n", .{});
+            log.info("\n┌─ Issue Categories ────────────────────────────────\n", .{});
 
             for (self.categories[0..self.category_count]) |cat| {
                 if (cat.count == 0) continue;
@@ -401,14 +402,14 @@ pub const AttributionSummary = struct {
                     .unknown => "❓",
                 };
 
-                std.log.info("│ {s} [{s}] {d:>4} issues\n", .{
+                log.info("│ {s} [{s}] {d:>4} issues\n", .{
                     icon,
                     cat.kind,
                     cat.count,
                 });
             }
 
-            std.log.info("└────────────────────────────────────────────────\n", .{});
+            log.info("└────────────────────────────────────────────────\n", .{});
         }
     }
 

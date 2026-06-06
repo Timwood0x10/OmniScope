@@ -20,6 +20,7 @@
 //! those violations.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 const engine = @import("engine.zig");
 const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
 // Platform profile is consulted when available to disambiguate
@@ -260,7 +261,7 @@ pub const BoundaryAnalyzer = struct {
     /// Add an issue to the issue list.
     pub fn addIssue(self: *BoundaryAnalyzer, issue: BoundaryIssue) void {
         self.issues.append(self.allocator, issue) catch |err| {
-            std.log.err("BoundaryAnalyzer: Failed to add issue: {}", .{err});
+            log.err("BoundaryAnalyzer: Failed to add issue: {}", .{err});
         };
     }
 

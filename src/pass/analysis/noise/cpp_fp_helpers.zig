@@ -4,6 +4,7 @@
 //! Contains L1-L8 filter functions, RAII/Singleton/RC detection helpers.
 
 const std = @import("std");
+const log = @import("../../../common/log.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const PassContext = @import("../../pass.zig").PassContext;
 const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
@@ -192,7 +193,7 @@ pub fn markAsRcFunction(func: c.LLVMValueRef, rc_set: *std.AutoHashMap(usize, vo
     if (@intFromPtr(func_name_raw) != 0) {
         const func_ptr = @intFromPtr(func_name_raw);
         rc_set.put(func_ptr, {}) catch {
-            std.log.warn("RC-WARN: failed to track RC container function (OOM?)\n", .{});
+            log.warn("RC-WARN: failed to track RC container function (OOM?)\n", .{});
         };
     }
 }
@@ -259,7 +260,7 @@ pub fn detectRaiiManagedAllocations(
         if (@intFromPtr(func_name_raw) != 0) {
             const func_ptr = @intFromPtr(func_name_raw);
             raii_func_set.put(func_ptr, {}) catch {
-                std.log.warn("RAII-WARN: failed to track RAII function (OOM?)\n", .{});
+                log.warn("RAII-WARN: failed to track RAII function (OOM?)\n", .{});
             };
         }
     }
@@ -300,7 +301,7 @@ pub fn detectMeyersSingletonFunctions(
         if (@intFromPtr(func_name_raw) != 0) {
             const func_ptr = @intFromPtr(func_name_raw);
             meyers_set.put(func_ptr, {}) catch {
-                std.log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
+                log.warn("MEYERS-WARN: failed to track Meyers function (OOM?)\n", .{});
             };
         }
     }
@@ -411,9 +412,9 @@ pub fn detectAsPtrBorrowEscape(
                 )) catch {
                     diag.warn("Failed to register as_ptr escape issue", .{});
                 };
-                diag.err("VULNERABILITY OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.8)) });
-                diag.err("Type: borrow_escape", .{});
-                diag.err("Reason: as_ptr() on local value passed to FFI - may dangle", .{});
+                log.warn("VULNERABILITY OMI-{d:0>3} [{s}] [Confidence: {s}]", .{ vuln_id, @tagName(.high), @tagName(Confidence.fromScore(0.8)) });
+                log.warn("Type: borrow_escape", .{});
+                log.warn("Reason: as_ptr() on local value passed to FFI - may dangle", .{});
 
                 reported.put(func_key, {}) catch {};
             }

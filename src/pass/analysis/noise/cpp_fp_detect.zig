@@ -8,6 +8,7 @@
 //! Log prefix: [cpp-fp-detect]
 
 const std = @import("std");
+const log = @import("../../../common/log.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const ffi_language_classifier = @import("../ffi/ffi_language_classifier.zig");
 
@@ -185,8 +186,8 @@ pub fn detectDoubleFree(
                 ctx.addIssue(&Issue.init(.double_free, "Double-free detected", Location.init(first_func), severity, confidence)) catch {
                     diag.warn("Failed to register critical double_free issue", .{});
                 };
-                diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
-                diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
+                log.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
+                log.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
                 continue;
             };
             defer ctx.allocator.free(msg);
@@ -194,8 +195,8 @@ pub fn detectDoubleFree(
             ctx.addIssue(&Issue.init(.double_free, msg, Location.init(first_func), severity, confidence)) catch {
                 diag.warn("Failed to register double_free issue with message", .{});
             };
-            diag.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
-            diag.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
+            log.err("DOUBLE-FREE [HIGH]: Allocation {d} freed {d} times in SAME basic block ({s}) — confirmed double-free", .{ alloc_id, free_cnt, first_func });
+            log.err("  Risk: Heap corruption, use-after-free, security vulnerability", .{});
         }
     }
 }

@@ -10,6 +10,7 @@
 //! - Name demangling utilities
 
 const std = @import("std");
+const log = @import("../../../common/log.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 
@@ -342,7 +343,7 @@ pub fn demangleRustName(allocator: std.mem.Allocator, mangled: []const u8) error
     }
 
     if (components.items.len >= max_components) {
-        std.log.warn("[ffi-utils] Rust demangle: path truncated to {d} segments (max: {d}), mangled name may be incomplete", .{ components.items.len, max_components });
+        log.warn("[ffi-utils] Rust demangle: path truncated to {d} segments (max: {d}), mangled name may be incomplete", .{ components.items.len, max_components });
         truncated = true;
     }
 

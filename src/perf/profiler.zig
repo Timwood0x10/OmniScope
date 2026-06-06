@@ -164,20 +164,20 @@ pub const Profiler = struct {
         // Performance profile is pipeline telemetry — only show in verbose/debug
         if (log.current_log_level != .verbose and log.current_log_level != .debug) return;
 
-        std.log.info("\n=== Performance Profile Report ===\n\n", .{});
-        std.log.info("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
+        log.info("\n=== Performance Profile Report ===\n\n", .{});
+        log.info("{s:<30} {s:>10} {s:>12} {s:>12} {s:>12}\n", .{
             "Operation",
             "Calls",
             "Total (ms)",
             "Avg (us)",
             "Max (us)",
         });
-        std.log.info("{s:-<80}\n", .{""});
+        log.info("{s:-<80}\n", .{""});
 
         var iter = self.stats.iterator();
         while (iter.next()) |entry| {
             const s = entry.value_ptr.*;
-            std.log.info("{s:<30} {d:>10} {d:>12.2} {d:>12.2} {d:>12.2}\n", .{
+            log.info("{s:<30} {d:>10} {d:>12.2} {d:>12.2} {d:>12.2}\n", .{
                 s.name,
                 s.call_count,
                 s.totalMs(),
@@ -317,20 +317,20 @@ pub const PassStatsCollector = struct {
     pub fn printReport(self: *const PassStatsCollector, enabled: bool) void {
         if (!enabled or self.stats.items.len == 0) return;
 
-        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
-        std.log.info("{s} Per-Pass Performance Statistics", .{LOG_PREFIX});
-        std.log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
-        std.log.info("", .{});
+        log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        log.info("{s} Per-Pass Performance Statistics", .{LOG_PREFIX});
+        log.info("{s} ══════════════════════════════════════════════════════", .{LOG_PREFIX});
+        log.info("", .{});
 
         // Table header
-        std.log.info("{s} {s} {s} {s} {s}", .{
+        log.info("{s} {s} {s} {s} {s}", .{
             "Pass",
             "Time (ms)",
             "RSS Δ (KB)",
             "Alloc Δ",
             "Alloc/s",
         });
-        std.log.info("{s}", .{"---------------------------------------------"});
+        log.info("{s}", .{"---------------------------------------------"});
 
         var total_ms: f64 = 0;
         for (self.stats.items) |s| {
@@ -345,7 +345,7 @@ pub const PassStatsCollector = struct {
             else
                 0;
 
-            std.log.info("{s} {d:.2} {d} {d} {d}", .{
+            log.info("{s} {d:.2} {d} {d} {d}", .{
                 s.pass_name,
                 ms,
                 rss_delta,
@@ -354,8 +354,8 @@ pub const PassStatsCollector = struct {
             });
         }
 
-        std.log.info("{s} {s} {d:.2}", .{ "TOTAL", "", total_ms });
-        std.log.info("", .{});
+        log.info("{s} {s} {d:.2}", .{ "TOTAL", "", total_ms });
+        log.info("", .{});
     }
 
     /// Generate JSON output of all recorded passes

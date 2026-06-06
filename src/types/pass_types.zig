@@ -749,9 +749,9 @@ pub const DiagnosticWriter = struct {
 
         const color = comptime getSeverityColor(severity);
         if (self.use_color) {
-            std.log.info(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
+            log.info(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
         } else {
-            std.log.info("[" ++ severity ++ "] " ++ format ++ "\n", args);
+            log.info("[" ++ severity ++ "] " ++ format ++ "\n", args);
         }
     }
 

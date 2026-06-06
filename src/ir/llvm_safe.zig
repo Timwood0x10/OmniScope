@@ -6,6 +6,7 @@
 //! Usage: Always use this layer, never access llvm_raw.c directly.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 const Allocator = std.mem.Allocator;
 const c = @import("llvm_raw.zig").c;
 
@@ -180,7 +181,7 @@ pub const IRLoader = struct {
             defer self.allocator.free(result.stdout);
             defer self.allocator.free(result.stderr);
             if (result.term.Exited != 0) {
-                std.log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
+                log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
                 c.LLVMDisposeMemoryBuffer(mem_buf);
                 return Error.ParseFailed;
             }

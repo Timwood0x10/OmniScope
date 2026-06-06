@@ -9,6 +9,8 @@
 
 const std = @import("std");
 
+const log = @import("../common/log.zig");
+
 const Allocator = std.mem.Allocator;
 
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -370,7 +372,7 @@ pub const DataFlowGraph = struct {
 
         // Log filtering statistics (only if filtering occurred)
         if (filtered_count > 0) {
-            std.log.info("FFI-FILTER: Total={}, Filtered={} safe/internal functions, Retained={} potentially dangerous", .{
+            log.info("FFI-FILTER: Total={}, Filtered={} safe/internal functions, Retained={} potentially dangerous", .{
                 total_matches,
                 filtered_count,
                 retained_count,

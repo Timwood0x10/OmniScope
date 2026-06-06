@@ -57,7 +57,7 @@ pub const SuppressionStats = struct {
 
     pub fn logSummary(self: SuppressionStats) void {
         if (self.total_suppressed == 0) return;
-        std.log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d} safe={d} defensive={d} stdlib={d}", .{
+        log.info("[SUPPRESSION] {d} suppressed: drop={d} static={d} panic={d} osapi={d} safe={d} defensive={d} stdlib={d}", .{
             self.total_suppressed,
             self.drop_chain,
             self.static_provenance,
