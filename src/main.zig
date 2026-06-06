@@ -10,6 +10,7 @@ const file_config = OmniScope.config.file_config;
 const Config = main_config.Config;
 
 const pipeline_runner = @import("pipeline_runner.zig");
+const pipeline = @import("pipeline.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -89,7 +90,7 @@ pub fn main() !void {
     if (config.input_files.items.len == 1) {
         try pipeline_runner.runSingleFileAnalysis(allocator, config.input_files.items[0], config);
     } else {
-        try pipeline_runner.runMultiFileAnalysis(allocator, config.input_files.items, config);
+        try pipeline.runMultiFileAnalysis(allocator, config.input_files.items, config);
     }
 }
 

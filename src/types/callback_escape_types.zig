@@ -45,12 +45,16 @@ pub const EscapeStats = struct {
 };
 
 /// Allocation site info for internal tracking.
+/// NOTE: Consider using ownership_types.AllocSite (the authoritative source)
+/// instead of defining a separate type here.
 pub const AllocSiteInfo = struct {
     inst_id: c.LLVMValueRef,
     func_name: []const u8,
 };
 
 /// Free site info for internal tracking.
+/// NOTE: Consider using ownership_types.FreeSite (the authoritative source)
+/// instead of defining a separate type here.
 pub const FreeSiteInfo = struct {
     inst_id: c.LLVMValueRef,
     func_name: []const u8,
@@ -454,18 +458,15 @@ pub const TRANSFER_PATTERNS = &[_][]const u8{
 };
 
 /// Checks if a function is a factory/constructor that transfers ownership to caller.
+// TODO: Directly call @import("../common/factory_patterns.zig").isFactoryFunction instead.
 pub fn isFactoryFunction(func_name: []const u8) bool {
-    return @import("../common/factory_patterns.zig").isFactoryFunctionWithStrategy(func_name, .substring);
+    return @import("../common/factory_patterns.zig").isFactoryFunction(func_name);
 }
 
 /// Checks if a function is a destructor that consumes ownership from caller.
+// TODO: Directly call @import("../common/factory_patterns.zig").isDestructorFunction instead.
 pub fn isDestructorFunction(func_name: []const u8) bool {
-    for (DESTRUCTOR_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return true;
-        }
-    }
-    return false;
+    return @import("../common/factory_patterns.zig").isDestructorFunction(func_name);
 }
 
 /// Checks if a function is a transfer function that passes ownership through.

@@ -22,6 +22,9 @@ const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 
+const Effect = @import("../../../semantics/resource/effect.zig").Effect;
+const SummaryStore = @import("../../../semantics/resource/function_summary.zig").SummaryStore;
+
 /// FFI unsafe detection pass with precision optimization
 pub const FFIUnsafePass = struct {
     pub const name = "ffi-unsafe";
@@ -35,13 +38,17 @@ pub const FFIUnsafePass = struct {
     const MIN_CONFIDENCE_SPECIFIC: f32 = 0.70;
 
     // Patterns that are genuinely dangerous at FFI boundaries.
-    // NOTE: malloc/free/realloc/calloc are REMOVED from this list because:
-    //   - They are legitimate memory management functions, not security hazards.
-    //   - Cross-allocator mismatches (malloc+delete, new+free) are already handled
-    //     by FreeValidationPass.isCrossAllocatorFree() with proper domain awareness.
-    //   - Flagging every malloc/free at an FFI boundary as "unsafe" creates massive
-    //     false positive noise that obscures real vulnerabilities.
-    const DangerousPatterns = &[_][]const u8{
+    // NOTE: This has been replaced with SummaryStore-based effect queries.
+    // The hardcoded list is kept as a FALLBACK for when the SummaryStore is
+    // unavailable (no resource summary has been loaded) or when a function
+    // isn't registered in the SummaryStore.
+    //
+    // Primary detection path (SummaryStore):
+    //   Functions with effects like escapes_to_callback, stores_arg_to_global,
+    //   or conditional_release are flagged as dangerous FFI patterns.
+    //
+    // Fallback list (used when SummaryStore is unavailable):
+    const FallbackDangerousPatterns = &[_][]const u8{
         "system",      "popen",
         "exec",        "execve",
         "execvp",      "execv",
@@ -157,14 +164,14 @@ pub const FFIUnsafePass = struct {
     ) !AnalysisResult {
         var result = AnalysisResult{ .reported = 0, .skipped = 0 };
 
-        if (!isDangerous(boundary.function_name)) {
+        if (!isDangerous(boundary.function_name, ctx.resource_summary)) {
             return result;
         }
 
         const vuln_type = classifyVulnerability(boundary.function_name);
 
         // Layer 2: Whitelist check (before expensive confidence calculation)
-        if (isWhitelisted(boundary, vuln_type)) {
+        if (isWhitelisted(boundary, vuln_type, ctx.resource_summary)) {
             log.debug("FFIUnsafe-SKIP [WHITELIST]: {s} in caller={s}", .{
                 cleanFunctionName(boundary.function_name),
                 boundary.location.func,
@@ -209,7 +216,7 @@ pub const FFIUnsafePass = struct {
             return result;
         }
 
-        var confidence = calculateConfidence(boundary.function_name, vuln_type);
+        var confidence = calculateConfidence(boundary.function_name, vuln_type, ctx.resource_summary);
 
         // Apply context-based confidence adjustment
         confidence = adjustConfidenceForContext(boundary, vuln_type, confidence);
@@ -260,9 +267,35 @@ pub const FFIUnsafePass = struct {
         return result;
     }
 
-    pub fn isDangerous(func_name: []const u8) bool {
+    /// Check if a function name matches known-dangerous FFI patterns.
+    ///
+    /// Primary check: queries the SummaryStore for dangerous effects
+    /// (escapes_to_callback, stores_arg_to_global, conditional_release).
+    /// Secondary fallback: exact match against the hardcoded FallbackDangerousPatterns list
+    /// for functions not registered in the SummaryStore.
+    ///
+    /// Returns true if the function is a known-dangerous FFI pattern.
+    pub fn isDangerous(func_name: []const u8, store: ?*const SummaryStore) bool {
         const clean = if (func_name.len > 0 and func_name[0] < 32) func_name[1..] else func_name;
-        for (DangerousPatterns) |pattern| {
+
+        // Primary: SummaryStore effect-based detection
+        if (store) |s| {
+            if (s.lookup(clean)) |summary| {
+                // Functions with these effects at FFI boundaries are dangerous:
+                // - escapes_to_callback: pointer escapes to callback/handler
+                // - stores_arg_to_global: saves context globally (like setjmp)
+                // - conditional_release: refcount-based semantics (may free unexpectedly)
+                if (summary.hasEffect(.escapes_to_callback) or
+                    summary.hasEffect(.stores_arg_to_global) or
+                    summary.hasEffect(.conditional_release))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Fallback: exact match against the hardcoded pattern list
+        for (FallbackDangerousPatterns) |pattern| {
             if (std.mem.eql(u8, clean, pattern)) {
                 return true;
             }
@@ -276,7 +309,7 @@ pub const FFIUnsafePass = struct {
     /// well-audited standard library internals, test code, and safe wrappers.
     ///
     /// Returns true if the call should be suppressed (whitelisted).
-    pub fn isWhitelisted(boundary: *const FFIBoundary, vuln_type: IssueKind) bool {
+    pub fn isWhitelisted(boundary: *const FFIBoundary, vuln_type: IssueKind, store: ?*const SummaryStore) bool {
         const func_name = cleanFunctionName(boundary.function_name);
         const caller_name = boundary.location.func;
         const file_path = boundary.location.file orelse "";
@@ -309,7 +342,7 @@ pub const FFIUnsafePass = struct {
 
             if (matched) {
                 // Additional check: ensure it's not a dangerous function with "safe" in name
-                if (!isDangerous(func_name)) {
+                if (!isDangerous(func_name, store)) {
                     return true;
                 }
             }
@@ -457,17 +490,28 @@ pub const FFIUnsafePass = struct {
     /// Calculate confidence score for a vulnerability detection
     ///
     /// Factors considered:
+    /// - SummaryStore effect confidence (primary)
     /// - Exact match vs partial match (exact = higher confidence)
     /// - Vulnerability type (command injection = highest confidence)
     /// - Function name specificity
     ///
     /// Returns:
     ///   - Confidence score (0.0 - 1.0)
-    fn calculateConfidence(func_name: []const u8, vuln_type: IssueKind) f32 {
+    fn calculateConfidence(func_name: []const u8, vuln_type: IssueKind, store: ?*const SummaryStore) f32 {
         var base_confidence: f32 = 0.5; // Base confidence
 
-        // Exact match bonus
-        for (DangerousPatterns) |pattern| {
+        // Primary: SummaryStore-based confidence
+        if (store) |s| {
+            if (s.lookup(func_name)) |summary| {
+                // Use summary confidence if available and reliable
+                if (summary.confidence > base_confidence) {
+                    base_confidence = summary.confidence;
+                }
+            }
+        }
+
+        // Exact match bonus against fallback list
+        for (FallbackDangerousPatterns) |pattern| {
             if (std.mem.eql(u8, func_name, pattern)) {
                 base_confidence += 0.3; // Exact match = +30%
                 break;
@@ -610,9 +654,9 @@ pub const FFIUnsafePass = struct {
 };
 
 test "FFIUnsafePass - dangerous detection" {
-    try std.testing.expect(FFIUnsafePass.isDangerous("system"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("malloc"));
-    try std.testing.expect(!FFIUnsafePass.isDangerous("safe_func"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("system", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("strcpy", null));
+    try std.testing.expect(!FFIUnsafePass.isDangerous("safe_func", null));
 }
 
 test "FFIUnsafePass - vulnerability classification" {
@@ -622,10 +666,10 @@ test "FFIUnsafePass - vulnerability classification" {
 
 test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
     // P1-2: C control flow violation at FFI boundary
-    try std.testing.expect(FFIUnsafePass.isDangerous("setjmp"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("longjmp"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("sigsetjmp"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("siglongjmp"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("setjmp", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("longjmp", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("sigsetjmp", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("siglongjmp", null));
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("setjmp"));
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("longjmp"));
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("sigsetjmp"));
@@ -634,12 +678,12 @@ test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
 
 test "FFIUnsafePass - P1-2 variadic function detection" {
     // P1-2: Variadic functions across FFI boundary
-    try std.testing.expect(FFIUnsafePass.isDangerous("vprintf"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vfprintf"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsprintf"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsnprintf"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsscanf"));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vfscanf"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vprintf", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vfprintf", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsprintf", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsnprintf", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vsscanf", null));
+    try std.testing.expect(FFIUnsafePass.isDangerous("vfscanf", null));
     // Classification
     try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vprintf"));
     try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vsprintf"));
@@ -660,8 +704,8 @@ test "FFIUnsafePass - Layer 2: Whitelist - stdlib internals" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&sqlite_boundary, .ffi_unsafe_call));
-    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&sqlite_boundary, .command_injection));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&sqlite_boundary, .ffi_unsafe_call, null));
+    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&sqlite_boundary, .command_injection, null));
 
     // libuv internal functions
     const libuv_boundary = FFIBoundary{
@@ -671,7 +715,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - stdlib internals" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&libuv_boundary, .format_string));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&libuv_boundary, .format_string, null));
 
     // Rust standard library
     const rust_boundary = FFIBoundary{
@@ -681,7 +725,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - stdlib internals" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&rust_boundary, .ffi_unsafe_call));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&rust_boundary, .ffi_unsafe_call, null));
 }
 
 test "FFIUnsafePass - Layer 2: Whitelist - safe naming patterns" {
@@ -693,8 +737,8 @@ test "FFIUnsafePass - Layer 2: Whitelist - safe naming patterns" {
         .parameters = &[_][]const u8{},
     };
 
-    // get_version is not in DangerousPatterns, so whitelist should apply
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&safe_getter, .ffi_unsafe_call));
+    // get_version is not in the fallback list, so whitelist should apply
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&safe_getter, .ffi_unsafe_call, null));
 
     // Safe validation function
     const safe_validate = FFIBoundary{
@@ -704,7 +748,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - safe naming patterns" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&safe_validate, .ffi_unsafe_call));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&safe_validate, .ffi_unsafe_call, null));
 }
 
 test "FFIUnsafePass - Layer 2: Whitelist - test files" {
@@ -717,7 +761,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - test files" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&test_boundary, .format_string));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&test_boundary, .format_string, null));
 
     // Demo files
     const demo_boundary = FFIBoundary{
@@ -728,7 +772,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - test files" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&demo_boundary, .format_string));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&demo_boundary, .format_string, null));
 }
 
 test "FFIUnsafePass - Layer 2: Whitelist - specific vulns never whitelisted" {
@@ -740,7 +784,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - specific vulns never whitelisted" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&cmd_inject_boundary, .command_injection));
+    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&cmd_inject_boundary, .command_injection, null));
 
     // Buffer overflow should NEVER be whitelisted
     const bof_boundary = FFIBoundary{
@@ -750,7 +794,7 @@ test "FFIUnsafePass - Layer 2: Whitelist - specific vulns never whitelisted" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&bof_boundary, .buffer_overflow));
+    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&bof_boundary, .buffer_overflow, null));
 }
 
 test "FFIUnsafePass - Layer 3: Auxiliary evidence - high-risk keywords" {
@@ -827,15 +871,15 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - no evidence for safe calls" 
 test "FFIUnsafePass - Layer 1: Confidence threshold" {
     // Test that generic calls need higher confidence
     // setjmp has confidence 0.5 + 0.3 (exact) = 0.8 < 0.85 threshold
-    const setjmp_confidence = FFIUnsafePass.calculateConfidence("setjmp", .ffi_unsafe_call);
+    const setjmp_confidence = FFIUnsafePass.calculateConfidence("setjmp", .ffi_unsafe_call, null);
     try std.testing.expect(setjmp_confidence < FFIUnsafePass.MIN_CONFIDENCE_GENERIC);
 
     // system has confidence 0.5 + 0.3 + 0.15 (cmd injection) = 0.95 > 0.70 threshold
-    const system_confidence = FFIUnsafePass.calculateConfidence("system", .command_injection);
+    const system_confidence = FFIUnsafePass.calculateConfidence("system", .command_injection, null);
     try std.testing.expect(system_confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 
     // strcpy has confidence 0.5 + 0.3 + 0.10 (buffer overflow) = 0.90 > 0.70 threshold
-    const strcpy_confidence = FFIUnsafePass.calculateConfidence("strcpy", .buffer_overflow);
+    const strcpy_confidence = FFIUnsafePass.calculateConfidence("strcpy", .buffer_overflow, null);
     try std.testing.expect(strcpy_confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 }
 
@@ -855,7 +899,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
     const sqlite_vuln_type = FFIUnsafePass.classifyVulnerability("vsnprintf");
 
     // Layer 2: Whitelist should catch this
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&sqlite_fp, sqlite_vuln_type));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&sqlite_fp, sqlite_vuln_type, null));
 
     // Scenario 2: libuv internal calling sprintf (should be filtered)
     const libuv_fp = FFIBoundary{
@@ -869,7 +913,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
     const libuv_vuln_type = FFIUnsafePass.classifyVulnerability("sprintf");
 
     // Layer 2: Whitelist should catch this
-    try std.testing.expect(FFIUnsafePass.isWhitelisted(&libuv_fp, libuv_vuln_type));
+    try std.testing.expect(FFIUnsafePass.isWhitelisted(&libuv_fp, libuv_vuln_type, null));
 
     // Scenario 3: User code calling system with user input (should NOT be filtered)
     const real_bug = FFIBoundary{
@@ -883,13 +927,13 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
     const real_vuln_type = FFIUnsafePass.classifyVulnerability("system");
 
     // command_injection is never whitelisted
-    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&real_bug, real_vuln_type));
+    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&real_bug, real_vuln_type, null));
 
     // Should have auxiliary evidence (user input context)
     try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&real_bug));
 
     // Confidence should be above threshold
-    const confidence = FFIUnsafePass.calculateConfidence("system", real_vuln_type);
+    const confidence = FFIUnsafePass.calculateConfidence("system", real_vuln_type, null);
     try std.testing.expect(confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 }
 
@@ -902,20 +946,20 @@ test "FFIUnsafePass - Edge cases and boundary conditions" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(!FFIUnsafePass.isDangerous(""));
-    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&empty_boundary, .ffi_unsafe_call));
+    try std.testing.expect(!FFIUnsafePass.isDangerous("", null));
+    try std.testing.expect(!FFIUnsafePass.isWhitelisted(&empty_boundary, .ffi_unsafe_call, null));
 
     // Function name with control character (cleanFunctionName handling)
     // Verify control characters are properly stripped before matching
-    try std.testing.expect(FFIUnsafePass.isDangerous("\x01system"));
+    try std.testing.expect(FFIUnsafePass.isDangerous("\x01system", null));
     // Test that the function can handle control-prefixed names
     const ctrl_name = "\x01system";
     const cleaned = if (ctrl_name.len > 0 and ctrl_name[0] < 32) ctrl_name[1..] else ctrl_name;
     try std.testing.expectEqualStrings(cleaned, "system");
 
     // Very long function name (specificity bonus)
-    const long_confidence = FFIUnsafePass.calculateConfidence("posix_spawn_file_actions_addclose", .ffi_unsafe_call);
-    const short_confidence = FFIUnsafePass.calculateConfidence("exec", .ffi_unsafe_call);
+    const long_confidence = FFIUnsafePass.calculateConfidence("posix_spawn_file_actions_addclose", .ffi_unsafe_call, null);
+    const short_confidence = FFIUnsafePass.calculateConfidence("exec", .ffi_unsafe_call, null);
 
     try std.testing.expect(long_confidence > short_confidence);
 }

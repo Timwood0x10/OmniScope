@@ -47,9 +47,13 @@ const contract = @import("free_validation_contract.zig");
 const report = @import("free_validation_report.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
+// TODO: Reference from @import("../../../types/function_catalogs.zig") once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
 pub const FREE_FUNCTIONS = safety.FREE_FUNCTIONS;
 
 /// Memory allocation functions — delegated to ptr_types (single source of truth).
+// TODO: Reference from @import("../../../types/function_catalogs.zig") once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
 pub const ALLOC_FUNCTIONS = safety.ALLOC_FUNCTIONS;
 
 /// Free validation detection pass

@@ -172,8 +172,13 @@ pub fn countSecondarySignals(match: *const call_graph.FFIMatch) u32 {
     return signal_count;
 }
 
-/// Calculate dynamic confidence based on secondary signals.
-pub fn calculateFFIConfidence(signal_count: u32, vuln_type: FFIVulnType) f32 {
+/// Calculate dynamic confidence based on secondary signals and boundary evidence.
+///
+/// The `boundary_confidence` parameter (0.0 - 1.0) comes from BoundaryEvidence
+/// classification (via ffi_boundary_tuple.zig) and acts as a multiplier on the
+/// base confidence. When boundary evidence is weak (e.g., no DWARF info), this
+/// reduces overall confidence to reflect the uncertainty in language detection.
+pub fn calculateFFIConfidence(signal_count: u32, vuln_type: FFIVulnType, boundary_confidence: f32) f32 {
     var base_confidence: f32 = 0.5;
     const type_mismatch_weight: f32 = 0.15;
     const memory_safety_weight: f32 = 0.12;
@@ -195,6 +200,15 @@ pub fn calculateFFIConfidence(signal_count: u32, vuln_type: FFIVulnType) f32 {
         .generic => {},
     }
     if (base_confidence > 0.95) base_confidence = 0.95;
+
+    // Apply boundary confidence as a multiplier.
+    // When boundary evidence is strong (close to 1.0), this has minimal effect.
+    // When boundary evidence is weak or unknown (close to 0.0), the overall
+    // confidence is reduced to reflect language detection uncertainty.
+    if (boundary_confidence > 0 and boundary_confidence < 1.0) {
+        base_confidence *= boundary_confidence;
+    }
+
     return base_confidence;
 }
 
@@ -316,7 +330,10 @@ fn calculateFFISeverity(confidence: f32) Severity {
 }
 
 /// Convert an FFI match to an issue with multi-layer precision filtering.
-pub fn ffiMatchToIssue(match: *const call_graph.FFIMatch) ?Issue {
+///
+/// `boundary_confidence` (0.0–1.0) comes from BoundaryEvidence classification
+/// (via ffi_boundary_tuple.zig). Defaults to 1.0 when not available (no reduction).
+pub fn ffiMatchToIssue(match: *const call_graph.FFIMatch, boundary_confidence: f32) ?Issue {
     if (isWhitelistedFFI(match)) {
         log.debug("FFI-SKIP [WHITELIST]: {s}", .{match.name});
         return null;
@@ -339,7 +356,7 @@ pub fn ffiMatchToIssue(match: *const call_graph.FFIMatch) ?Issue {
         return null;
     }
 
-    const confidence = calculateFFIConfidence(signal_count, vuln_type);
+    const confidence = calculateFFIConfidence(signal_count, vuln_type, boundary_confidence);
 
     const min_confidence: f32 = switch (vuln_type) {
         .command_injection => 0.70,

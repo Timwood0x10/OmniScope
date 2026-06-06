@@ -345,6 +345,8 @@ pub fn isRustFromRawCall(callee_name: []const u8) bool {
 }
 
 /// Check if a callee name is a Rust as_ptr (borrow escape) call.
+// TODO: Move to shared module (e.g., ir_helpers.zig) when consolidating duplicate
+// Rust pattern detection functions across the codebase.
 pub fn isRustAsPtrCall(callee_name: []const u8) bool {
     for (as_ptr_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) {
@@ -419,6 +421,9 @@ pub fn detectRustFfiPairingFunctions(
 // ==================== Flow Graph Helpers ====================
 
 /// Check if allocation result can reach any free site through the flow graph.
+// TODO: Delegate to graph_algorithms.zig once the function signature is unified.
+// The shared version (dataflow/graph_algorithms.zig) uses *std.AutoHashMap(u32, void)
+// for free_map, while this version uses *std.AutoHashMap(u32, *const FreeSite).
 pub fn findFreePath(
     from_ptr: u32,
     free_map: *std.AutoHashMap(u32, *const @import("./ownership_types.zig").FreeSite),

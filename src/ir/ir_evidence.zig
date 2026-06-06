@@ -12,11 +12,130 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const AutoHashMap = std.AutoHashMap;
 const log = @import("../common/log.zig");
 const c = @import("../ir/llvm_raw.zig").c;
 
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
+
+/// DWARF source language identifiers (DW_LANG_* constants from DWARF spec).
+/// These are the canonical values used in DICompileUnit metadata.
+/// Uses standard DWARF constants (e.g., DW_LANG_C = 0x0001).
+pub const DWARFSourceLanguage = enum(c_uint) {
+    C = 0x0001,
+    Ada83 = 0x0002,
+    C_plus_plus = 0x0003,
+    Cobol74 = 0x0004,
+    Cobol85 = 0x0005,
+    Fortran77 = 0x0006,
+    Fortran90 = 0x0007,
+    Pascal83 = 0x0008,
+    Modula2 = 0x0009,
+    Java = 0x000a,
+    C99 = 0x000b,
+    Ada95 = 0x000c,
+    Fortran95 = 0x000d,
+    PLI = 0x000e,
+    ObjC = 0x000f,
+    ObjC_plus_plus = 0x0010,
+    UPC = 0x0011,
+    D = 0x0012,
+    Python = 0x0013,
+    OpenCL = 0x0014,
+    Go = 0x0015,
+    Modula3 = 0x0016,
+    Haskell = 0x0017,
+    C_plus_plus_03 = 0x0018,
+    C_plus_plus_11 = 0x0019,
+    OCaml = 0x001a,
+    Rust = 0x001b,
+    C11 = 0x001c,
+    Swift = 0x001d,
+    Julia = 0x001e,
+    Dylan = 0x001f,
+    C_plus_plus_14 = 0x0020,
+    Fortran03 = 0x0021,
+    Fortran08 = 0x0022,
+    RenderScript = 0x0023,
+    BLISS = 0x0024,
+    Kotlin = 0x0025,
+    Zig = 0x0026,
+    Crystal = 0x0027,
+    C_plus_plus_17 = 0x0028,
+    C_plus_plus_20 = 0x0029,
+    C17 = 0x002a,
+    Fortran18 = 0x002b,
+    Ada2005 = 0x002c,
+    Ada2012 = 0x002d,
+    HIP = 0x002e,
+    Assembly = 0x002f,
+    C_sharp = 0x0030,
+    Mojo = 0x0031,
+    GLSL = 0x0032,
+    GLSL_ES = 0x0033,
+    HLSL = 0x0034,
+    OpenCL_CPP = 0x0035,
+    CPP_for_OpenCL = 0x0036,
+    SYCL = 0x0037,
+    Ruby = 0x0038,
+    Move = 0x0039,
+    Hylo = 0x003a,
+    Metal = 0x003b,
+    Mips_Assembler = 0x0101,
+    GOOGLE_RenderScript = 0x0102,
+    BORLAND_Delphi = 0x0200,
+
+    /// LLVM vendor extensions (0x8000xxxx range from LLVM 21+)
+    _,
+
+    pub fn fromLLVMEnum(lang: c.LLVMDWARFSourceLanguage) DWARFSourceLanguage {
+        return @enumFromInt(@intFromEnum(lang));
+    }
+
+    /// Infer DWARF source language from a source file path extension.
+    /// Used as fallback when CU language metadata is not directly available.
+    pub fn inferFromFilename(filename: []const u8) ?DWARFSourceLanguage {
+        if (std.mem.endsWith(u8, filename, ".c")) return .C;
+        if (std.mem.endsWith(u8, filename, ".cpp") or
+            std.mem.endsWith(u8, filename, ".cc") or
+            std.mem.endsWith(u8, filename, ".cxx") or
+            std.mem.endsWith(u8, filename, ".C")) return .C_plus_plus;
+        if (std.mem.endsWith(u8, filename, ".rs")) return .Rust;
+        if (std.mem.endsWith(u8, filename, ".go")) return .Go;
+        if (std.mem.endsWith(u8, filename, ".zig")) return .Zig;
+        if (std.mem.endsWith(u8, filename, ".swift")) return .Swift;
+        if (std.mem.endsWith(u8, filename, ".cs")) return .C_sharp;
+        if (std.mem.endsWith(u8, filename, ".py")) return .Python;
+        if (std.mem.endsWith(u8, filename, ".java")) return .Java;
+        if (std.mem.endsWith(u8, filename, ".kt") or
+            std.mem.endsWith(u8, filename, ".kts")) return .Kotlin;
+        if (std.mem.endsWith(u8, filename, ".rb")) return .Ruby;
+        if (std.mem.endsWith(u8, filename, ".dart")) return .D;
+        if (std.mem.endsWith(u8, filename, ".m")) return .ObjC;
+        if (std.mem.endsWith(u8, filename, ".mm")) return .ObjC_plus_plus;
+        return null;
+    }
+};
+
+/// Map LLVM DWARF source language to OmniScope internal Language.
+pub fn dwarfLangToLanguage(dwarf_lang: DWARFSourceLanguage) Language {
+    return switch (dwarf_lang) {
+        .C, .C99, .C11, .C17 => .c,
+        .C_plus_plus, .C_plus_plus_03, .C_plus_plus_11, .C_plus_plus_14, .C_plus_plus_17, .C_plus_plus_20 => .cpp,
+        .Rust => .rust,
+        .Go => .go,
+        .Zig => .zig,
+        .C_sharp => .csharp,
+        .Python => .python,
+        .Java => .java,
+        .Kotlin => .java,
+        .Swift => .swift,
+        .Ruby => .ruby,
+        .ObjC, .ObjC_plus_plus => .objc,
+        else => .unknown,
+    };
+}
 
 /// Persistent evidence container for module-level language detection.
 ///
@@ -45,9 +164,32 @@ pub const IREvidence = struct {
     pyinit_count: usize = 0,
     pygc_count: usize = 0,
 
+    // DWARF language evidence (from collectDwarfLanguages)
+    // Maps each LLVM function to its DWARF source language.
+    // Must be initialized via IREvidence.init(allocator) or manually.
+    dwarf_lang_map: AutoHashMap(c.LLVMValueRef, DWARFSourceLanguage),
+
     // Derived fields (computed after collection)
     dominant_language: Language = .unknown,
     confidence: f32 = 0.0,
+
+    /// Initialize IREvidence with allocated resources.
+    pub fn init(allocator: Allocator) IREvidence {
+        return .{
+            .dwarf_lang_map = AutoHashMap(c.LLVMValueRef, DWARFSourceLanguage).init(allocator),
+        };
+    }
+
+    /// Release owned memory.
+    pub fn deinit(self: *IREvidence) void {
+        self.dwarf_lang_map.deinit();
+    }
+
+    /// Query DWARF source language for a specific function.
+    /// Returns null if no DWARF evidence was collected for this function.
+    pub fn getDwarfLang(self: *const IREvidence, func: c.LLVMValueRef) ?DWARFSourceLanguage {
+        return self.dwarf_lang_map.get(func);
+    }
 };
 
 /// Evidence collector that scans an LLVM module once and produces IREvidence.
@@ -66,7 +208,7 @@ pub const EvidenceCollector = struct {
     /// and populates the evidence struct with raw counts and derived results.
     pub fn init(allocator: Allocator, module: c.LLVMModuleRef) !EvidenceCollector {
         var self = EvidenceCollector{
-            .evidence = .{},
+            .evidence = IREvidence.init(allocator),
             .allocator = allocator,
         };
 
@@ -78,6 +220,7 @@ pub const EvidenceCollector = struct {
         self.collectPersonality(module);
         self.collectMangling(module);
         self.collectGlobals(module);
+        self.collectDwarfLanguages(module);
         self.computeDominantLanguage();
 
         log.debug("[ir-evidence] Collection complete: lang={s}, confidence={d:.1}%", .{
@@ -89,9 +232,26 @@ pub const EvidenceCollector = struct {
     }
 
     /// Release owned memory.
+    ///
+    /// IMPORTANT: Does NOT deinit self.evidence (including dwarf_lang_map)
+    /// because ownership of the evidence has been transferred to the caller.
+    ///
+    /// The caller in pass_context_impl.zig does:
+    ///   self.evidence = evidence_collector.getEvidence().*;
+    ///
+    /// This shallow-copies the IREvidence struct (including the HashMap handle
+    /// for dwarf_lang_map). Both the collector's copy and the caller's copy
+    /// point to the same underlying HashMap allocations.
+    ///
+    /// If we freed the HashMap here, the caller's copy would be a
+    /// use-after-free. Instead, the caller (PassContext) is responsible
+    /// for calling IREvidence.deinit() on its own copy.
+    ///
+    /// If you add new fields with owned allocations that are NOT transferred
+    /// to the caller, deinit them here.
     pub fn deinit(self: *EvidenceCollector) void {
-        _ = self;
-        // No owned buffers in MVP
+        _ = &self.evidence;
+        _ = &self.allocator;
     }
 
     /// Get immutable reference to collected evidence.
@@ -242,6 +402,52 @@ pub const EvidenceCollector = struct {
         }
     }
 
+    /// Phase 4: Collect DWARF compile unit language evidence for each function.
+    ///
+    /// For each function with debug info (DISubprogram), tries to extract the
+    /// source file and infer language from the filename extension. Falls back
+    /// to filename inference when direct CU language metadata is unavailable
+    /// via the LLVM C API.
+    ///
+    /// Results are stored in dwarf_lang_map (function → DWARFSourceLanguage).
+    fn collectDwarfLanguages(self: *EvidenceCollector, module: c.LLVMModuleRef) void {
+        var func = c.LLVMGetFirstFunction(module);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            // Try to get DISubprogram metadata for this function
+            const subprogram = c.LLVMGetSubprogram(func);
+            if (subprogram != null) {
+                // The subprogram metadata ref IS a DIScope, so we can get the file directly
+                const file = c.LLVMDIScopeGetFile(subprogram);
+                if (file != null) {
+                    var len: c_uint = 0;
+                    const filename_ptr = c.LLVMDIFileGetFilename(file, &len);
+                    if (len > 0 and @intFromPtr(filename_ptr) != 0) {
+                        const filename = filename_ptr[0..len];
+                        if (DWARFSourceLanguage.inferFromFilename(filename)) |lang| {
+                            self.evidence.dwarf_lang_map.put(func, lang) catch {};
+                        }
+                    }
+                }
+            }
+
+            // Fallback: if no DWARF evidence was collected, try inferring from
+            // the function name itself (for external declarations with no body).
+            if (!self.evidence.dwarf_lang_map.contains(func)) {
+                const name_ptr = c.LLVMGetValueName(func);
+                if (@intFromPtr(name_ptr) != 0) {
+                    const name = std.mem.span(name_ptr);
+                    // External declarations with no body have no subprogram metadata.
+                    // For known language-specific naming patterns we can still infer.
+                    // Skip inference for anonymous/llvm internal names.
+                    if (name.len > 0 and !std.mem.startsWith(u8, name, "llvm.")) {
+                        // No reliable per-function language inference from name alone;
+                        // this is a best-effort fallback that can be enhanced in future.
+                    }
+                }
+            }
+        }
+    }
+
     /// Compute dominant language and confidence from collected evidence.
     ///
     /// Uses weighted voting across all three phases:
@@ -353,7 +559,9 @@ pub const EvidenceCollector = struct {
 // Unit tests
 
 test "IREvidence default initialization" {
-    const evidence = IREvidence{};
+    const allocator = std.testing.allocator;
+    var evidence = IREvidence.init(allocator);
+    defer evidence.deinit();
 
     try std.testing.expectEqual(false, evidence.has_rust_personality);
     try std.testing.expectEqual(@as(usize, 0), evidence.rust_mangled_count);
@@ -364,6 +572,7 @@ test "IREvidence default initialization" {
 test "EvidenceCollector with null module returns empty evidence" {
     const allocator = std.testing.allocator;
     var collector = try EvidenceCollector.init(allocator, @as(c.LLVMModuleRef, @ptrFromInt(0)));
+    defer collector.evidence.deinit();
     defer collector.deinit();
 
     const evidence = collector.getEvidence();
@@ -373,9 +582,10 @@ test "EvidenceCollector with null module returns empty evidence" {
 
 test "computeDominantLanguage with Rust evidence" {
     var collector = EvidenceCollector{
-        .evidence = .{},
+        .evidence = IREvidence.init(std.testing.allocator),
         .allocator = std.testing.allocator,
     };
+    defer collector.evidence.deinit();
 
     collector.evidence.rust_mangled_count = 10;
     collector.evidence.has_rust_personality = true;
@@ -387,9 +597,10 @@ test "computeDominantLanguage with Rust evidence" {
 
 test "computeDominantLanguage with C++ evidence" {
     var collector = EvidenceCollector{
-        .evidence = .{},
+        .evidence = IREvidence.init(std.testing.allocator),
         .allocator = std.testing.allocator,
     };
+    defer collector.evidence.deinit();
 
     collector.evidence.cpp_mangled_count = 15;
     collector.evidence.vtable_count = 3;
@@ -405,9 +616,10 @@ test "collectMangling patterns" {
     const allocator = std.testing.allocator;
 
     var collector = EvidenceCollector{
-        .evidence = .{},
+        .evidence = IREvidence.init(allocator),
         .allocator = allocator,
     };
+    defer collector.evidence.deinit();
 
     const test_names = [_][]const u8{
         "_rust_mangle_fn",
@@ -451,9 +663,10 @@ test "collectMangling patterns" {
 
 test "collectGlobals vtable/RTTI counting" {
     var collector = EvidenceCollector{
-        .evidence = .{},
+        .evidence = IREvidence.init(std.testing.allocator),
         .allocator = std.testing.allocator,
     };
+    defer collector.evidence.deinit();
 
     const test_globals = [_][]const u8{
         "_ZTV4Base",

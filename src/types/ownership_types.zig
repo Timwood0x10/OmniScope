@@ -98,6 +98,8 @@ pub const OwnershipViolationType = enum(u8) {
 };
 
 /// Allocation site information.
+/// NOTE: This is the authoritative source for AllocSite definition.
+/// Other modules (e.g., callback_escape_types.zig) should reference this type.
 pub const AllocSite = struct {
     inst_id: u32,
     func_name: []const u8,
@@ -122,6 +124,8 @@ pub const OwnershipState = enum(u8) {
 };
 
 /// Free site information.
+/// NOTE: This is the authoritative source for FreeSite definition.
+/// Other modules (e.g., callback_escape_types.zig) should reference this type.
 pub const FreeSite = struct {
     inst_id: u32,
     func_name: []const u8,
@@ -196,6 +200,8 @@ pub const OwnershipStats = struct {
 
 /// Standard library / runtime function prefixes that do NOT represent
 /// real FFI boundary security risk. Used by FFI Relevance Gate.
+// TODO: Move to function_catalogs.zig (shared constant catalog) once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
 pub const stdlib_prefixes = [_][]const u8{
     "malloc",      "calloc",             "realloc",          "free",
     "abort",       "exit",               "printf",           "fprintf",
@@ -217,6 +223,8 @@ pub const ffi_name_patterns = [_][]const u8{
 };
 
 /// LLVM memory intrinsic names for memory access classification.
+// TODO: Move to function_catalogs.zig (shared constant catalog) once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
 pub const mem_intrinsics = [_][]const u8{
     "llvm.memcpy",        "llvm.memmove", "llvm.memset",
     "llvm.memset.inline",
@@ -272,6 +280,8 @@ pub fn checkDebugMetadataAvailable(mod: c.LLVMModuleRef) bool {
 }
 
 /// Check if an allocation site involves cross-language (non-C, non-unknown) allocation.
+// TODO: Move to function_catalogs.zig (shared function catalog) once that module
+// is created, to consolidate duplicate language classification logic.
 pub fn isCrossFFIAllocation(alloc_lang: Language) bool {
     return alloc_lang != .unknown and alloc_lang != .c;
 }

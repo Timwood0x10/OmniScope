@@ -18,19 +18,45 @@ pub const InstClass = enum(u8) {
     call,
     /// Type conversions (bitcast, ptrtoint, inttoptr, trunc, etc.)
     conversion,
-    /// Aggregate operations (extractvalue, insertvalue, etc.)
+    /// Aggregate operations (extractvalue, insertvalue — retained for compat)
     aggregate,
     /// Pointer operations (GEP, etc.)
     pointer,
     /// Phi nodes
     phi,
+    /// Select (conditional value pick)
+    select,
+    /// extractvalue — field projection from aggregate
+    extract_value,
+    /// insertvalue — field insertion into aggregate
+    insert_value,
+    /// freeze — poison-free wrapper
+    freeze,
+    /// Atomic read-modify-write
+    atomic_rmw,
+    /// Atomic compare-and-exchange
+    cmpxchg,
+    /// Memory fence / barrier
+    fence,
     /// Other / unclassified
     other,
 
     /// Check if this instruction class is relevant for memory safety / FFI analysis.
     pub fn isRelevantForAnalysis(self: InstClass) bool {
         return switch (self) {
-            .memory, .call, .conversion, .pointer, .phi => true,
+            .memory,
+            .call,
+            .conversion,
+            .pointer,
+            .phi,
+            .select,
+            .extract_value,
+            .insert_value,
+            .freeze,
+            .atomic_rmw,
+            .cmpxchg,
+            .fence,
+            => true,
             else => false,
         };
     }
@@ -77,9 +103,15 @@ pub fn classifyOpcode(opcode: c_uint) InstClass {
         c.LLVMUIToFP,
         c.LLVMSIToFP,
         => .conversion,
-        c.LLVMExtractValue, c.LLVMInsertValue => .aggregate,
+        c.LLVMExtractValue => .extract_value,
+        c.LLVMInsertValue => .insert_value,
         c.LLVMGetElementPtr => .pointer,
         c.LLVMPHI => .phi,
+        c.LLVMSelect => .select,
+        c.LLVMFreeze => .freeze,
+        c.LLVMAtomicRMW => .atomic_rmw,
+        c.LLVMAtomicCmpXchg => .cmpxchg,
+        c.LLVMFence => .fence,
 
         // Arithmetic
         c.LLVMAdd,

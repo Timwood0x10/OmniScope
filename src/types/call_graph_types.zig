@@ -21,6 +21,8 @@ pub const FunctionKind = enum {
 
 /// Trusted libc functions (source: config/languages/c.json).
 /// Dangerous functions (system, exec, popen) are NOT included — see DANGEROUS_FUNCTIONS.
+// TODO: Reference from @import("./function_catalogs.zig") (or the shared function catalog
+// module) once that module is created, to consolidate duplicate constant definitions.
 pub const LIBC_FUNCTIONS = &[_][]const u8{
     "malloc",
     "free",
@@ -50,6 +52,8 @@ pub const LIBC_FUNCTIONS = &[_][]const u8{
 
 /// List of dangerous functions that should be flagged as security risks.
 /// These are treated as FFI boundaries and potential sinks.
+// TODO: Reference from @import("./function_catalogs.zig") once that module is created,
+// to consolidate duplicate constant definitions across the codebase.
 pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
     // Command execution
     "system",

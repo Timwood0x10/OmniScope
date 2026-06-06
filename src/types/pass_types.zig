@@ -514,6 +514,7 @@ pub const PassContext = struct {
         if (self.arena) |*a| {
             a.deinit();
         }
+        if (self.evidence) |*ev| ev.deinit();
     }
 
     pub fn getFunctionSurface(self: *const PassContext, func_ptr: u64) ?surface_classifier.FunctionSurface {
