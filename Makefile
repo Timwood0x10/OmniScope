@@ -117,7 +117,14 @@ test-stress:
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build test-stress
 
-test-all: test-unit test-int test-issues test-stability test-stress
+test-inline-ir-matrix:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              INLINE IR MATRIX TESTS                           ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-inline-ir-matrix
+
+test-all: test-unit test-int test-issues test-stability test-stress test-inline-ir-matrix
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║                  ALL TESTS PASSED                              ║"

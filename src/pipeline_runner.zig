@@ -65,23 +65,33 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                 // ── Rust ──────────────────────────────────────────
                 // Rust v0 mangling (_R...) — unambiguous
                 if (name.len > 2 and name[0] == '_' and name[1] == 'R') {
-                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .rust) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
                 // Rust/C++ _ZN mangling (disambiguate via isRustMangledName)
                 if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'N') {
                     if (source_lang.language != .rust and source_lang.language != .cpp) {
-                        has_multi_lang_hint = true; break;
+                        has_multi_lang_hint = true;
+                        break;
                     }
                 }
                 // C++ _Z (non-_ZN) mangling — unambiguous C++
                 if (name.len > 2 and name[0] == '_' and name[1] == 'Z' and name[2] != 'N') {
-                    if (source_lang.language != .cpp) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .cpp) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
                 // Rust strong prefixes
                 if (std.mem.startsWith(u8, name, "_rust_") or
                     std.mem.startsWith(u8, name, "rs2py_"))
                 {
-                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .rust) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
                 // Rust personality/eH / unwind
                 if (std.mem.indexOf(u8, name, "rust_eh_personality") != null or
@@ -89,18 +99,24 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.indexOf(u8, name, "rust_oom") != null or
                     std.mem.startsWith(u8, name, "__rust_"))
                 {
-                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .rust) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── C++ ──────────────────────────────────────────
                 // C++ personality, EH, RTTI
                 if (std.mem.indexOf(u8, name, "__gxx_personality") != null or
                     std.mem.startsWith(u8, name, "__cxa_") or
-                    std.mem.startsWith(u8, name, "_ZTV") or  // C++ vtable
-                    std.mem.startsWith(u8, name, "_ZTI") or  // C++ typeinfo
-                    std.mem.startsWith(u8, name, "_ZTS"))    // C++ typeinfo name
+                    std.mem.startsWith(u8, name, "_ZTV") or // C++ vtable
+                    std.mem.startsWith(u8, name, "_ZTI") or // C++ typeinfo
+                    std.mem.startsWith(u8, name, "_ZTS")) // C++ typeinfo name
                 {
-                    if (source_lang.language != .cpp) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .cpp) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── Go ───────────────────────────────────────────
@@ -114,7 +130,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.startsWith(u8, name, "__go_") or
                     std.mem.indexOf(u8, name, "_Cgo_") != null)
                 {
-                    if (source_lang.language != .go) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .go) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── Zig ──────────────────────────────────────────
@@ -123,7 +142,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.startsWith(u8, name, "zig.") or
                     std.mem.startsWith(u8, name, "__zig_"))
                 {
-                    if (source_lang.language != .zig) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .zig) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── Java / JNI ────────────────────────────────────
@@ -131,7 +153,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.startsWith(u8, name, "JNI_OnLoad") or
                     std.mem.startsWith(u8, name, "JNI_OnUnload"))
                 {
-                    if (source_lang.language != .java) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .java) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── Python ────────────────────────────────────────
@@ -141,7 +166,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.startsWith(u8, name, "_PyGC_") or
                     std.mem.startsWith(u8, name, "_Py_"))
                 {
-                    if (source_lang.language != .python) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .python) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── C# / .NET ─────────────────────────────────────
@@ -159,7 +187,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.indexOf(u8, name, "csharp_exception_personality") != null or
                     std.mem.indexOf(u8, name, "mono_unity_personality") != null)
                 {
-                    if (source_lang.language != .csharp) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .csharp) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
 
                 // ── C (Unwind / special sections) ─────────────────
@@ -168,7 +199,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                     std.mem.startsWith(u8, name, "__start_") or
                     std.mem.startsWith(u8, name, "__stop_"))
                 {
-                    if (source_lang.language != .c) { has_multi_lang_hint = true; break; }
+                    if (source_lang.language != .c) {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
                 }
             }
         }

@@ -462,6 +462,26 @@ pub fn build(b: *std.Build) void {
     p1_critical_fix_test_step.dependOn(&run_p1_critical_fix_tests.step);
     test_step.dependOn(&run_p1_critical_fix_tests.step);
 
+    // Inline IR Matrix tests step — covers all 8 languages × scenarios
+    const inline_ir_matrix_step = b.step("test-inline-ir-matrix", "Run inline IR test matrix (all languages × scenarios)");
+    const inline_ir_matrix_mod = b.addModule("inline_ir_matrix", .{
+        .root_source_file = b.path("tests/integration/inline_ir_matrix.zig"),
+        .target = target,
+    });
+    inline_ir_matrix_mod.addImport("OmniScope", lib_mod);
+    inline_ir_matrix_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const inline_ir_matrix_tests = b.addTest(.{
+        .root_module = inline_ir_matrix_mod,
+    });
+    configureLLVM(b, inline_ir_matrix_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        inline_ir_matrix_tests.want_lto = true;
+    }
+    const run_inline_ir_matrix_tests = b.addRunArtifact(inline_ir_matrix_tests);
+    run_inline_ir_matrix_tests.step.dependOn(b.getInstallStep());
+    inline_ir_matrix_step.dependOn(&run_inline_ir_matrix_tests.step);
+    test_step.dependOn(&run_inline_ir_matrix_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{
