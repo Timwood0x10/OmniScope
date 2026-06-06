@@ -171,10 +171,6 @@ pub fn isRefCountOperation(func_name: []const u8) bool {
     return false;
 }
 
-/// Check if a function call is Rust's as_ptr() on a local value.
-/// Delegates to rust_ffi_helpers.zig (SSOT).
-pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
-
 /// Extract function name from LLVM value reference.
 pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
     return @import("../../../ir/ir_helpers.zig").getFunctionName(func);
@@ -376,7 +372,7 @@ pub fn detectAsPtrBorrowEscape(
             if (@intFromPtr(callee_name) == 0) continue;
             const name_slice = std.mem.sliceTo(callee_name, 0);
 
-            if (!cpp_types.isRustAsPtrCall(name_slice)) continue;
+            if (!rust_ffi_helpers.isRustAsPtrCall(name_slice)) continue;
 
             var i: c_uint = 0;
             while (i < num_operands - 1) : (i += 1) {

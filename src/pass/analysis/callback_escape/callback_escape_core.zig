@@ -26,8 +26,8 @@ const isUnsafePtrConversion = cb_types.isUnsafePtrConversion;
 const isGenericCallbackReceiver = cb_types.isGenericCallbackReceiver;
 const isLikelyCallbackFunction = cb_types.isLikelyCallbackFunction;
 const isGlobalVariable = cb_types.isGlobalVariable;
-const isFactoryFunction = cb_types.isFactoryFunction;
-const isDestructorFunction = cb_types.isDestructorFunction;
+const isFactoryFunction = @import("../../../common/factory_patterns.zig").isFactoryFunction;
+const isDestructorFunction = @import("../../../common/factory_patterns.zig").isDestructorFunction;
 const isTransferFunction = cb_types.isTransferFunction;
 
 pub const log_prefix = "[callback-escape-core]";

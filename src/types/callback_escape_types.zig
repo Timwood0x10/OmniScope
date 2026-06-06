@@ -457,18 +457,6 @@ pub const TRANSFER_PATTERNS = &[_][]const u8{
     "Clone", "Copy", "Move", "Transfer", "Take",
 };
 
-/// Checks if a function is a factory/constructor that transfers ownership to caller.
-// TODO: Directly call @import("../common/factory_patterns.zig").isFactoryFunction instead.
-pub fn isFactoryFunction(func_name: []const u8) bool {
-    return @import("../common/factory_patterns.zig").isFactoryFunction(func_name);
-}
-
-/// Checks if a function is a destructor that consumes ownership from caller.
-// TODO: Directly call @import("../common/factory_patterns.zig").isDestructorFunction instead.
-pub fn isDestructorFunction(func_name: []const u8) bool {
-    return @import("../common/factory_patterns.zig").isDestructorFunction(func_name);
-}
-
 /// Checks if a function is a transfer function that passes ownership through.
 pub fn isTransferFunction(func_name: []const u8) bool {
     for (TRANSFER_PATTERNS) |pattern| {

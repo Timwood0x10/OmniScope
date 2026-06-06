@@ -122,10 +122,6 @@ pub fn isRustFromRawCall(name: []const u8) bool {
     return false;
 }
 
-/// Check if a callee name indicates an as_ptr borrow escape.
-/// Delegates to rust_ffi_helpers.zig (SSOT).
-pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
-
 /// Get callee name from a call instruction.
 fn getCalleeName(inst: c.LLVMValueRef) ?[]const u8 {
     const called_val = c.LLVMGetCalledValue(inst);

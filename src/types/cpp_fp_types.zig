@@ -14,7 +14,6 @@ const lifetime = @import("../lifetime/root.zig");
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const PathManager = @import("../dataflow/path_condition.zig").PathManager;
 const identifyLanguages = @import("../semantics/language_detector.zig").identifyLanguage;
-const rust_ffi_helpers = @import("../pass/analysis/rust_ffi/rust_ffi_helpers.zig");
 
 // ==================== Constants ====================
 
@@ -316,9 +315,6 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
 }
 
 /// Check if a value can reach another value through the flow graph.
-pub const canReach = @import("../dataflow/graph_algorithms.zig").canReach;
-
-/// Check if a callee name is a Rust into_raw (ownership transfer OUT) call.
 pub fn isRustIntoRawCall(callee_name: []const u8) bool {
     for (into_raw_patterns) |pattern| {
         if (std.mem.indexOf(u8, callee_name, pattern) != null) {
@@ -337,10 +333,6 @@ pub fn isRustFromRawCall(callee_name: []const u8) bool {
     }
     return false;
 }
-
-/// Check if a callee name is a Rust as_ptr (borrow escape) call.
-/// Delegates to rust_ffi_helpers.zig (SSOT).
-pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
 
 // ==================== Detection Helper Functions ====================
 
