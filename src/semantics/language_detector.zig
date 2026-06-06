@@ -15,95 +15,60 @@ const c = @import("../ir/llvm_raw.zig").c;
 
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
+const data = @import("language_detector_data.zig");
 
 /// How the language was detected
 pub const DetectionMethod = enum {
-    /// Statistical sampling of function name patterns
     sampling,
-    /// LLVM personality function attribute analysis
     personality,
-    /// LLVM global variable name prefix analysis
     globals,
-    /// Could not determine
     unknown,
 };
 
 /// Module-level language detection result
 pub const LanguageProfile = struct {
-    /// Detected source language
     language: Language,
-    /// Confidence score (0.0-1.0)
     confidence: f32,
-    /// How the detection was made
     method: DetectionMethod,
 };
 
 /// Detect the source language of an entire LLVM module.
-///
-/// This is the R7.2 entry point: called once at scan time, before any
-/// analysis passes run. The result is cached in PassContext and used
-/// to activate the correct zone rules channel.
-///
-/// R8.5 Enhanced: 3-round weighted voting:
-///   Phase 1: detectFromSampling() (primary — function name patterns, weight 1.0x)
-///   Phase 2: detectFromPersonality() (secondary — personality attrs, weight 0.8x)
-///   Phase 3: detectFromGlobals() (tertiary — global var prefixes, weight 0.6x)
-///   Final: Weighted sum across all phases, pick dominant language.
 pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
-    // Phase 1: Statistical sampling (existing, most reliable)
     const sampling_result = detectFromSampling(module);
-
-    // Phase 2: Personality function analysis (new, orthogonal signal)
     const personality_result = detectFromPersonality(module);
-
-    // Phase 3: Global variable prefix analysis (new, weak but useful tiebreaker)
     const globals_result = detectFromGlobals(module);
 
-    // If only sampling produced a result, return it directly
     if (sampling_result != null and personality_result == null and globals_result == null) {
         return sampling_result.?;
     }
 
-    // Weighted voting across all phases
-    const SAMPLING_WEIGHT: f32 = 1.0;
-    const PERSONALITY_WEIGHT: f32 = 0.8;
-    const GLOBALS_WEIGHT: f32 = 0.6;
-
-    // One slot per concrete language. `.unknown` is the "no winner" fallback
-    // and intentionally has no vote slot — letting it index in would write
-    // past the array (see T0.2 in plan/todolist_v2.md).
-    var weighted_votes = [_]f32{0} ** 8; // [rust, go, zig, cpp, c, csharp, java, python]
+    var weighted_votes = [_]f32{0} ** data.LANGUAGE_COUNT;
 
     if (sampling_result) |r| {
         if (langToIndex(r.language)) |idx| {
-            weighted_votes[idx] += r.confidence * SAMPLING_WEIGHT;
+            weighted_votes[idx] += r.confidence * data.SAMPLING_WEIGHT;
         }
     }
-
     if (personality_result) |r| {
         if (langToIndex(r.language)) |idx| {
-            weighted_votes[idx] += r.confidence * PERSONALITY_WEIGHT;
+            weighted_votes[idx] += r.confidence * data.PERSONALITY_WEIGHT;
         }
     }
-
     if (globals_result) |r| {
         if (langToIndex(r.language)) |idx| {
-            weighted_votes[idx] += r.confidence * GLOBALS_WEIGHT;
+            weighted_votes[idx] += r.confidence * data.GLOBALS_WEIGHT;
         }
     }
 
-    // Find dominant language from weighted votes
     var max_vote: f32 = 0;
     var dominant: Language = .unknown;
     var total_weight: f32 = 0;
-    // Track which detection method contributed most to the winning language
     var winning_method: DetectionMethod = .sampling;
     for (weighted_votes, 0..) |vote, i| {
         total_weight += vote;
         if (vote > max_vote) {
             max_vote = vote;
             dominant = indexToLang(i);
-            // Determine which method(s) voted for this language
             if (personality_result != null and personality_result.?.language == dominant) {
                 winning_method = .personality;
             } else if (globals_result != null and globals_result.?.language == dominant) {
@@ -114,34 +79,14 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
         }
     }
 
-    if (max_vote < 0.3 or total_weight < 0.3) {
-        // Low confidence: check if user configured a default language override.
-        // This handles cases like pure-C projects with Rust allocator symbols
-        // where auto-detection is confused by cross-language runtime artifacts.
-        // The default_lang is accessed via PassContext.getDefaultLanguage(),
-        // but since this function doesn't have PassContext, we return unknown here.
-        // Callers that have PassContext should check getDefaultLanguage() when
-        // they receive .unknown with low confidence.
-        return .{
-            .language = .unknown,
-            .confidence = 0.0,
-            .method = .unknown,
-        };
+    if (max_vote < data.MIN_VOTE_THRESHOLD or total_weight < data.MIN_VOTE_THRESHOLD) {
+        return .{ .language = .unknown, .confidence = 0.0, .method = .unknown };
     }
 
     const confidence = @min(max_vote / total_weight, 1.0);
-    return .{
-        .language = dominant,
-        .confidence = confidence,
-        .method = winning_method,
-    };
+    return .{ .language = dominant, .confidence = confidence, .method = winning_method };
 }
 
-/// Map a concrete language to its weighted-vote slot, or null for `.unknown`.
-///
-/// `.unknown` is the "no signal" sentinel returned when no concrete language
-/// wins — it deliberately has no vote slot, so callers must skip it instead
-/// of indexing the array (T0.2: prior code wrote past the 8-slot bound).
 pub fn langToIndex(lang: Language) ?usize {
     return switch (lang) {
         .rust => 0,
@@ -171,21 +116,6 @@ pub fn indexToLang(idx: usize) Language {
 }
 
 /// Detect language by statistically sampling function names.
-///
-/// Sampling strategy (SAMPLE_SIZE=50 functions):
-///   1. Skip LLVM intrinsics (llvm.* prefix)
-///   2. Count language-specific patterns:
-///      - Rust: _rust_, rs2py_ prefix; _ZN with '$' or hash suffix
-///      - Go: main., runtime., syscall., gcops. prefixes
-///      - Zig: zig_, Allocator. patterns
-///      - C++: _Z prefix (non-_ZN) = plain Itanium without nested names
-///      - _ZN (Itanium nested): ambiguous between Rust/C++, resolved by
-///        isRustMangledName() multi-layer check
-///      - Default: C
-const SAMPLE_SIZE: usize = 50;
-
-/// Multi-layer Rust mangled name detector for _ZN disambiguation.
-/// Delegates to ffi_language_classifier.isRustMangledName for consistency.
 fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var rust_count: u32 = 0;
     var go_count: u32 = 0;
@@ -199,234 +129,83 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     var func = c.LLVMGetFirstFunction(module);
     var sampled: usize = 0;
 
-    while (@intFromPtr(func) != 0 and sampled < SAMPLE_SIZE) : ({
+    while (@intFromPtr(func) != 0 and sampled < data.SAMPLE_SIZE) : ({
         func = c.LLVMGetNextFunction(func);
     }) {
         const name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(name_ptr) == 0) continue;
-
         const name = std.mem.span(name_ptr);
-
         if (std.mem.startsWith(u8, name, "llvm.")) continue;
 
         sampled += 1;
-
         total += 1;
 
-        // Explicit Rust markers (unambiguous)
-        if (std.mem.indexOf(u8, name, "_rust_") != null or
-            std.mem.indexOf(u8, name, "rs2py_") != null)
-        {
+        // Rust: _rust_ and rs2py_ markers
+        if (data.hasAnySubstring(name, data.rust_strong_prefixes)) {
             rust_count += 1;
             continue;
         }
 
-        // Go runtime markers (unambiguous)
-        if (std.mem.startsWith(u8, name, "main.") or
-            std.mem.startsWith(u8, name, "runtime.") or
-            std.mem.startsWith(u8, name, "syscall.") or
-            std.mem.startsWith(u8, name, "gcops."))
-        {
+        // Go strong prefixes (main., runtime., syscall., gcops.)
+        if (data.hasAnyPrefix(name, data.go_strong_prefixes)) {
             go_count += 1;
             continue;
         }
 
-        // Zig markers (unambiguous)
-        if (std.mem.indexOf(u8, name, "zig_") != null or
-            std.mem.indexOf(u8, name, "Allocator.") != null)
-        {
+        // Zig markers (zig_, Allocator.)
+        if (data.hasAnySubstring(name, data.zig_markers)) {
             zig_count += 1;
             continue;
         }
 
         // Python C extension module init function (unambiguous)
-        // PyInit_<modname> is the mandatory entry point for Python C extensions.
-        // This is a strong signal — only Python extensions use this naming convention.
         if (std.mem.startsWith(u8, name, "PyInit_")) {
             python_count += 1;
             continue;
         }
 
-        // C# / .NET NativeAOT mangling prefixes (unambiguous)
-        // .NET NativeAOT and Mono produce distinctive symbol names:
-        //   - $s prefix: used by .NET NativeAOT for managed symbols
-        //   - System_*, Microsoft_*: Itanium-mangled .NET namespace prefixes
-        // These prefixes uniquely identify .NET/C# compiled code.
-        if (std.mem.startsWith(u8, name, "$s") or
-            (name.len > 7 and std.mem.indexOf(u8, name[0..7], "System_") != null) or
-            (name.len > 10 and std.mem.indexOf(u8, name[0..10], "Microsoft_") != null) or
-            (name.len > 5 and std.mem.indexOf(u8, name[0..5], "Mono_") != null))
+        // C# / .NET strong markers
+        if (data.hasAnyPrefix(name, data.csharp_prefixes) or
+            data.hasAnySubstring(name, data.csharp_substrings) or
+            data.hasAnyPrefixLimited(name, data.csharp_prefix_limited))
         {
             csharp_count += 1;
             continue;
         }
 
-        // C# / .NET NativeAOT markers (unambiguous)
-        // .NET NativeAOT and Mono produce distinctive symbol names:
-        //   - <Module>.  prefix for module-level methods
-        //   - System.*, Microsoft.* namespace prefixes
-        //   - Mono_* prefix for Mono runtime symbols
-        //   - _N3System (Itanium-mangled .NET: N=namespace, 3=len("System"))
-        //   - Rh* prefix = Runtime Helpers (RhThrowHresult, RhNewArray etc.)
-        //   - GC_* = GC interaction stubs (GCPinAllocHandle, GCGlobalHandleFree2)
-        //   - IL_* = IL code stubs
-        //   - Function names with '.' indicate managed method namespacing
-        if (std.mem.startsWith(u8, name, "<Module>.") or
-            std.mem.startsWith(u8, name, "System.") or
-            std.mem.startsWith(u8, name, "Microsoft.") or
-            std.mem.startsWith(u8, name, "Mono_") or
-            (name.len > 9 and std.mem.indexOf(u8, name[0..9], "_N3System") != null) or
-            (name.len > 2 and name[0] == 'R' and name[1] == 'h') or
-            std.mem.startsWith(u8, name, "GC_") or
-            std.mem.startsWith(u8, name, "IL_") or
-            std.mem.indexOf(u8, name, "__DotNet") != null or
-            std.mem.indexOf(u8, name, "Marshal_") != null)
-        {
+        // C# / .NET qualified name with '.' pattern
+        if (data.hasDotNetQualifiedName(name)) {
             csharp_count += 1;
             continue;
         }
 
-        // C# function names containing '.' (managed method namespace pattern)
-        // This catches additional .NET patterns like:
-        //   System.Console.WriteLine, Program.Main, etc.
-        // Must appear AFTER explicit Go patterns to avoid false positives.
-        // Only match if the name looks like a qualified .NET identifier
-        // (contains at least one '.' but doesn't start with known Go prefixes).
-        if (std.mem.indexOf(u8, name, ".") != null) {
-            const has_dotnet_pattern =
-                (std.mem.indexOf(u8, name, "System.") != null or
-                    std.mem.indexOf(u8, name, "Microsoft.") != null or
-                    std.mem.indexOf(u8, name, "Mono.") != null);
-            if (has_dotnet_pattern) {
-                csharp_count += 1;
-                continue;
-            }
-        }
-
-        // Go / TinyGo markers (from TINYGO_IR_SPEC.md)
-        // TinyGo produces distinctive runtime.* and internal/task.* symbols.
-        // Standard Go (gc) uses similar naming with more GC-related functions.
-        // User code follows package.FunctionName convention (e.g., main.foo).
-        if (std.mem.startsWith(u8, name, "runtime.") or
-            std.mem.startsWith(u8, name, "internal/task.") or
-            std.mem.startsWith(u8, name, "reflect/types."))
-        {
+        // Go / TinyGo markers
+        if (data.hasAnyPrefix(name, data.go_tinygo_prefixes)) {
             go_count += 1;
             continue;
         }
 
         // Go runtime internal symbols (fine-grained classification)
-        // These are strong signals that uniquely identify Go runtime internals.
-        // Weight: strong signal (2.0) equivalent — unambiguous Go markers.
-        //
-        // Categories:
-        //   GC:         gc*, mallocgc, scanobject, markroot, sweep, scanstack
-        //   Scheduler:  schedule*, park*, wake*, stopm, startm, handoffp
-        //   Channel:    chan*, select*, chanclose, chansend, chanrecv
-        //   Interface:  interface*, assertI2I*, assertE2I*, convI2E*
-        //   Map:        mapaccess*, mapassign*, mapdelete*, mapiter*
-        //   Goroutine:  newproc*, goexit*, systemstack*, morestack*, lessstack*
-        //   Defer:      defer*, deferreturn, deferproc
-        //   Reflect:    reflect.* (medium signal — could be user code using reflect)
-        const is_go_runtime_internal = blk: {
-            if (!std.mem.startsWith(u8, name, "runtime.")) break :blk false;
-
-            const rest = name["runtime.".len..];
-
-            if (std.mem.startsWith(u8, rest, "gc") or
-                std.mem.startsWith(u8, rest, "mallocgc") or
-                std.mem.startsWith(u8, rest, "scanobject") or
-                std.mem.startsWith(u8, rest, "markroot") or
-                std.mem.startsWith(u8, rest, "sweep") or
-                std.mem.startsWith(u8, rest, "scanstack"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "schedule") or
-                std.mem.startsWith(u8, rest, "park") or
-                std.mem.startsWith(u8, rest, "wake") or
-                std.mem.startsWith(u8, rest, "stopm") or
-                std.mem.startsWith(u8, rest, "startm") or
-                std.mem.startsWith(u8, rest, "handoffp"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "chan") or
-                std.mem.startsWith(u8, rest, "select"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "interface") or
-                std.mem.startsWith(u8, rest, "assertI2I") or
-                std.mem.startsWith(u8, rest, "assertE2I") or
-                std.mem.startsWith(u8, rest, "convI2E"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "mapaccess") or
-                std.mem.startsWith(u8, rest, "mapassign") or
-                std.mem.startsWith(u8, rest, "mapdelete") or
-                std.mem.startsWith(u8, rest, "mapiter"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "newproc") or
-                std.mem.startsWith(u8, rest, "goexit") or
-                std.mem.startsWith(u8, rest, "systemstack") or
-                std.mem.startsWith(u8, rest, "morestack") or
-                std.mem.startsWith(u8, rest, "lessstack"))
-            {
-                break :blk true;
-            }
-
-            if (std.mem.startsWith(u8, rest, "defer")) {
-                break :blk true;
-            }
-
-            break :blk false;
-        };
-
-        if (is_go_runtime_internal) {
+        if (data.isGoRuntimeInternal(name)) {
             go_count += 1;
             continue;
         }
 
         // Reflect package symbols (medium Go signal)
-        // reflect.* functions are part of Go's reflection system but can also
-        // appear in user code. Weight as medium confidence (1.0).
         if (std.mem.startsWith(u8, name, "reflect.")) {
             go_count += 1;
             continue;
         }
+
         // _Cgo_* prefix — CGo bridge functions (unambiguous)
-        if (std.mem.indexOf(u8, name, "_Cgo_") != null) {
+        if (data.hasAnySubstring(name, data.go_cgo_markers)) {
             go_count += 1;
             continue;
         }
 
-        // _ZN (Itanium nested name mangling) -- used by BOTH Rust and C++.
-        // Multi-layer disambiguation with increasing specificity:
-        //
-        // Layer 1: '$' separator -- Rust uses $ for generics/refs/lifetimes
-        //   Rust: _ZN103_$LT$ring..ec$u20$as$u20$core..fmt..Debug$GT$3fmt17h...
-        //   C++:   _ZN4absl4CordC2INSt3__112basic_stringIcNS2_11char_traits...
-        //
-        // Layer 2: Hash suffix 'h<hex>E' -- Rust symbol hashing for incremental
-        //   compilation. Every Rust _ZN name ends with <len>h<hex_digits>E.
-        //   This is the most reliable discriminator when $ is absent.
-        //   Rust: ...execute17he1b7ec36415abac2E
-        //   C++:   ...set_dataEPKcm (no h-hex-E suffix)
-        //
-        // Layer 3: Double-dot path segments -- Rust encodes :: as ..
-        //   Rust: core..convert..TryFrom (double dots between crate/module)
-        //   C++:   std::__1::basic_string (single colon, Itanium-encoded)
+        // _ZN (Itanium nested name mangling) — used by BOTH Rust and C++.
         if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'N') {
-            if (isRustMangledName(name)) {
+            if (ffi_language_classifier.isRustMangledName(name)) {
                 rust_count += 1;
             } else {
                 cpp_count += 1;
@@ -465,30 +244,13 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
     }
 
     const confidence = @as(f32, @floatFromInt(max_count)) / @as(f32, @floatFromInt(total));
-
-    if (confidence < 0.4) {
+    if (confidence < data.MIN_SAMPLING_CONFIDENCE) {
         return .{ .language = .unknown, .confidence = 0.3, .method = .sampling };
     }
-
-    return .{
-        .language = dominant,
-        .confidence = confidence,
-        .method = .sampling,
-    };
+    return .{ .language = dominant, .confidence = confidence, .method = .sampling };
 }
 
-/// R8.5-a: Detect language by scanning LLVM personality function attributes.
-///
-/// Each LLVM function may have a "personality" attribute that identifies
-/// the exception handling runtime, which is strongly correlated with the
-/// source language:
-///   - @rust_eh_personality  → Rust (weight +3)
-///   - __gxx_personality_v0  → C++ (weight +3)
-///   - __gnat_eh_personality → Ada (rare, treat as cpp)
-///   - csharp_exception_personality / mono_unity_personality → C# (weight +3)
-///   - _Unwind_Resume        → C (weight +1)
-///   - _Unwind_RaiseException → C (weight +1)
-///   - No personality         → no vote (skip)
+/// Detect language by scanning LLVM personality function attributes.
 fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
     var rust_score: f32 = 0;
     const go_score: f32 = 0;
@@ -499,41 +261,21 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
     var c_score: f32 = 0;
     var total_votes: u32 = 0;
 
-    const PERSONALITY_WEIGHT: f32 = 3.0;
-
     var func = c.LLVMGetFirstFunction(module);
     while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-        // Check if function has a personality attribute
-        // In LLVM-C API, we check for named metadata or function attributes
         const name_ptr = c.LLVMGetValueName(func);
         if (@intFromPtr(name_ptr) == 0) continue;
         const name = std.mem.span(name_ptr);
 
-        // Personality functions are typically named with known patterns.
-        // We scan for them by checking function names directly since
-        // LLVM-C doesn't expose a direct "getPersonality" API in older versions.
-
-        if (std.mem.eql(u8, name, "rust_eh_personality") or
-            std.mem.indexOf(u8, name, "rust_eh_personality") != null)
-        {
-            rust_score += PERSONALITY_WEIGHT;
+        if (data.matchPersonality(name)) |lang| {
+            switch (lang) {
+                .rust => rust_score += data.PERSONALITY_STRONG,
+                .cpp => cpp_score += data.PERSONALITY_STRONG,
+                .csharp => csharp_score += data.PERSONALITY_STRONG,
+            }
             total_votes += 1;
-        } else if (std.mem.eql(u8, name, "__gxx_personality_v0") or
-            std.mem.indexOf(u8, name, "__gxx_personality") != null)
-        {
-            cpp_score += PERSONALITY_WEIGHT;
-            total_votes += 1;
-        } else if (std.mem.eql(u8, name, "csharp_exception_personality") or
-            std.mem.indexOf(u8, name, "csharp_exception_personality") != null or
-            std.mem.eql(u8, name, "mono_unity_personality") or
-            std.mem.indexOf(u8, name, "mono_unity_personality") != null)
-        {
-            csharp_score += PERSONALITY_WEIGHT;
-            total_votes += 1;
-        } else if (std.mem.eql(u8, name, "_Unwind_Resume") or
-            std.mem.eql(u8, name, "_Unwind_RaiseException"))
-        {
-            c_score += 1.0; // Lower weight — C/C++ both use this
+        } else if (data.isCUnwindPersonality(name)) {
+            c_score += 1.0;
             total_votes += 1;
         }
     }
@@ -559,24 +301,13 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
         }
     }
 
-    if (max_score < 2.0) return null; // Need at least one strong signal
+    if (max_score < data.MIN_PERSONALITY_SCORE) return null;
 
-    const confidence = @min(max_score / (PERSONALITY_WEIGHT * @as(f32, @floatFromInt(total_votes))), 1.0);
-    return .{
-        .language = dominant,
-        .confidence = confidence,
-        .method = .personality,
-    };
+    const confidence = @min(max_score / (data.PERSONALITY_STRONG * @as(f32, @floatFromInt(total_votes))), 1.0);
+    return .{ .language = dominant, .confidence = confidence, .method = .personality };
 }
 
-/// R8.5-b: Detect language by scanning LLVM global variable name prefixes.
-///
-/// Global variables often carry language-specific naming conventions:
-///   - __rust_no_alloc_shim* → Rust (weight +2)
-///   - __go_*                → Go (weight +2)
-///   - zig.*                 → Zig (weight +2)
-///   - __cxa_*               → C++ ABI (weight +2)
-///   - __start/__stop        → C linker symbols (weight +1)
+/// Detect language by scanning LLVM global variable name prefixes.
 fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
     var rust_score: f32 = 0;
     var go_score: f32 = 0;
@@ -587,9 +318,6 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
     var c_score: f32 = 0;
     var total_votes: u32 = 0;
 
-    const GLOBAL_STRONG_WEIGHT: f32 = 2.0;
-    const GLOBAL_WEAK_WEIGHT: f32 = 1.0;
-
     var global = c.LLVMGetFirstGlobal(module);
     while (@intFromPtr(global) != 0) : (global = c.LLVMGetNextGlobal(global)) {
         const name_ptr = c.LLVMGetValueName(global);
@@ -597,91 +325,64 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
         const name = std.mem.span(name_ptr);
 
         // C# / .NET global symbols
-        // .NET NativeAOT and Mono produce distinctive global variable patterns:
-        //   - __dotnet_* / __cil_*: CIL runtime infrastructure
-        //   - System_*, Microsoft_*, Mono_*: mangled namespace prefixes
-        //   - gc_frame, __managed_*: GC and managed code markers
-        if (std.mem.startsWith(u8, name, "__dotnet_") or
-            std.mem.startsWith(u8, name, "__cil_") or
-            std.mem.startsWith(u8, name, "System_") or
-            std.mem.startsWith(u8, name, "Microsoft_") or
-            std.mem.startsWith(u8, name, "Mono_"))
-        {
-            csharp_score += GLOBAL_STRONG_WEIGHT;
+        if (data.hasAnyPrefix(name, data.csharp_global_prefixes)) {
+            csharp_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
-        // C# managed code / GC markers (weaker signal)
-        if (std.mem.indexOf(u8, name, "__managed_") != null or
-            std.mem.indexOf(u8, name, "gc_frame") != null)
-        {
-            csharp_score += GLOBAL_WEAK_WEIGHT;
+        // C# weak markers
+        if (data.hasAnySubstring(name, data.csharp_global_substrings)) {
+            csharp_score += data.GLOBAL_WEAK_WEIGHT;
             total_votes += 1;
             continue;
         }
 
         // Rust global patterns
-        if (std.mem.startsWith(u8, name, "__rust_")) {
-            rust_score += GLOBAL_STRONG_WEIGHT;
+        if (data.hasAnyPrefix(name, data.rust_global_prefixes)) {
+            rust_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
         // Go runtime globals
-        if (std.mem.startsWith(u8, name, "__go_")) {
-            go_score += GLOBAL_STRONG_WEIGHT;
+        if (data.hasAnyPrefix(name, data.go_global_prefixes)) {
+            go_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
         // Zig globals
-        if (std.mem.startsWith(u8, name, "zig.") or
-            std.mem.startsWith(u8, name, "__zig_"))
-        {
-            zig_score += GLOBAL_STRONG_WEIGHT;
+        if (data.hasAnyPrefix(name, data.zig_global_prefixes)) {
+            zig_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
-        // C++ ABI globals (__cxa_guard*, __cxa_atexit, etc.)
-        if (std.mem.startsWith(u8, name, "__cxa_")) {
-            cpp_score += GLOBAL_STRONG_WEIGHT;
+        // C++ ABI globals (__cxa_*)
+        if (data.hasAnyPrefix(name, data.cpp_global_prefixes)) {
+            cpp_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
-        // C++ RTTI / vtable globals (Itanium C++ ABI)
-        // These are unambiguous strong signals — only present in C++ with RTTI enabled:
-        //   _ZTV* = vtable (virtual function table pointer)
-        //   _ZTI* = typeinfo (RTTI type information object)
-        //   _ZTS* = typeinfo name (null-terminated mangled type name)
-        // Weight: same as __cxa_ since they're equally definitive.
-        if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'T') {
-            const third_char = name[3];
-            if (third_char == 'V' or third_char == 'I' or third_char == 'S') {
-                cpp_score += GLOBAL_STRONG_WEIGHT;
-                total_votes += 1;
-                continue;
-            }
+        // C++ RTTI / vtable globals (_ZTV, _ZTI, _ZTS)
+        if (data.isCppRttiGlobal(name)) {
+            cpp_score += data.GLOBAL_STRONG_WEIGHT;
+            total_votes += 1;
+            continue;
         }
 
         // Python GC internal runtime symbols
-        // _PyGC_* functions are part of CPython's garbage collector implementation.
-        // These are strong signals for Python/C extension code that interacts with
-        // the Python runtime's memory management system.
-        if (std.mem.startsWith(u8, name, "_PyGC_")) {
-            python_score += GLOBAL_STRONG_WEIGHT;
+        if (data.hasAnyPrefix(name, data.python_global_prefixes)) {
+            python_score += data.GLOBAL_STRONG_WEIGHT;
             total_votes += 1;
             continue;
         }
 
         // C linker symbols
-        if (std.mem.startsWith(u8, name, "__start_") or
-            std.mem.startsWith(u8, name, "__stop_") or
-            std.mem.startsWith(u8, name, "__end_"))
-        {
-            c_score += GLOBAL_WEAK_WEIGHT;
+        if (data.hasAnyPrefix(name, data.c_global_prefixes)) {
+            c_score += data.GLOBAL_WEAK_WEIGHT;
             total_votes += 1;
         }
     }
@@ -707,20 +408,13 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
         }
     }
 
-    if (max_score < 1.5) return null; // Need at least one strong signal
+    if (max_score < data.MIN_GLOBALS_SCORE) return null;
 
-    const confidence = @min(max_score / (GLOBAL_STRONG_WEIGHT * @as(f32, @floatFromInt(total_votes))), 1.0);
-    return .{
-        .language = dominant,
-        .confidence = confidence,
-        .method = .globals,
-    };
+    const confidence = @min(max_score / (data.GLOBAL_STRONG_WEIGHT * @as(f32, @floatFromInt(total_votes))), 1.0);
+    return .{ .language = dominant, .confidence = confidence, .method = .globals };
 }
 
 /// Identify the language of an LLVM function value.
-///
-/// This is the **single canonical implementation** used by all analysis passes.
-/// Do NOT duplicate this logic elsewhere -- always call through here.
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
     return @import("../pass/analysis/ffi/ffi_language_classifier.zig").identifyLanguage(func);
 }
@@ -728,18 +422,4 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
 /// Identify the language of a called function by name string.
 pub fn identifyCalleeLanguage(func_name: []const u8) Language {
     return @import("../pass/analysis/ffi/ffi_language_classifier.zig").identifyCalleeLanguage(func_name);
-}
-
-/// Multi-layer Rust mangled name detector for _ZN disambiguation.
-/// Returns true if the symbol is a Rust-mangled name, false for C++ Itanium.
-///
-/// Detection layers (ordered by reliability):
-///   1. '$' presence -- Rust uses $LT$, $GT$, $u20$, $RF$ etc.
-///   2. Hash suffix <N>h<hex>E -- Rust incremental compilation hash
-///   3. Known Rust namespace prefixes -- _ZN4core, _ZN3std, etc.
-///
-/// This function delegates to ffi_language_classifier.isRustMangledName
-/// to ensure consistent detection across the codebase.
-fn isRustMangledName(name: []const u8) bool {
-    return ffi_language_classifier.isRustMangledName(name);
 }

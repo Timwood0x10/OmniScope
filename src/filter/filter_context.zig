@@ -127,6 +127,9 @@ pub const FilterContext = struct {
     /// Whether this issue kind is never downgraded (core_memory_safety
     /// or security_critical).
     never_downgraded: bool = false,
+    /// Whether the module is a pure C/C++ module (no cross-language FFI concept).
+    /// Set by the caller to prevent FFI boundary bypass in C/C++ modules.
+    is_pure_c_module: bool = false,
 
     // ── Public API ────────────────────────────────────────────────────
 
@@ -218,8 +221,11 @@ pub const FilterContext = struct {
     /// FFI/core issues bypass risk suppression. Critical issues bypass
     /// risk suppression. Otherwise, suppressed risk drops the issue.
     pub fn applyNoiseFilter(self: *FilterContext) void {
-        // Never-suppressed issues bypass risk suppression
-        if (self.never_suppressed or self.has_ffi_boundary) {
+        // Never-suppressed issues bypass risk suppression.
+        // For pure C/C++ modules, has_ffi_boundary is a false positive
+        // (unmangled external linkage is normal, not cross-ABI),
+        // so skip the FFI bypass for C/C++ modules.
+        if (self.never_suppressed or (self.has_ffi_boundary and !self.is_pure_c_module)) {
             if (self.risk_level == .suppressed) {
                 self.risk_level = .low;
             }

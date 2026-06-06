@@ -15,6 +15,7 @@ const ownership_types = @import("../../../types/ownership_types.zig");
 const AllocSite = ownership_types.AllocSite;
 const ValueIdMap = @import("../../../dataflow/value_id_map.zig").ValueIdMap;
 const cpp_types = @import("../../../types/cpp_fp_types.zig");
+const rust_ffi_helpers = @import("../rust_ffi/rust_ffi_helpers.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
@@ -171,16 +172,8 @@ pub fn isRefCountOperation(func_name: []const u8) bool {
 }
 
 /// Check if a function call is Rust's as_ptr() on a local value.
-pub fn isRustAsPtrCall(name: []const u8) bool {
-    const as_ptr_patterns = [_][]const u8{
-        "as_ptr",
-        "slice_as_ptr",
-    };
-    for (as_ptr_patterns) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
-    return false;
-}
+/// Delegates to rust_ffi_helpers.zig (SSOT).
+pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
 
 /// Extract function name from LLVM value reference.
 pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {

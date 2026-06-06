@@ -37,6 +37,7 @@ const MemoryGraph = @import("../semantics/memory_graph.zig").MemoryGraph;
 const DangerSurface = @import("../types/memory_graph_types.zig").DangerSurface;
 
 const PassContext = @import("../types/pass_types.zig").PassContext;
+const ChannelMode = @import("../types/pass_types.zig").ChannelMode;
 
 pub fn getNextId(self: *PassContext) u32 {
     return self.next_id.fetchAdd(1, .seq_cst);
@@ -230,6 +231,7 @@ pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
     }
 
     var ctx = FilterContext.init(issue);
+    ctx.is_pure_c_module = self.isCModule();
 
     const classification = self.classifyFunctionSurface(ctx.func_name, null);
     ctx.origin = classification.origin;
@@ -627,7 +629,7 @@ fn countChar(s: []const u8, char: u8) usize {
 // Channel mode gating (Wave 3: moved from pass_types.zig)
 // =====================================================================
 
-pub fn channelFFIBoundary(self: *const PassContext) PassContext.ChannelMode {
+pub fn channelFFIBoundary(self: *const PassContext) ChannelMode {
     return switch (self.module_language.language) {
         .zig => .limited,
         .go => .limited,
@@ -636,7 +638,7 @@ pub fn channelFFIBoundary(self: *const PassContext) PassContext.ChannelMode {
     };
 }
 
-pub fn channelPtrLifetime(self: *const PassContext) PassContext.ChannelMode {
+pub fn channelPtrLifetime(self: *const PassContext) ChannelMode {
     return switch (self.module_language.language) {
         .zig => .limited,
         .go => .limited,
@@ -644,14 +646,14 @@ pub fn channelPtrLifetime(self: *const PassContext) PassContext.ChannelMode {
     };
 }
 
-pub fn channelCallbackEscape(self: *const PassContext) PassContext.ChannelMode {
+pub fn channelCallbackEscape(self: *const PassContext) ChannelMode {
     return switch (self.module_language.language) {
         .zig => .limited,
         else => .full,
     };
 }
 
-pub fn channelPointerOwnership(self: *const PassContext) PassContext.ChannelMode {
+pub fn channelPointerOwnership(self: *const PassContext) ChannelMode {
     return switch (self.module_language.language) {
         .zig => .limited,
         .go => .limited,

@@ -25,6 +25,7 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const log = @import("../../common/log.zig");
+const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 
 // ============================================================================
 // Public API
@@ -47,7 +48,12 @@ const log = @import("../../common/log.zig");
 ///     → Rust pub fn, same-language internal API
 ///   - Internal/linkonce linkage functions
 ///     → not visible outside this TU
-pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef) bool {
+pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef, module_lang: ?Language) bool {
+    // C/C++ modules: unmangled external linkage is normal, not FFI boundary
+    if (module_lang == .c or module_lang == .cpp) {
+        return false;
+    }
+
     // Declarations are not boundaries themselves (callee side)
     if (c.LLVMIsDeclaration(func) != 0) return false;
 
@@ -112,12 +118,12 @@ pub fn detectBoundaryFromLLVM(func: c.LLVMValueRef) bool {
 /// Rust crates but not from C/Python/etc.
 ///
 /// Used for statistics and optional downstream filtering.
-pub fn detectLibraryExport(func: c.LLVMValueRef) bool {
+pub fn detectLibraryExport(func: c.LLVMValueRef, module_lang: ?Language) bool {
     if (c.LLVMIsDeclaration(func) != 0) return false;
     if (c.LLVMGetLinkage(func) != c.LLVMExternalLinkage) return false;
 
     // Has external linkage but is NOT an FFI boundary → library export
-    return !detectBoundaryFromLLVM(func);
+    return !detectBoundaryFromLLVM(func, module_lang);
 }
 
 /// Detect if a function is a Windows DLL import/export boundary.

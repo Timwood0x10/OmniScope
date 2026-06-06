@@ -11,6 +11,7 @@ pub const ir = struct {
     pub const llvm_safe = @import("ir/llvm_safe.zig");
     pub const view = @import("ir/view.zig");
     pub const debug_info = @import("ir/debug_info.zig");
+    pub const mangling = @import("ir/mangling.zig");
 };
 
 // Export pass system

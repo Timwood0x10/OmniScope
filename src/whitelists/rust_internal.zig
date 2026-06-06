@@ -1,3 +1,13 @@
+//! DEPRECATED — This static whitelist has been replaced by structural
+//! detection via `isRustInternal()` in `src/ir/mangling.zig`.
+//!
+//! The new approach uses IR evidence (DWARF language, personality function,
+//! Rust v0 mangling validation) instead of a static name list.
+//!
+//! Kept for backward compatibility. New code should use:
+//!   `mangling.isRustInternal(evidence, func_name)`
+//!
+//! --- original doc ---
 //! Rust Internal Function Whitelist - Suppresses false positives from
 //! Rust's panic/unwind mechanism and standard library internals.
 //!

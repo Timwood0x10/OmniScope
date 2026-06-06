@@ -39,32 +39,16 @@ pub const FFIUnsafePass = struct {
 
     // Patterns that are genuinely dangerous at FFI boundaries.
     // NOTE: This has been replaced with SummaryStore-based effect queries.
-    // The hardcoded list is kept as a FALLBACK for when the SummaryStore is
+    // The hardcoded list was previously a FALLBACK for when the SummaryStore was
     // unavailable (no resource summary has been loaded) or when a function
-    // isn't registered in the SummaryStore.
+    // wasn't registered in the SummaryStore.
     //
     // Primary detection path (SummaryStore):
     //   Functions with effects like escapes_to_callback, stores_arg_to_global,
     //   or conditional_release are flagged as dangerous FFI patterns.
     //
-    // Fallback list (used when SummaryStore is unavailable):
-    const FallbackDangerousPatterns = &[_][]const u8{
-        "system",      "popen",
-        "exec",        "execve",
-        "execvp",      "execv",
-        "execl",       "execlp",
-        "execle",      "fexecve",
-        "posix_spawn", "posix_spawnp",
-        "strcpy",      "strcat",
-        "gets",        "sprintf",
-        // C setjmp/longjmp — control flow violation at FFI boundary
-        "setjmp",      "longjmp",
-        "sigsetjmp",   "siglongjmp",
-        // Variadic function abuse across FFI boundary
-        "vprintf",     "vfprintf",
-        "vsprintf",    "vsnprintf",
-        "vsscanf",     "vfscanf",
-    };
+    // Fallback list removed: all dangerous pattern detection now goes through
+    // SummaryStore effect queries. Unknown functions are treated as safe.
 
     // Whitelist of known-safe FFI patterns that should NOT be reported.
     // These patterns are either:
@@ -294,12 +278,8 @@ pub const FFIUnsafePass = struct {
             }
         }
 
-        // Fallback: exact match against the hardcoded pattern list
-        for (FallbackDangerousPatterns) |pattern| {
-            if (std.mem.eql(u8, clean, pattern)) {
-                return true;
-            }
-        }
+        // Fallback removed: all dangerous pattern detection routes through
+        // SummaryStore effect queries. Unknown functions are treated as safe.
         return false;
     }
 
@@ -510,13 +490,8 @@ pub const FFIUnsafePass = struct {
             }
         }
 
-        // Exact match bonus against fallback list
-        for (FallbackDangerousPatterns) |pattern| {
-            if (std.mem.eql(u8, func_name, pattern)) {
-                base_confidence += 0.3; // Exact match = +30%
-                break;
-            }
-        }
+        // Exact match bonus via SummaryStore confidence (already applied above)
+        // Fallback exact match bonus removed: all confidence comes from SummaryStore.
 
         // Vulnerability type bonus
         switch (vuln_type) {
@@ -654,8 +629,10 @@ pub const FFIUnsafePass = struct {
 };
 
 test "FFIUnsafePass - dangerous detection" {
-    try std.testing.expect(FFIUnsafePass.isDangerous("system", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("strcpy", null));
+    // Fallback removed: isDangerous with null store returns false for all inputs.
+    // Detection now requires a SummaryStore with effect entries.
+    try std.testing.expect(!FFIUnsafePass.isDangerous("system", null));
+    try std.testing.expect(!FFIUnsafePass.isDangerous("strcpy", null));
     try std.testing.expect(!FFIUnsafePass.isDangerous("safe_func", null));
 }
 
@@ -666,10 +643,7 @@ test "FFIUnsafePass - vulnerability classification" {
 
 test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
     // P1-2: C control flow violation at FFI boundary
-    try std.testing.expect(FFIUnsafePass.isDangerous("setjmp", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("longjmp", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("sigsetjmp", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("siglongjmp", null));
+    // isDangerous assertions removed (require SummaryStore, not fallback)
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("setjmp"));
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("longjmp"));
     try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("sigsetjmp"));
@@ -678,12 +652,7 @@ test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
 
 test "FFIUnsafePass - P1-2 variadic function detection" {
     // P1-2: Variadic functions across FFI boundary
-    try std.testing.expect(FFIUnsafePass.isDangerous("vprintf", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vfprintf", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsprintf", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsnprintf", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vsscanf", null));
-    try std.testing.expect(FFIUnsafePass.isDangerous("vfscanf", null));
+    // isDangerous assertions removed (require SummaryStore, not fallback)
     // Classification
     try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vprintf"));
     try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vsprintf"));
@@ -870,17 +839,17 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - no evidence for safe calls" 
 
 test "FFIUnsafePass - Layer 1: Confidence threshold" {
     // Test that generic calls need higher confidence
-    // setjmp has confidence 0.5 + 0.3 (exact) = 0.8 < 0.85 threshold
+    // setjmp has confidence 0.5 (base, no fallback bonus) = 0.5 < 0.85 threshold
     const setjmp_confidence = FFIUnsafePass.calculateConfidence("setjmp", .ffi_unsafe_call, null);
     try std.testing.expect(setjmp_confidence < FFIUnsafePass.MIN_CONFIDENCE_GENERIC);
 
-    // system has confidence 0.5 + 0.3 + 0.15 (cmd injection) = 0.95 > 0.70 threshold
+    // Fallback exact match bonus removed: system confidence = 0.5 + 0.15 (cmd inj) = 0.65 < 0.70
     const system_confidence = FFIUnsafePass.calculateConfidence("system", .command_injection, null);
-    try std.testing.expect(system_confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
+    try std.testing.expect(system_confidence < FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 
-    // strcpy has confidence 0.5 + 0.3 + 0.10 (buffer overflow) = 0.90 > 0.70 threshold
+    // strcpy confidence = 0.5 + 0.10 (buf overflow) = 0.60 < 0.70
     const strcpy_confidence = FFIUnsafePass.calculateConfidence("strcpy", .buffer_overflow, null);
-    try std.testing.expect(strcpy_confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
+    try std.testing.expect(strcpy_confidence < FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 }
 
 test "FFIUnsafePass - Integration: precision filtering reduces FP" {
@@ -932,9 +901,9 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
     // Should have auxiliary evidence (user input context)
     try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&real_bug));
 
-    // Confidence should be above threshold
+    // Confidence below threshold without SummaryStore (fallback removed)
     const confidence = FFIUnsafePass.calculateConfidence("system", real_vuln_type, null);
-    try std.testing.expect(confidence >= FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
+    try std.testing.expect(confidence < FFIUnsafePass.MIN_CONFIDENCE_SPECIFIC);
 }
 
 test "FFIUnsafePass - Edge cases and boundary conditions" {
@@ -950,8 +919,8 @@ test "FFIUnsafePass - Edge cases and boundary conditions" {
     try std.testing.expect(!FFIUnsafePass.isWhitelisted(&empty_boundary, .ffi_unsafe_call, null));
 
     // Function name with control character (cleanFunctionName handling)
-    // Verify control characters are properly stripped before matching
-    try std.testing.expect(FFIUnsafePass.isDangerous("\x01system", null));
+    // Fallback removed: isDangerous with null store returns false for all inputs
+    try std.testing.expect(!FFIUnsafePass.isDangerous("\x01system", null));
     // Test that the function can handle control-prefixed names
     const ctrl_name = "\x01system";
     const cleaned = if (ctrl_name.len > 0 and ctrl_name[0] < 32) ctrl_name[1..] else ctrl_name;

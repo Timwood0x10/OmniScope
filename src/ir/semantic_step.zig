@@ -150,6 +150,51 @@ pub fn propagateOwnership(inst: c.LLVMValueRef, class: InstClass, lookup: *const
     };
 }
 
+/// Calling convention-based ownership adjustment.
+///
+/// Certain LLVM calling conventions carry specific ownership semantics
+/// that refine the ownership propagation for function boundaries.
+pub const CallConvEffect = enum(u8) {
+    /// Standard C calling convention; no special ownership semantics.
+    standard,
+    /// Swift calling convention (swiftcc); uses Swift ARC model.
+    swift_managed,
+    /// Tail call calling convention (tailcc); callee may perform tail calls.
+    tail_call_aware,
+    /// C++ fast TLS calling convention; signals C++ ABI environment.
+    cxx_tls_aware,
+    /// Unknown or unspecified calling convention.
+    unknown,
+};
+
+// Known LLVM calling convention numeric values.
+// These may not have dedicated C API constants, so we define them
+// as named constants for readability and maintainability.
+const swiftcc: u32 = 13;
+const tailcc: u32 = 17;
+const cxx_fast_tls: u32 = 31;
+
+/// Infer ownership-related adjustments from a function's calling convention.
+///
+/// Maps LLVM calling convention numbers to CallConvEffect values that
+/// SemanticStep.propagateOwnership can consume to refine ownership tracking
+/// across language and ABI boundaries.
+///
+/// Parameters:
+///   - call_conv: LLVM calling convention number (from LLVMGetFunctionCallConv)
+///
+/// Returns:
+///   - CallConvEffect describing the ownership implications, never null
+pub fn inferFromCallConv(call_conv: u32) CallConvEffect {
+    return switch (call_conv) {
+        c.LLVMCCallConv, c.LLVMFastCallCC, c.LLVMColdCallCC, c.LLVMX86_64SysVCallConv, c.LLVMX86_64Win64CallConv => .standard,
+        swiftcc => .swift_managed,
+        tailcc => .tail_call_aware,
+        cxx_fast_tls => .cxx_tls_aware,
+        else => .unknown,
+    };
+}
+
 // ============================================================================
 // Taint Propagation
 // ============================================================================

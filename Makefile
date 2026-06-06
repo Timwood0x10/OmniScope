@@ -55,7 +55,7 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         go go-ir go-run go-json go-sarif \
         zig zig-ir zig-run zig-json zig-sarif \
         help \
-        corpus corpus-ir corpus-analyze corpus-check \
+        corpus corpus-ir corpus-red-team-ir corpus-analyze corpus-check \
         red-team blue-team corpus-test \
         real-world real-world-ir real-world-run real-world-json real-world-sarif \
         install-deps release benchmark benchmark-ci benchmark-json benchmark-full \
@@ -544,6 +544,27 @@ corpus-ir:
 		$(CORPUS_FFI_DENSE)/zlib_binding.c -o $(CORPUS_FFI_DENSE)/output/zlib_binding.ll 2>/dev/null || true
 
 	@echo "  Done."
+
+# ========================================
+# Corpus red_team_test LLVM IR regeneration with DWARF
+# ========================================
+
+# Regenerate red_team_test .ll files with DWARF debug info
+# Required by A1 (DICompileUnit language detection)
+# Run this after updating corpus source files:
+#   make corpus-red-team-ir
+
+RED_TEAM_DIR := corpus/red_team_test
+
+corpus-red-team-ir:
+	@echo "Regenerating red_team_test IR with DWARF debug info..."
+	@for src in $(RED_TEAM_DIR)/*.c; do \
+		base=$$(basename $$src .c); \
+		echo "  - $$base.c → $$base.ll"; \
+		$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+			$$src -o $(RED_TEAM_DIR)/$$base.ll 2>/dev/null || true; \
+	done
+	@echo "  Done. All red_team_test .ll files regenerated with DWARF."
 
 corpus-analyze: corpus-ir build
 	@echo ""

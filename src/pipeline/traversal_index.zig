@@ -16,6 +16,9 @@ const Allocator = std.mem.Allocator;
 const c = @import("../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../ir/llvm_safe.zig");
 
+// Delegate allocation function detection to the unified function catalog
+const ptr_types = @import("../pass/analysis/ptr_lifetime/ptr_lifetime_types.zig");
+
 /// Shared traversal index for LLVM IR analysis
 ///
 /// Collects function, call site, allocation, and free site indexes
@@ -223,36 +226,9 @@ pub const CallRecord = struct {
 };
 
 /// Check if a function name represents a memory allocation function
+/// Delegates to ptr_types.isHeapAllocFunction (unified function catalog).
 fn isAllocFunction(name: []const u8) bool {
-    // Common allocation functions across languages
-    const alloc_functions = [_][]const u8{
-        "malloc",         "calloc",   "realloc", "aligned_alloc",
-        "posix_memalign", "memalign", "valloc",  "pvalloc",
-        "_Znwm",        "_Znam",               "_ZnwmSt11align_val_t", "_ZnamSt11align_val_t", // C++ new/delete operators
-        "__rust_alloc", "__rust_alloc_zeroed", "__rust_realloc",
-        "jemalloc", "tc_malloc", "tc_new", // Custom allocators
-        "GC_malloc", "GC_malloc_atomic", // Boehm GC
-        "PyMem_Malloc", "PyObject_Malloc", // Python
-        "rb_alloc", "ruby_xmalloc", // Ruby
-        "lua_newuserdata", // Lua
-    };
-
-    for (alloc_functions) |alloc_func| {
-        if (std.mem.eql(u8, name, alloc_func)) {
-            return true;
-        }
-    }
-
-    // Check for common patterns with substring matching
-    // Match "alloc" as a substring (case-sensitive)
-    if (std.mem.indexOf(u8, name, "alloc") != null or
-        std.mem.indexOf(u8, name, "Alloc") != null or
-        std.mem.indexOf(u8, name, "ALLOC") != null)
-    {
-        return true;
-    }
-
-    return false;
+    return ptr_types.isHeapAllocFunction(name);
 }
 
 /// Check if a function name represents a memory free function

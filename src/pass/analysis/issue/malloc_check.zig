@@ -23,16 +23,8 @@ const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;
 
-/// Memory allocation functions that return nullable pointers
-const ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",
-    "calloc",
-    "realloc",
-    "aligned_alloc",
-    "valloc",
-    "pvalloc",
-    "memalign",
-};
+// Delegate allocation function detection to the unified function catalog
+const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 
 /// Malloc null check detection pass
 ///
@@ -196,12 +188,7 @@ pub const MallocCheckPass = struct {
 
     /// Check if function is a memory allocation function
     fn isAllocFunction(func_name: []const u8) bool {
-        for (ALLOC_FUNCTIONS) |alloc_func| {
-            if (std.mem.eql(u8, func_name, alloc_func)) {
-                return true;
-            }
-        }
-        return false;
+        return ptr_types.isHeapAllocFunction(func_name);
     }
 
     /// Report unchecked malloc use

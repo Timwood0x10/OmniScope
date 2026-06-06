@@ -198,9 +198,11 @@ pub const FreeValidationPass = struct {
                 }
 
                 if (!is_intentional) {
-                    if (try cross_lang_detector.detectCrossLanguageFree(alloc_func, callee_name, ctx.allocator)) |cross_issue| {
-                        try report.reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
-                        return true;
+                    if (ctx.memory_graph.family_registry) |family_reg| {
+                        if (try cross_lang_detector.detectCrossLanguageFree(family_reg, alloc_func, callee_name, ctx.allocator)) |cross_issue| {
+                            try report.reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
+                            return true;
+                        }
                     }
                 } else {
                     log.debug("CROSS-LANG-CHECK: Intentional transfer in caller={s}, skipping", .{caller_name_str});

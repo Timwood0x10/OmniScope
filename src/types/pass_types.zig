@@ -11,9 +11,6 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const log = @import("../common/log.zig");
-const c = @import("../ir/llvm_raw.zig").c;
-const PrefixTrie = @import("../common/prefix_trie.zig").PrefixTrie;
 const StringInterner = @import("../common/string_interner.zig").StringInterner;
 const Arena = @import("../common/arena.zig").Arena;
 
@@ -27,21 +24,12 @@ const call_graph_mod = @import("../semantics/call_graph.zig");
 const zone_classifier = @import("../semantics/zone_classifier.zig");
 const noise_filter = @import("../semantics/noise_filter.zig");
 const surface_classifier = @import("../semantics/surface_classifier/surface_classifier.zig");
-// Import name-based heuristic classifier for origin fallback
-const ffi_enhancement = @import("../pass/analysis/ffi/ffi_enhancement.zig");
 const language_detector = @import("../semantics/language_detector.zig");
 const ir_evidence = @import("../ir/ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
-const suppression_patterns = @import("../pass/analysis/noise/suppression_patterns.zig");
-const issue_classification = @import("../filter/issue_classification.zig");
-const filter_context_mod = @import("../filter/filter_context.zig");
-const FilterContext = filter_context_mod.FilterContext;
 const Issue = @import("../diag/issue.zig").Issue;
-const DiagSeverity = @import("../diag/issue.zig").Severity;
-const SemanticSurface = @import("../common/types.zig").SemanticSurface;
-const NoiseSeverity = noise_filter.Severity;
-const SemanticRegistry = @import("../registry/semantic_registry.zig").SemanticRegistry;
 const FunctionSemantics = @import("../registry/semantic_registry.zig").FunctionSemantics;
+const pc_impl = @import("../pass/pass_context_impl.zig");
 
 const resource_summary_mod = @import("../semantics/resource/function_summary.zig");
 pub const SummaryStore = resource_summary_mod.SummaryStore;
@@ -53,225 +41,22 @@ pub const IssueVerifier = resource_verifier_mod.IssueVerifier;
 
 const contract_db_mod = @import("../resource/ffi_contract_db.zig");
 pub const FFIContractDB = contract_db_mod.FFIContractDB;
-
-// Language Override Registry for user-specified function language classifications
 const language_override = @import("../config/language_override.zig");
 
 const ir_store_mod = @import("../ir/ir_store.zig");
 pub const ModuleIRStore = ir_store_mod.ModuleIRStore;
 
-const pc_impl = @import("../pass/pass_context_impl.zig");
+const pass_defs = @import("pass_defs.zig");
+pub const PassKind = pass_defs.PassKind;
+pub const CrossLangEdge = pass_defs.CrossLangEdge;
+pub const CallSiteIndex = pass_defs.CallSiteIndex;
+pub const CallSite = pass_defs.CallSite;
+pub const GlobalAllocTracker = pass_defs.GlobalAllocTracker;
+pub const Colors = pass_defs.Colors;
+pub const DiagnosticWriter = pass_defs.DiagnosticWriter;
 
-/// Pass kind classification
-pub const PassKind = enum {
-    foundation,
-    analysis,
-    plugin,
-};
-
-/// R8.2: Cross-language call edge extracted by CallGraphPass.
-pub const CrossLangEdge = struct {
-    caller_name: []const u8,
-    callee_name: []const u8,
-    caller_lang: @import("../diag/issue.zig").FFIBoundary.Language,
-    callee_lang: @import("../diag/issue.zig").FFIBoundary.Language,
-    is_ffi_boundary: bool,
-    ptr_args: []const u32,
-};
-
-/// Shared callee → call_sites index for O(1) lookup.
-pub const CallSiteIndex = struct {
-    map: std.StringHashMap(std.ArrayList(CallSite)),
-    allocator: Allocator,
-
-    pub fn init(allocator: Allocator) CallSiteIndex {
-        return .{ .map = std.StringHashMap(std.ArrayList(CallSite)).init(allocator), .allocator = allocator };
-    }
-
-    pub fn deinit(self: *CallSiteIndex) void {
-        var iter = self.map.iterator();
-        while (iter.next()) |entry| {
-            entry.value_ptr.deinit(self.allocator);
-        }
-        self.map.deinit();
-    }
-
-    pub fn addCall(self: *CallSiteIndex, allocator: Allocator, callee_name: []const u8, caller_func: u64, inst: u64) !void {
-        const gop = try self.map.getOrPut(callee_name);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = try std.ArrayList(CallSite).initCapacity(allocator, 4);
-        }
-        try gop.value_ptr.append(self.allocator, .{ .caller_func = caller_func, .inst = inst });
-    }
-
-    pub fn getCallSites(self: *const CallSiteIndex, callee_name: []const u8) ?[]const CallSite {
-        if (self.map.get(callee_name)) |sites| {
-            return sites.items;
-        }
-        return null;
-    }
-};
-
-/// A single call site record in the shared index.
-pub const CallSite = struct {
-    caller_func: u64,
-    inst: u64,
-};
-
-/// R8.3: Global allocation tracker for cross-function leak detection.
-pub const GlobalAllocTracker = struct {
-    pub const AllocRecord = struct {
-        ptr_id: u32,
-        alloc_func: []const u8,
-        /// P19-2: LLVM function value for structural transfer inference
-        alloc_func_val: ?c.LLVMValueRef = null,
-        alloc_callee: []const u8,
-        freed: bool,
-        free_func: ?[]const u8,
-        is_global_or_static: bool,
-        /// Bug 4: Whether this allocation is inside a conditional branch.
-        /// If true, reduces leak report confidence (may not execute on all paths).
-        is_conditional: bool = false,
-        /// Allocation size in bytes (if determinable from LLVM IR).
-        /// null = size unknown (common for indirect calls or variable-sized allocations).
-        /// Used for confidence boost: large leaks (>1MB) are more impactful.
-        alloc_size: ?u64 = null,
-    };
-
-    allocator: Allocator,
-    records_by_ptr: std.AutoHashMap(u64, u32),
-    records: std.ArrayList(AllocRecord),
-
-    pub fn init(allocator: Allocator) GlobalAllocTracker {
-        return .{
-            .allocator = allocator,
-            .records_by_ptr = std.AutoHashMap(u64, u32).init(allocator),
-            .records = std.ArrayList(AllocRecord).empty,
-        };
-    }
-
-    pub fn deinit(self: *GlobalAllocTracker) void {
-        for (self.records.items) |*rec| {
-            self.allocator.free(rec.alloc_func);
-            if (rec.alloc_callee.len > 0) self.allocator.free(rec.alloc_callee);
-            if (rec.free_func) |f| self.allocator.free(f);
-        }
-        self.records.deinit(self.allocator);
-        self.records_by_ptr.deinit();
-    }
-
-    pub fn insertAlloc(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8, callee_name: []const u8, is_global: bool, inst_id: u32, is_conditional: bool, func_val: ?c.LLVMValueRef, alloc_size: ?u64) !void {
-        const name_owned = try self.allocator.dupe(u8, func_name);
-        const callee_owned = if (callee_name.len > 0) try self.allocator.dupe(u8, callee_name) else &[_]u8{};
-        const idx = @as(u32, @intCast(self.records.items.len));
-        try self.records.append(self.allocator, .{
-            .ptr_id = inst_id,
-            .alloc_func = name_owned,
-            .alloc_func_val = func_val,
-            .alloc_callee = callee_owned,
-            .freed = false,
-            .free_func = null,
-            .is_global_or_static = is_global,
-            .is_conditional = is_conditional,
-            .alloc_size = alloc_size,
-        });
-        try self.records_by_ptr.put(ptr_val, idx);
-    }
-
-    pub fn markFreed(self: *GlobalAllocTracker, ptr_val: u64, func_name: []const u8) bool {
-        const idx = self.records_by_ptr.get(ptr_val) orelse return false;
-        var rec = &self.records.items[idx];
-        if (rec.freed) return true;
-        rec.freed = true;
-        const free_name_owned = self.allocator.dupe(u8, func_name) catch return true;
-        rec.free_func = free_name_owned;
-        return true;
-    }
-
-    pub fn getLeakCount(self: *const GlobalAllocTracker) u32 {
-        return self.leakCount();
-    }
-
-    pub fn size(self: *const GlobalAllocTracker) usize {
-        return self.records.items.len;
-    }
-
-    pub fn leakCount(self: *const GlobalAllocTracker) u32 {
-        var count: u32 = 0;
-        for (self.records.items) |rec| {
-            if (!rec.freed and !rec.is_global_or_static) count += 1;
-        }
-        return count;
-    }
-
-    /// Try to determine the allocation size from an LLVM instruction.
-    /// Returns null if size cannot be determined (common for indirect calls
-    /// or variable-sized allocations via runtime computation).
-    ///
-    /// This function is O(1) — it only inspects the immediate operands
-    /// of the allocation instruction, no recursive analysis.
-    ///
-    /// Supported patterns:
-    ///   - malloc(const_size) → returns constant
-    ///   - calloc(const_count, const_size) → returns count * size
-    ///   - _Znwm(const_size) [C++ operator new] → returns constant
-    ///   - alloca(const_size) → returns constant
-    ///
-    /// Unsupported (returns null):
-    ///   - Indirect calls through function pointers
-    ///   - Size computed from PHI nodes or load instructions
-    ///   - Variable-length arrays (VLAs)
-    pub fn getAllocationSize(alloc_inst: c.LLVMValueRef) ?u64 {
-        if (@intFromPtr(alloc_inst) == 0) return null;
-
-        const opcode = c.LLVMGetInstructionOpcode(alloc_inst);
-
-        // Case 1: Direct call/invoke with constant size operand
-        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-            const num_ops = c.LLVMGetNumOperands(alloc_inst);
-            if (num_ops < 2) return null;
-
-            // For malloc(size): last operand before callee is size
-            // For calloc(count, size): two size operands
-            // For operator new(size): similar to malloc
-            // Operand layout: [op0, op1, ..., callee_func]
-            // We check the size operand(s) for constants
-            const size_op_idx = @as(c_uint, @intCast(num_ops - 2));
-            const size_op = c.LLVMGetOperand(alloc_inst, size_op_idx);
-            if (@intFromPtr(size_op) == 0) return null;
-
-            // Check if it's a constant integer
-            if (c.LLVMIsConstant(size_op) != 0) {
-                // Try to get constant value — API varies by LLVM version
-                const const_val = c.LLVMConstIntGetZExtValue(size_op);
-                return @as(u64, @bitCast(const_val));
-            }
-
-            // Case 1b: calloc with two constant operands (count * size)
-            if (num_ops >= 3) {
-                const count_op = c.LLVMGetOperand(alloc_inst, @as(c_uint, @intCast(num_ops - 3)));
-                if (@intFromPtr(count_op) != 0 and c.LLVMIsConstant(count_op) != 0) {
-                    const count_val = c.LLVMConstIntGetZExtValue(count_op);
-                    const size_val = c.LLVMConstIntGetZExtValue(size_op);
-                    return @as(u64, @bitCast(count_val)) * @as(u64, @bitCast(size_val));
-                }
-            }
-        }
-
-        // Case 2: Alloca with known type size
-        // Note: LLVMGetTargetData/ABISizeOfType may not be available in all LLVM versions.
-        // For stack allocations (alloca), we typically don't track them in GlobalAllocTracker
-        // anyway, so returning null here is acceptable.
-        if (opcode == c.LLVMAlloca) {
-            // Alloca instructions are stack-allocated, not heap-allocated.
-            // They are not tracked as potential leaks, so we return null.
-            return null;
-        }
-
-        // Cannot determine size from available information
-        return null;
-    }
-};
+const lang_types = @import("../lang/language_types.zig");
+pub const ChannelMode = lang_types.ChannelMode;
 
 /// Main pass context - holds all analysis state and provides unified API
 pub const PassContext = struct {
@@ -316,41 +101,13 @@ pub const PassContext = struct {
     evidence: ?ir_evidence.IREvidence,
     interner: ?StringInterner,
     arena: ?Arena,
-    /// Detected platform profile from LLVM module metadata.
-    /// Populated during pipeline initialization, read-only thereafter.
-    /// Used by SurfaceClassifier, language detector, and noise suppressor.
     platform_profile: ?@import("../semantics/platform_profile.zig").PlatformProfile,
-    /// Resource function summary store for shared callee semantics.
-    /// All heavy passes (memory_graph, ptr_lifetime, ffi_boundary) read
-    /// from this single source instead of independently classifying callees.
-    /// null = legacy mode (per-pass guessing). Set during pipeline init.
     resource_summary: ?*SummaryStore,
-
-    /// Issue candidate builder for two-stage verification.
-    /// Passes generate candidates instead of directly reporting issues.
-    /// The verifier then decides whether to promote, downgrade, or suppress.
     candidate_builder: ?*CandidateBuilder,
-
-    /// Issue verifier for two-stage confirmation.
-    /// All candidates pass through here before becoming real Issues.
-    /// null = legacy mode (direct reporting). Set during pipeline init.
     issue_verifier: ?*IssueVerifier,
-
-    /// FFI Contract Database for library-specific alloc/free validation.
-    /// Provides lifecycle rules for common C libraries (OpenSSL, SQLite, etc.).
-    /// Used by free_validation pass to detect mismatched alloc/free pairs.
     contract_db: FFIContractDB,
-
-    /// Whether to focus on user code only (skip stdlib).
-    /// Set from CLI config via Pipeline.setFocusUserCode().
-    /// When true, passes should suppress issues from stdlib functions.
     focus_user_code: bool = true,
-
-    /// Language override registry for user-specified function language classifications.
-    /// When non-null, passes can check this registry before auto-detecting languages.
-    /// Set from CLI config via Pipeline.setLanguageOverrides().
     language_overrides: ?*language_override.LanguageOverrideRegistry = null,
-
     ir_store: *ModuleIRStore,
 
     pub fn init(
@@ -521,17 +278,10 @@ pub const PassContext = struct {
         return pc_impl.getFunctionSurface(self, func_ptr);
     }
 
-    /// Look up language for a function name from the override registry.
-    /// Returns null if not in registry (caller should use auto-detect).
-    /// This is the primary entry point for all passes to check user-specified
-    /// language classifications before falling back to auto-detection.
     pub fn lookupFunctionLanguage(self: *const PassContext, func_name: []const u8) ?language_override.Language {
         return pc_impl.lookupFunctionLanguage(self, func_name);
     }
 
-    /// Get default language from override config.
-    /// Returns null if no default is configured.
-    /// Used by language_detector as fallback when auto-detection confidence is low.
     pub fn getDefaultLanguage(self: *const PassContext) ?language_override.Language {
         return pc_impl.getDefaultLanguage(self);
     }
@@ -637,13 +387,6 @@ pub const PassContext = struct {
         return pc_impl.channelPointerOwnership(self);
     }
 
-    /// R7.2: Channel mode for analysis pass gating.
-    pub const ChannelMode = enum {
-        full,
-        limited,
-        skip,
-    };
-
     pub fn getOrComputeZoneByName(self: *PassContext, func_name: []const u8) zone_classifier.ZoneKind {
         return pc_impl.getOrComputeZoneByName(self, func_name);
     }
@@ -724,79 +467,3 @@ pub const PassContext = struct {
         return pc_impl.isZigStdlibFunction(self, func_name);
     }
 };
-
-/// ANSI color codes for terminal output
-pub const Colors = struct {
-    const reset = "\x1b[0m";
-    const red = "\x1b[31m";
-    const yellow = "\x1b[33m";
-    const green = "\x1b[32m";
-    const blue = "\x1b[34m";
-    const magenta = "\x1b[35m";
-    const cyan = "\x1b[36m";
-    const bold = "\x1b[1m";
-    const dim = "\x1b[2m";
-};
-
-/// Diagnostic writer for pass output with color support
-pub const DiagnosticWriter = struct {
-    allocator: Allocator,
-    use_color: bool = true,
-
-    pub fn write(self: *DiagnosticWriter, comptime severity: []const u8, comptime format: []const u8, args: anytype) void {
-        if (log.current_log_level == .quiet) return;
-        if (std.mem.eql(u8, severity, "DEBUG") and log.current_log_level != .debug) return;
-        if (std.mem.eql(u8, severity, "INFO") and log.current_log_level == .normal) return;
-
-        const color = comptime getSeverityColor(severity);
-        if (self.use_color) {
-            log.info(color ++ "[" ++ severity ++ "]" ++ Colors.reset ++ " " ++ format ++ "\n", args);
-        } else {
-            log.info("[" ++ severity ++ "] " ++ format ++ "\n", args);
-        }
-    }
-
-    pub fn info(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
-        self.write("INFO", format, args);
-    }
-
-    pub fn warn(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
-        self.write("WARN", format, args);
-    }
-
-    pub fn err(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
-        self.write("ERROR", format, args);
-    }
-
-    pub fn critical(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
-        self.write("CRITICAL", format, args);
-    }
-
-    pub fn debug(self: *DiagnosticWriter, comptime format: []const u8, args: anytype) void {
-        self.write("DEBUG", format, args);
-    }
-};
-
-fn getSeverityColor(comptime severity: []const u8) []const u8 {
-    if (comptime std.mem.eql(u8, severity, "CRITICAL")) {
-        return Colors.bold ++ Colors.red;
-    } else if (comptime std.mem.eql(u8, severity, "ERROR")) {
-        return Colors.red;
-    } else if (comptime std.mem.eql(u8, severity, "WARN")) {
-        return Colors.yellow;
-    } else if (comptime std.mem.eql(u8, severity, "INFO")) {
-        return Colors.green;
-    } else if (comptime std.mem.eql(u8, severity, "DEBUG")) {
-        return Colors.dim;
-    }
-    return Colors.reset;
-}
-
-fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
-    return switch (sev) {
-        .low => .low,
-        .medium => .medium,
-        .high => .high,
-        .critical => .critical,
-    };
-}

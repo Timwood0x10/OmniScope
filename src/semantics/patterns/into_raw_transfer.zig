@@ -13,6 +13,7 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const llvm_safe = @import("../../ir/llvm_safe.zig");
+const rust_ffi_helpers = @import("../../pass/analysis/rust_ffi/rust_ffi_helpers.zig");
 const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
 const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
 const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
@@ -122,19 +123,8 @@ pub fn isRustFromRawCall(name: []const u8) bool {
 }
 
 /// Check if a callee name indicates an as_ptr borrow escape.
-/// Must be a Rust-mangled name containing "as_ptr".
-pub fn isRustAsPtrCall(name: []const u8) bool {
-    // Must contain "as_ptr" somewhere
-    if (std.mem.indexOf(u8, name, "as_ptr") == null) return false;
-
-    // Verify it's a Rust mangled name (starts with _R or contains Rust patterns)
-    if (std.mem.startsWith(u8, name, "_R")) return true; // Rust v0 mangling
-    if (std.mem.startsWith(u8, name, "_ZN")) { // Rust legacy mangling
-        if (std.mem.indexOf(u8, name, "as_ptr") != null) return true;
-    }
-
-    return false;
-}
+/// Delegates to rust_ffi_helpers.zig (SSOT).
+pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
 
 /// Get callee name from a call instruction.
 fn getCalleeName(inst: c.LLVMValueRef) ?[]const u8 {

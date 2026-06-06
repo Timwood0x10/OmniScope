@@ -173,6 +173,10 @@ pub const IREvidence = struct {
     dominant_language: Language = .unknown,
     confidence: f32 = 0.0,
 
+    /// Performance tracking: nanoseconds spent in EvidenceCollector.init().
+    /// Populated after init() completes. 0 if timing was unavailable.
+    init_duration_ns: u64 = 0,
+
     /// Initialize IREvidence with allocated resources.
     pub fn init(allocator: Allocator) IREvidence {
         return .{
@@ -180,9 +184,15 @@ pub const IREvidence = struct {
         };
     }
 
-    /// Release owned memory.
+    /// Release owned memory and warn if init exceeded performance budget.
     pub fn deinit(self: *IREvidence) void {
         self.dwarf_lang_map.deinit();
+
+        if (self.init_duration_ns > 500_000_000) {
+            std.log.warn("IREvidence.init took {}ms (≥500ms threshold)", .{
+                @divFloor(self.init_duration_ns, 1_000_000),
+            });
+        }
     }
 
     /// Query DWARF source language for a specific function.
@@ -207,6 +217,7 @@ pub const EvidenceCollector = struct {
     /// This runs all three detection phases (sampling, personality, globals)
     /// and populates the evidence struct with raw counts and derived results.
     pub fn init(allocator: Allocator, module: c.LLVMModuleRef) !EvidenceCollector {
+        const init_start = std.time.Instant.now() catch null;
         var self = EvidenceCollector{
             .evidence = IREvidence.init(allocator),
             .allocator = allocator,
@@ -227,6 +238,13 @@ pub const EvidenceCollector = struct {
             @tagName(self.evidence.dominant_language),
             self.evidence.confidence * 100,
         });
+
+        // Performance: record init duration if timing was available
+        if (init_start) |start| {
+            if (std.time.Instant.now()) |end| {
+                self.evidence.init_duration_ns = @intCast(end.since(start));
+            } else |_| {}
+        }
 
         return self;
     }

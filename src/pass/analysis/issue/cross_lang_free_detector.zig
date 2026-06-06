@@ -17,6 +17,10 @@
 const std = @import("std");
 const log = std.log.scoped(.cross_lang_free);
 
+const family_registry_mod = @import("../../../semantics/resource/family_registry.zig");
+const ResourceFamilyRegistry = family_registry_mod.ResourceFamilyRegistry;
+const FamilyId = family_registry_mod.FamilyId;
+
 /// Allocator family classification for cross-language detection.
 pub const AllocatorFamily = enum {
     /// C standard library: malloc, calloc, realloc, free, aligned_alloc
@@ -85,11 +89,34 @@ pub const AllocatorFunction = struct {
     kind: enum { alloc, dealloc },
 };
 
-/// Classify an allocator/deallocator function into its language family.
-/// Uses pattern matching on function names including mangled names.
-pub fn classifyAllocatorFamily(func_name: []const u8) AllocatorFamily {
-    // Fast path: check for known patterns in order of specificity
+/// Map a ResourceFamilyRegistry FamilyId to the legacy AllocatorFamily enum.
+/// Families not represented in AllocatorFamily are mapped to custom_unknown.
+fn familyIdToAllocatorFamily(id: FamilyId) AllocatorFamily {
+    return switch (id) {
+        .c_heap, .c_mmap, .c_aligned => .c_standard,
+        .cpp_new_scalar, .cpp_new_array => .cpp_operator,
+        .rust_global, .rust_box => .rust_global,
+        .python_object, .python_mem, .python_mem_raw => .python_capi,
+        .go_gc => .go_runtime,
+        .zig_allocator => .zig_stdlib,
+        else => .custom_unknown,
+    };
+}
 
+/// Classify an allocator/deallocator function into its language family.
+/// First queries the ResourceFamilyRegistry for known allocator/deallocator names.
+/// Falls back to pattern matching on function names (including mangled names)
+/// when the registry does not have an entry.
+pub fn classifyAllocatorFamily(func_name: []const u8, registry: *const ResourceFamilyRegistry) AllocatorFamily {
+    // Fast path: query registry first (both acquire and release indices)
+    if (registry.lookupAcquire(func_name, null)) |op| {
+        return familyIdToAllocatorFamily(op.family);
+    }
+    if (registry.lookupRelease(func_name, null)) |op| {
+        return familyIdToAllocatorFamily(op.family);
+    }
+
+    // Fallback: pattern matching for names not in the registry
     // 1. Rust mangled names (v0 mangling: _R prefix)
     if (isRustMangledName(func_name)) return .rust_global;
 
@@ -119,12 +146,13 @@ pub fn classifyAllocatorFamily(func_name: []const u8) AllocatorFamily {
 /// Returns an issue if alloc and free are from different families AND it's unsafe.
 /// Returns null if same family or known safe cross-family pattern.
 pub fn detectCrossLanguageFree(
+    registry: *const ResourceFamilyRegistry,
     alloc_func: []const u8,
     free_func: []const u8,
     allocator: std.mem.Allocator,
 ) !?CrossLangFreeIssue {
-    const alloc_family = classifyAllocatorFamily(alloc_func);
-    const free_family = classifyAllocatorFamily(free_func);
+    const alloc_family = classifyAllocatorFamily(alloc_func, registry);
+    const free_family = classifyAllocatorFamily(free_func, registry);
 
     log.debug("CROSS-LANG-FREE: alloc={s} (family={s}), free={s} (family={s})", .{
         alloc_func,
@@ -487,9 +515,9 @@ fn fmtCrossLangMessage(
 
 /// Quick check if two function names are from different allocator families.
 /// Convenience wrapper for simple cases.
-pub fn isCrossLanguageMismatch(alloc_func: []const u8, free_func: []const u8) bool {
-    const alloc_fam = classifyAllocatorFamily(alloc_func);
-    const free_fam = classifyAllocatorFamily(free_func);
+pub fn isCrossLanguageMismatch(registry: *const ResourceFamilyRegistry, alloc_func: []const u8, free_func: []const u8) bool {
+    const alloc_fam = classifyAllocatorFamily(alloc_func, registry);
+    const free_fam = classifyAllocatorFamily(free_func, registry);
 
     if (alloc_fam == free_fam) return false;
     if (alloc_fam == .custom_unknown or free_fam == .custom_unknown) return false;
@@ -497,32 +525,46 @@ pub fn isCrossLanguageMismatch(alloc_func: []const u8, free_func: []const u8) bo
     return !isSafeCrossPattern(alloc_fam, free_fam, free_func);
 }
 
+/// Helper to create a test registry for unit tests.
+fn testRegistry() !ResourceFamilyRegistry {
+    return try ResourceFamilyRegistry.init(std.testing.allocator);
+}
+
 test "classifyAllocatorFamily - C standard" {
-    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("malloc"));
-    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("free"));
-    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("calloc"));
-    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("realloc"));
+    var reg = try testRegistry();
+    defer reg.deinit();
+    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("malloc", &reg));
+    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("free", &reg));
+    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("calloc", &reg));
+    try std.testing.expectEqual(AllocatorFamily.c_standard, classifyAllocatorFamily("realloc", &reg));
 }
 
 test "classifyAllocatorFamily - Rust global" {
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rust_alloc"));
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rust_dealloc"));
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("_RZN4alloc5alloc17h_allocate"));
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("_RZN4alloc5alloc17h_deallocate"));
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rg_alloc"));
-    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rg_dealloc"));
+    var reg = try testRegistry();
+    defer reg.deinit();
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rust_alloc", &reg));
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rust_dealloc", &reg));
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("_RZN4alloc5alloc17h_allocate", &reg));
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("_RZN4alloc5alloc17h_deallocate", &reg));
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rg_alloc", &reg));
+    try std.testing.expectEqual(AllocatorFamily.rust_global, classifyAllocatorFamily("__rg_dealloc", &reg));
 }
 
 test "classifyAllocatorFamily - C++ operators" {
-    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("_Znwm"));
-    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("_ZdlPv"));
-    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("operator new"));
-    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("operator delete"));
+    var reg = try testRegistry();
+    defer reg.deinit();
+    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("_Znwm", &reg));
+    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("_ZdlPv", &reg));
+    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("operator new", &reg));
+    try std.testing.expectEqual(AllocatorFamily.cpp_operator, classifyAllocatorFamily("operator delete", &reg));
 }
 
 test "detectCrossLanguageFree - Rust alloc + C free" {
+    var reg = try testRegistry();
+    defer reg.deinit();
     const testing_allocator = std.testing.allocator;
     const result = try detectCrossLanguageFree(
+        &reg,
         "_RZN4alloc5alloc17h_allocate",
         "free",
         testing_allocator,
@@ -535,8 +577,11 @@ test "detectCrossLanguageFree - Rust alloc + C free" {
 }
 
 test "detectCrossLanguageFree - C alloc + Rust free" {
+    var reg = try testRegistry();
+    defer reg.deinit();
     const testing_allocator = std.testing.allocator;
     const result = try detectCrossLanguageFree(
+        &reg,
         "malloc",
         "_RZN4alloc5alloc17h_deallocate",
         testing_allocator,
@@ -548,8 +593,11 @@ test "detectCrossLanguageFree - C alloc + Rust free" {
 }
 
 test "detectCrossLanguageFree - Same family (should return null)" {
+    var reg = try testRegistry();
+    defer reg.deinit();
     const testing_allocator = std.testing.allocator;
     const result = try detectCrossLanguageFree(
+        &reg,
         "malloc",
         "free",
         testing_allocator,
@@ -558,8 +606,10 @@ test "detectCrossLanguageFree - Same family (should return null)" {
 }
 
 test "isCrossLanguageMismatch - basic cases" {
-    try std.testing.expect(isCrossLanguageMismatch("_RZN4alloc5alloc17h_allocate", "free"));
-    try std.testing.expect(isCrossLanguageMismatch("malloc", "__rust_dealloc"));
-    try std.testing.expect(!isCrossLanguageMismatch("malloc", "free"));
-    try std.testing.expect(!isCrossLanguageMismatch("__rust_alloc", "__rust_dealloc"));
+    var reg = try testRegistry();
+    defer reg.deinit();
+    try std.testing.expect(isCrossLanguageMismatch(&reg, "_RZN4alloc5alloc17h_allocate", "free"));
+    try std.testing.expect(isCrossLanguageMismatch(&reg, "malloc", "__rust_dealloc"));
+    try std.testing.expect(!isCrossLanguageMismatch(&reg, "malloc", "free"));
+    try std.testing.expect(!isCrossLanguageMismatch(&reg, "__rust_alloc", "__rust_dealloc"));
 }

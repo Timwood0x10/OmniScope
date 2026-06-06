@@ -32,14 +32,9 @@ pub fn isFreeFunction(func_name: []const u8) bool {
 }
 
 /// Check if function is an allocation function.
-/// Uses exact match + endsWith to avoid FP like 'my_custom_allocator' matching 'alloc'.
+/// Delegates to ptr_types.isHeapAllocFunction (unified function catalog).
 pub fn isAllocFunction(func_name: []const u8) bool {
-    for (ALLOC_FUNCTIONS) |alloc_func| {
-        if (functionNameMatches(func_name, alloc_func)) {
-            return true;
-        }
-    }
-    return false;
+    return ptr_types.isHeapAllocFunction(func_name);
 }
 
 /// Match strategy: exact equality OR suffix match.

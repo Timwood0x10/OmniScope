@@ -14,6 +14,7 @@ const lifetime = @import("../lifetime/root.zig");
 const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
 const PathManager = @import("../dataflow/path_condition.zig").PathManager;
 const identifyLanguages = @import("../semantics/language_detector.zig").identifyLanguage;
+const rust_ffi_helpers = @import("../pass/analysis/rust_ffi/rust_ffi_helpers.zig");
 
 // ==================== Constants ====================
 
@@ -54,13 +55,6 @@ pub const from_raw_patterns = [_][]const u8{
     "Box.*from_raw",
     "CString.*from_raw",
     "from_raw_parts",
-};
-
-/// Patterns for Rust as_ptr (borrow escape) calls.
-pub const as_ptr_patterns = [_][]const u8{
-    "as_ptr",
-    "as_mut_ptr",
-    "slice::as_ptr",
 };
 
 /// Resource allocation/deallocation pairs for leak detection.
@@ -345,16 +339,8 @@ pub fn isRustFromRawCall(callee_name: []const u8) bool {
 }
 
 /// Check if a callee name is a Rust as_ptr (borrow escape) call.
-// TODO: Move to shared module (e.g., ir_helpers.zig) when consolidating duplicate
-// Rust pattern detection functions across the codebase.
-pub fn isRustAsPtrCall(callee_name: []const u8) bool {
-    for (as_ptr_patterns) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) {
-            return true;
-        }
-    }
-    return false;
-}
+/// Delegates to rust_ffi_helpers.zig (SSOT).
+pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
 
 // ==================== Detection Helper Functions ====================
 
@@ -421,40 +407,27 @@ pub fn detectRustFfiPairingFunctions(
 // ==================== Flow Graph Helpers ====================
 
 /// Check if allocation result can reach any free site through the flow graph.
-// TODO: Delegate to graph_algorithms.zig once the function signature is unified.
-// The shared version (dataflow/graph_algorithms.zig) uses *std.AutoHashMap(u32, void)
-// for free_map, while this version uses *std.AutoHashMap(u32, *const FreeSite).
+/// Delegates to graph_algorithms.zig for the graph traversal.
 pub fn findFreePath(
     from_ptr: u32,
     free_map: *std.AutoHashMap(u32, *const @import("./ownership_types.zig").FreeSite),
     flow_graph: *std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
 ) !bool {
+    const ga = @import("../dataflow/graph_algorithms.zig");
+
+    // Bridge type difference: build a key-only free_map for the shared API.
+    var key_free_map = std.AutoHashMap(u32, void).init(free_map.allocator);
+    defer key_free_map.deinit();
+
+    var key_iter = free_map.keyIterator();
+    while (key_iter.next()) |key| {
+        try key_free_map.put(key.*, {});
+    }
+
     var visited = std.AutoHashMap(u32, void).init(free_map.allocator);
     defer visited.deinit();
 
-    var bfs_queue = try std.ArrayList(u32).initCapacity(free_map.allocator, 64);
-    defer bfs_queue.deinit(free_map.allocator);
-    try bfs_queue.append(free_map.allocator, from_ptr);
-
-    while (bfs_queue.items.len > 0) {
-        const current = bfs_queue.orderedRemove(0);
-
-        if (visited.contains(current)) continue;
-        try visited.put(current, {});
-
-        if (free_map.contains(current)) return true;
-
-        if (flow_graph.get(current)) |flows| {
-            var iter = flows.iterator();
-            while (iter.next()) |entry| {
-                const next_id = entry.key_ptr.*;
-                if (!visited.contains(next_id)) {
-                    try bfs_queue.append(free_map.allocator, next_id);
-                }
-            }
-        }
-    }
-    return false;
+    return ga.findFreePath(from_ptr, &key_free_map, flow_graph, &visited);
 }
 
 /// Check if freed pointer has use-after-free in flow graph.

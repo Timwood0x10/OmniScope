@@ -9,6 +9,7 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
+const rust_ffi_helpers = @import("../rust_ffi/rust_ffi_helpers.zig");
 
 // ============================================================================
 // Function Name Utilities
@@ -50,17 +51,8 @@ pub fn isRustFromRawCall(callee_name: []const u8) bool {
 }
 
 /// Check if a callee name is a Rust as_ptr (borrow escape) call
-pub fn isRustAsPtrCall(callee_name: []const u8) bool {
-    const patterns = [_][]const u8{
-        "as_ptr",
-        "as_mut_ptr",
-        "slice::as_ptr",
-    };
-    for (patterns) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
-    }
-    return false;
-}
+/// Delegates to rust_ffi_helpers.zig (SSOT).
+pub const isRustAsPtrCall = rust_ffi_helpers.isRustAsPtrCall;
 
 /// Check if a callee name is a C free() call
 pub fn isCFreeCall(callee_name: []const u8) bool {

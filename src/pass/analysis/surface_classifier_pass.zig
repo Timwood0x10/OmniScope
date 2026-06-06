@@ -66,11 +66,11 @@ pub const SurfaceClassifierPass = struct {
             // are within the same language. Skip boundary detection entirely
             // to prevent false positives on external linkage C functions.
             const is_ffi_boundary = if (!ctx.isCModule())
-                boundary.detectBoundaryFromLLVM(func)
+                boundary.detectBoundaryFromLLVM(func, ctx.module_language.language)
             else
                 false;
             const is_lib_export = if (!ctx.isCModule())
-                boundary.detectLibraryExport(func)
+                boundary.detectLibraryExport(func, ctx.module_language.language)
             else
                 false;
 
