@@ -144,10 +144,17 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
     try w.writeAll(term.reset);
     try w.writeAll(term.cyan);
     try w.print("{s}", .{languageDisplayName(source_lang)});
-    try w.writeAll(term.dim);
-    try w.writeAll(" --> ");
-    try w.writeAll(term.bright_cyan);
-    try w.print("{s}\n", .{languageDisplayName(target_lang)});
+    if (source_lang == target_lang) {
+        try w.writeAll(term.reset);
+        try w.writeAll(term.dim);
+        try w.writeAll(" (no cross-language content)");
+    } else {
+        try w.writeAll(term.dim);
+        try w.writeAll(" --> ");
+        try w.writeAll(term.bright_cyan);
+        try w.print("{s}", .{languageDisplayName(target_lang)});
+    }
+    try w.writeAll("\n");
     try w.writeAll(term.reset);
     try w.writeAll("\n");
 

@@ -13,6 +13,10 @@
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
 
+/// Import IREvidence for DWARF-based language detection.
+const IREvidence = @import("../../../ir/ir_evidence.zig").IREvidence;
+const dwarfLangToLanguage = @import("../../../ir/ir_evidence.zig").dwarfLangToLanguage;
+
 /// Re-export ffi_utils for unified STL/ABI pattern matching (single source of truth).
 const ffi_utils = @import("ffi_utils.zig");
 
@@ -267,6 +271,29 @@ pub fn identifyLanguage(func: c.LLVMValueRef) Language {
     return .c;
 }
 
+/// Identify function language using DWARF evidence first, then fall back to name heuristics.
+/// This is the preferred entry point when IREvidence is available.
+pub fn identifyLanguageWithEvidence(func: c.LLVMValueRef, evidence: *const IREvidence) Language {
+    // DWARF evidence is the most reliable source
+    if (evidence.getDwarfLang(func)) |dwarf_lang| {
+        const lang = dwarfLangToLanguage(dwarf_lang);
+        if (lang != .unknown) return lang;
+    }
+    // Fall back to name heuristics
+    return identifyLanguage(func);
+}
+
+/// Identify callee language with DWARF evidence support.
+pub fn identifyCalleeLanguageWithEvidence(func_name: []const u8, func_ref: ?c.LLVMValueRef, evidence: *const IREvidence) Language {
+    if (func_ref) |func| {
+        if (evidence.getDwarfLang(func)) |dwarf_lang| {
+            const lang = dwarfLangToLanguage(dwarf_lang);
+            if (lang != .unknown) return lang;
+        }
+    }
+    return identifyCalleeLanguage(func_name);
+}
+
 /// Identify the language of a called function based on its name string.
 ///
 /// Similar to `identifyLanguage()` but operates on a string slice instead of
@@ -429,12 +456,28 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
 ///   - profile: Optional platform profile for triple-based disambiguation (can be null)
 ///   - override_lang: Optional language from user-specified override registry.
 ///                    If non-null, takes priority over all auto-detection.
+///   - func_ref: Optional LLVM function reference for DWARF evidence lookup.
+///               Only used when evidence is also provided.
+///   - evidence: Optional IREvidence for DWARF-based language detection.
+///               If provided and has DWARF data for func_ref, takes priority.
 pub fn identifyCalleeLanguageWithContext(
     func_name: []const u8,
     module_lang: Language,
     profile: ?PlatformProfile,
     override_lang: ?Language,
+    func_ref: ?c.LLVMValueRef,
+    evidence: ?*const IREvidence,
 ) Language {
+    // DWARF evidence check — most reliable source
+    if (evidence) |ev| {
+        if (func_ref) |func| {
+            if (ev.getDwarfLang(func)) |dwarf_lang| {
+                const lang = dwarfLangToLanguage(dwarf_lang);
+                if (lang != .unknown) return lang;
+            }
+        }
+    }
+
     // Check language override first — user-specified classifications
     // take priority over all auto-detection logic.
     if (override_lang) |lang| {

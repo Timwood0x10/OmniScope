@@ -134,12 +134,14 @@ pub fn scanInstruction(
                 if (@intFromPtr(called_name_ptr) == 0) continue;
                 const called_name = std.mem.span(called_name_ptr);
                 // Use platform-aware classification (Bug 2 fix: Zig vs Go disambiguation)
-                // Note: No PassContext available here, so override_lang is always null.
+                // Note: No PassContext available here, so override_lang, func_ref, evidence are all null.
                 const callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
                     called_name,
                     module_lang,
                     platform_profile,
                     null, // no override available in this context
+                    null, // no func_ref available
+                    null, // no evidence available
                 );
                 if (callee_lang != .unknown) {
                     try callback_escapes.append(allocator, .{

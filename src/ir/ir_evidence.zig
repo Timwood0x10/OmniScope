@@ -130,9 +130,11 @@ pub fn dwarfLangToLanguage(dwarf_lang: DWARFSourceLanguage) Language {
         .Python => .python,
         .Java => .java,
         .Kotlin => .java,
-        .Swift => .swift,
-        .Ruby => .ruby,
-        .ObjC, .ObjC_plus_plus => .objc,
+        // Languages not yet represented in the Language enum map to unknown.
+        // These DWARF language codes exist in the IR but are not part of the
+        // current FFI boundary detection scope. Adding enum variants would
+        // require updating all exhaustive switch statements across the codebase.
+        .Swift, .Ruby, .ObjC, .ObjC_plus_plus => .unknown,
         else => .unknown,
     };
 }

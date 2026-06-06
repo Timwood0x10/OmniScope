@@ -148,13 +148,16 @@ pub fn identifyCalleeLanguage(func_name: []const u8) Language {
 
 /// Platform-aware callee language classification (Bug 2 fix).
 /// Uses module-level language and PlatformProfile to disambiguate Zig vs Go.
+/// Also supports optional DWARF evidence via func_ref and evidence parameters.
 pub fn identifyCalleeLanguageWithContext(
     func_name: []const u8,
     module_lang: Language,
     platform_profile: ?PlatformProfile,
     override_lang: ?Language,
+    func_ref: ?c.LLVMValueRef,
+    evidence: ?*const @import("../../../ir/ir_evidence.zig").IREvidence,
 ) Language {
-    return lang_classifier.identifyCalleeLanguageWithContext(func_name, module_lang, platform_profile, override_lang);
+    return lang_classifier.identifyCalleeLanguageWithContext(func_name, module_lang, platform_profile, override_lang, func_ref, evidence);
 }
 
 /// Classify the boundary kind based on caller and callee languages.

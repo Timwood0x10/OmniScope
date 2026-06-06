@@ -21,6 +21,10 @@ pub const PointerInfo = struct {
     source_inst: ?c.LLVMValueRef,
     /// Description for trace
     source_desc: []const u8,
+    /// The exact allocation function name (e.g., "malloc", "_Znwm", "__rust_alloc").
+    /// Populated at detection time to avoid fragile downstream string parsing.
+    /// null if the pointer is not from a known allocation function.
+    alloc_func_name: ?[]const u8 = null,
 };
 
 /// Check if a function is a known library-specific allocator from FFIContractDB.
@@ -59,6 +63,7 @@ pub fn trackPointerOrigin(
                             .origin = .from_malloc,
                             .source_inst = inst,
                             .source_desc = desc,
+                            .alloc_func_name = func_name,
                         };
                     } else if (library_alloc_pairs.lookupTable(func_name)) |entry| {
                         if (entry.effect == .borrow) {
@@ -90,6 +95,7 @@ pub fn trackPointerOrigin(
                                 .origin = .from_malloc,
                                 .source_inst = inst,
                                 .source_desc = desc,
+                                .alloc_func_name = func_name,
                             };
                         }
                     } else if (safety.isFFIBoundaryCall(func_name)) {
@@ -102,6 +108,7 @@ pub fn trackPointerOrigin(
                             .origin = .from_ffi_call,
                             .source_inst = inst,
                             .source_desc = desc,
+                            .alloc_func_name = func_name,
                         };
                     } else if (mangling.isRustAllocCall(func_name)) {
                         const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
@@ -113,6 +120,7 @@ pub fn trackPointerOrigin(
                             .origin = .from_malloc,
                             .source_inst = inst,
                             .source_desc = desc,
+                            .alloc_func_name = func_name,
                         };
                     } else if (safety.isCppNewCall(func_name)) {
                         const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
@@ -124,6 +132,7 @@ pub fn trackPointerOrigin(
                             .origin = .from_malloc,
                             .source_inst = inst,
                             .source_desc = desc,
+                            .alloc_func_name = func_name,
                         };
                     } else if (isContractDbAllocFunc(ctx, func_name)) {
                         const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
@@ -135,6 +144,7 @@ pub fn trackPointerOrigin(
                             .origin = .from_ffi_call,
                             .source_inst = inst,
                             .source_desc = desc,
+                            .alloc_func_name = func_name,
                         };
                     }
                 }
@@ -154,6 +164,7 @@ pub fn trackPointerOrigin(
                     .origin = info.origin,
                     .source_inst = info.source_inst,
                     .source_desc = desc,
+                    .alloc_func_name = info.alloc_func_name,
                 };
             }
         },
@@ -171,6 +182,7 @@ pub fn trackPointerOrigin(
                     .origin = info.origin,
                     .source_inst = info.source_inst,
                     .source_desc = desc,
+                    .alloc_func_name = info.alloc_func_name,
                 };
             }
         },
@@ -188,6 +200,7 @@ pub fn trackPointerOrigin(
                     .origin = info.origin,
                     .source_inst = info.source_inst,
                     .source_desc = desc,
+                    .alloc_func_name = info.alloc_func_name,
                 };
             }
         },
@@ -217,6 +230,7 @@ pub fn trackPointerOrigin(
                             .origin = info.origin,
                             .source_inst = info.source_inst,
                             .source_desc = desc,
+                            .alloc_func_name = info.alloc_func_name,
                         };
                         best_priority = priority;
                     }

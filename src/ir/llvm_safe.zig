@@ -174,9 +174,50 @@ pub const IRLoader = struct {
             if (bc_path.len > 3 and std.mem.eql(u8, bc_path[bc_path.len - 3 ..], ".ll")) {
                 @memcpy(bc_path[bc_path.len - 3 ..], ".bc");
             }
+            // Strip LLVM 22+ attributes (target_memN, nocreateundeforpoison) unsupported by llvm-as 21
+            const pp_path = try std.fmt.allocPrint(self.allocator, "{s}.pp", .{bc_path});
+            defer self.allocator.free(pp_path);
+
+            var pp_ok = false;
+            pp_blk: {
+                const file_content = std.fs.cwd().readFileAlloc(self.allocator, path, 100 * 1024 * 1024) catch break :pp_blk;
+                defer self.allocator.free(file_content);
+
+                var cleaned = std.ArrayList(u8){};
+                defer cleaned.deinit(self.allocator);
+
+                var i: usize = 0;
+                while (i < file_content.len) {
+                    if (std.mem.startsWith(u8, file_content[i..], "target_mem")) {
+                        // Skip "target_memN: value" (no preceding comma added yet since it was
+                        // appended as individual chars before we detected the pattern).
+                        // We remove the already-appended ", " by truncating cleaned.
+                        if (cleaned.items.len >= 2 and
+                            cleaned.items[cleaned.items.len - 2] == ',' and
+                            cleaned.items[cleaned.items.len - 1] == ' ')
+                        {
+                            cleaned.shrinkRetainingCapacity(cleaned.items.len - 2);
+                        }
+                        var j = i + 10;
+                        while (j < file_content.len and file_content[j] != ',' and file_content[j] != ')') : (j += 1) {}
+                        i = j;
+                    } else if (std.mem.startsWith(u8, file_content[i..], "nocreateundeforpoison")) {
+                        i += "nocreateundeforpoison".len;
+                    } else {
+                        cleaned.append(self.allocator, file_content[i]) catch break :pp_blk;
+                        i += 1;
+                    }
+                }
+
+                std.fs.cwd().writeFile(.{ .sub_path = pp_path, .data = cleaned.items }) catch break :pp_blk;
+                pp_ok = true;
+            }
+
+            const as_path = if (pp_ok) pp_path else path;
+
             const result = std.process.Child.run(.{
                 .allocator = self.allocator,
-                .argv = &[_][]const u8{ "llvm-as", path, "-o", bc_path },
+                .argv = &[_][]const u8{ "llvm-as", "-disable-verify", as_path, "-o", bc_path },
             }) catch return Error.ParseFailed;
             defer self.allocator.free(result.stdout);
             defer self.allocator.free(result.stderr);

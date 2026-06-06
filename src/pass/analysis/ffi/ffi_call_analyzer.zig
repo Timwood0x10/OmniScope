@@ -225,18 +225,26 @@ pub fn resolveCalleeAndZone(
 ///
 /// Modifies: ac.caller_lang, ac.callee_lang
 pub fn classifyCallLanguages(ac: *CallAnalysisContext) void {
-    // Identify languages using platform-aware classification
+    // Build optional evidence pointer from PassContext
+    const evidence_ptr: ?*const @import("../../../ir/ir_evidence.zig").IREvidence =
+        if (ac.ctx.evidence) |*ev| ev else null;
+
+    // Identify languages using platform-aware classification with DWARF evidence
     ac.caller_lang = lang_classifier.identifyCalleeLanguageWithContext(
         ac.caller_name,
         ac.ctx.module_language.language,
         ac.ctx.platform_profile,
         ac.ctx.lookupFunctionLanguage(ac.caller_name),
+        ac.caller_func,
+        evidence_ptr,
     );
     ac.callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
         ac.called_name,
         ac.ctx.module_language.language,
         ac.ctx.platform_profile,
         ac.ctx.lookupFunctionLanguage(ac.called_name),
+        c.LLVMGetCalledValue(ac.inst),
+        evidence_ptr,
     );
 
     // Bug 2 final fix: Transitive Zig inference for entry-point callers.

@@ -178,7 +178,7 @@ pub const FreeValidationPass = struct {
         // ── NEW: Cross-Language Free Detection (v0.2.0 enhancement) ──
         if (origin_info) |info| {
             const src_desc = info.source_desc;
-            const alloc_func_name = contract.extractAllocFuncNameForCrossLang(src_desc);
+            const alloc_func_name = contract.extractAllocFuncNameForCrossLang(src_desc, info.alloc_func_name);
             if (alloc_func_name) |alloc_func| {
                 log.debug("CROSS-LANG-CHECK: alloc={s}, free={s}", .{ alloc_func, callee_name });
 
@@ -212,7 +212,7 @@ pub const FreeValidationPass = struct {
 
         // ── FFI Contract Database Validation (source_desc-based) ──
         if (origin_info) |info| {
-            if (try contract.validateWithContractDBFromSource(ctx, info.source_desc, callee_name, caller_func, inst, diag)) |result| {
+            if (try contract.validateWithContractDBFromSource(ctx, info.source_desc, callee_name, caller_func, inst, diag, info.alloc_func_name)) |result| {
                 return result;
             }
         }
@@ -243,7 +243,7 @@ pub const FreeValidationPass = struct {
             },
             .from_ffi_call => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                const alloc_fn = if (origin_info) |_| contract.extractAllocFuncNameForCrossLang(src) else null;
+                const alloc_fn = if (origin_info) |info| info.alloc_func_name else null;
                 if (safety.isCrossAllocatorFree(.from_ffi_call, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
                     try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
@@ -292,7 +292,7 @@ pub const FreeValidationPass = struct {
             },
             .from_malloc => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                const alloc_fn = if (origin_info) |_| contract.extractAllocFuncNameForCrossLang(src) else null;
+                const alloc_fn = if (origin_info) |info| info.alloc_func_name else null;
                 if (safety.isCrossAllocatorFree(.from_malloc, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
                     try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;

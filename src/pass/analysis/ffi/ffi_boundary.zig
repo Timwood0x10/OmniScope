@@ -416,17 +416,25 @@ pub const FFIBoundaryPass = struct {
         // Identify languages of caller and callee — both use platform-aware
         // classification (Bug 2 fix). Zig functions like "main" (no special prefix)
         // and "main.main" (Go-like naming) must be classified correctly.
+        //
+        // DWARF evidence takes priority when available.
+        const evidence_ptr: ?*const @import("../../../ir/ir_evidence.zig").IREvidence =
+            if (ctx.evidence) |*ev| ev else null;
         var caller_lang = lang_classifier.identifyCalleeLanguageWithContext(
             caller_name,
             ctx.module_language.language,
             ctx.platform_profile,
             ctx.lookupFunctionLanguage(caller_name),
+            caller_func,
+            evidence_ptr,
         );
         var callee_lang = lang_classifier.identifyCalleeLanguageWithContext(
             called_name,
             ctx.module_language.language,
             ctx.platform_profile,
             ctx.lookupFunctionLanguage(called_name),
+            called_val,
+            evidence_ptr,
         );
 
         // Bug 2 final fix: Transitive Zig inference for entry-point callers.

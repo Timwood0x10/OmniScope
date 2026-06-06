@@ -146,6 +146,13 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
             continue;
         }
 
+        // Rust v0 mangling prefix (RFC 2603) — _R<hash><crate>...
+        // This MUST be checked before _ZN and _Z since _R is an unambiguous Rust prefix.
+        if (name.len > 2 and name[0] == '_' and name[1] == 'R') {
+            rust_count += 1;
+            continue;
+        }
+
         // Go strong prefixes (main., runtime., syscall., gcops.)
         if (data.hasAnyPrefix(name, data.go_strong_prefixes)) {
             go_count += 1;

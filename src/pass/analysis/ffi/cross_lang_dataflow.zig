@@ -1726,9 +1726,16 @@ fn searchForPinOp(ctx: *PassContext, alloc_func: []const u8) bool {
             else
                 "";
 
+            // Debug: log callee names for Go functions to help identify actual IR patterns
+            log.debug("Go-GC-PIN: Checking callee '{s}' in {s}", .{ called_name, alloc_func });
+
             // Pure string match for Go GC pin calls
-            if (std.mem.indexOf(u8, called_name, "runtime.Pinner.Pin") != null or
-                std.mem.indexOf(u8, called_name, "runtime.KeepAlive") != null)
+            if (std.mem.indexOf(u8, called_name, "runtime_pinner") != null or // Go 1.21+ (underscore variant)
+                std.mem.indexOf(u8, called_name, "runtime.Pinner.Pin") != null or // Original (keep for compatibility)
+                std.mem.indexOf(u8, called_name, "runtime.(*Pinner).Pin") != null or // Debug name variant
+                std.mem.indexOf(u8, called_name, "runtime.KeepAlive") != null or // cgo-generated
+                std.mem.indexOf(u8, called_name, "runtime.noescape") != null or // Common alternative pattern
+                std.mem.eql(u8, called_name, "runtime.GC")) // Conservative pin surrogate
             {
                 log.debug("Go-GC-PIN: Found pin/keepalive call '{s}' in {s}", .{ called_name, alloc_func });
                 return true;

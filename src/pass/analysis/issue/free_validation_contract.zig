@@ -93,8 +93,9 @@ pub fn validateWithContractDBFromSource(
     caller_func: c.LLVMValueRef,
     free_inst: c.LLVMValueRef,
     diag: *DiagnosticWriter,
+    direct_alloc_name: ?[]const u8,
 ) !?bool {
-    const alloc_func = extractAllocFuncName(source_desc) orelse return null;
+    const alloc_func = extractAllocFuncName(source_desc, direct_alloc_name) orelse return null;
 
     std.log.scoped(.free_validation).debug("CONTRACT-DB-SOURCE: Checking pair {s} -> {s} at inst 0x{x} (from source_desc: '{s}')", .{
         alloc_func, callee_name, @intFromPtr(free_inst), source_desc,
@@ -138,7 +139,10 @@ pub fn validateWithContractDBFromSource(
 }
 
 /// Extract the allocator function name from origin info description.
-pub fn extractAllocFuncName(source_desc: []const u8) ?[]const u8 {
+/// Prefers the direct `direct_alloc_name` when available, falling back to
+/// string parsing of `source_desc` as a safety net.
+pub fn extractAllocFuncName(source_desc: []const u8, direct_alloc_name: ?[]const u8) ?[]const u8 {
+    if (direct_alloc_name) |name| return name;
     // Pattern 1: Find "by XXXX()"
     if (std.mem.indexOf(u8, source_desc, "by ")) |start| {
         const after_by = source_desc[start + 3 ..];
@@ -184,7 +188,10 @@ pub fn extractAllocFuncName(source_desc: []const u8) ?[]const u8 {
 
 /// Extract allocation function name for cross-language detection.
 /// Similar to extractAllocFuncName but optimized for cross-language patterns.
-pub fn extractAllocFuncNameForCrossLang(source_desc: []const u8) ?[]const u8 {
+/// Prefers the direct `direct_alloc_name` when available, falling back to
+/// string parsing of `source_desc` as a safety net.
+pub fn extractAllocFuncNameForCrossLang(source_desc: []const u8, direct_alloc_name: ?[]const u8) ?[]const u8 {
+    if (direct_alloc_name) |name| return name;
     // Pattern 1: "from XXXX()" - most common format
     if (std.mem.indexOf(u8, source_desc, "from ")) |start| {
         const after_from = source_desc[start + 5 ..];

@@ -16,6 +16,7 @@ const LanguageDetector = OmniScope.semantics.language_detector;
 const pipeline = @import("pipeline.zig");
 const ffi_precision = @import("ffi_precision.zig");
 const output_formatter = @import("output_formatter.zig");
+const c = OmniScope.ir.llvm_raw.c;
 
 pub const AnalyzeResult = pipeline.AnalyzeResult;
 
@@ -38,37 +39,192 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
     log.info("[Language] Source: {s} (confidence: {:.1}%)\n", .{ source_lang_name, source_lang.confidence * 100 });
     log.debug("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
 
+    // P0: If the module is confidently a single language (confidence >= 95%),
+    // skip the entire FFI analysis pipeline — there is no cross-language content.
+    // This saves significant time on pure single-language modules (C-only, Rust-only, etc.).
+    if (source_lang.confidence >= 0.95 and source_lang.language != .unknown) {
+        // Double-check: Even with high confidence, verify there are no functions
+        // from OTHER languages that would indicate mixed-language content.
+        // This prevents misclassifying Rust+SQLite binaries as pure C.
+        var has_multi_lang_hint = false;
+        if (loader.getModule()) |module_ref| {
+            var func = c.LLVMGetFirstFunction(module_ref.raw);
+            while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+                const name_ptr = c.LLVMGetValueName(func);
+                if (@intFromPtr(name_ptr) == 0) continue;
+                const name = std.mem.span(name_ptr);
+                if (std.mem.startsWith(u8, name, "llvm.")) continue;
+
+                // ═══════════════════════════════════════════════════════
+                // Comprehensive multi-language hint detection
+                // Covers ALL 8 supported languages: Rust, Go, Zig, C++,
+                // C#, Java, Python, C — each check is gated by
+                // source_lang so we only flag functions from OTHER languages.
+                // ═══════════════════════════════════════════════════════
+
+                // ── Rust ──────────────────────────────────────────
+                // Rust v0 mangling (_R...) — unambiguous
+                if (name.len > 2 and name[0] == '_' and name[1] == 'R') {
+                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                }
+                // Rust/C++ _ZN mangling (disambiguate via isRustMangledName)
+                if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'N') {
+                    if (source_lang.language != .rust and source_lang.language != .cpp) {
+                        has_multi_lang_hint = true; break;
+                    }
+                }
+                // C++ _Z (non-_ZN) mangling — unambiguous C++
+                if (name.len > 2 and name[0] == '_' and name[1] == 'Z' and name[2] != 'N') {
+                    if (source_lang.language != .cpp) { has_multi_lang_hint = true; break; }
+                }
+                // Rust strong prefixes
+                if (std.mem.startsWith(u8, name, "_rust_") or
+                    std.mem.startsWith(u8, name, "rs2py_"))
+                {
+                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                }
+                // Rust personality/eH / unwind
+                if (std.mem.indexOf(u8, name, "rust_eh_personality") != null or
+                    std.mem.indexOf(u8, name, "rust_begin_unwind") != null or
+                    std.mem.indexOf(u8, name, "rust_oom") != null or
+                    std.mem.startsWith(u8, name, "__rust_"))
+                {
+                    if (source_lang.language != .rust) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── C++ ──────────────────────────────────────────
+                // C++ personality, EH, RTTI
+                if (std.mem.indexOf(u8, name, "__gxx_personality") != null or
+                    std.mem.startsWith(u8, name, "__cxa_") or
+                    std.mem.startsWith(u8, name, "_ZTV") or  // C++ vtable
+                    std.mem.startsWith(u8, name, "_ZTI") or  // C++ typeinfo
+                    std.mem.startsWith(u8, name, "_ZTS"))    // C++ typeinfo name
+                {
+                    if (source_lang.language != .cpp) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── Go ───────────────────────────────────────────
+                // Go strong prefixes
+                if (std.mem.startsWith(u8, name, "runtime.") or
+                    std.mem.startsWith(u8, name, "main.") or
+                    std.mem.startsWith(u8, name, "syscall.") or
+                    std.mem.startsWith(u8, name, "gcops.") or
+                    std.mem.startsWith(u8, name, "reflect.") or
+                    std.mem.startsWith(u8, name, "internal/") or
+                    std.mem.startsWith(u8, name, "__go_") or
+                    std.mem.indexOf(u8, name, "_Cgo_") != null)
+                {
+                    if (source_lang.language != .go) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── Zig ──────────────────────────────────────────
+                if (std.mem.startsWith(u8, name, "zig_") or
+                    std.mem.indexOf(u8, name, "Allocator.") != null or
+                    std.mem.startsWith(u8, name, "zig.") or
+                    std.mem.startsWith(u8, name, "__zig_"))
+                {
+                    if (source_lang.language != .zig) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── Java / JNI ────────────────────────────────────
+                if (std.mem.startsWith(u8, name, "Java_") or
+                    std.mem.startsWith(u8, name, "JNI_OnLoad") or
+                    std.mem.startsWith(u8, name, "JNI_OnUnload"))
+                {
+                    if (source_lang.language != .java) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── Python ────────────────────────────────────────
+                if (std.mem.startsWith(u8, name, "PyInit_") or
+                    std.mem.startsWith(u8, name, "Py_") or
+                    std.mem.startsWith(u8, name, "PyObject_") or
+                    std.mem.startsWith(u8, name, "_PyGC_") or
+                    std.mem.startsWith(u8, name, "_Py_"))
+                {
+                    if (source_lang.language != .python) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── C# / .NET ─────────────────────────────────────
+                if (std.mem.startsWith(u8, name, "System.") or
+                    std.mem.startsWith(u8, name, "Microsoft.") or
+                    std.mem.startsWith(u8, name, "Mono_") or
+                    std.mem.startsWith(u8, name, "$s") or
+                    std.mem.startsWith(u8, name, "<Module>.") or
+                    std.mem.startsWith(u8, name, "GC_") or
+                    std.mem.startsWith(u8, name, "IL_") or
+                    std.mem.startsWith(u8, name, "__dotnet_") or
+                    std.mem.startsWith(u8, name, "__cil_") or
+                    std.mem.indexOf(u8, name, "__DotNet") != null or
+                    std.mem.indexOf(u8, name, "Marshal_") != null or
+                    std.mem.indexOf(u8, name, "csharp_exception_personality") != null or
+                    std.mem.indexOf(u8, name, "mono_unity_personality") != null)
+                {
+                    if (source_lang.language != .csharp) { has_multi_lang_hint = true; break; }
+                }
+
+                // ── C (Unwind / special sections) ─────────────────
+                if (std.mem.eql(u8, name, "_Unwind_Resume") or
+                    std.mem.eql(u8, name, "_Unwind_RaiseException") or
+                    std.mem.startsWith(u8, name, "__start_") or
+                    std.mem.startsWith(u8, name, "__stop_"))
+                {
+                    if (source_lang.language != .c) { has_multi_lang_hint = true; break; }
+                }
+            }
+        }
+
+        if (!has_multi_lang_hint) {
+            log.info("[Language] Single-language module ({s}) — no cross-language FFI content to analyze\n", .{source_lang_name});
+            try output_formatter.emitOutput(allocator, &.{}, loader.getFunctionCount(), 0, config, source_lang.language, source_lang.language);
+            log.info("[Language] Analysis complete: no cross-language content ({s} --> {s})\n", .{ source_lang_name, source_lang_name });
+            return;
+        }
+        // Fall through: detected mixed-language hints despite high confidence
+        log.info("[Language] Module appears mixed-language (dominant: {s}), running full analysis\n", .{source_lang_name});
+    }
+
     var result = try pipeline.runModulePipeline(allocator, &loader, config);
     defer pipeline.deinitAnalyzeResult(&result);
 
     const target_lang = output_formatter.detectTargetLanguage(result.issues);
     const target_lang_name = output_formatter.languageDisplayName(target_lang);
-    log.info("[Language] Analyzing: {s} --> {s}\n", .{ source_lang_name, target_lang_name });
+
+    if (source_lang.language == target_lang) {
+        log.info("[Language] Same language ({s}) — no cross-language FFI boundary to analyze\n", .{source_lang_name});
+    } else {
+        log.info("[Language] Analyzing: {s} --> {s}\n", .{ source_lang_name, target_lang_name });
+    }
 
     try output_formatter.emitOutput(allocator, result.issues, result.func_count, result.time_ms, config, source_lang.language, target_lang);
 
-    log.info("[Language] Analysis complete: {d} issues in {s} --> {s} boundary\n", .{
-        result.issues.len, source_lang_name, target_lang_name,
-    });
+    if (source_lang.language == target_lang) {
+        log.info("[Language] Skipped cross-language analysis: {s} --> {s} (same language)\n", .{
+            source_lang_name, target_lang_name,
+        });
+    } else {
+        log.info("[Language] Analysis complete: {d} issues in {s} --> {s} boundary\n", .{
+            result.issues.len, source_lang_name, target_lang_name,
+        });
 
-    {
-        var rust_to_c: usize = 0;
-        var c_to_rust: usize = 0;
-        var other_boundary: usize = 0;
-        for (result.issues) |issue| {
-            if (issue.ffi_boundary) |bnd| {
-                if (bnd.caller_language == .rust and bnd.callee_language == .c) {
-                    rust_to_c += 1;
-                } else if (bnd.caller_language == .c and bnd.callee_language == .rust) {
-                    c_to_rust += 1;
-                } else {
-                    other_boundary += 1;
+        {
+            var rust_to_c: usize = 0;
+            var c_to_rust: usize = 0;
+            var other_boundary: usize = 0;
+            for (result.issues) |issue| {
+                if (issue.ffi_boundary) |bnd| {
+                    if (bnd.caller_language == .rust and bnd.callee_language == .c) {
+                        rust_to_c += 1;
+                    } else if (bnd.caller_language == .c and bnd.callee_language == .rust) {
+                        c_to_rust += 1;
+                    } else {
+                        other_boundary += 1;
+                    }
                 }
             }
+            if (rust_to_c > 0) log.info("[Language]   rust --> c : {d} issues", .{rust_to_c});
+            if (c_to_rust > 0) log.info("[Language]   c --> rust : {d} issues", .{c_to_rust});
+            if (other_boundary > 0) log.info("[Language]   other boundary: {d} issues", .{other_boundary});
         }
-        if (rust_to_c > 0) log.info("[Language]   rust --> c : {d} issues", .{rust_to_c});
-        if (c_to_rust > 0) log.info("[Language]   c --> rust : {d} issues", .{c_to_rust});
-        if (other_boundary > 0) log.info("[Language]   other boundary: {d} issues", .{other_boundary});
     }
 
     if (config.visualize) {
