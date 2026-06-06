@@ -144,30 +144,23 @@ const AcquiredRef = struct {
 const JniFunctionState = struct {
     allocator: std.mem.Allocator,
     /// All acquired refs not yet matched with a release.
-    acquired_refs: std.ArrayList(AcquiredRef),
-    /// Count of local ref releases observed.
-    local_releases: u32 = 0,
-    /// Count of global ref releases observed.
-    global_releases: u32 = 0,
-    /// Count of array releases observed.
-    array_releases: u32 = 0,
-    /// Count of string releases observed.
-    string_releases: u32 = 0,
+    /// Keyed by the call instruction (LLVMValueRef) of the acquire JNI call.
+    acquired: std.AutoHashMap(c.LLVMValueRef, AcquiredRef),
 
     fn init(allocator: std.mem.Allocator) error{OutOfMemory}!JniFunctionState {
         return .{
             .allocator = allocator,
-            .acquired_refs = try std.ArrayList(AcquiredRef).initCapacity(allocator, 0),
+            .acquired = std.AutoHashMap(c.LLVMValueRef, AcquiredRef).init(allocator),
         };
     }
 
     fn deinit(self: *JniFunctionState) void {
-        self.acquired_refs.deinit(self.allocator);
+        self.acquired.deinit();
     }
 
     /// Record an acquire operation.
     fn addAcquire(self: *JniFunctionState, inst: c.LLVMValueRef, func_name: []const u8, role: JniRole) !void {
-        try self.acquired_refs.append(self.allocator, .{
+        try self.acquired.put(inst, .{
             .inst = inst,
             .func_name = func_name,
             .role = role,
@@ -176,31 +169,19 @@ const JniFunctionState = struct {
 
     /// Record a release operation and try to match it with an acquire.
     fn addRelease(self: *JniFunctionState, role: JniRole) void {
-        switch (role) {
-            .local_ref_release => self.local_releases += 1,
-            .global_ref_release => self.global_releases += 1,
-            .array_release => self.array_releases += 1,
-            .string_release => self.string_releases += 1,
-            else => {},
-        }
-
         // Try to match with an acquire of compatible type.
-        // Simple strategy: remove one acquire of matching category.
-        var best_idx: ?usize = null;
-        for (self.acquired_refs.items, 0..) |ref, i| {
-            if (isCompatibleRole(ref.role, role)) {
-                best_idx = i;
-                break; // match first compatible
+        // Iterate HashMap entries to find a matching acquire by role.
+        var remove_key: ?c.LLVMValueRef = null;
+        var iter = self.acquired.iterator();
+        while (iter.next()) |entry| {
+            if (isCompatibleRole(entry.value_ptr.role, role)) {
+                remove_key = entry.key_ptr.*;
+                break;
             }
         }
-        if (best_idx) |idx| {
-            _ = self.acquired_refs.swapRemove(idx);
+        if (remove_key) |key| {
+            _ = self.acquired.remove(key);
         }
-    }
-
-    /// Get remaining unmatched acquires (the leaks).
-    fn getLeaks(self: *const JniFunctionState) []const AcquiredRef {
-        return self.acquired_refs.items;
     }
 };
 
@@ -317,6 +298,19 @@ pub const JniLeakDetectorPass = struct {
                 // Quick filter: skip non-JNI functions entirely
                 if (!isJniFunction(called_name)) continue;
 
+                // Language override check: if both caller and callee are
+                // overridden to the same language, this is not a cross-language
+                // call — skip detection.
+                if (ctx.language_overrides) |reg| {
+                    const caller_lang = reg.lookup(func_name);
+                    const callee_lang = reg.lookup(called_name);
+                    if (caller_lang) |cl| {
+                        if (callee_lang) |cal| {
+                            if (cl == cal) continue;
+                        }
+                    }
+                }
+
                 const role = classifyJniFunc(called_name);
                 switch (role) {
                     .local_ref_acquire, .global_ref_acquire, .array_borrow, .string_borrow => {
@@ -331,10 +325,10 @@ pub const JniLeakDetectorPass = struct {
         }
 
         // Report unmatched acquires as leaks
-        const leaks = state.getLeaks();
         var issue_count: usize = 0;
-        for (leaks) |leak| {
-            try reportLeak(ctx, &leak, func_name, location);
+        var leak_iter = state.acquired.iterator();
+        while (leak_iter.next()) |entry| {
+            try reportLeak(ctx, entry.value_ptr, func_name, location);
             issue_count += 1;
         }
 
@@ -478,17 +472,18 @@ test "JniLeakDetectorPass - JniFunctionState acquire/release matching" {
     defer state.deinit();
 
     // Add two local ref acquires
-    const mock_inst: c.LLVMValueRef = @ptrFromInt(0x1000);
-    try state.addAcquire(mock_inst, "NewStringUTF", .local_ref_acquire);
-    try state.addAcquire(mock_inst, "FindClass", .local_ref_acquire);
+    const mock_inst1: c.LLVMValueRef = @ptrFromInt(0x1000);
+    const mock_inst2: c.LLVMValueRef = @ptrFromInt(0x1001);
+    try state.addAcquire(mock_inst1, "NewStringUTF", .local_ref_acquire);
+    try state.addAcquire(mock_inst2, "FindClass", .local_ref_acquire);
 
     // One release should match one acquire
     state.addRelease(.local_ref_release);
-    try std.testing.expectEqual(@as(usize, 1), state.getLeaks().len);
+    try std.testing.expectEqual(@as(usize, 1), state.acquired.count());
 
     // Second release should clear the other
     state.addRelease(.local_ref_release);
-    try std.testing.expectEqual(@as(usize, 0), state.getLeaks().len);
+    try std.testing.expectEqual(@as(usize, 0), state.acquired.count());
 }
 
 test "JniLeakDetectorPass - JniFunctionState mismatched release" {
@@ -500,5 +495,5 @@ test "JniLeakDetectorPass - JniFunctionState mismatched release" {
 
     // Global ref release should NOT match local ref acquire
     state.addRelease(.global_ref_release);
-    try std.testing.expectEqual(@as(usize, 1), state.getLeaks().len);
+    try std.testing.expectEqual(@as(usize, 1), state.acquired.count());
 }

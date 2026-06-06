@@ -96,7 +96,7 @@ pub const go_runtime_channel = &[_][]const u8{ "chan", "select" };
 pub const go_runtime_interface = &[_][]const u8{ "interface", "assertI2I", "assertE2I", "convI2E" };
 pub const go_runtime_map = &[_][]const u8{ "mapaccess", "mapassign", "mapdelete", "mapiter" };
 pub const go_runtime_goroutine = &[_][]const u8{ "newproc", "goexit", "systemstack", "morestack", "lessstack" };
-pub const go_runtime_defer = &[_][]const u8{ "defer" };
+pub const go_runtime_defer = &[_][]const u8{"defer"};
 
 /// Aggregated Go runtime internal patterns for bulk checking
 pub const go_runtime_internal_categories = &[_][]const []const u8{
@@ -113,7 +113,7 @@ pub const go_runtime_internal_categories = &[_][]const []const u8{
 // Personality Function Patterns
 // ═══════════════════════════════════════════════════════════════
 
-pub const rust_personality = &[_][]const u8{ "rust_eh_personality" };
+pub const rust_personality = &[_][]const u8{"rust_eh_personality"};
 pub const cpp_personality = &[_][]const u8{ "__gxx_personality_v0", "__gxx_personality" };
 pub const csharp_personality = &[_][]const u8{ "csharp_exception_personality", "mono_unity_personality" };
 pub const c_personality_exact = &[_][]const u8{ "_Unwind_Resume", "_Unwind_RaiseException" };
@@ -135,11 +135,11 @@ pub const csharp_global_substrings = &[_][]const u8{
     "gc_frame",
 };
 
-pub const rust_global_prefixes = &[_][]const u8{ "__rust_" };
-pub const go_global_prefixes = &[_][]const u8{ "__go_" };
+pub const rust_global_prefixes = &[_][]const u8{"__rust_"};
+pub const go_global_prefixes = &[_][]const u8{"__go_"};
 pub const zig_global_prefixes = &[_][]const u8{ "zig.", "__zig_" };
-pub const cpp_global_prefixes = &[_][]const u8{ "__cxa_" };
-pub const python_global_prefixes = &[_][]const u8{ "_PyGC_" };
+pub const cpp_global_prefixes = &[_][]const u8{"__cxa_"};
+pub const python_global_prefixes = &[_][]const u8{"_PyGC_"};
 pub const c_global_prefixes = &[_][]const u8{ "__start_", "__stop_", "__end_" };
 
 // ═══════════════════════════════════════════════════════════════

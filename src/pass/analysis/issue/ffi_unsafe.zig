@@ -20,6 +20,7 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
+const Language = FFIBoundary.Language;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 
 const Effect = @import("../../../semantics/resource/effect.zig").Effect;
@@ -152,7 +153,11 @@ pub const FFIUnsafePass = struct {
             return result;
         }
 
-        const vuln_type = classifyVulnerability(boundary.function_name);
+        const vuln_type = classifyVulnerability(
+            boundary.function_name,
+            boundary.caller_language,
+            boundary.callee_language,
+        );
 
         // Layer 2: Whitelist check (before expensive confidence calculation)
         if (isWhitelisted(boundary, vuln_type, ctx.resource_summary)) {
@@ -413,7 +418,60 @@ pub const FFIUnsafePass = struct {
         return false;
     }
 
-    pub fn classifyVulnerability(func_name: []const u8) IssueKind {
+    pub fn classifyVulnerability(
+        func_name: []const u8,
+        caller_lang: Language,
+        callee_lang: Language,
+    ) IssueKind {
+        // Language-aware classification rules (P1 Task: Language Context Sensitivity).
+        //
+        // These rules consider the caller/callee language pair to provide
+        // context-appropriate vulnerability classification. Checked before
+        // generic name-matching fallback.
+
+        // Rust → C: memcpy with as_ptr() source → borrow_escape.
+        if (caller_lang == .rust and callee_lang == .c) {
+            if (std.mem.indexOf(u8, func_name, "memcpy") != null) {
+                return .borrow_escape;
+            }
+        }
+
+        // Rust → C: strcpy/gets → ffi_unsafe_call (Rust cannot know C buffer length).
+        if (caller_lang == .rust and callee_lang == .c) {
+            if (std.mem.indexOf(u8, func_name, "strcpy") != null or
+                std.mem.indexOf(u8, func_name, "gets") != null)
+            {
+                return .ffi_unsafe_call;
+            }
+        }
+
+        // Go → C: system/exec → command_injection.
+        // Go's os/exec and syscall packages calling libc system().
+        if (caller_lang == .go and callee_lang == .c) {
+            if (std.mem.indexOf(u8, func_name, "system") != null or
+                std.mem.startsWith(u8, func_name, "exec"))
+            {
+                return .command_injection;
+            }
+        }
+
+        // C → C: same-language calls are code quality, not FFI-specific bugs.
+        if (caller_lang == .c and callee_lang == .c) {
+            if (std.mem.indexOf(u8, func_name, "strcpy") != null or
+                std.mem.indexOf(u8, func_name, "gets") != null)
+            {
+                return .ffi_unsafe_call;
+            }
+        }
+
+        // ANY → Rust: malloc result passed to Rust → cross_allocator_mismatch.
+        if (callee_lang == .rust) {
+            if (std.mem.indexOf(u8, func_name, "malloc") != null) {
+                return .cross_language_free;
+            }
+        }
+
+        // Fallback: generic name-based pattern matching.
         // P1-2: setjmp/longjmp — control flow violation (C99 §7.13.2)
         // Variables modified between setjmp/longjmp have indeterminate values.
         // At FFI boundary, this bypasses Rust/Zig destructors and unwind cleanup.
@@ -637,27 +695,27 @@ test "FFIUnsafePass - dangerous detection" {
 }
 
 test "FFIUnsafePass - vulnerability classification" {
-    try std.testing.expectEqual(IssueKind.command_injection, FFIUnsafePass.classifyVulnerability("system"));
-    try std.testing.expectEqual(IssueKind.buffer_overflow, FFIUnsafePass.classifyVulnerability("strcpy"));
+    try std.testing.expectEqual(IssueKind.command_injection, FFIUnsafePass.classifyVulnerability("system", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.buffer_overflow, FFIUnsafePass.classifyVulnerability("strcpy", .unknown, .unknown));
 }
 
 test "FFIUnsafePass - P1-2 setjmp/longjmp detection" {
     // P1-2: C control flow violation at FFI boundary
     // isDangerous assertions removed (require SummaryStore, not fallback)
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("setjmp"));
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("longjmp"));
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("sigsetjmp"));
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("siglongjmp"));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("setjmp", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("longjmp", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("sigsetjmp", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("siglongjmp", .unknown, .unknown));
 }
 
 test "FFIUnsafePass - P1-2 variadic function detection" {
     // P1-2: Variadic functions across FFI boundary
     // isDangerous assertions removed (require SummaryStore, not fallback)
     // Classification
-    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vprintf"));
-    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vsprintf"));
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vsscanf"));
-    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vfscanf"));
+    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vprintf", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.format_string, FFIUnsafePass.classifyVulnerability("vsprintf", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vsscanf", .unknown, .unknown));
+    try std.testing.expectEqual(IssueKind.ffi_unsafe_call, FFIUnsafePass.classifyVulnerability("vfscanf", .unknown, .unknown));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -865,7 +923,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
         .parameters = &[_][]const u8{},
     };
 
-    const sqlite_vuln_type = FFIUnsafePass.classifyVulnerability("vsnprintf");
+    const sqlite_vuln_type = FFIUnsafePass.classifyVulnerability("vsnprintf", .unknown, .unknown);
 
     // Layer 2: Whitelist should catch this
     try std.testing.expect(FFIUnsafePass.isWhitelisted(&sqlite_fp, sqlite_vuln_type, null));
@@ -879,7 +937,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
         .parameters = &[_][]const u8{},
     };
 
-    const libuv_vuln_type = FFIUnsafePass.classifyVulnerability("sprintf");
+    const libuv_vuln_type = FFIUnsafePass.classifyVulnerability("sprintf", .unknown, .unknown);
 
     // Layer 2: Whitelist should catch this
     try std.testing.expect(FFIUnsafePass.isWhitelisted(&libuv_fp, libuv_vuln_type, null));
@@ -893,7 +951,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
         .parameters = &[_][]const u8{},
     };
 
-    const real_vuln_type = FFIUnsafePass.classifyVulnerability("system");
+    const real_vuln_type = FFIUnsafePass.classifyVulnerability("system", .unknown, .unknown);
 
     // command_injection is never whitelisted
     try std.testing.expect(!FFIUnsafePass.isWhitelisted(&real_bug, real_vuln_type, null));

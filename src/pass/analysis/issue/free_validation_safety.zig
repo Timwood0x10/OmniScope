@@ -12,6 +12,7 @@ const ValueOrigin = @import("../ffi/ffi_semantics.zig").ValueOrigin;
 const mg_types = @import("../../../types/memory_graph_types.zig");
 const AllocNode = mg_types.AllocNode;
 const FamilyId = mg_types.FamilyId;
+const ResourceFamilyRegistry = @import("../../../semantics/resource/family_registry.zig").ResourceFamilyRegistry;
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
 /// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
@@ -159,10 +160,48 @@ pub fn isFFIBoundaryCall(func_name: []const u8) bool {
     return true;
 }
 
+/// Check if function is a Python reference release function.
+/// Matches Py_DECREF and Py_XDECREF which decrement the reference count
+/// of a Python object. Calling these on borrowed references is a bug.
+pub fn isPythonRelease(func_name: []const u8) bool {
+    return std.mem.eql(u8, func_name, "Py_DECREF") or
+        std.mem.eql(u8, func_name, "Py_XDECREF");
+}
+
 /// Check if a free call crosses allocator boundaries.
 /// Returns true when memory from one runtime's allocator is freed
 /// by a different runtime's deallocator — almost always a bug.
-pub fn isCrossAllocatorFree(alloc_origin: ValueOrigin, source_desc: []const u8, free_func: []const u8) bool {
+///
+/// Uses ResourceFamilyRegistry for precise family-based detection when
+/// both alloc_func and registry are provided, before falling back to
+/// heuristic substring matching in the exemption branches.
+pub fn isCrossAllocatorFree(
+    alloc_origin: ValueOrigin,
+    source_desc: []const u8,
+    free_func: []const u8,
+    registry: ?*const ResourceFamilyRegistry,
+    alloc_func: ?[]const u8,
+) bool {
+    // Family-registry-based cross allocator detection (runs before exemption branches).
+    // When both a registry and an alloc function name are available, use the registry's
+    // family comparison for precise detection instead of heuristic substring matching.
+    if (alloc_func) |af| {
+        if (registry) |reg| {
+            const alloc_op = reg.lookupAcquire(af, null);
+            const free_op = reg.lookupRelease(free_func, null);
+            if (alloc_op != null and free_op != null) {
+                const alloc_fam = alloc_op.?.family;
+                const free_fam = free_op.?.family;
+                if (alloc_fam != free_fam) {
+                    const match = reg.compareFamilies(alloc_fam, free_fam);
+                    if (match == .mismatch) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     const is_rust_free = isRustDeallocFunction(free_func);
     const is_c_free = std.mem.eql(u8, free_func, "free") or
         std.mem.eql(u8, free_func, "kfree") or

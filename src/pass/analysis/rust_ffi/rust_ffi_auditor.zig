@@ -196,6 +196,16 @@ pub const RustFfiAuditor = struct {
                     });
                     self.stats.into_raw_funcs += 1;
                 }
+
+                // Write ownership transfer fact to MemoryGraph for cross_lang_dataflow.
+                // Scan calls to find the into_raw call site and record the transfer
+                // so downstream passes know this pointer was intentionally moved to C/FFI.
+                for (fir.calls) |inst| {
+                    const callee_name = inst_cache.getCalleeName(inst) orelse continue;
+                    if (isRustIntoRawCall(callee_name)) {
+                        ctx.memory_graph.markOwnershipTransferred(@intFromPtr(inst), .into_raw_transfer);
+                    }
+                }
             }
 
             // Rule 2: as_ptr borrow escape detection

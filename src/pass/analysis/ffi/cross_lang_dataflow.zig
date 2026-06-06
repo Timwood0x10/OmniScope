@@ -453,6 +453,34 @@ pub const CrossLangDataFlow = struct {
         // callee-owned resources; detect alloc/release mismatches.
         for (allocations.items) |alloc| {
             if (alloc.freed) continue;
+
+            // ── GO CGO GC PIN DETECTION ──
+            // Go pointers passed to C must be pinned to prevent GC from moving them.
+            // Check if the function calls runtime.Pinner.Pin or runtime.KeepAlive.
+            if (alloc.alloc_lang == .go and alloc.passed_to_other_lang) {
+                const has_pin = searchForPinOp(ctx, alloc.alloc_func);
+                if (!has_pin) {
+                    const message = try std.fmt.allocPrint(ctx.allocator, "Go pointer passed to C without GC pinning in {s}: use runtime.Pinner.Pin or runtime.KeepAlive to prevent GC movement", .{alloc.alloc_func});
+                    defer ctx.allocator.free(message);
+
+                    const location = Location.init(alloc.alloc_func);
+                    const issue = Issue.init(
+                        .cross_language_leak,
+                        message,
+                        location,
+                        .high,
+                        0.85,
+                    );
+                    try ctx.addIssue(&issue);
+
+                    diag.warn("CrossLangDataFlow: Go pointer {} in {s} passed to C without GC pinning", .{
+                        alloc.id,
+                        alloc.alloc_func,
+                    });
+                }
+                continue; // Not an orphan, skip orphan check
+            }
+
             if (alloc.passed_to_other_lang) continue;
 
             // ── FOCUS-USER-CODE: Stdlib suppression (P0-1 fix) ──
@@ -1674,6 +1702,40 @@ fn isIntentionalOwnershipTransfer(alloc: *const CrossLangAlloc) bool {
         }
     }
 
+    return false;
+}
+
+/// Search for runtime.Pinner.Pin or runtime.KeepAlive calls in the function.
+/// Go requires that pointers passed to C must be pinned to prevent GC movement.
+/// This is a pure string match — no complex analysis needed.
+fn searchForPinOp(ctx: *PassContext, alloc_func: []const u8) bool {
+    // Iterate over all functions to find the one matching alloc_func
+    for (ctx.ir_store.function_list) |fir| {
+        if (!std.mem.eql(u8, fir.name, alloc_func)) continue;
+
+        // Scan all instructions in this function for pin/keepalive calls
+        for (fir.instructions, fir.opcodes) |inst, opcode| {
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+
+            const called_val = c.LLVMGetCalledValue(inst);
+            if (@intFromPtr(called_val) == 0) continue;
+
+            const called_name_ptr = c.LLVMGetValueName(called_val);
+            const called_name = if (@intFromPtr(called_name_ptr) != 0)
+                std.mem.span(called_name_ptr)
+            else
+                "";
+
+            // Pure string match for Go GC pin calls
+            if (std.mem.indexOf(u8, called_name, "runtime.Pinner.Pin") != null or
+                std.mem.indexOf(u8, called_name, "runtime.KeepAlive") != null)
+            {
+                log.debug("Go-GC-PIN: Found pin/keepalive call '{s}' in {s}", .{ called_name, alloc_func });
+                return true;
+            }
+        }
+        break; // Found the matching function, no need to continue searching
+    }
     return false;
 }
 

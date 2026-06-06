@@ -307,6 +307,9 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
     // struct-embedded), not heap memory. Must exclude BEFORE matching "destroy"
     // to prevent false positives like _pthread_mutexattr_destroy() being
     // classified as a Zig deallocator → cross_language_free CRITICAL FP.
+    // POSIX cleanup functions that contain "destroy" but are NOT Zig deallocators.
+    // Must broaden list: pthread_mutex_destroy frees kernel resources, not heap.
+    // Expanded to cover all pthread_destroy variants and known C patterns.
     const posix_attr_cleanup = [_][]const u8{
         "pthread_mutexattr_destroy",
         "pthread_condattr_destroy",
@@ -314,6 +317,12 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         "_pthread_mutexattr_destroy", // macOS variant
         "_pthread_condattr_destroy",
         "_pthread_rwlockattr_destroy",
+        "pthread_mutex_destroy",
+        "_pthread_mutex_destroy", // macOS variant
+        "pthread_cond_destroy",
+        "pthread_rwlock_destroy",
+        "pthread_barrier_destroy",
+        "pthread_spin_destroy",
     };
     if (containsAny(fn_name, &posix_attr_cleanup)) {
         // Not a Zig deallocator — fall through to return null
@@ -325,8 +334,8 @@ pub fn classifyFreeLanguage(fn_name: []const u8) ?[]const u8 {
         "GeneralPoolAllocator.free",
         "ArenaAllocator.free",
         "heap.page_allocator.free",
-        "destroy", // allocator.destroy() in Zig IR
-        "rawDestroy",
+        ".destroy", // allocator.destroy() in Zig IR — dot prefix avoids matching C functions like destroyRootPage
+        ".rawDestroy", // Allocator.rawDestroy in Zig IR — dot prefix for safety
     }))
         return "zig";
     return null;

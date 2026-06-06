@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const mangling = @import("../../../ir/mangling.zig");
 const ValueOrigin = @import("../ffi/ffi_semantics.zig").ValueOrigin;
 const library_alloc_pairs = @import("../../../semantics/patterns/library_alloc_pairs.zig");
 const safety = @import("free_validation_safety.zig");
@@ -102,7 +103,7 @@ pub fn trackPointerOrigin(
                             .source_inst = inst,
                             .source_desc = desc,
                         };
-                    } else if (safety.isRustAllocCall(func_name)) {
+                    } else if (mangling.isRustAllocCall(func_name)) {
                         const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
                         const gop = try pointer_origins.getOrPut(inst);
                         if (gop.found_existing) {

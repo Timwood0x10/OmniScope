@@ -243,7 +243,8 @@ pub const FreeValidationPass = struct {
             },
             .from_ffi_call => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                if (safety.isCrossAllocatorFree(.from_ffi_call, src, callee_name)) {
+                const alloc_fn = if (origin_info) |_| contract.extractAllocFuncNameForCrossLang(src) else null;
+                if (safety.isCrossAllocatorFree(.from_ffi_call, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
                     try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
                 }
@@ -291,7 +292,8 @@ pub const FreeValidationPass = struct {
             },
             .from_malloc => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                if (safety.isCrossAllocatorFree(.from_malloc, src, callee_name)) {
+                const alloc_fn = if (origin_info) |_| contract.extractAllocFuncNameForCrossLang(src) else null;
+                if (safety.isCrossAllocatorFree(.from_malloc, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
                     try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
                 }
@@ -340,40 +342,65 @@ pub const FreeValidationPass = struct {
                 }
             },
             .from_library_borrow => {
-                const caller_name_ptr = c.LLVMGetValueName(caller_func);
-                const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-                    std.mem.span(caller_name_ptr)
-                else
-                    "unknown";
+                // ── Python borrowed ref over-release ──
+                if (safety.isPythonRelease(callee_name)) {
+                    const message = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "Python DECREF on borrowed reference: pointer from borrowed library function " ++
+                            "was passed to {s}. Borrowed references must not be DECREF'd by the caller " ++
+                            "(origin: {s}).",
+                        .{ callee_name, if (origin_info) |info| info.source_desc else "unknown" },
+                    );
+                    return try reportBorrowedRefIssue(
+                        ctx,
+                        caller_func,
+                        callee_name,
+                        origin_val,
+                        origin_info,
+                        message,
+                        "Python borrowed reference released via DECREF",
+                    );
+                }
 
+                // ── C free on Python internal memory ──
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free"))
+                {
+                    const message = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "C free on Python internal memory: pointer from borrowed library function " ++
+                            "was passed to {s}. Python internal memory must not be freed by the caller " ++
+                            "(origin: {s}).",
+                        .{ callee_name, if (origin_info) |info| info.source_desc else "unknown" },
+                    );
+                    return try reportBorrowedRefIssue(
+                        ctx,
+                        caller_func,
+                        callee_name,
+                        origin_val,
+                        origin_info,
+                        message,
+                        "Free called on Python internal memory",
+                    );
+                }
+
+                // ── General borrowed library reference handling ──
                 const message = try std.fmt.allocPrint(
                     ctx.allocator,
                     "Invalid free: pointer from borrowed library function was freed. " ++
                         "Borrowed references must not be freed by the caller (origin: {s}).",
                     .{if (origin_info) |info| info.source_desc else "unknown"},
                 );
-                const location = Location.init(caller_name);
-
-                const trace = try ctx.allocator.alloc(TraceEntry, 3);
-                trace[0] = TraceEntry.init("Free called on borrowed library reference");
-                trace[1] = try createOriginTraceEntry(ctx.allocator, origin_val, origin_info);
-                trace[2] = try createFreeTraceEntry(ctx.allocator, callee_name);
-
-                var issue = Issue.initWithTrace(
-                    .invalid_free,
+                return try reportBorrowedRefIssue(
+                    ctx,
+                    caller_func,
+                    callee_name,
+                    origin_val,
+                    origin_info,
                     message,
-                    location,
-                    .critical,
-                    0.90,
-                    trace,
+                    "Free called on borrowed library reference",
                 );
-                errdefer issue.deinit(ctx.allocator);
-
-                try ctx.addIssue(&issue);
-                diag.warn("[OMI-CRITICAL] Invalid free of borrowed library ref in {s}: {s}() on borrowed pointer", .{
-                    caller_name, callee_name,
-                });
-                return true;
             },
             .unknown => {},
         }
@@ -403,6 +430,44 @@ fn createFreeTraceEntry(allocator: std.mem.Allocator, func_name: []const u8) !Tr
         .{func_name},
     );
     return TraceEntry.initOwned(desc);
+}
+
+/// Helper to report an invalid free on a borrowed library reference.
+/// Extracted to reduce duplication across Python-specific and general branches.
+fn reportBorrowedRefIssue(
+    ctx: *PassContext,
+    caller_func: anytype,
+    callee_name: []const u8,
+    origin_val: ValueOrigin,
+    origin_info: ?origin.PointerInfo,
+    message: []const u8,
+    trace_desc: []const u8,
+) !bool {
+    const caller_name_ptr = c.LLVMGetValueName(caller_func);
+    const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+        std.mem.span(caller_name_ptr)
+    else
+        "unknown";
+
+    const location = Location.init(caller_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init(trace_desc);
+    trace[1] = try createOriginTraceEntry(ctx.allocator, origin_val, origin_info);
+    trace[2] = try createFreeTraceEntry(ctx.allocator, callee_name);
+
+    var issue = Issue.initWithTrace(
+        .invalid_free,
+        message,
+        location,
+        .critical,
+        0.90,
+        trace,
+    );
+    errdefer issue.deinit(ctx.allocator);
+
+    try ctx.addIssue(&issue);
+    return true;
 }
 
 test "FreeValidationPass - name and kind" {

@@ -50,6 +50,14 @@ pub fn isRustVMangled(name: []const u8) bool {
     return true;
 }
 
+/// Check if a function name is a Rust v0 mangled alloc function.
+/// Rust v0 mangled names start with `_R` and contain `alloc`/`allocate` segments.
+/// This is purely structural detection — no static name list needed.
+pub fn isRustAllocCall(func_name: []const u8) bool {
+    if (!std.mem.startsWith(u8, func_name, "_R")) return false;
+    return std.mem.indexOf(u8, func_name, "alloc") != null;
+}
+
 /// Returns true if c is a base-62 digit: 0-9, a-z, or A-Z.
 fn isBase62(c: u8) bool {
     return switch (c) {

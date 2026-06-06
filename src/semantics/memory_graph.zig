@@ -22,6 +22,7 @@ pub const MemoryGraphError = mg_types.MemoryGraphError;
 pub const SourceKind = mg_types.SourceKind;
 pub const FuncCounter = mg_types.FuncCounter;
 pub const OwnershipTransferStatus = mg_types.OwnershipTransferStatus;
+pub const OwnershipTransferReason = mg_types.OwnershipTransferReason;
 pub const ResourceLifecycle = mg_types.ResourceLifecycle;
 pub const CallArgEdge = mg_types.CallArgEdge;
 pub const CallRetEdge = mg_types.CallRetEdge;
@@ -467,6 +468,35 @@ pub const MemoryGraph = struct {
             lazy_node.ownership_model = .refcount;
 
             log.debug("MEMORY: Created lazy borrowed node for inst 0x{x}", .{inst_addr});
+        }
+    }
+
+    /// Mark a pointer as having its ownership intentionally transferred (e.g., via Box::into_raw).
+    /// This records the transfer fact in the MemoryGraph so downstream passes
+    /// (cross_lang_dataflow, free validation) know the transfer is deliberate.
+    /// Uses `reason` to annotate why (e.g., .into_raw_transfer for Rust's into_raw pattern).
+    pub fn markOwnershipTransferred(graph: *MemoryGraph, ptr_val: u64, reason: OwnershipTransferReason) void {
+        // Try to find existing node by pointer value
+        var node = graph.nodes.get(ptr_val);
+
+        if (node == null) {
+            // No direct match — search by alloc_inst field
+            for (graph.node_store.items) |n| {
+                if (n.alloc_inst == ptr_val) {
+                    node = n;
+                    break;
+                }
+            }
+        }
+
+        if (node) |n| {
+            n.zone = .ffi;
+            n.alloc_callee = @tagName(reason);
+            log.debug("MEMORY: Node {} (ptr 0x{x}) ownership transferred via '{s}'", .{
+                n.id, ptr_val, @tagName(reason),
+            });
+        } else {
+            log.debug("MEMORY: No node found for ptr 0x{x} to mark ownership transfer", .{ptr_val});
         }
     }
 

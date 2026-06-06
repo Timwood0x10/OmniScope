@@ -76,6 +76,14 @@ pub const OwnershipTransferStatus = enum(u8) {
     potential_double_transfer,
 };
 
+/// Reason/cause for an intentional ownership transfer.
+/// Used by markOwnershipTransferred to annotate why a transfer occurred.
+pub const OwnershipTransferReason = enum(u8) {
+    /// Ownership transferred via Rust's into_raw() pattern
+    /// (Box::into_raw, CString::into_raw, Vec::leak, etc.)
+    into_raw_transfer,
+};
+
 /// Complete lifecycle information for a resource.
 pub const ResourceLifecycle = struct {
     /// The instruction that allocated this resource.
