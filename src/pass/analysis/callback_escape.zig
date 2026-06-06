@@ -106,7 +106,7 @@ const isDestructorFunction = cb_types.isDestructorFunction;
 const isTransferFunction = cb_types.isTransferFunction;
 
 // Core analysis functions (extracted to reduce file size)
-const cb_core = @import("../../types/callback_escape_core.zig");
+const cb_core = @import("callback_escape/callback_escape_core.zig");
 const scanInstruction = cb_core.scanInstruction;
 const scanCallbackEscapes = cb_core.scanCallbackEscapes;
 const isBorrowedCallbackArg = cb_core.isBorrowedCallbackArg;
@@ -763,4 +763,4 @@ pub const reportFreeOrphan = cb_report.reportFreeOrphan;
 pub const makeTrace = cb_report.makeTrace;
 
 // Tests are in callback_escape_test.zig (imported to run tests)
-const _tests = @import("../../types/callback_escape_test.zig");
+const _tests = @import("callback_escape/callback_escape_test.zig");

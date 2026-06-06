@@ -16,9 +16,7 @@ const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 
 /// Extract function name from LLVM value reference
 pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-    const name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(name_ptr) == 0) return "unknown";
-    return std.mem.span(name_ptr);
+    return @import("../../../ir/ir_helpers.zig").getFunctionName(func);
 }
 
 /// Check if a callee name is a Rust into_raw (ownership transfer OUT) call

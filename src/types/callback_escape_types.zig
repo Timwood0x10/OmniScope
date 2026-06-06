@@ -455,12 +455,7 @@ pub const TRANSFER_PATTERNS = &[_][]const u8{
 
 /// Checks if a function is a factory/constructor that transfers ownership to caller.
 pub fn isFactoryFunction(func_name: []const u8) bool {
-    for (FACTORY_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
-            return true;
-        }
-    }
-    return false;
+    return @import("../common/factory_patterns.zig").isFactoryFunctionWithStrategy(func_name, .substring);
 }
 
 /// Checks if a function is a destructor that consumes ownership from caller.

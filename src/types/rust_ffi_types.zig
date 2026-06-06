@@ -55,14 +55,6 @@ pub const AuditStats = struct {
 // Common Helper Functions
 // ============================================================================
 
-/// Get a safe UTF-8 function name from an LLVM value reference.
-/// Returns a borrowed slice (LLVM-owned memory, do not free).
-fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-    const name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(name_ptr) == 0) return "<unknown>";
-    return std.mem.sliceTo(name_ptr, 0);
-}
-
 /// Check if a function name matches a Rust allocator pattern.
 pub fn isRustAllocator(func_name: []const u8) bool {
     return std.mem.indexOf(u8, func_name, "__rust_alloc") != null or

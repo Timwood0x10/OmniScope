@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-const callback_escape_types = @import("callback_escape_types.zig");
+const callback_escape_types = @import("../../../types/callback_escape_types.zig");
 
 const isCgoBoundary = callback_escape_types.isCgoBoundary;
 const isGoSafetyFunction = callback_escape_types.isGoSafetyFunction;

@@ -7,7 +7,7 @@
 const std = @import("std");
 const log = std.log.scoped(.memory_graph_methods);
 
-const mg_types = @import("memory_graph_types.zig");
+const mg_types = @import("../types/memory_graph_types.zig");
 pub const DangerSurface = mg_types.DangerSurface;
 pub const DangerPathKind = mg_types.DangerPathKind;
 pub const FreeRecord = mg_types.FreeRecord;

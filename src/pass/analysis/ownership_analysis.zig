@@ -8,11 +8,11 @@
 //! Log prefix: [ownership-analysis]
 
 const std = @import("std");
-const c = @import("../ir/llvm_raw.zig").c;
-const llvm_safe = @import("../ir/llvm_safe.zig");
-const ir_store_mod = @import("../ir/ir_store.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
+const ir_store_mod = @import("../../ir/ir_store.zig");
 
-const types = @import("./ownership_types.zig");
+const types = @import("../../types/ownership_types.zig");
 pub const AllocSite = types.AllocSite;
 pub const FreeSite = types.FreeSite;
 pub const AllocType = types.AllocType;
@@ -21,13 +21,13 @@ pub const OwnershipStats = types.OwnershipStats;
 pub const addFlowEdge = types.addFlowEdge;
 pub const markAllocSitesReachingValue = types.markAllocSitesReachingValue;
 
-const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
-const MemoryPool = @import("../perf/memory_pool.zig").MemoryPool;
-const NullCheckRecognizer = @import("../dataflow/null_check_guard.zig").NullCheckRecognizer;
-const alloc_classifier = @import("../pass/analysis/ptr_lifetime/allocation_classifier.zig");
-const cpp_fp = @import("../pass/analysis/noise/cpp_fp_reduction.zig");
-const hooks = @import("../registry/hooks.zig");
-const Language = @import("../diag/issue.zig").FFIBoundary.Language;
+const ValueIdMap = @import("../../dataflow/value_id_map.zig").ValueIdMap;
+const MemoryPool = @import("../../perf/memory_pool.zig").MemoryPool;
+const NullCheckRecognizer = @import("../../dataflow/null_check_guard.zig").NullCheckRecognizer;
+const alloc_classifier = @import("ptr_lifetime/allocation_classifier.zig");
+const cpp_fp = @import("noise/cpp_fp_reduction.zig");
+const hooks = @import("../../registry/hooks.zig");
+const Language = @import("../../diag/issue.zig").FFIBoundary.Language;
 
 // ============================================================================
 // Function-Level Analysis
@@ -212,7 +212,7 @@ pub fn analyzeInstructionForOwnership(
                     }
                 }
 
-                var hook_ctx = @import("../registry/types.zig").HookContext{
+                var hook_ctx = @import("../../registry/types.zig").HookContext{
                     .inst = @ptrCast(inst),
                     .callee_name = callee_name,
                     .opcode = opcode,
@@ -417,5 +417,5 @@ pub fn classifyFree(inst: c.LLVMValueRef, op: c_uint) FreeType {
 
 /// Get the name of a function from its LLVM value reference.
 pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-    return cpp_fp.getFunctionName(func);
+    return @import("../../ir/ir_helpers.zig").getFunctionName(func);
 }

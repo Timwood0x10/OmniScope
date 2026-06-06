@@ -326,8 +326,8 @@ pub const lifetime = struct {
 
 // Export config system
 pub const config = struct {
-    pub const file_config = @import("types/file_config.zig");
-    pub const main_config = @import("types/main_config.zig");
+    pub const file_config = @import("config/file_config.zig");
+    pub const main_config = @import("config/main_config.zig");
     pub const language_override = @import("config/language_override.zig");
 };
 
@@ -374,7 +374,7 @@ test "root.zig - module import test" {
 
 // Wire up previously disconnected test modules
 test {
-    _ = @import("types/callback_escape_enhanced_test.zig");
+    _ = @import("pass/analysis/callback_escape/callback_escape_enhanced_test.zig");
     _ = @import("pass/analysis/ffi/ffi_type_mismatch_test.zig");
     _ = @import("pass/analysis/ptr_lifetime/ptr_lifetime_test.zig");
     _ = @import("pass/analysis/noise/noise_reduction_test.zig");

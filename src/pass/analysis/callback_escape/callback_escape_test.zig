@@ -4,24 +4,24 @@
 
 const std = @import("std");
 
-const CallbackEscapePass = @import("../pass/analysis/callback_escape.zig").CallbackEscapePass;
-const PassKind = @import("../pass/pass.zig").PassKind;
+const CallbackEscapePass = @import("../callback_escape.zig").CallbackEscapePass;
+const PassKind = @import("../../pass.zig").PassKind;
 
-const isCgoBoundary = @import("../pass/analysis/callback_escape.zig").isCgoBoundary;
-const isGoSafetyFunction = @import("../pass/analysis/callback_escape.zig").isGoSafetyFunction;
-const isCBytesPattern = @import("../pass/analysis/callback_escape.zig").isCBytesPattern;
-const isUnsafePtrConversion = @import("../pass/analysis/callback_escape.zig").isUnsafePtrConversion;
-const isCgoBoundaryFromLLVM = @import("../pass/analysis/callback_escape.zig").isCgoBoundaryFromLLVM;
-const mayRetainInCLanguageAware = @import("../pass/analysis/callback_escape.zig").mayRetainInCLanguageAware;
-const isRegisterNativesPattern = @import("../pass/analysis/callback_escape.zig").isRegisterNativesPattern;
-const isPthreadCreatePattern = @import("../pass/analysis/callback_escape.zig").isPthreadCreatePattern;
-const isCallbackReceiver = @import("../pass/analysis/callback_escape.zig").isCallbackReceiver;
-const isCgoGlueByPattern = @import("../pass/analysis/callback_escape.zig").isCgoGlueByPattern;
-const validate_callback_signature = @import("../pass/analysis/callback_escape.zig").validate_callback_signature;
+const isCgoBoundary = @import("../callback_escape.zig").isCgoBoundary;
+const isGoSafetyFunction = @import("../callback_escape.zig").isGoSafetyFunction;
+const isCBytesPattern = @import("../callback_escape.zig").isCBytesPattern;
+const isUnsafePtrConversion = @import("../callback_escape.zig").isUnsafePtrConversion;
+const isCgoBoundaryFromLLVM = @import("../callback_escape.zig").isCgoBoundaryFromLLVM;
+const mayRetainInCLanguageAware = @import("../callback_escape.zig").mayRetainInCLanguageAware;
+const isRegisterNativesPattern = @import("../callback_escape.zig").isRegisterNativesPattern;
+const isPthreadCreatePattern = @import("../callback_escape.zig").isPthreadCreatePattern;
+const isCallbackReceiver = @import("../callback_escape.zig").isCallbackReceiver;
+const isCgoGlueByPattern = @import("../callback_escape.zig").isCgoGlueByPattern;
+const validate_callback_signature = @import("../callback_escape.zig").validate_callback_signature;
 
-const EscapeViolation = @import("../pass/analysis/callback_escape.zig").EscapeViolation;
-const EscapePattern = @import("../pass/analysis/callback_escape.zig").EscapePattern;
-const EscapeStats = @import("../pass/analysis/callback_escape.zig").EscapeStats;
+const EscapeViolation = @import("../callback_escape.zig").EscapeViolation;
+const EscapePattern = @import("../callback_escape.zig").EscapePattern;
+const EscapeStats = @import("../callback_escape.zig").EscapeStats;
 
 test "CallbackEscapePass - name and kind" {
     try std.testing.expectEqualStrings("callback-escape", CallbackEscapePass.name);

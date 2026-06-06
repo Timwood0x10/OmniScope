@@ -64,7 +64,7 @@ const markAllocSitesReachingValue = types.markAllocSitesReachingValue;
 const isRustFFIRelevantFunction = types.isRustFFIRelevantFunction;
 
 /// Analysis methods extracted to ownership_analysis.zig
-const analysis = @import("../../types/ownership_analysis.zig");
+const analysis = @import("ownership_analysis.zig");
 const analyzeFunctionForOwnership = analysis.analyzeFunctionForOwnership;
 const checkOwnershipTransferForFunction = analysis.checkOwnershipTransferForFunction;
 const analyzeInstructionForOwnership = analysis.analyzeInstructionForOwnership;

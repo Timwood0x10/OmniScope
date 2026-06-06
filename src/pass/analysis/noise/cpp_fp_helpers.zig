@@ -4,19 +4,20 @@
 //! Contains L1-L8 filter functions, RAII/Singleton/RC detection helpers.
 
 const std = @import("std");
-const c = @import("../ir/llvm_raw.zig").c;
-const PassContext = @import("../pass/pass.zig").PassContext;
-const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
-const Issue = @import("../diag/issue.zig").Issue;
-const Location = @import("../diag/issue.zig").Location;
-const Confidence = @import("../diag/issue.zig").Confidence;
-const ownership_types = @import("ownership_types.zig");
+const c = @import("../../../ir/llvm_raw.zig").c;
+const PassContext = @import("../../pass.zig").PassContext;
+const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
+const Issue = @import("../../../diag/issue.zig").Issue;
+const Location = @import("../../../diag/issue.zig").Location;
+const Confidence = @import("../../../diag/issue.zig").Confidence;
+const ownership_types = @import("../../../types/ownership_types.zig");
 const AllocSite = ownership_types.AllocSite;
-const ValueIdMap = @import("../dataflow/value_id_map.zig").ValueIdMap;
+const ValueIdMap = @import("../../../dataflow/value_id_map.zig").ValueIdMap;
+const cpp_types = @import("../../../types/cpp_fp_types.zig");
 
 /// Check if a function is an internal STL/libc++ template expansion.
 pub fn isStlInternalFunction(func_name: []const u8) bool {
-    return @import("../pass/analysis/ffi/ffi_utils.zig").isStlInternalFunction(func_name);
+    return @import("../ffi/ffi_utils.zig").isStlInternalFunction(func_name);
 }
 
 /// Check if a function is a C++ special member function.
@@ -39,36 +40,12 @@ pub fn isCppSpecialMemberFunction(func_name: []const u8) bool {
 /// Examples: XXH32_createState, sqlite3_open, malloc_wrapper, make_object.
 /// These functions intentionally don't free — the caller must do it.
 pub fn isFactoryFunction(func_name: []const u8) bool {
-    const factory_suffixes = [_][]const u8{
-        "Create", "create", // XXH32_createState, CreateWindow
-        "New", "new", // NewStringUTF, new_buffer
-        "Alloc", "alloc", // AllocX, alloc_buffer
-        "Make", "make", // MakeString, make_context
-        "Open", "open", // fopen, open_db
-        "Init", "init", // InitWithConfig (if returns ptr)
-        "From", "from", // FromRaw, from_cstr
-        "State", "state", // createState, resetState
-        "Dup", "dup", // strdup, dup_fd
-        "Clone", "clone", // clone_object
-    };
-    for (factory_suffixes) |suffix| {
-        if (std.mem.endsWith(u8, func_name, suffix)) return true;
-    }
-    // Also check common FFI factory prefixes
-    const factory_prefixes = [_][]const u8{
-        "create", "new", "alloc", "make",
-    };
-    for (factory_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, func_name, prefix) and func_name.len > prefix.len + 2) {
-            return true;
-        }
-    }
-    return false;
+    return @import("../../../common/factory_patterns.zig").isFactoryFunction(func_name);
 }
 
 /// Check if a function is Rust's drop_in_place (destructor glue).
 pub fn isRustDropGlue(func_name: []const u8) bool {
-    return @import("../pass/analysis/ffi/ffi_utils.zig").isRustDropGlue(func_name);
+    return @import("../ffi/ffi_utils.zig").isRustDropGlue(func_name);
 }
 
 /// Check if a value name suggests it's a local Rust String/Vec/slice.
@@ -99,7 +76,7 @@ pub fn isCppNewAllocation(callee: []const u8) bool {
 
 /// Check if a function is a C++ ABI internal function.
 pub fn isCppAbiInternalFunction(func_name: []const u8) bool {
-    return @import("../pass/analysis/ffi/ffi_utils.zig").isCppAbiInternalFunction(func_name);
+    return @import("../ffi/ffi_utils.zig").isCppAbiInternalFunction(func_name);
 }
 
 /// Check if an allocation is part of a Meyers singleton pattern.
@@ -206,9 +183,7 @@ pub fn isRustAsPtrCall(name: []const u8) bool {
 
 /// Extract function name from LLVM value reference.
 pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-    const name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(name_ptr) == 0) return "unknown";
-    return std.mem.span(name_ptr);
+    return @import("../../../ir/ir_helpers.zig").getFunctionName(func);
 }
 
 /// Mark a function as reference-counted.
@@ -407,7 +382,7 @@ pub fn detectAsPtrBorrowEscape(
             if (@intFromPtr(callee_name) == 0) continue;
             const name_slice = std.mem.sliceTo(callee_name, 0);
 
-            if (!isRustAsPtrCall(name_slice)) continue;
+            if (!cpp_types.isRustAsPtrCall(name_slice)) continue;
 
             var i: c_uint = 0;
             while (i < num_operands - 1) : (i += 1) {

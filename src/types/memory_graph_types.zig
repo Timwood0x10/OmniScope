@@ -146,6 +146,17 @@ pub const OwnershipModel = enum(u8) {
     /// Hybrid (C# with SafeHandle + GC)
     hybrid = 4,
 
+    /// Human-readable name for logging and diagnostics.
+    pub fn displayName(self: OwnershipModel) []const u8 {
+        return switch (self) {
+            .manual => "Manual",
+            .raii => "RAII",
+            .refcount => "RefCount",
+            .gc => "GC",
+            .hybrid => "Hybrid",
+        };
+    }
+
     pub fn allowsLeak(self: OwnershipModel) bool {
         return switch (self) {
             .manual => true,
@@ -153,6 +164,21 @@ pub const OwnershipModel = enum(u8) {
             .refcount => true,
             .gc => false,
             .hybrid => true,
+        };
+    }
+
+    /// Get the default ownership model for a given language.
+    pub fn forLanguage(lang: Language) OwnershipModel {
+        return switch (lang) {
+            .c => .manual,
+            .cpp => .raii,
+            .rust => .raii,
+            .zig => .raii,
+            .python => .refcount,
+            .go => .hybrid,
+            .csharp => .hybrid,
+            .java => .gc,
+            .unknown => .manual,
         };
     }
 };

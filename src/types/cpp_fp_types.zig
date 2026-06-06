@@ -138,7 +138,7 @@ pub fn detectLoopLeaks(
         const alloc_info = entry.value_ptr.*;
         if (alloc_info.transferred) continue;
         // Note: isStlInternalFunction and isCppSpecialMemberFunction are imported from cpp_fp_helpers
-        const helpers = @import("cpp_fp_helpers.zig");
+        const helpers = @import("../pass/analysis/noise/cpp_fp_helpers.zig");
         if (helpers.isStlInternalFunction(alloc_info.func_name)) continue;
         if (helpers.isCppSpecialMemberFunction(alloc_info.func_name)) continue;
 
@@ -190,7 +190,7 @@ pub fn detectResourceLeaks(
 ) void {
     const Issue = @import("../diag/issue.zig").Issue;
     const Location = @import("../diag/issue.zig").Location;
-    const cpp_helpers = @import("cpp_fp_helpers.zig");
+    const cpp_helpers = @import("../pass/analysis/noise/cpp_fp_helpers.zig");
     const isCppInternalLeakPattern = cpp_helpers.isCppInternalLeakPattern;
 
     const mod = ctx.module orelse return;
@@ -279,11 +279,7 @@ pub fn detectResourceLeaks(
 }
 
 /// Extract function name from LLVM value reference.
-pub fn getFunctionName(func: c.LLVMValueRef) []const u8 {
-    const name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(name_ptr) == 0) return "unknown";
-    return std.mem.span(name_ptr);
-}
+pub const getFunctionName = @import("../ir/ir_helpers.zig").getFunctionName;
 
 /// Identify the language of a function (delegated to unified language_detector).
 pub fn identifyLanguage(func: c.LLVMValueRef) Language {
@@ -325,32 +321,8 @@ pub fn convertLanguageToHint(lang: Language) lifetime.LanguageHint {
     };
 }
 
-/// Check if an allocation crosses an FFI boundary.
-pub fn isCrossFFIAllocation(lang: Language) bool {
-    return lang != .unknown and lang != .c;
-}
-
 /// Check if a value can reach another value through the flow graph.
-pub fn canReach(
-    flow_graph: *const std.AutoHashMap(u32, std.AutoHashMap(u32, void)),
-    from: u32,
-    to: u32,
-    visited: *std.AutoHashMap(u32, void),
-) bool {
-    if (from == to) return true;
-
-    if (visited.contains(from)) return false;
-    visited.put(from, {}) catch return false;
-
-    const edges = flow_graph.get(from) orelse return false;
-    var iter = edges.iterator();
-    while (iter.next()) |entry| {
-        if (canReach(flow_graph, entry.key_ptr.*, to, visited)) {
-            return true;
-        }
-    }
-    return false;
-}
+pub const canReach = @import("../dataflow/graph_algorithms.zig").canReach;
 
 /// Check if a callee name is a Rust into_raw (ownership transfer OUT) call.
 pub fn isRustIntoRawCall(callee_name: []const u8) bool {

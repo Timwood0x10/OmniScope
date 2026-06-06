@@ -8,24 +8,24 @@
 //! Log prefix: [cpp-fp-detect]
 
 const std = @import("std");
-const c = @import("../ir/llvm_raw.zig").c;
-const ffi_language_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
+const c = @import("../../../ir/llvm_raw.zig").c;
+const ffi_language_classifier = @import("../ffi/ffi_language_classifier.zig");
 
-const PassContext = @import("../pass/pass.zig").PassContext;
-const DiagnosticWriter = @import("../pass/pass.zig").DiagnosticWriter;
-const Issue = @import("../diag/issue.zig").Issue;
-const Severity = @import("../diag/issue.zig").Severity;
-const IssueCandidate = @import("../pass/analysis/resource/issue_candidate_builder.zig").IssueCandidate;
-const Confidence = @import("../diag/issue.zig").Confidence;
-const Location = @import("../diag/issue.zig").Location;
-const ownership_types = @import("ownership_types.zig");
+const PassContext = @import("../../pass.zig").PassContext;
+const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
+const Issue = @import("../../../diag/issue.zig").Issue;
+const Severity = @import("../../../diag/issue.zig").Severity;
+const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;
+const Confidence = @import("../../../diag/issue.zig").Confidence;
+const Location = @import("../../../diag/issue.zig").Location;
+const ownership_types = @import("../../../types/ownership_types.zig");
 const AllocSite = ownership_types.AllocSite;
 const FreeSite = ownership_types.FreeSite;
 const OwnershipStats = ownership_types.OwnershipStats;
 
 // Helpers from centralized modules
 const cpp_helpers = @import("cpp_fp_helpers.zig");
-const cpp_types = @import("cpp_fp_types.zig");
+const cpp_types = @import("../../../types/cpp_fp_types.zig");
 
 const isStlInternalFunction = cpp_helpers.isStlInternalFunction;
 const isCppSpecialMemberFunction = cpp_helpers.isCppSpecialMemberFunction;

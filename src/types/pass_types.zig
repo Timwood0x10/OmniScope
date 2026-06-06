@@ -30,7 +30,7 @@ const surface_classifier = @import("../semantics/surface_classifier/surface_clas
 // Import name-based heuristic classifier for origin fallback
 const ffi_enhancement = @import("../pass/analysis/ffi/ffi_enhancement.zig");
 const language_detector = @import("../semantics/language_detector.zig");
-const ir_evidence = @import("./ir_evidence.zig");
+const ir_evidence = @import("../ir/ir_evidence.zig");
 const issue_suppression = @import("../pass/analysis/noise/issue_suppression.zig");
 const suppression_patterns = @import("../pass/analysis/noise/suppression_patterns.zig");
 const issue_classification = @import("../filter/issue_classification.zig");
@@ -59,6 +59,8 @@ const language_override = @import("../config/language_override.zig");
 
 const ir_store_mod = @import("../ir/ir_store.zig");
 pub const ModuleIRStore = ir_store_mod.ModuleIRStore;
+
+const pc_impl = @import("../pass/pass_context_impl.zig");
 
 /// Pass kind classification
 pub const PassKind = enum {
@@ -443,23 +445,23 @@ pub const PassContext = struct {
     }
 
     pub fn getNextId(self: *PassContext) u32 {
-        return self.next_id.fetchAdd(1, .seq_cst);
+        return pc_impl.getNextId(self);
     }
 
     pub fn getValueId(self: *PassContext, ptr: usize) !u32 {
-        return self.value_id_map.getOrPutId(ptr);
+        return pc_impl.getValueId(self, ptr);
     }
 
     pub fn getNextVulnId(self: *PassContext) u32 {
-        return self.vuln_id.fetchAdd(1, .seq_cst) + 1;
+        return pc_impl.getNextVulnId(self);
     }
 
     pub fn recordDegradedFunction(self: *PassContext) void {
-        _ = self.degraded_functions.fetchAdd(1, .seq_cst);
+        return pc_impl.recordDegradedFunction(self);
     }
 
     pub fn getDegradedFunctionCount(self: *const PassContext) u32 {
-        return self.degraded_functions.load(.seq_cst);
+        return pc_impl.getDegradedFunctionCount(self);
     }
 
     pub fn deinit(self: *PassContext) void {
@@ -515,7 +517,7 @@ pub const PassContext = struct {
     }
 
     pub fn getFunctionSurface(self: *const PassContext, func_ptr: u64) ?surface_classifier.FunctionSurface {
-        return self.function_surface.get(func_ptr);
+        return pc_impl.getFunctionSurface(self, func_ptr);
     }
 
     /// Look up language for a function name from the override registry.
@@ -523,44 +525,22 @@ pub const PassContext = struct {
     /// This is the primary entry point for all passes to check user-specified
     /// language classifications before falling back to auto-detection.
     pub fn lookupFunctionLanguage(self: *const PassContext, func_name: []const u8) ?language_override.Language {
-        if (self.language_overrides) |reg| {
-            return reg.lookup(func_name);
-        }
-        return null;
+        return pc_impl.lookupFunctionLanguage(self, func_name);
     }
 
     /// Get default language from override config.
     /// Returns null if no default is configured.
     /// Used by language_detector as fallback when auto-detection confidence is low.
     pub fn getDefaultLanguage(self: *const PassContext) ?language_override.Language {
-        if (self.language_overrides) |reg| {
-            return reg.getDefault();
-        }
-        return null;
+        return pc_impl.getDefaultLanguage(self);
     }
 
     pub fn shouldAnalyzeFunctionSurface(self: *const PassContext, func_ptr: u64) bool {
-        const surf = self.getFunctionSurface(func_ptr) orelse return true;
-        return surf.shouldAnalyze();
+        return pc_impl.shouldAnalyzeFunctionSurface(self, func_ptr);
     }
 
     pub fn shouldAnalyzeFunctionSurfaceByName(self: *PassContext, func_name: []const u8, func_ptr: ?u64) bool {
-        if (func_ptr) |ptr| {
-            if (self.function_surface.get(ptr)) |surf| {
-                return surf.shouldAnalyze();
-            }
-        }
-        if (self.module) |mod| {
-            const raw_mod = mod.raw;
-            const func = c.LLVMGetNamedFunction(raw_mod, func_name.ptr);
-            if (@intFromPtr(func) != 0) {
-                const ptr = @as(u64, @intFromPtr(func));
-                if (self.function_surface.get(ptr)) |surf| {
-                    return surf.shouldAnalyze();
-                }
-            }
-        }
-        return true;
+        return pc_impl.shouldAnalyzeFunctionSurfaceByName(self, func_name, func_ptr);
     }
 
     pub fn classifyFunctionSurface(
@@ -568,374 +548,92 @@ pub const PassContext = struct {
         func_name: []const u8,
         source_location: ?@import("../ir/debug_info.zig").SourceLocation,
     ) noise_filter.ClassificationResult {
-        _ = source_location;
-
-        if (isZigStdlibFunctionImpl(func_name)) {
-            return .{
-                .origin = .stdlib,
-                .risk_level = noise_filter.getRiskLevel(.stdlib, .medium),
-                .reason = "Zig standard library (prefix match)",
-            };
-        }
-
-        if (self.module) |mod| {
-            const raw_mod = mod.raw;
-            const func = c.LLVMGetNamedFunction(raw_mod, func_name.ptr);
-            if (@intFromPtr(func) != 0) {
-                const ptr = @as(u64, @intFromPtr(func));
-                if (self.function_surface.get(ptr)) |surf| {
-                    const nf_origin = noise_filter.functionSurfaceToOrigin(surf);
-                    return .{
-                        .origin = nf_origin,
-                        .risk_level = noise_filter.getRiskLevel(nf_origin, .medium),
-                        .reason = "surface-classifier cache",
-                    };
-                }
-            }
-        }
-
-        // P16-3: Name-based heuristic fallback — reduces unknown from ~60% to <20%
-        // When surface classifier cache misses (common in test corpus without debug info),
-        // use naming convention heuristics to classify function origin.
-        // This prevents over-aggressive severity downgrade for user code.
-        const fn_origin_heuristic = ffi_enhancement.classifyFunctionOrigin(func_name);
-        const fn_origin: noise_filter.FunctionOrigin = switch (fn_origin_heuristic) {
-            .user => .user,
-            .stdlib => .stdlib,
-            .compiler_generated => .compiler_generated,
-            .third_party => .third_party,
-            .unknown => .unknown,
-        };
-        if (fn_origin != .unknown) {
-            return .{
-                .origin = fn_origin,
-                .risk_level = noise_filter.getRiskLevel(fn_origin, .medium),
-                .reason = "name-based heuristic fallback",
-            };
-        }
-
-        // Final fallback: still unknown, but with improved reason
-        return .{
-            .origin = .unknown,
-            .risk_level = .medium,
-            .reason = "unclassified (no cache hit, no name pattern match)",
-        };
-    }
-
-    /// P19-8: Infer SemanticSurface from function origin classification.
-    /// Maps noise_filter.FunctionOrigin → common.types.SemanticSurface.
-    /// This is a generic, name-independent mapping — no project/library whitelists.
-    fn inferSemanticSurface(func_name: []const u8, origin: noise_filter.FunctionOrigin) ?SemanticSurface {
-        const zone = zone_classifier.classifyFunction(func_name, null);
-
-        // Direct mapping from origin to surface
-        const surface: SemanticSurface = switch (origin) {
-            .user => .boundary,
-            .stdlib => .internal_core,
-            .compiler_generated => .runtime_internal,
-            .third_party => .internal_core,
-            .unknown => blk: {
-                // For unknown origin, use zone classifier as secondary signal
-                break :blk switch (zone) {
-                    .unsafe, .ffi => .boundary,
-                    .safe => .internal_core,
-                    .runtime_internal => .runtime_internal,
-                    .unknown => .unknown,
-                };
-            },
-        };
-
-        // Refinement: if function is in a known FFI producer pattern
-        // (factory/allocator called by boundary code), upgrade to ffi_producer
-        const is_ffi_producer = isFFIProducerPattern(func_name);
-        if (is_ffi_producer and surface == .internal_core) {
-            return .ffi_producer;
-        }
-
-        return surface;
-    }
-
-    /// Check if function name matches FFI producer patterns.
-    /// These are internal functions that PRODUCE values for FFI boundaries.
-    /// Examples: malloc wrapper, factory functions, allocators used by bridges.
-    fn isFFIProducerPattern(func_name: []const u8) bool {
-        // Allocator-like patterns (produce memory for FFI)
-        if (std.mem.indexOf(u8, func_name, "alloc") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "malloc") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "create") != null) return true;
-
-        // Serializer/marshaler patterns (produce data for FFI export)
-        if (std.mem.indexOf(u8, func_name, "marshal") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "serialize") != null) return true;
-        if (std.mem.indexOf(u8, func_name, "pack") != null) return true;
-
-        return false;
+        return pc_impl.classifyFunctionSurface(self, func_name, source_location);
     }
 
     pub fn setModule(self: *PassContext, module: ModuleRef) void {
-        self.module = module;
+        return pc_impl.setModule(self, module);
     }
 
     pub fn hasModule(self: *const PassContext) bool {
-        return self.module != null;
+        return pc_impl.hasModule(self);
     }
 
     pub fn getDataFlowGraph(self: *const PassContext) *DataFlowGraph {
-        return self.data_flow_graph;
+        return pc_impl.getDataFlowGraph(self);
     }
 
     pub fn addNode(self: *PassContext, node: anytype) !void {
-        try self.data_flow_graph.addNode(node);
+        return pc_impl.addNode(self, node);
     }
 
     pub fn addEdge(self: *PassContext, edge: anytype) !void {
-        try self.data_flow_graph.addEdge(edge);
+        return pc_impl.addEdge(self, edge);
     }
 
     pub fn addFFIBoundary(self: *PassContext, boundary: anytype) !void {
-        try self.data_flow_graph.addFFIBoundary(boundary);
+        return pc_impl.addFFIBoundary(self, boundary);
     }
 
     pub fn addIssue(self: *PassContext, issue: *const Issue) !void {
-        // ── Layer 2: Suppression ──────────────────────────────────────────
-        // Platform-specific patterns (e.g. Windows MSVC CRT) gated by profile.
-        const profile_ptr = if (self.platform_profile) |*p| p else null;
-        if (issue_suppression.shouldSuppressWithProfile(issue, profile_ptr)) {
-            if (suppression_patterns.isStdlibInternalFunction(issue)) {
-                self.suppression_stats.record(.stdlib_internal);
-            } else {
-                self.suppression_stats.record(.drop_chain);
-            }
-            if (issue.owned) {
-                var mutable_issue = issue.*;
-                mutable_issue.deinit(self.allocator);
-            }
-            return;
-        }
-
-        // ── Layer 0+3: Initialize FilterContext and classify origin ──────
-        var ctx = FilterContext.init(issue);
-
-        const classification = self.classifyFunctionSurface(ctx.func_name, null);
-        ctx.origin = classification.origin;
-
-        // ── Layer 3: Compute risk level ──────────────────────────────────
-        ctx.computeRisk();
-
-        // ── Layer 4: Infer semantic surface ──────────────────────────────
-        ctx.surface = inferSemanticSurface(ctx.func_name, ctx.origin);
-
-        // Boundary evidence: FFI boundary issues or on-danger-path
-        ctx.has_boundary_evidence = ctx.has_ffi_boundary or switch (issue.kind) {
-            .cross_language_free,
-            .cross_language_leak,
-            .ffi_unsafe_call,
-            .ffi_type_mismatch,
-            .borrow_escape,
-            => true,
-            else => false,
-        };
-
-        // ── Layer 5: Surface downgrade + noise filter ────────────────────
-        ctx.applySurfaceDowngrade();
-        ctx.applyNoiseFilter();
-
-        // ── Dedup ────────────────────────────────────────────────────────
-        const dedup_key = self.dedupKey(issue);
-        if (issue.severity != .critical) {
-            const gop = try self.reported_keys.getOrPut(dedup_key);
-            if (gop.found_existing) {
-                ctx.is_duplicate = true;
-            }
-        }
-
-        if (!ctx.shouldReport()) {
-            if (issue.owned) {
-                var mutable_issue = issue.*;
-                mutable_issue.deinit(self.allocator);
-            }
-            return;
-        }
-
-        // ── Emit ─────────────────────────────────────────────────────────
-        var final_issue = issue.*;
-        final_issue.severity = ctx.getFinalSeverity();
-        final_issue.semantic_surface = ctx.surface;
-        final_issue.classification = ctx.deriveClassification();
-
-        if (!final_issue.owned) {
-            const cloned_msg = try self.allocator.dupe(u8, final_issue.message);
-            final_issue.message = cloned_msg;
-            final_issue.owned = true;
-        }
-        try self.data_flow_graph.addIssue(final_issue);
-    }
-
-    fn dedupKey(self: *PassContext, issue: *const Issue) u64 {
-        _ = self;
-        const loc = @field(issue, "location");
-        const kind_tag = @tagName(@field(issue, "kind"));
-        var hasher = std.hash.Fnv1a_64.init();
-        hasher.update(loc.func);
-        hasher.update(kind_tag);
-        if (loc.file) |f| hasher.update(f);
-        if (loc.line > 0) hasher.update(&std.mem.toBytes(loc.line));
-        if (loc.column > 0) hasher.update(&std.mem.toBytes(loc.column));
-        return hasher.final();
+        return pc_impl.addIssue(self, issue);
     }
 
     pub fn cachedRegistryLookup(self: *PassContext, func_name: []const u8) ?FunctionSemantics {
-        if (self.registry_cache.get(func_name)) |sem| {
-            return sem;
-        }
-        const sem = SemanticRegistry.lookup(func_name) orelse return null;
-        self.registry_cache.put(func_name, sem) catch |err| {
-            log.warn("[pass-types] registry_cache.put OOM for '{s}': {}", .{ func_name, err });
-        };
-        return sem;
+        return pc_impl.cachedRegistryLookup(self, func_name);
     }
 
     pub fn cachedZoneLookup(self: *PassContext, func_name: []const u8) ?zone_classifier.ZoneKind {
-        return self.zone_cache.get(func_name);
+        return pc_impl.cachedZoneLookup(self, func_name);
     }
 
     pub fn cacheZoneResult(self: *PassContext, func_name: []const u8, zone: zone_classifier.ZoneKind) void {
-        self.zone_cache.put(func_name, zone) catch |err| {
-            log.warn("[pass-types] zone_cache.put OOM for '{s}': {}", .{ func_name, err });
-        };
+        return pc_impl.cacheZoneResult(self, func_name, zone);
     }
 
     pub fn getOrComputeZone(self: *PassContext, func: *anyopaque, func_name: []const u8) zone_classifier.ZoneKind {
-        const func_addr = @intFromPtr(func);
-        if (func_addr == 0) return .unknown;
-        return self.cachedZoneLookup(func_name) orelse blk: {
-            const z = zone_classifier.classifyFunctionFromLLVM(@ptrCast(func), func_name);
-            self.cacheZoneResult(func_name, z);
-            break :blk z;
-        };
+        return pc_impl.getOrComputeZone(self, func, func_name);
     }
 
     pub fn shouldAnalyzeZone(zone: zone_classifier.ZoneKind) bool {
-        return switch (zone) {
-            .safe => false,
-            .runtime_internal => false,
-            .unknown => true,
-            .unsafe => true,
-            .ffi => true,
-        };
+        return pc_impl.shouldAnalyzeZone(zone);
     }
 
     pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
-        if (self.language_detected) return;
-        if (module_ref == null or self.module == null) {
-            self.module_language = .{
-                .language = .unknown,
-                .confidence = 0.0,
-                .method = .unknown,
-            };
-            self.language_detected = true;
-            return;
-        }
-
-        const llvm_module = if (self.module) |m|
-            m.raw
-        else
-            @as(c.LLVMModuleRef, @ptrFromInt(0));
-
-        if (@intFromPtr(llvm_module) == 0) {
-            self.module_language = .{
-                .language = .unknown,
-                .confidence = 0.0,
-                .method = .unknown,
-            };
-            self.language_detected = true;
-            return;
-        }
-
-        self.module_language = language_detector.detectModuleLanguage(llvm_module);
-        self.language_detected = true;
-
-        // R7.2-b: Default language fallback from override registry.
-        // When auto-detection confidence is low and user configured --default-lang,
-        // use the configured language instead of .unknown. This handles pure-C projects
-        // with cross-language runtime artifacts (e.g., Rust stdlib linked into C binary).
-        if (self.module_language.language == .unknown or self.module_language.confidence < 0.6) {
-            if (self.getDefaultLanguage()) |default_lang| {
-                if (default_lang != .unknown) {
-                    log.debug("[pass-types] LANG-OVERRIDE: Using default_lang={s} (auto-detection confidence too low)", .{
-                        @tagName(default_lang),
-                    });
-                    self.module_language = .{
-                        .language = default_lang,
-                        .confidence = 0.8, // User-configured: moderate-high confidence
-                        .method = .unknown, // Not auto-detected
-                    };
-                }
-            }
-        }
-
-        if (self.evidence == null) {
-            var evidence_collector = ir_evidence.EvidenceCollector.init(self.allocator, llvm_module) catch |err| {
-                log.warn("[pass-types] Evidence collection failed: {}", .{err});
-                return;
-            };
-            defer evidence_collector.deinit();
-            self.evidence = evidence_collector.getEvidence().*;
-        }
-
-        log.debug("[pass-types] LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
-            @tagName(self.module_language.language),
-            self.module_language.confidence * 100,
-            @tagName(self.module_language.method),
-        });
+        return pc_impl.initModuleLanguage(self, module_ref);
     }
 
     pub fn getModuleLanguage(self: *const PassContext) language_detector.LanguageProfile {
-        return self.module_language;
+        return pc_impl.getModuleLanguage(self);
     }
 
     pub fn isGoModule(self: *const PassContext) bool {
-        return self.module_language.language == .go;
+        return pc_impl.isGoModule(self);
     }
     pub fn isRustModule(self: *const PassContext) bool {
-        return self.module_language.language == .rust;
+        return pc_impl.isRustModule(self);
     }
     pub fn isZigModule(self: *const PassContext) bool {
-        return self.module_language.language == .zig;
+        return pc_impl.isZigModule(self);
     }
     pub fn isCModule(self: *const PassContext) bool {
-        return self.module_language.language == .c or self.module_language.language == .cpp;
+        return pc_impl.isCModule(self);
     }
     pub fn isUnknownModule(self: *const PassContext) bool {
-        return self.module_language.language == .unknown;
+        return pc_impl.isUnknownModule(self);
     }
 
     pub fn channelFFIBoundary(self: *const PassContext) ChannelMode {
-        return switch (self.module_language.language) {
-            .zig => .limited,
-            .go => .limited,
-            else => .full,
-        };
+        return pc_impl.channelFFIBoundary(self);
     }
     pub fn channelPtrLifetime(self: *const PassContext) ChannelMode {
-        return switch (self.module_language.language) {
-            .zig => .limited,
-            .go => .limited,
-            else => .full,
-        };
+        return pc_impl.channelPtrLifetime(self);
     }
     pub fn channelCallbackEscape(self: *const PassContext) ChannelMode {
-        return switch (self.module_language.language) {
-            .zig => .limited,
-            else => .full,
-        };
+        return pc_impl.channelCallbackEscape(self);
     }
     pub fn channelPointerOwnership(self: *const PassContext) ChannelMode {
-        return switch (self.module_language.language) {
-            .zig => .limited,
-            .go => .limited,
-            else => .full,
-        };
+        return pc_impl.channelPointerOwnership(self);
     }
 
     /// R7.2: Channel mode for analysis pass gating.
@@ -946,230 +644,83 @@ pub const PassContext = struct {
     };
 
     pub fn getOrComputeZoneByName(self: *PassContext, func_name: []const u8) zone_classifier.ZoneKind {
-        return self.cachedZoneLookup(func_name) orelse blk: {
-            const z = zone_classifier.classifyFunction(func_name, null);
-            self.cacheZoneResult(func_name, z);
-            break :blk z;
-        };
+        return pc_impl.getOrComputeZoneByName(self, func_name);
     }
 
     pub fn markTainted(self: *PassContext, node_id: u32, source_id: ?u32) !void {
-        try self.data_flow_graph.markTainted(node_id, source_id);
+        return pc_impl.markTainted(self, node_id, source_id);
     }
 
     pub fn isTainted(self: *const PassContext, node_id: u32) bool {
-        return self.data_flow_graph.isTainted(node_id);
+        return pc_impl.isTainted(self, node_id);
     }
 
     pub fn addCrossLangEdge(self: *PassContext, edge: CrossLangEdge) !void {
-        const idx = @as(u32, @intCast(self.cross_lang_edges.items.len));
-        try self.cross_lang_edges.append(self.allocator, edge);
-        const gop = try self.cross_edge_by_callee.getOrPut(edge.callee_name);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = try std.ArrayList(u32).initCapacity(self.allocator, 4);
-        }
-        try gop.value_ptr.*.append(self.allocator, idx);
+        return pc_impl.addCrossLangEdge(self, edge);
     }
 
     pub fn getCrossLangEdges(self: *const PassContext) []const CrossLangEdge {
-        return self.cross_lang_edges.items;
+        return pc_impl.getCrossLangEdges(self);
     }
 
     pub fn getCrossEdgeByCallee(self: *const PassContext, callee_name: []const u8) ?*const CrossLangEdge {
-        if (self.cross_edge_by_callee.get(callee_name)) |indices| {
-            if (indices.items.len > 0) {
-                return &self.cross_lang_edges.items[indices.items[0]];
-            }
-        }
-        return null;
+        return pc_impl.getCrossEdgeByCallee(self, callee_name);
     }
 
     pub fn getAllCrossEdgesByCallee(self: *const PassContext, callee_name: []const u8) ?[]const u32 {
-        if (self.cross_edge_by_callee.get(callee_name)) |indices| {
-            return indices.items;
-        }
-        return null;
+        return pc_impl.getAllCrossEdgesByCallee(self, callee_name);
     }
 
     pub fn isRelevantAlloc(self: *const PassContext, ptr_val: u64) bool {
-        if (self.danger_surface_relevant.contains(ptr_val)) return true;
-        if (self.ffi_auto_relevant.count() == 0) return false;
-        return self.ffi_auto_relevant.contains(ptr_val);
+        return pc_impl.isRelevantAlloc(self, ptr_val);
     }
 
     pub fn isOnDangerPathFull(self: *PassContext, ptr_val: u64) bool {
-        const raw_ffis = self.getCrossLangEdges();
-        if (raw_ffis.len == 0) return self.isRelevantAlloc(ptr_val);
-
-        if (self.ffi_set_cache == null) {
-            var ffi_set = std.StringHashMap(void).init(self.allocator);
-            for (raw_ffis) |ffe| {
-                if (ffe.is_ffi_boundary) {
-                    ffi_set.put(ffe.callee_name, {}) catch {
-                        ffi_set.deinit();
-                        return false;
-                    };
-                }
-            }
-            self.ffi_set_cache = ffi_set;
-        }
-
-        if (self.danger_surfaces_cache == null) {
-            const surfaces = self.allocator.alloc(memory_graph_mod.DangerSurface, raw_ffis.len) catch return false;
-            for (raw_ffis, 0..) |ffe, i| {
-                surfaces[i] = .{
-                    .callee_name = ffe.callee_name,
-                    .is_ffi_boundary = ffe.is_ffi_boundary,
-                };
-            }
-            self.danger_surfaces_cache = surfaces;
-        }
-
-        if (self.danger_path_visited_cache == null) {
-            self.danger_path_visited_cache = std.AutoHashMap(u64, void).init(self.allocator);
-        }
-        self.danger_path_visited_cache.?.clearRetainingCapacity();
-
-        const result = self.memory_graph.isOnDangerPath(ptr_val, self.danger_surfaces_cache.?, &self.danger_path_visited_cache.?, &self.ffi_set_cache.?);
-        return result != .none;
+        return pc_impl.isOnDangerPathFull(self, ptr_val);
     }
 
     pub fn markRelevantAlloc(self: *PassContext, ptr_val: u64) !void {
-        try self.danger_surface_relevant.put(ptr_val, {});
+        return pc_impl.markRelevantAlloc(self, ptr_val);
     }
 
     pub fn markFfiRelevant(self: *PassContext, ptr_val: u64) !void {
-        try self.ffi_auto_relevant.put(ptr_val, {});
+        return pc_impl.markFfiRelevant(self, ptr_val);
     }
 
     pub fn isRelevantFunction(self: *const PassContext, func_ptr: u64) bool {
-        return self.relevant_functions.contains(func_ptr);
+        return pc_impl.isRelevantFunction(self, func_ptr);
     }
 
     pub fn markRelevantFunction(self: *PassContext, func_ptr: u64) !void {
-        try self.relevant_functions.put(func_ptr, {});
+        return pc_impl.markRelevantFunction(self, func_ptr);
     }
 
     pub fn markFunctionFromInst(self: *PassContext, inst_ptr: u64) !void {
-        if (inst_ptr == 0) return;
-
-        const inst = @as(c.LLVMValueRef, @ptrFromInt(inst_ptr));
-        if (@intFromPtr(inst) == 0) return;
-
-        const bb = c.LLVMGetInstructionParent(inst);
-        if (@intFromPtr(bb) == 0) return;
-
-        const func = c.LLVMGetBasicBlockParent(bb);
-        if (@intFromPtr(func) == 0) return;
-
-        const func_ptr = @as(u64, @intFromPtr(func));
-        try self.relevant_functions.put(func_ptr, {});
+        return pc_impl.markFunctionFromInst(self, inst_ptr);
     }
 
-    /// Intern a string using the optional string interner.
-    ///
-    /// If the interner is initialized (non-null), returns the canonical
-    /// deduplicated copy. Otherwise returns a freshly allocated copy.
-    ///
-    /// Arguments:
-    ///   s - String slice to intern
-    ///
-    /// Returns:
-    ///   Owned string slice (caller must not free directly)
-    ///
-    /// Errors:
-    ///   OutOfMemory if allocation fails
     pub fn internString(self: *PassContext, s: []const u8) ![]const u8 {
-        if (self.interner) |*intr| {
-            return intr.intern(s);
-        }
-        return self.allocator.dupe(u8, s);
+        return pc_impl.internString(self, s);
     }
 
-    /// Enable string interning for this context.
-    ///
-    /// Initializes the internal StringInterner if not already done.
-    /// After calling this, internString() will deduplicate strings.
     pub fn enableInterning(self: *PassContext) !void {
-        if (self.interner == null) {
-            self.interner = StringInterner.init(self.allocator);
-        }
+        return pc_impl.enableInterning(self);
     }
 
-    /// Enable arena allocator for this context.
-    ///
-    /// Initializes the internal Arena if not already done.
-    /// After calling this, arenaAlloc() returns a fast bump-pointer allocator
-    /// suitable for temporary allocations during analysis passes.
-    ///
-    /// Use cases:
-    /// - Temporary HashMap nodes during single-pass analysis
-    /// - ArrayList elements that are bulk-freed at pass end
-    /// - Any short-lived data that can be freed all at once
-    ///
-    /// Example:
-    ///
-    /// ```zig
-    /// try ctx.enableArena();
-    /// const alloc = ctx.arenaAlloc();
-    /// var temp_list = std.ArrayList(u32).init(alloc);
-    /// ```
     pub fn enableArena(self: *PassContext) !void {
-        if (self.arena == null) {
-            self.arena = Arena.init(self.allocator);
-        }
+        return pc_impl.enableArena(self);
     }
 
-    /// Get the arena allocator if enabled, or fallback to the default allocator.
-    ///
-    /// Returns a std.mem.Allocator that can be used for temporary allocations.
-    /// If the arena is not initialized, falls back to the context's main allocator.
-    ///
-    /// Returns:
-    ///   Allocator interface (arena if enabled, otherwise default allocator)
-    ///
-    /// Note:
-    ///   When using the returned allocator, memory is managed by the arena
-    ///   and will be freed on reset/deinit. Do not call allocator.free() on
-    ///   pointers obtained from this allocator.
     pub fn arenaAlloc(self: *PassContext) std.mem.Allocator {
-        if (self.arena) |*a| {
-            return @import("../common/arena.zig").arenaAllocator(a);
-        }
-        return self.allocator;
+        return pc_impl.arenaAlloc(self);
     }
 
-    /// Reset the arena allocator, freeing all temporary allocations.
-    ///
-    /// This should be called at pass boundaries to reclaim temporary memory
-    /// without deallocating and reallocating blocks. The arena keeps its
-    /// first block for reuse, which is a key optimization.
-    ///
-    /// Example:
-    /// ```zig
-    /// // Run a pass that uses arena allocations
-    /// try somePass.run(ctx, diag);
-    /// // Reset arena before next pass
-    /// ctx.resetArena();
-    /// ```
     pub fn resetArena(self: *PassContext) void {
-        if (self.arena) |*a| {
-            a.reset();
-        }
+        return pc_impl.resetArena(self);
     }
 
-    /// Check if a function name is a Zig stdlib function.
-    /// Uses prefix/substring matching against known stdlib patterns.
-    /// This is the primary classifier for focus_user_code filtering.
-    ///
-    /// Arguments:
-    ///   func_name - Function name to check
-    ///
-    /// Returns:
-    ///   true if the function appears to be from Zig standard library
     pub fn isZigStdlibFunction(self: *const PassContext, func_name: []const u8) bool {
-        _ = self;
-        return isZigStdlibFunctionImpl(func_name);
+        return pc_impl.isZigStdlibFunction(self, func_name);
     }
 };
 
@@ -1247,167 +798,4 @@ fn diagToNoiseSeverity(sev: DiagSeverity) NoiseSeverity {
         .high => .high,
         .critical => .critical,
     };
-}
-
-/// Internal implementation of stdlib detection.
-/// Separated from public API to allow reuse without &PassContext.
-fn isZigStdlibFunctionImpl(func_name: []const u8) bool {
-    // Fast path: prefix/substring match with extended pattern list (v0.2.0)
-    // Split into two groups to avoid comptime branch quota overflow
-    const stdlib_prefixes_group1 = [_][]const u8{
-        // Core patterns (high-frequency)
-        "debug.",
-        "heap.",
-        "mem.",
-        "fmt.",
-        "io.",
-        "posix.",
-        "hash_map.",
-        "array_hash_map.",
-        "array_list.",
-        "sort.",
-        "bitmap.",
-        "crypto.",
-        "log.",
-        "time.",
-        "fs.",
-        "net.",
-        "process.",
-        "async.",
-        "event_loop.",
-        "unicode",
-        "math.",
-        "random",
-        "compress",
-        "hmac",
-        "aead",
-        "aes",
-
-        // I/O subsystem
-        "io.writer",
-        "io.reader",
-        "io.stream",
-
-        // Debug/DWARF
-        "debug.dwarf",
-        "debug.info",
-        "debug.format",
-
-        // Async/Event loop
-        "loop.",
-        "fs.file",
-        "fs.path",
-
-        // Crypto extensions
-        "crypto.chacha",
-        "crypto.salsa",
-
-        // Math extensions
-        "math.big",
-        "math.complex",
-
-        // Compression
-        "compress.zlib",
-        "compress.lz4",
-
-        // Unicode
-        "unicode.utf8view",
-        "unicode.utf16le",
-    };
-
-    const trie1 = comptime PrefixTrie.init(&stdlib_prefixes_group1, .substring);
-    if (trie1.contains(func_name)) return true;
-
-    // Second group: less common patterns (checked only if first group misses)
-    const stdlib_prefixes_group2 = [_][]const u8{
-        ".dwarf",
-        "crypto.curve",
-        "compress.xz",
-        "unicode.utf16be",
-        "unicode.ascii",
-        ".buffer",
-        ".queue",
-        ".stack",
-        ".allocator",
-        ".arena",
-        ".gpa",
-    };
-
-    const trie2 = comptime PrefixTrie.init(&stdlib_prefixes_group2, .substring);
-    if (trie2.contains(func_name)) return true;
-
-    // Slow path: substring matching for internal module detection
-    return looksLikeInternalZigFunction(func_name);
-}
-
-/// Check if a function name looks like an internal Zig stdlib function.
-/// Uses heuristics based on naming conventions:
-///   - Contains namespace separators (".")
-///   - Sufficiently long (>15 chars) to indicate mangled/generated names
-///   - Doesn't look like user code (no common user prefixes)
-fn looksLikeInternalZigFunction(func_name: []const u8) bool {
-    // Must contain namespace separator (Zig uses "." like "std.mem.copy")
-    if (std.mem.indexOf(u8, func_name, ".") == null) return false;
-
-    // Internal functions are typically longer than user-defined functions
-    if (func_name.len < 15) return false;
-
-    // Check for known internal markers (substring match)
-    const internal_markers = [_][]const u8{
-        ".debug.", // debug subsystem
-        ".dwarf", // DWARF debugging format
-        ".writer", // Writer interfaces
-        ".reader", // Reader interfaces
-        ".hash_", // Hash functions
-        ".alloc", // Allocation routines
-        ".format", // Formatting utilities
-    };
-
-    for (internal_markers) |marker| {
-        if (std.mem.indexOf(u8, func_name, marker) != null) {
-            // Additional validation: exclude obvious user code
-            if (!looksLikeUserCode(func_name)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-/// Heuristic check if a function name looks like user-written code (not stdlib).
-/// Returns true if the name suggests it's application-level code.
-fn looksLikeUserCode(func_name: []const u8) bool {
-    const user_prefixes = [_][]const u8{
-        "main", // main() function
-        "test", // test functions
-        "my", // myCustomFunc
-        "app", // appInit
-        "user", // userInput
-        "handle", // handleClick (but not std.io.handle)
-        "callback", // callbackFn
-        "wrapper", // wrapperFunc
-    };
-
-    for (user_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, func_name, prefix)) {
-            // Additional check: must be a simple name (no multiple "." separators)
-            // User code rarely has deep nesting like "main.helper.subfunc"
-            const dot_count = countChar(func_name, '.');
-            if (dot_count <= 1) {
-                return true; // Likely user code
-            }
-        }
-    }
-
-    return false;
-}
-
-/// Count occurrences of a character in a string.
-fn countChar(s: []const u8, char: u8) usize {
-    var count: usize = 0;
-    for (s) |ch| {
-        if (ch == char) count += 1;
-    }
-    return count;
 }

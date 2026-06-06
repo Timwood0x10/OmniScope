@@ -18,55 +18,9 @@ pub const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 ///
 /// Classifies how each language manages object lifetimes, which determines
 /// whether leaks are possible and how ownership transfers work across FFI.
-pub const MemoryModel = enum {
-    /// Manual malloc/free (C style). Leaks are common.
-    manual,
-    /// RAII / destructors (C++, Rust). Compiler inserts cleanup at scope end.
-    raii,
-    /// Reference counting (Python, Objective-C). Leak if refcount never reaches 0.
-    refcount,
-    /// Garbage collected (Java, Go runtime). Collector handles cleanup.
-    gc,
-    /// Hybrid (C# SafeHandle + GC, Go cgo). Depends on usage pattern.
-    hybrid,
-
-    /// Human-readable name for logging and diagnostics.
-    pub fn displayName(self: MemoryModel) []const u8 {
-        return switch (self) {
-            .manual => "Manual",
-            .raii => "RAII",
-            .refcount => "RefCount",
-            .gc => "GC",
-            .hybrid => "Hybrid",
-        };
-    }
-
-    /// Check if this memory model allows resource leaks in normal operation.
-    pub fn allowsLeak(self: MemoryModel) bool {
-        return switch (self) {
-            .manual => true,
-            .raii => false,
-            .refcount => true,
-            .gc => false,
-            .hybrid => true,
-        };
-    }
-
-    /// Get the default memory model for a given target language.
-    pub fn forLanguage(lang: Language) MemoryModel {
-        return switch (lang) {
-            .c => .manual,
-            .cpp => .raii,
-            .rust => .raii,
-            .zig => .raii,
-            .python => .refcount,
-            .go => .hybrid,
-            .csharp => .hybrid,
-            .java => .gc,
-            .unknown => .manual,
-        };
-    }
-};
+///
+/// Re-exported from memory_graph_types.zig (single source of truth).
+pub const MemoryModel = @import("../types/memory_graph_types.zig").OwnershipModel;
 
 /// FFI call semantics classification.
 pub const FFISemantics = enum {

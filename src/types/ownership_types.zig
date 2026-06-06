@@ -9,6 +9,8 @@ const llvm_safe = @import("../ir/llvm_safe.zig");
 const Language = @import("../diag/issue.zig").FFIBoundary.Language;
 const alloc_classifier = @import("../pass/analysis/ptr_lifetime/allocation_classifier.zig");
 
+const graph_algo = @import("../dataflow/graph_algorithms.zig");
+
 pub const AllocType = alloc_classifier.AllocType;
 pub const FreeType = alloc_classifier.FreeType;
 
@@ -397,43 +399,27 @@ pub const FlowGraph = std.AutoHashMap(u32, std.AutoHashMap(u32, void));
 
 /// Check if a value can reach another value through the flow graph (DFS).
 /// Uses visited set for cycle detection on cyclic graphs.
+/// Delegates to graph_algorithms.zig (SSOT).
 pub fn canReach(
     flow_graph: *const FlowGraph,
     from: u32,
     to: u32,
     visited: *std.AutoHashMap(u32, void),
 ) bool {
-    if (from == to) return true;
-    if (visited.contains(from)) return false;
-    visited.put(from, {}) catch return false;
-
-    const edges = flow_graph.get(from) orelse return false;
-    var iter = edges.iterator();
-    while (iter.next()) |entry| {
-        if (canReach(flow_graph, entry.key_ptr.*, to, visited)) return true;
-    }
-    return false;
+    return graph_algo.canReach(flow_graph, from, to, visited);
 }
 
 /// BFS traversal with cycle detection from from_ptr to find any reachable free site.
 /// Enables alloc-free path detection for leak analysis.
 /// Returns true if from_ptr can reach any entry in free_map via flow_graph.
+/// Delegates to graph_algorithms.zig (SSOT).
 pub fn findFreePath(
     from_ptr: u32,
     free_map: *std.AutoHashMap(u32, void),
     flow_graph: *const FlowGraph,
     visited: *std.AutoHashMap(u32, void),
 ) bool {
-    if (free_map.contains(from_ptr)) return true;
-    if (visited.contains(from_ptr)) return false;
-    visited.put(from_ptr, {}) catch return false;
-
-    if (flow_graph.get(from_ptr)) |outgoing| {
-        for (outgoing.keys()) |target| {
-            if (findFreePath(target, free_map, flow_graph, visited)) return true;
-        }
-    }
-    return false;
+    return graph_algo.findFreePath(from_ptr, free_map, flow_graph, visited);
 }
 
 /// DFS with cycle detection to check if 'from' can reach any free site.
@@ -444,6 +430,7 @@ pub fn findFreePath(
 /// CONSERVATIVE STRATEGY: If 'from' has known aliases AND any of those aliases
 /// are in the free_map, count it as a potential UAF even without full chain tracking.
 /// This catches: ptr_a = alloc(); ptr_b = alias(ptr_a); free(ptr_a); use(ptr_b)
+/// Delegates to graph_algorithms.zig (SSOT).
 pub fn canReachFree(
     from: u32,
     flow: std.AutoHashMap(u32, void),
@@ -451,22 +438,7 @@ pub fn canReachFree(
     flow_graph: *const FlowGraph,
     visited: *std.AutoHashMap(u32, void),
 ) bool {
-    if (flow.count() > 0) {
-        var alias_iter = flow.iterator();
-        while (alias_iter.next()) |entry| {
-            if (free_map.contains(entry.key_ptr.*)) return true;
-        }
-    }
-    if (free_map.contains(from)) return true;
-    if (visited.contains(from)) return false;
-    visited.put(from, {}) catch return false;
-
-    if (flow_graph.get(from)) |outgoing| {
-        for (outgoing.keys()) |target| {
-            if (canReachFree(target, .{}, free_map, flow_graph, visited)) return true;
-        }
-    }
-    return false;
+    return graph_algo.canReachFree(from, flow, free_map, flow_graph, visited);
 }
 
 /// Add a forward edge (from → to) to flow_graph and reverse edge to reverse_flow.

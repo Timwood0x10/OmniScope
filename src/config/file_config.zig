@@ -12,7 +12,7 @@
 
 const std = @import("std");
 const log = std.log.scoped(.omniscope_config);
-const language_override = @import("../config/language_override.zig");
+const language_override = @import("language_override.zig");
 
 /// Configuration file structure (matches JSON schema)
 pub const FileConfig = struct {

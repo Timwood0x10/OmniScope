@@ -40,13 +40,13 @@ const lifetime = @import("../../../lifetime/root.zig");
 const noise_reduction = @import("noise_reduction.zig");
 
 // Helpers from centralized types module
-const cpp_helpers = @import("../../../types/cpp_fp_helpers.zig");
+const cpp_helpers = @import("cpp_fp_helpers.zig");
 
 // Extracted types and pure functions
 const cpp_types = @import("../../../types/cpp_fp_types.zig");
 
 // Extracted detection functions (double-free + memory leak)
-const cpp_detect = @import("../../../types/cpp_fp_detect.zig");
+const cpp_detect = @import("cpp_fp_detect.zig");
 
 const isStlInternalFunction = cpp_helpers.isStlInternalFunction;
 const isCppSpecialMemberFunction = cpp_helpers.isCppSpecialMemberFunction;
@@ -74,8 +74,8 @@ const identifyLanguage = cpp_types.identifyLanguage;
 const isGuardedByNullCheck = cpp_types.isGuardedByNullCheck;
 const isLikelyStructMemberOwnership = cpp_types.isLikelyStructMemberOwnership;
 const convertLanguageToHint = cpp_types.convertLanguageToHint;
-const isCrossFFIAllocation = cpp_types.isCrossFFIAllocation;
-const canReach = cpp_types.canReach;
+const isCrossFFIAllocation = ownership_types.isCrossFFIAllocation;
+const canReach = @import("../../../dataflow/graph_algorithms.zig").canReach;
 const isRustIntoRawCall = cpp_types.isRustIntoRawCall;
 const isRustFromRawCall = cpp_types.isRustFromRawCall;
 const isRustAsPtrCall = cpp_types.isRustAsPtrCall;

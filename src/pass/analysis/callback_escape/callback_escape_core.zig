@@ -6,19 +6,19 @@
 //! Log prefix: [callback-escape-core]
 
 const std = @import("std");
-const c = @import("../ir/llvm_raw.zig").c;
-const safe = @import("../ir/llvm_safe.zig");
-const word_boundary = @import("../utils/word_boundary.zig");
-const lang_classifier = @import("../pass/analysis/ffi/ffi_language_classifier.zig");
+const c = @import("../../../ir/llvm_raw.zig").c;
+const safe = @import("../../../ir/llvm_safe.zig");
+const word_boundary = @import("../../../utils/word_boundary.zig");
+const lang_classifier = @import("../ffi/ffi_language_classifier.zig");
 
-const Language = @import("../diag/issue.zig").FFIBoundary.Language;
-const PlatformProfile = @import("../semantics/platform_profile.zig").PlatformProfile;
+const Language = @import("../../../diag/issue.zig").FFIBoundary.Language;
+const PlatformProfile = @import("../../../semantics/platform_profile.zig").PlatformProfile;
 
-const cb_types = @import("./callback_escape_types.zig");
+const cb_types = @import("../../../types/callback_escape_types.zig");
 const AllocSiteInfo = cb_types.AllocSiteInfo;
 const FreeSiteInfo = cb_types.FreeSiteInfo;
-const CGoCallInfo = @import("../pass/analysis/callback_escape_report.zig").CGoCallInfo;
-const CallbackEscapeInfo = @import("../pass/analysis/callback_escape_report.zig").CallbackEscapeInfo;
+const CGoCallInfo = @import("../callback_escape_report.zig").CGoCallInfo;
+const CallbackEscapeInfo = @import("../callback_escape_report.zig").CallbackEscapeInfo;
 
 const isGoSafetyFunction = cb_types.isGoSafetyFunction;
 const isCBytesPattern = cb_types.isCBytesPattern;
