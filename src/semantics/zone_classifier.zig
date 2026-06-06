@@ -310,18 +310,22 @@ test "classifyCFunction - FFI patterns" {
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("FFI_01_dlopen_null_check"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_dlopen_wrapper"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("dlopen_handle"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pthread_create_cb"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("signal_handler"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("malloc_wrapper"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("free_memory"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("my_mmap_handler"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("socket_create"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("fopen_file"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("cleanup_init"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_resource"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("PyObject_Call"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("JNI_OnLoad"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("NewGlobalRef"));
+}
+
+test "classifyCFunction - C stdlib patterns are not FFI" {
+    // Standard C library calls should NOT be classified as FFI
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("malloc_wrapper"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("free_memory"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("my_mmap_handler"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("socket_create"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("fopen_file"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pthread_create_cb"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("signal_handler"));
 }
 
 test "classifyCFunction - non-FFI returns unknown" {
@@ -331,11 +335,14 @@ test "classifyCFunction - non-FFI returns unknown" {
 }
 
 test "classifyCFunction - word boundary prevents FP" {
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("close_file"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("open_socket"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("read_data"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("write_buffer"));
-    try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("pipe_create"));
+    // POSIX I/O words (close, open, read, write, pipe) are now in C_STDLIB_PATTERNS → .unknown
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("close_file"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("open_socket"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("read_data"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("write_buffer"));
+    try std.testing.expectEqual(ZoneKind.unknown, classifyCFunction("pipe_create"));
+
+    // Generic lifecycle patterns still classify as FFI
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("destroy_handle"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("create_resource"));
     try std.testing.expectEqual(ZoneKind.ffi, classifyCFunction("init_module"));

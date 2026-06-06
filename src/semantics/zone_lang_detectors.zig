@@ -172,6 +172,183 @@ pub fn classifyCFunction(func_name: []const u8) ZoneKind {
         }
     }
 
+    // C_STDLIB_PATTERNS: Standard C library and POSIX functions.
+    // In a pure C project, calling malloc/fopen/read/write etc. is normal C
+    // code, NOT an FFI boundary. These must be checked before C_FFI_PATTERNS
+    // to avoid false positive FFI classifications for pure C code.
+    const C_STDLIB_PATTERNS = [_][]const u8{
+        // Memory allocation
+        "malloc",
+        "calloc",
+        "realloc",
+        "free",
+
+        // Memory operations
+        "memcpy",
+        "memmove",
+        "memset",
+        "memcmp",
+
+        // File I/O
+        "fopen",
+        "fclose",
+        "fread",
+        "fwrite",
+        "fprintf",
+        "fscanf",
+        "fflush",
+        "fseek",
+        "ftell",
+        "rewind",
+        "remove",
+        "rename",
+        "tmpfile",
+        "tmpnam",
+
+        // String operations
+        "strcpy",
+        "strncpy",
+        "strcat",
+        "strncat",
+        "strlen",
+        "strcmp",
+        "strncmp",
+        "strchr",
+        "strrchr",
+        "strstr",
+        "strtok",
+        "strspn",
+        "strcspn",
+        "sprintf",
+        "snprintf",
+        "sscanf",
+
+        // Conversion
+        "atoi",
+        "atol",
+        "atoll",
+        "strtol",
+        "strtoul",
+        "strtoll",
+        "strtoull",
+        "strtod",
+        "strtof",
+        "strtold",
+
+        // POSIX/Network I/O
+        "socket",
+        "connect",
+        "bind",
+        "listen",
+        "accept",
+        "send",
+        "recv",
+        "sendto",
+        "recvfrom",
+        "setsockopt",
+        "getsockopt",
+        "shutdown",
+        "select",
+        "poll",
+        "epoll",
+        "ioctl",
+        "fcntl",
+
+        // POSIX File I/O
+        "open",
+        "close",
+        "read",
+        "write",
+        "pread",
+        "pwrite",
+        "lseek",
+        "truncate",
+        "ftruncate",
+        "fsync",
+        "fdatasync",
+        "sync",
+        "pipe",
+        "dup",
+        "dup2",
+
+        // POSIX File system
+        "stat",
+        "lstat",
+        "fstat",
+        "mkdir",
+        "rmdir",
+        "chdir",
+        "getcwd",
+        "chmod",
+        "chown",
+        "link",
+        "unlink",
+        "symlink",
+        "readlink",
+        "realpath",
+        "access",
+        "opendir",
+        "readdir",
+        "closedir",
+
+        // POSIX Memory mapping
+        "mmap",
+        "munmap",
+        "mprotect",
+        "mlock",
+        "munlock",
+        "msync",
+        "brk",
+        "sbrk",
+
+        // Threading (POSIX threads)
+        "pthread_",
+        "sem_",
+        "shm_",
+        "msg_",
+        "mkfifo",
+        "mq_",
+
+        // Process management
+        "fork",
+        "exec",
+        "execve",
+        "execvp",
+        "wait",
+        "waitpid",
+        "waitid",
+        "kill",
+        "signal",
+        "raise",
+        "alarm",
+        "pause",
+        "sleep",
+        "usleep",
+        "nanosleep",
+        "getpid",
+        "getppid",
+        "exit",
+
+        // Control flow
+        "setjmp",
+        "longjmp",
+
+        // Platform-specific allocators
+        "malloc_zone",
+    };
+    for (C_STDLIB_PATTERNS) |pat| {
+        // Use word-boundary matching: the pattern must appear at the start of the
+        // function name or be preceded by a '_' separator. This prevents false
+        // positives where a short stdlib word (e.g., "open") appears inside a
+        // longer compound word (e.g., "dlopen") while still matching legitimate
+        // C function names (e.g., "open_socket", "my_fopen_wrapper").
+        const idx = std.mem.indexOf(u8, func_name, pat);
+        if (idx) |i| {
+            const at_word_boundary = i == 0 or func_name[i - 1] == '_';
+            if (at_word_boundary) return .unknown;
+        }
+    }
+
     const C_FFI_PATTERNS = [_][]const u8{
         // FFI boundary markers
         "FFI_",
@@ -181,74 +358,6 @@ pub fn classifyCFunction(func_name: []const u8) ZoneKind {
         "dlopen",
         "dlsym",
         "dlclose",
-
-        // Memory mapping
-        "mmap",
-        "munmap",
-        "mprotect",
-
-        // Network I/O
-        "socket",
-        "connect",
-        "bind",
-        "listen",
-        "accept",
-        "send",
-        "recv",
-
-        // File I/O (specific variants with prefixes)
-        "fopen",
-        "fclose",
-
-        // Threading
-        "pthread_",
-        "sem_",
-        "shm_",
-        "msg_",
-        "mkfifo",
-
-        // Process management
-        "fork",
-        "exec",
-        "wait",
-        "kill",
-        "signal",
-        "alarm",
-
-        // Control flow
-        "setjmp",
-        "longjmp",
-        "exit",
-
-        // Memory allocation
-        "malloc",
-        "calloc",
-        "realloc",
-        "free",
-        "memcpy",
-        "memmove",
-        "memset",
-        "memcmp",
-
-        // String operations (buffer overflow risk)
-        "strcpy",
-        "strncpy",
-        "strcat",
-        "strncat",
-        "strlen",
-        "strcmp",
-        "strncmp",
-        "sprintf",
-        "snprintf",
-
-        // Conversion
-        "atoi",
-        "atol",
-        "strtol",
-        "strtod",
-
-        // Platform-specific allocators
-        "malloc_zone",
 
         // Python C API
         "Py_",
@@ -281,9 +390,6 @@ pub fn classifyCFunction(func_name: []const u8) ZoneKind {
         "destroy_",  "create_",  "init_",     "cleanup_",
         "release_",  "acquire_", "allocate_", "deallocate_",
         "resource_", "handle_",
-        // Also include the previously ambiguous short words
-         "close",     "open",
-        "read",      "write",    "pipe",
     };
     for (C_FFI_BROAD_PREFIXES) |word| {
         const idx = std.mem.indexOf(u8, func_name, word);

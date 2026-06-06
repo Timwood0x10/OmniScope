@@ -61,13 +61,26 @@ pub const SurfaceClassifierPass = struct {
 
             // L4a: FFI Boundary detection (strict — only cross-ABI)
             // L4b: Library Export detection (mangled + external, not FFI)
-            const is_ffi_boundary = boundary.detectBoundaryFromLLVM(func);
-            const is_lib_export = boundary.detectLibraryExport(func);
+            //
+            // P0-Fix1: Pure C/C++ modules have no FFI concept — all functions
+            // are within the same language. Skip boundary detection entirely
+            // to prevent false positives on external linkage C functions.
+            const is_ffi_boundary = if (!ctx.isCModule())
+                boundary.detectBoundaryFromLLVM(func)
+            else
+                false;
+            const is_lib_export = if (!ctx.isCModule())
+                boundary.detectLibraryExport(func)
+            else
+                false;
 
             // L4c: Caller-side FFI detection (calls external FFI functions)
             // Complements callee-side detection for modules that IMPORT FFI functions
             // Example: Rust module calling c_hash() from C bridge
-            const is_ffi_caller = boundary.detectCallerSideFFI(func, raw_mod);
+            const is_ffi_caller = if (!ctx.isCModule())
+                boundary.detectCallerSideFFI(func, raw_mod)
+            else
+                false;
             const is_real_ffi_boundary = is_ffi_boundary or is_ffi_caller;
 
             if (is_real_ffi_boundary) ffi_boundary_count += 1;

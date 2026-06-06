@@ -631,6 +631,7 @@ pub fn channelFFIBoundary(self: *const PassContext) PassContext.ChannelMode {
     return switch (self.module_language.language) {
         .zig => .limited,
         .go => .limited,
+        .c, .cpp => .limited,
         else => .full,
     };
 }

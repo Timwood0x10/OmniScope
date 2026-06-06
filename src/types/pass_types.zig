@@ -310,7 +310,7 @@ pub const PassContext = struct {
     danger_surfaces_cache: ?[]memory_graph_mod.DangerSurface,
     danger_path_visited_cache: ?std.AutoHashMap(u64, void),
     function_surface: std.AutoHashMap(u64, surface_classifier.FunctionSurface),
-    has_ffi_boundary: bool = true,
+    has_ffi_boundary: bool = false,
     suppression_stats: issue_suppression.SuppressionStats,
     semantic_resolution: ?*@import("../semantics/resolution_engine.zig").ResolutionEngine,
     evidence: ?ir_evidence.IREvidence,
@@ -428,7 +428,7 @@ pub const PassContext = struct {
                 try m.ensureTotalCapacity(4096);
                 break :blk m;
             },
-            .has_ffi_boundary = true,
+            .has_ffi_boundary = false,
             .suppression_stats = .{},
             .semantic_resolution = null,
             .evidence = null,
