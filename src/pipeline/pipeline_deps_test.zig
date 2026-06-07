@@ -18,8 +18,8 @@ const PassKind = @import("../pass/pass.zig").PassKind;
 // FIX-4 Core: All FFI passes must declare correct dependencies
 // ============================================================================
 
-test "PtrLifetimePass - depends on call-graph only (v0.1.9 circular dep fix)" {
-    // v0.1.9: Removed danger-surface dependency to break circular dependency.
+test "PtrLifetimePass - depends on call-graph only (v0.2.0 circular dep fix)" {
+    // v0.2.0: Removed danger-surface dependency to break circular dependency.
     // Execution order: call-graph → ptr-lifetime → danger-surface → ffi_boundary.
     // ptr-lifetime no longer needs danger-surface to run first — it populates
     // MemoryGraph independently, and danger-surface consumes it afterwards.
@@ -68,8 +68,8 @@ test "CallbackEscapePass - depends on call-graph and danger-surface (FIX-4 happy
     try std.testing.expect(has_danger_surface);
 }
 
-test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.1.9 happy path)" {
-    // v0.1.9: Added ptr-lifetime dependency to ensure MemoryGraph is populated
+test "DangerSurfacePass - depends on call-graph and ptr-lifetime (v0.2.0 happy path)" {
+    // v0.2.0: Added ptr-lifetime dependency to ensure MemoryGraph is populated
     // before DangerSurfacePass reads it. This eliminates the Phase 0 fallback
     // that was needed when MemoryGraph was empty.
     const deps = DangerSurfacePass.deps;

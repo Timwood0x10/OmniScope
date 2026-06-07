@@ -408,7 +408,7 @@ Alternatives considered:
 **Decision**: Implement Semantic Resolution Tree for FP suppression
 
 Rationale:
-1. v0.1.x had unacceptably high FP rate (~1966/test suite)
+1. Version `0.2.0` keeps false-positive work tied to tracked baselines
 2. Need semantic-level understanding beyond pattern matching
 3. Tree structure allows compositional reasoning
 

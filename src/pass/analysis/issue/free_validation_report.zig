@@ -33,9 +33,10 @@ fn createOriginTraceEntry(
         .from_param => try allocator.dupe(u8, "Pointer origin: function parameter"),
         .from_global => try allocator.dupe(u8, "Pointer origin: global variable"),
         .from_constant => try allocator.dupe(u8, "Pointer origin: constant value"),
+        .from_malloc => try allocator.dupe(u8, "Pointer origin: heap allocation"),
+        .from_ffi_call => try allocator.dupe(u8, "Pointer origin: FFI call"),
         .from_library_borrow => try allocator.dupe(u8, "Pointer origin: borrowed library reference"),
         .unknown => try allocator.dupe(u8, "Pointer origin: unknown"),
-        else => try allocator.dupe(u8, "Pointer origin: non-heap source"),
     };
     return TraceEntry.initOwned(desc);
 }
@@ -97,9 +98,10 @@ pub fn reportInvalidFree(
         .from_param => "function parameter",
         .from_global => "global variable",
         .from_constant => "constant",
+        .from_malloc => "heap-allocated",
+        .from_ffi_call => "FFI call",
         .from_library_borrow => "borrowed library reference",
         .unknown => "unknown source",
-        else => "non-heap source",
     };
 
     const ffi_note = if (reaches_ffi) " [cross-FFI alias detected]" else "";

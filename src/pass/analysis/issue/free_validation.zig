@@ -282,6 +282,7 @@ pub const FreeValidationPass = struct {
                 if (std.mem.eql(u8, callee_name, "free") or
                     std.mem.eql(u8, callee_name, "kfree") or
                     std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.eql(u8, callee_name, "zig_free") or
                     std.mem.startsWith(u8, callee_name, "operator delete") or
                     std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
                     std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
@@ -331,6 +332,7 @@ pub const FreeValidationPass = struct {
                 if (std.mem.eql(u8, callee_name, "free") or
                     std.mem.eql(u8, callee_name, "kfree") or
                     std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.eql(u8, callee_name, "zig_free") or
                     std.mem.startsWith(u8, callee_name, "operator delete") or
                     std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
                     std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
@@ -419,9 +421,10 @@ fn createOriginTraceEntry(allocator: std.mem.Allocator, origin_val: ValueOrigin,
         .from_param => try allocator.dupe(u8, "Pointer origin: function parameter"),
         .from_global => try allocator.dupe(u8, "Pointer origin: global variable"),
         .from_constant => try allocator.dupe(u8, "Pointer origin: constant value"),
+        .from_malloc => try allocator.dupe(u8, "Pointer origin: heap allocation"),
+        .from_ffi_call => try allocator.dupe(u8, "Pointer origin: FFI call"),
         .from_library_borrow => try allocator.dupe(u8, "Pointer origin: borrowed library reference"),
         .unknown => try allocator.dupe(u8, "Pointer origin: unknown"),
-        else => try allocator.dupe(u8, "Pointer origin: non-heap source"),
     };
     return TraceEntry.initOwned(desc);
 }

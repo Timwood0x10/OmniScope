@@ -490,7 +490,7 @@ test "is_llvm_intrinsic_noise - real FFI functions NOT suppressed" {
 }
 
 test "is_llvm_intrinsic_noise - Rust synthetic patterns" {
-    // After FIX-1 (v0.1.6): __rust_alloc/dealloc/realloc REMOVED from noise patterns.
+    // After FIX-1 (v0.2.0): __rust_alloc/dealloc/realloc REMOVED from noise patterns.
     // They must now be tracked by ptr_lifetime for FFI boundary detection.
     try std.testing.expect(!is_llvm_intrinsic_noise("__rust_alloc"));
     try std.testing.expect(!is_llvm_intrinsic_noise("__rust_dealloc"));

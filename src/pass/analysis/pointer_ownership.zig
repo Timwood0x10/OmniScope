@@ -289,60 +289,64 @@ pub const PointerOwnershipPass = struct {
 
         // T3.1: Pre-collect all functions into work items for parallel distribution.
         const func_list = ctx.ir_store.function_list;
-        const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_list.len);
-        defer ctx.allocator.free(work_items);
-        for (func_list, 0..) |fir, idx| {
-            work_items[idx] = .{
-                .func = @intFromPtr(fir.func),
-                .func_name = fir.name,
-                .is_declaration = false,
-                .fir_idx = idx,
+        if (func_list.len > 0) {
+            const work_items = try ctx.allocator.alloc(parallel.WorkItem, func_list.len);
+            defer ctx.allocator.free(work_items);
+            for (func_list, 0..) |fir, idx| {
+                work_items[idx] = .{
+                    .func = @intFromPtr(fir.func),
+                    .func_name = fir.name,
+                    .is_declaration = false,
+                    .fir_idx = idx,
+                };
+            }
+
+            // T3.1: Mutex protecting shared state during parallel analysis.
+            // Coarse-grained lock: held during analyzeFunctionForOwnership + detects.
+            // Noise filtering runs unlocked for parallelism (same pattern as ptr_lifetime).
+            var analysis_mutex = std.Thread.Mutex{};
+
+            // T3.1: Worker context — all shared state needed by per-function analysis.
+            var worker_ctx = OwnershipWorkerContext{
+                .ctx_ptr = ctx,
+                .diag_ptr = diag,
+                .alloc_map = &alloc_map,
+                .free_map = &free_map,
+                .flow_graph = &flow_graph,
+                .reverse_flow = &reverse_flow,
+                .stats = &stats,
+                .has_debug_info = has_debug_info,
+                .id_map = &id_map,
+                .alloc_pool = &alloc_pool,
+                .free_pool = &free_pool,
+                .null_check_recognizer = &null_check_recognizer,
+                .ffi_relevant_cache = &ffi_relevant_cache,
+                .raii_count = &raii_count,
+                .mutex = &analysis_mutex,
             };
+
+            // T3.1: Publish worker context for worker function access
+            worker_context_ptr = &worker_ctx;
+            defer worker_context_ptr = null;
+
+            // T3.1: Parallel execution — distribute functions across worker threads.
+            // Use limited worker count (2) to avoid contention with wasmtime's internal rayon pool
+            // and LLVM C API thread-safety limitations.
+            var executor = parallel.ParallelExecutor.init(ctx.allocator, 2) catch |err| {
+                diag.warn("PointerOwnership: failed to init parallel executor: {}", .{err});
+                return error.OutOfMemory;
+            };
+            defer executor.deinit();
+            const results = executor.run(work_items, ownershipWorkerFn) catch |err| {
+                diag.warn("PointerOwnership: parallel execution error: {}", .{err});
+                return error.OutOfMemory;
+            };
+
+            // T3.1: Merge per-worker results (funcs_analyzed/skipped/errored already accumulated via mutex)
+            _ = results;
+        } else {
+            diag.debug("PointerOwnership: no functions in IR store, skipping per-function analysis", .{});
         }
-
-        // T3.1: Mutex protecting shared state during parallel analysis.
-        // Coarse-grained lock: held during analyzeFunctionForOwnership + detects.
-        // Noise filtering runs unlocked for parallelism (same pattern as ptr_lifetime).
-        var analysis_mutex = std.Thread.Mutex{};
-
-        // T3.1: Worker context — all shared state needed by per-function analysis.
-        var worker_ctx = OwnershipWorkerContext{
-            .ctx_ptr = ctx,
-            .diag_ptr = diag,
-            .alloc_map = &alloc_map,
-            .free_map = &free_map,
-            .flow_graph = &flow_graph,
-            .reverse_flow = &reverse_flow,
-            .stats = &stats,
-            .has_debug_info = has_debug_info,
-            .id_map = &id_map,
-            .alloc_pool = &alloc_pool,
-            .free_pool = &free_pool,
-            .null_check_recognizer = &null_check_recognizer,
-            .ffi_relevant_cache = &ffi_relevant_cache,
-            .raii_count = &raii_count,
-            .mutex = &analysis_mutex,
-        };
-
-        // T3.1: Publish worker context for worker function access
-        worker_context_ptr = &worker_ctx;
-        defer worker_context_ptr = null;
-
-        // T3.1: Parallel execution — distribute functions across worker threads.
-        // Use limited worker count (2) to avoid contention with wasmtime's internal rayon pool
-        // and LLVM C API thread-safety limitations.
-        var executor = parallel.ParallelExecutor.init(ctx.allocator, 2) catch |err| {
-            diag.warn("PointerOwnership: failed to init parallel executor: {}", .{err});
-            return error.OutOfMemory;
-        };
-        defer executor.deinit();
-        const results = executor.run(work_items, ownershipWorkerFn) catch |err| {
-            diag.warn("PointerOwnership: parallel execution error: {}", .{err});
-            return error.OutOfMemory;
-        };
-
-        // T3.1: Merge per-worker results (funcs_analyzed/skipped/errored already accumulated via mutex)
-        _ = results;
 
         // C1 FIX: Report detection results (previously in separate passes 4-8)
         if (raii_count > 0) {

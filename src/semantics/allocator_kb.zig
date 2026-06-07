@@ -97,34 +97,28 @@ pub const AllocatorKB = struct {
     deallocators: std.StringHashMap(AllocatorInfo),
     /// Known safe allocator pairs.
     pairs: std.ArrayList(AllocatorPair),
-    /// Arena allocator for long-lived data.
-    arena: std.heap.ArenaAllocator,
     /// Temporary allocator.
     temp_allocator: std.mem.Allocator,
 
     /// Initializes a new allocator knowledge base with builtin knowledge.
     pub fn init(temp_allocator: std.mem.Allocator) AllocatorKBError!AllocatorKB {
-        var arena = std.heap.ArenaAllocator.init(temp_allocator);
-        errdefer arena.deinit();
-
         var kb = AllocatorKB{
-            .allocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
-            .deallocators = std.StringHashMap(AllocatorInfo).init(arena.allocator()),
-            .pairs = try std.ArrayList(AllocatorPair).initCapacity(arena.allocator(), 0),
-            .arena = undefined,
+            .allocators = std.StringHashMap(AllocatorInfo).init(temp_allocator),
+            .deallocators = std.StringHashMap(AllocatorInfo).init(temp_allocator),
+            .pairs = try std.ArrayList(AllocatorPair).initCapacity(temp_allocator, 0),
             .temp_allocator = temp_allocator,
         };
+        errdefer kb.deinit();
 
-        kb.arena = arena;
         try kb.populateBuiltin();
-
-        arena = undefined;
         return kb;
     }
 
     /// Deinitializes the knowledge base.
     pub fn deinit(kb: *AllocatorKB) void {
-        kb.arena.deinit();
+        kb.allocators.deinit();
+        kb.deallocators.deinit();
+        kb.pairs.deinit(kb.temp_allocator);
         kb.* = undefined;
     }
 
@@ -236,7 +230,7 @@ pub const AllocatorKB = struct {
                 .free = free_info,
                 .is_confirmed = true,
             };
-            try kb.pairs.append(kb.arena.allocator(), pair);
+            try kb.pairs.append(kb.temp_allocator, pair);
         }
     }
 

@@ -131,7 +131,6 @@ pub const PassManager = struct {
             for (pass.deps) |dep_name| {
                 // Find dependency index
                 const dep_idx = self.pass_map.get(dep_name) orelse {
-                    log.err("PassManager: pass '{s}' depends on '{s}' which is not registered", .{ pass.name, dep_name });
                     return error.MissingDependency;
                 };
                 // Add edge: dep_idx -> i
@@ -210,7 +209,7 @@ pub const PassManager = struct {
             self.pass_stats_collector = profiler.PassStatsCollector.init(self.allocator);
         }
 
-        // Execute in resolved order with graceful degradation (v0.1.6)
+        // Execute in resolved order with graceful degradation.
         var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;

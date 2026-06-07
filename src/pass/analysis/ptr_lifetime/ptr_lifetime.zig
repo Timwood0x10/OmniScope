@@ -86,7 +86,7 @@ const word_boundary = @import("../../../utils/word_boundary.zig");
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
-// v0.1.7: New semantic modules
+// v0.2.0: Semantic modules
 const memory_graph = @import("../../../semantics/memory_graph.zig");
 const call_graph_mod = @import("../../../semantics/call_graph.zig");
 const allocator_kb = @import("../../../semantics/allocator_kb.zig");
@@ -164,7 +164,7 @@ pub const LifetimeMap = ptr_types.LifetimeMap;
 pub const PtrLifetimePass = struct {
     pub const name = "ptr-lifetime";
     pub const kind = PassKind.analysis;
-    // v0.1.9: Removed danger-surface dependency to break circular dependency.
+    // v0.2.0: Removed danger-surface dependency to break circular dependency.
     // Execution order: call-graph → ptr-lifetime → danger-surface → ffi_boundary.
     // ptr-lifetime populates MemoryGraph; danger-surface consumes it.
     // Noise reduction using isRelevantFunction() still works via Phase 0 fallback

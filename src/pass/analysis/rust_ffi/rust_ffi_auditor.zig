@@ -229,6 +229,11 @@ pub const RustFfiAuditor = struct {
         // ── Universal FFI boundary rules (run on ALL languages) ──
 
         // Rule 4: Unsafe block FFI call scan
+        // NOTE: For non-Rust functions, only report if the function has extern C calls
+        // that are NOT standard allocator/deallocator functions (malloc/free/etc.).
+        // Standard allocator calls through FFI are expected patterns — they shouldn't
+        // trigger unsafe FFI warnings. The safety of allocator usage is validated by
+        // dedicated passes (MallocCheckPass, FreeValidationPass, etc.).
         try basic_rules.detectUnsafeFfiCalls(self, func, calls, inst_cache);
 
         if (self.stats.unsafe_ffi_calls > 0) {

@@ -7,7 +7,7 @@
 //! **Execution order**: Must run AFTER call-graph (needs CrossLangEdge)
 //!                       and AFTER ptr-lifetime (needs populated MemoryGraph),
 //!                       and BEFORE callback_escape and other reporting passes.
-//! v0.1.9: Added ptr-lifetime dependency — ensures MemoryGraph has call_args/call_rets
+//! v0.2.0: Added ptr-lifetime dependency — ensures MemoryGraph has call_args/call_rets
 //!          populated before DangerSurfacePass reads them, eliminating Phase 0 fallback.
 //!
 //! **Algorithm (optimized O(E × avg_args) instead of O(N × B))**:
@@ -31,7 +31,7 @@ const c = @import("../../ir/llvm_raw.zig").c;
 pub const DangerSurfacePass = struct {
     pub const name = "danger-surface";
     pub const kind = PassKind.analysis;
-    // v0.1.9: Added ptr-lifetime dependency — DangerSurfacePass needs MemoryGraph
+    // v0.2.0: Added ptr-lifetime dependency — DangerSurfacePass needs MemoryGraph
     // populated (call_args, call_rets) before it can trace danger surfaces.
     // Without this, Phase 0 fallback was needed to compensate for empty MemoryGraph.
     pub const deps = &[_][]const u8{ "call-graph", "ptr-lifetime" };

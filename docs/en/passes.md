@@ -1,744 +1,612 @@
-# Pass Reference
+# Pass Guide By Design
 
-> "13 passes, one pipeline, zero mercy for memory bugs."
->
-> **⚠️ Realistic Statement**: This document reflects the real state of v0.2.0, including measured performance data and known limitations.
->
-> Version: v0.2.0 | Last updated: 2026-06-01 | Corresponding code: VERSION 0.2.0, LLVM 22
+This document describes the passes that are registered by `src/pipeline_registration.zig` for the full pipeline in version `0.2.0`. It is written as a code-reading guide, not as an accuracy claim.
 
-OmniScope's analysis engine consists of **13 passes** (excluding Tier 3's SRT/Gate/Scorer), divided into Foundation, Tier 1 (pass-through), and Tier 2 (graph-driven) layers. Each pass is an independent analysis unit that communicates through shared graph data structures.
+Each pass section answers four questions:
 
-**Important architecture notes**:
-- **Tier 1** (4 passes): Build data, do not report issues
-- **Tier 2** (9 passes): FFI/unsafe boundary analysis, all issues gated by `isOnDangerPath()`
-- **Tier 3** (not passes, but suppression layer): SRT + Issue Gate + Confidence Scorer, performs FP suppression before issue emission
+- What problem does this pass try to isolate?
+- What is the design idea in the current code?
+- What does it read or produce through `PassContext`?
+- Which other passes does it normally cooperate with?
 
-## Data Flow Overview
+The safety-only path in `src/pipeline.zig` registers a smaller subset: `call-graph`, `malloc-check`, `buffer-overflow`, `integer-overflow`, `ptr-lifetime`, `danger-surface`, `memory-safety`, `free-validation`, and `callback-escape`.
+
+## Pipeline Shape
 
 ```mermaid
 flowchart TD
-    LLVMIR["LLVM IR<br/>(.bc / .ll)"]
-
-    subgraph Foundation["Foundation Passes"]
-        cfg["cfg"]
-        dfg["dfg"]
-        cfg --> dfg
-    end
-
-    subgraph Tier1["Tier 1: Pass-Through<br/>(Build data, don't report issues)"]
-        call_graph["call-graph"]
-        pointer_flow["pointer-flow"]
-        pointer_own["pointer-ownership"]
-        return_check["return-check"]
-    end
-
-    subgraph Tier2["Tier 2: Graph-Driven<br/>(All issues gated by isOnDangerPath)"]
-        ptr_lifetime["ptr-lifetime"]
-        danger_surface["danger-surface"]
-        ffi_boundary["ffi-boundary"]
-        ffi_type_mismatch["ffi-type-mismatch"]
-        ffi_body_check["ffi-body-check"]
-        ffi_unsafe["ffi-unsafe"]
-        callback_esc["callback-escape"]
-        memory_safety["memory-safety"]
-        free_validation["free-validation"]
-    end
-
-    subgraph OutputLayer["Output & Reports<br/>Text / JSON / SARIF"]
-    end
-
-    LLVMIR --> Foundation
-    Foundation --> Tier1
-    Tier1 --> Tier2
-    Tier2 --> OutputLayer
-
-    call_graph -->|CrossLangEdge| ptr_lifetime
-    ptr_lifetime -->|MemoryGraph| danger_surface
-    danger_surface -->|DangerSurface markers| ffi_boundary
-    danger_surface --> ffi_type_mismatch
-    danger_surface --> ffi_body_check
-    danger_surface --> ffi_unsafe
-    danger_surface --> callback_esc
-    danger_surface --> memory_safety
-    danger_surface --> free_validation
+    IR[LLVM module] --> Base[CFG / DFG / Alias]
+    IR --> Surface[Surface classifier]
+    IR --> Semantics[Semantic resolver]
+    Base --> Calls[Call graph]
+    Calls --> Flow[Pointer flow]
+    Calls --> Lifetime[Pointer lifetime]
+    Flow --> FFI[FFI detector and FFI analysis]
+    Lifetime --> Danger[Danger surface]
+    Danger --> Boundary[FFI boundary]
+    Boundary --> Ownership[Pointer ownership and cross-language checks]
+    Boundary --> Specialized[ABI / layout / string / unwind / callback / GC / error checks]
+    Semantics --> Rust[Rust FFI auditor]
+    Danger --> Safety[Memory safety and free validation]
+    Safety --> Issues[Issues]
+    Specialized --> Issues
+    Ownership --> Issues
+    Rust --> Issues
 ```
 
-## Foundation Passes
+The graph is conceptual. Actual execution order is resolved by `src/pass/manager.zig` from each pass's `deps`; when a pass has no dependency, the registration order in `src/pipeline_registration.zig` still matters for the current behavior.
 
-### `cfg` -- Control Flow Graph
+## Shared Contracts
 
-**The foundation.**
+| Contract | Where to look | Why it matters |
+| --- | --- | --- |
+| Pass metadata | each pass's `name`, `kind`, `deps` | Drives dependency resolution. |
+| Context | `src/pass/pass.zig`, `src/types/pass_types.zig`, `src/pass/pass_context_impl.zig` | Shared module, IR store, facts, data-flow graph, memory graph, semantic state, and issue insertion. |
+| Registration | `src/pipeline_registration.zig` | Defines the full pipeline pass set. |
+| Safety-only registration | `src/pipeline.zig` | Defines the smaller single-language safety path. |
+| Issue model | `src/diag/issue.zig` | Normalizes kind, severity, confidence, trace, and location. |
 
-| Attribute | Value |
-|-----------|-------|
+## Foundation And Context Passes
+
+### `cfg`
+
+| Field | Value |
+| --- | --- |
 | File | `src/pass/foundation/cfg.zig` |
-| Tier | Foundation |
-| Dependencies | None |
-| Output | `cfg_edge` fact |
-| Reports issues | No |
+| Kind | `foundation` |
+| Dependencies | none |
+| Standard issue output | no |
 
-Builds control flow graph (CFG) for each function. Traverses all BasicBlocks, records jump relationships between blocks, outputs `cfg_edge` facts to FactStore.
+Problem: later checks need basic block relationships without each pass walking terminators differently.
 
-Without this pass, nothing else works. It's the `main()` of the analysis world.
+Design: scan functions and basic blocks from the LLVM module and record control-flow edges as facts. The pass is intentionally low-level; it should not decide whether a path is dangerous.
 
-```zig
-pub const name = "cfg";
-pub const kind = PassKind.foundation;
-pub const deps = &[_][]const u8{};
-```
+Cooperates with: `dfg` and `alias`, which depend on stable block and instruction structure. Diagnostic passes should use the shared context rather than rebuild CFG state.
 
-### `dfg` -- Data Flow Graph
+### `dfg`
 
-**The foundation.** (Yes, CFG and DFG are both.)
-
-| Attribute | Value |
-|-----------|-------|
+| Field | Value |
+| --- | --- |
 | File | `src/pass/foundation/dfg.zig` |
-| Tier | Foundation |
+| Kind | `foundation` |
 | Dependencies | `cfg` |
-| Output | `dfg_edge` fact |
-| Reports issues | No |
+| Standard issue output | no |
 
-Builds data flow graph (DFG) for each function. Tracks data dependency relationships between instructions (def-use chain), outputs `dfg_edge` facts. Depends on CFG to complete first.
+Problem: value dependencies are needed by pointer, taint, and ownership checks, but def-use traversal is easy to duplicate.
 
-```zig
-pub const name = "dfg";
-pub const kind = PassKind.foundation;
-pub const deps = &[_][]const u8{"cfg"};
-```
+Design: traverse instruction operands and emit data-flow facts. PHI handling is kept in this layer so higher passes can reason about values rather than raw operand mechanics.
 
-## Tier 1: Pass-Through Passes
+Cooperates with: `alias`, `ffi-detector`, and `ownership-violation`, which declare `dfg` or consume value-flow evidence.
 
-Tier 1 passes operate on **pure C/C++ internal operations**. They build and enrich intermediate data structures but **never emit issues directly**. Their role is information gathering and lightweight classification.
+### `alias`
 
-### `call-graph` -- Call Graph
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/alias.zig` |
+| Kind | `analysis` |
+| Dependencies | `cfg`, `dfg` |
+| Standard issue output | no |
 
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/call_graph.zig` |
-| Tier | Tier 1 |
-| Dependencies | None |
-| Output | `CrossLangEdge` list |
-| Reports issues | No |
+Problem: memory checks often need to know whether two values may refer to the same storage.
 
-Builds function call graph, records relationships between functions. Classifies functions as `internal` (defined within module), `libc` (standard C library, trusted), or `external_unknown` (source unknown, potential FFI boundary).
+Design: build alias evidence from CFG/DFG-level facts and store it in shared structures. It does not try to be a whole-program alias engine; it gives later passes a common local signal.
 
-Key output: Generates `CrossLangEdge` for every FFI call site, recording caller/callee language, whether it crosses FFI boundary, and pointer parameter index. Downstream passes (ptr-lifetime, ffi-boundary, callback-escape, danger-surface) consume these edges.
+Cooperates with: `ptr-lifetime`, `memory-safety`, `free-validation`, and instrumentation planning when they need pointer equivalence or conservative uncertainty.
 
-```zig
-pub const FunctionKind = enum {
-    internal,          // Defined within module
-    libc,              // Standard C library (trusted)
-    external_unknown,  // Source unknown (potential FFI boundary)
-};
-```
+### `surface-classifier`
 
-### `pointer-flow` -- Pointer Flow Tracking
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/surface_classifier_pass.zig` |
+| Kind | `foundation` |
+| Dependencies | none |
+| Standard issue output | no |
 
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/taint_propagation.zig` |
-| Tier | Tier 1 |
-| Dependencies | `call-graph` |
-| Output | Pointer flow graph |
-| Reports issues | No |
+Problem: raw function names do not say whether code is user code, runtime glue, platform code, or a boundary-facing surface.
 
-Tracks pointer value flow across assignments, parameter passing, and return values. This is the infrastructure for taint analysis.
+Design: classify functions using `semantics/surface_classifier*` helpers and attach that context to `PassContext`.
 
-Note: In the current implementation, pointer-flow functionality is provided by `taint_propagation.zig`.
+Cooperates with: issue filtering, FFI passes, `ptr-lifetime`, and output decisions that need to separate user-facing evidence from runtime/internal noise.
 
-### `pointer-ownership` -- Pointer Ownership Tracking
+### `SemanticResolver`
 
-**The absolute workhorse.**
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/semantic_resolver_pass.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | no |
 
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/pointer_ownership.zig` |
-| Tier | Tier 1 |
-| Dependencies | None |
-| Output | `alloc_map` / `free_map` |
-| Reports issues | No |
+Problem: some symbols need semantic interpretation before a pass can decide whether they are allocators, release functions, runtime glue, or language constructs.
 
-Tracks pointer ownership at FFI boundaries. Detects cross-language free mismatches (Rust alloc/C free, or vice versa), ownership loss, double free risks.
+Design: build semantic resolution state from `semantics/` and `registry/` knowledge and place it on the shared context.
 
-Uses def-use chain for ownership state tracking. Integrates inter-procedural analysis (function summaries) and path-sensitive analysis (null check tracking). Uses MemoryPool to reduce allocation overhead, Profiler for performance analysis.
+Cooperates with: `rust-ffi-filter`, noise filters, memory checks, and resource checks that need meaning beyond string matching.
 
-```zig
-// v0.2: Inter-procedural analysis (function summaries)
-// v0.3: MemoryPool + Profiler + BoundaryAnalyzer
-```
+## General Safety Passes
 
-### `return-check` -- Return Value Check
+### `malloc-check`
 
-| Attribute | Value |
-|-----------|-------|
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/issue/malloc_check.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: unchecked allocation results can become null dereferences or error-handling bugs.
+
+Design: scan calls to allocation-like functions and check whether the result is guarded before use. The pass is deliberately simple and should be read with `null_check_guard.zig` and output filtering in mind.
+
+Cooperates with: `memory-safety` and `free-validation`, which may later reason about the same allocation as a lifetime or release event.
+
+### `buffer-overflow`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/buffer_overflow.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: known unsafe copy/format patterns can cross into memory corruption when buffer size evidence is weak or missing.
+
+Design: look for risky buffer operations in IR call sites and report candidates with available context. This pass is pattern-oriented; it does not replace dynamic bounds checking.
+
+Cooperates with: `surface-classifier`, `ffi-boundary`, and issue filters so reports can be narrowed to boundary-relevant code when configured.
+
+### `integer-overflow`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/issue/integer_overflow.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: arithmetic used for sizes, counts, or allocation lengths can overflow before a memory operation.
+
+Design: scan integer operations and related call contexts for overflow-sensitive patterns. The pass reports candidates where the IR suggests risk; it does not prove every arithmetic path.
+
+Cooperates with: `buffer-overflow`, `malloc-check`, and `memory-safety` because size computation often feeds allocation and copy behavior.
+
+### `return-check`
+
+| Field | Value |
+| --- | --- |
 | File | `src/pass/analysis/issue/return_check.zig` |
-| Tier | Tier 1 |
-| Dependencies | None |
-| Output | None (direct verification) |
-| Reports issues | No |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
 
-Validates return value ownership for dangerous functions. Return values from `malloc`, `open`, `read`, etc. must be checked — ignoring them is a classic bug source.
+Problem: ignoring return values from APIs such as allocation, I/O, or system calls can hide failed operations.
 
-```zig
-const DangerousFunctions = &[_][]const u8{
-    "malloc", "open", "read", "write", "system", "exec", "popen",
-};
+Design: match known return-sensitive functions and inspect whether the returned value is consumed or checked.
 
-const SafeReturnFunctions = &[_][]const u8{
-    "free",    // void return, no need to check
-    "close",   // rarely needs checking in practice
-    "fflush",  // void return
-    "fclose",  // rarely needs checking in practice
-};
-```
+Cooperates with: `ffi-body-check` and `ffi-unsafe`, which may classify the same call as risky for boundary or unsafe API reasons.
 
-## Tier 2: Graph-Driven Passes
+### `memory-safety`
 
-Tier 2 passes perform **FFI and unsafe boundary analysis**. Every issue report is gated through `isOnDangerPath()` — a unified check that consults the `DangerSurface` marker set. If a function or pointer is not on a danger path, the pass silently skips it.
-
-### `ptr-lifetime` -- Pointer Lifetime Tracking
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/ptr_lifetime.zig` |
-| Tier | Tier 2 |
-| Dependencies | `call-graph` |
-| Output | `MemoryGraph` |
-| Consumes | `CrossLangEdge`, `DangerSurface` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Tracks raw pointer lifetime, detects:
-- Stack pointers escaping to FFI callbacks (dangling after return)
-- Use-after-scope (pointers used after allocation scope ends)
-- Returning stack addresses (undefined behavior)
-- Heap pointers passed to extern without ownership transfer
-
-Design principle: Intra-procedural analysis + def-use chain tracking. Based only on IR facts, no inter-procedural alias analysis required.
-
-```rust
-// Detection example: Stack pointer escapes to C callback
-unsafe {
-    let buf = [0u8; 256];
-    c_callback(buf.as_ptr());  // BUG: buf released when scope exits
-}
-```
-
-```
-// Detection example: Returning stack address
-fn getBuffer() [*]const u8 {
-    var buf: [64]u8 = undefined;
-    return &buf;  // BUG: stack invalid after return
-}
-```
-
-### `danger-surface` -- Danger Surface Marking
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/danger_surface.zig` |
-| Tier | Tier 2 |
-| Dependencies | `call-graph` |
-| Output | `DangerSurface` markers |
-| Consumes | `CrossLangEdge`, `MemoryGraph` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Core architecture shift from "scan everything" to "track outward from danger surfaces". This is the unique entry point for Tier 2 (strict analysis).
-
-Algorithm (optimized O(E x avg_args) instead of O(N x B)):
-1. Collect all danger surfaces (FFI boundary `CrossLangEdge`)
-2. If no FFI boundaries → early return (fast path for pure C projects)
-3. For each surface, find associated pointers via call_arg/call_ret edges
-4. Perform `isOnDangerPath` check only on these pointers
-5. Fallback: Scan all nodes looking for cross_lang_lifecycle + unsafe_alloc
-
-Without this pass, nothing else works. It's the `main()` of the analysis world.
-
-### `ffi-boundary` -- FFI Boundary Detection
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/ffi_boundary.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | `FFIBoundary` issue |
-| Consumes | `CrossLangEdge` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Detects FFI call boundaries. This is the orchestrator, delegating specific work to:
-- `ffi_zone_check.zig` -- Zone classification
-- `ffi_boundary_check.zig` -- Core boundary check
-- `ffi_noise_filter.zig` -- Noise filtering
-
-Integrates type checker, language classifier, safety checker, noise reduction modules.
-
-### `ffi-type-mismatch` -- FFI Type Mismatch Detection
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/ffi_type_mismatch.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | Type mismatch issue |
-| Consumes | `noise_filter` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Detects type mismatches at FFI boundaries. Supports all languages:
-- C/C++: extern declarations, API boundaries
-- Rust: `extern "C"`, unsafe FFI
-- Go: cgo calls (`C.CBytes`, `C.malloc`, etc.)
-- Zig: extern declarations, `@cImport`
-- Python: C API calls (`Py*`, `PyObject*`)
-
-FFI boundaries are blind spots for every compiler, making them the most dangerous source of UB.
-
-```zig
-pub const TypeMismatchKind = enum(u8) {
-    size_mismatch,      // Size mismatch (e.g., usize vs size_t on 32-bit)
-    sign_mismatch,      // Sign mismatch (e.g., i32 vs u32)
-    alignment_mismatch, // Alignment mismatch
-    enum_mismatch,      // Enum representation mismatch
-    struct_layout,      // Struct layout mismatch
-    pointer_type,       // Pointer type mismatch
-};
-```
-
-### `ffi-body-check` -- FFI Function Body Audit
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/issue/ffi_body_check.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | Dangerous call issue |
-| Consumes | `noise_filter`, `ffi_semantics` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Audits function bodies of FFI-exposed functions, detecting calls to dangerous functions (e.g., `printf`, `system`, etc.). Uses semantic models for noise reduction and precise analysis.
-
-### `ffi-unsafe` -- FFI Unsafe Detection
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/issue/ffi_unsafe.zig` |
-| Tier | Tier 2 |
-| Dependencies | `ffi-boundary` |
-| Output | Unsafe pattern issue |
-| Consumes | None |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Detects unsafe patterns at FFI boundaries. Includes:
-- Dangerous function calls (`system`, `exec`, `popen`, `strcpy`, `gets`, etc.)
-- Control flow violations (`setjmp`/`longjmp` at FFI boundaries)
-- Variadic function abuse (`vprintf`, `vsprintf`, etc.)
-- Memory operations (`malloc`, `free`, `realloc`, `calloc`)
-
-```zig
-const DangerousPatterns = &[_][]const u8{
-    "system", "popen", "exec", "execve", "execvp", "execv",
-    "malloc", "free", "realloc", "calloc",
-    "strcpy", "strcat", "gets", "sprintf",
-    "setjmp", "longjmp", "sigsetjmp", "siglongjmp",
-    "vprintf", "vfprintf", "vsprintf", "vsnprintf",
-};
-```
-
-### `callback-escape` -- Callback Escape Detection
-
-| Attribute | Value |
-|-----------|-------|
-| File | `src/pass/analysis/callback_escape.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | Callback escape issue |
-| Consumes | `CrossLangEdge`, `DangerSurface` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
-
-Detects callback pointers escaping across FFI. Main detection targets:
-- Go pointers passed to C via `C.CBytes()` without `runtime.KeepAlive`
-- `unsafe.Pointer` conversions that may dangle after GC
-- C functions retaining Go-allocated pointers beyond call scope
-- Missing `C.free` / `C.malloc` pairing in cgo code
-
-```go
-// Detection example: C retains pointer, GC may reclaim
-var buf []byte{1, 2, 3}
-C.process(C.CBytes(string(buf)))  // C retains pointer, GC may reclaim buf
-```
-
-### `memory-safety` -- Memory Safety Detection
-
-| Attribute | Value |
-|-----------|-------|
+| Field | Value |
+| --- | --- |
 | File | `src/pass/analysis/issue/memory_safety.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | Memory safety issue |
-| Consumes | `DangerSurface` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
+| Kind | `analysis` |
+| Dependencies | `danger-surface`, `ptr-lifetime` |
+| Standard issue output | yes |
 
-General memory safety detection. True single-pass implementation:
-1. For each function: hash function name (u64, zero-copy)
-2. Scan instructions: Call → record in call_graph; Alloc → record origins; Free → **immediately** validate
-3. Inline issue reporting (no second pass)
+Problem: double free, use-after-free, leak-like behavior, and unsafe release patterns need shared allocation/free state.
 
-Performance characteristics:
-- Time: O(N), N = total instruction count (single linear scan)
-- Space: O(F + A), F = function count, A = alloc/free operation count
-- No string copies on hot path (hash-based)
-- Pre-allocated HashMap prevents rehashing
+Design: read `PassContext` memory state, danger relevance, and function information to report memory-safety candidates. Current behavior should be understood together with the memory graph rather than as a standalone theorem prover.
 
-### `free-validation` -- Free Validation
+Cooperates with: `ptr-lifetime` as the producer of lifetime/memory graph evidence, `danger-surface` as relevance gate, and `free-validation` for release-specific checks.
 
-| Attribute | Value |
-|-----------|-------|
+### `free-validation`
+
+| Field | Value |
+| --- | --- |
 | File | `src/pass/analysis/issue/free_validation.zig` |
-| Tier | Tier 2 |
-| Dependencies | No explicit dependency |
-| Output | Invalid free issue |
-| Consumes | `MemoryGraph`, `DangerSurface` |
-| Reports issues | Yes (gated by `isOnDangerPath`) |
+| Kind | `analysis` |
+| Dependencies | `danger-surface`, `ptr-lifetime` |
+| Standard issue output | yes |
 
-Validates `free()` calls on non-allocation sources. This causes undefined behavior.
+Problem: freeing stack, global, foreign-owned, or mismatched-family memory is different from simply seeing a call named `free`.
 
-Design principle: Based only on IR facts, no guessing. Tracks pointer source (`from_malloc`, `from_param`, `from_global`, `unknown`), checks legitimacy of `free()` call sources.
+Design: classify allocation sources and release calls, then validate whether the release family and pointer origin are compatible enough to report.
 
-```zig
-pub const FREE_FUNCTIONS = &[_][]const u8{
-    "free", "dealloc", "deallocate",
-    "operator delete", "operator delete[]",
-    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
-};
-```
+Cooperates with: `ptr-lifetime`, `pointer-ownership`, `registry/`, `resource/`, and `semantics/resource/` for ownership and allocator-family knowledge.
 
-## Pass Dependency Graph
+### `lock`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/lock.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: lock/unlock imbalance and thread-safety violations are often visible as call patterns even when source-level types are gone.
+
+Design: inspect lock-related calls and track local lock state enough to report suspicious patterns.
+
+Cooperates with: `thread_crossing` support code, issue filtering, and surface classification when concurrency reports should be scoped to user or boundary code.
+
+## Call, Flow, And Lifetime Passes
+
+### `call-graph`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/call_graph.zig` |
+| Kind | `foundation` |
+| Dependencies | none |
+| Standard issue output | no |
+
+Problem: most checks need to know which function calls which symbol and whether that call may cross a boundary.
+
+Design: scan call instructions, classify callee categories, and populate call relationships and cross-language edges in context.
+
+Cooperates with: `pointer-flow`, `ffi-type-mismatch`, `ptr-lifetime`, `danger-surface`, `ffi-boundary`, `callback-escape`, `gc-safety`, and error/callback checks.
+
+### `pointer-flow`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/taint/taint_propagation.zig` |
+| Kind | `foundation` |
+| Dependencies | `call-graph` |
+| Standard issue output | no |
+
+Problem: FFI and ownership checks need to know how pointer-like values move through arguments, returns, and assignments.
+
+Design: propagate pointer/taint-style state through the shared data-flow graph and call records.
+
+Cooperates with: `ffi-detector`, `ownership-violation`, and `cross-lang-dataflow`, which explicitly depend on pointer-flow evidence.
+
+### `ptr-lifetime`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ptr_lifetime/ptr_lifetime.zig` |
+| Kind | `analysis` |
+| Dependencies | `call-graph` |
+| Standard issue output | yes |
+
+Problem: raw pointers can outlive stack storage, escape through callbacks, or be freed through the wrong language/runtime family.
+
+Design: analyze functions from `ir_store`, update the shared memory graph, record allocation/free/escape evidence, and report lifetime violations when evidence is strong enough for the current rules.
+
+Cooperates with: `danger-surface`, `memory-safety`, `free-validation`, `callback-escape`, resource family registries, and semantic filters.
+
+### `danger-surface`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/danger_surface.zig` |
+| Kind | `analysis` |
+| Dependencies | `call-graph`, `ptr-lifetime` |
+| Standard issue output | no |
+
+Problem: if every internal helper is treated like an FFI boundary, reports become hard to review.
+
+Design: mark functions, pointers, or paths that are close to FFI or other dangerous surfaces. The pass uses call graph and memory graph evidence, then exposes relevance helpers through `PassContext`; it is mainly a relevance producer for later reporting passes.
+
+Cooperates with: `ffi-boundary`, `callback-escape`, `memory-safety`, and `free-validation`, which use danger-surface state before reporting.
+
+### `pointer-ownership`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/pointer_ownership.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary` |
+| Standard issue output | no |
+
+Problem: ownership may be transferred at FFI boundaries, but LLVM IR does not encode that policy directly.
+
+Design: track allocation and release behavior around FFI boundaries and keep ownership evidence available for downstream checks. In the current code this pass does not write standard issues directly.
+
+Cooperates with: `ffi-boundary` as the boundary producer, `ptr-lifetime` and `free-validation` for memory evidence, and registries for allocator/release semantics.
+
+## FFI Boundary Passes
+
+### `ffi-detector`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/ffi_detector.zig` |
+| Kind | `analysis` |
+| Dependencies | `cfg`, `dfg`, `pointer-flow` |
+| Standard issue output | no |
+
+Problem: FFI evidence is spread across declarations, calls, signatures, names, and pointer flow.
+
+Design: combine graph and pointer-flow evidence with FFI-specific classifiers to find candidate boundary vulnerabilities. In the current code it records internal vulnerability data and diagnostic logs rather than writing standard issues through `ctx.addIssue`.
+
+Cooperates with: `ffi-boundary`, `ffi-analysis`, `ffi-type-mismatch`, and output filtering. It should be treated as a candidate producer, not the only source of boundary truth.
+
+### `ffi-boundary`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/ffi_boundary.zig` |
+| Kind | `foundation` |
+| Dependencies | `call-graph`, `danger-surface` |
+| Standard issue output | yes |
+
+Problem: downstream FFI checks need a shared definition of “this call/function is at a boundary.”
+
+Design: use call graph, danger-surface state, language classification, and FFI helper modules to identify boundary points and attach boundary metadata to issues/context.
+
+Cooperates with: `pointer-ownership`, `ffi-unsafe`, `ffi-body-check`, `abi-compat-checker`, `cross-lang-dataflow`, `callback-lifecycle`, `gc-safety`, `error-propagation-tracer`, and `jni-leak-detector`.
+
+### `ffi-type-mismatch`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/ffi_type_mismatch.zig` |
+| Kind | `analysis` |
+| Dependencies | `call-graph` |
+| Standard issue output | yes |
+
+Problem: source languages may disagree about integer width, signedness, pointer type, enum representation, or struct layout.
+
+Design: inspect FFI call/signature evidence and report mismatches visible at the IR level. It is conservative where IR does not preserve source layout intent.
+
+Cooperates with: `call-graph`, `ffi-boundary`, `abi-compat-checker`, and `layout_mismatch`.
+
+### `abi-compat-checker`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/abi_compat_checker.zig` |
+| Kind | `analysis` |
+| Dependencies | `call-graph`, `ffi-boundary` |
+| Standard issue output | yes |
+
+Problem: even if a type name looks compatible, ABI details can still make a boundary unsafe.
+
+Design: examine ABI-sensitive signatures and call boundary metadata for compatibility problems.
+
+Cooperates with: `ffi-type-mismatch`, `layout_mismatch`, and `ffi-boundary`; these passes split type, layout, and ABI concerns so a report can point to a narrower cause.
+
+### `ffi-body-check`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/issue/ffi_body_check.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary` |
+| Standard issue output | yes |
+
+Problem: code inside an exported or boundary-facing function may call dangerous APIs even if the boundary signature itself looks ordinary.
+
+Design: inspect function bodies reachable from FFI boundary context and report risky calls or patterns.
+
+Cooperates with: `ffi-boundary`, `ffi-unsafe`, semantic filters, and surface classification.
+
+### `ffi-unsafe`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/issue/ffi_unsafe.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary` |
+| Standard issue output | yes |
+
+Problem: some calls are risky mainly because they happen at or near an FFI boundary.
+
+Design: match known unsafe APIs or control-flow patterns after boundary context exists, then report through the normal issue path.
+
+Cooperates with: `ffi-body-check`, `return-check`, `buffer-overflow`, and issue filters.
+
+### `ownership-violation`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/ffi_analysis.zig` |
+| Kind | `analysis` |
+| Dependencies | `cfg`, `dfg`, `pointer-flow` |
+| Standard issue output | no |
+
+Problem: ownership violations can be visible as pointer-flow and allocation/free behavior even before specialized resource-family checks run.
+
+Design: run FFI ownership analysis over CFG/DFG/pointer-flow evidence and collect ownership findings in the pass-local analysis state. Specialized memory and cross-language passes are the normal path for standard issue emission.
+
+Cooperates with: `pointer-flow`, `pointer-ownership`, `ptr-lifetime`, `free-validation`, and `cross-lang-dataflow`.
+
+### `cross-lang-dataflow`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/cross_lang_dataflow.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary`, `pointer-flow` |
+| Standard issue output | yes |
+
+Problem: a value may be created in one language/runtime and consumed in another after several calls.
+
+Design: combine boundary metadata with pointer-flow edges to find cross-language propagation and ownership-transfer candidates.
+
+Cooperates with: `ffi-boundary`, `pointer-flow`, `ptr-lifetime`, `pointer-ownership`, and resource contract checks.
+
+### `layout_mismatch`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/layout_mismatch_detector.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: struct layout, padding, alignment, or representation can differ across language boundaries.
+
+Design: inspect layout-relevant IR and known FFI patterns for mismatch candidates. The lack of explicit dependencies means readers should check registration order and helper usage before moving it.
+
+Cooperates with: `ffi-type-mismatch`, `abi-compat-checker`, and `ffi-boundary` conceptually, even though the current metadata does not declare those dependencies.
+
+### `string_safety_ffi`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/string_safety_ffi.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: strings crossing FFI boundaries may lose length, encoding, termination, or ownership information.
+
+Design: scan string-related FFI call patterns and report suspicious conversions or uses.
+
+Cooperates with: `ffi-boundary`, `ffi-type-mismatch`, and `ptr-lifetime` conceptually; verify the code before assuming dependency ordering because `deps` is empty.
+
+### `unwind-boundary`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/unwind_boundary_checker.zig` |
+| Kind | `analysis` |
+| Dependencies | none |
+| Standard issue output | yes |
+
+Problem: exceptions or panics crossing a C ABI boundary can violate language/runtime expectations.
+
+Design: look for unwind-sensitive boundary patterns in IR and report candidates where language/runtime behavior may escape across FFI.
+
+Cooperates with: `ffi-boundary`, `rust-ffi-filter`, and language detection conceptually; dependency metadata is currently empty.
+
+## Language And Runtime Specific Passes
+
+### `jni-leak-detector`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/issue/jni_leak_detector.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary` |
+| Standard issue output | yes |
+
+Problem: JNI has local/global reference rules that are easy to miss when looking only at generic C calls.
+
+Design: inspect JNI-style calls and reference management around boundary context.
+
+Cooperates with: `ffi-boundary`, registry entries for JNI, `ptr-lifetime`, and output filtering.
+
+### `rust-ffi-filter`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/rust_ffi/rust_ffi_auditor.zig` |
+| Kind | `analysis` |
+| Dependencies | `SemanticResolver` |
+| Standard issue output | yes |
+
+Problem: Rust FFI patterns such as ownership transfer, `into_raw`/`from_raw`, borrow escape, and drop glue need Rust-specific interpretation.
+
+Design: use semantic resolution and Rust FFI helper rules to distinguish candidate FFI issues from common Rust-generated patterns.
+
+Cooperates with: `SemanticResolver`, `ptr-lifetime`, `free-validation`, `ffi-boundary`, and Rust-specific semantic filters.
+
+### `gc-safety`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/gc_safety_analyzer.zig` |
+| Kind | `foundation` |
+| Dependencies | `ffi-boundary`, `call-graph` |
+| Standard issue output | yes |
+
+Problem: GC-managed languages have pointer lifetime rules that differ from C ownership rules.
+
+Design: inspect boundary calls and call graph context for GC-sensitive pointer passing and retention patterns.
+
+Cooperates with: `callback-escape`, `cross-lang-dataflow`, language adapters, and `ffi-boundary`.
+
+### `error-propagation-tracer`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/error_propagation_tracer.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary`, `call-graph` |
+| Standard issue output | yes |
+
+Problem: error values can be dropped or translated incorrectly when moving across FFI.
+
+Design: trace error-like return values or calls through boundary-aware call graph context.
+
+Cooperates with: `return-check`, `ffi-body-check`, `ffi-boundary`, and language/runtime registries.
+
+## Callback Passes
+
+### `callback-escape`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/callback_escape.zig` |
+| Kind | `analysis` |
+| Dependencies | `call-graph`, `danger-surface` |
+| Standard issue output | yes |
+
+Problem: callbacks can retain pointers or closures after their original language frame has ended.
+
+Design: inspect call graph and danger-surface evidence for callback arguments and escape patterns.
+
+Cooperates with: `ptr-lifetime`, `gc-safety`, `callback-lifecycle`, and `ffi-boundary`.
+
+### `callback-lifecycle`
+
+| Field | Value |
+| --- | --- |
+| File | `src/pass/analysis/ffi/callback_lifecycle_checker.zig` |
+| Kind | `analysis` |
+| Dependencies | `ffi-boundary`, `call-graph` |
+| Standard issue output | yes |
+
+Problem: registering a callback is only part of the lifecycle; unregistering, retaining context, and call timing also matter.
+
+Design: inspect boundary-aware callback registration and lifecycle patterns from the call graph.
+
+Cooperates with: `callback-escape`, `gc-safety`, `ptr-lifetime`, and `ffi-boundary`.
+
+## Practical Reading Paths
+
+### Why did a boundary issue appear?
 
 ```mermaid
-graph TD
-    subgraph Tier1["Tier 1 (pass-through)"]
-        call_graph["call-graph"]
-        pointer_flow["pointer-flow"]
-        pointer_ownership["pointer-ownership"]
-        return_check["return-check"]
-    end
-
-    subgraph Tier2["Tier 2 (graph-driven)"]
-        ptr_lifetime["ptr-lifetime"]
-        danger_surface["danger-surface"]
-        ffi_boundary["ffi-boundary"]
-        ffi_type_mismatch["ffi-type-mismatch"]
-        ffi_body_check["ffi-body-check"]
-        ffi_unsafe["ffi-unsafe"]
-        callback_esc["callback-escape"]
-        memory_safety["memory-safety"]
-        free_validation["free-validation"]
-    end
-
-    call_graph -->|CrossLangEdge| ptr_lifetime
-    pointer_flow --> call_graph
-    ptr_lifetime --> danger_surface
-    danger_surface --> ffi_boundary
-    danger_surface --> ffi_type_mismatch
-    danger_surface --> ffi_body_check
-    ffi_boundary --> ffi_unsafe
-    danger_surface --> callback_esc
-    danger_surface --> memory_safety
-    danger_surface --> free_validation
-    call_graph -->|CrossLangEdge| ffi_boundary
+flowchart LR
+    Issue[Issue] --> Boundary[ffi-boundary]
+    Boundary --> Calls[call-graph]
+    Boundary --> Surface[danger-surface]
+    Surface --> Lifetime[ptr-lifetime]
+    Boundary --> Specialized[ffi-unsafe / type / ABI / layout / string / unwind]
 ```
 
-## `isOnDangerPath` Gating
+Start from the reporting pass, then read the boundary and surface evidence it consumed.
 
-All Tier 2 passes must perform this check before reporting issues:
-
-```zig
-fn isOnDangerPath(fn_or_ptr: ID) bool {
-    return dangerSurfaceMarkers.contains(fn_or_ptr);
-}
-```
-
-Not on a danger path? Skip directly. This single gate prevents noise from non-FFI internal code paths.
-
-## Issue Detection Classification
-
-| Category | IssueKind | Severity | Confidence |
-|----------|-----------|----------|------------|
-| **Memory** | memory_leak, use_after_free, double_free, invalid_free | Critical/High | 0.70-0.90 |
-| **FFI** | ffi_unsafe_call, unchecked_return, type_mismatch, ffi_type_mismatch | High | 0.65-0.80 |
-| **Rust FFI** | borrow_escape, cross_language_leak, cross_language_free, unpaired_into_raw | High | 0.75-0.85 |
-| **Security** | command_injection, format_string, buffer_overflow | Critical | 0.75-0.90 |
-| **Dereference** | null_dereference, malloc_unchecked | Critical | 0.85 |
-| **Concurrency** | data_race, thread_safety_violation | High/Medium | 0.65-0.75 |
-
-## Output Formats
-
-### Text (Default)
-
-```
-VULNERABILITY OMI-001 [high] [Confidence: medium]
-Type: borrow_escape
-Reason: as_ptr() on local String/Vec passed to extern C - may dangle
-```
-
-### JSON (Stable Schema v1)
-
-```json
-{
-  "schema_version": "1.0.0",
-  "tool": "omniscope",
-  "tool_version 0.1.7",
-  "summary": {"functions": 135, "issues": 6, "time_ms": 91},
-  "issues": [{
-    "id": "OMI-001",
-    "kind": "borrow_escape",
-    "severity": "high",
-    "confidence": "MEDIUM",
-    "confidence_score": 0.80,
-    "cwe_id": 704,
-    "reason": "as_ptr() on local String/Vec passed to extern C",
-    "message": "Potential as_ptr borrow escape",
-    "location": {"function": "leak_cstring"}
-  }]
-}
-```
-
-### SARIF v2.1.0
-
-- **16 rule definitions** (covering all **25** IssueKind variants)
-- GitHub Code Scanning compatible
-- Attributes: `confidence`, `confidenceLevel`, `reason`, `cwe`
-
----
-
-## Pass Performance Overhead Estimates (Measured Data)
-
-> **⚠️ Data Source**: Based on test results under ReleaseFast mode on MacBook Pro M1/M2. Error margin ±15%.
-
-### Foundation Passes
-
-| Pass | Relative Time | Absolute Time (1K funcs) | Memory Usage | Notes |
-|------|--------------|------------------------|-------------|-------|
-| `cfg` | 1.0x (baseline) | ~15ms | ~8MB | Linear BasicBlock scan |
-| `dfg` | 1.5x | ~22ms | ~12MB | Depends on cfg, tracks def-use chain |
-
-**Foundation Total**: ~37ms / 1K functions, ~20MB
-
-### Tier 1: Pass-Through Passes
-
-| Pass | Relative Time | Absolute Time (1K funcs) | Memory Usage | Notes |
-|------|--------------|------------------------|-------------|-------|
-| `call-graph` | 2.0x | ~30ms | ~15MB | Build call graph + CrossLangEdge |
-| `pointer-flow` | 1.8x | ~27ms | ~18MB | Pointer flow tracking |
-| `pointer-ownership` | 2.5x | ~38ms | ~22MB | alloc/free pair classification |
-| `return-check` | 0.8x | ~12ms | ~5MB | Lightweight return value check |
-
-**Tier 1 Total**: ~107ms / 1K functions, ~60MB
-
-### Tier 2: Graph-Driven Passes
-
-| Pass | Relative Time | Absolute Time (1K funcs) | Memory Usage | isOnDangerPath Pruning Effect | Notes |
-|------|--------------|------------------------|-------------|-------------------------------|-------|
-| `ptr-lifetime` | 4.0x | ~60ms | ~35MB | N/A (producer) | MemoryGraph construction |
-| `danger-surface` | 3.0x | ~45ms | ~25MB | N/A (producer) | Danger surface marking |
-| `ffi-boundary` | 2.5x | ~38ms | ~15MB | **~70% pruned** | FFI boundary detection |
-| `ffi-type-mismatch` | 2.0x | ~30ms | ~12MB | **~75% pruned** | Type mismatch detection |
-| `ffi-body-check` | 3.5x | ~53ms | ~20MB | **~65% pruned** | Function body audit |
-| `ffi-unsafe` | 2.8x | ~42ms | ~18MB | **~70% pruned** | Unsafe pattern detection |
-| `callback-escape` | 3.2x | ~48ms | ~22MB | **~80% pruned** | Callback escape detection |
-| `memory-safety` | 2.2x | ~33ms | ~14MB | **~85% pruned** | General memory safety check |
-| `free-validation` | 2.5x | ~38ms | ~16MB | **~80% pruned** | Free validation |
-
-**Tier 2 Total**: ~387ms / 1K functions, ~177MB (without DangerSurface pruning)
-
-**Actual Tier 2 Total (with pruning)**: ~120-150ms / 1K functions (~65-70% pruned/skipped)
-
-### Tier 3: FP Suppression Layer (Not Passes)
-
-| Component | Relative Time | Absolute Time (1K funcs) | Notes |
-|-----------|--------------|------------------------|-------|
-| **SRT Detectors (R-0~R-7)** | 3.5x | ~52ms | 8 detectors populate semantic tree serially/parallelly |
-| **Issue Gate query** | 0.5x per issue | ~0.01ms/issue | Gate check per issue |
-| **Confidence Scorer** | 0.3x per issue | ~0.005ms/issue | Score calculation |
-
-**Tier 3 Total**: ~52ms + O(issues) / 1K functions, ~40MB (SemanticTree)
-
-### Overall Performance Summary
-
-| Metric | Value | Conditions |
-|--------|-------|------------|
-| **Total analysis time (1K funcs)** | ~300-350ms | ReleaseFast, includes Tier 3 |
-| **Peak memory (1K funcs)** | ~280-300MB | All graphs + SRT loaded |
-| **isOnDangerPath pruning efficiency** | 65-85% | Depends on FFI density |
-| **SRT FP suppression rate** | ~94% | v0.1.x → v0.2.0 comparison |
-| **SRT overhead ratio** | <5% | Compared to v0.1.x total time |
-| **Large project (sqlite3, 3.3K funcs)** | ~10-12s | ReleaseFast |
-| **Medium project (ring, 410 funcs)** | ~1.5-2s | ReleaseFast |
-| **Small project (<100 funcs)** | <150ms | Debug or ReleaseFast |
-
-> **Key finding**: `isOnDangerPath()` gating is the core of performance optimization, pruning 70%+ of unnecessary analysis on average.
-
----
-
-## Known Dependency Bugs (v0.2.0 -- Updated)
-
-The following Tier 2 passes have **incomplete dependency declarations**. These bugs will not cause incorrect results with the current registration order, but may cause problems if pass execution order changes:
-
-| Bug ID | Affected Pass | Missing Dependency | Potential Impact | Severity | Planned Fix |
-|--------|--------------|-------------------|-----------------|----------|-------------|
-| BUG-DEP-001 | `free_validation` | `danger-surface` | May run before DangerSurface markers available, causing `isOnDangerPath()` to return false for all sites (increased false negatives) | P2 (Medium) | v0.2.1 |
-| BUG-DEP-002 | `memory_safety` | `danger-surface` | Same as above | P2 (Medium) | v0.2.1 |
-| BUG-DEP-003 | `danger_surface` | `ptr-lifetime` | May run before MemoryGraph populated, producing incomplete danger surface markers (false positives/false negatives) | P2 (Medium) | v0.2.1 |
-
-**Current mitigation**: PassManager's current registration order happens to avoid these issues. But this is fragile implicit dependency.
-
-**Recommendations**:
-- If you modify pass registration order, **must fix these 3 bugs first**
-- Can fix by adding missing dependencies to corresponding pass's `pub const deps`
-
----
-
-## Complete Inter-Pass Data Dependencies
+### Why did a memory issue appear?
 
 ```mermaid
-graph TD
-    subgraph Foundation["Foundation Passes"]
-        cfg["cfg<br/>~15ms"]
-        dfg["dfg<br/>~22ms<br/>dep: cfg"]
-    end
-
-    subgraph Tier1["Tier 1: Pass-Through<br/>Total: ~107ms"]
-        call_graph["call-graph<br/>~30ms"]
-        pointer_flow["pointer-flow<br/>~27ms<br/>dep: call-graph"]
-        pointer_own["pointer-ownership<br/>~38ms"]
-        return_check["return-check<br/>~12ms"]
-    end
-
-    subgraph Tier2["Tier 2: Graph-Driven<br/>Actual: ~120-150ms<br/>(with 70% pruning)"]
-        ptr_lifetime["ptr-lifetime<br/>~60ms<br/>dep: call-graph"]
-        danger_surface["danger-surface<br/>~45ms<br/>dep: call-graph, ptr_lifetime"]
-        ffi_boundary["ffi-boundary<br/>~38ms"]
-        ffi_type_mismatch["ffi-type-mismatch<br/>~30ms"]
-        ffi_body_check["ffi-body-check<br/>~53ms"]
-        ffi_unsafe["ffi-unsafe<br/>~42ms<br/>dep: ffi_boundary"]
-        callback_esc["callback-escape<br/>~48ms"]
-        memory_safety["memory-safety<br/>~33ms"]
-        free_validation["free-validation<br/>~38ms<br/>dep: ptr_lifetime"]
-    end
-
-    subgraph Tier3["Tier 3: FP Suppression Layer<br/>Total: ~52ms"]
-        srt_detectors["SRT Detectors<br/>R-0~R-7<br/>~52ms"]
-        issue_gate["Issue Gate<br/>~0.01ms/issue"]
-        confidence_scorer["Confidence Scorer<br/>~0.005ms/issue"]
-    end
-
-    cfg --> dfg
-    pointer_flow --> call_graph
-    ptr_lifetime --> danger_surface
-    ffi_boundary --> ffi_unsafe
-    danger_surface --> ffi_boundary
-    danger_surface --> ffi_type_mismatch
-    danger_surface --> ffi_body_check
-    danger_surface --> callback_esc
-    danger_surface --> memory_safety
-    danger_surface --> free_validation
-
-    srt_detectors --> issue_gate
-    issue_gate --> confidence_scorer
-
-    free_validation -. "BUG: missing dep" .-> danger_surface
-    memory_safety -. "BUG: missing dep" .-> danger_surface
-    danger_surface -. "BUG: missing dep" .-> ptr_lifetime
-
-    style free_validation fill:#ffcdd2
-    style memory_safety fill:#ffcdd2
-    style danger_surface fill:#ffcdd2
+flowchart LR
+    Issue[memory issue] --> Reporter[memory-safety or free-validation]
+    Reporter --> Life[ptr-lifetime]
+    Reporter --> Danger[danger-surface]
+    Life --> Graph[MemoryGraph]
+    Reporter --> Registry[registry / resource semantics]
 ```
 
-> **Red nodes** = passes with known dependency bugs (see "Known Dependency Bugs" table above)
+The formatter is usually not where the decision was made. Check `ctx.addIssue` call sites and the evidence used immediately before them.
 
----
+### How should a new pass fit?
 
-## Issue Detection Classification (Complete Version - 25 Types)
+```mermaid
+flowchart TD
+    Need[New check] --> Evidence{Needs shared evidence?}
+    Evidence -->|yes| Producer[Add or reuse producer pass]
+    Evidence -->|no| Reporter[Issue pass]
+    Producer --> Context[PassContext field or fact/dataflow store]
+    Reporter --> Deps[Declare deps]
+    Deps --> Register[pipeline_registration.zig]
+    Register --> Tests[Focused tests and baseline update]
+```
 
-| Category | IssueKind | CWE ID | Severity | Typical Confidence Range | Main Detection Pass |
-|----------|-----------|--------|----------|------------------------|---------------------|
-| **Memory (6)** | `memory_leak` | CWE-401 | High | 0.70-0.90 | memory-safety, ptr-lifetime |
-| | `use_after_free` | CWE-416 | Critical | 0.70-0.90 | free-validation, ptr-lifetime |
-| | `double_free` | CWE-415 | Critical | 0.70-0.90 | free-validation |
-| | `invalid_free` | CWE-590 | High | 0.70-0.90 | free-validation |
-| | `cross_language_leak` | CWE-401 | High | 0.75-0.85 | ptr-lifetime, callback-escape |
-| | `cross_language_free` | CWE-763 | Critical | 0.75-0.85 | ptr-lifetime, free-validation |
-| **FFI (4)** | `ffi_unsafe_call` | CWE-668 | High | 0.65-0.80 | ffi-unsafe |
-| | `unchecked_return` | CWE-252 | Medium | 0.65-0.80 | return-check |
-| | `type_mismatch` | CWE-704 | High | 0.65-0.80 | ffi-type-mismatch |
-| | `ffi_type_mismatch` | CWE-704 | High | 0.65-0.80 | ffi-type-mismatch |
-| **Rust FFI (1)** | `borrow_escape` | CWE-704 | High | 0.75-0.85 | ptr-lifetime, danger-surface |
-| **Security (4)** | `command_injection` | CWE-78 | Critical | 0.75-0.90 | ffi-body-check, ffi-unsafe |
-| | `buffer_overflow` | CWE-120 | Critical | 0.75-0.90 | buffer_overflow (standalone pass) |
-| | `integer_overflow` | CWE-190/191 | High | 0.70-0.85 | integer_overflow (standalone pass) |
-| | `format_string` | CWE-134 | High | 0.75-0.90 | ffi-body-check |
-| **Dereference (2)** | `malloc_unchecked` | CWE-252 | Critical | 0.85 | return-check, memory-safety |
-| | `null_dereference` | CWE-476 | Critical | 0.85 | memory-safety |
-| **Callback (2)** | `callback_signature_mismatch` | CWE-688 | High | 0.65-0.80 | callback-escape |
-| | `callback_ownership_risk` | CWE-825 | High | 0.65-0.80 | callback-escape |
-| **Contract (1)** | `contract_mismatch` | CWE-763 | High | 0.70-0.85 | ffi-boundary |
-| **Write Operation (1)** | `write_to_immutable` | CWE-757 | High | 0.70-0.85 | danger-surface |
-| **Static Buffer (1)** | `static_buffer_misuse` | CWE-242 | Medium | 0.60-0.75 | memory-safety |
-| **Concurrency (2)** | `data_race` | CWE-362 | High/Medium | 0.65-0.75 | lock, thread_crossing |
-| | `thread_safety_violation` | CWE-807 | High/Medium | 0.65-0.75 | lock |
-| **Unknown (1)** | `unknown` | — | — | — | fallback |
-
-**Total**: 25 IssueKind types (v0.2.0), covering 19 unique CWE IDs including CWE-668, 252, 704, 401, 763, 416, 78, 120, 190, 415, 590, 134, 476, 688, 825, 757, 242, 362, 807, etc.
-
----
-
-## Usage Recommendations & Best Practices
-
-### Recommended Analysis Workflow
-
-1. **Compile to LLVM IR**
-   ```bash
-   # Rust example
-   rustc --emit=llvm-ir -O -o target.ll src/lib.rs
-
-   # C/C++ example
-   clang -emit-llvm -O1 -o target.ll src/main.c
-   ```
-
-2. **Run OmniScope**
-   ```bash
-   ./OmniScope target.ll --json --sarif -o results/
-   ```
-
-3. **Review results**
-   - Prioritize **HIGH** confidence issues
-   - Focus on **Critical/High** severity issues
-   - Manually review **MEDIUM/LOW** confidence issues
-
-### Recommendations for Optimizing Analysis Effectiveness
-
-| Scenario | Recommendation | Expected Effect |
-|----------|---------------|-----------------|
-| **First-time analyzing new project** | Use `-O1` compilation, run full analysis | Baseline results |
-| **Too many false positives** | Check if using `-O0`; consider adding custom whitelist | FP reduced 30-50% |
-| **Slow analysis** | Use `ReleaseFast` build; split large modules | 2-3x speedup |
-| **CI/CD integration** | Use SARIF output + GitHub Code Scanning | Automated issue tracking |
-| **Focus only on FFI** | Ensure code contains `extern "C"` or `#[no_mangle]` | Tier 2 auto-focuses |
-
-### Common Troubleshooting
-
-| Problem | Possible Cause | Solution |
-|---------|---------------|----------|
-| **Analysis crash** | LLVM IR version incompatible | Use LLVM 15+ for compilation; check `.ll` file format |
-| **No issues reported** | Project has no FFI boundaries; or all suppressed by SRT | Check Zone classification; view verbose logs |
-| **Many false positives** | Using `-O0` compilation; or language support is Experimental | Switch to `-O1/-O2`; limit analysis scope |
-| **Memory usage too high** | Debug mode; very large files (>50K functions) | Use ReleaseFast; split modules |
-| **Analysis timeout** | Too many functions in single file (>100K) | Split modules; exclude third-party libraries |
-
----
-
-**Document maintenance info**:
-- Last updated: 2026-06-01
-- Corresponding code version: v0.2.0 (VERSION file)
-- Performance data source: ReleaseFast mode, MacBook Pro M1/M2, LLVM 22
-- Next planned update: After v0.2.1 release or major performance changes
+Add dependencies for the data you read. Do not rely on registration order when a pass requires another pass's output.

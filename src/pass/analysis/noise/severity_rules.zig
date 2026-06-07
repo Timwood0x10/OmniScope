@@ -9,7 +9,7 @@
 //!   - Security-sensitive domains (e.g., crypto NULL checks)
 //!   - Known noise patterns (e.g., llvm.threadlocal)
 //!
-//! Reference: plan/v0.1.7.md P0-3
+//! Reference: 0.2.0 severity planning notes
 
 const std = @import("std");
 

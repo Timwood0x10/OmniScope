@@ -42,6 +42,20 @@ pub const MallocCheckPass = struct {
         var func = c.LLVMGetFirstFunction(mod);
         if (@intFromPtr(func) == 0) return;
 
+        // DEBUG: Count functions and list them
+        {
+            var f_count: usize = 0;
+            var f_item = c.LLVMGetFirstFunction(mod);
+            while (@intFromPtr(f_item) != 0) : (f_item = c.LLVMGetNextFunction(f_item)) {
+                const fnp = c.LLVMGetValueName(f_item);
+                const func_name = if (@intFromPtr(fnp) != 0) std.mem.span(fnp) else "?";
+                const is_decl = c.LLVMIsDeclaration(f_item);
+                std.debug.print("MALLOC_CHECK_MOD: {s} decl={d}\n", .{ func_name, @intFromBool(is_decl != 0) });
+                f_count += 1;
+            }
+            std.debug.print("MALLOC_CHECK_MOD: total={d}\n", .{f_count});
+        }
+
         var issue_count: usize = 0;
         while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
             //Function-level error isolation
@@ -60,6 +74,14 @@ pub const MallocCheckPass = struct {
 
     fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
         var issue_count: usize = 0;
+
+        // DEBUG: Print function being analyzed
+        {
+            const func_name_ptr = c.LLVMGetValueName(func);
+            const func_name = if (@intFromPtr(func_name_ptr) != 0) std.mem.span(func_name_ptr) else "unknown";
+            const has_body = c.LLVMCountBasicBlocks(func);
+            std.debug.print("MALLOC_CHECK_FUNC: {s} bbs={d}\n", .{ func_name, has_body });
+        }
 
         // Track allocation results and their null check status
         var alloc_results = std.AutoHashMap(c.LLVMValueRef, AllocInfo).init(ctx.allocator);
@@ -112,7 +134,10 @@ pub const MallocCheckPass = struct {
                 const name_ptr = c.LLVMGetValueName(called);
                 if (@intFromPtr(name_ptr) != 0) {
                     const func_name = std.mem.span(name_ptr);
-                    if (isAllocFunction(func_name)) {
+                    // DEBUG
+                    const is_alloc = isAllocFunction(func_name);
+                    std.debug.print("MALLOC_CHECK_DEBUG: func_name={s} isAlloc={}\n", .{ func_name, is_alloc });
+                    if (is_alloc) {
                         // Record this allocation result
                         try alloc_results.put(inst, .{
                             .alloc_inst = inst,
@@ -168,11 +193,31 @@ pub const MallocCheckPass = struct {
             return false;
         }
 
+        // DEBUG: Print instruction details
+        {
+            const oc_name = switch (opcode) {
+                c.LLVMStore => "Store",
+                c.LLVMLoad => "Load",
+                c.LLVMCall => "Call",
+                c.LLVMRet => "Ret",
+                c.LLVMGetElementPtr => "GEP",
+                c.LLVMBitCast => "BitCast",
+                else => "Other",
+            };
+            const num_ops = c.LLVMGetNumOperands(inst);
+            std.debug.print("MALLOC_CHECK_USE: opcode={s} num_ops={d}\n", .{ oc_name, num_ops });
+        }
+
         // Check all operands for unchecked allocation results
         const num_ops = c.LLVMGetNumOperands(inst);
         var i: u32 = 0;
         while (i < num_ops) : (i += 1) {
             const operand = c.LLVMGetOperand(inst, i);
+            // DEBUG: Check if operand matches any allocation
+            const in_alloc = alloc_results.contains(operand);
+            if (in_alloc) {
+                std.debug.print("MALLOC_CHECK_MATCH: operand[{d}] matches an allocation!\n", .{i});
+            }
 
             if (alloc_results.get(operand)) |info| {
                 if (!info.has_null_check) {

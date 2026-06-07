@@ -237,6 +237,10 @@ const builtin_acquires = [_]OpEntry{
 
     // --- go_gc ---
     .{ .name = "runtime.mallocgc", .op = FamilyOp.init(.go_gc, .acquire, "runtime.mallocgc", .builtin_registry) },
+
+    // --- zig_allocator ---
+    .{ .name = "zig_alloc", .op = FamilyOp.init(.zig_allocator, .acquire, "zig_alloc", .builtin_registry) },
+    .{ .name = "__zig_alloc", .op = FamilyOp.init(.zig_allocator, .acquire, "__zig_alloc", .builtin_registry) },
 };
 
 /// Builtin release (deallocator) function names organized by family.
@@ -286,6 +290,10 @@ const builtin_releases = [_]OpEntry{
 
     // --- csharp_cotask ---
     .{ .name = "CoTaskMemFree", .op = FamilyOp.init(.csharp_cotask, .release, "CoTaskMemFree", .builtin_registry) },
+
+    // --- zig_allocator ---
+    .{ .name = "zig_free", .op = FamilyOp.init(.zig_allocator, .release, "zig_free", .builtin_registry) },
+    .{ .name = "__zig_dealloc", .op = FamilyOp.init(.zig_allocator, .release, "__zig_dealloc", .builtin_registry) },
 };
 
 /// Builtin retain (reference count increment) function names.

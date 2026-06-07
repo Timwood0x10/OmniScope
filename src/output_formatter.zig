@@ -94,7 +94,7 @@ pub fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_coun
             _ = try std.posix.write(std.posix.STDOUT_FILENO, json_output);
         }
     } else if (config.output_format == .sarif) {
-        var sarif = SarifOutput.init(allocator, "OmniScope", "0.1.9");
+        var sarif = SarifOutput.init(allocator, "OmniScope", "0.2.0");
         const sarif_output = sarif.generate(filtered_issues) catch |err| {
             log.err("Failed to generate SARIF output: {}\n", .{err});
             return;
@@ -502,7 +502,7 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     const w = buf.writer(allocator);
 
     try w.writeAll("{\n");
-    try w.print("  \"version\": \"0.1.9\",\n", .{});
+    try w.print("  \"version\": \"0.2.0\",\n", .{});
     try w.print("  \"function_count\": {d},\n", .{func_count});
     try w.print("  \"issue_count\": {d},\n", .{issues.len});
     try w.print("  \"analysis_time_ms\": {d},\n", .{time_ms});

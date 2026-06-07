@@ -416,7 +416,7 @@ pub fn reportHeapAmbiguous(
 }
 
 /// Report heap pointer escaping to FFI boundary.
-/// v0.1.6: malloc/calloc results passed to retaining extern functions
+/// v0.2.0: malloc/calloc results passed to retaining extern functions
 /// are critical FFI ownership issues — caller may not know to free them.
 pub fn reportHeapEscapeToFFI(
     ctx: *PassContext,

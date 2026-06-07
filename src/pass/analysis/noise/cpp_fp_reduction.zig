@@ -224,7 +224,7 @@ pub fn isFunctionLevelNullGuarded(
 }
 
 /// Detect use-after-free: pointer used after being freed.
-/// v0.1.7 FIX: Deduplication — each unique (freed_ptr, function) pair reports
+/// v0.2.0: Deduplication — each unique (freed_ptr, function) pair reports
 /// at most 1 UAF. Previously, every flow edge from a freed pointer was counted
 /// separately, causing 10x count inflation (e.g., 10 UAFs for 1 real bug).
 ///

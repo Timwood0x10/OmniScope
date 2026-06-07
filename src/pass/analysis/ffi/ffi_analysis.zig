@@ -98,7 +98,7 @@ pub const FFIAnalysisPass = struct {
     /// Track free sites: ptr_value_id -> list of free info (allows tracking multiple frees per pointer)
     free_sites: std.AutoHashMap(u64, std.ArrayList(FreeInfo)),
 
-    /// v0.1.6: Track which basic block each allocation/free is in (for path analysis)
+    /// v0.2.0: Track which basic block each allocation/free is in (for path analysis)
     alloc_bb_map: std.AutoHashMap(u64, c.LLVMBasicBlockRef),
     free_bb_map: std.AutoHashMap(u64, std.ArrayList(c.LLVMBasicBlockRef)),
 
@@ -189,7 +189,7 @@ pub const FFIAnalysisPass = struct {
         try self.detectDoubleFree(diag);
         try self.detectOwnershipMismatch(diag);
 
-        // v0.1.6: Enhanced detection
+        // v0.2.0: Enhanced detection
         try self.detectErrorPathLeaks(diag);
         try self.detectCrossPathDoubleFree(diag);
 
@@ -230,7 +230,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.2.0: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -267,7 +267,7 @@ pub const FFIAnalysisPass = struct {
                                 .value_id = ptr_value_id,
                                 .inst_ptr = inst,
                             });
-                            // v0.1.6: Track which BB this alloc is in
+                            // v0.2.0: Track which BB this alloc is in
                             try self.alloc_bb_map.put(ptr_value_id, bb);
                         }
                     }
@@ -289,7 +289,7 @@ pub const FFIAnalysisPass = struct {
             if (@intFromPtr(func_name_ptr) == 0) continue;
             const func_name = std.mem.span(func_name_ptr);
 
-            // v0.1.7: Skip compiler-generated and stdlib functions via three-layer noise reduction
+            // v0.2.0: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
             const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
             if (classification.origin == .compiler_generated) continue;
@@ -338,7 +338,7 @@ pub const FFIAnalysisPass = struct {
                                 try list.append(self.allocator, free_info);
                                 try self.free_sites.put(ptr_value_id, list);
                             }
-                            // v0.1.6: Track which BB this free is in
+                            // v0.2.0: Track which BB this free is in
                             if (self.free_bb_map.getPtr(ptr_value_id)) |bb_list_ptr| {
                                 try bb_list_ptr.append(self.allocator, bb);
                             } else {
@@ -415,7 +415,7 @@ pub const FFIAnalysisPass = struct {
         }
     }
 
-    /// v0.1.6: Detect error path leaks — allocations that can reach a function
+    /// v0.2.0: Detect error path leaks — allocations that can reach a function
     /// return without passing through a matching free.
     ///
     /// This is a lightweight path-sensitive check using basic block tracking:
@@ -502,7 +502,7 @@ pub const FFIAnalysisPass = struct {
         return true;
     }
 
-    /// v0.1.6: Detect cross-path double free — when frees of the same pointer
+    /// v0.2.0: Detect cross-path double free — when frees of the same pointer
     /// occur in different basic blocks (different control flow paths).
     ///
     /// Current detectDoubleFree only checks value identity. This enhancement adds

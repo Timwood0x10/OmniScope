@@ -1,7 +1,7 @@
 //! Known False-Positive Suppression Whitelist
 //!
 //! Maintains patterns that are known to produce false positives
-//! from real-world audits (v0.1.6: BLST, Wasmtime, SQLite3, libuv, etc.).
+//! from real-world audits (0.2.0 corpus: BLST, Wasmtime, SQLite3, libuv, etc.).
 //!
 //! Design principles (plan/rules/skills.md §2):
 //! - Minimum code that solves the problem
@@ -54,11 +54,11 @@ pub const KnownFPPattern = struct {
 /// Only patterns that cannot be expressed as IR-level semantic rules remain here.
 const known_fp_patterns = [_]KnownFPPattern{
     // macOS malloc_set_zone_name: copies name string, does not retain pointer (man page)
-    .{ .pattern = "malloc_set_zone_name", .kind = .exact, .reason = "macOS: copies name string, pointer not retained (man page)", .since_version = "v0.1.8" },
+    .{ .pattern = "malloc_set_zone_name", .kind = .exact, .reason = "macOS: copies name string, pointer not retained (man page)", .since_version = "v0.2.0" },
     // Rust Box::into_raw: explicit ownership transfer to caller
-    .{ .pattern = "into_raw", .kind = .contains, .reason = "Rust Box/CString/Vec::into_raw — ownership transferred to caller", .since_version = "v0.1.8" },
+    .{ .pattern = "into_raw", .kind = .contains, .reason = "Rust Box/CString/Vec::into_raw — ownership transferred to caller", .since_version = "v0.2.0" },
     // Rust String::into_raw: same ownership transfer pattern
-    .{ .pattern = "String_into_raw", .kind = .contains, .reason = "Rust String::into_raw — ownership transferred to caller", .since_version = "v0.1.8" },
+    .{ .pattern = "String_into_raw", .kind = .contains, .reason = "Rust String::into_raw — ownership transferred to caller", .since_version = "v0.2.0" },
 };
 
 /// Check if a function name matches any known false-positive pattern.
@@ -130,7 +130,7 @@ test "MatchKind - prefix matching" {
         .pattern = "llvm.",
         .kind = .prefix,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("llvm.test"));
     try std.testing.expect(!pattern.matches("not_llvm"));
@@ -141,7 +141,7 @@ test "MatchKind - exact matching" {
         .pattern = "malloc",
         .kind = .exact,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("malloc"));
     try std.testing.expect(!pattern.matches("malloc_custom"));
@@ -153,7 +153,7 @@ test "MatchKind - contains matching" {
         .pattern = "channel",
         .kind = .contains,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("mpsc::channel"));
     try std.testing.expect(pattern.matches("sync_channel"));

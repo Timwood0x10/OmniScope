@@ -403,7 +403,21 @@ pub const ErrorPropagationTracer = struct {
                 else
                     "";
 
-                if (has_unfreed_alloc and isErrorReturningFunction(called_name)) {
+                // FP suppression: skip reporting when the "error-returning"
+                // call IS a free function — the free IS the cleanup, not a
+                // leak source. Without this, patterns like:
+                //   p = malloc(n); ...; free(p);  ← "free" is error-returning
+                // produce false positives because free() returns int and
+                // appears in the error_funcs list.
+                const is_free_call = isFreeFunction(called_name);
+
+                // FP suppression: skip reporting when the "error-returning"
+                // call IS an allocation function. Consecutive allocations
+                // (malloc → malloc) are not error-path leaks — they're just
+                // multiple allocations in sequence.
+                const is_alloc_call = isAllocationFunction(called_name);
+
+                if (has_unfreed_alloc and isErrorReturningFunction(called_name) and !is_free_call and !is_alloc_call) {
                     stats.error_path_leaks += 1;
 
                     const message = try std.fmt.allocPrint(

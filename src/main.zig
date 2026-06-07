@@ -78,7 +78,7 @@ pub fn main() !void {
     }
 
     if (config.show_version) {
-        log.info("OmniScope v0.1.9\n", .{});
+        log.info("OmniScope v0.2.0\n", .{});
         return;
     }
 

@@ -46,7 +46,7 @@ const isLikelyStructMemberOwnership = cpp_types.isLikelyStructMemberOwnership;
 ///   - Same-BB double-free = REAL bug (sequential free() calls)
 ///   - Different-BB multi-free = cleanup paths (each error branch frees, NOT a bug)
 ///
-/// v0.1.7 FIX: Dual-source deduplication.
+/// v0.2.0: Dual-source deduplication.
 /// MemoryGraph.trackFree() sync (Source 1) + IR-scan (Source 3) may both create
 /// FreeSite entries for the same LLVM instruction. Without deduplication, every
 /// real free appears twice → 100% false-positive rate on double-free detection.

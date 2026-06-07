@@ -419,7 +419,7 @@ pub fn checkReturnViolation(
         return;
     }
 
-    // v0.1.7: Use OutputParamClassifier for precise C API output param detection.
+    // v0.2.0: Use OutputParamClassifier for precise C API output param detection.
     if (output_param_classifier.OutputParamClassifier.isLikelyOutputParamFunction(func_name)) {
         diag.debug("[SUPPRESSED] C API output parameter pattern: {s} (known output-param family)", .{func_name});
         stats.heap_intentional_transfer += 1;
@@ -434,7 +434,7 @@ pub fn checkReturnViolation(
 
     const retval = c.LLVMGetOperand(inst, 0);
 
-    // v0.1.9: Use MemoryGraph source kind to filter borrow_escape FP.
+    // v0.2.0: Use MemoryGraph source kind to filter borrow_escape FP.
     // If the return value is known to come from a heap/resource allocation,
     // it cannot be a borrow_escape (stack address return).
     if (mem_graph) |mg| {
@@ -447,7 +447,7 @@ pub fn checkReturnViolation(
             return;
         }
 
-        // v0.1.9: Alloc/free balance check.
+        // v0.2.0: Alloc/free balance check.
         // If this function has net positive allocations (more allocs than frees),
         // it's likely a factory/constructor that returns heap memory.
         // This is a project-agnostic signal — no whitelists needed.
@@ -459,7 +459,7 @@ pub fn checkReturnViolation(
             return;
         }
 
-        // v0.1.6: Check callee's alloc/free balance.
+        // v0.2.0: Check callee's alloc/free balance.
         // Wrapper functions like sqlite3_malloc() delegate to sqlite3Malloc()
         // and return the result. The wrapper itself has net()=0, but the callee
         // has net()>0. This catches the pattern without project-specific whitelists.
@@ -483,7 +483,7 @@ pub fn checkReturnViolation(
         }
     }
 
-    // v0.1.9: Check if retval is a call instruction result from a known allocator.
+    // v0.2.0: Check if retval is a call instruction result from a known allocator.
     // This catches cases where MemoryGraph doesn't track the call (e.g., custom allocators).
     const retval_opcode = c.LLVMGetInstructionOpcode(retval);
     if (retval_opcode == c.LLVMCall or retval_opcode == c.LLVMInvoke) {
@@ -514,12 +514,12 @@ pub fn checkReturnViolation(
 
     if (pointer_map.get(retval)) |ptr_info| {
         if (ptr_info.alloc_site == .stack) {
-            // v0.1.9: Skip param storage allocas — they are local copies of
+            // v0.2.0: Skip param storage allocas — they are local copies of
             // function parameters, not dangerous stack address returns.
             if (ptr_info.is_param_storage) {
                 diag.debug("[SUPPRESSED] Param storage alloca (not a real stack escape): {s}", .{func_name});
                 stats.heap_intentional_transfer += 1;
-                // v0.1.6: Skip sret allocas — LLVM uses "alloca ptr" as a return
+                // v0.2.0: Skip sret allocas — LLVM uses "alloca ptr" as a return
                 // value slot for functions returning pointers. The alloca itself is
                 // on the stack, but it only holds a pointer to heap-allocated memory.
                 // Returning the alloca address is the standard LLVM sret pattern,

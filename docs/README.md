@@ -1,64 +1,53 @@
-# OmniScope Documentation Index
+# OmniScope Docs
 
-## Structure
+Start from the question you need to answer. OmniScope is an LLVM IR-level FFI and memory/resource ownership auditor, so the most useful docs guide you from risk framing to evidence, then to implementation details.
 
-```
-docs/
-├── en/                          # English documentation
-│   ├── QUICK_START.md           # Getting started guide
-│   ├── API_REFERENCE.md         # API reference
-│   ├── REPORT_INTERPRETATION.md  # How to read analysis reports
-│   ├── architecture.md          # Architecture overview
-│   ├── developer_guide.md       # Contributor guide
-│   ├── modules.md               # Module documentation
-│   ├── passes.md                # Analysis passes documentation
-│   ├── RED_BLUE_TEAM_EN.md      # Red/Blue team testing guide
-│   └── ir-specs/                # IR specification (8 compilers)
-│       ├── C_CPP_IR_SPEC.md
-│       ├── RUST_IR_SPEC.md
-│       ├── ZIG_IR_SPEC.md
-│       ├── GO_GC_IR_SPEC.md
-│       ├── TINYGO_IR_SPEC.md
-│       ├── JDK_IR_SPEC.md
-│       ├── PYTHON_IR_SPEC.md
-│       └── SWIFT_IR_SPEC.md
-│
-└── zh/                          # 简体中文文档
-    ├── QUICK_START.md           # 快速入门
-    ├── API_REFERENCE.md         # API 参考
-    ├── REPORT_INTERPRETATION.md  # 分析结果解读指南
-    ├── architecture.md          # 架构概述
-    ├── developer_guide.md       # 开发者指南
-    ├── modules.md               # 模块文档
-    ├── passes.md                # 分析 pass 文档
-    ├── RED_BLUE_TEAM.md         # 红蓝队测试指南
-    ├── BASELINE_SPEC.md         # 基线规范
-    ├── ISSUE_CLASSIFICATION.md  # Issue 分类标准
-    ├── COMPILER_IR_PATTERNS_ZH.md # 编译器 IR 模式
-    └── ir-specs/                # IR 规范（8 个编译器）
-        ├── C_CPP_IR_SPEC.md
-        ├── RUST_IR_SPEC.md
-        ├── ZIG_IR_SPEC.md
-        ├── GO_GC_IR_SPEC.md
-        ├── TINYGO_IR_SPEC.md
-        ├── JDK_IR_SPEC.md
-        ├── PYTHON_IR_SPEC.md
-        └── SWIFT_IR_SPEC.md
+## Choose Your Path
+
+```mermaid
+flowchart TD
+    Start[What are you trying to do?] --> User[Use OmniScope on IR]
+    Start --> Triage[Understand reports and issue kinds]
+    Start --> Release[Check release accuracy evidence]
+    Start --> Dev[Change the analyzer]
+    User --> EnStart[docs/en/README.md]
+    User --> ZhStart[docs/zh/README.md]
+    Triage --> EnReport[docs/en/API_REFERENCE.md]
+    Triage --> ZhReport[docs/zh/REPORT_INTERPRETATION.md]
+    Release --> EnAccuracy[tests/BASELINE.md]
+    Release --> ZhAccuracy[tests/integration/inline_ir_matrix.zig]
+    Dev --> EnArch[docs/en/architecture.md]
+    Dev --> ZhArch[docs/zh/architecture.md]
+    Dev --> EnPasses[docs/en/passes.md]
+    Dev --> ZhPasses[docs/zh/passes.md]
 ```
 
-## IR Specifications
+## English
 
-Compiler-level IR pattern analysis for OmniScope's static analysis engine.
-Each document distinguishes **user-defined symbols** from **compiler-reserved symbols** with source code evidence.
+| Document | Use it when |
+| --- | --- |
+| `docs/en/README.md` | You need the English entry point and practical first-run guidance. |
+| `docs/en/architecture.md` | You need the current loader, pipeline, pass, shared-state, and output flow. |
+| `docs/en/modules.md` | You want a module inventory after understanding the main flow. |
+| `docs/en/passes.md` | You want details about analysis pass behavior. |
+| `docs/en/API_REFERENCE.md` | You need API-level reference material. |
+| `docs/en/developer_guide.md` | You are contributing code. |
+| `docs/en/ir-specs/` | You need compiler/IR pattern notes. |
 
-| Compiler | Languages | Key Patterns |
-|----------|-----------|-------------|
-| **C/C++** (Clang) | C, C++ | Itanium mangling, vtable, exception handling, builtins |
-| **Rust** (rustc) | Rust | v0/_ZN mangling, `__rust_alloc`, drop glue, panic/unwind |
-| **Zig** | Zig | `__zig_*` builtins, allocator vtable, AIR→LLVM IR |
-| **Go gc** | Go | SSA form, ~150 runtime functions, write barrier, ABI0/ABIInternal |
-| **TinyGo** | Go | `runtime.*`, CGo `_Cgo_*`, transform passes |
-| **JDK** (HotSpot) | Java | C2 Sea-of-Nodes, JNI, GC barriers, 200+ intrinsics |
-| **CPython** | Python | PyObject refcount, GC, C API, buffer protocol |
-| **Swift** | Swift | ARC metadata, value witness table, existential containers |
-| **C#/.NET** | C# | P/Invoke, delegates, GC handles, COM/native interop |
+## 中文
+
+| 文档 | 适合场景 |
+| --- | --- |
+| `docs/zh/README.md` | 中文入口和第一次使用路径。 |
+| `docs/zh/architecture.md` | 当前 loader、pipeline、pass、共享状态和输出路径。 |
+| `docs/zh/REPORT_INTERPRETATION.md` | 解读分析结果和报告字段。 |
+| `docs/zh/ISSUE_CLASSIFICATION.md` | 理解 issue 分类。 |
+| `docs/zh/modules.md` | 查看模块清单。 |
+| `docs/zh/passes.md` | 查看分析 pass 行为。 |
+| `docs/zh/developer_guide.md` | 参与开发。 |
+| `docs/zh/RED_BLUE_TEAM.md` | 运行红蓝队测试。 |
+| `docs/zh/ir-specs/` | 查看编译器/IR 模式说明。 |
+
+## 0.2.0 Release Status
+
+The repository declares `0.2.0` in `VERSION`, `build.zig.zon`, CLI `--version`, JSON output, and SARIF output. Treat the current worktree as a release candidate until `zig build test` is green and `tests/BASELINE.md` is updated from its pre-fix status.

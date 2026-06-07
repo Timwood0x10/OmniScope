@@ -69,7 +69,7 @@ pub const PtrInfo = struct {
     escaped: bool = false,
     /// Whether this pointer has been freed
     freed: bool = false,
-    /// v0.1.7: Whether this pointer has been double-freed (freed twice)
+    /// v0.2.0: Whether this pointer has been double-freed (freed twice)
     double_free_detected: bool = false,
     /// Basic block where the pointer was allocated (for scope tracking)
     alloc_bb_id: usize = 0,
@@ -318,35 +318,42 @@ pub const RUST_ALLOC_INTRINSICS = struct {
 
 /// Heap allocation functions (legacy list, for compatibility).
 pub const HEAP_ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",            "calloc",        "realloc",         "aligned_alloc",
-    "valloc",            "pvalloc",       "memalign",        "operator new",
-    "operator new[]",    "allocImpl",     "mmap",
+    "malloc",            "calloc",          "realloc",         "aligned_alloc",
+    "valloc",            "pvalloc",         "memalign",        "operator new",
+    "operator new[]",    "allocImpl",       "mmap",
     // C++ operator new — Itanium ABI mangled names
     // Scalar: _Znw*, _Znwm (operator new / operator new(unsigned long))
     // Array:  _Zna*, _Znam (operator new[] / operator new[](unsigned long))
     // Covers standard + aligned (C++17) + nothrow + placement variants
     // Substring matching ensures all suffixes are caught (_ZnamSt9align_val_t, etc.)
                "_Znwm",
-    "_Znam",             "_Znw",          "_Zna",
+    "_Znam",             "_Znw",            "_Zna",
     // C++17 aligned new/delete (double underscore prefix on some platforms)
                "__Znwm",
-    "__Znam",            "__Znw",         "__Zna",
+    "__Znam",            "__Znw",           "__Zna",
     // Bug 3 fix: also catch MSVC-mangled operator new (when cross-compiled to ELF)
               "?operator new@@",
     "?operator new[]@@",
-    // v0.1.7 FIX: Removed "into_raw" from this list.
+    // v0.2.0: Removed "into_raw" from this list.
     // into_raw is an OWNERSHIP TRANSFER (Rust → C), not a heap allocation.
     // Keeping it here caused false-positive leaks: Box::into_raw(ptr) was
     // recorded as a new allocation, and without matching from_raw, reported
     // as leaked. The correct tracking is in hooks.zig (rustOwnershipHook)
     // which pairs into_raw/from_raw as transfer-out/transfer-in.
-    "dlopen",        "fopen",           "socket",
-    "JNI_OnLoad",        "Py_Initialize", "Py_BuildValue",   "PyTuple_New",
-    "PyList_New",        "PyDict_New",    "NewStringUTF",    "NewByteArray",
+    "dlopen",          "fopen",           "socket",
+    "JNI_OnLoad",        "Py_Initialize",   "Py_BuildValue",   "PyTuple_New",
+    "PyList_New",        "PyDict_New",      "NewStringUTF",    "NewByteArray",
     "NewGlobalRef",      "c_malloc",
+    // Python memory allocators
+           "PyMem_Malloc",    "PyMem_Calloc",
+    "PyMem_Realloc",     "PyObject_Malloc", "PyObject_Calloc",
+    // Lua
+    "lua_newuserdata",
     // Rust global allocator intrinsics (substring-matched via isAllocFunction callers)
-         "__rust_alloc",    "__rust_realloc",
-    "__rdl_alloc",       "__rg_alloc",    "exchange_malloc",
+    "__rust_alloc",      "__rust_realloc",  "__rdl_alloc",     "__rg_alloc",
+    "exchange_malloc",
+    // Zig standard library / runtime allocators
+      "zig_alloc",       "__zig_alloc",
 };
 
 // ============================================================================
@@ -520,7 +527,7 @@ pub fn is_intentional_free(func_name: []const u8) bool {
 
 /// Check if a function may store/retain its pointer argument.
 pub fn may_retain_pointer(callee_name: []const u8) bool {
-    // v0.1.7: Check if this is an LLVM intrinsic that should be suppressed.
+    // v0.2.0: Check if this is an LLVM intrinsic that should be suppressed.
     if (isIntrinsicNoise(callee_name)) return false;
 
     if (is_extern_function(callee_name)) return true;
@@ -544,7 +551,7 @@ pub fn may_retain_pointer(callee_name: []const u8) bool {
 }
 
 fn isOutputParamSetter(func_name: []const u8) bool {
-    // v0.1.7: Check for output parameter patterns.
+    // v0.2.0: Check for output parameter patterns.
 
     // Check if function has output parameters based on common patterns.
     const output_patterns = [_][]const u8{
@@ -570,7 +577,7 @@ fn isOutputParamSetter(func_name: []const u8) bool {
 // Allocation Site Detection
 // ============================================================================
 
-/// v0.1.7: Check if a function is a known heap allocator using Allocator KB.
+/// v0.2.0: Check if a function is a known heap allocator using Allocator KB.
 var g_allocator_kb: ?allocator_kb.AllocatorKB = null;
 var g_allocator_kb_init_failed: bool = false;
 var g_allocator_kb_lock = std.atomic.Value(bool).init(false);
@@ -596,18 +603,27 @@ pub fn getAllocatorKB() ?*allocator_kb.AllocatorKB {
 }
 
 pub fn isHeapAllocFunction(func_name: []const u8) bool {
+    // 1. Substring match against HEAP_ALLOC_FUNCTIONS list (case-sensitive, existing logic)
     for (HEAP_ALLOC_FUNCTIONS) |alloc_fn| {
         if (std.mem.indexOf(u8, func_name, alloc_fn) != null) return true;
     }
 
+    // 2. Check AllocatorKB (existing logic)
     if (getAllocatorKB()) |kb| {
         if (kb.isAllocator(func_name)) return true;
+    }
+
+    // 3. Case-insensitive pattern matching for common allocator substrings.
+    //    Catches variants like Malloc, allocate, my_alloc_func, allocx, etc.
+    const alloc_patterns = [_][]const u8{ "alloc", "malloc", "calloc" };
+    for (alloc_patterns) |pattern| {
+        if (std.ascii.indexOfIgnoreCase(func_name, pattern) != null) return true;
     }
 
     return false;
 }
 
-/// v0.1.7: Check if a function is a known deallocator using Allocator KB.
+/// v0.2.0: Check if a function is a known deallocator using Allocator KB.
 pub fn isKnownDeallocFunction(func_name: []const u8) bool {
     if (getAllocatorKB()) |kb| {
         if (kb.isDeallocator(func_name)) return true;
@@ -620,7 +636,7 @@ pub fn isKnownDeallocFunction(func_name: []const u8) bool {
 // Intrinsic Filter
 // ============================================================================
 
-/// v0.1.7: Check if a function is an LLVM intrinsic that should be suppressed.
+/// v0.2.0: Check if a function is an LLVM intrinsic that should be suppressed.
 /// Note: IntrinsicFilter.init() does not return an error, so no error handling needed.
 var g_intrinsic_filter: ?intrinsic_filter.IntrinsicFilter = null;
 var g_intrinsic_filter_lock = std.atomic.Value(bool).init(false);

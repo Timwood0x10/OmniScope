@@ -2203,6 +2203,37 @@ fn analyzeIR(tmp_path: []const u8, ir: []const u8) !struct { loader: IRLoader, p
     try registerAllPasses(&pipeline);
 
     const module = loader.getModule() orelse return error.NoModule;
+    // DEBUG: Print function names and instructions in module
+    if (std.mem.indexOf(u8, tmp_path, "Zig-null") != null or std.mem.indexOf(u8, tmp_path, "Zig-leak") != null) {
+        const c = OmniScope.ir.llvm_raw.c;
+        var func_count: usize = 0;
+        var f = c.LLVMGetFirstFunction(module.raw);
+        while (@intFromPtr(f) != 0) : (f = c.LLVMGetNextFunction(f)) {
+            const name_ptr = c.LLVMGetValueName(f);
+            const name = if (@intFromPtr(name_ptr) != 0) std.mem.span(name_ptr) else "unnamed";
+            const is_decl = c.LLVMIsDeclaration(f);
+            const has_body = c.LLVMCountBasicBlocks(f);
+            std.debug.print("      DEBUG module func: {s} decl={} bbs={d}\n", .{name, is_decl != 0, has_body});
+            // Print instructions in each basic block
+            if (has_body > 0) {
+                var bb = c.LLVMGetFirstBasicBlock(f);
+                while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+                    var inst = c.LLVMGetFirstInstruction(bb);
+                    while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                        const opcode = c.LLVMGetInstructionOpcode(inst);
+                        std.debug.print("        DEBUG inst opcode={d}\n", .{opcode});
+                        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
+                            const called = c.LLVMGetCalledValue(inst);
+                            const called_name = if (@intFromPtr(called) != 0) std.mem.span(c.LLVMGetValueName(called)) else "null";
+                            std.debug.print("          DEBUG call: called={s} called_ptr=0x{x}\n", .{called_name, @intFromPtr(called)});
+                        }
+                    }
+                }
+            }
+            func_count += 1;
+        }
+        std.debug.print("      DEBUG module func count: {d}\n", .{func_count});
+    }
     pipeline.setModule(module);
     try pipeline.run();
 
@@ -2247,6 +2278,23 @@ test "Inline IR Test Matrix — all languages and scenarios" {
         };
 
         const found_issues = result.issue_count;
+
+        // DEBUG: Print issue details for safe tests with unexpected issues
+        if (tc.category == .same_lang_safe and found_issues > 0) {
+            const issues = result.pipeline.getIssues();
+            for (issues) |issue| {
+                std.debug.print("    DEBUG issue: kind={s} msg={s}\n", .{ @tagName(issue.kind), issue.message });
+            }
+        }
+
+        // DEBUG: Print issues for Zig-null_deref and Zig-leak
+        if (std.mem.eql(u8, tc.name, "Zig-null_deref") or std.mem.eql(u8, tc.name, "Zig-leak") or std.mem.eql(u8, tc.name, "Go-null_deref") or std.mem.eql(u8, tc.name, "Go-leak")) {
+            const issues = result.pipeline.getIssues();
+            std.debug.print("    DEBUG [{s}]: found {d} issues:\n", .{ tc.name, found_issues });
+            for (issues) |issue| {
+                std.debug.print("      - kind={s} msg={s}\n", .{ @tagName(issue.kind), issue.message });
+            }
+        }
 
         // Explicit cleanup (no defer — avoids UB when catch → continue skips assignment)
         result.pipeline.deinit();

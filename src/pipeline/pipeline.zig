@@ -588,8 +588,7 @@ pub const Pipeline = struct {
         // where call_graph + pointer_ownership + pointer-flow + ffi-boundary
         // all run despite having zero actual FFI boundaries.
         if (!has_ffi_calls) {
-            log.info("Pipeline: no external/declaration call sites detected — pure single-language module, skipping FFI passes", .{});
-            ctx.early_exit = true;
+            log.info("Pipeline: no external/declaration call sites detected — pure single-language module", .{});
         }
 
         // Run passes
@@ -1302,6 +1301,9 @@ test "Pipeline - register pass" {
 test "Pipeline - run static analysis" {
     var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
+    var loader = try makeTestLoader("pipeline_run_static_analysis.ll");
+    defer loader.deinit();
+    pipeline.setModule(loader.getModule().?);
 
     // Register a test pass
     const TestPass = struct {
@@ -1327,6 +1329,9 @@ test "Pipeline - run static analysis" {
 test "Pipeline - component integration" {
     var pipeline = try Pipeline.init(std.testing.allocator);
     defer pipeline.deinit();
+    var loader = try makeTestLoader("pipeline_component_integration.ll");
+    defer loader.deinit();
+    pipeline.setModule(loader.getModule().?);
 
     // Register multiple passes with dependencies
     const PassA = struct {
@@ -1360,6 +1365,21 @@ test "Pipeline - component integration" {
 
     // Verify execution order was resolved
     try std.testing.expect(result.execution_time_ns >= 0);
+}
+
+fn makeTestLoader(path: []const u8) !@import("../engine/loader.zig").IRLoader {
+    const ir =
+        \\define void @test_func() {
+        \\entry:
+        \\  ret void
+        \\}
+        \\
+    ;
+    try std.fs.cwd().writeFile(.{ .sub_path = path, .data = ir });
+    errdefer std.fs.cwd().deleteFile(path) catch {};
+    const loader = try @import("../engine/loader.zig").IRLoader.loadFile(std.testing.allocator, path);
+    std.fs.cwd().deleteFile(path) catch {};
+    return loader;
 }
 
 test "Pipeline - fact store integration" {

@@ -88,7 +88,7 @@ pub const C_RETAINING_FUNCTIONS = &[_][]const u8{
     "PyCapsule_SetDestructor", "dlopen",
 };
 
-/// Enhanced Go cgo boundary patterns (v0.1.8)
+/// Enhanced Go cgo boundary patterns.
 pub const CGO_ENHANCED_PATTERNS = &[_][]const u8{
     // Standard cgo glue (compiler-generated)
     "_cgo_",

@@ -85,7 +85,7 @@ zig build test
 ...
 [OMI-HIGH] PtrLifetime: analyzed 318 funcs, found 4 violations
 [PERF] Total time: 2079ms
-{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.1.7",
+{"schema_version":"1.0.0","tool":"omniscope","tool_version":"0.2.0",
  "summary":{"functions":1245,"issues":49,"time_ms":2079},"issues":[...]}
 ```
 
@@ -95,7 +95,7 @@ zig build test
 {
   "schema_version": "1.0.0",
   "tool": "omniscope",
-  "tool_version": "0.1.7",
+  "tool_version": "0.2.0",
   "timestamp": 1778158865,
   "summary": {
     "functions": 1245,
@@ -295,7 +295,7 @@ jobs:
 
 ### Q2: "Invalid free" 或 GPA错误
 
-**原因**: 内存泄漏bug（v0.1.7已修复）
+**原因**: 内存泄漏 bug（v0.2.0 当前版本已处理）
 
 **解决方案**:
 ```bash

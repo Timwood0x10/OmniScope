@@ -125,7 +125,6 @@ pub const CallGraphPass = struct {
         // Skip remaining heavy passes (pointer_ownership, taint, ffi_boundary, etc.)
         if (ctx.cross_lang_edges.items.len == 0) {
             diag.info("CallGraph: no cross-language edges — single-language project, skipping FFI passes", .{});
-            ctx.early_exit = true;
             return;
         }
 
