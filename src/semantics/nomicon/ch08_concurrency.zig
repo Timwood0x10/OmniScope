@@ -63,7 +63,6 @@ pub fn detectFunction(
     srt: *SemanticTree,
     diag: *DiagnosticWriter,
 ) !void {
-    _ = module;
     _ = diag;
     if (c.LLVMIsDeclaration(func) != 0) return;
 
@@ -95,7 +94,7 @@ pub fn detectFunction(
             }
 
             if (isAtomicOperation(opcode)) {
-                _ = analyzeAtomicUsage(inst, srt);
+                _ = analyzeAtomicUsage(inst, module, srt);
             }
         }
     }
@@ -278,6 +277,7 @@ fn analyzeThreadSpawnCall(
 /// 3. Missing or incorrect memory ordering constraints
 fn analyzeAtomicUsage(
     inst: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
     srt: *SemanticTree,
 ) bool {
     const inst_ref = @intFromPtr(inst);
@@ -294,7 +294,7 @@ fn analyzeAtomicUsage(
             if (@intFromPtr(ptr_type) != 0 and c.LLVMGetTypeKind(ptr_type) == c.LLVMPointerTypeKind) {
                 const elem_type = c.LLVMGetElementType(ptr_type);
                 if (@intFromPtr(elem_type) != 0) {
-                    const type_size = c.LLVMStoreSizeOfType(c.LLVMGetModuleDataLayout(c.LLVMGetGlobalParent(inst)), elem_type);
+                    const type_size = c.LLVMStoreSizeOfType(c.LLVMGetModuleDataLayout(module), elem_type);
                     // Atomic ops on types > 8 bytes are suspicious (should use locks)
                     if (type_size > 8) {
                         recordResolution(srt, inst_ref, .send_sync_violation, 0.70, "Atomic op on large type — consider Mutex/RwLock instead");

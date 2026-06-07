@@ -901,6 +901,9 @@ pub const Pipeline = struct {
                 }
             }
 
+            // Flush pending diagnostics to process message folding/aggregation.
+            try aggregator.flush();
+
             // Store deduplicated issue indices (caller owns this memory).
             self.dedup_issue_indices = try indices.toOwnedSlice(self.allocator);
 

@@ -92,8 +92,14 @@ pub const DiagnosticAggregator = struct {
     /// Pattern aggregation: tracks (issue_kind, pattern_base) → count
     pattern_counts: std.AutoHashMap(u64, PatternInfo),
 
+    /// Pending diagnostics for deferred bucketing in flush()
+    pending: std.ArrayList(PendingDiag),
+
     /// Threshold for pattern folding (fold when count exceeds this)
     const PATTERN_FOLD_THRESHOLD: usize = 3;
+
+    /// Threshold for message-based folding (same kind+message across functions)
+    const MESSAGE_FOLD_THRESHOLD: usize = 5;
 
     /// Pattern information for aggregation
     const PatternInfo = struct {
@@ -104,6 +110,16 @@ pub const DiagnosticAggregator = struct {
         last_func_name: []const u8,
     };
 
+    /// Pending diagnostic for deferred bucketing in flush()
+    const PendingDiag = struct {
+        kind_tag: []const u8,
+        message: []const u8,
+        func_name: []const u8,
+        severity: OutputSeverity,
+        loc: u32,
+        confidence: f32,
+    };
+
     /// Create a new diagnostic aggregator
     pub fn init(allocator: std.mem.Allocator) !DiagnosticAggregator {
         return .{
@@ -111,6 +127,7 @@ pub const DiagnosticAggregator = struct {
             .diagnostics = try std.ArrayList(Diagnostic).initCapacity(allocator, 0),
             .seen_keys = std.AutoHashMap(u64, void).init(allocator),
             .pattern_counts = std.AutoHashMap(u64, PatternInfo).init(allocator),
+            .pending = try std.ArrayList(PendingDiag).initCapacity(allocator, 0),
         };
     }
 
@@ -129,6 +146,8 @@ pub const DiagnosticAggregator = struct {
             self.allocator.free(entry.value_ptr.last_func_name);
         }
         self.pattern_counts.deinit();
+
+        self.pending.deinit(self.allocator);
     }
 
     /// Add a diagnostic with cross-pass deduplication
@@ -207,9 +226,6 @@ pub const DiagnosticAggregator = struct {
         else
             0.5;
 
-        // Map issue kind to diagnostic kind (preserve semantic info)
-        const diag_kind = mapKindToDiagnostic(kind_tag);
-
         // Preserve location info when available.
         // Handle both u32 and ?u32 for line field (test compatibility).
         const loc_id: u32 = blk: {
@@ -226,15 +242,19 @@ pub const DiagnosticAggregator = struct {
             }
         };
 
-        try self.add(.{
-            .kind = diag_kind,
-            .severity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info,
+        const severity: OutputSeverity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info;
+
+        // Push to pending list for deferred bucketing in flush()
+        try self.pending.append(self.allocator, .{
+            .kind_tag = kind_tag,
+            .message = try self.allocator.dupe(u8, msg),
+            .func_name = try self.allocator.dupe(u8, func_name),
+            .severity = severity,
             .loc = loc_id,
-            .message = msg,
             .confidence = conf,
         });
 
-        // Pattern-based aggregation: detect and fold repetitive patterns
+        // Pattern-based aggregation: detect and track repetitive patterns
         // (e.g., ffi_alloc_1, ffi_alloc_2, ... ffi_alloc_20)
         if (extractPatternBase(func_name)) |pattern_base| {
             const pkey = patternHashKey(kind_tag, pattern_base);
@@ -256,34 +276,126 @@ pub const DiagnosticAggregator = struct {
                 // Free old last_func_name before updating
                 self.allocator.free(pattern_gop.value_ptr.last_func_name);
                 pattern_gop.value_ptr.last_func_name = try self.allocator.dupe(u8, func_name);
+            }
+        }
 
-                // Check if we should generate a folded summary
-                if (pattern_gop.value_ptr.count == PATTERN_FOLD_THRESHOLD + 1) {
+        return true;
+    }
+
+    /// Flush pending diagnostics with deferred bucketing and aggregation.
+    ///
+    /// Processes the pending list accumulated by addIssue():
+    /// 1. Emits folded diagnostics for patterns exceeding PATTERN_FOLD_THRESHOLD
+    /// 2. Groups pending diagnostics by (kind_tag + message) hash key
+    /// 3. For groups > MESSAGE_FOLD_THRESHOLD, emits ONE aggregated diagnostic
+    /// 4. For groups <= MESSAGE_FOLD_THRESHOLD, emits each diagnostic individually
+    /// 5. Clears the pending list
+    pub fn flush(self: *DiagnosticAggregator) !void {
+        // 1. Emit pattern-folded diagnostics for patterns exceeding threshold
+        {
+            var it = self.pattern_counts.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.count > PATTERN_FOLD_THRESHOLD) {
                     const fold_msg = try std.fmt.allocPrint(
                         self.allocator,
                         "[{s}×{d}] {s}{{1..{d}}} — {d} identical patterns",
                         .{
-                            kind_tag,
-                            pattern_gop.value_ptr.count,
-                            pattern_gop.value_ptr.pattern_base,
-                            pattern_gop.value_ptr.count,
-                            pattern_gop.value_ptr.count,
+                            entry.value_ptr.kind_tag,
+                            entry.value_ptr.count,
+                            entry.value_ptr.pattern_base,
+                            entry.value_ptr.count,
+                            entry.value_ptr.count,
                         },
                     );
                     defer self.allocator.free(fold_msg);
 
                     try self.add(.{
-                        .kind = diag_kind,
-                        .severity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info,
-                        .loc = loc_id,
+                        .kind = mapKindToDiagnostic(entry.value_ptr.kind_tag),
+                        .severity = .warning,
+                        .loc = 0,
                         .message = fold_msg,
-                        .confidence = conf,
+                        .confidence = 0.8,
                     });
                 }
             }
         }
 
-        return true;
+        // If nothing pending, nothing more to do
+        if (self.pending.items.len == 0) return;
+
+        // 2. Build group counts by (kind_tag + message) hash key
+        var group_counts = std.AutoHashMap(u64, usize).init(self.allocator);
+        defer group_counts.deinit();
+
+        for (self.pending.items) |diag| {
+            var hasher = std.hash.Fnv1a_64.init();
+            hasher.update(diag.kind_tag);
+            hasher.update(diag.message);
+            const key = hasher.final();
+
+            const gop = try group_counts.getOrPut(key);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = 1;
+            } else {
+                gop.value_ptr.* += 1;
+            }
+        }
+
+        // 3. Track which aggregated groups have already been emitted
+        var emitted_groups = std.AutoHashMap(u64, void).init(self.allocator);
+        defer emitted_groups.deinit();
+
+        // 4. Iterate pending and emit individual or aggregated diagnostics
+        for (self.pending.items) |diag| {
+            var hasher = std.hash.Fnv1a_64.init();
+            hasher.update(diag.kind_tag);
+            hasher.update(diag.message);
+            const key = hasher.final();
+
+            const count = group_counts.get(key).?;
+
+            if (count > MESSAGE_FOLD_THRESHOLD) {
+                // Emit aggregated diagnostic once per group
+                const gop = try emitted_groups.getOrPut(key);
+                if (!gop.found_existing) {
+                    const fold_msg = try std.fmt.allocPrint(
+                        self.allocator,
+                        "[aggregated] {s} ×{d} ({s} and {d} other functions)",
+                        .{
+                            diag.kind_tag,
+                            count,
+                            diag.func_name,
+                            count - 1,
+                        },
+                    );
+                    defer self.allocator.free(fold_msg);
+
+                    try self.add(.{
+                        .kind = mapKindToDiagnostic(diag.kind_tag),
+                        .severity = diag.severity,
+                        .loc = diag.loc,
+                        .message = fold_msg,
+                        .confidence = diag.confidence,
+                    });
+                }
+            } else {
+                // Emit individually
+                try self.add(.{
+                    .kind = mapKindToDiagnostic(diag.kind_tag),
+                    .severity = diag.severity,
+                    .loc = diag.loc,
+                    .message = diag.message,
+                    .confidence = diag.confidence,
+                });
+            }
+        }
+
+        // 5. Clear pending list
+        for (self.pending.items) |diag| {
+            self.allocator.free(diag.message);
+            self.allocator.free(diag.func_name);
+        }
+        self.pending.clearRetainingCapacity();
     }
 
     fn mapKindToDiagnostic(kind_str: []const u8) DiagnosticKind {
@@ -453,6 +565,13 @@ pub const DiagnosticAggregator = struct {
             self.allocator.free(entry.value_ptr.last_func_name);
         }
         self.pattern_counts.clearRetainingCapacity();
+
+        // Free pending items and clear
+        for (self.pending.items) |diag| {
+            self.allocator.free(diag.message);
+            self.allocator.free(diag.func_name);
+        }
+        self.pending.clearRetainingCapacity();
     }
 
     /// Extract pattern base from function name by detecting numeric suffixes.
@@ -898,6 +1017,9 @@ test "DiagnosticAggregator - pattern aggregation" {
 
         _ = try aggregator.addIssue(issue);
     }
+
+    // Flush pending to process pattern folding
+    try aggregator.flush();
 
     // Should have individual issues + 1 folded summary
     const all_diags = aggregator.getAll();

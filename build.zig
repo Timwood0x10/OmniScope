@@ -30,6 +30,27 @@ fn configureLLVM(b: *std.Build, compile: *std.Build.Step.Compile, llvm_path: []c
     compile.root_module.addRPath(.{ .cwd_relative = lib });
 }
 
+/// Configure a Step.Compile with the C++ bridge source for IR parsing
+fn configureCppBridge(b: *std.Build, compile: *std.Build.Step.Compile, llvm_path: []const u8) void {
+    compile.root_module.addCSourceFile(.{ .file = b.path("src/ir/llvm_cpp_bridge.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+    compile.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+
+    const target: std.Target = if (compile.root_module.resolved_target) |rt|
+        rt.result
+    else
+        @import("builtin").target;
+
+    const cxxlib: []const u8 = switch (target.os.tag) {
+        .macos, .ios, .tvos, .watchos => "c++",
+        .linux, .freebsd, .openbsd, .netbsd => "stdc++",
+        .windows => "",
+        else => "c++",
+    };
+    if (cxxlib.len > 0) {
+        compile.root_module.linkSystemLibrary(cxxlib, .{});
+    }
+}
+
 /// Build configuration for OmniScope
 pub fn build(b: *std.Build) void {
     // Parse build options
@@ -61,6 +82,22 @@ pub fn build(b: *std.Build) void {
     });
 
     lib_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+
+    // Link C++ bridge for direct LLVM IR parsing (llvm::parseIRFile)
+    // Replaces the external llvm-as dependency that fails in macOS sandbox.
+    // Added to lib_mod so all test targets that import OmniScope get it.
+    lib_mod.addCSourceFile(.{ .file = b.path("src/ir/llvm_cpp_bridge.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+
+    // Cross-platform C++ standard library linking
+    const cxxlib: []const u8 = switch (target.result.os.tag) {
+        .macos, .ios, .tvos, .watchos => "c++",
+        .linux, .freebsd, .openbsd, .netbsd => "stdc++",
+        .windows => "", // MSVC links automatically
+        else => "c++",
+    };
+    if (cxxlib.len > 0) {
+        lib_mod.linkSystemLibrary(cxxlib, .{});
+    }
 
     // Build main executable
     const exe = b.addExecutable(.{

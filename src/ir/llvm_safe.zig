@@ -10,6 +10,13 @@ const log = @import("../common/log.zig");
 const Allocator = std.mem.Allocator;
 const c = @import("llvm_raw.zig").c;
 
+// C++ bridge for direct LLVM IR parsing (avoids llvm-as external dependency).
+// Declares the remaining C-compatible functions from llvm_cpp_bridge.cpp.
+const cpp = struct {
+    extern fn omni_parse_ir_file(path: [*:0]const u8, ctx: ?*anyopaque, module_out: ?*?*anyopaque, error_out: ?*?[*:0]u8) c_int;
+    extern fn omni_free_string(str: ?*anyopaque) void;
+};
+
 /// Error types for LLVM operations
 pub const Error = error{
     IRLoadFailed,
@@ -144,30 +151,35 @@ pub const IRLoader = struct {
         const path_c = try self.allocator.dupeZ(u8, path);
         defer self.allocator.free(path_c);
 
-        var mem_buf: c.LLVMMemoryBufferRef = undefined;
-        var err_msg: [*c]u8 = null;
-
-        // Create memory buffer from file
-        if (c.LLVMCreateMemoryBufferWithContentsOfFile(
-            path_c,
-            &mem_buf,
-            &err_msg,
-        ) != 0) {
-            defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
-            return Error.FileNotFound;
-        }
-
-        // Detect file type
         const is_ll_file = std.mem.endsWith(u8, path, ".ll");
 
         var module_raw: c.LLVMModuleRef = null;
-        var parse_result: c.LLVMBool = 0;
 
         if (is_ll_file) {
             // LLVM 22: LLVMParseIRInContext segfaults on text IR (address 0x8).
             // Root cause: LLVM 22's IR text parser requires target/machine init
             // that the C API context doesn't provide by default.
-            // Workaround: convert .ll → .bc via llvm-as, then load bitcode.
+            // Fix: Use C++ bridge (llvm::parseIRFile) which handles this correctly.
+            // Fallback: llvm-as conversion if C++ bridge is unavailable.
+
+            // Try C++ bridge first (direct llvm::parseIRFile)
+            var cpp_module: ?*anyopaque = null;
+            var cpp_error: ?[*:0]u8 = null;
+            const cpp_result = cpp.omni_parse_ir_file(path_c, self.context.raw, &cpp_module, &cpp_error);
+            defer if (cpp_error) |err| cpp.omni_free_string(@ptrCast(err));
+
+            if (cpp_result == 0 and cpp_module != null) {
+                module_raw = @ptrCast(cpp_module);
+                self.module = .{ .raw = module_raw };
+                return self.module.?;
+            }
+
+            // C++ bridge failed, fall back to llvm-as conversion.
+            // This handles environments where the C++ bridge wasn't compiled
+            // or the LLVM shared library doesn't support it.
+            log.debug("C++ bridge parseIRFile failed ({s}), falling back to llvm-as", .{
+                if (cpp_error) |e| std.mem.sliceTo(e, 0) else "unknown error",
+            });
             const bc_path = try self.allocator.dupeZ(u8, path);
             defer self.allocator.free(bc_path);
             // Replace .ll suffix with .bc
@@ -223,32 +235,41 @@ pub const IRLoader = struct {
             defer self.allocator.free(result.stderr);
             if (result.term.Exited != 0) {
                 log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
-                c.LLVMDisposeMemoryBuffer(mem_buf);
                 return Error.ParseFailed;
             }
-            // Dispose original .ll buffer, load converted .bc
-            c.LLVMDisposeMemoryBuffer(mem_buf);
+            // Load converted .bc
             return self.loadFile(std.mem.sliceTo(bc_path, 0));
         } else {
-            // Parse LLVM bitcode format (.bc)
+            // .bc path: create memory buffer from file and parse bitcode
+            var mem_buf: c.LLVMMemoryBufferRef = undefined;
+            var err_msg: [*c]u8 = null;
+
+            if (c.LLVMCreateMemoryBufferWithContentsOfFile(
+                path_c,
+                &mem_buf,
+                &err_msg,
+            ) != 0) {
+                defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+                return Error.FileNotFound;
+            }
+
+            var parse_result: c.LLVMBool = 0;
             parse_result = c.LLVMParseBitcodeInContext2(
                 self.context.raw,
                 mem_buf,
                 &module_raw,
             );
-        }
 
-        if (parse_result != 0 or module_raw == null) {
-            defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+            if (parse_result != 0 or module_raw == null) {
+                defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+                c.LLVMDisposeMemoryBuffer(mem_buf);
+                return Error.ParseFailed;
+            }
+
             c.LLVMDisposeMemoryBuffer(mem_buf);
-            return Error.ParseFailed;
+            self.module = .{ .raw = module_raw };
+            return self.module.?;
         }
-
-        self.module = .{ .raw = module_raw };
-        // L7 FIX: Dispose memory buffer on success path to prevent leak.
-        // Previous code only disposed on error path (line 184), leaking on success.
-        c.LLVMDisposeMemoryBuffer(mem_buf);
-        return self.module.?;
     }
 
     /// Get the module

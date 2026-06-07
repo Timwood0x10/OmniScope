@@ -33,7 +33,13 @@ pub const LanguageProfile = struct {
 };
 
 /// Detect the source language of an entire LLVM module.
+///
+/// Detection priority:
+///   1. Function-name sampling — statistical pattern matching
+///   2. Personality function attributes
+///   3. Global variable name patterns
 pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
+    // Fallback: function-name sampling, personality, globals voting
     const sampling_result = detectFromSampling(module);
     const personality_result = detectFromPersonality(module);
     const globals_result = detectFromGlobals(module);

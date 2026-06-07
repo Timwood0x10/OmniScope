@@ -194,9 +194,6 @@ pub const CrossLangDataFlow = struct {
             }
         }
 
-        var funcs_with_frees = std.StringHashMap(void).init(ctx.allocator);
-        defer funcs_with_frees.deinit();
-
         var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer freed_alloc_by_ptr.deinit();
 
@@ -301,8 +298,6 @@ pub const CrossLangDataFlow = struct {
                                 continue;
                             }
                         }
-
-                        try funcs_with_frees.put(func_name, {});
 
                         const num_operands = c.LLVMGetNumOperands(inst);
                         if (num_operands >= 2) {
@@ -527,8 +522,21 @@ pub const CrossLangDataFlow = struct {
                 continue;
             }
 
-            if (funcs_with_frees.contains(alloc.alloc_func)) {
-                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — function calls a free function", .{ alloc.alloc_callee, alloc.alloc_func });
+            // Heuristic: if the allocation's function also freed this specific
+            // allocation (same alloc_func appears in free_funcs), the alloc/free
+            // is correctly paired. The previous check ("function calls any free")
+            // was too broad — it suppressed cross-language orphans where the
+            // alloc function happened to call a free for a DIFFERENT pointer.
+            // Fix: check specific alloc→free pairing, not function-level presence.
+            var same_func_freed = false;
+            for (alloc.free_funcs.items) |free_func| {
+                if (std.mem.eql(u8, free_func, alloc.alloc_func)) {
+                    same_func_freed = true;
+                    break;
+                }
+            }
+            if (same_func_freed) {
+                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — same function freed this allocation", .{ alloc.alloc_callee, alloc.alloc_func });
                 continue;
             }
 
@@ -953,12 +961,21 @@ pub const CrossLangDataFlow = struct {
                 continue;
             }
 
-            // Heuristic: if the allocation's function also calls a free function,
-            // the allocation is likely correctly paired. The pointer matching may
-            // have failed due to store→load cycles or LLVM value identity issues.
-            // Suppress the orphan report in this case.
-            if (funcs_with_frees.contains(alloc.alloc_func)) {
-                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — function calls a free function", .{ alloc.alloc_callee, alloc.alloc_func });
+            // Heuristic: if the allocation's function ALSO freed this specific
+            // allocation (same alloc_func appears in free_funcs), the alloc/free
+            // is correctly paired. The previous check ("function calls any free")
+            // was too broad — it suppressed cross-language orphans where the
+            // alloc function happened to call a free for a DIFFERENT pointer.
+            // Fix: check specific alloc→free pairing, not function-level presence.
+            var same_func_freed = false;
+            for (alloc.free_funcs.items) |free_func| {
+                if (std.mem.eql(u8, free_func, alloc.alloc_func)) {
+                    same_func_freed = true;
+                    break;
+                }
+            }
+            if (same_func_freed) {
+                diag.info("CrossLangDataFlow: Suppressing orphan for {s} in {s} — same function freed this allocation", .{ alloc.alloc_callee, alloc.alloc_func });
                 continue;
             }
 
