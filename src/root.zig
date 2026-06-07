@@ -12,6 +12,7 @@ pub const ir = struct {
     pub const view = @import("ir/view.zig");
     pub const debug_info = @import("ir/debug_info.zig");
     pub const mangling = @import("ir/mangling.zig");
+    pub const ir_store = @import("ir/ir_store.zig");
 };
 
 // Export pass system
@@ -201,6 +202,11 @@ pub const cross_lang = struct {
     pub const FFIAnalysisError = @import("pass/analysis/ffi/ffi_analysis.zig").FFIAnalysisError;
     pub const GcSafetyPass = @import("pass/analysis/ffi/gc_safety_analyzer.zig").GcSafetyAnalyzer;
     pub const ErrorPropagationTracer = @import("pass/analysis/ffi/error_propagation_tracer.zig").ErrorPropagationTracer;
+
+    // New FFI detectors (Phase 5)
+    pub const LayoutMismatchPass = @import("pass/analysis/ffi/layout_mismatch_detector.zig").LayoutMismatchPass;
+    pub const StringSafetyPass = @import("pass/analysis/ffi/string_safety_ffi.zig").StringSafetyPass;
+    pub const UnwindBoundaryPass = @import("pass/analysis/ffi/unwind_boundary_checker.zig").UnwindBoundaryPass;
 
     // Semantic resolution pass
     pub const SemanticResolverPass = @import("pass/analysis/semantic_resolver_pass.zig").SemanticResolverPass;

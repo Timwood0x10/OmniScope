@@ -39,4 +39,8 @@ pub fn registerAllPasses(pipeline: *Pipeline) !void {
     try pipeline.registerPass(OmniScope.cross_lang.GcSafetyPass);
     try pipeline.registerPass(OmniScope.cross_lang.ErrorPropagationTracer);
     try pipeline.registerPass(OmniScope.cross_lang.LockPass);
+    // Phase 5: New FFI detectors
+    try pipeline.registerPass(OmniScope.cross_lang.LayoutMismatchPass);
+    try pipeline.registerPass(OmniScope.cross_lang.StringSafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.UnwindBoundaryPass);
 }

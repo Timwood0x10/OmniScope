@@ -482,6 +482,48 @@ pub fn build(b: *std.Build) void {
     inline_ir_matrix_step.dependOn(&run_inline_ir_matrix_tests.step);
     test_step.dependOn(&run_inline_ir_matrix_tests.step);
 
+    // ── FFI Layout Mismatch Tests ──
+    const ffi_layout_step = b.step("test-ffi-layout", "Run FFI layout mismatch detection tests");
+    const ffi_layout_mod = b.addModule("test_ffi_layout", .{
+        .root_source_file = b.path("tests/integration/test_ffi_layout.zig"),
+        .target = target,
+    });
+    ffi_layout_mod.addImport("OmniScope", lib_mod);
+    ffi_layout_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_layout_tests = b.addTest(.{ .root_module = ffi_layout_mod });
+    configureLLVM(b, ffi_layout_tests, llvm_path, llvm_version);
+    const run_ffi_layout_tests = b.addRunArtifact(ffi_layout_tests);
+    run_ffi_layout_tests.step.dependOn(b.getInstallStep());
+    ffi_layout_step.dependOn(&run_ffi_layout_tests.step);
+
+    // ── FFI String Safety Tests ──
+    const ffi_string_step = b.step("test-ffi-string", "Run FFI string safety detection tests");
+    const ffi_string_mod = b.addModule("test_ffi_string", .{
+        .root_source_file = b.path("tests/integration/test_ffi_string.zig"),
+        .target = target,
+    });
+    ffi_string_mod.addImport("OmniScope", lib_mod);
+    ffi_string_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_string_tests = b.addTest(.{ .root_module = ffi_string_mod });
+    configureLLVM(b, ffi_string_tests, llvm_path, llvm_version);
+    const run_ffi_string_tests = b.addRunArtifact(ffi_string_tests);
+    run_ffi_string_tests.step.dependOn(b.getInstallStep());
+    ffi_string_step.dependOn(&run_ffi_string_tests.step);
+
+    // ── FFI Unwind Boundary Tests ──
+    const ffi_unwind_step = b.step("test-ffi-unwind", "Run FFI unwind boundary detection tests");
+    const ffi_unwind_mod = b.addModule("test_ffi_unwind", .{
+        .root_source_file = b.path("tests/integration/test_ffi_unwind.zig"),
+        .target = target,
+    });
+    ffi_unwind_mod.addImport("OmniScope", lib_mod);
+    ffi_unwind_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_unwind_tests = b.addTest(.{ .root_module = ffi_unwind_mod });
+    configureLLVM(b, ffi_unwind_tests, llvm_path, llvm_version);
+    const run_ffi_unwind_tests = b.addRunArtifact(ffi_unwind_tests);
+    run_ffi_unwind_tests.step.dependOn(b.getInstallStep());
+    ffi_unwind_step.dependOn(&run_ffi_unwind_tests.step);
+
     // Help information
     const help_step = b.step("help", "Show build options");
     help_step.dependOn(&b.addSystemCommand(&.{

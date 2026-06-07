@@ -199,8 +199,11 @@ pub const FreeValidationPass = struct {
 
                 if (!is_intentional) {
                     if (ctx.memory_graph.family_registry) |family_reg| {
-                        if (try cross_lang_detector.detectCrossLanguageFree(family_reg, alloc_func, callee_name, ctx.allocator)) |cross_issue| {
-                            try report.reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, &cross_issue, diag);
+                        var cross_issue = try cross_lang_detector.detectCrossLanguageFree(family_reg, alloc_func, callee_name, ctx.allocator);
+                        if (cross_issue) |*ci| {
+                            try report.reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, ci, diag);
+                            // Ownership of ci.message transferred to Issue::initWithTrace → addIssue → deinit
+                            // or freed in early return above
                             return true;
                         }
                     }

@@ -63,7 +63,8 @@ ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
         viz visualize \
         cross-lang-test cross-lang-build cross-lang-run cross-lang-report \
         reports-json reports-sarif \
-        test-issues test-stability test-stress
+        test-issues test-stability test-stress test-inline-ir-matrix \
+        test-ffi-layout test-ffi-string test-ffi-unwind
 
 # ========================================
 # Default Target - Run All Tests
@@ -78,6 +79,7 @@ all: test-all bench
 	@echo "║  Integration Tests: ✓ Passed                                  ║"
 	@echo "║  Issue Verification:✓ Passed                                  ║"
 	@echo "║  Stability Tests:   ✓ Passed                                  ║"
+	@echo "║  Inline IR Matrix:  ✓ Passed                                  ║"
 	@echo "║  Benchmarks:        ✓ Completed                               ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 
@@ -124,7 +126,29 @@ test-inline-ir-matrix:
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build test-inline-ir-matrix
 
-test-all: test-unit test-int test-issues test-stability test-stress test-inline-ir-matrix
+test-ffi-layout:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI LAYOUT MISMATCH TESTS                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-layout
+
+test-ffi-string:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI STRING SAFETY TESTS                          ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-string
+
+test-ffi-unwind:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI UNWIND BOUNDARY TESTS                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-unwind
+
+test-all: test-unit test-int test-issues test-stability test-stress test-inline-ir-matrix \
+        test-ffi-layout test-ffi-string test-ffi-unwind
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║                  ALL TESTS PASSED                              ║"
@@ -846,7 +870,11 @@ help:
 	@echo "  make test-issues Run issue verification tests"
 	@echo "  make test-stability Run stability tests"
 	@echo "  make test-stress    Run stress tests"
-	@echo "  make test-all    Run all tests"
+	@echo "  make test-inline-ir-matrix  Run inline IR matrix tests (all languages × scenarios)"
+	@echo "  make test-ffi-layout    Run FFI layout mismatch tests"
+	@echo "  make test-ffi-string   Run FFI string safety tests"
+	@echo "  make test-ffi-unwind   Run FFI unwind boundary tests"
+	@echo "  make test-all          Run all tests"
 	@echo "  make bench       Run performance benchmarks"
 	@echo ""
 	@echo "Corpus Commands:"

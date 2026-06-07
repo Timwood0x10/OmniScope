@@ -348,7 +348,7 @@ pub fn reportCrossLangFreeIssue(
     caller_func: c.LLVMValueRef,
     callee_name: []const u8,
     ptr_arg: c.LLVMValueRef,
-    cross_issue: *const cross_lang_detector.CrossLangFreeIssue,
+    cross_issue: *cross_lang_detector.CrossLangFreeIssue,
     diag: *DiagnosticWriter,
 ) !void {
     const caller_name_ptr = c.LLVMGetValueName(caller_func);
@@ -361,6 +361,7 @@ pub fn reportCrossLangFreeIssue(
         diag.info("[SUPPRESSED] Cross-language free in {s}: intentional ownership transfer (alloc={s}, free={s})", .{
             caller_name, cross_issue.alloc_family.displayName(), cross_issue.free_family.family.displayName(),
         });
+        ctx.allocator.free(cross_issue.message);
         return;
     }
 

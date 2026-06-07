@@ -77,6 +77,13 @@ pub const CrossLangFreeIssue = struct {
     free_family: AllocatorFunction,
     /// Human-readable message describing the issue
     message: []const u8,
+
+    /// Free the owned message field.
+    pub fn deinit(self: *CrossLangFreeIssue, allocator: std.mem.Allocator) void {
+        if (self.message.len > 0) {
+            allocator.free(self.message);
+        }
+    }
 };
 
 /// Detailed information about a free/deallocation function.
@@ -573,7 +580,7 @@ test "detectCrossLanguageFree - Rust alloc + C free" {
     try std.testing.expectEqual(AllocatorFamily.rust_global, result.?.alloc_family);
     try std.testing.expectEqual(AllocatorFamily.c_standard, result.?.free_family.family);
     try std.testing.expect(result.?.confidence > 0.9);
-    testing_allocator.free(result.?.message);
+    result.?.deinit(testing_allocator);
 }
 
 test "detectCrossLanguageFree - C alloc + Rust free" {
@@ -589,7 +596,7 @@ test "detectCrossLanguageFree - C alloc + Rust free" {
     try std.testing.expect(result != null);
     try std.testing.expectEqual(AllocatorFamily.c_standard, result.?.alloc_family);
     try std.testing.expectEqual(AllocatorFamily.rust_global, result.?.free_family.family);
-    testing_allocator.free(result.?.message);
+    result.?.deinit(testing_allocator);
 }
 
 test "detectCrossLanguageFree - Same family (should return null)" {
