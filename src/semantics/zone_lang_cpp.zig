@@ -167,6 +167,9 @@ pub fn classifyCppFunction(func_name: []const u8) ZoneKind {
             .cpp_allocator,
             .static_buffer,
             => return .ffi,
+
+            // Pure computation functions are safe — no FFI risk
+            .pure_computation => {},
         }
     }
 

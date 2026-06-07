@@ -355,6 +355,7 @@ pub fn riskKindToIssueKind(risk: RiskKind) IssueKind {
         .thread_mgmt => .ffi_unsafe_call,
         .process_mgmt => .command_injection,
         .signal_handler => .ffi_unsafe_call,
+        .pure_computation => .ffi_unsafe_call, // Should be filtered before reaching here
     };
 }
 

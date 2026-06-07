@@ -19,6 +19,8 @@ const Location = @import("../../diag/issue.zig").Location;
 const Issue = @import("../../diag/issue.zig").Issue;
 const IssueKind = @import("../../diag/issue.zig").IssueKind;
 
+const FFITypeMismatchPass = @import("ffi/ffi_type_mismatch.zig").FFITypeMismatchPass;
+
 /// Buffer overflow detection pass.
 /// Analyzes GEP (GetElementPtr) instructions against alloca sizes
 /// and static array bounds to detect potential overflows.
@@ -44,6 +46,35 @@ pub const BufferOverflowPass = struct {
         return "function_with_non_utf8_name";
     }
 
+    /// Count only user-defined functions (excluding STL/LLVM intrinsics).
+    /// This prevents C++ STL template expansion from triggering the 500-function
+    /// skip threshold, which was causing buffer overflow detection to be
+    /// completely skipped on real-world C++ codebases.
+    fn countUserDefinedFunctions(mod: c.LLVMModuleRef) u32 {
+        var count: u32 = 0;
+        var func = c.LLVMGetFirstFunction(mod);
+        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+            if (c.LLVMIsDeclaration(func) != 0) continue;
+            const name_ptr = c.LLVMGetValueName(func);
+            if (@intFromPtr(name_ptr) == 0) continue;
+            const func_name = std.mem.span(name_ptr);
+
+            // Skip LLVM intrinsics
+            if (std.mem.startsWith(u8, func_name, "llvm.")) continue;
+            // Skip C++ Itanium ABI mangled names (STL internals)
+            if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'Z') continue;
+            // Skip C++ vtable/typeinfo
+            if (std.mem.startsWith(u8, func_name, "_ZTV") or
+                std.mem.startsWith(u8, func_name, "_ZTI") or
+                std.mem.startsWith(u8, func_name, "_ZTS")) continue;
+            // Skip Rust mangled names (internals)
+            if (func_name.len > 2 and func_name[0] == '_' and func_name[1] == 'R') continue;
+
+            count += 1;
+        }
+        return count;
+    }
+
     /// Run buffer overflow detection on the loaded module.
     /// This is an AUXILIARY pass (not core FFI/unsafe detection).
     /// For performance, it skips modules with >500 functions (large codebases).
@@ -60,8 +91,11 @@ pub const BufferOverflowPass = struct {
             func_count += 1;
         }
         if (func_count > 500) {
-            diag.info("BufferOverflow: Skipped (module has {d} functions, >500 threshold)", .{func_count});
-            return;
+            const user_func_count = countUserDefinedFunctions(mod);
+            if (user_func_count < 200) {
+                diag.info("BufferOverflow: Skipped (module has {d} functions, {d} user-defined, >500 funcs but <200 user funcs)", .{ func_count, user_func_count });
+                return;
+            }
         }
 
         var overflow_count: u32 = 0;
@@ -105,6 +139,11 @@ pub const BufferOverflowPass = struct {
                     // Pattern: __memcpy_chk(dest, src, size, limit) where size > limit = overflow.
                     if (llvm_safe.isCallOrInvoke(opcode)) {
                         if (checkMemcpyChkOverflow(ctx, func, inst, diag)) |vuln| {
+                            overflow_count += 1;
+                            try reportIssue(ctx, vuln, diag);
+                        }
+                        // Check for FFI size truncation that may cause buffer overflow.
+                        if (checkFFITruncation(ctx, func, inst, diag)) |vuln| {
                             overflow_count += 1;
                             try reportIssue(ctx, vuln, diag);
                         }
@@ -359,5 +398,56 @@ pub const BufferOverflowPass = struct {
         // For invalid UTF-8, return a safe fallback message
         // (In production, you might want to allocate and clean the string)
         return "buffer overflow detected (details contain non-UTF-8 characters)";
+    }
+
+    /// Check for FFI size truncation that could lead to buffer overflow.
+    /// When a value is narrowed at an FFI boundary (e.g., trunc i64→i32),
+    /// the truncated value may cause out-of-bounds access if used as a size/length.
+    fn checkFFITruncation(ctx: *PassContext, func: c.LLVMValueRef, inst: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+        const called_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called_val) == 0) return null;
+        const name_ptr = c.LLVMGetValueName(called_val);
+        if (@intFromPtr(name_ptr) == 0) return null;
+        const callee_name = std.mem.span(name_ptr);
+
+        const caller_name = getSafeFuncName(func);
+
+        // Only check FFI boundary calls to avoid false positives for internal truncations
+        if (!FFITypeMismatchPass.isFFIBoundary(caller_name, callee_name)) return null;
+
+        const num_args = llvm_safe.getCallInstArgCount(inst);
+        var arg_idx: u32 = 0;
+        while (arg_idx < num_args) : (arg_idx += 1) {
+            const arg = c.LLVMGetOperand(inst, arg_idx);
+            if (@intFromPtr(arg) == 0) continue;
+
+            if (FFITypeMismatchPass.detectTruncationMismatch(arg, callee_name, arg_idx, inst)) |mismatch| {
+                diag.warn("FFI-TRUNCATION [HIGH]: {s} at param {d} in {s} -> {s}", .{
+                    mismatch.description,
+                    mismatch.param_index,
+                    caller_name,
+                    callee_name,
+                });
+
+                const msg = std.fmt.allocPrint(
+                    ctx.allocator,
+                    "FFI size truncation: {s} ({s}→{s}) at param {d} in call to {s} — truncated value may cause buffer overflow",
+                    .{
+                        mismatch.description,
+                        mismatch.caller_type,
+                        mismatch.callee_type,
+                        mismatch.param_index,
+                        callee_name,
+                    },
+                ) catch null;
+
+                const final_msg = msg orelse "FFI size truncation may cause buffer overflow";
+                var issue = Issue.init(.buffer_overflow, final_msg, Location.init(caller_name), .high, 0.8);
+                issue.owned = msg != null;
+                return issue;
+            }
+        }
+
+        return null;
     }
 };

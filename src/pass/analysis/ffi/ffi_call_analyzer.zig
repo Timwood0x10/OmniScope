@@ -292,20 +292,48 @@ pub fn validateCrossLanguageBoundary(ac: *CallAnalysisContext) bool {
         }
     }
 
-    // P1 FIX: Skip same-language calls regardless of cross_edge_matched.
-    // CallGraph may mark C→C as cross-language when callee is external (e.g., time(), printf()),
-    // but calling a libc function from C code is NOT FFI.
-    if (ac.caller_lang != .unknown and ac.callee_lang != .unknown and
-        ac.caller_lang == ac.callee_lang)
-    {
-        return false;
-    }
-
     // T1.3 Enhanced: Module-level language context cross-validation
     const module_lang_profile = ac.ctx.getModuleLanguage();
     const module_lang = module_lang_profile.language;
     const is_module_lang_confident = module_lang_profile.confidence >= 0.6 and
         module_lang != .unknown;
+
+    // P2-1: Confidence-gated same-language skip.
+    // Without confidence gating, Zig functions classified as C will skip
+    // C→C boundaries that are actually Zig→C FFI calls.
+    const SAME_LANG_SKIP_MIN: f32 = 0.80;
+    const MODULE_OVERRIDE_MIN: f32 = 0.90;
+
+    if (ac.caller_lang != .unknown and ac.callee_lang != .unknown and
+        ac.caller_lang == ac.callee_lang)
+    {
+        // Calculate confidence using simplified inline logic
+        // (classifyLanguageConfidence is defined in ffi_boundary.zig)
+        const caller_confidence: f32 = if (ac.caller_lang == module_lang) 0.75 else 0.50;
+        const callee_confidence: f32 = if (ac.callee_lang == module_lang) 0.75 else 0.50;
+
+        // High confidence on both sides → safe to skip
+        if (caller_confidence >= SAME_LANG_SKIP_MIN and callee_confidence >= SAME_LANG_SKIP_MIN) {
+            return false;
+        }
+
+        // Module-level override: if module is confidently a single language
+        // and both match module, skip regardless of per-function confidence
+        if (is_module_lang_confident and
+            module_lang_profile.confidence >= MODULE_OVERRIDE_MIN and
+            ac.caller_lang == module_lang and ac.callee_lang == module_lang)
+        {
+            return false;
+        }
+
+        // Low confidence → don't skip, but allow through with lower severity
+        ac.diag.debug("LOW-CONF-SAME-LANG-ALLOW: {s} ({s}, conf={d:.2}) -> {s} ({s}, conf={d:.2})", .{
+            ac.caller_name, @tagName(ac.caller_lang), caller_confidence,
+            ac.called_name, @tagName(ac.callee_lang), callee_confidence,
+        });
+    }
+
+    // T1.3 Enhanced: Module-level language context cross-validation (cont.)
 
     if (is_module_lang_confident) {
         // Case 1: Both match module language → same-lang skip

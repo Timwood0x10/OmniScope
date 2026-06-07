@@ -372,6 +372,18 @@ pub const FFIBoundaryPass = struct {
             ctx.cachedRegistryLookup(called_name);
         const is_dangerous = semantics != null;
 
+        // PURE-COMP: If the callee is a pure computation function (strlen, atoi,
+        // time, rand, getenv, etc.), it has no memory side effects, no writes,
+        // and no global state changes. FFI calls to these functions should not
+        // produce boundary warnings — they are semantically harmless even across
+        // language boundaries.
+        if (semantics) |sem| {
+            if (sem.kind == .pure_computation) {
+                diag.debug("PURE-COMP-SKIP: {s}", .{called_name});
+                return false;
+            }
+        }
+
         // ═══ R7.0 Zone-Aware Filtering ═══
         // Replace scattered whitelist logic with unified zone classification.
 
@@ -486,14 +498,38 @@ pub const FFIBoundaryPass = struct {
             }
         }
 
-        // P1 FIX: Skip same-language calls regardless of cross_edge_matched.
-        // CallGraph may mark C→C as cross-language when callee is external (e.g., time(),
-        // printf()), but calling a libc function from C code is NOT FFI.
-        // Similarly, Rust→Rust stdlib calls are not FFI boundaries.
+        // P2-1: Confidence-gated same-language skip.
+        // Without confidence gating, Zig functions classified as C will skip
+        // C→C boundaries that are actually Zig→C FFI calls.
+        const SAME_LANG_SKIP_MIN: f32 = 0.80;
+        const MODULE_OVERRIDE_MIN: f32 = 0.90;
+
         if (caller_lang != .unknown and callee_lang != .unknown and
             caller_lang == callee_lang)
         {
-            return false;
+            // Calculate confidence for caller and callee
+            const caller_confidence = classifyLanguageConfidence(caller_name, caller_lang, module_lang);
+            const callee_confidence = classifyLanguageConfidence(called_name, callee_lang, module_lang);
+
+            // High confidence on both sides → safe to skip
+            if (caller_confidence >= SAME_LANG_SKIP_MIN and callee_confidence >= SAME_LANG_SKIP_MIN) {
+                return false;
+            }
+
+            // Module-level override: if module is confidently a single language
+            // and both match module, skip regardless of per-function confidence
+            if (is_module_lang_confident and
+                module_lang_profile.confidence >= MODULE_OVERRIDE_MIN and
+                caller_lang == module_lang and callee_lang == module_lang)
+            {
+                return false;
+            }
+
+            // Low confidence → don't skip, but allow through with lower severity
+            diag.debug("LOW-CONF-SAME-LANG-ALLOW: {s} ({s}, conf={d:.2}) -> {s} ({s}, conf={d:.2})", .{
+                caller_name, @tagName(caller_lang), caller_confidence,
+                called_name, @tagName(callee_lang), callee_confidence,
+            });
         }
 
         // T1.3 Enhanced: Module-level language context cross-validation.
@@ -715,6 +751,19 @@ pub const FFIBoundaryPass = struct {
             }
         }
         return false;
+    }
+
+    /// Classify the confidence of a per-function language assignment.
+    /// Higher confidence means we're more certain the function truly belongs
+    /// to that language (not a misclassification due to name collision).
+    fn classifyLanguageConfidence(func_name: []const u8, lang: Language, module_lang: Language) f32 {
+        _ = func_name;
+        // TODO: Implement full LangClassification with DWARF/mangling/prefix signals
+        // For now, use a conservative default:
+        // - If per-function lang matches module lang, confidence = 0.75
+        // - Otherwise, confidence = 0.50 (uncertain)
+        if (lang == module_lang) return 0.75;
+        return 0.50;
     }
 
     /// Report a known-risky function call.

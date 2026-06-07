@@ -69,6 +69,12 @@ pub const SemanticKind = enum(u16) {
     // ── Nomicon Ch8: Concurrency violations (Send/Sync trait abuse) ──
     send_sync_violation, // Sending non-Send type across thread boundary
 
+    // ── Pure computation (strlen, atoi, time, rand, etc.) ──
+    /// Pure computation function (strlen, atoi, time, rand, etc.)
+    /// No memory side effects, no writes, no global state changes.
+    /// FFI calls to pure computation functions should not be reported.
+    pure_computation,
+
     // ══════════════════════════════════════════
     // v0.2.0: Multi-language FFI semantics
     // ══════════════════════════════════════════
@@ -164,6 +170,9 @@ pub const SemanticKindHelpers = struct {
             // Generic FFI - language-agnostic
             .ffi_opaque_handle, .ffi_resource_acquire, .ffi_resource_release, .ffi_callback_boundary => null,
 
+            // Pure computation - language-agnostic
+            .pure_computation => null,
+
             else => null, // Legacy/unclassified
         };
     }
@@ -182,7 +191,11 @@ pub const SemanticKindHelpers = struct {
         if (language(kind)) |lang| {
             return lang.displayName();
         }
-        return "unknown";
+        // Named categories for language-agnostic kinds
+        return switch (kind) {
+            .pure_computation => "pure_computation",
+            else => "unknown",
+        };
     }
 };
 

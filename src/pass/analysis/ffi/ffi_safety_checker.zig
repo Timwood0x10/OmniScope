@@ -408,6 +408,7 @@ pub fn riskKindToIssueKind(risk: RiskKind) IssueKind {
         .process_mgmt => .ffi_unsafe_call,
         // Delegates to staticBufferIssueKind() — see P2-1
         .static_buffer => .static_buffer_misuse,
+        .pure_computation => .ffi_unsafe_call, // Should be filtered before reaching here
     };
 }
 

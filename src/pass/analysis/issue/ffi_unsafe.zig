@@ -225,7 +225,7 @@ pub const FFIUnsafePass = struct {
         }
 
         // Layer 3: Auxiliary evidence requirement for generic calls
-        if (is_generic_vuln and !hasAuxiliaryEvidence(boundary)) {
+        if (is_generic_vuln and !hasAuxiliaryEvidence(boundary, ctx)) {
             log.debug("FFIUnsafe-SKIP [NO-EVIDENCE]: {s} — no auxiliary danger signals", .{
                 cleanFunctionName(boundary.function_name),
             });
@@ -354,10 +354,19 @@ pub const FFIUnsafePass = struct {
     /// Evidence includes:
     /// - High-risk keywords in function/caller names
     /// - Cross-trust-boundary data flow indicators
+    /// - IR-level taint facts (tainted parameters → strong evidence)
     /// - Missing validation patterns in caller context
     ///
+    /// Parameters:
+    ///   - boundary: The FFI boundary to check
+    ///   - ctx: Optional PassContext for IR-level evidence queries.
+    ///         Pass null when IR context is unavailable (e.g., in unit tests).
+    ///
     /// Returns true if sufficient evidence exists to report the issue.
-    pub fn hasAuxiliaryEvidence(boundary: *const FFIBoundary) bool {
+    pub fn hasAuxiliaryEvidence(
+        boundary: *const FFIBoundary,
+        ctx: ?*PassContext,
+    ) bool {
         const func_name = cleanFunctionName(boundary.function_name);
         const caller_name = boundary.location.func;
         const context_str = boundary.location.file orelse caller_name;
@@ -383,6 +392,31 @@ pub const FFIUnsafePass = struct {
         for (trust_boundary_indicators) |indicator| {
             if (std.mem.indexOf(u8, caller_name, indicator) != null) {
                 return true;
+            }
+        }
+
+        // --- IR-level evidence: taint facts from data flow graph ---
+        // Checks if the data flow analysis has detected tainted data propagation
+        // to function parameters, which is a strong indicator of real danger.
+        if (ctx) |c| {
+            const dfg = c.data_flow_graph;
+            const tainted_nodes = dfg.getTaintedNodes();
+            if (tainted_nodes.len > 0) {
+                // Strong evidence: tainted function parameters flowing toward FFI
+                for (tainted_nodes) |node_id| {
+                    if (dfg.getNode(node_id)) |node| {
+                        if (node.metadata) |meta| {
+                            if (meta.is_parameter) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                // Moderate evidence: multiple tainted nodes suggest active
+                // taint propagation in the analyzed module
+                if (tainted_nodes.len >= 3) {
+                    return true;
+                }
             }
         }
 
@@ -833,7 +867,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - high-risk keywords" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&unsafe_boundary));
+    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&unsafe_boundary, null));
 
     // Caller with "eval" keyword should trigger evidence
     const eval_caller = FFIBoundary{
@@ -843,7 +877,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - high-risk keywords" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&eval_caller));
+    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&eval_caller, null));
 }
 
 test "FFIUnsafePass - Layer 3: Auxiliary evidence - trust boundary indicators" {
@@ -855,7 +889,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - trust boundary indicators" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&user_input));
+    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&user_input, null));
 
     // Network-related caller
     const network_caller = FFIBoundary{
@@ -865,7 +899,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - trust boundary indicators" {
         .parameters = &[_][]const u8{},
     };
 
-    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&network_caller));
+    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&network_caller, null));
 }
 
 test "FFIUnsafePass - Layer 3: Auxiliary evidence - no evidence for safe calls" {
@@ -879,7 +913,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - no evidence for safe calls" 
     };
 
     // Should NOT have auxiliary evidence (no high-risk keywords, no trust boundary)
-    try std.testing.expect(!FFIUnsafePass.hasAuxiliaryEvidence(&safe_boundary));
+    try std.testing.expect(!FFIUnsafePass.hasAuxiliaryEvidence(&safe_boundary, null));
 
     // Function with validation in context
     const validated = FFIBoundary{
@@ -892,7 +926,7 @@ test "FFIUnsafePass - Layer 3: Auxiliary evidence - no evidence for safe calls" 
 
     // Has "validate" in context, so no additional evidence needed (but this test checks the heuristic)
     // The function doesn't have risky prefix, so it returns false
-    try std.testing.expect(!FFIUnsafePass.hasAuxiliaryEvidence(&validated));
+    try std.testing.expect(!FFIUnsafePass.hasAuxiliaryEvidence(&validated, null));
 }
 
 test "FFIUnsafePass - Layer 1: Confidence threshold" {
@@ -957,7 +991,7 @@ test "FFIUnsafePass - Integration: precision filtering reduces FP" {
     try std.testing.expect(!FFIUnsafePass.isWhitelisted(&real_bug, real_vuln_type, null));
 
     // Should have auxiliary evidence (user input context)
-    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&real_bug));
+    try std.testing.expect(FFIUnsafePass.hasAuxiliaryEvidence(&real_bug, null));
 
     // Confidence below threshold without SummaryStore (fallback removed)
     const confidence = FFIUnsafePass.calculateConfidence("system", real_vuln_type, null);

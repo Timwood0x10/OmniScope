@@ -219,6 +219,16 @@ pub fn isCrossAllocatorFree(
         const is_rust_source = std.mem.indexOf(u8, source_desc, "__rust") != null or
             std.mem.indexOf(u8, source_desc, "_ZN") != null;
         if (is_rust_source and is_c_free) return true;
+
+        // Go CGO cross-language free detection:
+        // Go CGO allocates via _cgo_allocate / _Cfunc_GoMalloc and
+        // frees via C's free(). This is a cross-allocator mismatch.
+        const is_cgo_source = std.mem.indexOf(u8, source_desc, "_cgo_") != null or
+            std.mem.indexOf(u8, source_desc, "_Cfunc_") != null or
+            std.mem.indexOf(u8, source_desc, "runtime.") != null;
+        if (is_cgo_source and is_c_free) {
+            return true;
+        }
     }
 
     return false;

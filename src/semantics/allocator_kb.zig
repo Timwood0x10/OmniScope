@@ -47,6 +47,8 @@ pub const AllocKind = enum(u8) {
     static_buffer,
     /// Unknown allocation type.
     unknown,
+    /// Heap deallocation (free, delete).
+    heap_free,
 };
 
 /// Kind of deallocation operation.
@@ -365,7 +367,7 @@ pub const AllocatorKB = struct {
         return KBStats{
             .allocator_count = kb.allocators.count(),
             .deallocator_count = kb.deallocators.count(),
-            .pair_count = kb.pairs.items.len,
+            .pair_count = @intCast(kb.pairs.items.len),
             .heuristic_count = blk: {
                 var count: u32 = 0;
                 var it = kb.allocators.valueIterator();

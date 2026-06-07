@@ -204,13 +204,62 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                         break;
                     }
                 }
+
+                // ── Also check external declarations for multi-language hints ──
+                // JNI/Python/Go runtime functions are all external declarations.
+                if (c.LLVMIsDeclaration(func) != 0) {
+                    // Check JNI external functions
+                    if (std.mem.eql(u8, name, "NewGlobalRef") or
+                        std.mem.eql(u8, name, "NewLocalRef") or
+                        std.mem.eql(u8, name, "NewWeakGlobalRef") or
+                        std.mem.eql(u8, name, "DeleteGlobalRef") or
+                        std.mem.eql(u8, name, "DeleteLocalRef") or
+                        std.mem.eql(u8, name, "DeleteWeakGlobalRef") or
+                        std.mem.eql(u8, name, "GetStringUTFChars") or
+                        std.mem.eql(u8, name, "ReleaseStringUTFChars") or
+                        std.mem.eql(u8, name, "GetStringCritical") or
+                        std.mem.eql(u8, name, "ReleaseStringCritical") or
+                        std.mem.eql(u8, name, "GetPrimitiveArrayCritical") or
+                        std.mem.eql(u8, name, "ReleasePrimitiveArrayCritical") or
+                        std.mem.eql(u8, name, "GetByteArrayElements") or
+                        std.mem.eql(u8, name, "ReleaseByteArrayElements") or
+                        std.mem.eql(u8, name, "CallObjectMethod") or
+                        std.mem.eql(u8, name, "CallStaticObjectMethod") or
+                        std.mem.eql(u8, name, "FindClass") or
+                        std.mem.eql(u8, name, "GetMethodID") or
+                        std.mem.eql(u8, name, "GetStaticMethodID") or
+                        std.mem.eql(u8, name, "NewObject") or
+                        std.mem.eql(u8, name, "NewStringUTF") or
+                        std.mem.eql(u8, name, "GetObjectClass"))
+                    {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
+                    // Check Go CGO external functions
+                    if (std.mem.startsWith(u8, name, "_cgo_") or
+                        std.mem.startsWith(u8, name, "_Cfunc_"))
+                    {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
+                    // Check Python C API external functions
+                    if (std.mem.startsWith(u8, name, "Py_") or
+                        std.mem.startsWith(u8, name, "PyObject_") or
+                        std.mem.startsWith(u8, name, "PyInit_"))
+                    {
+                        has_multi_lang_hint = true;
+                        break;
+                    }
+                }
             }
         }
 
         if (!has_multi_lang_hint) {
-            log.info("[Language] Single-language module ({s}) — no cross-language FFI content to analyze\n", .{source_lang_name});
-            try output_formatter.emitOutput(allocator, &.{}, loader.getFunctionCount(), 0, config, source_lang.language, source_lang.language);
-            log.info("[Language] Analysis complete: no cross-language content ({s} --> {s})\n", .{ source_lang_name, source_lang_name });
+            log.info("[Language] Single-language ({s}) — running intra-language safety analysis\n", .{source_lang_name});
+            var result = try pipeline.runSafetyOnlyPipeline(allocator, &loader, config);
+            defer pipeline.deinitAnalyzeResult(&result);
+            try output_formatter.emitOutput(allocator, result.issues, result.func_count, result.time_ms, config, source_lang.language, source_lang.language);
+            log.info("[Language] Safety analysis complete: {d} issues in single-language {s}\n", .{ result.issues.len, source_lang_name });
             return;
         }
         // Fall through: detected mixed-language hints despite high confidence

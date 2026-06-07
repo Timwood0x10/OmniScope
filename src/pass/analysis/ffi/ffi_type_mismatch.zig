@@ -455,7 +455,7 @@ pub const FFITypeMismatchPass = struct {
     /// 2. Source type is wider than destination (narrowing)
     /// 3. Both are integer types
     /// 4. Not a known safe bit-packing pattern (dst ≤ 16 with flag/mask/pack name)
-    fn detectTruncationMismatch(
+    pub fn detectTruncationMismatch(
         arg: c.LLVMValueRef,
         callee_name: []const u8,
         param_index: u32,

@@ -71,6 +71,14 @@ const FFIPatterns = struct {
     };
 };
 
+/// Language classification with confidence score.
+/// Enables confidence-gated same-language skip decisions.
+pub const LangClassification = struct {
+    lang: Language,
+    confidence: f32,
+    source: enum { dwarf, mangling_strong, name_prefix, module_fallback, default_c },
+};
+
 /// Identify the language of a function based on its LLVM value.
 ///
 /// Uses pattern matching on the function name to detect:

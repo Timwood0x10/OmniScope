@@ -38,6 +38,7 @@ const python_c_api_reg = @import("python_c_api_reg.zig");
 const posix_io_reg = @import("posix_io_reg.zig");
 const posix_thread_reg = @import("posix_thread_reg.zig");
 const dynamic_loading_reg = @import("dynamic_loading_reg.zig");
+const pure_computation_reg = @import("pure_computation_reg.zig");
 
 pub const RiskKind = types.RiskKind;
 pub const Severity = types.Severity;
@@ -85,6 +86,9 @@ pub const SemanticRegistry = struct {
     /// Dynamic loading functions
     const dynamic_loading = dynamic_loading_reg.dynamic_loading_functions;
 
+    // ── Pure computation functions (no memory side effects) ──
+    const pure_computation = pure_computation_reg.pure_computation_functions;
+
     // ========================================================================
     // Optimized Lookup: HashMap for exact matches, linear scan for patterns
     // ========================================================================
@@ -116,11 +120,12 @@ pub const SemanticRegistry = struct {
         // Iterate all 15 layer arrays and partition into exact vs non-exact.
         // inline for ensures compile-time unrolling — zero runtime loop overhead.
         const all_layers = [_][]const FunctionSemantics{
-            &layer1,       &layer2,          &layer3,
-            &layer4,       &layer5,          &layer6,
-            &jni,          &python_c_api,    &file_io,
-            &network_io,   &signal_handler,  &thread_mgmt,
-            &process_mgmt, &dynamic_loading, &static_buffer,
+            &layer1,           &layer2,          &layer3,
+            &layer4,           &layer5,          &layer6,
+            &jni,              &python_c_api,    &file_io,
+            &network_io,       &signal_handler,  &thread_mgmt,
+            &process_mgmt,     &dynamic_loading, &static_buffer,
+            &pure_computation,
         };
         for (all_layers) |layer| {
             for (layer) |sem| {
@@ -241,7 +246,7 @@ pub const SemanticRegistry = struct {
         return layer1.len + layer2.len + layer3.len + layer4.len + layer5.len + layer6.len +
             jni.len + python_c_api.len + file_io.len + network_io.len +
             signal_handler.len + thread_mgmt.len + process_mgmt.len + dynamic_loading.len +
-            static_buffer.len;
+            static_buffer.len + pure_computation.len;
     }
 
     // ========================================================================
@@ -450,7 +455,7 @@ pub const SemanticRegistry = struct {
 };
 
 test "SemanticRegistry - RiskKind enum" {
-    try std.testing.expectEqual(@as(usize, 20), @typeInfo(RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 21), @typeInfo(RiskKind).@"enum".fields.len);
 }
 
 test "SemanticRegistry - Severity enum" {

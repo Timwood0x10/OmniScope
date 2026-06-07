@@ -143,6 +143,45 @@ pub fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config
     };
 }
 
+/// Run only intra-language safety passes (Class B) for single-language modules.
+/// Skips cross-language passes (Class A) like FFIBoundaryPass, CrossLangDataFlowPass,
+/// JniLeakDetectorPass, RustFfiAuditor, GcSafetyPass (cross-lang branch), FFIUnsafePass.
+/// Registers foundational passes (CallGraphPass, DangerSurfacePass) first, then:
+/// MallocCheckPass, BufferOverflowPass, IntegerOverflowPass, PtrLifetimePass,
+/// MemorySafetyPass, FreeValidationPass, CallbackEscapePass.
+pub fn runSafetyOnlyPipeline(allocator: std.mem.Allocator, loader: *IRLoader, config: Config) !AnalyzeResult {
+    var pipeline = try Pipeline.init(allocator);
+    if (loader.getModule()) |module_ref| {
+        pipeline.setModule(module_ref);
+    }
+    if (config.perf_stats) pipeline.setPerfStats(true);
+    pipeline.setLeakThreshold(config.leak_confidence_threshold);
+    pipeline.setZigAllocatorTracking(config.enable_zig_allocator_tracking);
+    pipeline.setFocusUserCode(config.focus_user_code);
+
+    // Register foundational passes needed by safety passes
+    try pipeline.registerPass(OmniScope.cross_lang.CallGraphPass);
+
+    // Register only safety passes (Class B)
+    try pipeline.registerPass(OmniScope.cross_lang.MallocCheckPass);
+    try pipeline.registerPass(OmniScope.cross_lang.BufferOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.IntegerOverflowPass);
+    try pipeline.registerPass(OmniScope.cross_lang.PtrLifetimePass);
+    try pipeline.registerPass(OmniScope.cross_lang.DangerSurfacePass);
+    try pipeline.registerPass(OmniScope.cross_lang.MemorySafetyPass);
+    try pipeline.registerPass(OmniScope.cross_lang.FreeValidationPass);
+    try pipeline.registerPass(OmniScope.cross_lang.CallbackEscapePass);
+
+    const analysis_start = std.time.milliTimestamp();
+    _ = try pipeline.runStaticAnalysis();
+    const elapsed = std.time.milliTimestamp() - analysis_start;
+    const time_ms: u64 = @intCast(@max(0, elapsed));
+
+    const issues = pipeline.getIssues();
+    const func_count = loader.getFunctionCount();
+    return AnalyzeResult{ .issues = issues, .func_count = func_count, .fact_count = 0, .time_ms = time_ms, ._pipeline = pipeline };
+}
+
 /// Deinitialize an AnalyzeResult, freeing its internal pipeline resources.
 pub fn deinitAnalyzeResult(res: *AnalyzeResult) void {
     res._pipeline.deinit();
