@@ -12,7 +12,7 @@ target triple = "arm64-apple-macosx15.0.0"
 @.str.6 = private unnamed_addr constant [10 x i8] c"weak_ref\0A\00", align 1, !dbg !32
 @.str.7 = private unnamed_addr constant [8 x i8] c"Thread\0A\00", align 1, !dbg !37
 @.str.8 = private unnamed_addr constant [10 x i8] c"callback\0A\00", align 1, !dbg !42
-@.str.9 = private unnamed_addr constant [12 x i8] c"post-exc %d\0A\00", align 1, !dbg !47
+@.str.9 = private unnamed_addr constant [13 x i8] c"post-exc %d\0A\00", align 1, !dbg !47
 @g_cached_local_ref = internal global ptr null, align 8, !dbg !52
 @g_native_weak = internal global ptr null, align 8, !dbg !59
 

@@ -9,7 +9,7 @@ target triple = "arm64-apple-macosx15.0.0"
 ; ============================================================================
 
 @.str.sensitive = private unnamed_addr constant [15 x i8] c"sensitive data\00", align 1
-@.str.nested = private unnamed_addr constant [26 x i8] c"nested pointer target data\00", align 1
+@.str.nested = private unnamed_addr constant [27 x i8] c"nested pointer target data\00", align 1
 @.str.delegate_msg = private unnamed_addr constant [14 x i8] c"callback data\00", align 1
 @.str.com_obj = private unnamed_addr constant [11 x i8] c"COM object\00", align 1
 @.str.test = private unnamed_addr constant [10 x i8] c"test data\00", align 1

@@ -170,6 +170,7 @@ pub const Config = struct {
     /// This reduces false positives by 80%+ for Zig/Rust/Go projects.
     focus_user_code: bool = true,
     ffi_only: bool = false,
+    force_analysis: bool = false,
     include_stdlib: bool = false,
     perf_stats: bool = false, // Enable per-pass performance profiling (wall time, RSS, allocations)
     perf_json_path: ?[]const u8 = null, // Export performance data to JSON file (implies --perf-stats)
@@ -329,6 +330,8 @@ pub fn parseArgs(allocator: Allocator) !Config {
             config.focus_user_code = false;
         } else if (std.mem.eql(u8, arg, "--ffi-only")) {
             config.ffi_only = true;
+        } else if (std.mem.eql(u8, arg, "--force-analysis")) {
+            config.force_analysis = true;
         } else if (std.mem.eql(u8, arg, "--include-stdlib")) {
             config.include_stdlib = true;
         } else if (std.mem.eql(u8, arg, "--perf-stats")) {
@@ -431,6 +434,7 @@ pub fn showHelp() void {
         \\  --focus-user-code   Only report issues from user code (default: ON)
         \\  --no-focus-user-code  Report all issues including stdlib (default: OFF)
         \\  --ffi-only          Only report FFI boundary issues
+        \\  --force-analysis    Force analysis even for single-language modules (bypass skip)
         \\  --include-stdlib    Include stdlib issues
         \\  --perf-stats                      Enable per-pass performance profiling (time, RSS, allocations)
         \\  --perf-json <path>                 Export performance data to JSON file (implies --perf-stats)

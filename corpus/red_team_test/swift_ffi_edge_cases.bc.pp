@@ -23,11 +23,11 @@ target triple = "arm64-apple-macosx15.0.0"
 ; Opaque C struct used for retain cycle test
 %COpaqueStruct = type { ptr, i64, ptr }
 
-@.str.bug01 = private unnamed_addr constant [34 x i8] c"BUG-01: Unmanaged double release\00", align 8
+@.str.bug01 = private unnamed_addr constant [33 x i8] c"BUG-01: Unmanaged double release\00", align 8
 @.str.bug02 = private unnamed_addr constant [31 x i8] c"BUG-02: withUnsafeBytes escape\00", align 8
 @.str.bug03 = private unnamed_addr constant [30 x i8] c"BUG-03: fromOpaque wrong type\00", align 8
-@.str.bug04 = private unnamed_addr constant [32 x i8] c"BUG-04: autoreleasepool escape\00", align 8
-@.str.bug05 = private unnamed_addr constant [19 x i8] c"BUG-05: weak race\00", align 8
+@.str.bug04 = private unnamed_addr constant [31 x i8] c"BUG-04: autoreleasepool escape\00", align 8
+@.str.bug05 = private unnamed_addr constant [18 x i8] c"BUG-05: weak race\00", align 8
 @.str.bug06 = private unnamed_addr constant [27 x i8] c"BUG-06: Sendable violation\00", align 8
 @.str.bug07 = private unnamed_addr constant [21 x i8] c"BUG-07: retain cycle\00", align 8
 @.str.bug08 = private unnamed_addr constant [39 x i8] c"BUG-08: withExtendedLifetime early ret\00", align 8

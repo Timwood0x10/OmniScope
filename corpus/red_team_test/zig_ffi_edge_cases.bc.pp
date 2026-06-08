@@ -27,7 +27,7 @@ target triple = "aarch64-apple-macosx15.0.0"
 @.str.safe = private unnamed_addr constant [14 x i8] c"safe zig data\00", align 1
 
 ; Static (comptime) string -- lives in read-only memory
-@comptime_string = private unnamed_addr constant [18 x i8] c"comptime string!\00", align 1
+@comptime_string = private unnamed_addr constant [17 x i8] c"comptime string!\00", align 1
 
 ; ============================================================================
 ; Bug 01: Allocator mismatch (page_allocator vs c free)

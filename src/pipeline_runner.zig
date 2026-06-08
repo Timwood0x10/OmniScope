@@ -251,13 +251,27 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
                         has_multi_lang_hint = true;
                         break;
                     }
+                    // Check for C standard library functions that indicate C FFI boundary.
+                    // When dominant language is not C, extern declarations of these
+                    // standard C functions indicate a cross-language interface.
+                    if (isStdCFunction(name)) {
+                        if (source_lang.language != .c) {
+                            has_multi_lang_hint = true;
+                            break;
+                        }
+                    }
                 }
             }
         }
 
         if (!has_multi_lang_hint) {
-            log.info("[Language] Single-language ({s}) — OmniScope analyzes cross-language FFI boundaries only, skipping analysis for pure single-language modules\n", .{source_lang_name});
-            return;
+            if (config.force_analysis) {
+                log.info("[Language] Single-language ({s}) but --force-analysis is set, running full analysis\n", .{source_lang_name});
+                // fall through to full analysis
+            } else {
+                log.info("[Language] Single-language ({s}) — OmniScope analyzes cross-language FFI boundaries only, skipping analysis for pure single-language modules\n", .{source_lang_name});
+                return;
+            }
         }
         // Fall through: detected mixed-language hints
         log.info("[Language] Module appears mixed-language (dominant: {s}), running full analysis\n", .{source_lang_name});
@@ -310,6 +324,47 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
     if (config.visualize) {
         try generateVisualization(allocator, result.issues, path);
     }
+}
+
+/// Check if function name matches a C standard library function.
+/// When the dominant language is not C, extern declarations of these
+/// standard C functions indicate a C FFI boundary (cross-language interface).
+fn isStdCFunction(name: []const u8) bool {
+    const c_stdlib_funcs = [_][]const u8{
+        // C standard allocator functions
+        "malloc",               "calloc",              "realloc",            "free",               "aligned_alloc",       "posix_memalign",
+        // macOS specific allocator
+        "malloc_create_zone",   "malloc_destroy_zone", "malloc_zone_malloc", "malloc_zone_calloc", "malloc_zone_realloc", "malloc_zone_free",
+        "malloc_zone_memalign",
+        // mimalloc
+        "mi_malloc",           "mi_calloc",          "mi_realloc",         "mi_free",             "mi_malloc_aligned",
+        // System calls
+        "mmap",                 "munmap",              "mremap",
+        // Memory operations
+                    "memcpy",             "memmove",             "memset",
+        "memcmp",               "strlen",              "strcmp",
+        // I/O — common in FFI boundaries
+        "printf",              "fprintf",             "sprintf",            "snprintf",
+        "fopen",               "fclose",              "fread",              "fwrite",
+        "puts",                "fputs",               "getchar",
+        // Process control
+        "exit",                "abort",               "atexit",
+        // String operations
+        "strcpy",              "strncpy",             "strcat",             "strncat",
+        "strchr",              "strstr",              "strdup",             "strndup",
+        // File system
+        "open",                "close",               "read",               "write",
+        "stat",                "lstat",               "fstat",
+        // Time
+        "time",                "clock_gettime",       "nanosleep",
+        // Other common FFI
+        "getenv",              "dlopen",              "dlsym",              "signal",
+        "atoi",                "atol",                "strtol",             "strtod",
+    };
+    for (c_stdlib_funcs) |c_func| {
+        if (std.mem.eql(u8, name, c_func)) return true;
+    }
+    return false;
 }
 
 fn generateVisualization(allocator: std.mem.Allocator, issues: []const Issue, path: []const u8) !void {

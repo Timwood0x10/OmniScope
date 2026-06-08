@@ -15,13 +15,13 @@ target triple = "arm64-apple-macosx15.0.0"
 @g_je_ptr = internal global ptr null, align 8, !dbg !24
 
 @.str.box_data = private unnamed_addr constant [15 x i8] c"Box owned data\00", align 1, !dbg !28
-@.str.vec_data = private unnamed_addr constant [19 x i8] c"original vec data\00", align 1, !dbg !35
+@.str.vec_data = private unnamed_addr constant [18 x i8] c"original vec data\00", align 1, !dbg !35
 @.str.cstring_src = private unnamed_addr constant [25 x i8] c"CString from Rust custom\00", align 1, !dbg !40
 @.str.pin_data = private unnamed_addr constant [14 x i8] c"Pinned object\00", align 1, !dbg !45
-@.str.phantom_data = private unnamed_addr constant [18 x i8] c"phantom ref data\00", align 1, !dbg !50
-@.str.mutex_inner = private unnamed_addr constant [17 x i8] c"mutex protected\00", align 1, !dbg !55
-@.str.arc_data = private unnamed_addr constant [12 x i8] c"Arc shared\00", align 1, !dbg !60
-@.str.transmuted = private unnamed_addr constant [20 x i8] c"transmuted pointer\00", align 1, !dbg !65
+@.str.phantom_data = private unnamed_addr constant [17 x i8] c"phantom ref data\00", align 1, !dbg !50
+@.str.mutex_inner = private unnamed_addr constant [16 x i8] c"mutex protected\00", align 1, !dbg !55
+@.str.arc_data = private unnamed_addr constant [11 x i8] c"Arc shared\00", align 1, !dbg !60
+@.str.transmuted = private unnamed_addr constant [19 x i8] c"transmuted pointer\00", align 1, !dbg !65
 
 ; TC-RUST-09: Box::into_raw + double free via alias
 ; Bug: Rust Box gives ptr to C, C stores in struct field, both Drop and free() run on same pointer
