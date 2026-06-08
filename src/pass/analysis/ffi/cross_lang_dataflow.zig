@@ -36,6 +36,24 @@ const summary_propagation = @import("../../../dataflow/summary_propagation.zig")
 const SummaryPropagation = summary_propagation.SummaryPropagation;
 const LeakAnalysisResult = summary_propagation.LeakAnalysisResult;
 const ir_store_mod = @import("../../../ir/ir_store.zig");
+const symbol_graph = @import("../../../ffi/symbol_graph.zig");
+
+/// Convert SymbolGraph LanguageId to FFIBoundary Language.
+/// Both enums share the same variant names for common languages;
+/// swift and kotlin are not in FFIBoundary.Language so they map to unknown.
+fn languageIdToLanguage(id: symbol_graph.LanguageId) Language {
+    return switch (id) {
+        .c => .c,
+        .cpp => .cpp,
+        .rust => .rust,
+        .zig => .zig,
+        .go => .go,
+        .java => .java,
+        .python => .python,
+        .csharp => .csharp,
+        .swift, .kotlin, .unknown => .unknown,
+    };
+}
 
 /// Statistics for cross-language data flow analysis
 pub const DataFlowStats = struct {
@@ -59,10 +77,12 @@ pub const CrossLangAlloc = struct {
     ptr_val: u64,
     /// Language where allocation occurred
     alloc_lang: Language,
-    /// Function that performed the allocation
+    /// Function that performed the allocation (display name)
     alloc_func: []const u8,
     /// Callee function that performed the allocation (e.g., malloc, into_raw)
     alloc_callee: []const u8,
+    /// Stable symbol pointer for the allocation function (from SymbolGraph)
+    alloc_symbol: ?*const symbol_graph.Symbol,
     /// Whether this allocation has been freed
     freed: bool = false,
     /// Languages where this pointer has been freed
@@ -119,25 +139,34 @@ pub const CrossLangDataFlow = struct {
             };
         }
 
+        // Build SymbolGraph for stable *Symbol identity across analysis.
+        // Symbol pointers remain valid for the lifetime of this function.
+        var sym_graph = symbol_graph.SymbolGraph.build(ctx.allocator, ctx.module.?.raw) catch |err| {
+            log.warn("CrossLangDataFlow: Failed to build SymbolGraph: {}", .{err});
+            return;
+        };
+        defer sym_graph.deinit();
+
         var stats = DataFlowStats{};
         var allocations = try std.ArrayList(CrossLangAlloc).initCapacity(ctx.allocator, 64);
         defer {
             for (allocations.items) |*alloc| {
                 alloc.free_langs.deinit(ctx.allocator);
+                for (alloc.free_funcs.items) |s| ctx.allocator.free(s);
                 alloc.free_funcs.deinit(ctx.allocator);
                 alloc.passed_langs.deinit(ctx.allocator);
             }
             allocations.deinit(ctx.allocator);
         }
 
-        const cross_edges = ctx.getCrossLangEdges();
-        if (cross_edges.len == 0) {
-            diag.info("CrossLangDataFlow: No cross-language edges found, skipping analysis", .{});
+        const cross_sites = sym_graph.getCrossLangSites();
+        if (cross_sites.len == 0) {
+            diag.info("CrossLangDataFlow: No cross-language sites found, skipping analysis", .{});
             return;
         }
 
-        // Pass propagation engine to unified analyzer
-        try analyzeModuleUnified(ctx, &allocations, cross_edges, &stats, diag, &contract_db, &esc_analysis, &raii, if (prop_engine) |*e| e else null);
+        // Pass sym_graph and propagation engine to unified analyzer
+        try analyzeModuleUnified(ctx, &allocations, &sym_graph, &stats, diag, &contract_db, &esc_analysis, &raii, if (prop_engine) |*e| e else null);
 
         try detectDoubleFreePaths(ctx, &allocations, &stats, diag, &contract_db);
 
@@ -167,10 +196,13 @@ pub const CrossLangDataFlow = struct {
     /// T4 Enhanced: Now accepts optional SummaryPropagation engine for cross-function
     /// leak detection. When provided, queries callee summaries to distinguish legitimate
     /// ownership transfers from actual memory leaks.
+    ///
+    /// T6 Enhanced: Uses SymbolGraph for stable *Symbol identity and cross-language
+    /// site matching instead of LLVMValueRef @intFromPtr comparisons.
     fn analyzeModuleUnified(
         ctx: *PassContext,
         allocations: *std.ArrayList(CrossLangAlloc),
-        cross_edges: []const CrossLangEdge,
+        sym_graph: *const symbol_graph.SymbolGraph,
         stats: *DataFlowStats,
         diag: *DiagnosticWriter,
         db: *ffi_contract_db.FFIContractDB,
@@ -182,20 +214,25 @@ pub const CrossLangDataFlow = struct {
 
         var next_id: u32 = 1;
 
-        // Build HashMap indices for O(1) lookups
+        // Build edge map from SymbolGraph cross-language sites.
+        // Each site.callee has a stable *Symbol pointer and lang classification.
+        var edge_map = std.StringHashMap(symbol_graph.LanguageId).init(ctx.allocator);
+        defer edge_map.deinit();
+        const cross_sites = sym_graph.getCrossLangSites();
+        for (cross_sites) |site| {
+            try edge_map.put(site.callee.name, site.callee.lang);
+        }
+
         var alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer alloc_by_ptr.deinit();
 
-        var edge_map = std.StringHashMap(CrossLangEdge).init(ctx.allocator);
-        defer edge_map.deinit();
-        for (cross_edges) |edge| {
-            if (edge.is_ffi_boundary) {
-                try edge_map.put(edge.callee_name, edge);
-            }
-        }
-
         var freed_alloc_by_ptr = std.AutoHashMap(u64, usize).init(ctx.allocator);
         defer freed_alloc_by_ptr.deinit();
+
+        // T6: *Symbol-based alloc identity map — uses stable Symbol pointers
+        // from SymbolGraph instead of @intFromPtr for robust alloc/free matching.
+        var alloc_by_sym = std.AutoHashMap(*const symbol_graph.Symbol, usize).init(ctx.allocator);
+        defer alloc_by_sym.deinit();
 
         for (ctx.ir_store.function_list) |fir| {
             const func_name = fir.name;
@@ -262,18 +299,24 @@ pub const CrossLangDataFlow = struct {
                         const result_val = @intFromPtr(inst);
                         if (result_val != 0) {
                             const alloc_lang = classifyAllocLanguage(called_name, func_lang, ctx);
+                            const alloc_sym = sym_graph.symbols.getPtr(func_name);
                             const alloc = CrossLangAlloc{
                                 .id = next_id,
                                 .ptr_val = result_val,
                                 .alloc_lang = alloc_lang,
                                 .alloc_func = func_name,
                                 .alloc_callee = called_name,
+                                .alloc_symbol = alloc_sym,
                                 .free_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
                                 .free_funcs = try std.ArrayList([]const u8).initCapacity(ctx.allocator, 2),
                                 .passed_langs = try std.ArrayList(Language).initCapacity(ctx.allocator, 2),
                             };
                             try allocations.append(ctx.allocator, alloc);
                             try alloc_by_ptr.put(result_val, allocations.items.len - 1);
+                            // T6: Also register by stable *Symbol for robust matching
+                            if (alloc_sym) |sym| {
+                                try alloc_by_sym.put(sym, allocations.items.len - 1);
+                            }
                             stats.alloc_count += 1;
                             next_id += 1;
 
@@ -321,6 +364,25 @@ pub const CrossLangDataFlow = struct {
                                         alloc.freed = true;
                                         try freed_alloc_by_ptr.put(ptr_val, idx);
                                     }
+                                } else if (sym_graph.symbols.getPtr(func_name)) |free_sym| {
+                                    // T6: *Symbol-based fallback — use stable Symbol pointer
+                                    // identity when @intFromPtr u64 match fails. Handles cases
+                                    // where LLVM value identity doesn't match but the alloc/free
+                                    // occurs in the same function (same *Symbol).
+                                    if (alloc_by_sym.get(free_sym)) |idx| {
+                                        const alloc = &allocations.items[idx];
+                                        if (!alloc.freed) {
+                                            const effective_caller_lang = ctx.lookupFunctionLanguage(func_name) orelse func_lang;
+                                            const free_lang = classifyFreeLanguage(called_name, effective_caller_lang, ctx);
+                                            try alloc.free_langs.append(ctx.allocator, free_lang);
+                                            try alloc.free_funcs.append(ctx.allocator, try ctx.allocator.dupe(u8, called_name));
+                                            alloc.freed = true;
+                                            try freed_alloc_by_ptr.put(ptr_val, idx);
+                                            log.debug("T6-SYMBOL-MATCH: Free matched via *Symbol '{s}' for alloc id={}", .{
+                                                func_name, alloc.id,
+                                            });
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -338,7 +400,7 @@ pub const CrossLangDataFlow = struct {
                             if (alloc_by_ptr.get(arg_val)) |idx| {
                                 const alloc = &allocations.items[idx];
                                 alloc.passed_to_other_lang = true;
-                                try alloc.passed_langs.append(ctx.allocator, edge.callee_lang);
+                                try alloc.passed_langs.append(ctx.allocator, languageIdToLanguage(edge));
                                 break;
                             }
                         }
@@ -356,8 +418,8 @@ pub const CrossLangDataFlow = struct {
                             const alloc = &allocations.items[idx];
                             var use_lang = func_lang;
 
-                            if (edge_map.get(called_name)) |edge| {
-                                use_lang = edge.callee_lang;
+                            if (edge_map.get(called_name)) |callee_lang| {
+                                use_lang = languageIdToLanguage(callee_lang);
                             }
 
                             for (alloc.free_langs.items) |free_lang| {
@@ -523,16 +585,18 @@ pub const CrossLangDataFlow = struct {
             }
 
             // Heuristic: if the allocation's function also freed this specific
-            // allocation (same alloc_func appears in free_funcs), the alloc/free
-            // is correctly paired. The previous check ("function calls any free")
-            // was too broad — it suppressed cross-language orphans where the
-            // alloc function happened to call a free for a DIFFERENT pointer.
-            // Fix: check specific alloc→free pairing, not function-level presence.
+            // allocation (same *Symbol pointer), the alloc/free is correctly
+            // paired. Uses stable *Symbol identity from SymbolGraph instead
+            // of string comparison to avoid LLVM value identity issues.
             var same_func_freed = false;
-            for (alloc.free_funcs.items) |free_func| {
-                if (std.mem.eql(u8, free_func, alloc.alloc_func)) {
-                    same_func_freed = true;
-                    break;
+            if (alloc.alloc_symbol) |alloc_sym| {
+                for (alloc.free_funcs.items) |free_func| {
+                    if (sym_graph.symbols.getPtr(free_func)) |free_sym| {
+                        if (free_sym == alloc_sym) {
+                            same_func_freed = true;
+                            break;
+                        }
+                    }
                 }
             }
             if (same_func_freed) {

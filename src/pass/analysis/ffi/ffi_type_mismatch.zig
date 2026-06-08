@@ -347,6 +347,26 @@ pub const FFITypeMismatchPass = struct {
 
         const elem_kind = c.LLVMGetTypeKind(elem_type);
 
+        // With opaque pointers, LLVMGetElementType may return void type.
+        // Void and function types don't have an ABI size — skip.
+        if (elem_kind == c.LLVMVoidTypeKind or elem_kind == c.LLVMFunctionTypeKind) return null;
+
+        // Only compute ABI size for simple scalar types to avoid LLVM internal
+        // crashes on composite types (struct/array) in Zig-generated IR.
+        const is_safe_type = switch (elem_kind) {
+            c.LLVMIntegerTypeKind,
+            c.LLVMHalfTypeKind,
+            c.LLVMFloatTypeKind,
+            c.LLVMDoubleTypeKind,
+            c.LLVMFP128TypeKind,
+            c.LLVMX86_FP80TypeKind,
+            c.LLVMPPC_FP128TypeKind,
+            c.LLVMBFloatTypeKind,
+            => true,
+            else => false,
+        };
+        if (!is_safe_type) return null;
+
         // Get DataLayout from module to compute type size
         const bb = c.LLVMGetInstructionParent(call_inst);
         if (!llvmNotNull(bb)) return null;

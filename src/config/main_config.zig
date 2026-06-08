@@ -197,6 +197,11 @@ pub const Config = struct {
     enable_zig_allocator_tracking: bool = true,
     /// Surface filter configuration for fine-grained control
     surface_filter: SurfaceFilterConfig = .{},
+    /// Report export surfaces in JSON output (--report-surfaces flag).
+    /// When enabled, the JSON output includes an "export_surfaces" array
+    /// listing all FFI export surfaces (externally-visible functions)
+    /// with their ABI class, detected risks, and call counts.
+    report_surfaces: bool = false,
 
     // ── Language Override Options ──────────────────────────────────────
     /// Exact symbol name → language (e.g. --lang __rust_alloc=rust)
@@ -369,6 +374,8 @@ pub fn parseArgs(allocator: Allocator) !Config {
                 return error.InvalidOption;
             };
             config.surface_filter.parseFromString(surfaces_str);
+        } else if (std.mem.eql(u8, arg, "--report-surfaces")) {
+            config.report_surfaces = true;
         } else if (std.mem.eql(u8, arg, "--lang")) {
             // Exact symbol name → language override: --lang name=lang
             const override = args.next() orelse return error.InvalidOption;
@@ -446,6 +453,9 @@ pub fn showHelp() void {
         \\  --min-severity <level>           Minimum severity to report (low|medium|high|critical)
         \\  --show-surface <surfaces>        Comma-separated surfaces to show
         \\                                    (boundary,ffi,reachable,internal,runtime)
+        \\  --report-surfaces                 Include export surfaces in JSON output
+        \\                                    (lists all FFI-visible functions with ABI
+        \\                                    class, detected risks, and call counts)
         \\
         \\Language Overrides:
         \\  --lang <name=lang>               Override language for exact symbol name

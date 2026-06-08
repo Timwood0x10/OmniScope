@@ -23,6 +23,18 @@ const FFI_Language = OmniScope.diag.FFIBoundary.Language;
 
 const issue_filter = @import("issue_filter.zig");
 
+/// Report of a single export surface (FFI-visible function).
+///
+/// Each entry describes an externally-callable function that crosses
+/// a language boundary, including its ABI classification, any risks
+/// detected, and how many times it is called within the module.
+pub const ExportSurfaceReport = struct {
+    symbol: []const u8,
+    abi: []const u8,
+    risks: []const []const u8,
+    call_count: usize,
+};
+
 /// Convert FFI_Language enum to user-friendly display string.
 pub fn languageDisplayName(lang: FFI_Language) []const u8 {
     return switch (lang) {
@@ -60,7 +72,7 @@ pub fn detectTargetLanguage(issues: []const Issue) FFI_Language {
     return dominant_lang;
 }
 
-pub fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64, config: Config, source_lang: FFI_Language, target_lang: FFI_Language) !void {
+pub fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, export_surfaces: []const ExportSurfaceReport, func_count: usize, time_ms: u64, config: Config, source_lang: FFI_Language, target_lang: FFI_Language) !void {
     var mutable_issues = try allocator.alloc(Issue, issues.len);
     defer allocator.free(mutable_issues);
     for (issues, 0..) |issue, i| {
@@ -73,7 +85,7 @@ pub fn emitOutput(allocator: std.mem.Allocator, issues: []const Issue, func_coun
     defer allocator.free(filtered_issues);
 
     if (config.output_format == .json) {
-        const json_output = formatIssuesAsJson(allocator, filtered_issues, func_count, time_ms) catch |err| {
+        const json_output = formatIssuesAsJson(allocator, filtered_issues, export_surfaces, func_count, time_ms, config.report_surfaces) catch |err| {
             log.err("Failed to format JSON output: {}\n", .{err});
             return;
         };
@@ -496,7 +508,7 @@ fn formatStructuredReport(allocator: std.mem.Allocator, issues: []const Issue, f
     return buf.toOwnedSlice(allocator);
 }
 
-fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_count: usize, time_ms: u64) ![]u8 {
+fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, export_surfaces: []const ExportSurfaceReport, func_count: usize, time_ms: u64, report_surfaces: bool) ![]u8 {
     var buf = std.ArrayList(u8).initCapacity(allocator, 2048) catch return error.OutOfMemory;
     defer buf.deinit(allocator);
     const w = buf.writer(allocator);
@@ -563,6 +575,35 @@ fn formatIssuesAsJson(allocator: std.mem.Allocator, issues: []const Issue, func_
     }
 
     try w.writeAll("  ]\n");
+
+    // Include export_surfaces field when --report-surfaces is enabled
+    if (report_surfaces) {
+        try w.writeAll("  ,\"export_surfaces\": [\n");
+        for (export_surfaces, 0..) |es, idx| {
+            try w.writeAll("    {\n");
+            try w.print("      \"symbol\": \"", .{});
+            try writeJsonEscaped(w, es.symbol);
+            try w.writeAll("\",\n");
+            try w.print("      \"abi\": \"{s}\",\n", .{es.abi});
+            // risks array
+            try w.writeAll("      \"risks\": [");
+            for (es.risks, 0..) |risk, risk_idx| {
+                if (risk_idx > 0) try w.writeAll(", ");
+                try w.writeAll("\"");
+                try writeJsonEscaped(w, risk);
+                try w.writeAll("\"");
+            }
+            try w.writeAll("],\n");
+            try w.print("      \"call_count\": {d}\n", .{es.call_count});
+            if (idx < export_surfaces.len - 1) {
+                try w.writeAll("    },\n");
+            } else {
+                try w.writeAll("    }\n");
+            }
+        }
+        try w.writeAll("  ]\n");
+    }
+
     try w.writeAll("}\n");
 
     return buf.toOwnedSlice(allocator);

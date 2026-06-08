@@ -27,6 +27,8 @@ const VulnerabilityRule = vulnerability_rules.VulnerabilityRule;
 const VulnerabilityType = vulnerability_rules.VulnerabilityType;
 const Severity = vulnerability_rules.Severity;
 
+const symbol_graph = @import("../../../ffi/symbol_graph.zig");
+
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 
@@ -190,22 +192,159 @@ pub const FFIDetector = struct {
     pub fn run(self: *FFIDetector, ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
-        // Build FFI matches from cross-language edges (not intra-module name matching).
-        // This correctly handles the common case where declare is in one .ll file
-        // and define is in another — FFIMatcher's single-module approach misses these.
-        const cross_edges = ctx.getCrossLangEdges();
-
-        if (cross_edges.len == 0) {
-            diag.debug("FFIDetector: no cross-lang edges found in module", .{});
-            return;
-        }
-
-        diag.info("FFIDetector: found {} cross-language edges to analyze", .{cross_edges.len});
-
         // Pre-compute tainted context set: O(T) one-time scan of taint facts
         // via FactStore's kind_index (O(1) lookup), reading SoA ctx[] directly.
         // After this, each per-edge check is O(1) HashMap contains().
         try self.buildTaintedContextSet(ctx);
+
+        // Primary path: build SymbolGraph and use cross-lang sites + export surfaces.
+        // Fallback: if SymbolGraph build fails (e.g., LLVM version compat), use
+        // existing cross-edge detection from PassContext.
+        const llvm_module = ctx.module.?.raw;
+        var sym_graph = symbol_graph.SymbolGraph.build(self.allocator, llvm_module) catch |err| {
+            diag.debug("SymbolGraph build failed ({s}), falling back to cross-edge detection", .{@errorName(err)});
+            try self.runWithCrossEdges(ctx, diag);
+            return;
+        };
+        defer sym_graph.deinit();
+
+        const cross_sites = sym_graph.getCrossLangSites();
+        const surfaces = sym_graph.getExportSurfaces();
+
+        if (cross_sites.len == 0 and surfaces.len == 0) {
+            diag.debug("FFIDetector: no cross-lang sites or export surfaces found in module", .{});
+            return;
+        }
+
+        diag.info("FFIDetector: SymbolGraph found {} cross-language sites and {} export surfaces", .{
+            cross_sites.len,
+            surfaces.len,
+        });
+
+        // ── Run Export Surface Analyzer for deep FFI trap detection ──
+        // Detects parameter ownership, return lifetime, and callback
+        // registration issues on each export surface symbol.
+        {
+            var surface_analyzer = @import("export_surface_analyzer.zig").ExportSurfaceAnalyzer.init(
+                self.allocator,
+                &sym_graph,
+            );
+            defer surface_analyzer.deinit();
+            const surface_issues = try surface_analyzer.analyze();
+            if (surface_issues.len > 0) {
+                diag.info("ExportSurfaceAnalyzer: found {} FFI trap issues across {} surfaces", .{
+                    surface_issues.len,
+                    surfaces.len,
+                });
+            }
+        }
+
+        var match_count: u32 = 0;
+
+        // ── Process cross-language call sites (caller-side view) ──────
+        for (cross_sites) |site| {
+            const callee_name = site.callee.name;
+            const caller_name = site.caller.name;
+
+            // Skip LLVM intrinsics — not real FFI boundaries
+            if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
+
+            // Allocate owned copies for FFIMatch lifecycle.
+            const name_copy = try ctx.allocator.dupe(u8, callee_name);
+            try self.owned_names.append(self.allocator, name_copy);
+
+            const caller_name_copy = try ctx.allocator.dupe(u8, caller_name);
+            try self.owned_names.append(self.allocator, caller_name_copy);
+
+            const declare_info = FunctionInfo{
+                .name = name_copy,
+                .kind = .declare,
+                .func = undefined,
+                .is_external = site.callee.kind == .declare,
+            };
+            const define_info = FunctionInfo{
+                .name = caller_name_copy,
+                .kind = .define,
+                .func = undefined,
+                .is_external = false,
+            };
+
+            const match = FFIMatch{
+                .name = name_copy,
+                .declare_func = declare_info,
+                .define_func = define_info,
+                .is_complete = true,
+            };
+
+            match_count += 1;
+
+            const vulnerabilities = try self.analyzeFFIMatch(ctx, &match);
+            defer ctx.allocator.free(vulnerabilities);
+            for (vulnerabilities) |vuln| {
+                try self.vulnerabilities.append(self.allocator, vuln);
+                try self.reportVulnerability(&vuln, diag);
+            }
+        }
+
+        // ── Process export surfaces (passive expose-side view) ────────
+        for (surfaces) |surface| {
+            const sym = surface.symbol;
+            const func_name = sym.name;
+
+            if (std.mem.startsWith(u8, func_name, "llvm.")) continue;
+
+            const name_copy = try ctx.allocator.dupe(u8, func_name);
+            try self.owned_names.append(self.allocator, name_copy);
+
+            // Export surface: the function is defined here and externally visible.
+            // Both declare and define sides refer to the same function name.
+            const declare_info = FunctionInfo{
+                .name = name_copy,
+                .kind = .declare,
+                .func = undefined,
+                .is_external = true,
+            };
+            const define_info = FunctionInfo{
+                .name = name_copy,
+                .kind = .define,
+                .func = undefined,
+                .is_external = false,
+            };
+
+            const match = FFIMatch{
+                .name = name_copy,
+                .declare_func = declare_info,
+                .define_func = define_info,
+                .is_complete = true,
+            };
+
+            match_count += 1;
+
+            const vulnerabilities = try self.analyzeFFIMatch(ctx, &match);
+            defer ctx.allocator.free(vulnerabilities);
+            for (vulnerabilities) |vuln| {
+                try self.vulnerabilities.append(self.allocator, vuln);
+                try self.reportVulnerability(&vuln, diag);
+            }
+        }
+
+        diag.info("FFI detection complete: {} matches analyzed, {} vulnerabilities found", .{
+            match_count,
+            self.vulnerability_count,
+        });
+    }
+
+    /// Fallback detection using cross-language edges from PassContext.
+    /// Used when SymbolGraph.build() fails.
+    fn runWithCrossEdges(self: *FFIDetector, ctx: *PassContext, diag: *DiagnosticWriter) !void {
+        const cross_edges = ctx.getCrossLangEdges();
+
+        if (cross_edges.len == 0) {
+            diag.debug("FFIDetector: no cross-lang edges found in module (fallback)", .{});
+            return;
+        }
+
+        diag.info("FFIDetector: found {} cross-language edges to analyze (fallback)", .{cross_edges.len});
 
         var match_count: u32 = 0;
         for (cross_edges) |*edge| {
@@ -215,18 +354,12 @@ pub const FFIDetector = struct {
             if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
 
             // Allocate owned copies for FFIMatch lifecycle.
-            // Registered in owned_names and freed uniformly in deinit(),
-            // eliminating per-allocation errdefer + GPA leak warnings.
             const name_copy = try ctx.allocator.dupe(u8, callee_name);
             try self.owned_names.append(self.allocator, name_copy);
 
             const caller_name_copy = try ctx.allocator.dupe(u8, edge.caller_name);
             try self.owned_names.append(self.allocator, caller_name_copy);
 
-            // Build synthetic FunctionInfo for declare (callee) and define (caller) sides.
-            // func field is undefined because we don't have a local LLVM function ref for
-            // the other module's functions. Detection methods that need IR access will
-            // gracefully return null; taint-based detection still works via name lookup.
             const declare_info = FunctionInfo{
                 .name = name_copy,
                 .kind = .declare,
@@ -249,7 +382,6 @@ pub const FFIDetector = struct {
 
             match_count += 1;
 
-            // Analyze this cross-edge match for vulnerabilities
             const vulnerabilities = try self.analyzeFFIMatch(ctx, &match);
             defer ctx.allocator.free(vulnerabilities);
             for (vulnerabilities) |vuln| {
@@ -258,7 +390,7 @@ pub const FFIDetector = struct {
             }
         }
 
-        diag.info("FFI detection complete: {} edges analyzed, {} vulnerabilities found", .{
+        diag.info("FFI detection complete (fallback): {} edges analyzed, {} vulnerabilities found", .{
             match_count,
             self.vulnerability_count,
         });

@@ -35,6 +35,10 @@ pub const AnalyzeResult = struct {
     /// Set when issues are deep-copied from pipeline to ensure they outlive the pipeline.
     /// Freed in deinitAnalyzeResult() before pipeline deinit.
     deduped_issues: ?[]Issue = null,
+    /// Export surface reports for FFI-visible functions.
+    /// Populated when --report-surfaces CLI flag is set.
+    /// Contains symbol name, ABI class, detected risks, and call count per surface.
+    export_surfaces: []const output_formatter.ExportSurfaceReport = &.{},
     func_count: usize,
     fact_count: usize,
     time_ms: u64,
@@ -389,7 +393,7 @@ pub fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const
         for (all_slices.items) |slice| {
             for (slice) |iss| try merged.append(allocator, iss);
         }
-        try output_formatter.emitOutput(allocator, merged.items, total_funcs, total_time, config, .unknown, dominant_target);
+        try output_formatter.emitOutput(allocator, merged.items, &.{}, total_funcs, total_time, config, .unknown, dominant_target);
     } else {
         log.info("Issues detected: {d} in pipeline, {d} FFI\n", .{ total_issues, ffi_issue_count });
     }

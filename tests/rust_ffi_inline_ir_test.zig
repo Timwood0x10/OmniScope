@@ -21,6 +21,7 @@ const std = @import("std");
 const OmniScope = @import("OmniScope");
 const IRLoader = OmniScope.engine.IRLoader;
 const Pipeline = OmniScope.pipeline.Pipeline;
+const SymbolGraph = OmniScope.cross_lang.SymbolGraph;
 
 // ============================================================================
 // Part 1: Rust FFI Bugs
@@ -1287,4 +1288,66 @@ test "Rust edge case: alloc in loop then free all with C free (cross-allocator)"
 
     const issue_count = try analyzeIR(std.testing.allocator, "/tmp/omniscope_rust_test_25.ll", ir);
     try std.testing.expect(issue_count > 0);
+}
+
+// ============================================================================
+// Diagnostic Test: SymbolGraph cross-language call detection in rust_hash.ll
+// ============================================================================
+
+test "DIAG: SymbolGraph detects both calls in rust_hash.ll pattern" {
+    const ir =
+        \\; ModuleID = 'rust_hash_test'
+        \\source_filename = "rust_hash_test"
+        \\target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128-Fn32"
+        \\target triple = "arm64-apple-macosx11.0.0"
+        \\
+        \\define i32 @rust_hash_compute(ptr %data, i64 %len, ptr %out) {
+        \\  %_result = tail call i32 @c_hash(ptr %data, i64 %len, ptr %out)
+        \\  ret i32 0
+        \\}
+        \\
+        \\define i32 @rust_fft_forward(ptr %real, ptr %imag, i64 %n) {
+        \\  %3 = tail call i32 @c_fft_forward(ptr %real, ptr %imag, i64 %n)
+        \\  ret i32 %3
+        \\}
+        \\
+        \\declare i32 @c_hash(ptr, i64, ptr)
+        \\declare i32 @c_fft_forward(ptr, ptr, i64)
+    ;
+
+    const tmp = "/tmp/omniscope_rust_hash_diag.ll";
+    try std.fs.cwd().writeFile(.{ .sub_path = tmp, .data = ir });
+    defer std.fs.cwd().deleteFile(tmp) catch {};
+
+    var loader = try IRLoader.loadFile(std.testing.allocator, tmp);
+    defer loader.deinit();
+
+    try std.testing.expect(loader.hasModule());
+    const module = loader.getModule() orelse return error.NoModule;
+
+    var graph = try SymbolGraph.build(std.testing.allocator, module.raw);
+    defer graph.deinit();
+
+    const cross_sites = graph.getCrossLangSites();
+
+    // Both cross-language calls must be detected
+    try std.testing.expectEqual(@as(usize, 2), cross_sites.len);
+
+    var found_hash = false;
+    var found_fft = false;
+    for (cross_sites) |site| {
+        if (std.mem.eql(u8, site.caller.name, "rust_hash_compute") and
+            std.mem.eql(u8, site.callee.name, "c_hash"))
+        {
+            found_hash = true;
+        }
+        if (std.mem.eql(u8, site.caller.name, "rust_fft_forward") and
+            std.mem.eql(u8, site.callee.name, "c_fft_forward"))
+        {
+            found_fft = true;
+        }
+    }
+
+    try std.testing.expect(found_hash);
+    try std.testing.expect(found_fft);
 }

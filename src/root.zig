@@ -140,6 +140,19 @@ pub const cross_lang = struct {
     pub const FFIMatcherError = @import("ffi/ffi_matcher.zig").FFIMatcherError;
     pub const FFIFunctionKind = @import("ffi/ffi_matcher.zig").FunctionKind;
 
+    // SymbolGraph — per-symbol FFI boundary detection
+    pub const SymbolGraph = @import("ffi/symbol_graph.zig").SymbolGraph;
+    pub const Symbol = @import("ffi/symbol_graph.zig").Symbol;
+    pub const SymbolKind = @import("ffi/symbol_graph.zig").SymbolKind;
+    pub const ABIClass = @import("ffi/symbol_graph.zig").ABIClass;
+    pub const ExportClass = @import("ffi/symbol_graph.zig").ExportClass;
+    pub const LanguageId = @import("ffi/symbol_graph.zig").LanguageId;
+    pub const CallSite = @import("ffi/symbol_graph.zig").CallSite;
+    pub const ExportSurface = @import("ffi/symbol_graph.zig").ExportSurface;
+    pub const ExposureReason = @import("ffi/symbol_graph.zig").ExposureReason;
+    pub const SymbolClassification = @import("ffi/symbol_graph.zig").SymbolClassification;
+    pub const classifySymbol = @import("ffi/symbol_graph.zig").classifySymbol;
+
     pub const FFIKind = @import("pass/analysis/ffi/ffi_info.zig").FFIKind;
     pub const FFIBoundaryInfo = @import("pass/analysis/ffi/ffi_info.zig").FFIBoundaryInfo;
     pub const FFIBoundaryDetector = @import("pass/analysis/ffi/ffi_info.zig").FFIBoundaryDetector;

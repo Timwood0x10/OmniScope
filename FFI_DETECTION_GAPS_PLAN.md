@@ -302,3 +302,49 @@ pub const SymbolGraph = struct {
 如果只想优先解决"用户能看见检测能力"，**优先级 T1→T2→T3→T4→T7**——T7 跑出 c\_ffi\_traps.ll 的 9 个陷阱比 T5 跑出 rust\_hash.ll 的 2 个 cross-lang call 更有展示价值。
 
 **推荐**：按 T1→T10 顺序做，但在 T4 完成后**先发一个 v0.2.1 beta**（只有 SymbolGraph + ExportSurface 识别，不接入下游 pass），让用户能看到"OmniScope 现在识别出了哪些 FFI 接口"。下游分析（T6/T7）放 v0.2.0。
+
+***
+
+## 七、实施状态（2026-06-08）
+
+### 已实施
+
+| Task | 状态 | 说明 |
+|------|------|------|
+| **T1** `symbol_graph.zig` 数据结构 | ✅ 完成 | 所有数据结构完整（Symbol / CallSite / ExportSurface / SymbolGraph），含 `init`/`deinit`/`build` 框架已实现。单元测试覆盖 classifySymbol 的 12 类符号 |
+| **T2** ABI/语言推断纯函数 | ✅ 完成 | `classifySymbol` 已实现，覆盖 Rust v0/Rust legacy/C++ Itanium/MSVC/Swift/Go/LLVM builtin/C fallback。含 debug-info 二次判定 |
+| **T3** `SymbolGraph.build` | ✅ 完成 | Phase 1–4 完整（收集符号 → 构建 call sites → 语言索引 → export surface 检测） |
+| **T4** Export surface 检测 | ✅ 完成 | `detectExportSurfaces` 实现，支持 3 种曝光原因（c_abi_external_linkage / cxx_extern_c / callback_target） |
+| **T5** `ffi_detector.zig` 改造 | ✅ 完成 | 已接入 SymbolGraph + ExportSurfaceAnalyzer，替换了旧的 module-level 检测路径 |
+| **T6** `cross_lang_dataflow.zig` 接入 | ❌ 未实施 | 计划中的改造未执行 |
+| **T7** `export_surface_analyzer.zig` | ✅ 完成 | 已创建并接入，在 ffi_detector.zig 中调用 |
+| **T8** 移除/降级 module-level 强判定 | ❌ 未实施 | 仍在使用 module-level 语言检测 |
+| **T9** CLI `--report-surfaces` 开关 | ✅ 完成 | 已在 CLI 选项中实现 |
+| **T10** 文档 + 回归 | 🔄 进行中 | 本文档更新 + 回归测试执行中 |
+
+### 已知问题
+
+1. **严重：符号图指针生命周期 Bug** — `processCallInstruction` 中 `cross_lang_calls` 存储指向 `call_sites` 内部缓冲区的 `*CallSite` 指针，但 `call_sites.append` 可能触发 reallocation，导致指针悬挂。表现为 `ffi_detector.zig:246` 处 `site.callee.name` 读取到 `0xaaaaaaaaaaaaaaaa`（释放后毒值）。影响范围：所有包含跨语言调用或有多个 call site 的模块。
+2. **rust_hash.ll** 仅检出 `rust_fft_forward → c_fft_forward` 这一个跨语言调用，漏掉了 `rust_hash_compute → c_hash`（预期应检出 2 个 cross-lang call）。
+3. **zig_main.ll** 在 ExportSurfaceAnalyzer 内部崩溃（`ffi_detector.zig:233`），与问题 1 同根因。
+4. 所有 bun\_ll 8 文件全部因问题 1 崩溃，无法评估回归噪音。
+5. `--force-analysis` 同样受问题 1 影响而崩溃。
+
+### 回归测试结果速览
+
+| 测试项 | 结果 |
+|--------|------|
+| `zig build` | ✅ 编译通过 |
+| `zig build test` | ✅ 42 passed, 45 warnings, 0 failed, Total: 87 |
+| ffi-demo rust\_hash.ll | ✅ 检出 1 issue（Rust → C boundary, 8ms） |
+| ffi-demo 其余 9 文件 | ❌ 全部崩溃（同根因：指针悬挂） |
+| bun\_ll 8 文件 | ❌ 全部崩溃 |
+| `--force-analysis` | ❌ 崩溃 |
+
+### 与验收标准对比
+
+| 验收标准 | 目标 | 当前 | 差距 |
+|---------|------|------|------|
+| ffi-demo F1 分数 | ≥ 4/5 | ~0/5（9/10 文件崩溃） | 🔴 严重退化 |
+| bun\_ll 总 issue 数不显著上升 | < 20% | 无法评估（全崩溃） | 🔴 阻塞 |
+| noise 测试不退化 | 0 退化 | 42/87（与基线一致） | ✅ 通过 |
