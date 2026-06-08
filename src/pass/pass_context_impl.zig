@@ -362,7 +362,7 @@ pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
         return;
     }
 
-    self.module_language = language_detector.detectModuleLanguage(llvm_module);
+    self.module_language = language_detector.detectModuleLanguage(llvm_module, self.allocator);
     self.language_detected = true;
 
     if (self.module_language.language == .unknown or self.module_language.confidence < 0.6) {

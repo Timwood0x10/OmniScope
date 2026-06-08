@@ -22,6 +22,7 @@ pub const DetectionMethod = enum {
     sampling,
     personality,
     globals,
+    metadata,
     unknown,
 };
 
@@ -32,14 +33,268 @@ pub const LanguageProfile = struct {
     method: DetectionMethod,
 };
 
+/// Maximum number of CU entries to scan during metadata-based detection.
+/// Scanning all CUs in LTO modules is unnecessary — the first few usually suffice.
+const METADATA_MAX_CU: u32 = 8;
+
+/// Detect language from LLVM debug metadata (llvm.dbg.cu).
+///
+/// Safe DI API approach — avoids LLVMGetMDNodeOperands (which uses
+/// cast<MDNode> internally and crashes on MetadataAsValue wrappers
+/// returned by LLVMGetNamedMetadataOperands).
+///
+/// Strategy 1: Read producer string from DICompileUnit operands.
+///   Uses LLVMGetMDNodeNumOperands (safe: uses dyn_cast_or_null internally)
+///   to guard the call to LLVMGetMDNodeOperands. If num_ops is 0 (expected
+///   for MetadataAsValue wrappers), we skip — no crash.
+///
+/// LLVMGetMDNodeNumOperands: returns 1 for non-MDNode metadata wrappers
+/// (e.g., MetadataAsValue), or the actual operand count for MDNode nodes.
+/// The `> 2` lower bound below safely excludes both 1 (non-MDNode guard)
+/// and 2 (insufficient operands for minimum CU format).
+fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?LanguageProfile {
+    const cu_count = c.LLVMGetNamedMetadataNumOperands(module, "llvm.dbg.cu");
+
+    // ── llvm.dbg.cu metadata analysis ──────────────────────────
+    if (cu_count > 0) {
+        // Heap-allocate CU operands buffer (some modules can have many CUs)
+        const cu_buf = allocator.alloc(c.LLVMValueRef, cu_count) catch {
+            return null;
+        };
+        defer allocator.free(cu_buf);
+        c.LLVMGetNamedMetadataOperands(module, "llvm.dbg.cu", cu_buf.ptr);
+
+        const scan_count = @min(cu_count, METADATA_MAX_CU);
+        for (cu_buf[0..scan_count]) |cu_val| {
+            if (cu_val == null) continue;
+
+            // ── Convert to metadata ref and verify kind ──────────────
+            const cu_md = c.LLVMValueAsMetadata(cu_val);
+            if (cu_md == null) continue;
+            // Verify this is actually a DICompileUnit before making DI calls
+            if (c.LLVMGetMetadataKind(cu_md) != c.LLVMDICompileUnitMetadataKind) continue;
+
+            // ═══════════════════════════════════════════════════════════
+            // Strategy 1: Producer string from DICompileUnit operands
+            // ═══════════════════════════════════════════════════════════
+            //
+            // LLVMGetMDNodeNumOperands: returns 1 for non-MDNode metadata wrappers
+            // (e.g., MetadataAsValue), or the actual operand count for MDNode nodes.
+            // The `> 2` lower bound below safely excludes both 1 (non-MDNode guard)
+            // and 2 (insufficient operands for minimum CU format).
+            const num_ops = c.LLVMGetMDNodeNumOperands(cu_val);
+            if (num_ops > 2 and num_ops < 100) {
+                // DICompileUnit operands can be numerous; allocate dynamically
+                // to avoid stack overflow (ref: CODE_REVIEW).
+                // SAFETY: num_ops > 2 confirms this is a viable MDNode, so
+                // LLVMGetMDNodeOperands (which uses cast<MDNode>) should be safe.
+                const ops_buf = allocator.alloc(c.LLVMValueRef, num_ops) catch {
+                    return null;
+                };
+                defer allocator.free(ops_buf);
+                c.LLVMGetMDNodeOperands(cu_val, ops_buf.ptr);
+
+                // Check producer at index 2 — DICompileUnit layout:
+                // [source_lang, file, producer, isOptimized, flags, ...]
+                if (ops_buf.len > 2) {
+                    const producer_val = ops_buf[2];
+                    // LLVMIsAMDString returns non-null if the value IS an MDString
+                    if (producer_val != null and c.LLVMIsAMDString(producer_val) != null) {
+                        var producer_len: c_uint = 0;
+                        const producer_ptr = c.LLVMGetMDString(producer_val, &producer_len);
+                        if (producer_ptr != null and producer_len > 0) {
+                            const producer = producer_ptr[0..producer_len];
+                            if (std.mem.startsWith(u8, producer, "rustc version")) {
+                                return LanguageProfile{ .language = .rust, .confidence = 0.95, .method = .metadata };
+                            }
+                            if (std.mem.startsWith(u8, producer, "zig ")) {
+                                return LanguageProfile{ .language = .zig, .confidence = 0.95, .method = .metadata };
+                            }
+                            if (std.mem.startsWith(u8, producer, "Go cmd/compile")) {
+                                return LanguageProfile{ .language = .go, .confidence = 0.95, .method = .metadata };
+                            }
+                            if (std.mem.startsWith(u8, producer, "clang")) {
+                                // Clang-produced code could be C or C++; defer to other strategies
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════
+            // Strategy 2: CU-level file extension via safe DI APIs
+            // ═══════════════════════════════════════════════════════════
+            const file_md = c.LLVMDIScopeGetFile(cu_md);
+            if (file_md != null) {
+                var file_len: c_uint = 0;
+                const file_ptr = c.LLVMDIFileGetFilename(file_md, &file_len);
+                if (file_ptr != null and file_len > 0) {
+                    const filename = file_ptr[0..file_len];
+                    if (std.mem.endsWith(u8, filename, ".zig")) {
+                        return LanguageProfile{ .language = .zig, .confidence = 0.85, .method = .metadata };
+                    }
+                    if (std.mem.endsWith(u8, filename, ".rs")) {
+                        return LanguageProfile{ .language = .rust, .confidence = 0.85, .method = .metadata };
+                    }
+                    if (std.mem.endsWith(u8, filename, ".go")) {
+                        return LanguageProfile{ .language = .go, .confidence = 0.85, .method = .metadata };
+                    }
+                    if (std.mem.endsWith(u8, filename, ".c")) {
+                        return LanguageProfile{ .language = .c, .confidence = 0.85, .method = .metadata };
+                    }
+                    if (std.mem.endsWith(u8, filename, ".cpp") or
+                        std.mem.endsWith(u8, filename, ".cc") or
+                        std.mem.endsWith(u8, filename, ".cxx") or
+                        std.mem.endsWith(u8, filename, ".hpp") or
+                        std.mem.endsWith(u8, filename, ".h"))
+                    {
+                        return LanguageProfile{ .language = .cpp, .confidence = 0.85, .method = .metadata };
+                    }
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Strategy 3: Subprogram-level file extension analysis
+    // ═══════════════════════════════════════════════════════════════════
+    // Iterate through functions, read each subprogram's DIFile, and tally
+    // file extensions. This catches cases where the CU file is generic
+    // (e.g., "main") but individual functions reference .zig/.rs/.go files.
+    {
+        const sample_limit = 100;
+        var counts = std.EnumMap(Language, u32){};
+        var total_sampled: u32 = 0;
+
+        var func = c.LLVMGetFirstFunction(module);
+        while (func != null and total_sampled < sample_limit) : ({
+            func = c.LLVMGetNextFunction(func);
+        }) {
+            const subprogram = c.LLVMGetSubprogram(func);
+            if (subprogram == null) continue;
+
+            const file_md = c.LLVMDIScopeGetFile(subprogram);
+            if (file_md == null) continue;
+
+            var file_len: c_uint = 0;
+            const file_ptr = c.LLVMDIFileGetFilename(file_md, &file_len);
+            if (file_ptr == null or file_len == 0) continue;
+
+            const filename = file_ptr[0..file_len];
+            const detected = if (std.mem.endsWith(u8, filename, ".zig"))
+                Language.zig
+            else if (std.mem.endsWith(u8, filename, ".rs"))
+                Language.rust
+            else if (std.mem.endsWith(u8, filename, ".go"))
+                Language.go
+            else if (std.mem.endsWith(u8, filename, ".c"))
+                Language.c
+            else if (std.mem.endsWith(u8, filename, ".cpp") or
+                std.mem.endsWith(u8, filename, ".cc") or
+                std.mem.endsWith(u8, filename, ".cxx") or
+                std.mem.endsWith(u8, filename, ".hpp") or
+                std.mem.endsWith(u8, filename, ".h"))
+                Language.cpp
+            else
+                continue;
+
+            counts.put(detected, (counts.get(detected) orelse 0) + 1);
+            total_sampled += 1;
+        }
+
+        if (total_sampled > 0) {
+            // Find the dominant language with at least 60% share
+            var dominant: Language = .unknown;
+            var max_count: u32 = 0;
+            var iter = counts.iterator();
+            while (iter.next()) |entry| {
+                if (entry.value.* > max_count) {
+                    max_count = entry.value.*;
+                    dominant = entry.key;
+                }
+            }
+
+            const share = @as(f32, @floatFromInt(max_count)) / @as(f32, @floatFromInt(total_sampled));
+            if (share >= 0.6) {
+                return LanguageProfile{ .language = dominant, .confidence = share * 0.95, .method = .metadata };
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Strategy 4: Module-level !llvm.ident metadata analysis
+    // ═══════════════════════════════════════════════════════════════════
+    // Check for compiler identification strings in llvm.ident metadata.
+    // This catches modules compiled without debug info (e.g., rustc -C
+    // debuginfo=0) which lack llvm.dbg.cu entries entirely.
+    //
+    // Structure: !llvm.ident = !{!1} / !1 = !{!"rustc version 1.95.0 ..."}
+    // Named metadata operands are MetadataAsValue wrappers. We use the same
+    // safe access pattern as Strategy 1 (LLVMGetMDNodeNumOperands guard).
+    {
+        const ident_count = c.LLVMGetNamedMetadataNumOperands(module, "llvm.ident");
+        if (ident_count > 0) {
+            const ident_buf = allocator.alloc(c.LLVMValueRef, ident_count) catch {
+                return null;
+            };
+            defer allocator.free(ident_buf);
+            c.LLVMGetNamedMetadataOperands(module, "llvm.ident", ident_buf.ptr);
+
+            for (ident_buf[0..ident_count]) |ident_val| {
+                if (ident_val == null) continue;
+
+                // Safety guard: only proceed if this is a real MDNode
+                const num_ops = c.LLVMGetMDNodeNumOperands(ident_val);
+                if (num_ops == 0 or num_ops > 20) continue;
+
+                const ops_buf = allocator.alloc(c.LLVMValueRef, num_ops) catch {
+                    return null;
+                };
+                defer allocator.free(ops_buf);
+                c.LLVMGetMDNodeOperands(ident_val, ops_buf.ptr);
+
+                for (ops_buf[0..num_ops]) |op_val| {
+                    if (op_val == null) continue;
+                    if (c.LLVMIsAMDString(op_val) == null) continue;
+
+                    var str_len: c_uint = 0;
+                    const str_ptr = c.LLVMGetMDString(op_val, &str_len);
+                    if (str_ptr == null or str_len == 0) continue;
+
+                    const ident_str = str_ptr[0..str_len];
+                    if (std.mem.startsWith(u8, ident_str, "rustc version")) {
+                        return LanguageProfile{ .language = .rust, .confidence = 0.90, .method = .metadata };
+                    }
+                    if (std.mem.startsWith(u8, ident_str, "zig ")) {
+                        return LanguageProfile{ .language = .zig, .confidence = 0.90, .method = .metadata };
+                    }
+                    if (std.mem.startsWith(u8, ident_str, "Go cmd/compile")) {
+                        return LanguageProfile{ .language = .go, .confidence = 0.90, .method = .metadata };
+                    }
+                    // clang in llvm.ident doesn't distinguish C vs C++
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
 /// Detect the source language of an entire LLVM module.
 ///
 /// Detection priority:
-///   1. Function-name sampling — statistical pattern matching
-///   2. Personality function attributes
-///   3. Global variable name patterns
-pub fn detectModuleLanguage(module: c.LLVMModuleRef) LanguageProfile {
-    // Fallback: function-name sampling, personality, globals voting
+///   1. Metadata (llvm.dbg.cu) — highest confidence, returns immediately
+///   2. Function-name sampling — statistical pattern matching
+///   3. Personality function attributes
+///   4. Global variable name patterns
+pub fn detectModuleLanguage(module: c.LLVMModuleRef, allocator: std.mem.Allocator) LanguageProfile {
+    // Priority 1: Metadata detection — highest confidence, safe DI API approach.
+    // Only falls back to sampling/personality/globals if metadata is absent.
+    if (detectFromMetadata(module, allocator)) |meta_result| {
+        return meta_result;
+    }
+
+    // Fall back to existing sampling/personality/globals voting
     const sampling_result = detectFromSampling(module);
     const personality_result = detectFromPersonality(module);
     const globals_result = detectFromGlobals(module);

@@ -31,6 +31,10 @@ const output_formatter = @import("output_formatter.zig");
 /// Result of a full pipeline analysis run.
 pub const AnalyzeResult = struct {
     issues: []const Issue,
+    /// Owned copy of deduped issues (populated after pipeline run completes).
+    /// Set when issues are deep-copied from pipeline to ensure they outlive the pipeline.
+    /// Freed in deinitAnalyzeResult() before pipeline deinit.
+    deduped_issues: ?[]Issue = null,
     func_count: usize,
     fact_count: usize,
     time_ms: u64,
@@ -129,13 +133,19 @@ pub fn runModulePipeline(allocator: std.mem.Allocator, loader: *IRLoader, config
     const issues = pipeline.getIssues();
     const func_count = loader.getFunctionCount();
 
+    // Obtain an owned (deep-copied) slice of deduped issues so that
+    // AnalyzeResult.issues remains valid even after pipeline.deinit().
+    const owned_issues = try pipeline.getIssuesOwned(allocator);
+    const final_issues: []const Issue = if (owned_issues) |o| o else issues;
+
     log.debug("Analysis complete\n", .{});
     log.debug("Functions processed: {d}\n", .{func_count});
     log.debug("Facts generated: {d}\n", .{pipeline_result.fact_count});
     log.debug("Time: {d}ms\n", .{time_ms});
 
     return AnalyzeResult{
-        .issues = issues,
+        .issues = final_issues,
+        .deduped_issues = owned_issues,
         .func_count = func_count,
         .fact_count = pipeline_result.fact_count,
         .time_ms = time_ms,
@@ -179,11 +189,34 @@ pub fn runSafetyOnlyPipeline(allocator: std.mem.Allocator, loader: *IRLoader, co
 
     const issues = pipeline.getIssues();
     const func_count = loader.getFunctionCount();
-    return AnalyzeResult{ .issues = issues, .func_count = func_count, .fact_count = 0, .time_ms = time_ms, ._pipeline = pipeline };
+
+    // Obtain an owned slice of deduped issues for safe lifetime management.
+    const owned_issues = try pipeline.getIssuesOwned(allocator);
+    const final_issues: []const Issue = if (owned_issues) |o| o else issues;
+
+    return AnalyzeResult{
+        .issues = final_issues,
+        .deduped_issues = owned_issues,
+        .func_count = func_count,
+        .fact_count = 0,
+        .time_ms = time_ms,
+        ._pipeline = pipeline,
+    };
 }
 
-/// Deinitialize an AnalyzeResult, freeing its internal pipeline resources.
+/// Deinitialize an AnalyzeResult, freeing its internal pipeline resources
+/// and any owned deduped issues.
 pub fn deinitAnalyzeResult(res: *AnalyzeResult) void {
+    // Free owned deduped issues first — they reference data that will be
+    // freed by pipeline.deinit() and must be cleaned up beforehand.
+    if (res.deduped_issues) |issues| {
+        const allocator = res._pipeline.allocator;
+        for (issues) |*issue| {
+            issue.deinit(allocator);
+        }
+        allocator.free(issues);
+        res.deduped_issues = null;
+    }
     res._pipeline.deinit();
     res.* = undefined;
 }
@@ -209,7 +242,7 @@ pub fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const
         try loaders.append(allocator, loader);
 
         const lang_profile = if (loader.getModule()) |module_ref|
-            LanguageDetector.detectModuleLanguage(module_ref.raw)
+            LanguageDetector.detectModuleLanguage(module_ref.raw, allocator)
         else
             LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
 
@@ -223,7 +256,7 @@ pub fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const
 
     var results = try std.ArrayList(AnalyzeResult).initCapacity(allocator, files.len);
     defer {
-        for (results.items) |*r| r._pipeline.deinit();
+        for (results.items) |*r| deinitAnalyzeResult(r);
         results.deinit(allocator);
     }
 

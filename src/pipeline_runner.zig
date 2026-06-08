@@ -31,7 +31,7 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
     defer loader.deinit();
 
     const source_lang = if (loader.getModule()) |module_ref|
-        LanguageDetector.detectModuleLanguage(module_ref.raw)
+        LanguageDetector.detectModuleLanguage(module_ref.raw, allocator)
     else
         LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
 
@@ -39,10 +39,11 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
     log.info("[Language] Source: {s} (confidence: {:.1}%)\n", .{ source_lang_name, source_lang.confidence * 100 });
     log.debug("Loaded: {d} functions\n\n", .{loader.getFunctionCount()});
 
-    // P0: If the module is confidently a single language (confidence >= 95%),
-    // skip the entire FFI analysis pipeline — there is no cross-language content.
-    // This saves significant time on pure single-language modules (C-only, Rust-only, etc.).
-    if (source_lang.confidence >= 0.95 and source_lang.language != .unknown) {
+    // P0: If the module is a single language, skip entirely — OmniScope analyzes
+    // cross-language FFI boundaries only. Pure single-language modules (C-only,
+    // Rust-only, etc.) have nothing to find by design. We check function name
+    // patterns from ALL supported languages below to detect multi-language content.
+    if (source_lang.language != .unknown) {
         // Double-check: Even with high confidence, verify there are no functions
         // from OTHER languages that would indicate mixed-language content.
         // This prevents misclassifying Rust+SQLite binaries as pure C.
@@ -255,14 +256,10 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
         }
 
         if (!has_multi_lang_hint) {
-            log.info("[Language] Single-language ({s}) — running intra-language safety analysis\n", .{source_lang_name});
-            var result = try pipeline.runSafetyOnlyPipeline(allocator, &loader, config);
-            defer pipeline.deinitAnalyzeResult(&result);
-            try output_formatter.emitOutput(allocator, result.issues, result.func_count, result.time_ms, config, source_lang.language, source_lang.language);
-            log.info("[Language] Safety analysis complete: {d} issues in single-language {s}\n", .{ result.issues.len, source_lang_name });
+            log.info("[Language] Single-language ({s}) — OmniScope analyzes cross-language FFI boundaries only, skipping analysis for pure single-language modules\n", .{source_lang_name});
             return;
         }
-        // Fall through: detected mixed-language hints despite high confidence
+        // Fall through: detected mixed-language hints
         log.info("[Language] Module appears mixed-language (dominant: {s}), running full analysis\n", .{source_lang_name});
     }
 

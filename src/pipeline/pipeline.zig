@@ -87,6 +87,12 @@ pub const Pipeline = struct {
     /// Contains indices into data_flow_graph.getIssues() for non-duplicate issues.
     /// Null before run() or if deduplication fails.
     dedup_issue_indices: ?[]usize = null,
+    /// Flat deduped issue view (populated after run() completes).
+    /// getIssues() returns this when set, so the output reflects message folding.
+    deduped_issues_view: ?[]Issue = null,
+    /// Optional: Map from deduped view index to owned aggregated message.
+    /// Populated during run() folding. Freed in deinit().
+    dedup_msg_overrides: ?std.AutoHashMap(usize, []u8) = null,
 
     /// Create a new analysis pipeline
     pub fn init(allocator: std.mem.Allocator) !Pipeline {
@@ -111,6 +117,17 @@ pub const Pipeline = struct {
 
     /// Deinitialize the pipeline
     pub fn deinit(self: *Pipeline) void {
+        // Free deduped issues view before data_flow_graph (it borrows from it)
+        if (self.deduped_issues_view) |view| self.allocator.free(view);
+        // Free message overrides (owned strings for aggregated issue messages)
+        if (self.dedup_msg_overrides) |*overrides| {
+            var it = overrides.iterator();
+            while (it.next()) |entry| {
+                self.allocator.free(entry.value_ptr.*);
+            }
+            overrides.deinit();
+            self.dedup_msg_overrides = null;
+        }
         self.data_flow_graph.deinit();
         self.query_engine.deinit();
         self.fact_store.deinit();
@@ -904,15 +921,97 @@ pub const Pipeline = struct {
             // Flush pending diagnostics to process message folding/aggregation.
             try aggregator.flush();
 
-            // Store deduplicated issue indices (caller owns this memory).
-            self.dedup_issue_indices = try indices.toOwnedSlice(self.allocator);
+            // ── Message Aggregation ──
+            // Rebuild indices based on aggregator's message-level folding.
+            // After flush(), aggregator.diagnostics has entries where:
+            //   - message starts with "[aggregated]": N issues with same kind+message were folded into 1
+            //   - otherwise: unique issue (no folding)
+            // We keep only 1 index per folded group, reducing output count.
+            {
+                // Build hash maps for O(1) issue lookup by message and kind_tag.
+                var exact_msg_map = std.StringHashMap(usize).init(self.allocator);
+                defer exact_msg_map.deinit();
+                var kind_to_idx_map = std.StringHashMap(usize).init(self.allocator);
+                defer kind_to_idx_map.deinit();
 
-            const dup_count = all_issues.len - self.dedup_issue_indices.?.len;
-            if (dup_count > 0) {
-                log.info("PIPELINE: Deduplication removed {} duplicate issues ({} unique remaining)", .{
-                    dup_count, self.dedup_issue_indices.?.len,
+                for (all_issues, 0..) |issue, issue_idx| {
+                    try exact_msg_map.put(issue.message, issue_idx);
+                    const kind_tag = @tagName(issue.kind);
+                    if (!kind_to_idx_map.contains(kind_tag)) {
+                        try kind_to_idx_map.put(kind_tag, issue_idx);
+                    }
+                }
+
+                var folded_indices = try std.ArrayList(usize).initCapacity(self.allocator, 0);
+                // Collect message overrides for aggregated (folded) entries.
+                // Key = index in folded_indices, value = owned aggregated message.
+                var msg_overrides = std.AutoHashMap(usize, []u8).init(self.allocator);
+
+                for (aggregator.diagnostics.items) |agg_diag| {
+                    var found: ?usize = null;
+                    var is_aggregated = false;
+
+                    // Exact message match (covers individually-emitted diagnostics)
+                    if (exact_msg_map.get(agg_diag.message)) |matched_idx| {
+                        found = matched_idx;
+                    } else if (std.mem.startsWith(u8, agg_diag.message, "[aggregated] ")) {
+                        // Aggregated (folded) diagnostics: match by kind_tag extracted from message
+                        const rest = agg_diag.message["[aggregated] ".len..];
+                        if (std.mem.indexOfScalar(u8, rest, ' ')) |space_pos| {
+                            const kind_tag = rest[0..space_pos];
+                            if (kind_to_idx_map.get(kind_tag)) |matched_idx| {
+                                found = matched_idx;
+                                is_aggregated = true;
+                            }
+                        }
+                    }
+
+                    const folded_idx = found orelse continue;
+                    try folded_indices.append(self.allocator, folded_idx);
+
+                    if (is_aggregated) {
+                        // Store owned override message so the user sees the aggregated summary
+                        // (e.g., "[aggregated] ffi_unsafe_call ×930 ...") instead of the
+                        // original issue message. Owned string, freed via Pipeline.deinit().
+                        const owned_msg = try self.allocator.dupe(u8, agg_diag.message);
+                        try msg_overrides.put(folded_indices.items.len - 1, owned_msg);
+                    }
+                }
+
+                const pre_fold_count = indices.items.len;
+                indices.deinit(self.allocator);
+                self.dedup_issue_indices = try folded_indices.toOwnedSlice(self.allocator);
+
+                // Store overrides on Pipeline for getIssuesOwned() to use.
+                // Transfer ownership from local msg_overrides HashMap.
+                var pipeline_overrides = std.AutoHashMap(usize, []u8).init(self.allocator);
+                var override_iter = msg_overrides.iterator();
+                while (override_iter.next()) |entry| {
+                    try pipeline_overrides.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
+                // msg_overrides.deinit() only frees internal arrays, not the values
+                // (ownership of values transferred to pipeline_overrides above)
+                msg_overrides.deinit();
+                self.dedup_msg_overrides = pipeline_overrides;
+
+                const exact_dup = all_issues.len - pre_fold_count;
+                const msg_fold = pre_fold_count - self.dedup_issue_indices.?.len;
+                const total_removed = all_issues.len - self.dedup_issue_indices.?.len;
+
+                log.info("PIPELINE: Dedup removed {} exact dupes; message aggregation folded {} more ({} total removed, {} aggregated remaining)", .{
+                    exact_dup, msg_fold, total_removed, self.dedup_issue_indices.?.len,
                 });
             }
+        }
+
+        // Build flat deduped issue view from dedup indices for getIssues() consumers.
+        if (self.dedup_issue_indices) |indices| {
+            const all_issues = self.data_flow_graph.getIssues();
+            var view = try std.ArrayList(Issue).initCapacity(self.allocator, indices.len);
+            for (indices) |i| {
+                view.appendAssumeCapacity(all_issues[i]);
+            }
+            self.deduped_issues_view = try view.toOwnedSlice(self.allocator);
         }
 
         // PERF-OPT-7: Final performance report - log total execution time and optimization status
@@ -1008,9 +1107,10 @@ pub const Pipeline = struct {
     ///
     /// Note: This returns a view into data_flow_graph's internal storage.
     /// For deduplicated results, use getIssuesOwned() instead.
+    /// Note: The returned issues borrow from this Pipeline's internal storage
+    /// and become invalid after deinit(). For long-lived usage, use getIssuesOwned().
     pub fn getIssues(self: *const Pipeline) []const Issue {
-        // Always return raw issues for backward compatibility.
-        // Use getIssuesOwned() for deduplicated results.
+        if (self.deduped_issues_view) |view| return view;
         return self.data_flow_graph.getIssues();
     }
 
@@ -1021,20 +1121,33 @@ pub const Pipeline = struct {
     /// by calling freeIssuesOwned() when done.
     ///
     /// Returns null if run() hasn't completed or deduplication failed.
-    pub fn getIssuesOwned(self: *Pipeline, allocator: std.mem.Allocator) ?[]Issue {
+    pub fn getIssuesOwned(self: *Pipeline, allocator: std.mem.Allocator) !?[]Issue {
         // Return deduplicated issues if available (populated by run()).
         if (self.dedup_issue_indices) |indices| {
             const all_issues = self.data_flow_graph.getIssues();
             var result = try std.ArrayList(Issue).initCapacity(allocator, indices.len);
 
-            for (indices) |idx| {
+            for (indices, 0..) |idx, view_idx| {
                 const original = all_issues[idx];
                 // Deep copy issue to create independent owned copy.
-                const copied = try self.deepCopyIssue(allocator, original);
-                try result.append(copied);
+                var copied = try self.deepCopyIssue(allocator, original);
+
+                // Apply message override for aggregated (folded) entries
+                if (self.dedup_msg_overrides) |overrides| {
+                    if (overrides.get(view_idx)) |override_msg| {
+                        // Free the message that deepCopyIssue allocated,
+                        // then replace with the aggregated summary message.
+                        // The override message is owned by the pipeline, so
+                        // we dupe it for the issue to own independently.
+                        allocator.free(copied.message);
+                        copied.message = try allocator.dupe(u8, override_msg);
+                    }
+                }
+
+                try result.append(allocator, copied);
             }
 
-            return result.toOwnedSlice(allocator);
+            return try result.toOwnedSlice(allocator);
         }
         // No deduplication available.
         return null;
